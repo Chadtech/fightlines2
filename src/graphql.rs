@@ -1,0 +1,301 @@
+use crate::{
+    lobby::{self, Snapshot, Store},
+    lobby_id::LobbyId,
+    session_token::SessionToken,
+};
+use actix_web::{HttpRequest, HttpResponse, web};
+use juniper::{EmptySubscription, FieldResult, RootNode, graphql_object, http::GraphQLRequest};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
+
+//----------------------------------------------------------------
+// CONTEXT
+//----------------------------------------------------------------
+
+pub struct Context {
+    pub store: Arc<Store>,
+    identity: Mutex<Option<SessionToken>>,
+    persist_identity: AtomicBool,
+}
+
+impl juniper::Context for Context {}
+
+impl Context {
+    pub fn identity(&self) -> Option<SessionToken> {
+        self.identity
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    pub fn set_identity(&self, identity: SessionToken) {
+        self.persist_identity.store(true, Ordering::Relaxed);
+        *self
+            .identity
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(identity);
+    }
+}
+
+//----------------------------------------------------------------
+// QUERIES
+//----------------------------------------------------------------
+
+pub struct Query;
+
+#[graphql_object(context = Context)]
+impl Query {
+    fn health() -> bool {
+        true
+    }
+
+    fn lobby(context: &Context, id: String) -> FieldResult<Snapshot> {
+        lobby::get(context, LobbyId::from_token(id))
+    }
+
+    fn game(context: &Context, id: String) -> FieldResult<Snapshot> {
+        lobby::game(context, LobbyId::from_token(id))
+    }
+}
+
+//----------------------------------------------------------------
+// MUTATIONS
+//----------------------------------------------------------------
+
+pub struct Mutation;
+
+#[graphql_object(context = Context)]
+impl Mutation {
+    fn create_lobby(context: &Context, name: String) -> FieldResult<Snapshot> {
+        lobby::create(context, &name)
+    }
+
+    fn join_lobby(context: &Context, id: String, name: String) -> FieldResult<Snapshot> {
+        lobby::join(context, LobbyId::from_token(id), &name)
+    }
+
+    fn start_game(context: &Context, id: String) -> FieldResult<Snapshot> {
+        lobby::start(context, LobbyId::from_token(id))
+    }
+}
+
+//----------------------------------------------------------------
+// SCHEMA
+//----------------------------------------------------------------
+
+pub type Schema = RootNode<Query, Mutation, EmptySubscription<Context>>;
+
+pub fn schema() -> Schema {
+    Schema::new(Query, Mutation, EmptySubscription::new())
+}
+
+//----------------------------------------------------------------
+// HTTP
+//----------------------------------------------------------------
+
+pub async fn handle(
+    request: HttpRequest,
+    input: web::Json<GraphQLRequest>,
+    store: web::Data<Store>,
+    schema: web::Data<Schema>,
+) -> HttpResponse {
+    // Mutations in one document share the newly created browser identity.
+    let original = SessionToken::from_request(&request);
+    let context = Context {
+        store: store.into_inner(),
+        identity: Mutex::new(original),
+        persist_identity: AtomicBool::new(false),
+    };
+    let result = input.execute_sync(&schema, &context);
+    let mut response = HttpResponse::Ok();
+    response.insert_header(("Cache-Control", "no-store"));
+    if let Some(identity) = context
+        .identity()
+        .filter(|_| context.persist_identity.load(Ordering::Relaxed))
+    {
+        response.cookie(identity.cookie());
+    }
+    response.json(result)
+}
+
+//----------------------------------------------------------------
+// SCHEMA EXPORT
+//----------------------------------------------------------------
+
+/// Export the real resolver schema without starting a server or mutating game state.
+pub fn export_schema() -> std::io::Result<()> {
+    let context = Context {
+        store: Arc::new(Store::new(crate::seed::Seed::new([0; 32]))),
+        identity: Mutex::new(None),
+        persist_identity: AtomicBool::new(false),
+    };
+    let (data, errors) =
+        juniper::introspect(&schema(), &context, juniper::IntrospectionFormat::All)
+            .map_err(std::io::Error::other)?;
+    if !errors.is_empty() {
+        return Err(std::io::Error::other("Schema introspection failed"));
+    }
+    println!("{}", serde_json::json!({ "data": data }));
+    Ok(())
+}
+
+//----------------------------------------------------------------
+// TESTS
+//----------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::{App, http::StatusCode, test};
+    use serde_json::{Value, json};
+
+    const FIELDS: &str = "id players { name isHost } isHost isMember gameUrl";
+
+    #[actix_web::test]
+    async fn lifecycle_and_authorization_over_graphql() {
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(Store::new(crate::seed::Seed::new([7; 32]))))
+                .app_data(web::Data::new(schema()))
+                .route("/graphql", web::post().to(handle)),
+        )
+        .await;
+        macro_rules! execute {
+            ($query:expr, $cookie:expr) => {{
+                let mut request = test::TestRequest::post().uri("/graphql")
+                    .set_json(json!({ "query": $query }));
+                if let Some(cookie) = $cookie { request = request.cookie(cookie); }
+                let response = test::call_service(&app, request.to_request()).await;
+                assert_eq!(response.status(), StatusCode::OK);
+                assert_eq!(response.headers().get("Cache-Control").unwrap(), "no-store");
+                let cookie = response.response().cookies().next().map(|cookie| cookie.into_owned());
+                let body: Value = test::read_body_json(response).await;
+                (body, cookie)
+            }};
+        }
+        let (invalid, cookie) = execute!(
+            format!("mutation {{ createLobby(name: \"   \") {{ {FIELDS} }} }}"),
+            None
+        );
+        assert!(
+            invalid["errors"][0]["message"]
+                .as_str()
+                .unwrap()
+                .contains("40")
+        );
+        assert!(cookie.is_none());
+        let (created, host) = execute!(
+            format!("mutation {{ createLobby(name: \" Chad \") {{ {FIELDS} }} }}"),
+            None
+        );
+        let host = host.unwrap();
+        assert_eq!(host.http_only(), Some(true));
+        assert_eq!(created["data"]["createLobby"]["players"][0]["name"], "Chad");
+        assert_eq!(created["data"]["createLobby"]["isHost"], true);
+        assert!(created["data"]["createLobby"]["gameUrl"].is_null());
+        let id = created["data"]["createLobby"]["id"].as_str().unwrap();
+        let (visitor, _) = execute!(
+            format!("{{ lobby(id: \"{id}\") {{ {FIELDS} }} health }}"),
+            None
+        );
+        assert_eq!(visitor["data"]["lobby"]["isMember"], false);
+        assert_eq!(visitor["data"]["health"], true);
+        let (early, _) = execute!(
+            format!("{{ game(id: \"{id}\") {{ {FIELDS} }} }}"),
+            Some(host.clone())
+        );
+        assert!(
+            early["errors"][0]["message"]
+                .as_str()
+                .unwrap()
+                .contains("not started")
+        );
+        let (duplicate, _) = execute!(
+            format!("mutation {{ joinLobby(id: \"{id}\", name: \"chad\") {{ {FIELDS} }} }}"),
+            None
+        );
+        assert!(duplicate["errors"].is_array());
+        let join =
+            format!("mutation {{ joinLobby(id: \"{id}\", name: \"Walter\") {{ {FIELDS} }} }}");
+        let (joined, guest) = execute!(&join, None);
+        let guest = guest.unwrap();
+        assert_eq!(
+            joined["data"]["joinLobby"]["players"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(joined["data"]["joinLobby"]["isHost"], false);
+        let (rejoined, _) = execute!(&join, Some(guest.clone()));
+        assert_eq!(
+            rejoined["data"]["joinLobby"]["players"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        let start = format!("mutation {{ startGame(id: \"{id}\") {{ {FIELDS} }} }}");
+        for identity in [None, Some(guest.clone())] {
+            let (denied, _) = execute!(&start, identity);
+            assert!(denied["errors"].is_array());
+        }
+        for _ in 0..2 {
+            let (started, _) = execute!(&start, Some(host.clone()));
+            assert_eq!(
+                started["data"]["startGame"]["gameUrl"],
+                format!("/game/{id}")
+            );
+        }
+        let (polled, _) = execute!(
+            format!("{{ lobby(id: \"{id}\") {{ {FIELDS} }} }}"),
+            Some(host.clone())
+        );
+        assert_eq!(polled["data"]["lobby"]["gameUrl"], format!("/game/{id}"));
+        let (late, _) = execute!(&join, None);
+        assert!(
+            late["errors"][0]["message"]
+                .as_str()
+                .unwrap()
+                .contains("already started")
+        );
+        let game = format!("{{ game(id: \"{id}\") {{ {FIELDS} }} }}");
+        let (member, _) = execute!(&game, Some(guest.clone()));
+        assert_eq!(member["data"]["game"]["isMember"], true);
+        let (outsider, _) = execute!(&game, None);
+        assert!(outsider["errors"].is_array());
+        let (reconnected, _) = execute!(&join, Some(guest));
+        assert_eq!(
+            reconnected["data"]["joinLobby"]["gameUrl"],
+            format!("/game/{id}")
+        );
+        let (missing, _) = execute!("{ lobby(id: \"missing\") { id } }", None);
+        assert!(missing["errors"].is_array());
+        let (unknown, cookie) = execute!(
+            "mutation { createLobby(name: \"Other\") { unknownField } }",
+            None
+        );
+        assert!(unknown["errors"].is_array());
+        assert!(cookie.is_none());
+        let (multiple, cookie) = execute!(
+            "mutation { a: createLobby(name: \"One\") { id isHost } b: createLobby(name: \"Two\") { id isHost } }",
+            None
+        );
+        let cookie = cookie.unwrap();
+        for alias in ["a", "b"] {
+            let id = multiple["data"][alias]["id"].as_str().unwrap();
+            let (owner, _) = execute!(
+                format!("{{ lobby(id: \"{id}\") {{ isHost }} }}"),
+                Some(cookie.clone())
+            );
+            assert_eq!(owner["data"]["lobby"]["isHost"], true);
+        }
+        let old = test::TestRequest::get().uri("/api/health").to_request();
+        assert_eq!(
+            test::call_service(&app, old).await.status(),
+            StatusCode::NOT_FOUND
+        );
+    }
+}

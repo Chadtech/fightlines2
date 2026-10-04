@@ -1,0 +1,8 @@
+/target/
+/elm-stuff/
+/public/elm.js
+/node_modules/
+/old
+/.idea
+/.env
+/schema.json.tmp

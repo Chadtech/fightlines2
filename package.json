@@ -1,0 +1,13 @@
+{
+  "name": "fightlines2",
+  "private": true,
+  "scripts": {
+    "generate-api": "node node_modules/@dillonkearns/elm-graphql/dist/bundle.js --introspection-file schema.json --base Api --output src"
+  },
+  "devDependencies": {
+    "@dillonkearns/elm-graphql": "4.3.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
