@@ -25,8 +25,12 @@ the design direction changes. User feedback takes precedence.
   destinations to implement the visual rule.
 - All text stays at 1rem and normal weight (400), including headers and controls.
   Use placement, spacing, grouping, and color to distinguish roles.
-- Use the existing monospace stack: Fira Code, SFMono-Regular, SF Mono, Menlo,
-  Monaco, Consolas, Liberation Mono, then generic monospace. Fonts are not bundled.
+- Use Ubuntu Mono Regular at weight 400. The unmodified TrueType font is
+  embedded as a data URL in `public/index.html`; its Ubuntu Font Licence 1.0
+  and pinned upstream revision are in `public/ubuntu-mono-LICENSE.txt`.
+  No separate font request is required.
+  Fall back to SFMono-Regular, SF Mono, Menlo, Monaco, Consolas, Liberation Mono,
+  then generic monospace.
 
 ## Color and surfaces
 
@@ -56,6 +60,7 @@ and white. Retain the other palette tokens for reuse.
 Keep keyboard focus visible, and communicate errors with text as well as color.
 Text fields use `indentStrong`: dark gray0 top/left edges and lighter gray3
 bottom/right edges, retaining the shared 1px border width.
+Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion point visible.
 
 ## Cards, spacing, and layout
 
@@ -74,6 +79,7 @@ bottom/right edges, retaining the shared 1px border width.
 
 ## Decision log
 
+- 2026-10-04: use bundled Ubuntu Mono Regular for the interface, embedding the font data directly in the HTML.
 - 2026-10-04: keep equal-size, normal-weight monospace typography; use a separate
   inverted gray title bar, nightwood text fields, brighter primary actions, and
   lowercase presentation throughout the interface.

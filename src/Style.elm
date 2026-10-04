@@ -36,6 +36,7 @@ module Style exposing
     , bottomFull
     , breakSpaces
     , capitalize
+    , caretRed1
     , col
     , colReverse
     , colorTransition2
@@ -1586,6 +1587,11 @@ textYellow6 =
     Css.property "color" yellow6Str
 
 
+caretRed1 : Css.Style
+caretRed1 =
+    Css.property "caret-color" red1Str
+
+
 textRed1 : Css.Style
 textRed1 =
     Css.property "color" red1Str
@@ -1633,7 +1639,7 @@ fontItalic =
 fontMonospace : Css.Style
 fontMonospace =
     Css.fontFamilyMany
-        [ "Fira Code"
+        [ "Ubuntu Mono"
         , "SFMono-Regular"
         , "SF Mono"
         , "Menlo"

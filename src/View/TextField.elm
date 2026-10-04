@@ -46,6 +46,7 @@ toHtml textField =
             [ S.indentStrong
             , S.bgNightwood3
             , S.textGray5
+            , S.caretRed1
             , Css.focus
                 [ S.textGray5
                 ]
