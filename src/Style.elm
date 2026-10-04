@@ -279,6 +279,7 @@ module Style exposing
     , wAuto
     , wFull
     , wFullViewport
+    , when
     , whitespacePreWrap
     , wrapAnywhere
     , z1
@@ -547,6 +548,15 @@ none =
 batch : List Css.Style -> Css.Style
 batch =
     Css.batch
+
+
+when : Bool -> Css.Style -> Css.Style
+when condition style =
+    if condition then
+        style
+
+    else
+        Css.batch []
 
 
 hover : List Css.Style -> Css.Style

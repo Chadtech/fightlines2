@@ -28,6 +28,7 @@ import Route
 import Shared
 import Style as S
 import View.Button as Button
+import View.Card as Card
 
 
 
@@ -92,25 +93,20 @@ setShared shared model =
 
 view : Model -> List (Html msg)
 view model =
-    [ H.div
-        [ A.css
-            [ S.col
-            , S.g3
-            ]
-        ]
-        [ H.h1
+    [ [ H.h1
             []
             [ H.text "Game"
             ]
-        , H.p
+      , H.p
             []
             [ H.text "The game has started. Game mechanics will be added here."
             ]
-        , H.p
+      , H.p
             []
             [ H.text ("Players: " ++ String.join ", " model.playerNames)
             ]
-        ]
+      ]
+        |> Card.toHtml Card.simple
     ]
 
 
@@ -121,18 +117,12 @@ loadFailedView id error retryMsg =
         message =
             ApiRequest.errorMessage error
     in
-    [ H.div
-        [ A.css
-            [ S.col
-            , S.g3
-            ]
-        ]
-        [ H.p
+    [ [ H.p
             [ A.attribute "role" "status"
             ]
             [ H.text message
             ]
-        , H.a
+      , H.a
             [ A.href (Route.toString (Route.Lobby id))
             , A.css
                 [ S.link
@@ -140,7 +130,8 @@ loadFailedView id error retryMsg =
             ]
             [ H.text "Return to lobby"
             ]
-        , Button.secondary "Retry" retryMsg
+      , Button.secondary "Retry" retryMsg
             |> Button.toHtml
-        ]
+      ]
+        |> Card.toHtml Card.simple
     ]

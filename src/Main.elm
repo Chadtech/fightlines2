@@ -35,6 +35,8 @@ import Url
     exposing
         ( Url
         )
+import View.Button as Button
+import View.Card as Card
 import View.Dropdown as Dropdown
 
 
@@ -65,6 +67,7 @@ type Msg
     | LobbyRetryButtonClicked
     | GameResponseReceived LobbyId (Response GamePage.Flags)
     | GameRetryButtonClicked
+    | ReturnHomeButtonClicked
 
 
 
@@ -227,6 +230,9 @@ handleRoute route page =
 update : Msg -> Page -> ( Page, Eff Msg )
 update msg page =
     case msg of
+        ReturnHomeButtonClicked ->
+            ( page, E.navigate Route.NewLobby )
+
         LinkClicked request ->
             case request of
                 Browser.Internal url ->
@@ -341,11 +347,13 @@ shell page =
                     List.map (H.map NewLobbyMsg) (NewLobby.view model)
 
                 LoadingLobby _ _ ->
-                    [ H.p
-                        [ A.attribute "role" "status"
-                        ]
-                        [ H.text "Loading lobby…"
-                        ]
+                    [ [ H.p
+                            [ A.attribute "role" "status"
+                            ]
+                            [ H.text "Loading lobby…"
+                            ]
+                      ]
+                        |> Card.toHtml Card.simple
                     ]
 
                 LobbyLoadFailed _ _ error ->
@@ -355,11 +363,13 @@ shell page =
                     List.map (H.map (LobbyMsg id)) (LobbyPage.view model)
 
                 LoadingGame _ _ ->
-                    [ H.p
-                        [ A.attribute "role" "status"
-                        ]
-                        [ H.text "Loading game…"
-                        ]
+                    [ [ H.p
+                            [ A.attribute "role" "status"
+                            ]
+                            [ H.text "Loading game…"
+                            ]
+                      ]
+                        |> Card.toHtml Card.simple
                     ]
 
                 GameLoadFailed _ id error ->
@@ -369,15 +379,27 @@ shell page =
                     GamePage.view model
 
                 NotFound _ ->
-                    [ H.p
-                        []
-                        [ H.text "Page not found. Use FightLines above to create a lobby."
-                        ]
+                    [ [ H.p
+                            []
+                            [ H.text "Page not found."
+                            ]
+                      , Button.primary "Return home" ReturnHomeButtonClicked
+                            |> Button.toHtml
+                      ]
+                        |> Card.toHtml Card.simple
                     ]
+
+        globalStyles : Html Msg
+        globalStyles =
+            Css.Global.global
+                (S.global
+                    ++ [ Dropdown.globalStyles
+                       ]
+                )
     in
     [ H.main_
         [ A.css
-            [ S.bgNightwood0
+            [ S.bgNightwood1
             , S.minHFullViewport
             , S.p4
             , S.textGray4
@@ -385,30 +407,7 @@ shell page =
             , S.g3
             ]
         ]
-        [ Css.Global.global
-            (S.global
-                ++ [ Dropdown.globalStyles
-                   ]
-            )
-        , H.a
-            [ A.href "/"
-            , A.css
-                [ S.link
-                ]
-            ]
-            [ H.text "FightLines"
-            ]
-        , H.article
-            [ A.css
-                [ S.bgGray1
-                , S.col
-                , S.g3
-                , S.outdent
-                , S.p3
-                ]
-            ]
-            content
-        ]
+        (globalStyles :: content)
     ]
 
 

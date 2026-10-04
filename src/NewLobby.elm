@@ -31,6 +31,7 @@ import Route
 import Shared
 import Style as S
 import View.Button as Button
+import View.Card as Card
 import View.TextField as TextField
 
 
@@ -155,43 +156,52 @@ view : Model -> List (Html Msg)
 view model =
     [ H.div
         [ A.css
-            [ S.col
-            , S.g3
+            [ S.flex1
+            , S.col
+            , S.itemsCenter
+            , S.justifyCenter
             ]
         ]
-        [ H.h1
-            []
-            [ H.text "Start a lobby"
-            ]
-        , H.p
-            []
-            [ H.text "Create a lobby, share its link, then start the game when everyone has joined."
-            ]
-        , H.form
-            [ Ev.onSubmit CreateButtonClicked
-            ]
-            [ H.fieldset
-                [ A.disabled model.busy
-                , A.css
-                    [ S.border0
-                    , S.col
-                    , S.g3
+        [ [ H.h1
+                []
+                [ H.text "Start a lobby"
+                ]
+          , H.p
+                []
+                [ H.text "Create a lobby, share its link, then start the game when everyone has joined."
+                ]
+          , H.form
+                [ Ev.onSubmit CreateButtonClicked
+                ]
+                [ H.fieldset
+                    [ A.disabled model.busy
+                    , A.css
+                        [ S.border0
+                        , S.col
+                        , S.g3
+                        ]
+                    ]
+                    [ H.label
+                        []
+                        [ H.text "Your name"
+                        , TextField.simple model.name NameInputChanged
+                            |> TextField.toHtml
+                        ]
+                    , Button.primary "Create lobby" CreateButtonClicked
+                        |> Button.toHtml
                     ]
                 ]
-                [ H.label
-                    []
-                    [ H.text "Your name"
-                    , TextField.simple model.name NameInputChanged
-                        |> TextField.toHtml
-                    ]
-                , Button.primary "Create lobby" CreateButtonClicked
-                    |> Button.toHtml
-                ]
-            ]
-        , H.p
-            [ A.attribute "role" "status"
-            ]
-            [ H.text (Maybe.withDefault "" model.error)
-            ]
+          , case model.error of
+                Just error ->
+                    H.p
+                        [ A.attribute "role" "status"
+                        ]
+                        [ H.text error
+                        ]
+
+                Nothing ->
+                    H.text ""
+          ]
+            |> Card.toHtml Card.compactForm
         ]
     ]

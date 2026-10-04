@@ -41,6 +41,7 @@ import Shared
 import Style as S
 import Time
 import View.Button as Button
+import View.Card as Card
 import View.TextField as TextField
 
 
@@ -292,17 +293,11 @@ gameNavigation args lobbyId =
 
 view : Model -> List (Html Msg)
 view model =
-    [ H.div
-        [ A.css
-            [ S.col
-            , S.g3
-            ]
-        ]
-        [ H.h1
+    [ [ H.h1
             []
             [ H.text "Lobby"
             ]
-        , H.label
+      , H.label
             [ A.css
                 [ S.col
                 , S.g2
@@ -322,8 +317,8 @@ view model =
                 ]
                 []
             ]
-        , lobbyView model
-        , H.p
+      , lobbyView model
+      , H.p
             [ A.attribute "role" "status"
             ]
             [ H.text
@@ -335,7 +330,7 @@ view model =
                     )
                 )
             ]
-        , H.fieldset
+      , H.fieldset
             [ A.disabled (model.busy || model.refreshing)
             , A.css
                 [ S.border0
@@ -344,7 +339,8 @@ view model =
             [ Button.secondary "Refresh lobby" RefreshButtonClicked
                 |> Button.toHtml
             ]
-        ]
+      ]
+        |> Card.toHtml Card.simple
     ]
 
 
@@ -435,20 +431,15 @@ playerView player =
 
 loadFailedView : Graphql.Http.Error Flags -> msg -> List (Html msg)
 loadFailedView error retryMsg =
-    [ H.div
-        [ A.css
-            [ S.col
-            , S.g3
-            ]
-        ]
-        [ H.p
+    [ [ H.p
             [ A.attribute "role" "status"
             ]
             [ H.text (ApiRequest.errorMessage error)
             ]
-        , Button.secondary "Retry" retryMsg
+      , Button.secondary "Retry" retryMsg
             |> Button.toHtml
-        ]
+      ]
+        |> Card.toHtml Card.simple
     ]
 
 
