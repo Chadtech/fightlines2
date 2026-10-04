@@ -95,15 +95,15 @@ view : Model -> List (Html msg)
 view model =
     [ [ H.h1
             []
-            [ H.text "Game"
+            [ H.text "game"
             ]
       , H.p
             []
-            [ H.text "The game has started. Game mechanics will be added here."
+            [ H.text "the game has started. game mechanics will be added here."
             ]
       , H.p
             []
-            [ H.text ("Players: " ++ String.join ", " model.playerNames)
+            [ H.text ("players: " ++ String.join ", " model.playerNames)
             ]
       ]
         |> Card.toHtml Card.simple
@@ -128,9 +128,9 @@ loadFailedView id error retryMsg =
                 [ S.link
                 ]
             ]
-            [ H.text "Return to lobby"
+            [ H.text "return to lobby"
             ]
-      , Button.secondary "Retry" retryMsg
+      , Button.secondary "retry" retryMsg
             |> Button.toHtml
       ]
         |> Card.toHtml Card.simple

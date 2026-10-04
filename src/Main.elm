@@ -329,7 +329,7 @@ update msg page =
 
 view : Page -> Browser.Document Msg
 view page =
-    { title = "FightLines"
+    { title = "fightlines"
     , body = List.map H.toUnstyled (shell page)
     }
 
@@ -350,7 +350,7 @@ shell page =
                     [ [ H.p
                             [ A.attribute "role" "status"
                             ]
-                            [ H.text "Loading lobby…"
+                            [ H.text "loading lobby…"
                             ]
                       ]
                         |> Card.toHtml Card.simple
@@ -366,7 +366,7 @@ shell page =
                     [ [ H.p
                             [ A.attribute "role" "status"
                             ]
-                            [ H.text "Loading game…"
+                            [ H.text "loading game…"
                             ]
                       ]
                         |> Card.toHtml Card.simple
@@ -381,9 +381,9 @@ shell page =
                 NotFound _ ->
                     [ [ H.p
                             []
-                            [ H.text "Page not found."
+                            [ H.text "page not found."
                             ]
-                      , Button.primary "Return home" ReturnHomeButtonClicked
+                      , Button.primary "return home" ReturnHomeButtonClicked
                             |> Button.toHtml
                       ]
                         |> Card.toHtml Card.simple
@@ -399,7 +399,7 @@ shell page =
     in
     [ H.main_
         [ A.css
-            [ S.bgNightwood1
+            [ S.bgNightwood2
             , S.minHFullViewport
             , S.p4
             , S.textGray4

@@ -32,6 +32,7 @@ import Shared
 import Style as S
 import View.Button as Button
 import View.Card as Card
+import View.CardHeader as CardHeader
 import View.TextField as TextField
 
 
@@ -162,13 +163,9 @@ view model =
             , S.justifyCenter
             ]
         ]
-        [ [ H.h1
+        [ [ H.p
                 []
-                [ H.text "Start a lobby"
-                ]
-          , H.p
-                []
-                [ H.text "Create a lobby, share its link, then start the game when everyone has joined."
+                [ H.text "create a lobby, then share its invite link."
                 ]
           , H.form
                 [ Ev.onSubmit CreateButtonClicked
@@ -182,12 +179,16 @@ view model =
                         ]
                     ]
                     [ H.label
-                        []
-                        [ H.text "Your name"
+                        [ A.css
+                            [ S.col
+                            , S.g1
+                            ]
+                        ]
+                        [ H.text "your name"
                         , TextField.simple model.name NameInputChanged
                             |> TextField.toHtml
                         ]
-                    , Button.primary "Create lobby" CreateButtonClicked
+                    , Button.primary "create lobby" CreateButtonClicked
                         |> Button.toHtml
                     ]
                 ]
@@ -202,6 +203,9 @@ view model =
                 Nothing ->
                     H.text ""
           ]
-            |> Card.toHtml Card.compactForm
+            |> Card.toHtml
+                (Card.compactForm
+                    |> Card.withHeader (CardHeader.simple "start a lobby")
+                )
         ]
     ]

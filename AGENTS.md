@@ -3,7 +3,9 @@
 Read [README.md](README.md) for the project status and development commands.
 Before changing code, read [CODE_STYLE.md](CODE_STYLE.md) and follow its
 conventions. Read [ARCHITECTURE.md](ARCHITECTURE.md) for state ownership and
-cross-module data flow. For server configuration or hosting changes, also read
+cross-module data flow. For UI changes, also read
+[DESIGN_SYSTEM.md](DESIGN_SYSTEM.md). For server configuration or hosting
+changes, also read
 [DEPLOYMENT.md](DEPLOYMENT.md).
 
 - Keep changes focused and preserve unrelated work.

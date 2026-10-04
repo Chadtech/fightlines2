@@ -89,14 +89,14 @@ toHtml button =
                 variantStyles =
                     case button.variant of
                         Variant__Primary ->
-                            [ S.bgYellow1
-                            , S.textYellow4
+                            [ S.bgYellow2
+                            , S.textYellow5
                             , S.importantOutdent
                             , Css.hover
-                                [ S.textYellow5
+                                [ S.textYellow6
                                 ]
                             , Css.active
-                                [ S.textYellow5
+                                [ S.textYellow6
                                 , S.importantIndent
                                 ]
                             ]

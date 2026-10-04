@@ -1,6 +1,7 @@
 module Style exposing
     ( absolute
     , batch
+    , bgGray0
     , bgGray1
     , bgGray2
     , bgGray3
@@ -13,6 +14,7 @@ module Style exposing
     , bgNone
     , bgRed0
     , bgYellow1
+    , bgYellow2
     , block
     , border
     , border0
@@ -87,6 +89,7 @@ module Style exposing
     , importantIndent
     , importantOutdent
     , indent
+    , indentStrong
     , inlineBlock
     , inlineCol
     , inlineRow
@@ -241,6 +244,7 @@ module Style exposing
     , textRed1
     , textYellow4
     , textYellow5
+    , textYellow6
     , top0
     , top1
     , top12
@@ -307,6 +311,7 @@ global =
         , Css.property "font-size" "inherit"
         , Css.property "font-family" "inherit"
         , Css.fontWeight Css.normal
+        , Css.property "text-transform" "lowercase"
         ]
     , Css.Global.selector "html"
         [ Css.fontSize (Css.rem 1)
@@ -388,6 +393,11 @@ yellow2Str =
     "#5A4F0E"
 
 
+yellow3Str : String
+yellow3Str =
+    "#87772D"
+
+
 yellow4Str : String
 yellow4Str =
     "#B39F4B"
@@ -396,6 +406,11 @@ yellow4Str =
 yellow5Str : String
 yellow5Str =
     "#E3D34B"
+
+
+yellow6Str : String
+yellow6Str =
+    "#F1E9A5"
 
 
 gray0Str : String
@@ -455,6 +470,15 @@ gray2Color =
     Css.hex gray2Str
 
 
+gray3Color :
+    Value
+        { provides
+            | hex : Supported
+        }
+gray3Color =
+    Css.hex gray3Str
+
+
 gray4Color :
     Value
         { provides
@@ -482,6 +506,15 @@ yellow0Color =
     Css.hex yellow0Str
 
 
+yellow1Color :
+    Value
+        { provides
+            | hex : Supported
+        }
+yellow1Color =
+    Css.hex yellow1Str
+
+
 yellow2Color :
     Value
         { provides
@@ -489,6 +522,24 @@ yellow2Color :
         }
 yellow2Color =
     Css.hex yellow2Str
+
+
+yellow3Color :
+    Value
+        { provides
+            | hex : Supported
+        }
+yellow3Color =
+    Css.hex yellow3Str
+
+
+yellow4Color :
+    Value
+        { provides
+            | hex : Supported
+        }
+yellow4Color =
+    Css.hex yellow4Str
 
 
 borderWidth :
@@ -510,6 +561,16 @@ indent =
         |> Css.batch
 
 
+indentStrong : Css.Style
+indentStrong =
+    [ Css.borderLeft3 borderWidth Css.solid gray0Color
+    , Css.borderTop3 borderWidth Css.solid gray0Color
+    , Css.borderRight3 borderWidth Css.solid gray3Color
+    , Css.borderBottom3 borderWidth Css.solid gray3Color
+    ]
+        |> Css.batch
+
+
 outdent : Css.Style
 outdent =
     [ Css.borderLeft3 borderWidth Css.solid content2Color
@@ -522,20 +583,20 @@ outdent =
 
 importantOutdent : Css.Style
 importantOutdent =
-    [ Css.borderLeft3 borderWidth Css.solid yellow2Color
-    , Css.borderTop3 borderWidth Css.solid yellow2Color
-    , Css.borderRight3 borderWidth Css.solid yellow0Color
-    , Css.borderBottom3 borderWidth Css.solid yellow0Color
+    [ Css.borderLeft3 borderWidth Css.solid yellow3Color
+    , Css.borderTop3 borderWidth Css.solid yellow3Color
+    , Css.borderRight3 borderWidth Css.solid yellow1Color
+    , Css.borderBottom3 borderWidth Css.solid yellow1Color
     ]
         |> Css.batch
 
 
 importantIndent : Css.Style
 importantIndent =
-    [ Css.borderLeft3 borderWidth Css.solid yellow0Color
-    , Css.borderTop3 borderWidth Css.solid yellow0Color
-    , Css.borderRight3 borderWidth Css.solid yellow2Color
-    , Css.borderBottom3 borderWidth Css.solid yellow2Color
+    [ Css.borderLeft3 borderWidth Css.solid yellow1Color
+    , Css.borderTop3 borderWidth Css.solid yellow1Color
+    , Css.borderRight3 borderWidth Css.solid yellow3Color
+    , Css.borderBottom3 borderWidth Css.solid yellow3Color
     ]
         |> Css.batch
 
@@ -1401,6 +1462,11 @@ bgYellow1 =
     Css.property "background" yellow1Str
 
 
+bgYellow2 : Css.Style
+bgYellow2 =
+    Css.property "background" yellow2Str
+
+
 bgNightwood0 : Css.Style
 bgNightwood0 =
     Css.property "background" nightwood0Str
@@ -1433,6 +1499,11 @@ bgNightwood3 =
 bgRed0 : Css.Style
 bgRed0 =
     Css.property "background" red0Str
+
+
+bgGray0 : Css.Style
+bgGray0 =
+    Css.property "background" gray0Str
 
 
 bgGray1 : Css.Style
@@ -1508,6 +1579,11 @@ textYellow4 =
 textYellow5 : Css.Style
 textYellow5 =
     Css.property "color" yellow5Str
+
+
+textYellow6 : Css.Style
+textYellow6 =
+    Css.property "color" yellow6Str
 
 
 textRed1 : Css.Style

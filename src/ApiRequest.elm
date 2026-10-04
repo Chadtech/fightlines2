@@ -36,7 +36,7 @@ errorMessage error =
         Graphql.Http.GraphqlError _ errors ->
             case errors of
                 [] ->
-                    "The server could not complete this request."
+                    "the server could not complete this request."
 
                 _ ->
                     errors
@@ -44,4 +44,4 @@ errorMessage error =
                         |> String.join " "
 
         Graphql.Http.HttpError _ ->
-            "Could not reach the server. Check your connection and try again."
+            "could not reach the server. check your connection and try again."

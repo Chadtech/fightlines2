@@ -295,7 +295,7 @@ view : Model -> List (Html Msg)
 view model =
     [ [ H.h1
             []
-            [ H.text "Lobby"
+            [ H.text "lobby"
             ]
       , H.label
             [ A.css
@@ -303,7 +303,7 @@ view model =
                 , S.g2
                 ]
             ]
-            [ H.text "Invite players: copy this link"
+            [ H.text "invite players: copy this link"
             , H.input
                 [ A.value (model.shared.origin ++ Route.toString (Route.Lobby model.id))
                 , A.readonly True
@@ -336,7 +336,7 @@ view model =
                 [ S.border0
                 ]
             ]
-            [ Button.secondary "Refresh lobby" RefreshButtonClicked
+            [ Button.secondary "refresh lobby" RefreshButtonClicked
                 |> Button.toHtml
             ]
       ]
@@ -352,17 +352,17 @@ lobbyView model =
             if model.gameUrl /= Nothing then
                 H.p
                     []
-                    [ H.text "This game has started. Joining is closed."
+                    [ H.text "this game has started. joining is closed."
                     ]
 
             else if model.isHost then
-                Button.primary "Start game" StartButtonClicked
+                Button.primary "start game" StartButtonClicked
                     |> Button.toHtml
 
             else if model.isMember then
                 H.p
                     []
-                    [ H.text "You have joined. Waiting for the host to start the game…"
+                    [ H.text "you have joined. waiting for the host to start the game…"
                     ]
 
             else
@@ -375,11 +375,11 @@ lobbyView model =
                     ]
                     [ H.label
                         []
-                        [ H.text "Your name"
+                        [ H.text "your name"
                         , TextField.simple model.name NameInputChanged
                             |> TextField.toHtml
                         ]
-                    , Button.primary "Join lobby" JoinButtonClicked
+                    , Button.primary "join lobby" JoinButtonClicked
                         |> Button.toHtml
                     ]
     in
@@ -391,7 +391,7 @@ lobbyView model =
         ]
         [ H.h2
             []
-            [ H.text ("Players (" ++ String.fromInt (List.length model.players) ++ ")")
+            [ H.text ("players (" ++ String.fromInt (List.length model.players) ++ ")")
             ]
         , H.ul
             [ A.css
@@ -436,7 +436,7 @@ loadFailedView error retryMsg =
             ]
             [ H.text (ApiRequest.errorMessage error)
             ]
-      , Button.secondary "Retry" retryMsg
+      , Button.secondary "retry" retryMsg
             |> Button.toHtml
       ]
         |> Card.toHtml Card.simple

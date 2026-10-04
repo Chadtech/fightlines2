@@ -43,9 +43,9 @@ toHtml : TextField msg -> Html msg
 toHtml textField =
     Html.input
         [ Attr.css
-            [ S.indent
-            , S.bgNightwood1
-            , S.textGray4
+            [ S.indentStrong
+            , S.bgNightwood3
+            , S.textGray5
             , Css.focus
                 [ S.textGray5
                 ]

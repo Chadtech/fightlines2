@@ -39,5 +39,6 @@ make check   # Check formatting, lint, test, and compile
 
 - [Architecture](ARCHITECTURE.md): state, frontend flow, GraphQL, and shared views.
 - [Code style](CODE_STYLE.md): coding conventions and verification requirements.
+- [Design system](DESIGN_SYSTEM.md): visual conventions, components, and UI copy.
 - [Agent instructions](AGENTS.md): guidance for automated contributors.
 - [Deployment](DEPLOYMENT.md): configuration, access from other devices, and hosting.

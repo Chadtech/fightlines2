@@ -56,6 +56,10 @@ prototype; do not update it unless the task explicitly requires that.
 
 ### Views
 
+- Follow [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) for visual conventions. Write all
+  user-facing interface copy in lowercase. Preserve underlying user data and URL
+  casing; lowercase rendering belongs at the presentation boundary.
+
 - Use vertical layouts by default: put an HTML element's attributes and children
   on separate lines below the element function. Put each attribute, style, and
   child on its own line in nonempty lists, including nested style lists. Empty
@@ -82,7 +86,9 @@ prototype; do not update it unless the task explicitly requires that.
   ```
 
 - Use `Html.Styled`, `Style` helpers, and the reusable `View.*` components.
-  Add shared styling to `Style`; keep page-specific composition in its page.
+  Keep `Style` domain-independent: put generic utilities and palette tokens
+  there, component-specific styling in the component, and page-specific
+  composition in its page.
 - Page views return `List (Html Msg)`. Keep page load-failure views with the
   corresponding page module.
 - Split large views into meaningful sections. Use local `let` bindings for
