@@ -45,6 +45,7 @@ import View.TextField as TextField
 
 type alias Flags =
     { id : LobbyId
+    , lobbyName : String
     , gameUrl : Maybe String
     }
 
@@ -52,6 +53,7 @@ type alias Flags =
 type alias Model =
     { shared : Shared.Model
     , id : LobbyId
+    , lobbyName : String
     , joiningClosed : Bool
     , name : String
     , busy : Bool
@@ -75,6 +77,7 @@ init : Shared.Model -> Flags -> Model
 init shared flags =
     { shared = shared
     , id = flags.id
+    , lobbyName = flags.lobbyName
     , joiningClosed = flags.gameUrl /= Nothing
     , name = ""
     , busy = False
@@ -223,7 +226,7 @@ view model =
           ]
             |> Card.toHtml
                 (Card.compactForm
-                    |> Card.withHeader (CardHeader.simple "join lobby")
+                    |> Card.withHeader (CardHeader.simple model.lobbyName)
                 )
         ]
     ]

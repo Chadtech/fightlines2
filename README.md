@@ -17,15 +17,23 @@ cp .env.example .env
 make run
 ```
 
-Open http://127.0.0.1:8080, enter your name, and choose **Create lobby**.
+Open http://127.0.0.1:8080, enter your user name and a lobby name, and choose
+**Create lobby**.
 Share the invite link with another player, who enters a name and chooses
-**Join lobby**. The host chooses **Start game**; joined browsers navigate to
-the game page within about two seconds. The host can also start alone.
+**Join lobby**. The host can select and save a map, then chooses **Start game**.
+Joined browsers navigate to the game page within about two seconds. The host can also start alone.
 
 Use separate browsers or browser profiles to test multiple players. Tabs in
 one browser share an identity cookie, which lasts 30 days and allows reconnecting
-without duplicate roster entries. Clearing it loses host access. Names must be
-unique within a lobby and are trimmed and limited to 40 characters.
+without duplicate roster entries. Clearing it loses host access. Player names
+must be unique within a lobby and are trimmed and limited to 40 characters.
+
+Lobby names are also trimmed and limited to 40 characters, and appear in the
+join and lobby headers.
+
+The initial map type is **supply point**. Joined players see the selected map;
+only the host can change it before starting. The game retains that selection.
+Map layout and rules are not implemented yet.
 
 New players cannot join after a game starts. All lobbies and games disappear
 when the server restarts.

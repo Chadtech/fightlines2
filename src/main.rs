@@ -1,6 +1,8 @@
 mod graphql;
 mod lobby;
 mod lobby_id;
+mod lobby_name;
+mod map_type;
 mod player_name;
 mod seed;
 mod session_token;

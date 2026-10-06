@@ -11,6 +11,10 @@ module LobbyPage exposing
     , view
     )
 
+import Api.Enum.MapType
+    exposing
+        ( MapType
+        )
 import Api.Mutation
 import Api.Object
 import Api.Object.PlayerView as PlayerView
@@ -20,7 +24,6 @@ import ApiRequest
     exposing
         ( Response
         )
-import Css
 import Effect as E
     exposing
         ( Eff
@@ -32,11 +35,13 @@ import Html.Styled as H
         ( Html
         )
 import Html.Styled.Attributes as A
+import Html.Styled.Events as Ev
 import Json.Decode as Decode
 import LobbyId
     exposing
         ( LobbyId
         )
+import MapType
 import Ports.Js.From as FromJs
 import Ports.Js.To as ToJs
 import Route
@@ -56,6 +61,8 @@ import View.CardHeader as CardHeader
 
 type alias Flags =
     { id : LobbyId
+    , name : String
+    , mapType : MapType
     , players : List Player
     , isHost : Bool
     , isMember : Bool
@@ -72,16 +79,26 @@ type alias Player =
 type alias Model =
     { shared : Shared.Model
     , id : LobbyId
+    , name : String
+    , mapType : MapType
     , players : List Player
     , isHost : Bool
     , isMember : Bool
     , gameUrl : Maybe String
+    , selectedMapType : MapType
+    , mapStatus : MapStatus
     , busy : Bool
     , refreshing : Bool
     , error : Maybe String
     , actionError : Maybe String
     , copyStatus : CopyStatus
     }
+
+
+type MapStatus
+    = MapIdle
+    | MapSaving
+    | MapSaved
 
 
 type CopyStatus
@@ -98,7 +115,10 @@ type alias CopyResult =
 
 
 type Msg
-    = StartButtonClicked
+    = MapInputChanged MapType
+    | SaveMapButtonClicked
+    | MapResponseReceived (Response Flags)
+    | StartButtonClicked
     | RetryButtonClicked
     | CopyLinkButtonClicked
     | CopyLinkResultReceived CopyResult
@@ -131,6 +151,10 @@ init : Shared.Model -> Flags -> ( Model, Eff Msg )
 init shared flags =
     ( { shared = shared
       , id = flags.id
+      , name = flags.name
+      , mapType = flags.mapType
+      , selectedMapType = flags.mapType
+      , mapStatus = MapIdle
       , players = flags.players
       , isHost = flags.isHost
       , isMember = flags.isMember
@@ -169,8 +193,10 @@ start id =
 
 flagsSelection : SelectionSet Flags Api.Object.Snapshot
 flagsSelection =
-    SS.map5 Flags
+    SS.map7 Flags
         (Snapshot.id |> SS.mapOrFail LobbyId.parse)
+        Snapshot.name
+        Snapshot.mapType
         (Snapshot.players (SS.map2 Player PlayerView.name PlayerView.isHost))
         Snapshot.isHost
         Snapshot.isMember
@@ -186,6 +212,52 @@ flagsSelection =
 update : Msg -> Model -> ( Model, Eff Msg )
 update msg model =
     case msg of
+        MapInputChanged mapType ->
+            ( { model
+                | selectedMapType = mapType
+                , mapStatus = MapIdle
+              }
+            , E.none
+            )
+
+        SaveMapButtonClicked ->
+            if model.busy || model.refreshing || not model.isHost || model.gameUrl /= Nothing then
+                ( model, E.none )
+
+            else
+                ( { model
+                    | busy = True
+                    , actionError = Nothing
+                    , mapStatus = MapSaving
+                  }
+                , Api.Mutation.setLobbyMap
+                    { id = LobbyId.toString model.id
+                    , mapType = model.selectedMapType
+                    }
+                    flagsSelection
+                    |> ApiRequest.mutationRequest
+                    |> E.request MapResponseReceived
+                )
+
+        MapResponseReceived result ->
+            case result of
+                Ok flags ->
+                    { model
+                        | busy = False
+                        , actionError = Nothing
+                        , mapStatus = MapSaved
+                    }
+                        |> receive flags
+
+                Err error ->
+                    ( { model
+                        | busy = False
+                        , actionError = Just (ApiRequest.errorMessage error)
+                        , mapStatus = MapIdle
+                      }
+                    , E.none
+                    )
+
         StartButtonClicked ->
             if model.busy || model.refreshing then
                 ( model, E.none )
@@ -278,6 +350,8 @@ receive : Flags -> Model -> ( Model, Eff Msg )
 receive flags model =
     ( { model
         | id = flags.id
+        , name = flags.name
+        , mapType = flags.mapType
         , players = flags.players
         , isHost = flags.isHost
         , isMember = flags.isMember
@@ -339,11 +413,12 @@ view model =
     [ H.div
         [ A.css
             [ S.wFull
-            , Css.maxWidth (Css.rem 40)
-            , Css.alignSelf Css.center
+            , S.maxW160
+            , S.selfCenter
             ]
         ]
         [ [ inviteView model
+          , mapView model
           , lobbyView model
           , errorNotice
           , case model.error of
@@ -361,7 +436,7 @@ view model =
           ]
             |> Card.toHtml
                 (Card.simple
-                    |> Card.withHeader (CardHeader.simple "lobby")
+                    |> Card.withHeader (CardHeader.simple model.name)
                 )
         ]
     ]
@@ -385,8 +460,8 @@ inviteView model =
                 , A.css
                     [ S.flex1
                     , S.minW0
-                    , Css.minWidth (Css.rem 10)
-                    , Css.maxWidth (Css.pct 100)
+                    , S.minW40
+                    , S.maxWFull
                     , S.p2
                     , S.indentStrong
                     , S.bgNightwood3
@@ -417,6 +492,79 @@ inviteView model =
                 )
             ]
         ]
+
+
+mapView : Model -> Html Msg
+mapView model =
+    if model.isHost && model.gameUrl == Nothing then
+        H.div
+            [ A.css
+                [ S.col
+                , S.g1
+                ]
+            ]
+            [ H.label
+                [ A.for "map-type"
+                ]
+                [ H.text "map"
+                ]
+            , H.select
+                [ A.id "map-type"
+                , A.disabled model.busy
+                , A.css
+                    [ S.indentStrong
+                    , S.bgNightwood3
+                    , S.textGray5
+                    , S.p2
+                    , S.maxW96
+                    ]
+                , Ev.on "change"
+                    (Decode.at [ "target", "value" ] Api.Enum.MapType.decoder
+                        |> Decode.map MapInputChanged
+                    )
+                ]
+                (List.map
+                    (\mapType ->
+                        H.option
+                            [ A.value (Api.Enum.MapType.toString mapType)
+                            , A.selected (mapType == model.selectedMapType)
+                            ]
+                            [ H.text (MapType.label mapType)
+                            ]
+                    )
+                    Api.Enum.MapType.list
+                )
+            , H.fieldset
+                [ A.disabled (model.busy || model.refreshing)
+                , A.css
+                    [ S.border0
+                    ]
+                ]
+                [ Button.secondary "save map" SaveMapButtonClicked
+                    |> Button.toHtml
+                ]
+            , H.p
+                [ A.attribute "role" "status"
+                ]
+                [ H.text
+                    (case model.mapStatus of
+                        MapIdle ->
+                            ""
+
+                        MapSaving ->
+                            "saving map…"
+
+                        MapSaved ->
+                            "map saved"
+                    )
+                ]
+            ]
+
+    else
+        H.p
+            []
+            [ H.text ("map: " ++ MapType.label model.mapType)
+            ]
 
 
 lobbyView : Model -> Html Msg

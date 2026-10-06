@@ -1,6 +1,7 @@
 use crate::{
     lobby::{self, Snapshot, Store},
     lobby_id::LobbyId,
+    map_type::MapType,
     session_token::SessionToken,
 };
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -68,12 +69,16 @@ pub struct Mutation;
 
 #[graphql_object(context = Context)]
 impl Mutation {
-    fn create_lobby(context: &Context, name: String) -> FieldResult<Snapshot> {
-        lobby::create(context, &name)
+    fn create_lobby(context: &Context, name: String, lobby_name: String) -> FieldResult<Snapshot> {
+        lobby::create(context, &name, &lobby_name)
     }
 
     fn join_lobby(context: &Context, id: String, name: String) -> FieldResult<Snapshot> {
         lobby::join(context, LobbyId::from_token(id), &name)
+    }
+
+    fn set_lobby_map(context: &Context, id: String, map_type: MapType) -> FieldResult<Snapshot> {
+        lobby::set_map_type(context, LobbyId::from_token(id), map_type)
     }
 
     fn start_game(context: &Context, id: String) -> FieldResult<Snapshot> {
@@ -151,7 +156,7 @@ mod tests {
     use actix_web::{App, http::StatusCode, test};
     use serde_json::{Value, json};
 
-    const FIELDS: &str = "id players { name isHost } isHost isMember gameUrl";
+    const FIELDS: &str = "id name mapType players { name isHost } isHost isMember gameUrl";
 
     #[actix_web::test]
     async fn lifecycle_and_authorization_over_graphql() {
@@ -176,7 +181,9 @@ mod tests {
             }};
         }
         let (invalid, cookie) = execute!(
-            format!("mutation {{ createLobby(name: \"   \") {{ {FIELDS} }} }}"),
+            format!(
+                "mutation {{ createLobby(name: \"   \", lobbyName: \" Friday Night \" ) {{ {FIELDS} }} }}"
+            ),
             None
         );
         assert!(
@@ -186,20 +193,39 @@ mod tests {
                 .contains("40")
         );
         assert!(cookie.is_none());
+        for lobby_name in ["   ".to_owned(), "x".repeat(41)] {
+            let (invalid, cookie) = execute!(
+                format!(
+                    "mutation {{ createLobby(name: \"Chad\", lobbyName: \"{lobby_name}\") {{ {FIELDS} }} }}"
+                ),
+                None
+            );
+            assert!(
+                invalid["errors"][0]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("lobby name")
+            );
+            assert!(cookie.is_none());
+        }
         let (created, host) = execute!(
-            format!("mutation {{ createLobby(name: \" Chad \") {{ {FIELDS} }} }}"),
+            format!(
+                "mutation {{ createLobby(name: \" Chad \", lobbyName: \" Friday Night \" ) {{ {FIELDS} }} }}"
+            ),
             None
         );
         let host = host.unwrap();
         assert_eq!(host.http_only(), Some(true));
         assert_eq!(created["data"]["createLobby"]["players"][0]["name"], "Chad");
         assert_eq!(created["data"]["createLobby"]["isHost"], true);
+        assert_eq!(created["data"]["createLobby"]["name"], "Friday Night");
         assert!(created["data"]["createLobby"]["gameUrl"].is_null());
         let id = created["data"]["createLobby"]["id"].as_str().unwrap();
         let (visitor, _) = execute!(
             format!("{{ lobby(id: \"{id}\") {{ {FIELDS} }} health }}"),
             None
         );
+        assert_eq!(visitor["data"]["lobby"]["name"], "Friday Night");
         assert_eq!(visitor["data"]["lobby"]["isMember"], false);
         assert_eq!(visitor["data"]["health"], true);
         let (early, _) = execute!(
@@ -237,6 +263,36 @@ mod tests {
                 .len(),
             2
         );
+        let set_map = format!(
+            "mutation {{ setLobbyMap(id: \"{id}\", mapType: SUPPLY_POINT) {{ {FIELDS} }} }}"
+        );
+        assert_eq!(created["data"]["createLobby"]["mapType"], "SUPPLY_POINT");
+        for identity in [None, Some(guest.clone())] {
+            let (denied, _) = execute!(&set_map, identity);
+            assert!(
+                denied["errors"][0]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Only the host")
+            );
+        }
+        let (configured, _) = execute!(&set_map, Some(host.clone()));
+        assert_eq!(configured["data"]["setLobbyMap"]["mapType"], "SUPPLY_POINT");
+        let (observed, _) = execute!(
+            format!("{{ lobby(id: \"{id}\") {{ mapType }} }}"),
+            Some(guest.clone())
+        );
+        assert_eq!(observed["data"]["lobby"]["mapType"], "SUPPLY_POINT");
+        let (invalid_map, _) = execute!(
+            format!("mutation {{ setLobbyMap(id: \"{id}\", mapType: UNKNOWN) {{ id }} }}"),
+            Some(host.clone())
+        );
+        assert!(invalid_map["errors"].is_array());
+        let (missing_map, _) = execute!(
+            "mutation { setLobbyMap(id: \"missing\", mapType: SUPPLY_POINT) { id } }",
+            Some(host.clone())
+        );
+        assert!(missing_map["errors"].is_array());
         let start = format!("mutation {{ startGame(id: \"{id}\") {{ {FIELDS} }} }}");
         for identity in [None, Some(guest.clone())] {
             let (denied, _) = execute!(&start, identity);
@@ -249,6 +305,13 @@ mod tests {
                 format!("/game/{id}")
             );
         }
+        let (locked, _) = execute!(&set_map, Some(host.clone()));
+        assert!(
+            locked["errors"][0]["message"]
+                .as_str()
+                .unwrap()
+                .contains("already started")
+        );
         let (polled, _) = execute!(
             format!("{{ lobby(id: \"{id}\") {{ {FIELDS} }} }}"),
             Some(host.clone())
@@ -263,6 +326,8 @@ mod tests {
         );
         let game = format!("{{ game(id: \"{id}\") {{ {FIELDS} }} }}");
         let (member, _) = execute!(&game, Some(guest.clone()));
+        assert_eq!(member["data"]["game"]["name"], "Friday Night");
+        assert_eq!(member["data"]["game"]["mapType"], "SUPPLY_POINT");
         assert_eq!(member["data"]["game"]["isMember"], true);
         let (outsider, _) = execute!(&game, None);
         assert!(outsider["errors"].is_array());
@@ -274,13 +339,13 @@ mod tests {
         let (missing, _) = execute!("{ lobby(id: \"missing\") { id } }", None);
         assert!(missing["errors"].is_array());
         let (unknown, cookie) = execute!(
-            "mutation { createLobby(name: \"Other\") { unknownField } }",
+            "mutation { createLobby(name: \"Other\", lobbyName: \" Friday Night \" ) { unknownField } }",
             None
         );
         assert!(unknown["errors"].is_array());
         assert!(cookie.is_none());
         let (multiple, cookie) = execute!(
-            "mutation { a: createLobby(name: \"One\") { id isHost } b: createLobby(name: \"Two\") { id isHost } }",
+            "mutation { a: createLobby(name: \"One\", lobbyName: \" Friday Night \" ) { id isHost } b: createLobby(name: \"Two\", lobbyName: \" Friday Night \" ) { id isHost } }",
             None
         );
         let cookie = cookie.unwrap();

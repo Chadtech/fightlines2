@@ -45,6 +45,7 @@ import View.TextField as TextField
 type alias Model =
     { shared : Shared.Model
     , name : String
+    , lobbyName : String
     , busy : Bool
     , error : Maybe String
     }
@@ -52,6 +53,7 @@ type alias Model =
 
 type Msg
     = NameInputChanged String
+    | LobbyNameInputChanged String
     | CreateButtonClicked
     | CreateResponseReceived (Response LobbyId)
 
@@ -66,6 +68,7 @@ init : Shared.Model -> Model
 init shared =
     { shared = shared
     , name = ""
+    , lobbyName = ""
     , busy = False
     , error = Nothing
     }
@@ -90,14 +93,14 @@ setShared shared model =
 ----------------------------------------------------------------
 
 
-create : String -> Graphql.Http.Request LobbyId
-create name =
+create : String -> String -> Graphql.Http.Request LobbyId
+create name lobbyName =
     let
         lobbyIdSelection : SelectionSet LobbyId Api.Object.Snapshot
         lobbyIdSelection =
             Snapshot.id |> SS.mapOrFail LobbyId.parse
     in
-    Api.Mutation.createLobby { name = name } lobbyIdSelection
+    Api.Mutation.createLobby { name = name, lobbyName = lobbyName } lobbyIdSelection
         |> ApiRequest.mutationRequest
 
 
@@ -117,6 +120,9 @@ update msg model =
             , E.none
             )
 
+        LobbyNameInputChanged lobbyName ->
+            ( { model | lobbyName = lobbyName }, E.none )
+
         CreateButtonClicked ->
             if model.busy then
                 ( model, E.none )
@@ -126,7 +132,7 @@ update msg model =
                     | busy = True
                     , error = Nothing
                   }
-                , E.request CreateResponseReceived (create model.name)
+                , E.request CreateResponseReceived (create model.name model.lobbyName)
                 )
 
         CreateResponseReceived result ->
@@ -184,8 +190,18 @@ view model =
                             , S.g1
                             ]
                         ]
-                        [ H.text "your name"
+                        [ H.text "user name"
                         , TextField.simple model.name NameInputChanged
+                            |> TextField.toHtml
+                        ]
+                    , H.label
+                        [ A.css
+                            [ S.col
+                            , S.g1
+                            ]
+                        ]
+                        [ H.text "lobby name"
+                        , TextField.simple model.lobbyName LobbyNameInputChanged
                             |> TextField.toHtml
                         ]
                     , Button.primary "create lobby" CreateButtonClicked

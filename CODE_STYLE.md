@@ -87,6 +87,9 @@ prototype; do not update it unless the task explicitly requires that.
   ```
 
 - Use `Html.Styled`, `Style` helpers, and the reusable `View.*` components.
+  Page modules must use `Style` helpers rather than importing or calling `Css`
+  directly. Add missing generic helpers to `Style`; direct `Css` belongs in
+  `Style` and reusable view components.
   Keep `Style` domain-independent: put generic utilities and palette tokens
   there, component-specific styling in the component, and page-specific
   composition in its page.

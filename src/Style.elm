@@ -115,6 +115,7 @@ module Style exposing
     , maxH64
     , maxW12
     , maxW16
+    , maxW160
     , maxW192
     , maxW240
     , maxW32
@@ -122,6 +123,7 @@ module Style exposing
     , maxW64
     , maxW8
     , maxW96
+    , maxWFull
     , mb24
     , mb4
     , md
@@ -131,6 +133,7 @@ module Style exposing
     , minHFullViewport
     , minW0
     , minW16
+    , minW40
     , minW72
     , ml1
     , ml128
@@ -224,6 +227,7 @@ module Style exposing
     , sNeg128
     , selectControl
     , selectableListRow
+    , selfCenter
     , setBgColorVar
     , setPrimaryColorVar
     , shrink0
@@ -921,6 +925,21 @@ maxW96 =
     Css.maxWidth s96
 
 
+maxW160 : Css.Style
+maxW160 =
+    Css.maxWidth (Css.rem 40)
+
+
+maxWFull : Css.Style
+maxWFull =
+    Css.maxWidth (Css.pct 100)
+
+
+selfCenter : Css.Style
+selfCenter =
+    Css.alignSelf Css.center
+
+
 maxW192 : Css.Style
 maxW192 =
     Css.maxWidth s192
@@ -1089,6 +1108,11 @@ minW0 =
 minW16 : Css.Style
 minW16 =
     Css.minWidth s16
+
+
+minW40 : Css.Style
+minW40 =
+    Css.minWidth s40
 
 
 minW72 : Css.Style

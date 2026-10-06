@@ -18,9 +18,18 @@ yet.
 
 `SessionToken` identifies a browser through its HTTP-only cookie. It is the
 credential checked against the host and roster, rather than a login account or a
-particular lobby. `PlayerName` validates trimmed display names; `LobbyId` keeps
+particular lobby. `PlayerName` validates trimmed display names. `LobbyName`
+validates trimmed lobby names and stays with the roster when the lobby becomes a
+game. `LobbyId` keeps
 public lobby identifiers distinct from those credentials. GraphQL IDs and names
 remain strings.
+
+`MapType` is a Rust enum exposed as a GraphQL enum. A lobby defaults to
+`SupplyPoint`; only its host can update it through `setLobbyMap`. Starting
+carries the selected type into the game, where it cannot be changed. Elm keeps
+the generated enum typed and uses `MapType.label` for display. The host saves a
+draft selection; lobby polling updates the authoritative map without replacing
+that draft. Board layout and rules are a separate next step.
 
 ## Frontend
 
@@ -74,13 +83,14 @@ removed. Frontend URLs such as `/lobby/<id>` and `/game/<id>` still serve the
 application.
 
 Queries are `health`, `lobby(id)`, and `game(id)`. Mutations are
-`createLobby(name)`, `joinLobby(id, name)`, and `startGame(id)`. Lobby and game
-selections expose `id`, `players { name isHost }`, `isHost`, `isMember`, and
-`gameUrl`. For example:
+`createLobby(name, lobbyName)`, `joinLobby(id, name)`,
+`setLobbyMap(id, mapType)`, and `startGame(id)`. Lobby
+and game selections expose `id`, `name`, `mapType`, `players { name isHost }`, `isHost`,
+`isMember`, and `gameUrl`. For example:
 
 ```graphql
 mutation {
-  createLobby(name: "Chad") {
+  createLobby(name: "Chad", lobbyName: "Friday Night") {
     id
     players { name isHost }
     isHost
@@ -106,7 +116,7 @@ running server. `npm ci` installs the generator from `package-lock.json`.
 
 Each page that loads initial data chooses its own fields and assembles a
 page-specific `Flags` record. `LobbyPage.load` returns `Graphql.Http.Request LobbyPage.Flags`, while `GamePage.load` returns `Graphql.Http.Request GamePage.Flags`. The lobby page selects the roster, membership, host controls,
-and game navigation; the current game page selects only player names. Creating a
+and game navigation; the current game page selects the map type and player names. Creating a
 lobby selects only the ID needed to navigate, returning `LobbyId`.
 
 `ApiRequest` shares query/mutation configuration and error presentation without

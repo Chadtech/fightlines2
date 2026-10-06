@@ -1,6 +1,8 @@
 use crate::graphql::Context;
 use crate::{
     lobby_id::LobbyId,
+    lobby_name::LobbyName,
+    map_type::MapType,
     player_name::PlayerName,
     seed::{self, Seed},
     session_token::SessionToken,
@@ -41,6 +43,8 @@ impl State {
 
 struct Lobby {
     id: LobbyId,
+    name: LobbyName,
+    map_type: MapType,
     host: SessionToken,
     players: Vec<Player>,
 }
@@ -49,6 +53,8 @@ struct Lobby {
 /// resolvable for polling players and repeated start requests.
 struct Game {
     source_lobby: LobbyId,
+    name: LobbyName,
+    map_type: MapType,
     host: SessionToken,
     players: Vec<Player>,
 }
@@ -57,6 +63,8 @@ impl From<Lobby> for Game {
     fn from(lobby: Lobby) -> Self {
         Self {
             source_lobby: lobby.id,
+            name: lobby.name,
+            map_type: lobby.map_type,
             host: lobby.host,
             players: lobby.players,
         }
@@ -71,6 +79,8 @@ struct Player {
 #[derive(GraphQLObject)]
 pub struct Snapshot {
     id: String,
+    name: String,
+    map_type: MapType,
     players: Vec<PlayerView>,
     is_host: bool,
     is_member: bool,
@@ -87,24 +97,34 @@ struct PlayerView {
 // SNAPSHOTS
 //----------------------------------------------------------------
 
+struct SnapshotSource<'a> {
+    id: &'a LobbyId,
+    name: &'a LobbyName,
+    map_type: MapType,
+    host: &'a SessionToken,
+    players: &'a [Player],
+}
+
 fn snapshot(
-    id: &LobbyId,
-    host: &SessionToken,
-    players: &[Player],
+    source: SnapshotSource<'_>,
     session: Option<&SessionToken>,
     game_url: Option<String>,
 ) -> Snapshot {
     Snapshot {
-        id: id.to_string(),
-        players: players
+        id: source.id.to_string(),
+        name: source.name.to_string(),
+        map_type: source.map_type,
+        players: source
+            .players
             .iter()
             .map(|player| PlayerView {
                 name: player.name.to_string(),
-                is_host: &player.session == host,
+                is_host: &player.session == source.host,
             })
             .collect(),
-        is_host: session == Some(host),
-        is_member: players
+        is_host: session == Some(source.host),
+        is_member: source
+            .players
             .iter()
             .any(|player| Some(&player.session) == session),
         game_url,
@@ -112,14 +132,28 @@ fn snapshot(
 }
 
 fn lobby_snapshot(lobby: &Lobby, session: Option<&SessionToken>) -> Snapshot {
-    snapshot(&lobby.id, &lobby.host, &lobby.players, session, None)
+    snapshot(
+        SnapshotSource {
+            id: &lobby.id,
+            name: &lobby.name,
+            map_type: lobby.map_type,
+            host: &lobby.host,
+            players: &lobby.players,
+        },
+        session,
+        None,
+    )
 }
 
 fn game_snapshot(game: &Game, session: Option<&SessionToken>) -> Snapshot {
     snapshot(
-        &game.source_lobby,
-        &game.host,
-        &game.players,
+        SnapshotSource {
+            id: &game.source_lobby,
+            name: &game.name,
+            map_type: game.map_type,
+            host: &game.host,
+            players: &game.players,
+        },
         session,
         Some(format!("/game/{}", game.source_lobby)),
     )
@@ -129,9 +163,12 @@ fn game_snapshot(game: &Game, session: Option<&SessionToken>) -> Snapshot {
 // API
 //----------------------------------------------------------------
 
-pub fn create(context: &Context, input: &str) -> FieldResult<Snapshot> {
+pub fn create(context: &Context, input: &str, lobby_input: &str) -> FieldResult<Snapshot> {
     let Some(name) = PlayerName::parse(input) else {
         return error("Enter a name between 1 and 40 characters.");
+    };
+    let Some(lobby_name) = LobbyName::parse(lobby_input) else {
+        return error("Enter a lobby name between 1 and 40 characters.");
     };
     let mut state = context
         .store
@@ -144,6 +181,8 @@ pub fn create(context: &Context, input: &str) -> FieldResult<Snapshot> {
     let id = LobbyId::from_token(state.next_token());
     let lobby = Lobby {
         id: id.clone(),
+        name: lobby_name,
+        map_type: MapType::default(),
         host: identity.clone(),
         players: vec![Player {
             session: identity.clone(),
@@ -217,6 +256,26 @@ pub fn join(context: &Context, id: LobbyId, input: &str) -> FieldResult<Snapshot
     let result = lobby_snapshot(lobby, Some(&identity));
     context.set_identity(identity);
     Ok(result)
+}
+
+pub fn set_map_type(context: &Context, id: LobbyId, map_type: MapType) -> FieldResult<Snapshot> {
+    let mut state = context
+        .store
+        .0
+        .lock()
+        .or_else(|_| error("The server state is unavailable."))?;
+    if state.games.contains_key(&id) {
+        return error("The game has already started. Its map cannot be changed.");
+    }
+    let Some(lobby) = state.lobbies.get_mut(&id) else {
+        return error("This lobby no longer exists. Create a new lobby from the home page.");
+    };
+    let identity = context.identity();
+    if identity.as_ref() != Some(&lobby.host) {
+        return error("Only the host can change the map.");
+    }
+    lobby.map_type = map_type;
+    Ok(lobby_snapshot(lobby, identity.as_ref()))
 }
 
 pub fn start(context: &Context, id: LobbyId) -> FieldResult<Snapshot> {

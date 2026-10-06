@@ -4,6 +4,7 @@
 
 module Api.Mutation exposing (..)
 
+import Api.Enum.MapType
 import Api.InputObject
 import Api.Interface
 import Api.Object
@@ -20,7 +21,9 @@ import Json.Decode as Decode exposing (Decoder)
 
 
 type alias CreateLobbyRequiredArguments =
-    { name : String }
+    { name : String
+    , lobbyName : String
+    }
 
 
 createLobby :
@@ -28,7 +31,7 @@ createLobby :
     -> SelectionSet decodesTo Api.Object.Snapshot
     -> SelectionSet decodesTo RootMutation
 createLobby requiredArgs____ object____ =
-    Object.selectionForCompositeField "createLobby" [ Argument.required "name" requiredArgs____.name Encode.string ] object____ Basics.identity
+    Object.selectionForCompositeField "createLobby" [ Argument.required "name" requiredArgs____.name Encode.string, Argument.required "lobbyName" requiredArgs____.lobbyName Encode.string ] object____ Basics.identity
 
 
 type alias JoinLobbyRequiredArguments =
@@ -43,6 +46,20 @@ joinLobby :
     -> SelectionSet decodesTo RootMutation
 joinLobby requiredArgs____ object____ =
     Object.selectionForCompositeField "joinLobby" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "name" requiredArgs____.name Encode.string ] object____ Basics.identity
+
+
+type alias SetLobbyMapRequiredArguments =
+    { id : String
+    , mapType : Api.Enum.MapType.MapType
+    }
+
+
+setLobbyMap :
+    SetLobbyMapRequiredArguments
+    -> SelectionSet decodesTo Api.Object.Snapshot
+    -> SelectionSet decodesTo RootMutation
+setLobbyMap requiredArgs____ object____ =
+    Object.selectionForCompositeField "setLobbyMap" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "mapType" requiredArgs____.mapType (Encode.enum Api.Enum.MapType.toString) ] object____ Basics.identity
 
 
 type alias StartGameRequiredArguments =

@@ -8,6 +8,10 @@ module GamePage exposing
     , view
     )
 
+import Api.Enum.MapType
+    exposing
+        ( MapType
+        )
 import Api.Object
 import Api.Object.PlayerView as PlayerView
 import Api.Object.Snapshot as Snapshot
@@ -24,6 +28,7 @@ import LobbyId
     exposing
         ( LobbyId
         )
+import MapType
 import Route
 import Shared
 import Style as S
@@ -38,12 +43,14 @@ import View.Card as Card
 
 
 type alias Flags =
-    { playerNames : List String
+    { mapType : MapType
+    , playerNames : List String
     }
 
 
 type alias Model =
     { shared : Shared.Model
+    , mapType : MapType
     , playerNames : List String
     }
 
@@ -57,6 +64,7 @@ type alias Model =
 init : Shared.Model -> Flags -> Model
 init shared flags =
     { shared = shared
+    , mapType = flags.mapType
     , playerNames = flags.playerNames
     }
 
@@ -66,7 +74,7 @@ load id =
     let
         selection : SelectionSet Flags Api.Object.Snapshot
         selection =
-            SS.map Flags (Snapshot.players PlayerView.name)
+            SS.map2 Flags Snapshot.mapType (Snapshot.players PlayerView.name)
     in
     Api.Query.game { id = LobbyId.toString id } selection
         |> ApiRequest.queryRequest
@@ -100,6 +108,10 @@ view model =
       , H.p
             []
             [ H.text "the game has started. game mechanics will be added here."
+            ]
+      , H.p
+            []
+            [ H.text ("map: " ++ MapType.label model.mapType)
             ]
       , H.p
             []

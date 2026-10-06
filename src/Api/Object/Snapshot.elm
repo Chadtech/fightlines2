@@ -4,6 +4,7 @@
 
 module Api.Object.Snapshot exposing (..)
 
+import Api.Enum.MapType
 import Api.InputObject
 import Api.Interface
 import Api.Object
@@ -22,6 +23,16 @@ import Json.Decode as Decode
 id : SelectionSet String Api.Object.Snapshot
 id =
     Object.selectionForField "String" "id" [] Decode.string
+
+
+name : SelectionSet String Api.Object.Snapshot
+name =
+    Object.selectionForField "String" "name" [] Decode.string
+
+
+mapType : SelectionSet Api.Enum.MapType.MapType Api.Object.Snapshot
+mapType =
+    Object.selectionForField "Enum.MapType.MapType" "mapType" [] Api.Enum.MapType.decoder
 
 
 players :

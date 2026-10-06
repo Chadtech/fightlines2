@@ -313,6 +313,7 @@ update msg page =
                                         (JoinLobby.init
                                             shared
                                             { id = flags.id
+                                            , lobbyName = flags.name
                                             , gameUrl = flags.gameUrl
                                             }
                                         )
