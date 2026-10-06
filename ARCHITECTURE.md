@@ -30,18 +30,39 @@ it in their own models. `Main` handles URL navigation through `handleRoute`
 and page dispatch. `Route` parses typed lobby/game routes, `Shared` owns
 navigation, and `Effect` translates page effects into commands.
 
-`NewLobby`, `LobbyPage`, and `GamePage` own their page state and views.
+`NewLobby`, `JoinLobby`, `LobbyPage`, `LobbyLoadFailed`, and `GamePage` own their page state and views.
 `LobbyPage.load` and `GamePage.load` define their initial requests. `Main` owns
-initial loading, failure, and retry, and initializes each page only after a
-successful response. `LobbyPage` retains its loaded roster while polling.
-Page views return lists of HTML; each page module also owns its load-failure view.
+initial requests and dispatches failures, and initializes each loaded page only
+after a successful response. `LobbyPage` retains its loaded roster while polling.
+`LobbyLoadFailed` owns the lobby error message, view, and button updates. Retry
+navigates to the same lobby route so `Main` starts a fresh initial request;
+return home navigates to the creation page. Page views return lists of HTML;
+`GamePage` also owns its load-failure view.
+
+The `/lobby/<id>` route shows `JoinLobby` to visitors who are not members and
+`LobbyPage` to existing members. `Main` chooses the page after the initial lobby
+request. `JoinLobby` owns the name form and join mutation, without polling or
+showing the roster and invite controls. Successful joining reloads the same
+route so membership opens the lobby; returning members skip the join form.
+The name remains editable during submission, while the join button and update
+guard prevent duplicate requests. A failed join preserves the form and name.
 
 Pages that load initial data own a `Flags` type and its typed GraphQL selections
 using generated `Api.*` modules. Flags initialize explicit model fields rather
 than persisting as a nested flags record. `ApiRequest` owns shared transport
 configuration and error messages. Lobby and game responses are tagged with their
 originating ID to ignore responses from pages left during navigation.
-JavaScript only boots Elm.
+JavaScript boots Elm and handles interop through one outgoing `toJs` port in
+`Ports.Js.To` and one incoming `fromJs` port in `Ports.Js.From`. These modules
+keep raw port functions private. `Effect.toJs` sends a `Ports.Js.To.Msg`, encoded
+with a `tag` and operation fields. Incoming messages use `type` and `payload`;
+pages expose `listeners` with payload decoders and their own messages. `Main`
+maps the active page's listeners and converts them into a single subscription
+with `Ports.Js.From.subscription`, handling listener errors without changing
+page state. `LobbyPage` owns copy feedback and keeps polling in its ordinary
+subscriptions. Clipboard results retain their URL so stale responses can be
+ignored. Add future JavaScript operations as outgoing message variants and
+page listeners rather than adding ports.
 
 The backend serves the frontend on the same origin, so no development proxy or
 CORS configuration is required.

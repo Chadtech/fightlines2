@@ -41,7 +41,8 @@ prototype; do not update it unless the task explicitly requires that.
 - Use `setShared` to update a page's shared state through its public interface.
 - Route navigation through typed `Route` values and `Effect`. Page updates
   return `( Model, Eff Msg )`; `Main` converts effects to commands.
-- Keep initial loading, failure, and retry dispatch in `Main`. Initialize a
+- Keep initial loading and failure dispatch in `Main`. A separate failure page
+  may own its messages and updates, retrying through typed route navigation. Initialize a
   loaded page after its initial request succeeds. Keep the loaded page visible
   during subsequent polling.
 - Tag page-specific asynchronous messages with their originating ID and ignore
@@ -90,7 +91,7 @@ prototype; do not update it unless the task explicitly requires that.
   there, component-specific styling in the component, and page-specific
   composition in its page.
 - Page views return `List (Html Msg)`. Keep page load-failure views with the
-  corresponding page module.
+  corresponding page module or a dedicated failure-page module.
 - Split large views into meaningful sections. Use local `let` bindings for
   values and helpers needed by just one function, and named module helpers
   when they have a broader role.

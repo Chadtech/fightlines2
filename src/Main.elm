@@ -18,12 +18,15 @@ import Html.Styled as H
         ( Html
         )
 import Html.Styled.Attributes as A
+import JoinLobby
 import LobbyId
     exposing
         ( LobbyId
         )
+import LobbyLoadFailed
 import LobbyPage
 import NewLobby
+import Ports.Js.From as FromJs
 import Route
     exposing
         ( Route
@@ -50,7 +53,8 @@ type Page
     = Blank Shared.Model
     | NewLobby NewLobby.Model
     | LoadingLobby Shared.Model LobbyId
-    | LobbyLoadFailed Shared.Model LobbyId (Graphql.Http.Error LobbyPage.Flags)
+    | LobbyLoadFailed LobbyId LobbyLoadFailed.Model
+    | JoinLobby LobbyId JoinLobby.Model
     | Lobby LobbyId LobbyPage.Model
     | LoadingGame Shared.Model LobbyId
     | GameLoadFailed Shared.Model LobbyId (Graphql.Http.Error GamePage.Flags)
@@ -62,12 +66,14 @@ type Msg
     = LinkClicked Browser.UrlRequest
     | RouteReceived (Maybe Route)
     | NewLobbyMsg NewLobby.Msg
+    | JoinLobbyMsg LobbyId JoinLobby.Msg
     | LobbyMsg LobbyId LobbyPage.Msg
     | LobbyResponseReceived LobbyId (Response LobbyPage.Flags)
-    | LobbyRetryButtonClicked
+    | LobbyLoadFailedMsg LobbyId LobbyLoadFailed.Msg
     | GameResponseReceived LobbyId (Response GamePage.Flags)
     | GameRetryButtonClicked
     | ReturnHomeButtonClicked
+    | JsErrorReceived FromJs.Error
 
 
 
@@ -125,8 +131,11 @@ getShared page =
         LoadingLobby shared _ ->
             shared
 
-        LobbyLoadFailed shared _ _ ->
-            shared
+        LobbyLoadFailed _ model ->
+            model.shared
+
+        JoinLobby _ model ->
+            model.shared
 
         Lobby _ model ->
             model.shared
@@ -156,8 +165,11 @@ setShared shared page =
         LoadingLobby _ id ->
             LoadingLobby shared id
 
-        LobbyLoadFailed _ id error ->
-            LobbyLoadFailed shared id error
+        LobbyLoadFailed id model ->
+            LobbyLoadFailed id (LobbyLoadFailed.setShared shared model)
+
+        JoinLobby id model ->
+            JoinLobby id (JoinLobby.setShared shared model)
 
         Lobby id model ->
             Lobby id (LobbyPage.setShared shared model)
@@ -230,6 +242,9 @@ handleRoute route page =
 update : Msg -> Page -> ( Page, Eff Msg )
 update msg page =
     case msg of
+        JsErrorReceived _ ->
+            ( page, E.none )
+
         ReturnHomeButtonClicked ->
             ( page, E.navigate Route.NewLobby )
 
@@ -254,6 +269,20 @@ update msg page =
                 _ ->
                     ( page, E.none )
 
+        JoinLobbyMsg id pageMsg ->
+            case page of
+                JoinLobby currentId model ->
+                    if id == currentId then
+                        JoinLobby.update pageMsg model
+                            |> Tuple.mapFirst (JoinLobby id)
+                            |> Tuple.mapSecond (E.map (JoinLobbyMsg id))
+
+                    else
+                        ( page, E.none )
+
+                _ ->
+                    ( page, E.none )
+
         LobbyMsg id pageMsg ->
             case page of
                 Lobby currentId model ->
@@ -274,12 +303,24 @@ update msg page =
                     if id == currentId then
                         case result of
                             Ok flags ->
-                                LobbyPage.init shared flags
-                                    |> Tuple.mapFirst (Lobby id)
-                                    |> Tuple.mapSecond (E.map (LobbyMsg id))
+                                if flags.isMember then
+                                    LobbyPage.init shared flags
+                                        |> Tuple.mapFirst (Lobby id)
+                                        |> Tuple.mapSecond (E.map (LobbyMsg id))
+
+                                else
+                                    ( JoinLobby id
+                                        (JoinLobby.init
+                                            shared
+                                            { id = flags.id
+                                            , gameUrl = flags.gameUrl
+                                            }
+                                        )
+                                    , E.none
+                                    )
 
                             Err error ->
-                                ( LobbyLoadFailed shared id error, E.none )
+                                ( LobbyLoadFailed id (LobbyLoadFailed.init shared id error), E.none )
 
                     else
                         ( page, E.none )
@@ -287,10 +328,17 @@ update msg page =
                 _ ->
                     ( page, E.none )
 
-        LobbyRetryButtonClicked ->
+        LobbyLoadFailedMsg id pageMsg ->
             case page of
-                LobbyLoadFailed shared id _ ->
-                    loadLobby shared id
+                LobbyLoadFailed currentId model ->
+                    if id == currentId then
+                        ( page
+                        , LobbyLoadFailed.update pageMsg model
+                            |> E.map (LobbyLoadFailedMsg id)
+                        )
+
+                    else
+                        ( page, E.none )
 
                 _ ->
                     ( page, E.none )
@@ -356,8 +404,11 @@ shell page =
                         |> Card.toHtml Card.simple
                     ]
 
-                LobbyLoadFailed _ _ error ->
-                    LobbyPage.loadFailedView error LobbyRetryButtonClicked
+                LobbyLoadFailed id model ->
+                    List.map (H.map (LobbyLoadFailedMsg id)) (LobbyLoadFailed.view model)
+
+                JoinLobby id model ->
+                    List.map (H.map (JoinLobbyMsg id)) (JoinLobby.view model)
 
                 Lobby id model ->
                     List.map (H.map (LobbyMsg id)) (LobbyPage.view model)
@@ -419,9 +470,25 @@ shell page =
 
 subscriptions : Page -> Sub Msg
 subscriptions page =
+    Sub.batch
+        [ case page of
+            Lobby id model ->
+                LobbyPage.subscriptions model |> Sub.map (LobbyMsg id)
+
+            _ ->
+                Sub.none
+        , FromJs.subscription
+            { listeners = [ listeners page ]
+            , onError = JsErrorReceived
+            }
+        ]
+
+
+listeners : Page -> FromJs.Listener Msg
+listeners page =
     case page of
-        Lobby id model ->
-            LobbyPage.subscriptions model |> Sub.map (LobbyMsg id)
+        Lobby id _ ->
+            LobbyPage.listeners |> FromJs.map (LobbyMsg id)
 
         _ ->
-            Sub.none
+            FromJs.none

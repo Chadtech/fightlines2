@@ -1,5 +1,6 @@
 module Effect exposing
     ( Eff
+    , after
     , load
     , map
     , navigate
@@ -7,6 +8,7 @@ module Effect exposing
     , pushUrl
     , request
     , toCmd
+    , toJs
     , withOut
     )
 
@@ -16,6 +18,8 @@ import ApiRequest
         )
 import Browser.Navigation as Navigation
 import Graphql.Http
+import Ports.Js.To as ToJs
+import Process
 import Route
     exposing
         ( Route
@@ -29,6 +33,7 @@ type Eff msg
     | Navigate Route
     | PushUrl String
     | Load String
+    | ToJsMsg ToJs.Msg
 
 
 none : Eff msg
@@ -41,12 +46,24 @@ withOut model =
     ( model, none )
 
 
+toJs : ToJs.Msg -> Eff msg
+toJs =
+    ToJsMsg
+
+
 request : (Response response -> msg) -> Graphql.Http.Request response -> Eff msg
 request toMsg graphqlRequest =
     graphqlRequest
         |> Graphql.Http.toTask
         |> Task.map (Ok >> toMsg)
         |> Task.onError (Err >> toMsg >> Task.succeed)
+        |> Request
+
+
+after : Float -> msg -> Eff msg
+after milliseconds msg =
+    Process.sleep milliseconds
+        |> Task.map (always msg)
         |> Request
 
 
@@ -83,6 +100,9 @@ map toMsg effect =
         Load url ->
             Load url
 
+        ToJsMsg msg ->
+            ToJsMsg msg
+
 
 toCmd : Navigation.Key -> Eff msg -> Cmd msg
 toCmd key effect =
@@ -101,3 +121,6 @@ toCmd key effect =
 
         Load url ->
             Navigation.load url
+
+        ToJsMsg msg ->
+            ToJs.toCmd msg

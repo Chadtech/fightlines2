@@ -74,8 +74,16 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
 - Buttons size to their labels and align to the start of the form.
 - The spacing unit is 0.25rem: `p1`/`g1` are 0.25rem, `p2`/`g2` are 0.5rem,
   and `p3`/`g3` are 0.75rem. `p2px` is a literal 2px inset.
+- Lobby cards fill available width up to 40rem, centered horizontally. Name
+  fields stay within 24rem. Place the selectable invite URL beside `copy link`
+  and let that row wrap on narrow screens. Lobby updates are automatic; show
+  `retry` only after an update fails.
 - Use `Card.compactForm` for the centered creation form; it fills available
   width up to 24rem. Preserve useful gutters and allow content to wrap.
+- Use a separate `Card.compactForm` join page for invite visitors. Show the name
+  field and join action before membership; show the roster, invite link, and
+  waiting status or host controls only after joining. Keep the invite URL the
+  same across both pages. The join form does not poll or disable the name field.
 
 ## Decision log
 

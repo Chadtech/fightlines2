@@ -3,8 +3,8 @@ module LobbyPage exposing
     , Model
     , Msg
     , init
+    , listeners
     , load
-    , loadFailedView
     , setShared
     , subscriptions
     , update
@@ -20,6 +20,7 @@ import ApiRequest
     exposing
         ( Response
         )
+import Css
 import Effect as E
     exposing
         ( Eff
@@ -31,18 +32,20 @@ import Html.Styled as H
         ( Html
         )
 import Html.Styled.Attributes as A
-import Html.Styled.Events as Ev
+import Json.Decode as Decode
 import LobbyId
     exposing
         ( LobbyId
         )
+import Ports.Js.From as FromJs
+import Ports.Js.To as ToJs
 import Route
 import Shared
 import Style as S
 import Time
 import View.Button as Button
 import View.Card as Card
-import View.TextField as TextField
+import View.CardHeader as CardHeader
 
 
 
@@ -73,19 +76,33 @@ type alias Model =
     , isHost : Bool
     , isMember : Bool
     , gameUrl : Maybe String
-    , name : String
     , busy : Bool
     , refreshing : Bool
     , error : Maybe String
     , actionError : Maybe String
+    , copyStatus : CopyStatus
+    }
+
+
+type CopyStatus
+    = CopyIdle
+    | Copying
+    | Copied
+    | CopyFailed
+
+
+type alias CopyResult =
+    { url : String
+    , success : Bool
     }
 
 
 type Msg
-    = NameInputChanged String
-    | JoinButtonClicked
-    | StartButtonClicked
-    | RefreshButtonClicked
+    = StartButtonClicked
+    | RetryButtonClicked
+    | CopyLinkButtonClicked
+    | CopyLinkResultReceived CopyResult
+    | CopyFeedbackElapsed
     | PollTimerElapsed Time.Posix
     | LobbyResponseReceived (Response Flags)
     | ActionResponseReceived (Response Flags)
@@ -118,11 +135,11 @@ init shared flags =
       , isHost = flags.isHost
       , isMember = flags.isMember
       , gameUrl = flags.gameUrl
-      , name = ""
       , busy = False
       , refreshing = False
       , error = Nothing
       , actionError = Nothing
+      , copyStatus = CopyIdle
       }
     , gameNavigation
         { isMember = flags.isMember
@@ -142,12 +159,6 @@ load id =
 ----------------------------------------------------------------
 -- HELPERS --
 ----------------------------------------------------------------
-
-
-join : LobbyId -> String -> Graphql.Http.Request Flags
-join id name =
-    Api.Mutation.joinLobby { id = LobbyId.toString id, name = name } flagsSelection
-        |> ApiRequest.mutationRequest
 
 
 start : LobbyId -> Graphql.Http.Request Flags
@@ -175,25 +186,6 @@ flagsSelection =
 update : Msg -> Model -> ( Model, Eff Msg )
 update msg model =
     case msg of
-        NameInputChanged name ->
-            ( { model
-                | name = name
-              }
-            , E.none
-            )
-
-        JoinButtonClicked ->
-            if model.busy || model.refreshing then
-                ( model, E.none )
-
-            else
-                ( { model
-                    | busy = True
-                    , actionError = Nothing
-                  }
-                , E.request ActionResponseReceived (join model.id model.name)
-                )
-
         StartButtonClicked ->
             if model.busy || model.refreshing then
                 ( model, E.none )
@@ -206,8 +198,32 @@ update msg model =
                 , E.request ActionResponseReceived (start model.id)
                 )
 
-        RefreshButtonClicked ->
+        RetryButtonClicked ->
             refresh model
+
+        CopyLinkButtonClicked ->
+            if model.copyStatus == Copying || model.copyStatus == Copied then
+                ( model, E.none )
+
+            else
+                ( { model | copyStatus = Copying }
+                , E.toJs (ToJs.CopyLink (inviteUrl model))
+                )
+
+        CopyLinkResultReceived result ->
+            if result.url /= inviteUrl model || model.copyStatus /= Copying then
+                ( model, E.none )
+
+            else if result.success then
+                ( { model | copyStatus = Copied }
+                , E.after 2000 CopyFeedbackElapsed
+                )
+
+            else
+                ( { model | copyStatus = CopyFailed }, E.none )
+
+        CopyFeedbackElapsed ->
+            ( { model | copyStatus = CopyIdle }, E.none )
 
         PollTimerElapsed _ ->
             refresh model
@@ -291,57 +307,110 @@ gameNavigation args lobbyId =
 ----------------------------------------------------------------
 
 
+inviteUrl : Model -> String
+inviteUrl model =
+    model.shared.origin ++ Route.toString (Route.Lobby model.id)
+
+
 view : Model -> List (Html Msg)
 view model =
-    [ [ H.h1
-            []
-            [ H.text "lobby"
-            ]
-      , H.label
-            [ A.css
-                [ S.col
-                , S.g2
+    let
+        errorNotice : Html msg
+        errorNotice =
+            H.p
+                [ A.attribute "role" "status"
                 ]
+                [ H.text
+                    (String.join " "
+                        (List.filterMap identity
+                            [ model.error
+                            , model.actionError
+                            ]
+                        )
+                    )
+                ]
+    in
+    [ H.div
+        [ A.css
+            [ S.wFull
+            , Css.maxWidth (Css.rem 40)
+            , Css.alignSelf Css.center
             ]
-            [ H.text "invite players: copy this link"
-            , H.input
-                [ A.value (model.shared.origin ++ Route.toString (Route.Lobby model.id))
+        ]
+        [ [ inviteView model
+          , lobbyView model
+          , errorNotice
+          , case model.error of
+                Just _ ->
+                    H.fieldset
+                        [ A.disabled (model.busy || model.refreshing)
+                        , A.css [ S.border0 ]
+                        ]
+                        [ Button.secondary "retry" RetryButtonClicked
+                            |> Button.toHtml
+                        ]
+
+                Nothing ->
+                    H.text ""
+          ]
+            |> Card.toHtml
+                (Card.simple
+                    |> Card.withHeader (CardHeader.simple "lobby")
+                )
+        ]
+    ]
+
+
+inviteView : Model -> Html Msg
+inviteView model =
+    H.div
+        [ A.css [ S.col, S.g1 ]
+        ]
+        [ H.label
+            [ A.for "invite-link" ]
+            [ H.text "invite players" ]
+        , H.div
+            [ A.css [ S.row, S.g2, S.flexWrap ] ]
+            [ H.input
+                [ A.id "invite-link"
+                , A.type_ "text"
+                , A.value (inviteUrl model)
                 , A.readonly True
                 , A.css
-                    [ S.wFull
+                    [ S.flex1
+                    , S.minW0
+                    , Css.minWidth (Css.rem 10)
+                    , Css.maxWidth (Css.pct 100)
                     , S.p2
-                    , S.indent
-                    , S.bgNightwood1
-                    , S.textGray4
+                    , S.indentStrong
+                    , S.bgNightwood3
+                    , S.textGray5
                     ]
                 ]
                 []
-            ]
-      , lobbyView model
-      , H.p
-            [ A.attribute "role" "status"
-            ]
-            [ H.text
-                (String.join " "
-                    (List.filterMap identity
-                        [ model.error
-                        , model.actionError
-                        ]
-                    )
-                )
-            ]
-      , H.fieldset
-            [ A.disabled (model.busy || model.refreshing)
-            , A.css
-                [ S.border0
+            , H.fieldset
+                [ A.disabled (model.copyStatus == Copying || model.copyStatus == Copied)
+                , A.css [ S.border0, S.shrink0 ]
+                ]
+                [ Button.secondary "copy link" CopyLinkButtonClicked
+                    |> Button.toHtml
                 ]
             ]
-            [ Button.secondary "refresh lobby" RefreshButtonClicked
-                |> Button.toHtml
+        , H.p
+            [ A.attribute "role" "status" ]
+            [ H.text
+                (case model.copyStatus of
+                    Copied ->
+                        "copied"
+
+                    CopyFailed ->
+                        "could not copy. select the link and copy it manually."
+
+                    _ ->
+                        ""
+                )
             ]
-      ]
-        |> Card.toHtml Card.simple
-    ]
+        ]
 
 
 lobbyView : Model -> Html Msg
@@ -359,28 +428,10 @@ lobbyView model =
                 Button.primary "start game" StartButtonClicked
                     |> Button.toHtml
 
-            else if model.isMember then
+            else
                 H.p
                     []
                     [ H.text "you have joined. waiting for the host to start the game…"
-                    ]
-
-            else
-                H.form
-                    [ Ev.onSubmit JoinButtonClicked
-                    , A.css
-                        [ S.col
-                        , S.g3
-                        ]
-                    ]
-                    [ H.label
-                        []
-                        [ H.text "your name"
-                        , TextField.simple model.name NameInputChanged
-                            |> TextField.toHtml
-                        ]
-                    , Button.primary "join lobby" JoinButtonClicked
-                        |> Button.toHtml
                     ]
     in
     H.div
@@ -429,20 +480,6 @@ playerView player =
         ]
 
 
-loadFailedView : Graphql.Http.Error Flags -> msg -> List (Html msg)
-loadFailedView error retryMsg =
-    [ [ H.p
-            [ A.attribute "role" "status"
-            ]
-            [ H.text (ApiRequest.errorMessage error)
-            ]
-      , Button.secondary "retry" retryMsg
-            |> Button.toHtml
-      ]
-        |> Card.toHtml Card.simple
-    ]
-
-
 
 ----------------------------------------------------------------
 -- SUBSCRIPTIONS --
@@ -452,3 +489,13 @@ loadFailedView error retryMsg =
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Time.every 2000 PollTimerElapsed
+
+
+listeners : FromJs.Listener Msg
+listeners =
+    FromJs.data "copyLinkResult"
+        (Decode.map2 CopyResult
+            (Decode.field "url" Decode.string)
+            (Decode.field "success" Decode.bool)
+        )
+        CopyLinkResultReceived
