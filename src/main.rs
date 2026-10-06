@@ -6,7 +6,7 @@ mod seed;
 mod session_token;
 
 use actix_files::{Files, NamedFile};
-use actix_web::{App, HttpServer, web};
+use actix_web::{App, HttpServer, middleware::DefaultHeaders, web};
 
 use std::{env, io, net::TcpListener, path::PathBuf};
 
@@ -46,6 +46,7 @@ async fn run() -> io::Result<()> {
     HttpServer::new(move || {
         let index = frontend.join("index.html");
         App::new()
+            .wrap(DefaultHeaders::new().add(("Cache-Control", "no-cache")))
             .app_data(store.clone())
             .app_data(schema.clone())
             .route("/graphql", web::post().to(graphql::handle))

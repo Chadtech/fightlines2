@@ -10,6 +10,10 @@ error. Schema export does not load `.env`.
 Build the Elm frontend before starting the Rust server. Serve it behind an
 HTTPS reverse proxy for internet hosting.
 
+Frontend pages and assets use `Cache-Control: no-cache` so browsers revalidate
+them after a rebuild. Preserve this header in the reverse proxy. GraphQL
+responses use `no-store`.
+
 - `FIGHTLINES_ADDR`: listen address; defaults to `127.0.0.1:8080`.
 - `FIGHTLINES_FRONTEND_DIR`: frontend asset directory; defaults to this
   checkout's `public/`. Set it explicitly when moving the executable

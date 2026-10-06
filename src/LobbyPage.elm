@@ -317,18 +317,24 @@ view model =
     let
         errorNotice : Html msg
         errorNotice =
-            H.p
-                [ A.attribute "role" "status"
-                ]
-                [ H.text
-                    (String.join " "
-                        (List.filterMap identity
-                            [ model.error
-                            , model.actionError
-                            ]
-                        )
-                    )
-                ]
+            let
+                notice =
+                    [ model.error
+                    , model.actionError
+                    ]
+                        |> List.filterMap identity
+                        |> String.join " "
+                        |> String.trim
+            in
+            if String.isEmpty notice then
+                H.text ""
+
+            else
+                H.p
+                    [ A.attribute "role" "status"
+                    ]
+                    [ H.text notice
+                    ]
     in
     [ H.div
         [ A.css

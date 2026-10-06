@@ -28,6 +28,7 @@ import Shared
 import Style as S
 import View.Button as Button
 import View.Card as Card
+import View.CardHeader as CardHeader
 
 
 type alias Model =
@@ -69,8 +70,10 @@ view : Model -> List (Html Msg)
 view model =
     [ H.div
         [ A.css
-            [ S.col
+            [ S.flex1
+            , S.col
             , S.itemsCenter
+            , S.justifyCenter
             ]
         ]
         [ [ H.p
@@ -91,6 +94,9 @@ view model =
                     |> Button.toHtml
                 ]
           ]
-            |> Card.toHtml Card.compactForm
+            |> Card.toHtml
+                (Card.compactForm
+                    |> Card.withHeader (CardHeader.simple "lobby unavailable")
+                )
         ]
     ]
