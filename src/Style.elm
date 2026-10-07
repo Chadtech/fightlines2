@@ -114,6 +114,7 @@ module Style exposing
     , maxH32
     , maxH64
     , maxW12
+    , maxW128
     , maxW16
     , maxW160
     , maxW192
@@ -923,6 +924,11 @@ maxW64 =
 maxW96 : Css.Style
 maxW96 =
     Css.maxWidth s96
+
+
+maxW128 : Css.Style
+maxW128 =
+    Css.maxWidth (Css.rem 32)
 
 
 maxW160 : Css.Style

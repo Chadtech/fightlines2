@@ -3,8 +3,8 @@
 A strategy game about supplies and logistics, built with Rust and Elm.
 
 The current prototype supports creating a lobby, joining through an invite link,
-and starting a game. The game page is a placeholder; game mechanics and
-persistent storage are not implemented yet.
+and starting a game. The game page shows a free-floating animated SVG board with selectable units and depots.
+Movement, combat, resources, and persistent storage are not implemented yet.
 
 ## Run locally
 
@@ -21,7 +21,8 @@ Open http://127.0.0.1:8080, enter your user name and a lobby name, and choose
 **Create lobby**.
 Share the invite link with another player, who enters a name and chooses
 **Join lobby**. The host can select and save a map, then chooses **Start game**.
-Joined browsers navigate to the game page within about two seconds. The host can also start alone.
+Joined browsers navigate to the game page within about two seconds. The initial
+scenario requires exactly two players; a third player cannot join.
 
 Use separate browsers or browser profiles to test multiple players. Tabs in
 one browser share an identity cookie, which lasts 30 days and allows reconnecting
@@ -33,7 +34,24 @@ join and lobby headers.
 
 The initial map type is **supply point**. Joined players see the selected map;
 only the host can change it before starting. The game retains that selection.
-Map layout and rules are not implemented yet.
+The scenario is a 17 x 17 grass map with mirrored starting forces, 60 forest tiles, and 46 hill tiles,
+three supply depots (one per side and a neutral depot at the exact center), and three infantry,
+one tank, two field guns, and two supply trucks per player. The host takes the red western side; the second
+player takes the blue eastern side. Click a unit or depot to inspect it; units
+and depots can also be selected with Tab and Enter/Space. Drag the battlefield
+with the primary mouse button to pan; scroll to zoom around the cursor. The floating
+view card has zoom and reset controls. With the battlefield focused, arrow keys
+pan, plus/minus zoom, and Home resets the view. Dragging does not select a tile.
+Roster, selection and view cards remain fixed while the board moves. Terrain uses detailed 80s anime
+illustrations, with a grass tile in every square, defined hill ridges and tree
+silhouettes, and a subtle grid.
+Units use detailed illustrated anime sprites with red and blue team colors,
+packed into 256px square cells and smoothly scaled to the board. The infantry,
+tanks, and supply trucks use four-frame rigid-part idle loops in light sky blue
+and warm orange-red, with staggered phases and fixed part shapes. Field guns use four independently drawn howitzer elevation frames, with the
+operator bending naturally at the rear controls and the carriage staying planted. Supply depots are separate concrete buildings with rounded roofs,
+neutral material colors and no team-colored outlines.
+No movement orders or resource quantities exist yet.
 
 New players cannot join after a game starts. All lobbies and games disappear
 when the server restarts.
@@ -41,12 +59,23 @@ when the server restarts.
 ## Development
 
 ```sh
+make sprites # Optional: re-export sprites using locally retained source artwork
 make build   # Generate the API client and build the frontend and backend
 make check   # Check formatting, lint, test, and compile
 ```
+
+Builds use the six committed runtime sprites in `public/assets/`. Source artwork,
+experiments and older exports are kept locally and ignored by Git. `make sprites`
+requires that local `artwork/` directory; a fresh clone can build and run without it.
+The export scripts remain in `tools/`. Back up source artwork separately.
 
 - [Architecture](ARCHITECTURE.md): state, frontend flow, GraphQL, and shared views.
 - [Code style](CODE_STYLE.md): coding conventions and verification requirements.
 - [Design system](DESIGN_SYSTEM.md): visual conventions, components, and UI copy.
 - [Agent instructions](AGENTS.md): guidance for automated contributors.
 - [Deployment](DEPLOYMENT.md): configuration, access from other devices, and hosting.
+
+To edit terrain, change the ASCII sketch in `src/scenario.rs`: `#` is forest,
+`%` is hills, and spaces or `.` are grass. Keep rows the same width; spaces
+count as cells. Restart the server and start a new game to see the layout.
+Depots and units are placed separately.

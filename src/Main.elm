@@ -70,6 +70,7 @@ type Msg
     | LobbyMsg LobbyId LobbyPage.Msg
     | LobbyResponseReceived LobbyId (Response LobbyPage.Flags)
     | LobbyLoadFailedMsg LobbyId LobbyLoadFailed.Msg
+    | GameMsg LobbyId GamePage.Msg
     | GameResponseReceived LobbyId (Response GamePage.Flags)
     | GameRetryButtonClicked
     | ReturnHomeButtonClicked
@@ -344,6 +345,20 @@ update msg page =
                 _ ->
                     ( page, E.none )
 
+        GameMsg id pageMsg ->
+            case page of
+                Game currentId model ->
+                    if id == currentId then
+                        GamePage.update pageMsg model
+                            |> Tuple.mapFirst (Game id)
+                            |> Tuple.mapSecond (E.map (GameMsg id))
+
+                    else
+                        ( page, E.none )
+
+                _ ->
+                    ( page, E.none )
+
         GameResponseReceived id result ->
             case page of
                 LoadingGame shared currentId ->
@@ -427,8 +442,8 @@ shell page =
                 GameLoadFailed _ id error ->
                     GamePage.loadFailedView id error GameRetryButtonClicked
 
-                Game _ model ->
-                    GamePage.view model
+                Game id model ->
+                    List.map (H.map (GameMsg id)) (GamePage.view model)
 
                 NotFound _ ->
                     [ [ H.p
@@ -475,6 +490,9 @@ subscriptions page =
         [ case page of
             Lobby id model ->
                 LobbyPage.subscriptions model |> Sub.map (LobbyMsg id)
+
+            Game id model ->
+                GamePage.subscriptions model |> Sub.map (GameMsg id)
 
             _ ->
                 Sub.none

@@ -2,10 +2,12 @@
   "name": "fightlines2",
   "private": true,
   "scripts": {
-    "generate-api": "node node_modules/@dillonkearns/elm-graphql/dist/bundle.js --introspection-file schema.json --base Api --output src"
+    "generate-api": "node node_modules/@dillonkearns/elm-graphql/dist/bundle.js --introspection-file schema.json --base Api --output src",
+    "build-sprites": "node tools/build-unit-sprites.cjs && node tools/build-illustrated-sprites.cjs && node tools/build-field-gun-sprites.cjs && node tools/build-rigged-sprites.cjs && node tools/build-terrain-sprites.cjs && node tools/build-building-sprites.cjs"
   },
   "devDependencies": {
-    "@dillonkearns/elm-graphql": "4.3.2"
+    "@dillonkearns/elm-graphql": "4.3.2",
+    "sharp": "0.35.4"
   },
   "engines": {
     "node": ">=22"

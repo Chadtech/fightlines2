@@ -18,7 +18,8 @@ responses use `no-store`.
 - `FIGHTLINES_FRONTEND_DIR`: frontend asset directory; defaults to this
   checkout's `public/`. Set it explicitly when moving the executable
   to another machine, and include `index.html`, `main.js`,
-  and the generated `elm.js` in that directory.
+  the generated `elm.js`, and the `assets/` directory containing the sprite
+  sheets.
 - `FIGHTLINES_SEED`: initial token-generation seed, exactly 64 hexadecimal
   characters (32 bytes). Defaults to all zeroes for reproducible local testing.
   Use a private seed for a hosted server: anyone who knows the seed can reproduce

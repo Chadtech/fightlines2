@@ -85,9 +85,58 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   waiting status or host controls only after joining. Keep the invite URL the
   same across both pages. The join form does not poll or disable the name field.
 
+## Game board
+
+- The game is a full-viewport workspace. Render the board directly on the page
+  background, without a containing card or border. Center it initially at 80vw
+  or 76vh, whichever is smaller, and allow it to pan freely beneath floating cards.
+- Keep the roster at the upper left and selection/view cards along the bottom;
+  wrap the bottom cards on narrow screens. Cards remain fixed while the board moves.
+- Primary-button dragging pans after a 6px threshold. A drag never selects a tile;
+  a click still inspects units, depots and terrain. Scroll zooms around the cursor,
+  bounded to 35–300%; the view card supplies zoom and reset controls. Keyboard
+  navigation supports arrows, plus/minus and Home while the battlefield is focused.
+- Use smooth image rendering for illustrated terrain, building and unit sprites; keep pixelated
+  rendering for the selection marker. SVG scales the
+  board to the camera width and handles selection events directly in Elm.
+- Use highly detailed 1980s anime OVA terrain with fine ink contours, richly
+  layered painted shading, botanical detail and textured rock faces within
+  broad readable shapes.
+  Render one grass image per 16px cell, including under hills and forests; match
+  ground texture scale across the board. Keep hill ridges, exposed rock faces,
+  pointed tree crowns and trunks exaggerated enough to read at 30px display size.
+  Terrain features stay inside their own cells. Keep tile hit targets separate
+  from the artwork and use subtle square grid strokes to clarify cell boundaries.
+- Keep comparable square footprints with transparent padding. Illustrated
+  infantry, tanks, trucks and field guns fit within 232 x 232px bounds in 256px
+  cells, preserving each master’s aspect ratio. Keep side-profile vehicles, a substantial tank turret and thick barrel,
+  and tall truck cab/canopy so their bulk reads as clearly as the infantry.
+- Render terrain below depots and units, with the original gold corner-marker sprite for the selected
+  tile. The red side starts west and the blue side east. Show side names and
+  selected-unit details so color is not the only identifier.
+- Units and depots support keyboard focus and Enter/Space activation. Illustrated
+  units face right; eastern units are mirrored. Use four-frame rigid-part idle
+  loops: infantry crouches through bending knees with small head adjustments,
+  keeping the rifle angle steady;
+  truck and tank bodies bounce on their suspension above fixed wheels/tracks.
+  Keep the tank barrel elevation. Preserve part shapes without pulsing or scaling.
+  Stagger unit phases by stable ID. Keep feet, wheels and tracks planted. Use light sky blue and
+  moderately light warm orange-red uniform and vehicle paint while preserving
+  skin, metal, wheels and canvas.
+  Field guns use four drawn elevation poses in strict side profile. Keep barrel
+  dimensions consistent, the carriage planted, and the operator moving naturally
+  at the rear controls. A tall wheel and solid shield give the unit a square footprint.
+  Supply depots are static concrete buildings with a distinctive rounded barrel-vault
+  roof seen head-on with slight elevation, detailed 1980s anime ink work and painted shading. They fill a comparable
+  square cell with neutral material colors and no ownership outlines or team labels.
+  Buildings are separate from terrain and units.
+
 ## Decision log
 
 - 2026-10-04: use bundled Ubuntu Mono Regular for the interface, embedding the font data directly in the HTML.
 - 2026-10-04: keep equal-size, normal-weight monospace typography; use a separate
   inverted gray title bar, nightwood text fields, brighter primary actions, and
   lowercase presentation throughout the interface.
+
+- 2026-10-07: use a free-floating, pannable and zoomable game board with fixed
+  floating cards for roster, selection and view controls.

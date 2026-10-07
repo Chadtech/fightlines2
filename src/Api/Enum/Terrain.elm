@@ -2,43 +2,55 @@
 -- https://github.com/dillonkearns/elm-graphql
 
 
-module Api.Enum.MapType exposing (..)
+module Api.Enum.Terrain exposing (..)
 
 import Json.Decode as Decode exposing (Decoder)
 
 
-{-| Selects the fixed initial board and forces for a game.
--}
-type MapType
-    = SupplyPoint
+type Terrain
+    = GrassPlain
+    | Hills
+    | Forest
 
 
-list : List MapType
+list : List Terrain
 list =
-    [ SupplyPoint ]
+    [ GrassPlain, Hills, Forest ]
 
 
-decoder : Decoder MapType
+decoder : Decoder Terrain
 decoder =
     Decode.string
         |> Decode.andThen
             (\string ->
                 case string of
-                    "SUPPLY_POINT" ->
-                        Decode.succeed SupplyPoint
+                    "GRASS_PLAIN" ->
+                        Decode.succeed GrassPlain
+
+                    "HILLS" ->
+                        Decode.succeed Hills
+
+                    "FOREST" ->
+                        Decode.succeed Forest
 
                     _ ->
-                        Decode.fail ("Invalid MapType type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
+                        Decode.fail ("Invalid Terrain type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
             )
 
 
 {-| Convert from the union type representing the Enum to a string that the GraphQL server will recognize.
 -}
-toString : MapType -> String
+toString : Terrain -> String
 toString enum____ =
     case enum____ of
-        SupplyPoint ->
-            "SUPPLY_POINT"
+        GrassPlain ->
+            "GRASS_PLAIN"
+
+        Hills ->
+            "HILLS"
+
+        Forest ->
+            "FOREST"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -52,11 +64,17 @@ This is the inverse of the Enum `toString` function. So you can call `toString` 
 This can be useful for generating Strings to use for <select> menus to check which item was selected.
 
 -}
-fromString : String -> Maybe MapType
+fromString : String -> Maybe Terrain
 fromString enumString____ =
     case enumString____ of
-        "SUPPLY_POINT" ->
-            Just SupplyPoint
+        "GRASS_PLAIN" ->
+            Just GrassPlain
+
+        "HILLS" ->
+            Just Hills
+
+        "FOREST" ->
+            Just Forest
 
         _ ->
             Nothing

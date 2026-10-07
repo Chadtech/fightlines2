@@ -4,6 +4,7 @@ use crate::{
     lobby_name::LobbyName,
     map_type::MapType,
     player_name::PlayerName,
+    scenario::{Scenario, Side},
     seed::{self, Seed},
     session_token::SessionToken,
 };
@@ -52,6 +53,7 @@ struct Lobby {
 /// Starting consumes the lobby. The source ID keeps existing invite URLs
 /// resolvable for polling players and repeated start requests.
 struct Game {
+    scenario: Scenario,
     source_lobby: LobbyId,
     name: LobbyName,
     map_type: MapType,
@@ -59,9 +61,10 @@ struct Game {
     players: Vec<Player>,
 }
 
-impl From<Lobby> for Game {
-    fn from(lobby: Lobby) -> Self {
+impl Game {
+    fn from_lobby(lobby: Lobby, scenario: Scenario) -> Self {
         Self {
+            scenario,
             source_lobby: lobby.id,
             name: lobby.name,
             map_type: lobby.map_type,
@@ -91,6 +94,30 @@ pub struct Snapshot {
 struct PlayerView {
     name: String,
     is_host: bool,
+}
+
+/// Public game response built for an authorized member's session.
+/// Stored game state remains in `Game`; viewer-specific flags are computed here.
+#[derive(GraphQLObject)]
+pub struct GameSnapshot {
+    id: String,
+    name: String,
+    map_type: MapType,
+    players: Vec<GamePlayerView>,
+    is_host: bool,
+    is_member: bool,
+    game_url: Option<String>,
+    scenario: Scenario,
+}
+
+/// Public roster entry; `is_you` compares the player with the requesting session.
+/// Session credentials are never included in this response.
+#[derive(GraphQLObject)]
+struct GamePlayerView {
+    name: String,
+    is_host: bool,
+    is_you: bool,
+    side: Side,
 }
 
 //----------------------------------------------------------------
@@ -157,6 +184,29 @@ fn game_snapshot(game: &Game, session: Option<&SessionToken>) -> Snapshot {
         session,
         Some(format!("/game/{}", game.source_lobby)),
     )
+}
+
+fn game_view(game: &Game, session: &SessionToken) -> GameSnapshot {
+    GameSnapshot {
+        id: game.source_lobby.to_string(),
+        name: game.name.to_string(),
+        map_type: game.map_type,
+        players: game
+            .players
+            .iter()
+            .zip([Side::West, Side::East])
+            .map(|(player, side)| GamePlayerView {
+                name: player.name.to_string(),
+                is_host: player.session == game.host,
+                is_you: &player.session == session,
+                side,
+            })
+            .collect(),
+        is_host: session == &game.host,
+        is_member: true,
+        game_url: Some(format!("/game/{}", game.source_lobby)),
+        scenario: game.scenario.clone(),
+    }
 }
 
 //----------------------------------------------------------------
@@ -247,6 +297,9 @@ pub fn join(context: &Context, id: LobbyId, input: &str) -> FieldResult<Snapshot
     {
         return error("That name is already in this lobby. Choose another name.");
     }
+    if lobby.players.len() >= lobby.map_type.player_count() {
+        return error("This map supports two players. The lobby is full.");
+    }
     let identity = identity.unwrap_or_else(|| SessionToken::from_token(state.next_token()));
     let lobby = state.lobbies.get_mut(&id).unwrap();
     lobby.players.push(Player {
@@ -297,13 +350,20 @@ pub fn start(context: &Context, id: LobbyId) -> FieldResult<Snapshot> {
     if identity.as_ref() != Some(&lobby.host) {
         return error("Only the host can start a game, and only joined players can enter it.");
     }
-    let game = Game::from(state.lobbies.remove(&id).unwrap());
+    if lobby.players.len() != lobby.map_type.player_count() {
+        return error("This map requires two players. Invite another player before starting.");
+    }
+    let scenario = lobby
+        .map_type
+        .scenario()
+        .or_else(|_| error("The map could not be initialized."))?;
+    let game = Game::from_lobby(state.lobbies.remove(&id).unwrap(), scenario);
     let result = game_snapshot(&game, identity.as_ref());
     state.games.insert(id, game);
     Ok(result)
 }
 
-pub fn game(context: &Context, id: LobbyId) -> FieldResult<Snapshot> {
+pub fn game(context: &Context, id: LobbyId) -> FieldResult<GameSnapshot> {
     let state = context
         .store
         .0
@@ -316,12 +376,13 @@ pub fn game(context: &Context, id: LobbyId) -> FieldResult<Snapshot> {
             error("This lobby no longer exists. Create a new lobby from the home page.")
         };
     };
-    let identity = context.identity();
-    let result = game_snapshot(game, identity.as_ref());
-    if !result.is_member {
+    let Some(identity) = context.identity() else {
+        return error("Only the host can start a game, and only joined players can enter it.");
+    };
+    if !game.players.iter().any(|player| player.session == identity) {
         return error("Only the host can start a game, and only joined players can enter it.");
     }
-    Ok(result)
+    Ok(game_view(game, &identity))
 }
 
 //----------------------------------------------------------------

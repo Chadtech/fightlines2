@@ -42,7 +42,7 @@ type alias GameRequiredArguments =
 
 game :
     GameRequiredArguments
-    -> SelectionSet decodesTo Api.Object.Snapshot
+    -> SelectionSet decodesTo Api.Object.GameSnapshot
     -> SelectionSet decodesTo RootQuery
 game requiredArgs____ object____ =
     Object.selectionForCompositeField "game" [ Argument.required "id" requiredArgs____.id Encode.string ] object____ Basics.identity

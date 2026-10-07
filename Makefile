@@ -1,4 +1,4 @@
-.PHONY: build frontend generate-api check run
+.PHONY: build frontend generate-api sprites check run
 
 build: frontend
 	cargo build --locked
@@ -7,6 +7,9 @@ generate-api:
 	cargo run --locked -p fightlines-server -- --export-schema > schema.json.tmp
 	mv schema.json.tmp schema.json
 	npm run generate-api
+
+sprites:
+	npm run build-sprites
 
 frontend: generate-api
 	elm make src/Main.elm --output=public/elm.js

@@ -1,5 +1,5 @@
 use crate::{
-    lobby::{self, Snapshot, Store},
+    lobby::{self, GameSnapshot, Snapshot, Store},
     lobby_id::LobbyId,
     map_type::MapType,
     session_token::SessionToken,
@@ -56,7 +56,7 @@ impl Query {
         lobby::get(context, LobbyId::from_token(id))
     }
 
-    fn game(context: &Context, id: String) -> FieldResult<Snapshot> {
+    fn game(context: &Context, id: String) -> FieldResult<GameSnapshot> {
         lobby::game(context, LobbyId::from_token(id))
     }
 }
@@ -238,6 +238,16 @@ mod tests {
                 .unwrap()
                 .contains("not started")
         );
+        let (solo, _) = execute!(
+            format!("mutation {{ startGame(id: \"{id}\") {{ id }} }}"),
+            Some(host.clone())
+        );
+        assert!(
+            solo["errors"][0]["message"]
+                .as_str()
+                .unwrap()
+                .contains("requires two players")
+        );
         let (duplicate, _) = execute!(
             format!("mutation {{ joinLobby(id: \"{id}\", name: \"chad\") {{ {FIELDS} }} }}"),
             None
@@ -263,6 +273,17 @@ mod tests {
                 .len(),
             2
         );
+        let (full, cookie) = execute!(
+            format!("mutation {{ joinLobby(id: \"{id}\", name: \"Third\") {{ id }} }}"),
+            None
+        );
+        assert!(
+            full["errors"][0]["message"]
+                .as_str()
+                .unwrap()
+                .contains("full")
+        );
+        assert!(cookie.is_none());
         let set_map = format!(
             "mutation {{ setLobbyMap(id: \"{id}\", mapType: SUPPLY_POINT) {{ {FIELDS} }} }}"
         );
@@ -324,11 +345,26 @@ mod tests {
                 .unwrap()
                 .contains("already started")
         );
-        let game = format!("{{ game(id: \"{id}\") {{ {FIELDS} }} }}");
+        let game = format!(
+            "{{ game(id: \"{id}\") {{ {FIELDS} players {{ side isYou }} scenario {{ map {{ width height baseTile features {{ position {{ x y }} terrain }} }} depots {{ position {{ x y }} owner }} units {{ id side kind position {{ x y }} }} }} }} }}"
+        );
         let (member, _) = execute!(&game, Some(guest.clone()));
         assert_eq!(member["data"]["game"]["name"], "Friday Night");
         assert_eq!(member["data"]["game"]["mapType"], "SUPPLY_POINT");
         assert_eq!(member["data"]["game"]["isMember"], true);
+        let scenario = &member["data"]["game"]["scenario"];
+        assert_eq!(scenario["map"]["width"], 17);
+        assert_eq!(scenario["map"]["height"], 17);
+        assert_eq!(scenario["map"]["baseTile"], "GRASS_PLAIN");
+        assert_eq!(scenario["map"]["features"].as_array().unwrap().len(), 106);
+        assert_eq!(scenario["depots"].as_array().unwrap().len(), 3);
+        assert_eq!(scenario["units"].as_array().unwrap().len(), 16);
+        assert_eq!(member["data"]["game"]["players"][0]["side"], "WEST");
+        assert_eq!(member["data"]["game"]["players"][1]["side"], "EAST");
+        assert_eq!(member["data"]["game"]["players"][1]["isYou"], true);
+        let (host_view, _) = execute!(&game, Some(host.clone()));
+        assert_eq!(host_view["data"]["game"]["scenario"], *scenario);
+        assert_eq!(host_view["data"]["game"]["players"][0]["isYou"], true);
         let (outsider, _) = execute!(&game, None);
         assert!(outsider["errors"].is_array());
         let (reconnected, _) = execute!(&join, Some(guest));

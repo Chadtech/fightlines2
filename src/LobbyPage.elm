@@ -259,7 +259,7 @@ update msg model =
                     )
 
         StartButtonClicked ->
-            if model.busy || model.refreshing then
+            if model.busy || model.refreshing || List.length model.players /= 2 then
                 ( model, E.none )
 
             else
@@ -576,6 +576,12 @@ lobbyView model =
                 H.p
                     []
                     [ H.text "this game has started. joining is closed."
+                    ]
+
+            else if List.length model.players < 2 then
+                H.p
+                    []
+                    [ H.text "this map needs two players. share the invite link to fill the other side."
                     ]
 
             else if model.isHost then

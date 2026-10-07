@@ -2,43 +2,48 @@
 -- https://github.com/dillonkearns/elm-graphql
 
 
-module Api.Enum.MapType exposing (..)
+module Api.Enum.Side exposing (..)
 
 import Json.Decode as Decode exposing (Decoder)
 
 
-{-| Selects the fixed initial board and forces for a game.
--}
-type MapType
-    = SupplyPoint
+type Side
+    = West
+    | East
 
 
-list : List MapType
+list : List Side
 list =
-    [ SupplyPoint ]
+    [ West, East ]
 
 
-decoder : Decoder MapType
+decoder : Decoder Side
 decoder =
     Decode.string
         |> Decode.andThen
             (\string ->
                 case string of
-                    "SUPPLY_POINT" ->
-                        Decode.succeed SupplyPoint
+                    "WEST" ->
+                        Decode.succeed West
+
+                    "EAST" ->
+                        Decode.succeed East
 
                     _ ->
-                        Decode.fail ("Invalid MapType type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
+                        Decode.fail ("Invalid Side type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
             )
 
 
 {-| Convert from the union type representing the Enum to a string that the GraphQL server will recognize.
 -}
-toString : MapType -> String
+toString : Side -> String
 toString enum____ =
     case enum____ of
-        SupplyPoint ->
-            "SUPPLY_POINT"
+        West ->
+            "WEST"
+
+        East ->
+            "EAST"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -52,11 +57,14 @@ This is the inverse of the Enum `toString` function. So you can call `toString` 
 This can be useful for generating Strings to use for <select> menus to check which item was selected.
 
 -}
-fromString : String -> Maybe MapType
+fromString : String -> Maybe Side
 fromString enumString____ =
     case enumString____ of
-        "SUPPLY_POINT" ->
-            Just SupplyPoint
+        "WEST" ->
+            Just West
+
+        "EAST" ->
+            Just East
 
         _ ->
             Nothing

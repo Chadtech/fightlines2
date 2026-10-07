@@ -29,7 +29,26 @@ remain strings.
 carries the selected type into the game, where it cannot be changed. Elm keeps
 the generated enum typed and uses `MapType.label` for display. The host saves a
 draft selection; lobby polling updates the authoritative map without replacing
-that draft. Board layout and rules are a separate next step.
+that draft.
+
+`map.rs` stores width/height, a base terrain tile, and a `BTreeMap` of coordinate
+terrain overrides. Lookup returns no tile outside the map; missing in-bounds
+coordinates fall back to the base tile. There is no stored dense grid. `Map::from_ascii` parses rectangular sketches
+with `#` for forests, `%` for hills, and spaces or `.` for grass. Spaces are
+preserved; malformed rows and unknown symbols return explicit errors.
+SupplyPoint terrain is authored as an ASCII sketch in `scenario.rs`.
+`scenario.rs` owns the fixed SupplyPoint layout, separate supply-depot buildings with optional
+side ownership, and units with stable typed IDs, kinds, sides, and positions.
+Resource quantities, movement, combat, and victory resolution remain future work.
+Starting requires exactly two players and initializes the scenario once before
+consuming the lobby. The host owns West and the second player East. Repeated
+start requests return the existing game. Joining is capped at two players,
+while reconnecting members can rejoin a full lobby.
+
+The member-only `game` query returns `GameSnapshot`, including the scenario and
+players with `side` and `isYou`. Lobby snapshots stay small and never include the
+board. The frontend receives sparse terrain overrides and expands them for
+rendering; authoritative initial positions and bounds remain in Rust.
 
 ## Frontend
 
@@ -116,7 +135,7 @@ running server. `npm ci` installs the generator from `package-lock.json`.
 
 Each page that loads initial data chooses its own fields and assembles a
 page-specific `Flags` record. `LobbyPage.load` returns `Graphql.Http.Request LobbyPage.Flags`, while `GamePage.load` returns `Graphql.Http.Request GamePage.Flags`. The lobby page selects the roster, membership, host controls,
-and game navigation; the current game page selects the map type and player names. Creating a
+and game navigation; the game page selects the scenario, map type, name, and player sides. Creating a
 lobby selects only the ID needed to navigate, returning `LobbyId`.
 
 `ApiRequest` shares query/mutation configuration and error presentation without
@@ -125,6 +144,53 @@ owning page data. Pages and `Main` pass request values and response callbacks to
 functions fix the operation's argument and result scopes; Elm compilation
 catches callers incompatible with a regenerated schema. The current server uses
 synchronous resolvers for its in-memory operations.
+
+`GamePage` owns unit/tile selection and an explicit four-state `AnimationFrame`.
+Board data types live in `Coordinate`, `TerrainFeature`, `Map`, `Depot`, `Unit`
+and `GameBoard`; the view composes them without owning domain data.
+`View.Sprite` clips atlas cells using named sheet dimensions and coordinates.
+`GamePage` also owns local camera offset, zoom, drag and click-suppression fields,
+and handles viewport events directly. `View.BoardViewport` owns only the view
+and event messages. The viewport wraps the pure board renderer in a fixed, full-screen pan/zoom
+surface; roster, selection and controls render separately as floating cards.
+Mouse movement/release subscriptions run only during a drag. A 6px drag threshold
+suppresses mouse selection in the page update, while keyboard activation remains
+independent. Wheel zoom anchors to the cursor, button zoom anchors to the viewport
+center, and reset restores the initial centered view. Camera changes never alter
+authoritative board coordinates or the selected tile.
+`Main` maps its messages with the originating lobby ID and subscribes only while
+the game page is active. A 400ms Elm timer cycles the four unit sprite frames.
+`View.GameBoard` renders raster sprite-sheet cells in nested SVG viewports;
+terrain, depots, units, and the legacy selection marker are separate layers. Eastern
+units are mirrored to face west. SVG events send typed unit IDs and coordinates
+directly to Elm; keyboard activation works on units and depots. The selection marker alone uses pixelated rendering.
+Illustrated terrain, buildings and units use smooth downsampling.
+Assets live in `public/assets/`, with provenance and sheet coordinates in its
+README. `units_illustrated-v4.png` has four frame columns and twelve rows:
+red, blue and neutral infantry, then the same team order for tanks, trucks and field guns.
+Its 256px square cells scale to logical 16px cells. Only the six runtime images
+are committed. Illustrated sources and original approved concepts are retained
+locally in the ignored `artwork/` directory, with export scripts in `tools/`.
+Normal builds use committed sprites; `make sprites` is an optional authoring
+step requiring the local source artwork.
+`make sprites` builds four rigid-part poses from fixed 256px masters in
+`artwork/units/illustrated/rigged/`. The exporter translates vehicle bodies above fixed wheels/tracks and rotates
+clipped head and complete barrel regions. The infantry rifle translates with
+the torso at a constant angle; truck tire cutouts exclude the bumper. Infantry hip lowering drives two rigid
+leg segments around planted ankles. It never resizes parts between frames;
+infantry boots, tank tracks and truck wheels remain pixel-identical.
+Field guns use four complete drawn howitzer poses and color-only team sheets
+in `artwork/units/illustrated/rigged/field-gun/drawn-{neutral,red,blue}/`. Their
+exporter registers complete drawings against wheel anchors, then packs them
+without articulated body cutouts.
+`View.GameBoard` offsets the four-frame cycle using each unit's stable ID so
+units do not animate in unison. The exporter also retains the older generated
+pose atlases and legacy pixel-art depot atlases. Terrain renders one 16px grass image per coordinate, then transparent
+16px hills/forest overlays in their own cells, with subtle grid strokes above.
+All terrain artwork renders before the cell hit targets, depots and units;
+artwork cannot intercept cell selection events. `make sprites` copies
+the v2 grass and v3 feature sources from `artwork/terrain/illustrated/` without reducing their
+resolution. Earlier terrain atlases remain available locally and are ignored by Git.
 
 ## Styles and views
 

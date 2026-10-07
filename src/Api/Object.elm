@@ -5,9 +5,41 @@
 module Api.Object exposing (..)
 
 
+type Coordinate
+    = Coordinate
+
+
+type Depot
+    = Depot
+
+
+type GamePlayerView
+    = GamePlayerView
+
+
+type GameSnapshot
+    = GameSnapshot
+
+
+type Map
+    = Map
+
+
 type PlayerView
     = PlayerView
 
 
+type Scenario
+    = Scenario
+
+
 type Snapshot
     = Snapshot
+
+
+type TerrainFeature
+    = TerrainFeature
+
+
+type Unit
+    = Unit
