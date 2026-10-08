@@ -236,8 +236,9 @@ view model =
                 model.board
             )
         , GamePanel.toHtml
-            (selectionView model)
-            (viewControls model)
+            [ selectionView model
+            , viewControls model
+            ]
         ]
     ]
 

@@ -157,6 +157,7 @@ module Style exposing
     , mx4
     , mx64
     , mx96
+    , nightwood2Str
     , noScrollbar
     , noWrap
     , none
@@ -293,6 +294,7 @@ module Style exposing
     , when
     , whitespacePreWrap
     , wrapAnywhere
+    , yellow5Str
     , z1
     , z2
     , z3

@@ -169,9 +169,9 @@ authoritative board coordinates or the selected tile.
 `Main` maps its messages with the originating lobby ID and subscribes only while
 the game page is active. A 400ms Elm timer cycles the four unit sprite frames.
 `View.GameBoard` renders raster sprite-sheet cells in nested SVG viewports;
-terrain, depots, units, and the legacy selection marker are separate layers. Eastern
+terrain, depots, units, and an inset SVG selection square are separate layers. Eastern
 units are mirrored to face west. SVG events send typed unit IDs and coordinates
-directly to Elm; keyboard activation works on units and depots. The selection marker alone uses pixelated rendering.
+directly to Elm; keyboard activation works on units and depots. The selection square ignores pointer events and stays within its cell.
 Illustrated terrain, buildings and units use smooth downsampling.
 Assets live in `public/assets/`, with provenance and sheet coordinates in its
 README. `units_illustrated-v4.png` has four frame columns and twelve rows:

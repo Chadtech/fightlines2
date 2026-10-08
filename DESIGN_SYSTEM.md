@@ -99,8 +99,7 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   a click still inspects units, depots and terrain. Scroll zooms around the cursor,
   bounded to 35–300%; the panel supplies zoom and reset controls. Keyboard
   navigation supports arrows, plus/minus and Home while the battlefield is focused.
-- Use smooth image rendering for illustrated terrain, building and unit sprites; keep pixelated
-  rendering for the selection marker. SVG scales the
+- Use smooth image rendering for illustrated terrain, building and unit sprites. SVG scales the
   board to the camera width and handles selection events directly in Elm.
 - Use highly detailed 1980s anime OVA terrain with fine ink contours, richly
   layered painted shading, botanical detail and textured rock faces within
@@ -114,8 +113,8 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   infantry, tanks, trucks and field guns fit within 232 x 232px bounds in 256px
   cells, preserving each master’s aspect ratio. Keep side-profile vehicles, a substantial tank turret and thick barrel,
   and tall truck cab/canopy so their bulk reads as clearly as the infantry.
-- Render terrain below depots and units, with the original gold corner-marker sprite for the selected
-  tile. The red side starts west and the blue side east. Show side names and
+- Render terrain below depots and units, with a thin, muted gold square inset inside the selected
+  tile. Keep its entire stroke within that cell, without a fill or animation. The red side starts west and the blue side east. Show side names and
   selected-unit details so color is not the only identifier.
 - Units and depots support keyboard focus and Enter/Space activation. Illustrated
   units face right; eastern units are mirrored. Use four-frame rigid-part idle

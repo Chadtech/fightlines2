@@ -6,8 +6,8 @@ import Html.Styled.Attributes as A
 import Style as S
 
 
-toHtml : Html msg -> Html msg -> Html msg
-toHtml selection controls =
+toHtml : List (Html msg) -> Html msg
+toHtml children =
     H.aside
         [ A.attribute "aria-label" "game panel"
         , A.css
@@ -24,6 +24,4 @@ toHtml selection controls =
             , Css.property "width" "min(18rem, 45vw)"
             ]
         ]
-        [ selection
-        , controls
-        ]
+        children

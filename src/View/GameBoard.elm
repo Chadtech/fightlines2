@@ -11,6 +11,8 @@ import Api.Enum.UnitKind as UnitKind
         ( UnitKind
         )
 import Coordinate exposing (Coordinate)
+import Css
+import Css.Global
 import Depot exposing (Depot)
 import GameBoard exposing (GameBoard)
 import Html.Attributes as HA
@@ -128,7 +130,7 @@ toHtml toMsg config model =
                     [ SA.width "16"
                     , SA.height "16"
                     , SA.fill "transparent"
-                    , SA.stroke "#082208"
+                    , SA.stroke S.nightwood2Str
                     , SA.strokeOpacity "0.22"
                     , SA.strokeWidth "0.25"
                     , mouseActivate (TileMouseClicked position) (TileClicked position)
@@ -251,16 +253,44 @@ toHtml toMsg config model =
                     ++ List.map terrainView positions
                 )
 
+        selectionMarker : Coordinate -> Svg Msg
+        selectionMarker position =
+            at position
+                [ Svg.rect
+                    [ SA.x "0.75"
+                    , SA.y "0.75"
+                    , SA.width "14.5"
+                    , SA.height "14.5"
+                    , SA.fill "none"
+                    , SA.stroke S.yellow5Str
+                    , SA.strokeOpacity "0.8"
+                    , SA.strokeWidth "0.5"
+                    , SA.pointerEvents "none"
+                    , HA.attribute "aria-hidden" "true"
+                    ]
+                    []
+                ]
+
         selection : List (Svg Msg)
         selection =
             config.selected
-                |> Maybe.map (\position -> at position [ Svg.g [ HA.style "image-rendering" "pixelated" ] [ Sprite.toSvg { path = "/assets/misc_sheet.png", sheetWidth = 16, sheetHeight = 464, column = 0, row = 2 } ] ])
+                |> Maybe.map selectionMarker
                 |> Maybe.map List.singleton
                 |> Maybe.withDefault []
     in
     H.div
         [ A.css
             [ S.wFull
+            , Css.Global.descendants
+                [ Css.Global.selector "rect[role=button]"
+                    [ Css.outline Css.none
+                    , Css.pseudoClass "focus-visible"
+                        [ Css.property "outline" ("0.5px solid " ++ S.yellow5Str)
+                        , Css.property "outline-offset" "-1px"
+                        , Css.property "border-radius" "0"
+                        ]
+                    ]
+                ]
             ]
         ]
         [ Svg.svg
