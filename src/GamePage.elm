@@ -3,6 +3,7 @@ module GamePage exposing
     , Model
     , Msg
     , init
+    , keyCommands
     , load
     , loadFailedView
     , setShared
@@ -50,6 +51,7 @@ import Html.Styled as H
         )
 import Html.Styled.Attributes as A
 import Json.Decode as Decode
+import KeyCmd
 import LobbyId
     exposing
         ( LobbyId
@@ -154,6 +156,7 @@ type Msg
     | ClearMoveClicked
     | InspectClicked
     | RestartPathClicked
+    | EscapePressed
 
 
 
@@ -259,17 +262,25 @@ update msg model =
             )
 
         InspectClicked ->
-            ( { model
-                | selected = Nothing
-                , moveOptions = []
-                , pathPreview = Nothing
-                , movementStatus = NoMovementStatus
-              }
-            , E.none
-            )
+            clearSelection model
+
+        EscapePressed ->
+            clearSelection model
 
         AnimationTimerElapsed _ ->
             ( { model | frame = AnimationFrame.next model.frame }, E.none )
+
+
+clearSelection : Model -> ( Model, Eff Msg )
+clearSelection model =
+    ( { model
+        | selected = Nothing
+        , moveOptions = []
+        , pathPreview = Nothing
+        , movementStatus = NoMovementStatus
+      }
+    , E.none
+    )
 
 
 subscriptions : Model -> Sub Msg
@@ -284,6 +295,11 @@ subscriptions model =
 ----------------------------------------------------------------
 -- API --
 ----------------------------------------------------------------
+
+
+keyCommands : Model -> KeyCmd.KeyCmd Msg
+keyCommands _ =
+    KeyCmd.escape EscapePressed
 
 
 setShared : Shared.Model -> Model -> Model
@@ -743,27 +759,31 @@ updateBoard boardMsg model =
                         ( model, E.none )
 
         Board.UnitClicked id ->
-            ( { model
-                | selected =
-                    model.board.units
-                        |> List.filter (\unit -> unit.id == id)
-                        |> List.head
-                        |> Maybe.map .position
-                , moveOptions =
-                    model.board.units
-                        |> List.filter (\unit -> unit.id == id && isOwnUnit model unit)
-                        |> List.head
-                        |> Maybe.map (Movement.options model.movementRules model.board)
-                        |> Maybe.withDefault []
-                , pathPreview =
-                    model.board.units
-                        |> List.filter (\unit -> unit.id == id && isOwnUnit model unit)
-                        |> List.head
-                        |> Maybe.map Movement.start
-                , movementStatus = NoMovementStatus
-              }
-            , E.none
-            )
+            if Maybe.map .id (selectedUnit model) == Just id then
+                update InspectClicked model
+
+            else
+                ( { model
+                    | selected =
+                        model.board.units
+                            |> List.filter (\unit -> unit.id == id)
+                            |> List.head
+                            |> Maybe.map .position
+                    , moveOptions =
+                        model.board.units
+                            |> List.filter (\unit -> unit.id == id && isOwnUnit model unit)
+                            |> List.head
+                            |> Maybe.map (\unit -> Movement.options (reservedDestinations unit model) model.movementRules model.board unit)
+                            |> Maybe.withDefault []
+                    , pathPreview =
+                        model.board.units
+                            |> List.filter (\unit -> unit.id == id && isOwnUnit model unit)
+                            |> List.head
+                            |> Maybe.map Movement.start
+                    , movementStatus = NoMovementStatus
+                  }
+                , E.none
+                )
 
         Board.TileClicked position ->
             case selectedUnit model of
@@ -772,7 +792,7 @@ updateBoard boardMsg model =
                         let
                             destinationOption : Movement.Option -> Maybe Movement.Option
                             destinationOption preview =
-                                if Movement.canStop model.board preview then
+                                if Movement.canStop (reservedDestinations unit model) model.board preview then
                                     Just preview
 
                                 else
@@ -829,3 +849,10 @@ traceTo position model =
     in
     selectedUnit model
         |> Maybe.andThen previewForUnit
+
+
+reservedDestinations : Unit.Unit -> Model -> List Coordinate.Coordinate
+reservedDestinations unit model =
+    model.plannedMoves
+        |> List.filter (\plan -> plan.unitId /= unit.id)
+        |> List.map (.move >> .destination)

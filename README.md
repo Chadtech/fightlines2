@@ -52,6 +52,8 @@ tanks, and supply trucks use four-frame rigid-part idle loops in light sky blue
 and warm orange-red, with staggered phases and fixed part shapes. Field guns use four independently drawn howitzer elevation frames, with the
 operator bending naturally at the rear controls and the carriage staying planted. Supply depots are separate concrete buildings with rounded roofs,
 neutral material colors and no team-colored outlines.
+Click the selected unit again to deselect it while keeping its saved move.
+Press Escape to clear the current selection and path preview while keeping saved moves.
 Select one of your units to highlight reachable squares, then click a highlighted
 square to save a move. Hover across squares to preview your exact route; retrace
 the line to shorten it. Skipped squares connect from the current path tip within
@@ -62,7 +64,9 @@ Use **restart path** to trace a different route or
 Use **inspect tiles** to leave movement selection. Paths remain visible when
 switching units. Plans are local drafts and disappear on refresh; units do not
 move yet. Units can travel through allied units; enemies block travel, and occupied
-squares cannot be destinations. Depots are passable.
+squares cannot be destinations. A saved move reserves its destination so other
+units cannot choose it; changing or clearing the move frees that square. Routes
+can pass through reserved destinations. Depots are passable.
 No submitted orders or resource quantities exist yet.
 
 New players cannot join after a game starts. All lobbies and games disappear

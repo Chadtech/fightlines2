@@ -192,7 +192,7 @@ mod tests {
                     assert!(body["errors"].is_null(), "{body}");
                     let game = &body["data"]["game"];
                     assert_eq!(game["movementRules"].as_array().unwrap().len(), 4);
-                    assert_eq!(game["movementRules"][0]["budget"], 8);
+                    assert_eq!(game["movementRules"][0]["budget"], 4);
                     assert_eq!(game["name"], "Test game");
                     assert_eq!(game["players"][0]["side"], "WEST");
                     assert_eq!(game["players"][0]["isYou"], true);

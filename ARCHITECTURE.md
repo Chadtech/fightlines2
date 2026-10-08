@@ -64,7 +64,9 @@ The fixture resets on restart and does not consume the normal token seed.
 `Page` in `Main` is the top-level state, starting at `Blank` before handling
 the initial route. Every page carries shared state, with feature pages storing
 it in their own models. `Main` handles URL navigation through `handleRoute`
-and page dispatch. `Route` parses typed lobby/game routes, `Shared` owns
+and page dispatch. `Main.init` returns an effect and handles the initial route
+directly after decoding flags; the `Browser.application` boundary converts
+effects to commands. `Route` parses typed lobby/game routes, `Shared` owns
 navigation, and `Effect` translates page effects into commands.
 
 `NewLobby`, `JoinLobby`, `LobbyPage`, `LobbyLoadFailed`, and `GamePage` own their page state and views.
@@ -169,6 +171,15 @@ center, and reset restores the initial centered view. Camera changes never alter
 authoritative board coordinates or the selected tile.
 `Main` maps its messages with the originating lobby ID and subscribes only while
 the game page is active. A 400ms Elm timer cycles the four unit sprite frames.
+JavaScript passes the browser platform through the main app's flags. `Main`
+decodes it into `OperatingSystem` and stores it in `Shared.Model`, using `Unknown`
+for unrecognized platform strings. Missing or malformed flags instead open an
+`AppInitError` page with decoder details in a read-only textarea; it has no shared
+state, subscriptions, or route handling. Pages expose keyboard commands through
+`keyCommands`; `Main` maps active-page messages and passes the shared operating
+system to `KeyCmd.subscriptions`. Command shortcuts use Meta on macOS/iOS and
+Control elsewhere. `GamePage` offers Escape to clear selection, reachable
+squares, and the live path preview while preserving saved move drafts.
 `View.GameBoard` renders raster sprite-sheet cells in nested SVG viewports;
 terrain, depots, units, and an inset SVG selection square are separate layers. Eastern
 units are mirrored to face west. SVG events send typed unit IDs and coordinates
@@ -235,7 +246,7 @@ requirements.
 
 `movement.rs` owns the movement table exposed as `GameSnapshot.movementRules`.
 Budgets and terrain entry costs use integer half-points (2 means one displayed
-point). Infantry has budget 4 with grass/hills/forest costs 1/1.5/2; tanks have
+point). Infantry has budget 2 with grass/hills/forest costs 1/1.5/2; tanks have
 budget 6 with costs 1/2/3; trucks have budget 7 with costs 1/3/4. Field guns have
 budget 1 and cost 1 on every current terrain, allowing exactly one adjacent
 square. Future impassable terrain can omit its cost entry.
@@ -250,8 +261,11 @@ earlier path cells blocked. Revisiting a path square trims the tail and refunds
 its cost. If an extension fails, the preview falls back to a cheapest affordable route
 from the unit; unreachable squares leave it intact. Clicking saves the preview
 route and ends hover editing until the unit is selected again or its path is
-restarted or cleared. Panning does not trace paths. Drafts do not reserve
-destinations or change occupancy. Reachable tiles and planned paths render in
+restarted or cleared. Panning does not trace paths. Saved drafts reserve their
+destinations for that unit; other units cannot choose those squares, but can
+travel through them. Replacing or clearing a draft releases
+its old destination. The selected unit’s own draft does not restrict its choices.
+Drafts do not change occupancy. Reachable tiles and planned paths render in
 `View.GameBoard`, with keyboard activation for reachable destinations.
 Drafts disappear on reload; submission and simultaneous resolution are future
 work. The server must validate orders against its rules when submission is added.

@@ -4,6 +4,7 @@ module Shared exposing
     )
 
 import Browser.Navigation as Navigation
+import OperatingSystem exposing (OperatingSystem)
 import Url
     exposing
         ( Url
@@ -16,12 +17,14 @@ used to turn lobby paths into complete invite URLs.
 type alias Model =
     { key : Navigation.Key
     , origin : String
+    , operatingSystem : OperatingSystem
     }
 
 
-init : Url -> Navigation.Key -> Model
-init url key =
+init : OperatingSystem -> Url -> Navigation.Key -> Model
+init operatingSystem url key =
     { key = key
+    , operatingSystem = operatingSystem
     , origin =
         Url.toString
             { url

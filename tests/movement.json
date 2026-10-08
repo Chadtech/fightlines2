@@ -2,7 +2,7 @@
   "rules": [
     {
       "kind": "INFANTRY",
-      "budget": 8,
+      "budget": 4,
       "terrainCosts": [
         {
           "terrain": "GRASS_PLAIN",
@@ -88,11 +88,6 @@
           1,
           0,
           3
-        ],
-        [
-          2,
-          0,
-          7
         ]
       ],
       "allies": []
@@ -358,6 +353,70 @@
           2,
           0,
           4
+        ]
+      ]
+    },
+    {
+      "name": "infantry two grass squares only",
+      "kind": "INFANTRY",
+      "sketch": ".....",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "allies": [],
+      "expected": [
+        [
+          1,
+          0,
+          2
+        ],
+        [
+          2,
+          0,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "infantry one forest square only",
+      "kind": "INFANTRY",
+      "sketch": ".##",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "allies": [],
+      "expected": [
+        [
+          1,
+          0,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "truck seven grass squares",
+      "kind": "SUPPLY_TRUCK",
+      "sketch": ".........",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "allies": [],
+      "expected": [
+        [
+          1,
+          0,
+          2
+        ],
+        [
+          2,
+          0,
+          4
         ],
         [
           3,
@@ -368,6 +427,21 @@
           4,
           0,
           8
+        ],
+        [
+          5,
+          0,
+          10
+        ],
+        [
+          6,
+          0,
+          12
+        ],
+        [
+          7,
+          0,
+          14
         ]
       ]
     }

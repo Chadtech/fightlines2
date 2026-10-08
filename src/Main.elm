@@ -4,6 +4,7 @@ import ApiRequest
     exposing
         ( Response
         )
+import AppInitError
 import Browser
 import Browser.Navigation as Navigation
 import Css.Global
@@ -19,6 +20,8 @@ import Html.Styled as H
         )
 import Html.Styled.Attributes as A
 import JoinLobby
+import Json.Decode as Decode
+import KeyCmd
 import LobbyId
     exposing
         ( LobbyId
@@ -26,6 +29,7 @@ import LobbyId
 import LobbyLoadFailed
 import LobbyPage
 import NewLobby
+import OperatingSystem exposing (OperatingSystem)
 import Ports.Js.From as FromJs
 import Route
     exposing
@@ -33,7 +37,6 @@ import Route
         )
 import Shared
 import Style as S
-import Task
 import Url
     exposing
         ( Url
@@ -50,7 +53,8 @@ import View.Dropdown as Dropdown
 
 
 type Page
-    = Blank Shared.Model
+    = AppInitError Decode.Error
+    | StartingApp Shared.Model
     | NewLobby NewLobby.Model
     | LoadingLobby Shared.Model LobbyId
     | LobbyLoadFailed LobbyId LobbyLoadFailed.Model
@@ -60,6 +64,11 @@ type Page
     | GameLoadFailed Shared.Model LobbyId (Graphql.Http.Error GamePage.Flags)
     | Game LobbyId GamePage.Model
     | NotFound Shared.Model
+
+
+type alias Flags =
+    { operatingSystem : OperatingSystem
+    }
 
 
 type Msg
@@ -83,17 +92,25 @@ type Msg
 ----------------------------------------------------------------
 
 
-main : Program () Page Msg
+main : Program Decode.Value Page Msg
 main =
     Browser.application
-        { init = init
+        { init =
+            \value url key ->
+                init value url key
+                    |> Tuple.mapSecond (E.toCmd key)
         , update =
             \msg page ->
                 let
                     ( newPage, eff ) =
                         update msg page
                 in
-                ( newPage, E.toCmd (getShared newPage).key eff )
+                case getShared newPage of
+                    Just shared ->
+                        ( newPage, E.toCmd shared.key eff )
+
+                    Nothing ->
+                        ( newPage, Cmd.none )
         , view = view
         , subscriptions = subscriptions
         , onUrlRequest = LinkClicked
@@ -107,11 +124,28 @@ main =
 ----------------------------------------------------------------
 
 
-init : () -> Url -> Navigation.Key -> ( Page, Cmd Msg )
-init _ url key =
-    ( Blank (Shared.init url key)
-    , Task.perform RouteReceived (Task.succeed (Route.fromUrl url))
-    )
+init : Decode.Value -> Url -> Navigation.Key -> ( Page, Eff Msg )
+init value url key =
+    case Decode.decodeValue flagsDecoder value of
+        Ok flags ->
+            let
+                shared : Shared.Model
+                shared =
+                    Shared.init flags.operatingSystem url key
+            in
+            handleRoute
+                shared
+                (Route.fromUrl url)
+                (StartingApp shared)
+
+        Err error ->
+            ( AppInitError error, E.none )
+
+
+flagsDecoder : Decode.Decoder Flags
+flagsDecoder =
+    Decode.map Flags
+        (Decode.field "operatingSystem" OperatingSystem.decoder)
 
 
 
@@ -120,45 +154,51 @@ init _ url key =
 ----------------------------------------------------------------
 
 
-getShared : Page -> Shared.Model
+getShared : Page -> Maybe Shared.Model
 getShared page =
     case page of
-        Blank shared ->
-            shared
+        AppInitError _ ->
+            Nothing
+
+        StartingApp shared ->
+            Just shared
 
         NewLobby model ->
-            model.shared
+            Just model.shared
 
         LoadingLobby shared _ ->
-            shared
+            Just shared
 
         LobbyLoadFailed _ model ->
-            model.shared
+            Just model.shared
 
         JoinLobby _ model ->
-            model.shared
+            Just model.shared
 
         Lobby _ model ->
-            model.shared
+            Just model.shared
 
         LoadingGame shared _ ->
-            shared
+            Just shared
 
         GameLoadFailed shared _ _ ->
-            shared
+            Just shared
 
         Game _ model ->
-            model.shared
+            Just model.shared
 
         NotFound shared ->
-            shared
+            Just shared
 
 
 setShared : Shared.Model -> Page -> Page
 setShared shared page =
     case page of
-        Blank _ ->
-            Blank shared
+        AppInitError _ ->
+            page
+
+        StartingApp _ ->
+            StartingApp shared
 
         NewLobby model ->
             NewLobby (NewLobby.setShared shared model)
@@ -190,7 +230,12 @@ setShared shared page =
 
 mapShared : (Shared.Model -> Shared.Model) -> Page -> Page
 mapShared transform page =
-    setShared (transform (getShared page)) page
+    case getShared page of
+        Just shared ->
+            setShared (transform shared) page
+
+        Nothing ->
+            page
 
 
 loadLobby : Shared.Model -> LobbyId -> ( Page, Eff Msg )
@@ -213,13 +258,8 @@ loadGame shared id =
 ----------------------------------------------------------------
 
 
-handleRoute : Maybe Route -> Page -> ( Page, Eff Msg )
-handleRoute route page =
-    let
-        shared : Shared.Model
-        shared =
-            getShared page
-    in
+handleRoute : Shared.Model -> Maybe Route -> Page -> ( Page, Eff Msg )
+handleRoute shared route page =
     case route of
         Just Route.NewLobby ->
             ( NewLobby (NewLobby.init shared), E.none )
@@ -258,7 +298,12 @@ update msg page =
                     ( page, E.load url )
 
         RouteReceived route ->
-            handleRoute route page
+            case getShared page of
+                Just shared ->
+                    handleRoute shared route page
+
+                Nothing ->
+                    page |> E.withOut
 
         NewLobbyMsg pageMsg ->
             case page of
@@ -404,7 +449,10 @@ shell page =
         content : List (Html Msg)
         content =
             case page of
-                Blank _ ->
+                AppInitError error ->
+                    AppInitError.view error
+
+                StartingApp _ ->
                     []
 
                 NewLobby model ->
@@ -486,6 +534,16 @@ shell page =
 
 subscriptions : Page -> Sub Msg
 subscriptions page =
+    case getShared page of
+        Just shared ->
+            pageSubscriptions shared page
+
+        Nothing ->
+            Sub.none
+
+
+pageSubscriptions : Shared.Model -> Page -> Sub Msg
+pageSubscriptions shared page =
     Sub.batch
         [ case page of
             Lobby id model ->
@@ -500,7 +558,18 @@ subscriptions page =
             { listeners = [ listeners page ]
             , onError = JsErrorReceived
             }
+        , KeyCmd.subscriptions shared.operatingSystem [ keyCommands page ]
         ]
+
+
+keyCommands : Page -> KeyCmd.KeyCmd Msg
+keyCommands page =
+    case page of
+        Game id model ->
+            GamePage.keyCommands model |> KeyCmd.map (GameMsg id)
+
+        _ ->
+            KeyCmd.none
 
 
 listeners : Page -> FromJs.Listener Msg

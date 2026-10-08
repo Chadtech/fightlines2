@@ -1,4 +1,8 @@
-const app = Elm.Main.init();
+const app = Elm.Main.init({
+  flags: {
+    operatingSystem: navigator.userAgentData?.platform ?? navigator.userAgent,
+  },
+});
 
 function toElm(tag, payload) {
   app.ports.fromJs.send({ type: tag, payload });

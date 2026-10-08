@@ -100,7 +100,7 @@ check rules fixture =
 
                 options : List Movement.Option
                 options =
-                    Movement.options rules board unit
+                    Movement.options [] rules board unit
 
                 actual : List (List Int)
                 actual =
@@ -173,7 +173,6 @@ traceChecks rules =
                     Just (Movement.start unit)
                         |> Maybe.andThen (\path -> Movement.trace rules board unit path down)
                         |> Maybe.andThen (\path -> Movement.trace rules board unit path right)
-                        |> Maybe.andThen (\path -> Movement.trace rules board unit path up)
 
                 traceFrom : Coordinate -> Maybe Movement.Option
                 traceFrom destination =
@@ -189,28 +188,28 @@ traceChecks rules =
             in
             List.concat
                 [ test "trace preserves a deliberate detour"
-                    (Maybe.map .path traced == Just [ origin, down, right, up ] && Maybe.map .cost traced == Just 6)
+                    (Maybe.map .path traced == Just [ origin, down, right ] && Maybe.map .cost traced == Just 4)
                 , test "backtracking trims and refunds terrain costs"
                     (traceFrom down |> Maybe.map (\path -> path.path == [ origin, down ] && path.cost == 2) |> Maybe.withDefault False)
                 , test "hovering the tip leaves the path unchanged"
-                    (traceFrom up == traced)
+                    (traceFrom right == traced)
                 , test "returning to origin resets the path"
                     (traceFrom origin == Just (Movement.start unit))
                 , test "over-budget extension is rejected without rerouting"
                     (traceFrom { x = 3, y = 0 } == Nothing)
                 , test "preview reroutes an over-budget detour to an affordable destination"
                     (traced
-                        |> Maybe.andThen (\path -> Movement.preview rules board unit path { x = 3, y = 0 })
-                        |> Maybe.map (\path -> path.cost == 6 && path.path == [ origin, up, { x = 2, y = 0 }, { x = 3, y = 0 } ])
+                        |> Maybe.andThen (\path -> Movement.preview rules board unit path up)
+                        |> Maybe.map (\path -> path.cost == 2 && path.path == [ origin, up ])
                         |> Maybe.withDefault False
                     )
                 , test "preview preserves the traced route when it fits"
-                    (traced |> Maybe.andThen (\path -> Movement.preview rules board unit path up) |> (==) traced)
+                    (traced |> Maybe.andThen (\path -> Movement.preview rules board unit path right) |> (==) traced)
                 , test "preview still rejects destinations beyond the full budget"
                     (traced |> Maybe.andThen (\path -> Movement.preview rules board unit path { x = 3, y = 3 }) |> (==) Nothing)
                 , test "skipped cells extend the existing prefix"
-                    (Movement.trace rules board unit (Movement.start unit) { x = 0, y = 3 }
-                        |> Maybe.map (\path -> path.path == [ origin, down, { x = 0, y = 2 }, { x = 0, y = 3 } ] && path.cost == 6)
+                    (Movement.trace rules board unit (Movement.start unit) { x = 0, y = 2 }
+                        |> Maybe.map (\path -> path.path == [ origin, down, { x = 0, y = 2 } ] && path.cost == 4)
                         |> Maybe.withDefault False
                     )
                 , test "enemy cells reject extension"
@@ -224,13 +223,13 @@ traceChecks rules =
                      Movement.trace rules alliedBoard unit (Movement.start unit) down
                         |> Maybe.andThen
                             (\path ->
-                                if Movement.canStop alliedBoard path then
+                                if Movement.canStop [] alliedBoard path then
                                     Nothing
 
                                 else
                                     Movement.trace rules alliedBoard unit path { x = 0, y = 2 }
                             )
-                        |> Maybe.map (\path -> path.path == [ origin, down, { x = 0, y = 2 } ] && path.cost == 4 && Movement.canStop alliedBoard path)
+                        |> Maybe.map (\path -> path.path == [ origin, down, { x = 0, y = 2 } ] && path.cost == 4 && Movement.canStop [] alliedBoard path)
                         |> Maybe.withDefault False
                     )
                 , test "fractional terrain cost is refunded on backtracking"
@@ -254,6 +253,62 @@ traceChecks rules =
                 ]
 
 
+reservationChecks : List Movement.Rule -> List String
+reservationChecks rules =
+    case UnitId.parse "1" of
+        Err error ->
+            [ error ]
+
+        Ok id ->
+            let
+                unit : Unit.Unit
+                unit =
+                    { id = id, kind = UnitKind.Infantry, position = { x = 0, y = 0 }, side = Side.West }
+
+                board : GameBoard.GameBoard
+                board =
+                    { map = { width = 3, height = 1, baseTile = Terrain.GrassPlain, features = [] }
+                    , units = [ unit ]
+                    , depots = []
+                    }
+
+                reserved : Coordinate
+                reserved =
+                    { x = 1, y = 0 }
+
+                beyond : Coordinate
+                beyond =
+                    { x = 2, y = 0 }
+
+                options : List Movement.Option
+                options =
+                    Movement.options [ reserved ] rules board unit
+
+                test : String -> Bool -> List String
+                test name passed =
+                    if passed then
+                        []
+
+                    else
+                        [ name ]
+            in
+            List.concat
+                [ test "reserved destinations are excluded from movement choices"
+                    (not (List.any (\option -> option.destination == reserved) options))
+                , test "reserved destinations reject saving a traced route"
+                    (Movement.trace rules board unit (Movement.start unit) reserved
+                        |> Maybe.map (Movement.canStop [ reserved ] board >> not)
+                        |> Maybe.withDefault False
+                    )
+                , test "routes can pass through reserved destinations"
+                    (List.any (\option -> option.destination == beyond && option.path == [ unit.position, reserved, beyond ]) options)
+                , test "releasing a reservation restores its movement choice"
+                    (Movement.options [] rules board unit
+                        |> List.any (\option -> option.destination == reserved)
+                    )
+                ]
+
+
 main : Program D.Value () Never
 main =
     Platform.worker
@@ -266,7 +321,7 @@ main =
                             [ D.errorToString error ]
 
                         Ok ( rules, cases ) ->
-                            List.concatMap (check rules) cases ++ traceChecks rules
+                            List.concatMap (check rules) cases ++ traceChecks rules ++ reservationChecks rules
                     )
                 )
         , update = \msg model -> never msg

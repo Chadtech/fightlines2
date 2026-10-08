@@ -61,6 +61,7 @@ toHtml textarea =
                 , S.textGray4
                 ]
             , Attr.value textarea.value
+            , Attr.readonly (textarea.onInput == Nothing)
             ]
 
         conditionalAttrs : List (Attribute msg)

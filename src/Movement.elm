@@ -22,7 +22,7 @@ import Unit exposing (Unit)
 
 {-| The cost to enter a terrain square, as supplied by Rust's movement rules.
 A movement point is a unit of the unit's travel budget: entering a square spends
-that terrain's cost. For example, infantry has a budget of 4 movement points;
+that terrain's cost. For example, infantry has a budget of 2 movement points;
 grass costs 1, hills 1.5, and forest 2.
 
 The integers store twice the displayed value so half-point costs stay exact:
@@ -60,10 +60,10 @@ pointsLabel points =
            )
 
 
-options : List Rule -> GameBoard -> Unit -> List Option
-options rules board unit =
+options : List Coordinate -> List Rule -> GameBoard -> Unit -> List Option
+options reserved rules board unit =
     optionsAvoiding [] rules board unit
-        |> List.filter (canStop board)
+        |> List.filter (canStop reserved board)
 
 
 optionsAvoiding : List Coordinate -> List Rule -> GameBoard -> Unit -> List Option
@@ -265,9 +265,12 @@ takeThrough destination path =
                 position :: takeThrough destination rest
 
 
-canStop : GameBoard -> Option -> Bool
-canStop board option =
-    option.cost > 0 && not (List.any (\unit -> unit.position == option.destination) board.units)
+canStop : List Coordinate -> GameBoard -> Option -> Bool
+canStop reserved board option =
+    option.cost
+        > 0
+        && not (List.member option.destination reserved)
+        && not (List.any (\unit -> unit.position == option.destination) board.units)
 
 
 preview : List Rule -> GameBoard -> Unit -> Option -> Coordinate -> Maybe Option
