@@ -23,7 +23,7 @@ prototype; do not update it unless the task explicitly requires that.
 - Use `elm-format`. Write multiline exposing lists, imports with exposing lists,
   record definitions, and record updates with one entry per line, following the
   existing layout. A single exported entry may remain inline.
-- Give top-level functions type annotations.
+- Give top-level functions and named local helpers type annotations.
 - Use the established aliases: `Html.Styled as H`, attributes as `A`, events as
   `Ev`, `Style as S`, and `Effect as E`.
 - Keep functions qualified by their module. Expose specific types when useful;
@@ -95,6 +95,9 @@ prototype; do not update it unless the task explicitly requires that.
   composition in its page.
 - Page views return `List (Html Msg)`. Keep page load-failure views with the
   corresponding page module or a dedicated failure-page module.
+- Bind attribute and child lists to named local values before appending them.
+  Use named, typed helpers for substantial mapping functions and name compound
+  conditions so their intent is clear.
 - Split large views into meaningful sections. Use local `let` bindings for
   values and helpers needed by just one function, and named module helpers
   when they have a broader role.
@@ -117,7 +120,9 @@ prototype; do not update it unless the task explicitly requires that.
   absence or failure. Handle invalid requests explicitly; avoid adding panics
   for recoverable input or runtime failures.
 - Keep authoritative game rules in Rust and independent of HTTP. Elm owns
-  interaction and presentation; obtain rule-dependent previews from Rust.
+  interaction and presentation; receive rule values from Rust and calculate
+  previews locally in Elm. Validate
+  submitted orders again in Rust when order submission is implemented.
 - Make state transitions explicit. Starting a game consumes its lobby rather
   than maintaining independently mutable copies of the same roster.
 - Thread random state explicitly through deterministic operations. Retain the

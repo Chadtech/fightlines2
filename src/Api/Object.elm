@@ -25,6 +25,10 @@ type Map
     = Map
 
 
+type MovementRule
+    = MovementRule
+
+
 type PlayerView
     = PlayerView
 
@@ -39,6 +43,10 @@ type Snapshot
 
 type TerrainFeature
     = TerrainFeature
+
+
+type TerrainMovementCost
+    = TerrainMovementCost
 
 
 type Unit

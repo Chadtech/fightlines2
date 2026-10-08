@@ -116,6 +116,17 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
 - Render terrain below depots and units, with a thin, muted gold square inset inside the selected
   tile. Keep its entire stroke within that cell, without a fill or animation. The red side starts west and the blue side east. Show side names and
   selected-unit details so color is not the only identifier.
+- Selecting your own unit highlights reachable squares with inset gold outlines
+  and a faint fill. Planned routes use dashed gold lines and a destination dot.
+  A solid gold line previews the hovered route before saving; preserve traced
+  squares, trim on backtracking, and connect gaps from the path tip. If the trace
+  cannot reach a square within budget, fall back to an affordable route from the
+  unit. Saving ends hover editing and hides reachable-square highlights;
+  restarting restores both.
+  Keep the selected unit active while choosing or replacing a destination. Show
+  movement budget, preview cost, planned destination/cost, restart and clear
+  controls, and local-draft status
+  in the right panel. Reachable tiles support Tab and Enter/Space.
 - Units and depots support keyboard focus and Enter/Space activation. Illustrated
   units face right; eastern units are mirrored. Use four-frame rigid-part idle
   loops: infantry crouches through bending knees with small head adjustments,

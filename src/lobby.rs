@@ -148,6 +148,7 @@ pub struct GameSnapshot {
     is_member: bool,
     game_url: Option<String>,
     scenario: Scenario,
+    movement_rules: Vec<crate::movement::MovementRule>,
 }
 
 /// Public roster entry; `is_you` compares the player with the requesting session.
@@ -246,6 +247,7 @@ fn game_view(game: &Game, session: &SessionToken) -> GameSnapshot {
         is_member: true,
         game_url: Some(format!("/game/{}", game.source_lobby)),
         scenario: game.scenario.clone(),
+        movement_rules: crate::movement::rules(),
     }
 }
 

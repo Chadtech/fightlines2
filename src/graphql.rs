@@ -160,7 +160,7 @@ mod tests {
 
     #[actix_web::test]
     async fn development_game_is_opt_in_and_does_not_replace_identity() {
-        let query = "{ game(id: \"00000000000000000000000000000000\") { id name isHost players { side isYou } scenario { units { id } depots { owner } } } }";
+        let query = "{ game(id: \"00000000000000000000000000000000\") { id name isHost players { side isYou } movementRules { kind budget terrainCosts { terrain cost } } scenario { units { id } depots { owner } } } }";
         for development in [false, true] {
             let seed = crate::seed::Seed::new([7; 32]);
             let store = if development {
@@ -191,6 +191,8 @@ mod tests {
                 if development {
                     assert!(body["errors"].is_null(), "{body}");
                     let game = &body["data"]["game"];
+                    assert_eq!(game["movementRules"].as_array().unwrap().len(), 4);
+                    assert_eq!(game["movementRules"][0]["budget"], 8);
                     assert_eq!(game["name"], "Test game");
                     assert_eq!(game["players"][0]["side"], "WEST");
                     assert_eq!(game["players"][0]["isYou"], true);
@@ -403,7 +405,7 @@ mod tests {
         assert_eq!(scenario["map"]["width"], 17);
         assert_eq!(scenario["map"]["height"], 17);
         assert_eq!(scenario["map"]["baseTile"], "GRASS_PLAIN");
-        assert_eq!(scenario["map"]["features"].as_array().unwrap().len(), 106);
+        assert_eq!(scenario["map"]["features"].as_array().unwrap().len(), 102);
         assert_eq!(scenario["depots"].as_array().unwrap().len(), 3);
         assert_eq!(scenario["units"].as_array().unwrap().len(), 16);
         assert_eq!(member["data"]["game"]["players"][0]["side"], "WEST");

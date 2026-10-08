@@ -26,8 +26,10 @@ import Api.Object.Depot as DepotApi
 import Api.Object.GamePlayerView as PlayerView
 import Api.Object.GameSnapshot as Snapshot
 import Api.Object.Map as MapApi
+import Api.Object.MovementRule as MovementRuleApi
 import Api.Object.Scenario as Scenario
 import Api.Object.TerrainFeature as FeatureApi
+import Api.Object.TerrainMovementCost as MovementCostApi
 import Api.Object.Unit as UnitApi
 import Api.Query
 import ApiRequest
@@ -53,6 +55,7 @@ import LobbyId
         ( LobbyId
         )
 import Map
+import Movement
 import Point exposing (Point)
 import Route
 import Shared
@@ -80,6 +83,7 @@ type alias Flags =
     , mapType : MapType
     , players : List Player
     , board : GameBoard.GameBoard
+    , movementRules : List Movement.Rule
     }
 
 
@@ -96,6 +100,11 @@ type alias Model =
     , mapType : MapType
     , players : List Player
     , board : GameBoard.GameBoard
+    , movementRules : List Movement.Rule
+    , pathPreview : Maybe Movement.Option
+    , moveOptions : List Movement.Option
+    , plannedMoves : List PlannedMove
+    , movementStatus : MovementStatus
     , selected : Maybe Coordinate.Coordinate
     , offset : Point
     , zoom : Float
@@ -105,10 +114,46 @@ type alias Model =
     }
 
 
+type MovementStatus
+    = NoMovementStatus
+    | PlannedMoveCleared
+    | PathRestarted
+    | MovePlanned
+    | DestinationUnavailable
+
+
+movementStatusText : MovementStatus -> String
+movementStatusText status =
+    case status of
+        NoMovementStatus ->
+            ""
+
+        PlannedMoveCleared ->
+            "planned move cleared."
+
+        PathRestarted ->
+            "trace a new path from the unit."
+
+        MovePlanned ->
+            "move planned."
+
+        DestinationUnavailable ->
+            "that square cannot be a destination within this unit’s movement budget."
+
+
+type alias PlannedMove =
+    { unitId : UnitId.UnitId
+    , move : Movement.Option
+    }
+
+
 type Msg
     = BoardMsg Board.Msg
     | ViewportMsg Viewport.Msg
     | AnimationTimerElapsed Time.Posix
+    | ClearMoveClicked
+    | InspectClicked
+    | RestartPathClicked
 
 
 
@@ -124,6 +169,11 @@ init shared flags =
     , mapType = flags.mapType
     , players = flags.players
     , board = flags.board
+    , movementRules = flags.movementRules
+    , pathPreview = Nothing
+    , moveOptions = []
+    , plannedMoves = []
+    , movementStatus = NoMovementStatus
     , selected = Nothing
     , offset = { x = 0, y = 0 }
     , zoom = 1
@@ -138,11 +188,18 @@ load id =
     let
         selection : SelectionSet Flags Api.Object.GameSnapshot
         selection =
-            SS.map4 Flags
+            SS.map5 Flags
                 Snapshot.name
                 Snapshot.mapType
                 (Snapshot.players (SS.map3 Player PlayerView.name PlayerView.side PlayerView.isYou))
                 (Snapshot.scenario boardSelection)
+                (Snapshot.movementRules
+                    (SS.map3 Movement.Rule
+                        MovementRuleApi.kind
+                        MovementRuleApi.budget
+                        (MovementRuleApi.terrainCosts (SS.map2 Movement.TerrainCost MovementCostApi.terrain MovementCostApi.cost))
+                    )
+                )
     in
     Api.Query.game { id = LobbyId.toString id } selection
         |> ApiRequest.queryRequest
@@ -183,6 +240,33 @@ update msg model =
 
         ViewportMsg viewportMsg ->
             ( updateViewport viewportMsg model, E.none )
+
+        ClearMoveClicked ->
+            ( { model
+                | plannedMoves = List.filter (\plan -> Just plan.unitId /= Maybe.map .id (selectedUnit model)) model.plannedMoves
+                , pathPreview = selectedUnit model |> Maybe.map Movement.start
+                , movementStatus = PlannedMoveCleared
+              }
+            , E.none
+            )
+
+        RestartPathClicked ->
+            ( { model
+                | pathPreview = selectedUnit model |> Maybe.map Movement.start
+                , movementStatus = PathRestarted
+              }
+            , E.none
+            )
+
+        InspectClicked ->
+            ( { model
+                | selected = Nothing
+                , moveOptions = []
+                , pathPreview = Nothing
+                , movementStatus = NoMovementStatus
+              }
+            , E.none
+            )
 
         AnimationTimerElapsed _ ->
             ( { model | frame = AnimationFrame.next model.frame }, E.none )
@@ -232,6 +316,14 @@ view model =
             (Board.toHtml BoardMsg
                 { frame = model.frame
                 , selected = model.selected
+                , reachable =
+                    if model.pathPreview == Nothing then
+                        []
+
+                    else
+                        List.map .destination model.moveOptions
+                , paths = List.map (.move >> .path) model.plannedMoves
+                , previewPath = model.pathPreview |> Maybe.map .path |> Maybe.withDefault []
                 }
                 model.board
             )
@@ -261,7 +353,131 @@ selectionView model =
             ]
             [ H.text (selectionText model)
             ]
+        , movementView model
         ]
+
+
+selectedUnit : Model -> Maybe Unit.Unit
+selectedUnit model =
+    model.board.units
+        |> List.filter (\unit -> Just unit.position == model.selected)
+        |> List.head
+
+
+isOwnUnit : Model -> Unit.Unit -> Bool
+isOwnUnit model unit =
+    List.any (\player -> player.isYou && player.side == unit.side) model.players
+
+
+movementView : Model -> Html Msg
+movementView model =
+    let
+        details : List (Html Msg)
+        details =
+            case selectedUnit model of
+                Just unit ->
+                    if isOwnUnit model unit then
+                        let
+                            budget : String
+                            budget =
+                                model.movementRules
+                                    |> List.filter (\rule -> rule.kind == unit.kind)
+                                    |> List.head
+                                    |> Maybe.map (.budget >> Movement.pointsLabel)
+                                    |> Maybe.withDefault "?"
+
+                            planned : Maybe PlannedMove
+                            planned =
+                                model.plannedMoves
+                                    |> List.filter (\plan -> plan.unitId == unit.id)
+                                    |> List.head
+
+                            pathDetails : List (Html Msg)
+                            pathDetails =
+                                [ H.p
+                                    []
+                                    [ H.text
+                                        ("movement budget: "
+                                            ++ budget
+                                            ++ (if model.pathPreview == Nothing then
+                                                    ". move saved."
+
+                                                else
+                                                    ". hover to trace a path; click to save it."
+                                               )
+                                        )
+                                    ]
+                                , H.p
+                                    []
+                                    [ H.text
+                                        (if model.pathPreview == Nothing then
+                                            "restart path to resume drawing, or click a new destination."
+
+                                         else
+                                            "retrace to shorten. if the route exceeds the budget, an affordable route is chosen."
+                                        )
+                                    ]
+                                , H.p
+                                    []
+                                    [ H.text
+                                        (model.pathPreview
+                                            |> Maybe.map (\preview -> "preview cost: " ++ Movement.pointsLabel preview.cost ++ "/" ++ budget)
+                                            |> Maybe.withDefault ""
+                                        )
+                                    ]
+                                , Button.secondary "restart path" RestartPathClicked
+                                    |> Button.toHtml
+                                ]
+
+                            plannedDetails : List (Html Msg)
+                            plannedDetails =
+                                case planned of
+                                    Nothing ->
+                                        []
+
+                                    Just plan ->
+                                        [ H.p
+                                            []
+                                            [ H.text ("planned destination: (" ++ String.fromInt plan.move.destination.x ++ ", " ++ String.fromInt plan.move.destination.y ++ ") · cost: " ++ Movement.pointsLabel plan.move.cost ++ "/" ++ budget)
+                                            ]
+                                        , Button.secondary "clear move" ClearMoveClicked
+                                            |> Button.toHtml
+                                        ]
+                        in
+                        pathDetails ++ plannedDetails
+
+                    else
+                        [ H.p
+                            []
+                            [ H.text "this unit belongs to the other player."
+                            ]
+                        ]
+
+                Nothing ->
+                    []
+
+        statusDetails : List (Html Msg)
+        statusDetails =
+            [ H.p
+                [ A.attribute "role" "status"
+                ]
+                [ H.text (movementStatusText model.movementStatus)
+                ]
+            , H.p
+                []
+                [ H.text (String.fromInt (List.length model.plannedMoves) ++ " planned moves · local drafts; refresh clears them.")
+                ]
+            , Button.secondary "inspect tiles" InspectClicked
+                |> Button.toHtml
+            ]
+    in
+    H.div
+        [ A.css
+            [ S.col
+            , S.g2
+            ]
+        ]
+        (details ++ statusDetails)
 
 
 viewControls : Model -> Html Msg
@@ -514,6 +730,18 @@ updateBoard boardMsg model =
             else
                 updateBoard (Board.TileClicked position) model
 
+        Board.TileHovered position ->
+            if model.drag /= Nothing || model.pathPreview == Nothing then
+                ( model, E.none )
+
+            else
+                case traceTo position model of
+                    Just preview ->
+                        ( { model | pathPreview = Just preview, movementStatus = NoMovementStatus }, E.none )
+
+                    Nothing ->
+                        ( model, E.none )
+
         Board.UnitClicked id ->
             ( { model
                 | selected =
@@ -521,9 +749,83 @@ updateBoard boardMsg model =
                         |> List.filter (\unit -> unit.id == id)
                         |> List.head
                         |> Maybe.map .position
+                , moveOptions =
+                    model.board.units
+                        |> List.filter (\unit -> unit.id == id && isOwnUnit model unit)
+                        |> List.head
+                        |> Maybe.map (Movement.options model.movementRules model.board)
+                        |> Maybe.withDefault []
+                , pathPreview =
+                    model.board.units
+                        |> List.filter (\unit -> unit.id == id && isOwnUnit model unit)
+                        |> List.head
+                        |> Maybe.map Movement.start
+                , movementStatus = NoMovementStatus
               }
             , E.none
             )
 
         Board.TileClicked position ->
-            ( { model | selected = Just position }, E.none )
+            case selectedUnit model of
+                Just unit ->
+                    if isOwnUnit model unit then
+                        let
+                            destinationOption : Movement.Option -> Maybe Movement.Option
+                            destinationOption preview =
+                                if Movement.canStop model.board preview then
+                                    Just preview
+
+                                else
+                                    Nothing
+                        in
+                        case traceTo position model |> Maybe.andThen destinationOption of
+                            Just move ->
+                                ( { model
+                                    | plannedMoves = { unitId = unit.id, move = move } :: List.filter (\plan -> plan.unitId /= unit.id) model.plannedMoves
+                                    , pathPreview = Nothing
+                                    , movementStatus = MovePlanned
+                                  }
+                                , E.none
+                                )
+
+                            Nothing ->
+                                ( { model | movementStatus = DestinationUnavailable }, E.none )
+
+                    else
+                        ( { model
+                            | selected = Just position
+                            , moveOptions = []
+                            , pathPreview = Nothing
+                            , movementStatus = NoMovementStatus
+                          }
+                        , E.none
+                        )
+
+                Nothing ->
+                    ( { model
+                        | selected = Just position
+                        , moveOptions = []
+                        , pathPreview = Nothing
+                        , movementStatus = NoMovementStatus
+                      }
+                    , E.none
+                    )
+
+
+traceTo : Coordinate.Coordinate -> Model -> Maybe Movement.Option
+traceTo position model =
+    let
+        previewForUnit : Unit.Unit -> Maybe Movement.Option
+        previewForUnit unit =
+            if isOwnUnit model unit then
+                Movement.preview model.movementRules
+                    model.board
+                    unit
+                    (model.pathPreview |> Maybe.withDefault (Movement.start unit))
+                    position
+
+            else
+                Nothing
+    in
+    selectedUnit model
+        |> Maybe.andThen previewForUnit

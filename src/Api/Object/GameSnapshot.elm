@@ -62,3 +62,10 @@ scenario :
     -> SelectionSet decodesTo Api.Object.GameSnapshot
 scenario object____ =
     Object.selectionForCompositeField "scenario" [] object____ Basics.identity
+
+
+movementRules :
+    SelectionSet decodesTo Api.Object.MovementRule
+    -> SelectionSet (List decodesTo) Api.Object.GameSnapshot
+movementRules object____ =
+    Object.selectionForCompositeField "movementRules" [] object____ (Basics.identity >> Decode.list)

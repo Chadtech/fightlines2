@@ -2,7 +2,8 @@
 
 FightLines uses an Elm frontend and an Actix Web Rust backend with Juniper for
 GraphQL. Rust owns authoritative state and game rules; Elm owns interaction and
-presentation. Rule-dependent move previews will come from the backend.
+presentation. Rust sends movement rules with each game snapshot; Elm computes
+movement previews locally.
 
 Rust and Elm source files share `src/`. `Cargo.toml` and `elm.json` live at the
 repository root, and frontend assets live in `public/`. The earlier prototype in
@@ -39,7 +40,7 @@ preserved; malformed rows and unknown symbols return explicit errors.
 SupplyPoint terrain is authored as an ASCII sketch in `scenario.rs`.
 `scenario.rs` owns the fixed SupplyPoint layout, separate supply-depot buildings with optional
 side ownership, and units with stable typed IDs, kinds, sides, and positions.
-Resource quantities, movement, combat, and victory resolution remain future work.
+Resource quantities, order submission, combat, and victory resolution remain future work.
 Starting requires exactly two players and initializes the scenario once before
 consuming the lobby. The host owns West and the second player East. Repeated
 start requests return the existing game. Joining is capped at two players,
@@ -229,6 +230,35 @@ its version. Updating the RNG dependency may change generated sequences.
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for seed configuration and hosting
 requirements.
+
+## Movement planning
+
+`movement.rs` owns the movement table exposed as `GameSnapshot.movementRules`.
+Budgets and terrain entry costs use integer half-points (2 means one displayed
+point). Infantry has budget 4 with grass/hills/forest costs 1/1.5/2; tanks have
+budget 6 with costs 1/2/3; trucks have budget 7 with costs 1/3/4. Field guns have
+budget 1 and cost 1 on every current terrain, allowing exactly one adjacent
+square. Future impassable terrain can omit its cost entry.
+
+`Movement.elm` calculates cheapest four-direction paths from those rules and
+the current board. Allied units allow passage, while enemy units block travel. Occupied unit
+squares cannot be destinations; depots do not block travel. `GamePage` caches options on selection and retains
+one editable local draft per unit owned by the viewer, plus a separate live path
+preview. Hovering extends that preview from its tip without replacing its prefix;
+mouse-event gaps use the cheapest connector within the remaining budget, with
+earlier path cells blocked. Revisiting a path square trims the tail and refunds
+its cost. If an extension fails, the preview falls back to a cheapest affordable route
+from the unit; unreachable squares leave it intact. Clicking saves the preview
+route and ends hover editing until the unit is selected again or its path is
+restarted or cleared. Panning does not trace paths. Drafts do not reserve
+destinations or change occupancy. Reachable tiles and planned paths render in
+`View.GameBoard`, with keyboard activation for reachable destinations.
+Drafts disappear on reload; submission and simultaneous resolution are future
+work. The server must validate orders against its rules when submission is added.
+
+`tests/movement.json` contains shared rule and reachability cases. `make check`
+checks the Rust rules against them and runs `MovementChecks.elm` in Node,
+including path adjacency, blocking, accumulated costs, and route tracing.
 
 ## Next milestone
 

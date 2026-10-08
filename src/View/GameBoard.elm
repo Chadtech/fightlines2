@@ -43,6 +43,7 @@ type Msg
     | TileClicked Coordinate
     | UnitMouseClicked UnitId
     | TileMouseClicked Coordinate
+    | TileHovered Coordinate
 
 
 at : Coordinate -> List (Svg msg) -> Svg msg
@@ -87,6 +88,9 @@ toHtml :
     (Msg -> msg)
     ->
         { frame : Frame
+        , reachable : List Coordinate
+        , paths : List (List Coordinate)
+        , previewPath : List Coordinate
         , selected : Maybe Coordinate
         }
     -> GameBoard
@@ -125,16 +129,34 @@ toHtml toMsg config model =
 
         tileTarget : Coordinate -> Svg Msg
         tileTarget position =
-            at position
-                [ Svg.rect
+            let
+                baseAttributes : List (Svg.Attribute Msg)
+                baseAttributes =
                     [ SA.width "16"
                     , SA.height "16"
                     , SA.fill "transparent"
                     , SA.stroke S.nightwood2Str
                     , SA.strokeOpacity "0.22"
                     , SA.strokeWidth "0.25"
+                    , Ev.onMouseOver (TileHovered position)
                     , mouseActivate (TileMouseClicked position) (TileClicked position)
                     ]
+
+                movementAttributes : List (Svg.Attribute Msg)
+                movementAttributes =
+                    if List.member position config.reachable then
+                        [ HA.attribute "tabindex" "0"
+                        , HA.attribute "role" "button"
+                        , HA.attribute "aria-label" ("move to (" ++ String.fromInt position.x ++ ", " ++ String.fromInt position.y ++ ")")
+                        , keyboardActivate (TileClicked position)
+                        ]
+
+                    else
+                        []
+            in
+            at position
+                [ Svg.rect
+                    (baseAttributes ++ movementAttributes)
                     []
                 ]
 
@@ -157,6 +179,7 @@ toHtml toMsg config model =
                     , HA.attribute "tabindex" "0"
                     , HA.attribute "role" "button"
                     , HA.attribute "aria-label" "supply depot"
+                    , Ev.onMouseOver (TileHovered depot.position)
                     , mouseActivate (TileMouseClicked depot.position) (TileClicked depot.position)
                     , keyboardActivate (TileClicked depot.position)
                     ]
@@ -216,6 +239,7 @@ toHtml toMsg config model =
                     , HA.attribute "tabindex" "0"
                     , HA.attribute "role" "button"
                     , HA.attribute "aria-label" (Unit.label unit)
+                    , Ev.onMouseOver (TileHovered unit.position)
                     , mouseActivate (UnitMouseClicked unit.id) (UnitClicked unit.id)
                     , keyboardActivate (UnitClicked unit.id)
                     ]
@@ -252,6 +276,109 @@ toHtml toMsg config model =
                     positions
                     ++ List.map terrainView positions
                 )
+
+        reachableTile : Coordinate -> Svg Msg
+        reachableTile position =
+            at position
+                [ Svg.rect
+                    [ SA.x "1"
+                    , SA.y "1"
+                    , SA.width "14"
+                    , SA.height "14"
+                    , SA.fill S.yellow5Str
+                    , SA.fillOpacity "0.12"
+                    , SA.stroke S.yellow5Str
+                    , SA.strokeOpacity "0.65"
+                    , SA.strokeWidth "0.5"
+                    ]
+                    []
+                ]
+
+        pathPoint : Coordinate -> String
+        pathPoint position =
+            String.fromInt (position.x * 16 + 8)
+                ++ ","
+                ++ String.fromInt (position.y * 16 + 8)
+
+        pathPoints : List Coordinate -> String
+        pathPoints path =
+            path
+                |> List.map pathPoint
+                |> String.join " "
+
+        destinationMarker : Coordinate -> Svg Msg
+        destinationMarker position =
+            at position
+                [ Svg.circle
+                    [ SA.cx "8"
+                    , SA.cy "8"
+                    , SA.r "2"
+                    , SA.fill S.yellow5Str
+                    ]
+                    []
+                ]
+
+        plannedPath : List Coordinate -> List (Svg Msg)
+        plannedPath path =
+            let
+                route : List (Svg Msg)
+                route =
+                    [ Svg.polyline
+                        [ SA.points (pathPoints path)
+                        , SA.fill "none"
+                        , SA.stroke S.yellow5Str
+                        , SA.strokeWidth "1.25"
+                        , SA.strokeDasharray "2 1"
+                        ]
+                        []
+                    ]
+
+                destination : List (Svg Msg)
+                destination =
+                    path
+                        |> List.reverse
+                        |> List.head
+                        |> Maybe.map destinationMarker
+                        |> Maybe.map List.singleton
+                        |> Maybe.withDefault []
+            in
+            route ++ destination
+
+        previewPath : List Coordinate -> List (Svg Msg)
+        previewPath path =
+            if List.length path > 1 then
+                [ Svg.polyline
+                    [ SA.points (pathPoints path)
+                    , SA.fill "none"
+                    , SA.stroke S.yellow5Str
+                    , SA.strokeWidth "1.5"
+                    ]
+                    []
+                ]
+
+            else
+                []
+
+        movementOverlay : Svg Msg
+        movementOverlay =
+            let
+                reachableTiles : List (Svg Msg)
+                reachableTiles =
+                    List.map reachableTile config.reachable
+
+                plannedPaths : List (Svg Msg)
+                plannedPaths =
+                    List.concatMap plannedPath config.paths
+
+                preview : List (Svg Msg)
+                preview =
+                    previewPath config.previewPath
+            in
+            Svg.g
+                [ SA.pointerEvents "none"
+                , HA.attribute "aria-hidden" "true"
+                ]
+                (reachableTiles ++ plannedPaths ++ preview)
 
         selectionMarker : Coordinate -> Svg Msg
         selectionMarker position =
@@ -299,7 +426,7 @@ toHtml toMsg config model =
             , HA.attribute "role" "group"
             , HA.attribute "aria-label" "supply point battlefield"
             ]
-            (terrain :: (List.map tileTarget positions ++ List.map depotView model.depots ++ List.map unitView model.units ++ selection))
+            (terrain :: movementOverlay :: (List.map tileTarget positions ++ List.map depotView model.depots ++ List.map unitView model.units ++ selection))
             |> H.fromUnstyled
         ]
         |> H.map toMsg

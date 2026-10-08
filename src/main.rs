@@ -4,6 +4,7 @@ mod lobby_id;
 mod lobby_name;
 mod map;
 mod map_type;
+mod movement;
 mod player_name;
 mod scenario;
 mod seed;

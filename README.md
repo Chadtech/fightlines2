@@ -4,7 +4,8 @@ A strategy game about supplies and logistics, built with Rust and Elm.
 
 The current prototype supports creating a lobby, joining through an invite link,
 and starting a game. The game page shows a free-floating animated SVG board with selectable units and depots.
-Movement, combat, resources, and persistent storage are not implemented yet.
+Local movement planning is available. Order submission, turn resolution, combat,
+resources, and persistent storage are not implemented yet.
 
 ## Run locally
 
@@ -34,7 +35,7 @@ join and lobby headers.
 
 The initial map type is **supply point**. Joined players see the selected map;
 only the host can change it before starting. The game retains that selection.
-The scenario is a 17 x 17 grass map with mirrored starting forces, 60 forest tiles, and 46 hill tiles,
+The scenario is a 17 x 17 grass map with mirrored starting forces, 60 forest tiles, and 42 hill tiles,
 three supply depots (one per side and a neutral depot at the exact center), and three infantry,
 one tank, two field guns, and two supply trucks per player. The host takes the red western side; the second
 player takes the blue eastern side. Click a unit or depot to inspect it; units
@@ -51,7 +52,18 @@ tanks, and supply trucks use four-frame rigid-part idle loops in light sky blue
 and warm orange-red, with staggered phases and fixed part shapes. Field guns use four independently drawn howitzer elevation frames, with the
 operator bending naturally at the rear controls and the carriage staying planted. Supply depots are separate concrete buildings with rounded roofs,
 neutral material colors and no team-colored outlines.
-No movement orders or resource quantities exist yet.
+Select one of your units to highlight reachable squares, then click a highlighted
+square to save a move. Hover across squares to preview your exact route; retrace
+the line to shorten it. Skipped squares connect from the current path tip within
+the remaining budget. If the traced route exceeds the budget, an affordable
+route from the unit is chosen when one exists. Saving stops hover previews and hides reachable-square highlights.
+Use **restart path** to trace a different route or
+**clear move** to remove the saved plan. Reachable squares support Tab and Enter/Space.
+Use **inspect tiles** to leave movement selection. Paths remain visible when
+switching units. Plans are local drafts and disappear on refresh; units do not
+move yet. Units can travel through allied units; enemies block travel, and occupied
+squares cannot be destinations. Depots are passable.
+No submitted orders or resource quantities exist yet.
 
 New players cannot join after a game starts. All lobbies and games disappear
 when the server restarts.

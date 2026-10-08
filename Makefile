@@ -19,6 +19,7 @@ check:
 	cargo clippy --locked --all-targets -- -D warnings
 	cargo test --locked
 	elm-format src --validate
+	node tools/check-movement.cjs
 	$(MAKE) frontend
 	elm make src/Style.elm src/View/*.elm --output=/dev/null
 

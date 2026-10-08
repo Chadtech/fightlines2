@@ -1,0 +1,375 @@
+{
+  "rules": [
+    {
+      "kind": "INFANTRY",
+      "budget": 8,
+      "terrainCosts": [
+        {
+          "terrain": "GRASS_PLAIN",
+          "cost": 2
+        },
+        {
+          "terrain": "HILLS",
+          "cost": 3
+        },
+        {
+          "terrain": "FOREST",
+          "cost": 4
+        }
+      ]
+    },
+    {
+      "kind": "TANK",
+      "budget": 12,
+      "terrainCosts": [
+        {
+          "terrain": "GRASS_PLAIN",
+          "cost": 2
+        },
+        {
+          "terrain": "HILLS",
+          "cost": 4
+        },
+        {
+          "terrain": "FOREST",
+          "cost": 6
+        }
+      ]
+    },
+    {
+      "kind": "FIELD_GUN",
+      "budget": 2,
+      "terrainCosts": [
+        {
+          "terrain": "GRASS_PLAIN",
+          "cost": 2
+        },
+        {
+          "terrain": "HILLS",
+          "cost": 2
+        },
+        {
+          "terrain": "FOREST",
+          "cost": 2
+        }
+      ]
+    },
+    {
+      "kind": "SUPPLY_TRUCK",
+      "budget": 14,
+      "terrainCosts": [
+        {
+          "terrain": "GRASS_PLAIN",
+          "cost": 2
+        },
+        {
+          "terrain": "HILLS",
+          "cost": 6
+        },
+        {
+          "terrain": "FOREST",
+          "cost": 8
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "name": "infantry fractional costs",
+      "kind": "INFANTRY",
+      "sketch": ".%#..",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "expected": [
+        [
+          1,
+          0,
+          3
+        ],
+        [
+          2,
+          0,
+          7
+        ]
+      ],
+      "allies": []
+    },
+    {
+      "name": "truck exact budget",
+      "kind": "SUPPLY_TRUCK",
+      "sketch": ".%#..",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "expected": [
+        [
+          1,
+          0,
+          6
+        ],
+        [
+          2,
+          0,
+          14
+        ]
+      ],
+      "allies": []
+    },
+    {
+      "name": "tank exact budget",
+      "kind": "TANK",
+      "sketch": ".%#..",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "expected": [
+        [
+          1,
+          0,
+          4
+        ],
+        [
+          2,
+          0,
+          10
+        ],
+        [
+          3,
+          0,
+          12
+        ]
+      ],
+      "allies": []
+    },
+    {
+      "name": "gun rough terrain",
+      "kind": "FIELD_GUN",
+      "sketch": "%#%\n#.#\n%#%",
+      "origin": [
+        1,
+        1
+      ],
+      "occupied": [],
+      "expected": [
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          1,
+          0,
+          2
+        ],
+        [
+          1,
+          2,
+          2
+        ],
+        [
+          2,
+          1,
+          2
+        ]
+      ],
+      "allies": []
+    },
+    {
+      "name": "gun blocked neighbor",
+      "kind": "FIELD_GUN",
+      "sketch": "%#%\n#.#\n%#%",
+      "origin": [
+        1,
+        1
+      ],
+      "occupied": [
+        [
+          1,
+          0
+        ]
+      ],
+      "expected": [
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          1,
+          2,
+          2
+        ],
+        [
+          2,
+          1,
+          2
+        ]
+      ],
+      "allies": []
+    },
+    {
+      "name": "cheaper route around forest",
+      "kind": "SUPPLY_TRUCK",
+      "sketch": ".....\n.###.\n.....",
+      "origin": [
+        0,
+        1
+      ],
+      "occupied": [],
+      "expected": [
+        [
+          0,
+          0,
+          2
+        ],
+        [
+          0,
+          2,
+          2
+        ],
+        [
+          1,
+          0,
+          4
+        ],
+        [
+          1,
+          1,
+          8
+        ],
+        [
+          1,
+          2,
+          4
+        ],
+        [
+          2,
+          0,
+          6
+        ],
+        [
+          2,
+          1,
+          14
+        ],
+        [
+          2,
+          2,
+          6
+        ],
+        [
+          3,
+          0,
+          8
+        ],
+        [
+          3,
+          2,
+          8
+        ],
+        [
+          4,
+          0,
+          10
+        ],
+        [
+          4,
+          1,
+          12
+        ],
+        [
+          4,
+          2,
+          10
+        ]
+      ],
+      "allies": []
+    },
+    {
+      "name": "occupied corridor",
+      "kind": "INFANTRY",
+      "sketch": ".....",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [
+        [
+          2,
+          0
+        ]
+      ],
+      "expected": [
+        [
+          1,
+          0,
+          2
+        ]
+      ],
+      "allies": []
+    },
+    {
+      "name": "edge no diagonal",
+      "kind": "FIELD_GUN",
+      "sketch": "..\n..",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "expected": [
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          1,
+          0,
+          2
+        ]
+      ],
+      "allies": []
+    },
+    {
+      "name": "allied corridor pass through without stopping",
+      "kind": "INFANTRY",
+      "sketch": ".....",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "allies": [
+        [
+          1,
+          0
+        ]
+      ],
+      "expected": [
+        [
+          2,
+          0,
+          4
+        ],
+        [
+          3,
+          0,
+          6
+        ],
+        [
+          4,
+          0,
+          8
+        ]
+      ]
+    }
+  ]
+}
