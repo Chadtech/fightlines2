@@ -2,6 +2,7 @@ use crate::graphql::Context;
 use crate::{
     lobby_id::LobbyId,
     lobby_name::LobbyName,
+    map::MapError,
     map_type::MapType,
     player_name::PlayerName,
     scenario::{Scenario, Side},
@@ -26,15 +27,47 @@ struct State {
 
 impl Store {
     pub fn new(seed: Seed) -> Self {
-        Self(Mutex::new(State {
-            seed,
-            lobbies: BTreeMap::new(),
-            games: BTreeMap::new(),
-        }))
+        Self(Mutex::new(State::new(seed)))
+    }
+
+    pub fn development(seed: Seed) -> Result<Self, MapError> {
+        let mut state = State::new(seed);
+        let host = SessionToken::from_token("development-west".into());
+        let map_type = MapType::default();
+        let mut game = Game::from_lobby(
+            Lobby {
+                id: LobbyId::from_token("00000000000000000000000000000000".into()),
+                name: LobbyName::parse("Test game").expect("valid fixture name"),
+                map_type,
+                host: host.clone(),
+                players: vec![
+                    Player {
+                        session: host,
+                        name: PlayerName::parse("Test west").expect("valid fixture name"),
+                    },
+                    Player {
+                        session: SessionToken::from_token("development-east".into()),
+                        name: PlayerName::parse("Test east").expect("valid fixture name"),
+                    },
+                ],
+            },
+            map_type.scenario()?,
+        );
+        game.access = GameAccess::DevelopmentPreview;
+        state.games.insert(game.source_lobby.clone(), game);
+        Ok(Self(Mutex::new(state)))
     }
 }
 
 impl State {
+    fn new(seed: Seed) -> Self {
+        Self {
+            seed,
+            lobbies: BTreeMap::new(),
+            games: BTreeMap::new(),
+        }
+    }
+
     fn next_token(&mut self) -> String {
         let (token, next_seed) = seed::token(self.seed);
         self.seed = next_seed;
@@ -53,6 +86,7 @@ struct Lobby {
 /// Starting consumes the lobby. The source ID keeps existing invite URLs
 /// resolvable for polling players and repeated start requests.
 struct Game {
+    access: GameAccess,
     scenario: Scenario,
     source_lobby: LobbyId,
     name: LobbyName,
@@ -61,9 +95,15 @@ struct Game {
     players: Vec<Player>,
 }
 
+enum GameAccess {
+    Members,
+    DevelopmentPreview,
+}
+
 impl Game {
     fn from_lobby(lobby: Lobby, scenario: Scenario) -> Self {
         Self {
+            access: GameAccess::Members,
             scenario,
             source_lobby: lobby.id,
             name: lobby.name,
@@ -376,6 +416,10 @@ pub fn game(context: &Context, id: LobbyId) -> FieldResult<GameSnapshot> {
             error("This lobby no longer exists. Create a new lobby from the home page.")
         };
     };
+    // The opt-in fixture always previews West, without changing browser identity.
+    if matches!(game.access, GameAccess::DevelopmentPreview) {
+        return Ok(game_view(game, &game.host));
+    }
     let Some(identity) = context.identity() else {
         return error("Only the host can start a game, and only joined players can enter it.");
     };

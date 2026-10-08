@@ -50,6 +50,14 @@ players with `side` and `isYou`. Lobby snapshots stay small and never include th
 board. The frontend receives sparse terrain overrides and expands them for
 rendering; authoritative initial positions and bounds remain in Rust.
 
+With the explicit `--dev-game` server flag, `Store::development` seeds one
+started game at ID `00000000000000000000000000000000`, using the current
+`MapType` scenario and two dummy players. It uses the ordinary `/game/<id>`
+route, game query and page. Only this fixture has
+`GameAccess::DevelopmentPreview`: its game query previews the host/West without
+requiring or setting a session cookie. Normal games retain member authorization.
+The fixture resets on restart and does not consume the normal token seed.
+
 ## Frontend
 
 `Page` in `Main` is the top-level state, starting at `Blank` before handling
@@ -151,11 +159,11 @@ and `GameBoard`; the view composes them without owning domain data.
 `View.Sprite` clips atlas cells using named sheet dimensions and coordinates.
 `GamePage` also owns local camera offset, zoom, drag and click-suppression fields,
 and handles viewport events directly. `View.BoardViewport` owns only the view
-and event messages. The viewport wraps the pure board renderer in a fixed, full-screen pan/zoom
-surface; roster, selection and controls render separately as floating cards.
+and event messages. The viewport wraps the pure board renderer in a pan/zoom surface beside a
+full-height right panel containing selection details and view controls.
 Mouse movement/release subscriptions run only during a drag. A 6px drag threshold
 suppresses mouse selection in the page update, while keyboard activation remains
-independent. Wheel zoom anchors to the cursor, button zoom anchors to the viewport
+independent. Wheel zoom uses the battlefield dimensions to anchor to the cursor; button zoom anchors to the viewport
 center, and reset restores the initial centered view. Camera changes never alter
 authoritative board coordinates or the selected tile.
 `Main` maps its messages with the originating lobby ID and subscribes only while

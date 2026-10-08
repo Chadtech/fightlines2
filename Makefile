@@ -1,4 +1,4 @@
-.PHONY: build frontend generate-api sprites check run
+.PHONY: build frontend generate-api sprites check run dev
 
 build: frontend
 	cargo build --locked
@@ -24,3 +24,6 @@ check:
 
 run: frontend
 	cargo run --locked -p fightlines-server
+
+dev: frontend
+	cargo run --locked -p fightlines-server -- --dev-game

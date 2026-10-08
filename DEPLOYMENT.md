@@ -7,6 +7,12 @@ precedence over `.env`, so shell exports and hosting configuration still work.
 A missing `.env` is allowed; malformed or unreadable files stop startup with an
 error. Schema export does not load `.env`.
 
+`make dev` passes `--dev-game` to the server to seed a public development preview
+at `/game/00000000000000000000000000000000`. Use `make run` for ordinary play
+and omit `--dev-game` on hosted servers. The fixture is absent by default;
+the flag does not alter authorization
+for normal games.
+
 Build the Elm frontend before starting the Rust server. Serve it behind an
 HTTPS reverse proxy for internet hosting.
 

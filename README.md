@@ -39,10 +39,10 @@ three supply depots (one per side and a neutral depot at the exact center), and 
 one tank, two field guns, and two supply trucks per player. The host takes the red western side; the second
 player takes the blue eastern side. Click a unit or depot to inspect it; units
 and depots can also be selected with Tab and Enter/Space. Drag the battlefield
-with the primary mouse button to pan; scroll to zoom around the cursor. The floating
-view card has zoom and reset controls. With the battlefield focused, arrow keys
+with the primary mouse button to pan; scroll to zoom around the cursor. The right-side
+panel has selection details, zoom and reset controls. With the battlefield focused, arrow keys
 pan, plus/minus zoom, and Home resets the view. Dragging does not select a tile.
-Roster, selection and view cards remain fixed while the board moves. Terrain uses detailed 80s anime
+The panel remains fixed while the board moves. Terrain uses detailed 80s anime
 illustrations, with a grass tile in every square, defined hill ridges and tree
 silhouettes, and a subtle grid.
 Units use detailed illustrated anime sprites with red and blue team colors,
@@ -57,6 +57,17 @@ New players cannot join after a game starts. All lobbies and games disappear
 when the server restarts.
 
 ## Development
+
+For a ready-to-view test game, run `make dev` and open
+[http://127.0.0.1:8080/game/00000000000000000000000000000000](http://127.0.0.1:8080/game/00000000000000000000000000000000).
+This seeds the current Supply Point scenario with two dummy players and previews
+the western player without creating a lobby, joining, or changing your identity
+cookie. Refresh or bookmark that URL as you work. Restart the server to reset
+the fixture and load scenario changes. Stop an existing server before switching
+from `make run` to `make dev`.
+
+The fixture is enabled only by `make dev` (or the server's `--dev-game` flag).
+Ordinary `make run` keeps the normal lobby workflow.
 
 ```sh
 make sprites # Optional: re-export sprites using locally retained source artwork
@@ -77,5 +88,6 @@ The export scripts remain in `tools/`. Back up source artwork separately.
 
 To edit terrain, change the ASCII sketch in `src/scenario.rs`: `#` is forest,
 `%` is hills, and spaces or `.` are grass. Keep rows the same width; spaces
-count as cells. Restart the server and start a new game to see the layout.
+count as cells. Restart `make dev` and refresh the test game URL, or start a new
+normal game, to see the layout.
 Depots and units are placed separately.

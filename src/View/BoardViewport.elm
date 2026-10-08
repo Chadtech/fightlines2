@@ -29,11 +29,10 @@ toHtml toMsg model board =
         [ A.attribute "tabindex" "0"
         , A.attribute "aria-label" "battlefield navigation"
         , A.css
-            [ S.fixed
-            , S.top0
-            , S.bottom0
-            , S.left0
-            , S.right0
+            [ S.relative
+            , S.flex1
+            , S.minW0
+            , S.hFull
             , S.row
             , S.itemsCenter
             , S.justifyCenter
@@ -55,7 +54,7 @@ toHtml toMsg model board =
         ]
         [ H.div
             [ A.css
-                [ Css.property "width" "min(80vw, 76vh)"
+                [ Css.property "width" "min(80%, 76vh)"
                 , S.shrink0
                 , Css.property "transform"
                     ("translate(" ++ String.fromFloat model.offset.x ++ "px, " ++ String.fromFloat model.offset.y ++ "px) scale(" ++ String.fromFloat model.zoom ++ ")")
@@ -99,8 +98,8 @@ wheelScrolledDecoder =
 viewportSizeDecoder : Decode.Decoder Point
 viewportSizeDecoder =
     Decode.map2 Point
-        (Decode.at [ "view", "innerWidth" ] Decode.float)
-        (Decode.at [ "view", "innerHeight" ] Decode.float)
+        (Decode.at [ "currentTarget", "clientWidth" ] Decode.float)
+        (Decode.at [ "currentTarget", "clientHeight" ] Decode.float)
 
 
 wheelDeltaDecoder : Decode.Decoder Float

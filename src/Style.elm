@@ -162,6 +162,7 @@ module Style exposing
     , none
     , opaque
     , outdent
+    , outdentLeft
     , outlineNone
     , overflowAuto
     , overflowHidden
@@ -585,6 +586,11 @@ outdent =
     , Css.borderBottom3 borderWidth Css.solid gray0Color
     ]
         |> Css.batch
+
+
+outdentLeft : Css.Style
+outdentLeft =
+    Css.borderLeft3 borderWidth Css.solid content2Color
 
 
 importantOutdent : Css.Style

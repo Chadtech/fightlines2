@@ -53,11 +53,9 @@ import LobbyId
         ( LobbyId
         )
 import Map
-import MapType
 import Point exposing (Point)
 import Route
 import Shared
-import Side
 import Style as S
 import Terrain
 import TerrainFeature
@@ -67,8 +65,8 @@ import UnitId
 import View.BoardViewport as Viewport
 import View.Button as Button
 import View.Card as Card
-import View.CardHeader as CardHeader
 import View.GameBoard as Board
+import View.GamePanel as GamePanel
 
 
 
@@ -219,111 +217,88 @@ setShared shared model =
 
 view : Model -> List (Html Msg)
 view model =
-    [ Viewport.toHtml ViewportMsg
-        model
-        (Board.toHtml BoardMsg
-            { frame = model.frame
-            , selected = model.selected
-            }
-            model.board
-        )
-    , H.div
+    [ H.div
         [ A.css
             [ S.fixed
-            , S.top4
-            , S.left4
-            , S.maxW96
-            , S.mr4
-            ]
-        ]
-        [ [ H.p
-                []
-                [ H.text ("map: " ++ MapType.label model.mapType)
-                ]
-          , H.ul
-                [ A.css
-                    [ S.listNone
-                    , S.col
-                    , S.g1
-                    ]
-                ]
-                (List.map playerView model.players)
-          ]
-            |> Card.toHtml
-                (Card.simple
-                    |> Card.withHeader (CardHeader.simple model.name)
-                )
-        ]
-    , H.div
-        [ A.css
-            [ S.fixed
-            , S.bottom4
-            , S.left4
-            , S.right4
+            , S.top0
+            , S.bottom0
+            , S.left0
+            , S.right0
             , S.row
-            , S.flexWrap
-            , S.itemsStart
-            , S.justifySpaceBetween
-            , S.g3
             ]
         ]
-        [ [ H.p
-                [ A.attribute "role" "status"
-                ]
-                [ H.text (selectionText model)
-                ]
-          ]
-            |> Card.toHtml
-                (Card.simple
-                    |> Card.withHeader (CardHeader.simple "selection")
-                )
-        , [ H.div
-                [ A.css
-                    [ S.row
-                    , S.flexWrap
-                    , S.itemsCenter
-                    , S.g2
-                    ]
-                ]
-                [ Button.secondary "−" (ViewportMsg Viewport.ZoomOutClicked)
-                    |> Button.toHtml
-                , H.span
-                    []
-                    [ H.text (String.fromInt (round (model.zoom * 100)) ++ "%")
-                    ]
-                , Button.secondary "+" (ViewportMsg Viewport.ZoomInClicked)
-                    |> Button.toHtml
-                , Button.secondary "reset view" (ViewportMsg Viewport.ResetClicked)
-                    |> Button.toHtml
-                ]
-          , H.p
-                []
-                [ H.text "drag to pan · scroll to zoom · click to inspect"
-                ]
-          ]
-            |> Card.toHtml
-                (Card.simple
-                    |> Card.withHeader (CardHeader.simple "view")
-                )
+        [ Viewport.toHtml ViewportMsg
+            model
+            (Board.toHtml BoardMsg
+                { frame = model.frame
+                , selected = model.selected
+                }
+                model.board
+            )
+        , GamePanel.toHtml
+            (selectionView model)
+            (viewControls model)
         ]
     ]
 
 
-playerView : Player -> Html Msg
-playerView player =
-    H.li
-        []
-        [ H.text
-            (Side.label player.side
-                ++ ": "
-                ++ player.name
-                ++ (if player.isYou then
-                        " (you)"
+selectionView : Model -> Html Msg
+selectionView model =
+    H.section
+        [ A.attribute "aria-label" "selection"
+        , A.css
+            [ S.col
+            , S.g3
+            ]
+        ]
+        [ H.h2
+            []
+            [ H.text "selection"
+            ]
+        , H.p
+            [ A.attribute "role" "status"
+            ]
+            [ H.text (selectionText model)
+            ]
+        ]
 
-                    else
-                        ""
-                   )
-            )
+
+viewControls : Model -> Html Msg
+viewControls model =
+    H.section
+        [ A.attribute "aria-label" "view controls"
+        , A.css
+            [ S.col
+            , S.g3
+            ]
+        ]
+        [ H.h2
+            []
+            [ H.text "view"
+            ]
+        , H.div
+            [ A.css
+                [ S.row
+                , S.flexWrap
+                , S.itemsCenter
+                , S.g2
+                ]
+            ]
+            [ Button.secondary "−" (ViewportMsg Viewport.ZoomOutClicked)
+                |> Button.toHtml
+            , H.span
+                []
+                [ H.text (String.fromInt (round (model.zoom * 100)) ++ "%")
+                ]
+            , Button.secondary "+" (ViewportMsg Viewport.ZoomInClicked)
+                |> Button.toHtml
+            , Button.secondary "reset view" (ViewportMsg Viewport.ResetClicked)
+                |> Button.toHtml
+            ]
+        , H.p
+            []
+            [ H.text "drag to pan · scroll to zoom · click to inspect"
+            ]
         ]
 
 

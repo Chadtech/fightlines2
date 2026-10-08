@@ -88,13 +88,16 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
 ## Game board
 
 - The game is a full-viewport workspace. Render the board directly on the page
-  background, without a containing card or border. Center it initially at 80vw
-  or 76vh, whichever is smaller, and allow it to pan freely beneath floating cards.
-- Keep the roster at the upper left and selection/view cards along the bottom;
-  wrap the bottom cards on narrow screens. Cards remain fixed while the board moves.
+  background, without a containing card or border. Center it initially at 80% of the battlefield width
+  or 76vh, whichever is smaller, and allow it to pan freely.
+- Use a full-height right panel for selection details and view controls, with a
+  warm gray body and an outset bevel only on its left edge. Place selection at
+  the top and view controls at the bottom. The panel is 18rem wide, capped at
+  45vw on narrow screens, and scrolls when needed. Reserve its width beside the
+  battlefield. Omit the roster and other floating cards.
 - Primary-button dragging pans after a 6px threshold. A drag never selects a tile;
   a click still inspects units, depots and terrain. Scroll zooms around the cursor,
-  bounded to 35–300%; the view card supplies zoom and reset controls. Keyboard
+  bounded to 35–300%; the panel supplies zoom and reset controls. Keyboard
   navigation supports arrows, plus/minus and Home while the battlefield is focused.
 - Use smooth image rendering for illustrated terrain, building and unit sprites; keep pixelated
   rendering for the selection marker. SVG scales the
@@ -140,3 +143,6 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
 
 - 2026-10-07: use a free-floating, pannable and zoomable game board with fixed
   floating cards for roster, selection and view controls.
+
+- 2026-10-07: replace game floating cards with a full-height right panel, beveled
+  only on the left edge, containing selection details and view controls.

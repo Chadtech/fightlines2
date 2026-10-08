@@ -159,6 +159,53 @@ mod tests {
     const FIELDS: &str = "id name mapType players { name isHost } isHost isMember gameUrl";
 
     #[actix_web::test]
+    async fn development_game_is_opt_in_and_does_not_replace_identity() {
+        let query = "{ game(id: \"00000000000000000000000000000000\") { id name isHost players { side isYou } scenario { units { id } depots { owner } } } }";
+        for development in [false, true] {
+            let seed = crate::seed::Seed::new([7; 32]);
+            let store = if development {
+                Store::development(seed).unwrap()
+            } else {
+                Store::new(seed)
+            };
+            let app = test::init_service(
+                App::new()
+                    .app_data(web::Data::new(store))
+                    .app_data(web::Data::new(schema()))
+                    .route("/graphql", web::post().to(handle)),
+            )
+            .await;
+            for identity in [
+                None,
+                Some(SessionToken::from_token("existing-player".into())),
+            ] {
+                let mut request = test::TestRequest::post()
+                    .uri("/graphql")
+                    .set_json(json!({ "query": query }));
+                if let Some(identity) = identity {
+                    request = request.cookie(identity.cookie());
+                }
+                let response = test::call_service(&app, request.to_request()).await;
+                assert!(response.response().cookies().next().is_none());
+                let body: Value = test::read_body_json(response).await;
+                if development {
+                    assert!(body["errors"].is_null(), "{body}");
+                    let game = &body["data"]["game"];
+                    assert_eq!(game["name"], "Test game");
+                    assert_eq!(game["players"][0]["side"], "WEST");
+                    assert_eq!(game["players"][0]["isYou"], true);
+                    assert_eq!(game["players"][1]["side"], "EAST");
+                    assert_eq!(game["players"][1]["isYou"], false);
+                    assert_eq!(game["scenario"]["units"].as_array().unwrap().len(), 16);
+                    assert_eq!(game["scenario"]["depots"].as_array().unwrap().len(), 3);
+                } else {
+                    assert!(body["errors"].is_array());
+                }
+            }
+        }
+    }
+
+    #[actix_web::test]
     async fn lifecycle_and_authorization_over_graphql() {
         let app = test::init_service(
             App::new()

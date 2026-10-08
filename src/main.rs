@@ -45,7 +45,17 @@ async fn run() -> io::Result<()> {
     let listener = TcpListener::bind(&address)?;
     println!("FightLines listening on http://{}", listener.local_addr()?);
 
-    let store = web::Data::new(lobby::Store::new(seed));
+    let store = if env::args().any(|argument| argument == "--dev-game") {
+        println!(
+            "Development game: http://{}/game/00000000000000000000000000000000",
+            listener.local_addr()?
+        );
+        lobby::Store::development(seed)
+            .map_err(|error| io::Error::other(format!("Development game failed: {error:?}")))?
+    } else {
+        lobby::Store::new(seed)
+    };
+    let store = web::Data::new(store);
     let schema = web::Data::new(graphql::schema());
     HttpServer::new(move || {
         let index = frontend.join("index.html");
