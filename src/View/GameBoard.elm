@@ -33,11 +33,18 @@ import View.UnitSprite as UnitSprite
 
 
 type Msg
-    = UnitClicked UnitId
-    | TileClicked Coordinate
-    | UnitMouseClicked UnitId
-    | TileMouseClicked Coordinate
-    | TileHovered Coordinate
+    = ClickedUnit UnitId { detail : Int }
+    | PressedEnterOnUnit UnitId
+    | PressedSpaceOnUnit UnitId
+    | MouseOverUnit UnitId
+    | ClickedDepot Coordinate { detail : Int }
+    | PressedEnterOnDepot Coordinate
+    | PressedSpaceOnDepot Coordinate
+    | MouseOverDepot Coordinate
+    | ClickedTile Coordinate { detail : Int }
+    | PressedEnterOnTile Coordinate
+    | PressedSpaceOnTile Coordinate
+    | MouseOverTile Coordinate
 
 
 at : Coordinate -> List (Svg msg) -> Svg msg
@@ -48,33 +55,30 @@ at position children =
         children
 
 
-keyboardActivate : msg -> Svg.Attribute msg
-keyboardActivate msg =
+onKeyDown : { pressedEnter : msg, pressedSpace : msg } -> Svg.Attribute msg
+onKeyDown messages =
     Ev.preventDefaultOn "keydown"
         (Decode.field "key" Decode.string
             |> Decode.andThen
                 (\key ->
-                    if key == "Enter" || key == " " then
-                        Decode.succeed ( msg, True )
+                    case key of
+                        "Enter" ->
+                            Decode.succeed ( messages.pressedEnter, True )
 
-                    else
-                        Decode.fail "not an activation key"
+                        " " ->
+                            Decode.succeed ( messages.pressedSpace, True )
+
+                        _ ->
+                            Decode.fail "not Enter or Space"
                 )
         )
 
 
-mouseActivate : msg -> msg -> Svg.Attribute msg
-mouseActivate mouseMsg keyboardMsg =
+onClickWithDetail : ({ detail : Int } -> msg) -> Svg.Attribute msg
+onClickWithDetail toMsg =
     Ev.on "click"
         (Decode.field "detail" Decode.int
-            |> Decode.map
-                (\detail ->
-                    if detail == 0 then
-                        keyboardMsg
-
-                    else
-                        mouseMsg
-                )
+            |> Decode.map (\detail -> toMsg { detail = detail })
         )
 
 
@@ -131,8 +135,8 @@ toHtml config model =
                     , SA.stroke S.nightwood2Str
                     , SA.strokeOpacity "0.22"
                     , SA.strokeWidth "0.25"
-                    , Ev.onMouseOver (TileHovered position)
-                    , mouseActivate (TileMouseClicked position) (TileClicked position)
+                    , Ev.onMouseOver (MouseOverTile position)
+                    , onClickWithDetail (ClickedTile position)
                     ]
 
                 movementAttributes : List (Svg.Attribute Msg)
@@ -141,7 +145,10 @@ toHtml config model =
                         [ HA.attribute "tabindex" "0"
                         , HA.attribute "role" "button"
                         , HA.attribute "aria-label" ("move to (" ++ String.fromInt position.x ++ ", " ++ String.fromInt position.y ++ ")")
-                        , keyboardActivate (TileClicked position)
+                        , onKeyDown
+                            { pressedEnter = PressedEnterOnTile position
+                            , pressedSpace = PressedSpaceOnTile position
+                            }
                         ]
 
                     else
@@ -172,9 +179,12 @@ toHtml config model =
                     , HA.attribute "tabindex" "0"
                     , HA.attribute "role" "button"
                     , HA.attribute "aria-label" "supply depot"
-                    , Ev.onMouseOver (TileHovered depot.position)
-                    , mouseActivate (TileMouseClicked depot.position) (TileClicked depot.position)
-                    , keyboardActivate (TileClicked depot.position)
+                    , Ev.onMouseOver (MouseOverDepot depot.position)
+                    , onClickWithDetail (ClickedDepot depot.position)
+                    , onKeyDown
+                        { pressedEnter = PressedEnterOnDepot depot.position
+                        , pressedSpace = PressedSpaceOnDepot depot.position
+                        }
                     ]
                     [ Svg.title
                         []
@@ -211,9 +221,12 @@ toHtml config model =
                     , HA.attribute "tabindex" "0"
                     , HA.attribute "role" "button"
                     , HA.attribute "aria-label" (Unit.label unit)
-                    , Ev.onMouseOver (TileHovered unit.position)
-                    , mouseActivate (UnitMouseClicked unit.id) (UnitClicked unit.id)
-                    , keyboardActivate (UnitClicked unit.id)
+                    , Ev.onMouseOver (MouseOverUnit unit.id)
+                    , onClickWithDetail (ClickedUnit unit.id)
+                    , onKeyDown
+                        { pressedEnter = PressedEnterOnUnit unit.id
+                        , pressedSpace = PressedSpaceOnUnit unit.id
+                        }
                     ]
                     [ Svg.title
                         []

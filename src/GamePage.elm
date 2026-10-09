@@ -441,6 +441,102 @@ clearSelection model =
     }
 
 
+selectUnit : UnitId.UnitId -> Model -> Model
+selectUnit id model =
+    if planningLocked model then
+        { model
+            | selected =
+                model.board.units
+                    |> List.filter (\unit -> unit.id == id)
+                    |> List.head
+                    |> Maybe.map .position
+        }
+
+    else if Maybe.map .id (selectedUnit model) == Just id then
+        clearSelection model
+
+    else
+        { model
+            | selected =
+                model.board.units
+                    |> List.filter (\unit -> unit.id == id)
+                    |> List.head
+                    |> Maybe.map .position
+            , moveOptions =
+                model.board.units
+                    |> List.filter (\unit -> unit.id == id && isOwnUnit model unit)
+                    |> List.head
+                    |> Maybe.map (\unit -> Movement.options (reservedDestinations unit model) model.movementRules model.board unit)
+                    |> Maybe.withDefault []
+            , pathPreview =
+                model.board.units
+                    |> List.filter (\unit -> unit.id == id && isOwnUnit model unit)
+                    |> List.head
+                    |> Maybe.map Movement.start
+            , movementStatus = NoMovementStatus
+        }
+
+
+selectTile : Coordinate.Coordinate -> Model -> Model
+selectTile position model =
+    if planningLocked model then
+        { model | selected = Just position }
+
+    else
+        let
+            notOwnUnit : () -> Model
+            notOwnUnit _ =
+                { model
+                    | selected = Just position
+                    , moveOptions = []
+                    , pathPreview = Nothing
+                    , movementStatus = NoMovementStatus
+                }
+        in
+        case selectedUnit model of
+            Just unit ->
+                if isOwnUnit model unit then
+                    let
+                        destinationOption : Movement.Option -> Maybe Movement.Option
+                        destinationOption preview =
+                            if Movement.canStop (reservedDestinations unit model) model.board preview then
+                                Just preview
+
+                            else
+                                Nothing
+                    in
+                    case traceTo position model |> Maybe.andThen destinationOption of
+                        Just move ->
+                            { model
+                                | plannedMoves = { unitId = unit.id, move = move } :: List.filter (\plan -> plan.unitId /= unit.id) model.plannedMoves
+                                , pathPreview = Nothing
+                                , movementStatus = MovePlanned
+                            }
+
+                        Nothing ->
+                            { model | movementStatus = DestinationUnavailable }
+
+                else
+                    notOwnUnit ()
+
+            Nothing ->
+                notOwnUnit ()
+
+
+previewTile : Coordinate.Coordinate -> Model -> Model
+previewTile position model =
+    if model.drag /= Nothing || model.pathPreview == Nothing then
+        model
+
+    else
+        case traceTo position model of
+            Just preview ->
+                { model | pathPreview = Just preview, movementStatus = NoMovementStatus }
+
+            Nothing ->
+                model
+
+
 
 ----------------------------------------------------------------
 -- UPDATE --
@@ -451,12 +547,8 @@ update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 update lobbyId msg model =
     case msg of
         BoardMsg boardMsg ->
-            if planningLocked model then
-                ( inspectBoard boardMsg model, E.none )
-
-            else
-                handleBoardMsg boardMsg model
-                    |> E.withOut
+            handleBoardMsg boardMsg model
+                |> E.withOut
 
         ViewportMsg viewportMsg ->
             ( updateViewport viewportMsg model, E.none )
@@ -565,96 +657,69 @@ update lobbyId msg model =
 handleBoardMsg : Board.Msg -> Model -> Model
 handleBoardMsg boardMsg model =
     case boardMsg of
-        Board.UnitMouseClicked id ->
-            if model.suppressClick then
+        Board.ClickedUnit id click ->
+            if click.detail /= 0 && model.suppressClick then
                 model
 
             else
-                handleBoardMsg (Board.UnitClicked id) model
+                selectUnit id model
 
-        Board.TileMouseClicked position ->
-            if model.suppressClick then
+        Board.PressedEnterOnUnit id ->
+            selectUnit id model
+
+        Board.PressedSpaceOnUnit id ->
+            selectUnit id model
+
+        Board.MouseOverUnit id ->
+            if planningLocked model then
                 model
 
             else
-                handleBoardMsg (Board.TileClicked position) model
+                model.board.units
+                    |> List.filter (\unit -> unit.id == id)
+                    |> List.head
+                    |> Maybe.map (\unit -> previewTile unit.position model)
+                    |> Maybe.withDefault model
 
-        Board.TileHovered position ->
-            if model.drag /= Nothing || model.pathPreview == Nothing then
+        Board.ClickedDepot position click ->
+            if click.detail /= 0 && model.suppressClick then
                 model
 
             else
-                case traceTo position model of
-                    Just preview ->
-                        { model | pathPreview = Just preview, movementStatus = NoMovementStatus }
+                selectTile position model
 
-                    Nothing ->
-                        model
+        Board.PressedEnterOnDepot position ->
+            selectTile position model
 
-        Board.UnitClicked id ->
-            if Maybe.map .id (selectedUnit model) == Just id then
-                clearSelection model
+        Board.PressedSpaceOnDepot position ->
+            selectTile position model
+
+        Board.MouseOverDepot position ->
+            if planningLocked model then
+                model
 
             else
-                { model
-                    | selected =
-                        model.board.units
-                            |> List.filter (\unit -> unit.id == id)
-                            |> List.head
-                            |> Maybe.map .position
-                    , moveOptions =
-                        model.board.units
-                            |> List.filter (\unit -> unit.id == id && isOwnUnit model unit)
-                            |> List.head
-                            |> Maybe.map (\unit -> Movement.options (reservedDestinations unit model) model.movementRules model.board unit)
-                            |> Maybe.withDefault []
-                    , pathPreview =
-                        model.board.units
-                            |> List.filter (\unit -> unit.id == id && isOwnUnit model unit)
-                            |> List.head
-                            |> Maybe.map Movement.start
-                    , movementStatus = NoMovementStatus
-                }
+                previewTile position model
 
-        Board.TileClicked position ->
-            case selectedUnit model of
-                Just unit ->
-                    if isOwnUnit model unit then
-                        let
-                            destinationOption : Movement.Option -> Maybe Movement.Option
-                            destinationOption preview =
-                                if Movement.canStop (reservedDestinations unit model) model.board preview then
-                                    Just preview
+        Board.ClickedTile position click ->
+            if click.detail /= 0 && model.suppressClick then
+                model
 
-                                else
-                                    Nothing
-                        in
-                        case traceTo position model |> Maybe.andThen destinationOption of
-                            Just move ->
-                                { model
-                                    | plannedMoves = { unitId = unit.id, move = move } :: List.filter (\plan -> plan.unitId /= unit.id) model.plannedMoves
-                                    , pathPreview = Nothing
-                                    , movementStatus = MovePlanned
-                                }
+            else
+                selectTile position model
 
-                            Nothing ->
-                                { model | movementStatus = DestinationUnavailable }
+        Board.PressedEnterOnTile position ->
+            selectTile position model
 
-                    else
-                        { model
-                            | selected = Just position
-                            , moveOptions = []
-                            , pathPreview = Nothing
-                            , movementStatus = NoMovementStatus
-                        }
+        Board.PressedSpaceOnTile position ->
+            selectTile position model
 
-                Nothing ->
-                    { model
-                        | selected = Just position
-                        , moveOptions = []
-                        , pathPreview = Nothing
-                        , movementStatus = NoMovementStatus
-                    }
+        Board.MouseOverTile position ->
+            if planningLocked model then
+                model
+
+            else
+                previewTile position model
 
 
 
@@ -1177,38 +1242,6 @@ turnPanel model =
             [ A.css [ S.borderT, S.borderGray2, S.pt3 ] ]
             [ viewControls model ]
         ]
-
-
-inspectBoard : Board.Msg -> Model -> Model
-inspectBoard msg model =
-    let
-        selectUnit : UnitId.UnitId -> Model
-        selectUnit id =
-            { model | selected = model.board.units |> List.filter (\unit -> unit.id == id) |> List.head |> Maybe.map .position }
-    in
-    case msg of
-        Board.UnitClicked id ->
-            selectUnit id
-
-        Board.UnitMouseClicked id ->
-            if model.suppressClick then
-                model
-
-            else
-                selectUnit id
-
-        Board.TileClicked position ->
-            { model | selected = Just position }
-
-        Board.TileMouseClicked position ->
-            if model.suppressClick then
-                model
-
-            else
-                { model | selected = Just position }
-
-        Board.TileHovered _ ->
-            model
 
 
 resolutionSummary : Model -> Html Msg
