@@ -159,7 +159,9 @@ synchronous resolvers for its in-memory operations.
 `GamePage` owns unit/tile selection and an explicit four-state `AnimationFrame`.
 Board data types live in `Coordinate`, `TerrainFeature`, `Map`, `Depot`, `Unit`
 and `GameBoard`; the view composes them without owning domain data.
-`View.Sprite` clips atlas cells using named sheet dimensions and coordinates.
+`View.Sprite` clips atlas cells using named sheet dimensions and coordinates,
+using styled SVG. `View.UnitSprite` owns the shared unit atlas, kind/side row
+mapping, and facing for both animated board units and static status portraits.
 `GamePage` also owns local camera offset, zoom, drag and click-suppression fields,
 and handles viewport events directly. `View.BoardViewport` owns only the view
 and event messages. The viewport wraps the pure board renderer in a pan/zoom surface beside a

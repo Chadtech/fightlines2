@@ -1,15 +1,7 @@
 module View.GameBoard exposing (Msg(..), toHtml)
 
 import AnimationFrame exposing (Frame)
-import Api.Enum.Side as Side
-    exposing
-        ( Side
-        )
 import Api.Enum.Terrain as Terrain
-import Api.Enum.UnitKind as UnitKind
-    exposing
-        ( UnitKind
-        )
 import Coordinate exposing (Coordinate)
 import Css
 import Css.Global
@@ -30,12 +22,13 @@ import Svg
         )
 import Svg.Attributes as SA
 import Svg.Events as Ev
+import Svg.Styled as StyledSvg
 import Unit exposing (Unit)
 import UnitId
     exposing
         ( UnitId
         )
-import View.Sprite as Sprite
+import View.UnitSprite as UnitSprite
 
 
 type Msg
@@ -192,46 +185,9 @@ toHtml toMsg config model =
 
         unitView : Unit -> Svg Msg
         unitView unit =
-            let
-                row : Int
-                row =
-                    (case unit.kind of
-                        UnitKind.Infantry ->
-                            0
-
-                        UnitKind.Tank ->
-                            3
-
-                        UnitKind.SupplyTruck ->
-                            6
-
-                        UnitKind.FieldGun ->
-                            9
-                    )
-                        + (case unit.side of
-                            Side.West ->
-                                0
-
-                            Side.East ->
-                                1
-                          )
-
-                facing : String
-                facing =
-                    case unit.side of
-                        Side.West ->
-                            ""
-
-                        Side.East ->
-                            "translate(16 0) scale(-1 1)"
-            in
             at unit.position
-                [ Svg.g
-                    [ SA.transform facing
-                    , HA.style "image-rendering" "auto"
-                    ]
-                    [ Sprite.toSvg { path = "/assets/units_illustrated-v4.png", sheetWidth = 64, sheetHeight = 192, column = AnimationFrame.unitColumn config.frame unit.id, row = row }
-                    ]
+                [ UnitSprite.toSvg (AnimationFrame.unitColumn config.frame unit.id) unit
+                    |> StyledSvg.toUnstyled
                 , Svg.rect
                     [ SA.width "16"
                     , SA.height "16"

@@ -1,15 +1,15 @@
 module View.UnitStatus exposing (toHtml)
 
-import Api.Enum.Side as Side
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Css
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Side
 import Style as S
-import Svg
-import Svg.Attributes as SA
+import Svg.Styled as Svg
+import Svg.Styled.Attributes as SA
 import Unit exposing (Unit)
+import View.UnitSprite as UnitSprite
 
 
 
@@ -72,39 +72,6 @@ toHtml unit =
 
 portrait : Unit -> Html msg
 portrait unit =
-    let
-        row : Int
-        row =
-            (case unit.kind of
-                Kind.Infantry ->
-                    0
-
-                Kind.Tank ->
-                    3
-
-                Kind.SupplyTruck ->
-                    6
-
-                Kind.FieldGun ->
-                    9
-            )
-                + (case unit.side of
-                    Side.West ->
-                        0
-
-                    Side.East ->
-                        1
-                  )
-
-        facing : String
-        facing =
-            case unit.side of
-                Side.West ->
-                    ""
-
-                Side.East ->
-                    "translate(256 0) scale(-1 1)"
-    in
     H.div
         [ A.attribute "role" "img"
         , A.attribute "aria-label" (Side.label unit.side ++ " " ++ kindLabel unit.kind)
@@ -115,30 +82,15 @@ portrait unit =
             ]
         ]
         [ Svg.svg
-            [ SA.viewBox "0 0 256 256"
+            [ SA.viewBox "0 0 16 16"
             , SA.width "100%"
             , SA.height "160"
-            , SA.style "display:block"
-            ]
-            [ Svg.g
-                [ SA.transform facing
-                ]
-                [ Svg.svg
-                    [ SA.viewBox ("0 " ++ String.fromInt (row * 256) ++ " 256 256")
-                    , SA.width "256"
-                    , SA.height "256"
-                    , SA.overflow "hidden"
-                    ]
-                    [ Svg.image
-                        [ SA.xlinkHref "/assets/units_illustrated-v4.png"
-                        , SA.width "1024"
-                        , SA.height "3072"
-                        ]
-                        []
-                    ]
+            , SA.css
+                [ S.block
                 ]
             ]
-            |> H.fromUnstyled
+            [ UnitSprite.toSvg 0 unit
+            ]
         ]
 
 

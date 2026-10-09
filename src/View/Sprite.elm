@@ -1,8 +1,8 @@
 module View.Sprite exposing (toSvg)
 
-import Html.Attributes as HA
-import Svg exposing (Svg)
-import Svg.Attributes as SA
+import Html.Styled.Attributes as HA
+import Svg.Styled as Svg exposing (Svg)
+import Svg.Styled.Attributes as SA
 
 
 
