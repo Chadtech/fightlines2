@@ -49,5 +49,13 @@ type TerrainMovementCost
     = TerrainMovementCost
 
 
+type TurnEvent
+    = TurnEvent
+
+
+type TurnResolution
+    = TurnResolution
+
+
 type Unit
     = Unit

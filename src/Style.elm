@@ -1,6 +1,8 @@
 module Style exposing
     ( absolute
+    , basisFull
     , batch
+    , belowWidth
     , bgBlue1
     , bgGray0
     , bgGray1
@@ -80,11 +82,13 @@ module Style exposing
     , h32
     , h320
     , h4
+    , h40
     , h6
     , h64
     , h72
     , h75Viewport
     , h8
+    , h80
     , hAuto
     , hFull
     , hFullViewport
@@ -114,6 +118,8 @@ module Style exposing
     , m2
     , m4
     , maxH16
+    , maxH18
+    , maxH24
     , maxH32
     , maxH64
     , maxW12
@@ -167,6 +173,7 @@ module Style exposing
     , opaque
     , outdent
     , outdentLeft
+    , outdentTopRight
     , outlineNone
     , overflowAuto
     , overflowHidden
@@ -274,6 +281,7 @@ module Style exposing
     , w0
     , w1
     , w12
+    , w120
     , w128
     , w16
     , w16px
@@ -312,6 +320,41 @@ import Css.Value
         ( Supported
         , Value
         )
+
+
+basisFull : Css.Style
+basisFull =
+    Css.flexBasis (Css.pct 100)
+
+
+belowWidth : Float -> List Css.Style -> Css.Style
+belowWidth width styles =
+    Css.Media.withMedia [ Css.Media.all [ Css.Media.maxWidth (Css.px width) ] ] styles
+
+
+h40 : Css.Style
+h40 =
+    Css.height (Css.rem 10)
+
+
+h80 : Css.Style
+h80 =
+    Css.height (Css.rem 20)
+
+
+maxH18 : Css.Style
+maxH18 =
+    Css.maxHeight (Css.rem 4.5)
+
+
+maxH24 : Css.Style
+maxH24 =
+    Css.maxHeight (Css.rem 6)
+
+
+w120 : Css.Style
+w120 =
+    Css.width (Css.rem 30)
 
 
 global : List Css.Global.Snippet
@@ -596,6 +639,14 @@ outdent =
 outdentLeft : Css.Style
 outdentLeft =
     Css.borderLeft3 borderWidth Css.solid content2Color
+
+
+outdentTopRight : Css.Style
+outdentTopRight =
+    Css.batch
+        [ Css.borderTop3 borderWidth Css.solid content2Color
+        , Css.borderRight3 borderWidth Css.solid gray0Color
+        ]
 
 
 importantOutdent : Css.Style

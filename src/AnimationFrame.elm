@@ -54,6 +54,10 @@ unitColumn frame unitId =
         phase =
             UnitId.toString unitId
                 |> String.toList
-                |> List.foldl (\character value -> modBy 4 (value * 31 + Char.toCode character)) 0
+                |> List.foldl
+                    (\character value ->
+                        modBy 4 (value * 31 + Char.toCode character)
+                    )
+                    0
     in
     modBy 4 (frameColumn frame + phase)

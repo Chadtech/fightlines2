@@ -394,7 +394,7 @@ update msg page =
             case page of
                 Game currentId model ->
                     if id == currentId then
-                        GamePage.update pageMsg model
+                        GamePage.update id pageMsg model
                             |> Tuple.mapFirst (Game id)
                             |> Tuple.mapSecond (E.map (GameMsg id))
 

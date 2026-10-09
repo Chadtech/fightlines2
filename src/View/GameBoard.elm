@@ -15,6 +15,7 @@ import Html.Styled as H
 import Html.Styled.Attributes as A
 import Json.Decode as Decode
 import Map
+import Point exposing (Point)
 import Style as S
 import Svg
     exposing
@@ -78,17 +79,16 @@ mouseActivate mouseMsg keyboardMsg =
 
 
 toHtml :
-    (Msg -> msg)
-    ->
-        { frame : Frame
-        , reachable : List Coordinate
-        , paths : List (List Coordinate)
-        , previewPath : List Coordinate
-        , selected : Maybe Coordinate
-        }
+    { frame : Frame
+    , reachable : List Coordinate
+    , paths : List (List Coordinate)
+    , previewPath : List Coordinate
+    , moving : Maybe { unitId : UnitId, position : Point }
+    , selected : Maybe Coordinate
+    }
     -> GameBoard
-    -> Html msg
-toHtml toMsg config model =
+    -> Html Msg
+toHtml config model =
     let
         terrainView : Coordinate -> Svg Msg
         terrainView position =
@@ -185,7 +185,23 @@ toHtml toMsg config model =
 
         unitView : Unit -> Svg Msg
         unitView unit =
-            at unit.position
+            let
+                transform : String
+                transform =
+                    case config.moving of
+                        Just moving ->
+                            if moving.unitId == unit.id then
+                                "translate(" ++ String.fromFloat (moving.position.x * 16) ++ " " ++ String.fromFloat (moving.position.y * 16) ++ ")"
+
+                            else
+                                "translate(" ++ String.fromInt (unit.position.x * 16) ++ " " ++ String.fromInt (unit.position.y * 16) ++ ")"
+
+                        Nothing ->
+                            "translate(" ++ String.fromInt (unit.position.x * 16) ++ " " ++ String.fromInt (unit.position.y * 16) ++ ")"
+            in
+            Svg.g
+                [ SA.transform transform
+                ]
                 [ UnitSprite.toSvg (AnimationFrame.unitColumn config.frame unit.id) unit
                     |> StyledSvg.toUnstyled
                 , Svg.rect
@@ -385,4 +401,3 @@ toHtml toMsg config model =
             (terrain :: movementOverlay :: (List.map tileTarget positions ++ List.map depotView model.depots ++ List.map unitView model.units ++ selection))
             |> H.fromUnstyled
         ]
-        |> H.map toMsg

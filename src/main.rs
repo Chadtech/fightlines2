@@ -9,6 +9,7 @@ mod player_name;
 mod scenario;
 mod seed;
 mod session_token;
+mod turns;
 
 use actix_files::{Files, NamedFile};
 use actix_web::{App, HttpServer, middleware::DefaultHeaders, web};

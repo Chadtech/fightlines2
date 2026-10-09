@@ -20,6 +20,28 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+turnNumber : SelectionSet Int Api.Object.GameSnapshot
+turnNumber =
+    Object.selectionForField "Int" "turnNumber" [] Decode.int
+
+
+submitted : SelectionSet Bool Api.Object.GameSnapshot
+submitted =
+    Object.selectionForField "Bool" "submitted" [] Decode.bool
+
+
+opponentSubmitted : SelectionSet Bool Api.Object.GameSnapshot
+opponentSubmitted =
+    Object.selectionForField "Bool" "opponentSubmitted" [] Decode.bool
+
+
+lastResolution :
+    SelectionSet decodesTo Api.Object.TurnResolution
+    -> SelectionSet (Maybe decodesTo) Api.Object.GameSnapshot
+lastResolution object____ =
+    Object.selectionForCompositeField "lastResolution" [] object____ (Basics.identity >> Decode.nullable)
+
+
 id : SelectionSet String Api.Object.GameSnapshot
 id =
     Object.selectionForField "String" "id" [] Decode.string

@@ -4,15 +4,15 @@ use juniper::GraphQLObject;
 /// Budgets and entry costs use half-points: two stored points equal one displayed point.
 #[derive(Clone, Debug, GraphQLObject)]
 pub struct TerrainMovementCost {
-    terrain: Terrain,
-    cost: i32,
+    pub(crate) terrain: Terrain,
+    pub(crate) cost: i32,
 }
 
 #[derive(Clone, Debug, GraphQLObject)]
 pub struct MovementRule {
-    kind: UnitKind,
-    budget: i32,
-    terrain_costs: Vec<TerrainMovementCost>,
+    pub(crate) kind: UnitKind,
+    pub(crate) budget: i32,
+    pub(crate) terrain_costs: Vec<TerrainMovementCost>,
 }
 
 pub fn rules() -> Vec<MovementRule> {

@@ -4,8 +4,8 @@ A strategy game about supplies and logistics, built with Rust and Elm.
 
 The current prototype supports creating a lobby, joining through an invite link,
 and starting a game. The game page shows a free-floating animated SVG board with selectable units and depots.
-Local movement planning is available. Order submission, turn resolution, combat,
-resources, and persistent storage are not implemented yet.
+Both players can plan and submit turns, with sequential movement playback.
+Combat, resources, and persistent storage are not implemented yet.
 
 ## Run locally
 
@@ -41,7 +41,8 @@ one tank, two field guns, and two supply trucks per player. The host takes the r
 player takes the blue eastern side. Click a unit or depot to inspect it; units
 and depots can also be selected with Tab and Enter/Space. Drag the battlefield
 with the primary mouse button to pan; scroll to zoom around the cursor. The right-side
-panel has selection details, zoom and reset controls. With the battlefield focused, arrow keys
+panel has selection details and unit actions; the bottom-left control panel has
+zoom and reset controls. With the battlefield focused, arrow keys
 pan, plus/minus zoom, and Home resets the view. Dragging does not select a tile.
 The panel remains fixed while the board moves. Terrain uses detailed 80s anime
 illustrations, with a grass tile in every square, defined hill ridges and tree
@@ -62,15 +63,27 @@ route from the unit is chosen when one exists. Saving stops hover previews and h
 Reselect the unit to trace a different route or use
 **clear move** to remove the saved plan. Reachable squares support Tab and Enter/Space.
 Press Escape or click the selected unit to leave movement selection. Paths remain visible when
-switching units. Plans are local drafts and disappear on refresh; units do not
-move yet. Units can travel through allied units; enemies block travel, and occupied
+switching units. Unsubmitted plans are local drafts and disappear on refresh.
+Units can travel through allied units; enemies block travel, and occupied
 squares cannot be destinations. A saved move reserves its destination so other
 units cannot choose it; changing or clearing the move frees that square. Routes
 can pass through reserved destinations. Depots are passable.
 The unit status panel shows the selected unit's illustration, name, and side,
 with expandable unit and gauge explanations. Hit points, supply, and vehicle
-fuel gauges currently show labeled sample values. No submitted orders or
-authoritative resource quantities exist yet.
+fuel gauges currently show labeled sample values. Authoritative resource quantities do not exist yet.
+
+The fixed-size bottom-left control panel sits flush with the screen edges, with
+a large **submit turn** button on the left, the turn number and readiness beside
+it, and zoom controls below. It also shows the other player's submission status.
+Give every unit a move or **hold position** order. **submit turn**
+becomes primary when all units are ready. Submission locks your orders, and that
+waiting state survives refresh. Once both players submit, the server moves the
+units and advances the turn. Each client plays the saved paths one unit at a time,
+then opens planning with empty drafts. Refresh during playback shows the completed
+board. Paths may cross without combat; opposing units choosing the same destination
+both hold their starting positions, with a message in the right-side panel. Destination
+occupancy is validated against the starting board, so moving into another unit's
+starting square is not yet allowed, even if that unit plans to leave.
 
 New players cannot join after a game starts. All lobbies and games disappear
 when the server restarts.
@@ -86,6 +99,8 @@ the fixture and load scenario changes. Stop an existing server before switching
 from `make run` to `make dev`.
 
 The fixture is enabled only by `make dev` (or the server's `--dev-game` flag).
+The development fixture is a read-only planning preview; use the normal two-player
+lobby workflow to test submission and resolution.
 Ordinary `make run` keeps the normal lobby workflow.
 
 ```sh

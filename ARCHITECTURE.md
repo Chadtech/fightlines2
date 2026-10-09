@@ -40,7 +40,7 @@ preserved; malformed rows and unknown symbols return explicit errors.
 SupplyPoint terrain is authored as an ASCII sketch in `scenario.rs`.
 `scenario.rs` owns the fixed SupplyPoint layout, separate supply-depot buildings with optional
 side ownership, and units with stable typed IDs, kinds, sides, and positions.
-Resource quantities, order submission, combat, and victory resolution remain future work.
+Resource quantities, combat, and victory resolution remain future work.
 Starting requires exactly two players and initializes the scenario once before
 consuming the lobby. The host owns West and the second player East. Repeated
 start requests return the existing game. Joining is capped at two players,
@@ -88,7 +88,9 @@ guard prevent duplicate requests. A failed join preserves the form and name.
 
 Pages that load initial data own a `Flags` type and its typed GraphQL selections
 using generated `Api.*` modules. Flags initialize explicit model fields rather
-than persisting as a nested flags record. `ApiRequest` owns shared transport
+than persisting as a nested flags record. `GamePage.Flags` wraps a `Snapshot` only
+for initialization; polling and submission responses use `Snapshot` directly.
+`ApiRequest` owns shared transport
 configuration and error messages. Lobby and game responses are tagged with their
 originating ID to ignore responses from pages left during navigation.
 JavaScript boots Elm and handles interop through one outgoing `toJs` port in
@@ -114,7 +116,8 @@ application.
 
 Queries are `health`, `lobby(id)`, and `game(id)`. Mutations are
 `createLobby(name, lobbyName)`, `joinLobby(id, name)`,
-`setLobbyMap(id, mapType)`, and `startGame(id)`. Lobby
+`setLobbyMap(id, mapType)`, `startGame(id)`, and
+`submitTurn(id, turnNumber, orders)`. Lobby
 and game selections expose `id`, `name`, `mapType`, `players { name isHost }`, `isHost`,
 `isMember`, and `gameUrl`. For example:
 
@@ -165,7 +168,9 @@ mapping, and facing for both animated board units and static status portraits.
 `GamePage` also owns local camera offset, zoom, drag and click-suppression fields,
 and handles viewport events directly. `View.BoardViewport` owns only the view
 and event messages. The viewport wraps the pure board renderer in a pan/zoom surface beside a
-full-height right panel containing selection details and view controls.
+full-height right panel containing selection details and resolution information.
+`GamePage.turnPanel` overlays fixed-size game controls at the battlefield's bottom-left
+edge, with the submit action beside turn status and camera controls below.
 Mouse movement/release subscriptions run only during a drag. A 6px drag threshold
 suppresses mouse selection in the page update, while keyboard activation remains
 independent. Wheel zoom uses the battlefield dimensions to anchor to the cursor; button zoom anchors to the viewport
@@ -269,8 +274,32 @@ travel through them. Replacing or clearing a draft releases
 its old destination. The selected unit’s own draft does not restrict its choices.
 Drafts do not change occupancy. Reachable tiles and planned paths render in
 `View.GameBoard`, with keyboard activation for reachable destinations.
-Drafts disappear on reload; submission and simultaneous resolution are future
-work. The server must validate orders against its rules when submission is added.
+Unsubmitted drafts disappear on reload. `turns.rs` owns full-path validation,
+locked submissions and deterministic resolution, independently of HTTP. Each
+submission includes the expected turn number and exactly one move/hold order per
+owned unit. Validation checks ownership, unique orders/destinations, origin,
+bounds, adjacency, terrain costs, budgets and starting occupancy. The store locks
+membership checks, submission and resolution together. Repeated submission for
+an already locked side is idempotent; stale turn numbers are rejected.
+
+Both submitted sides resolve together. Opposing destination conflicts hold both
+units; other paths may intersect without combat. Events use stable numeric unit
+order, independently of arrival order. `TurnEventKind` distinguishes moves, holds
+and destination conflicts. The server stores the latest `TurnResolution`, applies
+its outcomes and increments the turn once. Snapshots reveal submission flags,
+never the opponent's pending paths. Later attacks, path interruptions and battle
+events should extend this resolution stream rather than putting authoritative
+rules in the animation player.
+
+`GamePage` polls snapshots every two seconds and locks order editing while a
+submission is pending, submitted, or playing. `Turn.elm` rewinds the completed
+snapshot to the event origins and interpolates each move along its path at 180ms
+per edge, one unit at a time. Cell positions update after each event; fractional
+presentation positions go only to `View.GameBoard`. Refresh starts directly at
+the completed snapshot; it does not replay old turns. Same-turn polling preserves
+local drafts and monotonic submission flags. Page response messages retain the
+originating game ID through `Main`. `TurnChecks.elm` verifies sequential playback,
+interpolation and reconstruction of the final board.
 
 `tests/movement.json` contains shared rule and reachability cases. `make check`
 checks the Rust rules against them and runs `MovementChecks.elm` in Node,

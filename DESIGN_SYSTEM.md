@@ -54,6 +54,8 @@ warm gray surfaces, and crisp inset/outset borders.
 | Primary bevel dark edge | internal `yellow1Color` | `#302507` |
 
 Use gold sparingly for primary actions. Bevels reverse when buttons are pressed.
+Use `Button.large` for prominent actions such as submitting a turn: wider padding
+and a 3rem minimum height, retaining the normal text size and color variant.
 The primary button uses the original yellow palette shifted up one step in all
 states. Yellow3 interpolates yellow2 and yellow4; yellow6 interpolates yellow5
 and white. Retain the other palette tokens for reuse.
@@ -90,11 +92,20 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
 - The game is a full-viewport workspace. Render the board directly on the page
   background, without a containing card or border. Center it initially at 80% of the battlefield width
   or 76vh, whichever is smaller, and allow it to pan freely.
-- Use a full-height right panel for selection details and view controls, with a
-  warm gray body and an outset bevel only on its left edge. Place selection at
-  the top and view controls at the bottom. The panel is 18rem wide, capped at
+- Use a full-height right panel for selection details, unit-specific actions and
+  turn-resolution information, with a warm gray body and an outset bevel only
+  on its left edge. Place selection at the top. The panel is 18rem wide, capped at
   45vw on narrow screens, and scrolls when needed. Reserve its width beside the
   battlefield. Omit the roster and other floating cards.
+- The bottom-left control panel is flush with the screen's bottom and left edges,
+  overlaying the battlefield without reducing its height. It is 30rem wide, capped
+  by the battlefield width, and 10rem tall (20rem on narrow screens). Only its top
+  and right edges have a bevel. Place a large submit button on the left, with the
+  turn number and readiness together beside it and opponent status below. Keep
+  zoom and reset controls in the panel's bottom row. The panel retains its size
+  during pending, waiting, playback and failure states; longer feedback scrolls
+  within the status area. Submit becomes gold and enabled when every unit has an
+  explicit move or hold order; disable it while orders are locked.
 - Selected units use a `unit status` heading, their illustration in a nightwood3
   inset screen, and their name and side without position coordinates. Display
   sample hit points, supply, and (for tanks and supply trucks) fuel as horizontal
@@ -107,7 +118,7 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   provide them.
 - Primary-button dragging pans after a 6px threshold. A drag never selects a tile;
   a click still inspects units, depots and terrain. Scroll zooms around the cursor,
-  bounded to 35–300%; the panel supplies zoom and reset controls. Keyboard
+  bounded to 35–300%; the bottom-left panel supplies zoom and reset controls. Keyboard
   navigation supports arrows, plus/minus and Home while the battlefield is focused.
 - Use smooth image rendering for illustrated terrain, building and unit sprites. SVG scales the
   board to the camera width and handles selection events directly in Elm.
@@ -135,7 +146,7 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   reselecting the unit restores both.
   Keep the selected unit active while choosing or replacing a destination. Show
   movement budget, preview cost, planned destination/cost, clear move
-  controls, and local-draft status
+  and hold position controls, and order status
   in the right panel. Reachable tiles support Tab and Enter/Space.
 - Units and depots support keyboard focus and Enter/Space activation. Illustrated
   units face right; eastern units are mirrored. Use four-frame rigid-part idle
@@ -166,3 +177,7 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
 
 - 2026-10-07: replace game floating cards with a full-height right panel, beveled
   only on the left edge, containing selection details and view controls.
+
+- 2026-10-09: move zoom controls to a fixed-size, flush bottom-left control panel
+  with a larger left-aligned submit button and inline turn number. Keep selection
+  and resolution information on the right; omit view-opening shortcuts for now.

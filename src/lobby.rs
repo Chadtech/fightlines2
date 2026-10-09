@@ -8,6 +8,7 @@ use crate::{
     scenario::{Scenario, Side},
     seed::{self, Seed},
     session_token::SessionToken,
+    turns::{MoveOrderInput, TurnResolution, Turns},
 };
 use juniper::{FieldError, FieldResult, GraphQLObject};
 
@@ -86,6 +87,7 @@ struct Lobby {
 /// Starting consumes the lobby. The source ID keeps existing invite URLs
 /// resolvable for polling players and repeated start requests.
 struct Game {
+    turns: Turns,
     access: GameAccess,
     scenario: Scenario,
     source_lobby: LobbyId,
@@ -103,6 +105,7 @@ enum GameAccess {
 impl Game {
     fn from_lobby(lobby: Lobby, scenario: Scenario) -> Self {
         Self {
+            turns: Turns::default(),
             access: GameAccess::Members,
             scenario,
             source_lobby: lobby.id,
@@ -140,6 +143,10 @@ struct PlayerView {
 /// Stored game state remains in `Game`; viewer-specific flags are computed here.
 #[derive(GraphQLObject)]
 pub struct GameSnapshot {
+    turn_number: i32,
+    submitted: bool,
+    opponent_submitted: bool,
+    last_resolution: Option<TurnResolution>,
     id: String,
     name: String,
     map_type: MapType,
@@ -228,7 +235,12 @@ fn game_snapshot(game: &Game, session: Option<&SessionToken>) -> Snapshot {
 }
 
 fn game_view(game: &Game, session: &SessionToken) -> GameSnapshot {
+    let index = usize::from(session != &game.host);
     GameSnapshot {
+        turn_number: game.turns.number,
+        submitted: game.turns.orders[index].is_some(),
+        opponent_submitted: game.turns.orders[1 - index].is_some(),
+        last_resolution: game.turns.last_resolution.clone(),
         id: game.source_lobby.to_string(),
         name: game.name.to_string(),
         map_type: game.map_type,
@@ -428,6 +440,51 @@ pub fn game(context: &Context, id: LobbyId) -> FieldResult<GameSnapshot> {
     if !game.players.iter().any(|player| player.session == identity) {
         return error("Only the host can start a game, and only joined players can enter it.");
     }
+    Ok(game_view(game, &identity))
+}
+
+/// Submit under the same lock as validation and resolution so concurrent players
+/// cannot resolve against different boards. Development preview stays read-only.
+pub fn submit_turn(
+    context: &Context,
+    id: LobbyId,
+    turn_number: i32,
+    orders: Vec<MoveOrderInput>,
+) -> FieldResult<GameSnapshot> {
+    let mut state = context
+        .store
+        .0
+        .lock()
+        .or_else(|_| error("the server state is unavailable."))?;
+    let game = state
+        .games
+        .get_mut(&id)
+        .ok_or_else(|| FieldError::new("this game no longer exists.", juniper::Value::null()))?;
+    if matches!(game.access, GameAccess::DevelopmentPreview) {
+        return error(
+            "the development preview is read-only. create a two-player game to submit turns.",
+        );
+    }
+    let identity = context.identity().ok_or_else(|| {
+        FieldError::new(
+            "only joined players can submit turns.",
+            juniper::Value::null(),
+        )
+    })?;
+    let index = game
+        .players
+        .iter()
+        .position(|player| player.session == identity)
+        .ok_or_else(|| {
+            FieldError::new(
+                "only joined players can submit turns.",
+                juniper::Value::null(),
+            )
+        })?;
+    let side = if index == 0 { Side::West } else { Side::East };
+    game.turns
+        .submit(&mut game.scenario, side, turn_number, orders)
+        .map_err(|message| FieldError::new(message, juniper::Value::null()))?;
     Ok(game_view(game, &identity))
 }
 

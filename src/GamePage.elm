@@ -21,11 +21,14 @@ import Api.Enum.Side
     exposing
         ( Side
         )
+import Api.Enum.TurnEventKind as EventKind
+import Api.InputObject
+import Api.Mutation
 import Api.Object
 import Api.Object.Coordinate as CoordinateApi
 import Api.Object.Depot as DepotApi
 import Api.Object.GamePlayerView as PlayerView
-import Api.Object.GameSnapshot as Snapshot
+import Api.Object.GameSnapshot as SnapshotApi
 import Api.Object.Map as MapApi
 import Api.Object.MovementRule as MovementRuleApi
 import Api.Object.Scenario as Scenario
@@ -66,6 +69,7 @@ import Style as S
 import Terrain
 import TerrainFeature
 import Time
+import Turn
 import Unit
 import UnitId
 import View.BoardViewport as Viewport
@@ -83,11 +87,16 @@ import View.UnitStatus as UnitStatus
 
 
 type alias Flags =
+    { snapshot : Snapshot }
+
+
+type alias Snapshot =
     { name : String
     , mapType : MapType
     , players : List Player
     , board : GameBoard.GameBoard
     , movementRules : List Movement.Rule
+    , turn : Turn.Snapshot
     }
 
 
@@ -99,7 +108,12 @@ type alias Player =
 
 
 type alias Model =
-    { shared : Shared.Model
+    { turn : Turn.Snapshot
+    , busy : Bool
+    , refreshing : Bool
+    , turnError : Maybe String
+    , playback : Maybe Turn.Playback
+    , shared : Shared.Model
     , name : String
     , mapType : MapType
     , players : List Player
@@ -154,6 +168,12 @@ type Msg
     | ClearMoveClicked
     | InspectClicked
     | EscapePressed
+    | HoldPositionClicked
+    | SubmitTurnClicked
+    | SubmitResponseReceived (ApiRequest.Response Snapshot)
+    | PollTimerElapsed Time.Posix
+    | PollResponseReceived (ApiRequest.Response Snapshot)
+    | PlaybackFrameElapsed Float
 
 
 
@@ -164,12 +184,17 @@ type Msg
 
 init : Shared.Model -> Flags -> Model
 init shared flags =
-    { shared = shared
-    , name = flags.name
-    , mapType = flags.mapType
-    , players = flags.players
-    , board = flags.board
-    , movementRules = flags.movementRules
+    { turn = flags.snapshot.turn
+    , busy = False
+    , refreshing = False
+    , turnError = Nothing
+    , playback = Nothing
+    , shared = shared
+    , name = flags.snapshot.name
+    , mapType = flags.snapshot.mapType
+    , players = flags.snapshot.players
+    , board = flags.snapshot.board
+    , movementRules = flags.snapshot.movementRules
     , pathPreview = Nothing
     , moveOptions = []
     , plannedMoves = []
@@ -185,99 +210,14 @@ init shared flags =
 
 load : LobbyId -> Graphql.Http.Request Flags
 load id =
-    let
-        selection : SelectionSet Flags Api.Object.GameSnapshot
-        selection =
-            SS.map5 Flags
-                Snapshot.name
-                Snapshot.mapType
-                (Snapshot.players (SS.map3 Player PlayerView.name PlayerView.side PlayerView.isYou))
-                (Snapshot.scenario boardSelection)
-                (Snapshot.movementRules
-                    (SS.map3 Movement.Rule
-                        MovementRuleApi.kind
-                        MovementRuleApi.budget
-                        (MovementRuleApi.terrainCosts (SS.map2 Movement.TerrainCost MovementCostApi.terrain MovementCostApi.cost))
-                    )
-                )
-    in
-    Api.Query.game { id = LobbyId.toString id } selection
+    Api.Query.game { id = LobbyId.toString id } (SS.map Flags snapshotSelection)
         |> ApiRequest.queryRequest
 
 
-boardSelection : SelectionSet GameBoard.GameBoard Api.Object.Scenario
-boardSelection =
-    SS.map3 GameBoard.GameBoard
-        (Scenario.map
-            (SS.map4 Map.Map
-                MapApi.width
-                MapApi.height
-                MapApi.baseTile
-                (MapApi.features (SS.map2 TerrainFeature.TerrainFeature (FeatureApi.position coordinateSelection) FeatureApi.terrain))
-            )
-        )
-        (Scenario.depots (SS.map Depot.Depot (DepotApi.position coordinateSelection)))
-        (Scenario.units
-            (SS.map4 Unit.Unit
-                (UnitApi.id |> SS.mapOrFail UnitId.parse)
-                UnitApi.side
-                UnitApi.kind
-                (UnitApi.position coordinateSelection)
-            )
-        )
-
-
-coordinateSelection : SelectionSet Coordinate.Coordinate Api.Object.Coordinate
-coordinateSelection =
-    SS.map2 Coordinate.Coordinate CoordinateApi.x CoordinateApi.y
-
-
-update : Msg -> Model -> ( Model, Eff Msg )
-update msg model =
-    case msg of
-        BoardMsg boardMsg ->
-            updateBoard boardMsg model
-
-        ViewportMsg viewportMsg ->
-            ( updateViewport viewportMsg model, E.none )
-
-        ClearMoveClicked ->
-            ( { model
-                | plannedMoves = List.filter (\plan -> Just plan.unitId /= Maybe.map .id (selectedUnit model)) model.plannedMoves
-                , pathPreview = selectedUnit model |> Maybe.map Movement.start
-                , movementStatus = PlannedMoveCleared
-              }
-            , E.none
-            )
-
-        InspectClicked ->
-            clearSelection model
-
-        EscapePressed ->
-            clearSelection model
-
-        AnimationTimerElapsed _ ->
-            ( { model | frame = AnimationFrame.next model.frame }, E.none )
-
-
-clearSelection : Model -> ( Model, Eff Msg )
-clearSelection model =
-    ( { model
-        | selected = Nothing
-        , moveOptions = []
-        , pathPreview = Nothing
-        , movementStatus = NoMovementStatus
-      }
-    , E.none
-    )
-
-
-subscriptions : Model -> Sub Msg
-subscriptions model =
-    Sub.batch
-        [ Time.every 400 AnimationTimerElapsed
-        , viewportSubscriptions model
-        ]
+loadSnapshot : LobbyId -> Graphql.Http.Request Snapshot
+loadSnapshot id =
+    Api.Query.game { id = LobbyId.toString id } snapshotSelection
+        |> ApiRequest.queryRequest
 
 
 
@@ -300,289 +240,8 @@ setShared shared model =
 
 
 ----------------------------------------------------------------
--- VIEW --
+-- HELPERS --
 ----------------------------------------------------------------
-
-
-view : Model -> List (Html Msg)
-view model =
-    [ H.div
-        [ A.css
-            [ S.fixed
-            , S.top0
-            , S.bottom0
-            , S.left0
-            , S.right0
-            , S.row
-            ]
-        ]
-        [ Viewport.toHtml ViewportMsg
-            model
-            (Board.toHtml BoardMsg
-                { frame = model.frame
-                , selected = model.selected
-                , reachable =
-                    if model.pathPreview == Nothing then
-                        []
-
-                    else
-                        List.map .destination model.moveOptions
-                , paths = List.map (.move >> .path) model.plannedMoves
-                , previewPath = model.pathPreview |> Maybe.map .path |> Maybe.withDefault []
-                }
-                model.board
-            )
-        , GamePanel.toHtml
-            [ selectionView model
-            , viewControls model
-            ]
-        ]
-    ]
-
-
-selectionView : Model -> Html Msg
-selectionView model =
-    H.section
-        [ A.attribute "aria-label" "selection"
-        , A.css
-            [ S.col
-            , S.g3
-            ]
-        ]
-        [ H.h2
-            []
-            [ H.text "unit status"
-            ]
-        , case selectedUnit model of
-            Just unit ->
-                Keyed.node "div"
-                    []
-                    [ ( UnitId.toString unit.id, UnitStatus.toHtml unit )
-                    ]
-
-            Nothing ->
-                H.p
-                    [ A.attribute "role" "status"
-                    ]
-                    [ H.text (selectionText model)
-                    ]
-        , movementView model
-        ]
-
-
-selectedUnit : Model -> Maybe Unit.Unit
-selectedUnit model =
-    model.board.units
-        |> List.filter (\unit -> Just unit.position == model.selected)
-        |> List.head
-
-
-isOwnUnit : Model -> Unit.Unit -> Bool
-isOwnUnit model unit =
-    List.any (\player -> player.isYou && player.side == unit.side) model.players
-
-
-movementView : Model -> Html Msg
-movementView model =
-    let
-        details : List (Html Msg)
-        details =
-            case selectedUnit model of
-                Just unit ->
-                    if isOwnUnit model unit then
-                        let
-                            budget : String
-                            budget =
-                                model.movementRules
-                                    |> List.filter (\rule -> rule.kind == unit.kind)
-                                    |> List.head
-                                    |> Maybe.map (.budget >> Movement.pointsLabel)
-                                    |> Maybe.withDefault "?"
-
-                            planned : Maybe PlannedMove
-                            planned =
-                                model.plannedMoves
-                                    |> List.filter (\plan -> plan.unitId == unit.id)
-                                    |> List.head
-
-                            pathDetails : List (Html Msg)
-                            pathDetails =
-                                [ H.p
-                                    []
-                                    [ H.text
-                                        ("movement budget: "
-                                            ++ budget
-                                            ++ (if model.pathPreview == Nothing then
-                                                    ". move saved."
-
-                                                else
-                                                    ". hover to trace a path; click to save it."
-                                               )
-                                        )
-                                    ]
-                                , H.p
-                                    []
-                                    [ H.text
-                                        (if model.pathPreview == Nothing then
-                                            "reselect the unit to resume drawing, or click a new destination."
-
-                                         else
-                                            "retrace to shorten. if the route exceeds the budget, an affordable route is chosen."
-                                        )
-                                    ]
-                                , H.p
-                                    []
-                                    [ H.text
-                                        (model.pathPreview
-                                            |> Maybe.map (\preview -> "preview cost: " ++ Movement.pointsLabel preview.cost ++ "/" ++ budget)
-                                            |> Maybe.withDefault ""
-                                        )
-                                    ]
-                                ]
-
-                            plannedDetails : List (Html Msg)
-                            plannedDetails =
-                                case planned of
-                                    Nothing ->
-                                        []
-
-                                    Just plan ->
-                                        [ H.p
-                                            []
-                                            [ H.text ("planned destination: (" ++ String.fromInt plan.move.destination.x ++ ", " ++ String.fromInt plan.move.destination.y ++ ") · cost: " ++ Movement.pointsLabel plan.move.cost ++ "/" ++ budget)
-                                            ]
-                                        , Button.secondary "clear move" ClearMoveClicked
-                                            |> Button.toHtml
-                                        ]
-                        in
-                        pathDetails ++ plannedDetails
-
-                    else
-                        [ H.p
-                            []
-                            [ H.text "this unit belongs to the other player."
-                            ]
-                        ]
-
-                Nothing ->
-                    []
-
-        statusDetails : List (Html Msg)
-        statusDetails =
-            [ H.p
-                [ A.attribute "role" "status"
-                ]
-                [ H.text (movementStatusText model.movementStatus)
-                ]
-            , H.p
-                []
-                [ H.text (String.fromInt (List.length model.plannedMoves) ++ " planned moves · local drafts; refresh clears them.")
-                ]
-            ]
-    in
-    H.div
-        [ A.css
-            [ S.col
-            , S.g2
-            ]
-        ]
-        (details ++ statusDetails)
-
-
-viewControls : Model -> Html Msg
-viewControls model =
-    H.section
-        [ A.attribute "aria-label" "view controls"
-        , A.css
-            [ S.col
-            , S.g3
-            ]
-        ]
-        [ H.h2
-            []
-            [ H.text "view"
-            ]
-        , H.div
-            [ A.css
-                [ S.row
-                , S.flexWrap
-                , S.itemsCenter
-                , S.g2
-                ]
-            ]
-            [ Button.secondary "−" (ViewportMsg Viewport.ZoomOutClicked)
-                |> Button.toHtml
-            , H.span
-                []
-                [ H.text (String.fromInt (round (model.zoom * 100)) ++ "%")
-                ]
-            , Button.secondary "+" (ViewportMsg Viewport.ZoomInClicked)
-                |> Button.toHtml
-            , Button.secondary "reset view" (ViewportMsg Viewport.ResetClicked)
-                |> Button.toHtml
-            ]
-        , H.p
-            []
-            [ H.text "drag to pan · scroll to zoom · click to inspect"
-            ]
-        ]
-
-
-selectionText : Model -> String
-selectionText model =
-    case model.selected of
-        Nothing ->
-            "select a unit, depot or tile to inspect it."
-
-        Just position ->
-            let
-                coordinate =
-                    " at (" ++ String.fromInt position.x ++ ", " ++ String.fromInt position.y ++ ")"
-
-                unit =
-                    model.board.units |> List.filter (\item -> item.position == position) |> List.head
-
-                depot =
-                    model.board.depots |> List.filter (\item -> item.position == position) |> List.head
-            in
-            case unit of
-                Just item ->
-                    Unit.label item ++ coordinate
-
-                Nothing ->
-                    case depot of
-                        Just _ ->
-                            "supply depot" ++ coordinate
-
-                        Nothing ->
-                            Terrain.label (Map.terrainAt model.board.map position) ++ coordinate
-
-
-loadFailedView : LobbyId -> Graphql.Http.Error Flags -> msg -> List (Html msg)
-loadFailedView id error retryMsg =
-    let
-        message : String
-        message =
-            ApiRequest.errorMessage error
-    in
-    [ [ H.p
-            [ A.attribute "role" "status"
-            ]
-            [ H.text message
-            ]
-      , H.a
-            [ A.href (Route.toString (Route.Lobby id))
-            , A.css
-                [ S.link
-                ]
-            ]
-            [ H.text "return to lobby"
-            ]
-      , Button.secondary "retry" retryMsg
-            |> Button.toHtml
-      ]
-        |> Card.toHtml Card.simple
-    ]
 
 
 updateViewport : Viewport.Msg -> Model -> Model
@@ -704,59 +363,240 @@ zoomAt anchor factor model =
 
 resetViewport : Model -> Model
 resetViewport model =
-    { model | offset = { x = 0, y = 0 }, zoom = 1, drag = Nothing, suppressClick = False }
+    { model
+        | offset = { x = 0, y = 0 }
+        , zoom = 1
+        , drag = Nothing
+        , suppressClick = False
+    }
 
 
-viewportSubscriptions : Model -> Sub Msg
-viewportSubscriptions model =
-    case model.drag of
-        Nothing ->
-            Sub.none
+snapshotSelection : SelectionSet Snapshot Api.Object.GameSnapshot
+snapshotSelection =
+    let
+        boardSelection : SelectionSet GameBoard.GameBoard Api.Object.Scenario
+        boardSelection =
+            SS.map3 GameBoard.GameBoard
+                (Scenario.map
+                    (SS.map4 Map.Map
+                        MapApi.width
+                        MapApi.height
+                        MapApi.baseTile
+                        (MapApi.features
+                            (SS.map2
+                                TerrainFeature.TerrainFeature
+                                (FeatureApi.position coordinateSelection)
+                                FeatureApi.terrain
+                            )
+                        )
+                    )
+                )
+                (Scenario.depots (SS.map Depot.Depot (DepotApi.position coordinateSelection)))
+                (Scenario.units
+                    (SS.map4 Unit.Unit
+                        (UnitApi.id |> SS.mapOrFail UnitId.parse)
+                        UnitApi.side
+                        UnitApi.kind
+                        (UnitApi.position coordinateSelection)
+                    )
+                )
+    in
+    SS.map6 Snapshot
+        SnapshotApi.name
+        SnapshotApi.mapType
+        (SnapshotApi.players
+            (SS.map3
+                Player
+                PlayerView.name
+                PlayerView.side
+                PlayerView.isYou
+            )
+        )
+        (SnapshotApi.scenario boardSelection)
+        (SnapshotApi.movementRules
+            (SS.map3
+                Movement.Rule
+                MovementRuleApi.kind
+                MovementRuleApi.budget
+                (MovementRuleApi.terrainCosts
+                    (SS.map2 Movement.TerrainCost MovementCostApi.terrain MovementCostApi.cost)
+                )
+            )
+        )
+        Turn.selection
 
-        Just _ ->
-            Sub.batch
-                [ Browser.Events.onMouseMove
-                    (Decode.map2 (\point buttons -> ViewportMsg (Viewport.MouseMoved point buttons)) Point.decoder (Decode.field "buttons" Decode.int))
-                , Browser.Events.onMouseUp (Decode.map (Viewport.MouseReleased >> ViewportMsg) Point.decoder)
-                , Browser.Events.onVisibilityChange (Viewport.WindowVisibilityChanged >> ViewportMsg)
-                ]
+
+coordinateSelection : SelectionSet Coordinate.Coordinate Api.Object.Coordinate
+coordinateSelection =
+    SS.map2 Coordinate.Coordinate CoordinateApi.x CoordinateApi.y
 
 
-updateBoard : Board.Msg -> Model -> ( Model, Eff Msg )
-updateBoard boardMsg model =
+clearSelection : Model -> Model
+clearSelection model =
+    { model
+        | selected = Nothing
+        , moveOptions = []
+        , pathPreview = Nothing
+        , movementStatus = NoMovementStatus
+    }
+
+
+
+----------------------------------------------------------------
+-- UPDATE --
+----------------------------------------------------------------
+
+
+update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
+update lobbyId msg model =
+    case msg of
+        BoardMsg boardMsg ->
+            if planningLocked model then
+                ( inspectBoard boardMsg model, E.none )
+
+            else
+                handleBoardMsg boardMsg model
+                    |> E.withOut
+
+        ViewportMsg viewportMsg ->
+            ( updateViewport viewportMsg model, E.none )
+
+        ClearMoveClicked ->
+            if planningLocked model then
+                ( model, E.none )
+
+            else
+                ( { model
+                    | plannedMoves = List.filter (\plan -> Just plan.unitId /= Maybe.map .id (selectedUnit model)) model.plannedMoves
+                    , pathPreview = selectedUnit model |> Maybe.map Movement.start
+                    , movementStatus = PlannedMoveCleared
+                  }
+                , E.none
+                )
+
+        InspectClicked ->
+            clearSelection model
+                |> E.withOut
+
+        EscapePressed ->
+            clearSelection model
+                |> E.withOut
+
+        HoldPositionClicked ->
+            case selectedUnit model of
+                Just unit ->
+                    if isOwnUnit model unit && not (planningLocked model) then
+                        ( { model
+                            | plannedMoves = { unitId = unit.id, move = Movement.start unit } :: List.filter (\plan -> plan.unitId /= unit.id) model.plannedMoves
+                            , pathPreview = Nothing
+                            , moveOptions = []
+                            , movementStatus = MovePlanned
+                          }
+                        , E.none
+                        )
+
+                    else
+                        ( model, E.none )
+
+                Nothing ->
+                    ( model, E.none )
+
+        SubmitTurnClicked ->
+            if readyToSubmit model then
+                ( { model | busy = True, turnError = Nothing, pathPreview = Nothing, moveOptions = [] }
+                , E.request SubmitResponseReceived (submitRequest lobbyId model)
+                )
+
+            else
+                ( model, E.none )
+
+        SubmitResponseReceived result ->
+            case result of
+                Ok snapshot ->
+                    { model | busy = False, turnError = Nothing }
+                        |> receiveSnapshot snapshot
+                        |> E.withOut
+
+                Err error ->
+                    ( { model | busy = False, turnError = Just (ApiRequest.errorMessage error) }, E.none )
+
+        PollTimerElapsed _ ->
+            if model.refreshing || model.busy || model.playback /= Nothing then
+                ( model, E.none )
+
+            else
+                ( { model | refreshing = True }
+                , E.request PollResponseReceived (loadSnapshot lobbyId)
+                )
+
+        PollResponseReceived result ->
+            case result of
+                Ok snapshot ->
+                    { model | refreshing = False }
+                        |> receiveSnapshot snapshot
+                        |> E.withOut
+
+                Err error ->
+                    ( { model
+                        | refreshing = False
+                        , turnError = Just (ApiRequest.errorMessage error)
+                      }
+                    , E.none
+                    )
+
+        PlaybackFrameElapsed delta ->
+            case model.playback of
+                Nothing ->
+                    ( model, E.none )
+
+                Just playback ->
+                    let
+                        ( remaining, board ) =
+                            Turn.tick (min 50 delta) playback model.board
+                    in
+                    ( { model | playback = remaining, board = board }, E.none )
+
+        AnimationTimerElapsed _ ->
+            ( { model | frame = AnimationFrame.next model.frame }
+            , E.none
+            )
+
+
+handleBoardMsg : Board.Msg -> Model -> Model
+handleBoardMsg boardMsg model =
     case boardMsg of
         Board.UnitMouseClicked id ->
             if model.suppressClick then
-                ( model, E.none )
+                model
 
             else
-                updateBoard (Board.UnitClicked id) model
+                handleBoardMsg (Board.UnitClicked id) model
 
         Board.TileMouseClicked position ->
             if model.suppressClick then
-                ( model, E.none )
+                model
 
             else
-                updateBoard (Board.TileClicked position) model
+                handleBoardMsg (Board.TileClicked position) model
 
         Board.TileHovered position ->
             if model.drag /= Nothing || model.pathPreview == Nothing then
-                ( model, E.none )
+                model
 
             else
                 case traceTo position model of
                     Just preview ->
-                        ( { model | pathPreview = Just preview, movementStatus = NoMovementStatus }, E.none )
+                        { model | pathPreview = Just preview, movementStatus = NoMovementStatus }
 
                     Nothing ->
-                        ( model, E.none )
+                        model
 
         Board.UnitClicked id ->
             if Maybe.map .id (selectedUnit model) == Just id then
-                update InspectClicked model
+                clearSelection model
 
             else
-                ( { model
+                { model
                     | selected =
                         model.board.units
                             |> List.filter (\unit -> unit.id == id)
@@ -774,9 +614,7 @@ updateBoard boardMsg model =
                             |> List.head
                             |> Maybe.map Movement.start
                     , movementStatus = NoMovementStatus
-                  }
-                , E.none
-                )
+                }
 
         Board.TileClicked position ->
             case selectedUnit model of
@@ -793,36 +631,354 @@ updateBoard boardMsg model =
                         in
                         case traceTo position model |> Maybe.andThen destinationOption of
                             Just move ->
-                                ( { model
+                                { model
                                     | plannedMoves = { unitId = unit.id, move = move } :: List.filter (\plan -> plan.unitId /= unit.id) model.plannedMoves
                                     , pathPreview = Nothing
                                     , movementStatus = MovePlanned
-                                  }
-                                , E.none
-                                )
+                                }
 
                             Nothing ->
-                                ( { model | movementStatus = DestinationUnavailable }, E.none )
+                                { model | movementStatus = DestinationUnavailable }
 
                     else
-                        ( { model
+                        { model
                             | selected = Just position
                             , moveOptions = []
                             , pathPreview = Nothing
                             , movementStatus = NoMovementStatus
-                          }
-                        , E.none
-                        )
+                        }
 
                 Nothing ->
-                    ( { model
+                    { model
                         | selected = Just position
                         , moveOptions = []
                         , pathPreview = Nothing
                         , movementStatus = NoMovementStatus
-                      }
-                    , E.none
-                    )
+                    }
+
+
+
+----------------------------------------------------------------
+-- VIEW --
+----------------------------------------------------------------
+
+
+view : Model -> List (Html Msg)
+view model =
+    [ H.div
+        [ A.css
+            [ S.fixed
+            , S.top0
+            , S.bottom0
+            , S.left0
+            , S.right0
+            , S.row
+            ]
+        ]
+        [ H.div
+            [ A.css
+                [ S.relative
+                , S.flex1
+                , S.minW0
+                , S.hFull
+                , S.col
+                ]
+            ]
+            [ Viewport.toHtml ViewportMsg
+                model
+                (Board.toHtml
+                    { frame = model.frame
+                    , moving = Turn.movingPosition model.playback
+                    , selected = model.selected
+                    , reachable =
+                        if model.pathPreview == Nothing then
+                            []
+
+                        else
+                            List.map .destination model.moveOptions
+                    , paths = List.map (.move >> .path) model.plannedMoves
+                    , previewPath = model.pathPreview |> Maybe.map .path |> Maybe.withDefault []
+                    }
+                    model.board
+                    |> H.map BoardMsg
+                )
+            , turnPanel model
+            ]
+        , GamePanel.toHtml
+            [ selectionView model
+            , resolutionSummary model
+            ]
+        ]
+    ]
+
+
+selectionView : Model -> Html Msg
+selectionView model =
+    H.section
+        [ A.attribute "aria-label" "selection"
+        , A.css
+            [ S.col
+            , S.g3
+            ]
+        ]
+        [ H.h2
+            []
+            [ H.text "unit status"
+            ]
+        , case selectedUnit model of
+            Just unit ->
+                Keyed.node "div"
+                    []
+                    [ ( UnitId.toString unit.id, UnitStatus.toHtml unit )
+                    ]
+
+            Nothing ->
+                H.p
+                    [ A.attribute "role" "status"
+                    ]
+                    [ H.text (selectionText model)
+                    ]
+        , movementView model
+        ]
+
+
+selectedUnit : Model -> Maybe Unit.Unit
+selectedUnit model =
+    model.board.units
+        |> List.filter (\unit -> Just unit.position == model.selected)
+        |> List.head
+
+
+isOwnUnit : Model -> Unit.Unit -> Bool
+isOwnUnit model unit =
+    List.any (\player -> player.isYou && player.side == unit.side) model.players
+
+
+movementView : Model -> Html Msg
+movementView model =
+    let
+        details : List (Html Msg)
+        details =
+            case selectedUnit model of
+                Just unit ->
+                    if isOwnUnit model unit then
+                        let
+                            budget : String
+                            budget =
+                                model.movementRules
+                                    |> List.filter (\rule -> rule.kind == unit.kind)
+                                    |> List.head
+                                    |> Maybe.map (.budget >> Movement.pointsLabel)
+                                    |> Maybe.withDefault "?"
+
+                            planned : Maybe PlannedMove
+                            planned =
+                                model.plannedMoves
+                                    |> List.filter (\plan -> plan.unitId == unit.id)
+                                    |> List.head
+
+                            pathDetails : List (Html Msg)
+                            pathDetails =
+                                [ H.p
+                                    []
+                                    [ H.text
+                                        ("movement budget: "
+                                            ++ budget
+                                            ++ (if model.pathPreview == Nothing then
+                                                    ". move saved."
+
+                                                else
+                                                    ". hover to trace a path; click to save it."
+                                               )
+                                        )
+                                    ]
+                                , H.p
+                                    []
+                                    [ H.text
+                                        (if model.pathPreview == Nothing then
+                                            "reselect the unit to resume drawing, or click a new destination."
+
+                                         else
+                                            "retrace to shorten. if the route exceeds the budget, an affordable route is chosen."
+                                        )
+                                    ]
+                                , H.p
+                                    []
+                                    [ H.text
+                                        (model.pathPreview
+                                            |> Maybe.map (\preview -> "preview cost: " ++ Movement.pointsLabel preview.cost ++ "/" ++ budget)
+                                            |> Maybe.withDefault ""
+                                        )
+                                    ]
+                                ]
+
+                            plannedDetails : List (Html Msg)
+                            plannedDetails =
+                                case planned of
+                                    Nothing ->
+                                        []
+
+                                    Just plan ->
+                                        [ H.p
+                                            []
+                                            [ H.text ("planned destination: (" ++ String.fromInt plan.move.destination.x ++ ", " ++ String.fromInt plan.move.destination.y ++ ") · cost: " ++ Movement.pointsLabel plan.move.cost ++ "/" ++ budget)
+                                            ]
+                                        , Button.secondary "clear move" ClearMoveClicked
+                                            |> Button.toHtml
+                                        ]
+                        in
+                        if planningLocked model then
+                            [ H.p [] [ H.text "orders are locked while waiting or playing the turn." ] ]
+
+                        else
+                            let
+                                holdControls : List (Html Msg)
+                                holdControls =
+                                    [ Button.secondary "hold position" HoldPositionClicked
+                                        |> Button.toHtml
+                                    ]
+                            in
+                            List.concat [ pathDetails, holdControls, plannedDetails ]
+
+                    else
+                        [ H.p
+                            []
+                            [ H.text "this unit belongs to the other player."
+                            ]
+                        ]
+
+                Nothing ->
+                    []
+
+        statusDetails : List (Html Msg)
+        statusDetails =
+            [ H.p
+                [ A.attribute "role" "status"
+                ]
+                [ H.text (movementStatusText model.movementStatus)
+                ]
+            , H.p
+                []
+                [ H.text (String.fromInt (List.length model.plannedMoves) ++ " orders planned.")
+                ]
+            ]
+    in
+    H.div
+        [ A.css
+            [ S.col
+            , S.g2
+            ]
+        ]
+        (details ++ statusDetails)
+
+
+viewControls : Model -> Html Msg
+viewControls model =
+    H.section
+        [ A.attribute "aria-label" "view controls"
+        , A.css
+            [ S.row
+            , S.flexWrap
+            , S.itemsCenter
+            , S.g2
+            ]
+        ]
+        [ H.span
+            []
+            [ H.text "zoom"
+            ]
+        , H.div
+            [ A.css
+                [ S.row
+                , S.flexWrap
+                , S.itemsCenter
+                , S.g2
+                ]
+            ]
+            [ Button.secondary "−" (ViewportMsg Viewport.ZoomOutClicked)
+                |> Button.toHtml
+            , H.span
+                []
+                [ H.text (String.fromInt (round (model.zoom * 100)) ++ "%")
+                ]
+            , Button.secondary "+" (ViewportMsg Viewport.ZoomInClicked)
+                |> Button.toHtml
+            , Button.secondary "reset view" (ViewportMsg Viewport.ResetClicked)
+                |> Button.toHtml
+            ]
+        ]
+
+
+selectionText : Model -> String
+selectionText model =
+    case model.selected of
+        Nothing ->
+            "select a unit, depot or tile to inspect it."
+
+        Just position ->
+            let
+                coordinate =
+                    " at (" ++ String.fromInt position.x ++ ", " ++ String.fromInt position.y ++ ")"
+
+                unit =
+                    model.board.units |> List.filter (\item -> item.position == position) |> List.head
+
+                depot =
+                    model.board.depots |> List.filter (\item -> item.position == position) |> List.head
+            in
+            case unit of
+                Just item ->
+                    Unit.label item ++ coordinate
+
+                Nothing ->
+                    case depot of
+                        Just _ ->
+                            "supply depot" ++ coordinate
+
+                        Nothing ->
+                            Terrain.label (Map.terrainAt model.board.map position) ++ coordinate
+
+
+loadFailedView : LobbyId -> Graphql.Http.Error Flags -> msg -> List (Html msg)
+loadFailedView id error retryMsg =
+    let
+        message : String
+        message =
+            ApiRequest.errorMessage error
+    in
+    [ [ H.p
+            [ A.attribute "role" "status"
+            ]
+            [ H.text message
+            ]
+      , H.a
+            [ A.href (Route.toString (Route.Lobby id))
+            , A.css
+                [ S.link
+                ]
+            ]
+            [ H.text "return to lobby"
+            ]
+      , Button.secondary "retry" retryMsg
+            |> Button.toHtml
+      ]
+        |> Card.toHtml Card.simple
+    ]
+
+
+viewportSubscriptions : Model -> Sub Msg
+viewportSubscriptions model =
+    case model.drag of
+        Nothing ->
+            Sub.none
+
+        Just _ ->
+            Sub.batch
+                [ Browser.Events.onMouseMove
+                    (Decode.map2 (\point buttons -> ViewportMsg (Viewport.MouseMoved point buttons)) Point.decoder (Decode.field "buttons" Decode.int))
+                , Browser.Events.onMouseUp (Decode.map (Viewport.MouseReleased >> ViewportMsg) Point.decoder)
+                , Browser.Events.onVisibilityChange (Viewport.WindowVisibilityChanged >> ViewportMsg)
+                ]
 
 
 traceTo : Coordinate.Coordinate -> Model -> Maybe Movement.Option
@@ -849,3 +1005,253 @@ reservedDestinations unit model =
     model.plannedMoves
         |> List.filter (\plan -> plan.unitId /= unit.id)
         |> List.map (.move >> .destination)
+
+
+planningLocked : Model -> Bool
+planningLocked model =
+    model.busy || model.turn.submitted || model.playback /= Nothing
+
+
+readyToSubmit : Model -> Bool
+readyToSubmit model =
+    let
+        ownUnits : List Unit.Unit
+        ownUnits =
+            List.filter (isOwnUnit model) model.board.units
+
+        hasOrder : Unit.Unit -> Bool
+        hasOrder unit =
+            List.any (\plan -> plan.unitId == unit.id) model.plannedMoves
+    in
+    not (planningLocked model) && not (List.isEmpty ownUnits) && List.all hasOrder ownUnits
+
+
+submitRequest : LobbyId -> Model -> Graphql.Http.Request Snapshot
+submitRequest lobbyId model =
+    let
+        order : PlannedMove -> Api.InputObject.MoveOrderInput
+        order plan =
+            Api.InputObject.buildMoveOrderInput
+                { unitId = UnitId.toString plan.unitId
+                , path = List.map Api.InputObject.buildCoordinateInput plan.move.path
+                }
+    in
+    Api.Mutation.submitTurn
+        { id = LobbyId.toString lobbyId
+        , turnNumber = model.turn.number
+        , orders = List.map order model.plannedMoves
+        }
+        snapshotSelection
+        |> ApiRequest.mutationRequest
+
+
+receiveSnapshot : Snapshot -> Model -> Model
+receiveSnapshot snapshot model =
+    if snapshot.turn.number < model.turn.number then
+        model
+
+    else if snapshot.turn.number == model.turn.number then
+        let
+            turn : Turn.Snapshot
+            turn =
+                snapshot.turn
+        in
+        { model | turn = { turn | submitted = model.turn.submitted || turn.submitted, opponentSubmitted = model.turn.opponentSubmitted || turn.opponentSubmitted } }
+
+    else
+        { model
+            | turn = snapshot.turn
+            , board = Turn.rewind snapshot.turn snapshot.board
+            , playback = Turn.start snapshot.turn
+            , plannedMoves = []
+            , selected = Nothing
+            , moveOptions = []
+            , pathPreview = Nothing
+            , movementStatus = NoMovementStatus
+            , turnError = Nothing
+        }
+
+
+turnPanel : Model -> Html Msg
+turnPanel model =
+    let
+        ownCount : Int
+        ownCount =
+            List.length (List.filter (isOwnUnit model) model.board.units)
+
+        status : String
+        status =
+            if model.playback /= Nothing then
+                "playing turn " ++ String.fromInt (model.turn.number - 1)
+
+            else if model.busy then
+                "submitting orders…"
+
+            else if model.turn.submitted then
+                "orders submitted"
+
+            else
+                String.fromInt (List.length model.plannedMoves)
+                    ++ "/"
+                    ++ String.fromInt ownCount
+                    ++ " units ready"
+
+        submitButton : Html Msg
+        submitButton =
+            (if readyToSubmit model then
+                Button.primary "submit turn" SubmitTurnClicked
+
+             else
+                Button.secondary "submit turn" SubmitTurnClicked
+            )
+                |> Button.disabled (not (readyToSubmit model))
+                |> Button.large
+                |> Button.toHtml
+
+        errorDetails : List (Html Msg)
+        errorDetails =
+            case model.turnError of
+                Nothing ->
+                    []
+
+                Just message ->
+                    [ H.p [ A.attribute "role" "alert" ] [ H.text message ] ]
+
+        content : List (Html Msg)
+        content =
+            [ H.p [ A.attribute "role" "status" ]
+                [ H.text ("turn " ++ String.fromInt model.turn.number ++ " · " ++ status) ]
+            , H.p []
+                [ H.text
+                    (if model.turn.submitted then
+                        "waiting for the other player"
+
+                     else if model.turn.opponentSubmitted then
+                        "other player: submitted"
+
+                     else
+                        "other player: planning"
+                    )
+                ]
+            ]
+    in
+    H.section
+        [ A.attribute "aria-label" "game controls"
+        , A.css
+            [ S.bgGray1
+            , S.outdentTopRight
+            , S.absolute
+            , S.bottom0
+            , S.left0
+            , S.z1
+            , S.p3
+            , S.g3
+            , S.col
+            , S.justifySpaceBetween
+            , S.shrink0
+            , S.wrapAnywhere
+            , S.w120
+            , S.maxWFull
+            , S.h40
+            , S.belowWidth 640 [ S.h80 ]
+            ]
+        ]
+        [ H.div
+            [ A.css [ S.row, S.flexWrap, S.itemsStart, S.g3 ] ]
+            [ submitButton
+            , H.div
+                [ A.css
+                    [ S.flex1
+                    , S.minW0
+                    , S.overflowAuto
+                    , S.maxH18
+                    , S.belowWidth 640 [ S.basisFull, S.maxH24 ]
+                    ]
+                ]
+                [ H.div
+                    [ A.css [ S.col, S.g2 ] ]
+                    (content ++ errorDetails)
+                ]
+            ]
+        , H.div
+            [ A.css [ S.borderT, S.borderGray2, S.pt3 ] ]
+            [ viewControls model ]
+        ]
+
+
+inspectBoard : Board.Msg -> Model -> Model
+inspectBoard msg model =
+    let
+        selectUnit : UnitId.UnitId -> Model
+        selectUnit id =
+            { model | selected = model.board.units |> List.filter (\unit -> unit.id == id) |> List.head |> Maybe.map .position }
+    in
+    case msg of
+        Board.UnitClicked id ->
+            selectUnit id
+
+        Board.UnitMouseClicked id ->
+            if model.suppressClick then
+                model
+
+            else
+                selectUnit id
+
+        Board.TileClicked position ->
+            { model | selected = Just position }
+
+        Board.TileMouseClicked position ->
+            if model.suppressClick then
+                model
+
+            else
+                { model | selected = Just position }
+
+        Board.TileHovered _ ->
+            model
+
+
+resolutionSummary : Model -> Html Msg
+resolutionSummary model =
+    let
+        summary : String
+        summary =
+            case model.turn.resolution of
+                Nothing ->
+                    ""
+
+                Just resolution ->
+                    let
+                        conflicts : Int
+                        conflicts =
+                            List.length (List.filter (\event -> event.kind == EventKind.DestinationConflict) resolution.events)
+                    in
+                    if conflicts > 0 then
+                        "turn " ++ String.fromInt resolution.number ++ ": " ++ String.fromInt conflicts ++ " units held because opposing destinations matched."
+
+                    else
+                        ""
+    in
+    H.p
+        []
+        [ H.text summary ]
+
+
+
+----------------------------------------------------------------
+-- SUBSCRIPTIONS --
+----------------------------------------------------------------
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.batch
+        [ Time.every 400 AnimationTimerElapsed
+        , Time.every 2000 PollTimerElapsed
+        , if model.playback /= Nothing then
+            Browser.Events.onAnimationFrameDelta PlaybackFrameElapsed
+
+          else
+            Sub.none
+        , viewportSubscriptions model
+        ]

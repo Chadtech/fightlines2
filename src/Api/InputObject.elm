@@ -4,7 +4,72 @@
 
 module Api.InputObject exposing (..)
 
+import Api.Interface
+import Api.Object
+import Api.Scalar
+import Api.ScalarCodecs
+import Api.Union
+import Graphql.Internal.Builder.Argument as Argument exposing (Argument)
+import Graphql.Internal.Builder.Object as Object
+import Graphql.Internal.Encode as Encode exposing (Value)
+import Graphql.OptionalArgument exposing (OptionalArgument(..))
+import Graphql.SelectionSet exposing (SelectionSet)
+import Json.Decode as Decode
 
-placeholder : String
-placeholder =
-    ""
+
+buildCoordinateInput :
+    CoordinateInputRequiredFields
+    -> CoordinateInput
+buildCoordinateInput required____ =
+    { x = required____.x, y = required____.y }
+
+
+type alias CoordinateInputRequiredFields =
+    { x : Int
+    , y : Int
+    }
+
+
+{-| Type for the CoordinateInput input object.
+-}
+type alias CoordinateInput =
+    { x : Int
+    , y : Int
+    }
+
+
+{-| Encode a CoordinateInput into a value that can be used as an argument.
+-}
+encodeCoordinateInput : CoordinateInput -> Value
+encodeCoordinateInput input____ =
+    Encode.maybeObject
+        [ ( "x", Encode.int input____.x |> Just ), ( "y", Encode.int input____.y |> Just ) ]
+
+
+buildMoveOrderInput :
+    MoveOrderInputRequiredFields
+    -> MoveOrderInput
+buildMoveOrderInput required____ =
+    { unitId = required____.unitId, path = required____.path }
+
+
+type alias MoveOrderInputRequiredFields =
+    { unitId : String
+    , path : List CoordinateInput
+    }
+
+
+{-| Type for the MoveOrderInput input object.
+-}
+type alias MoveOrderInput =
+    { unitId : String
+    , path : List CoordinateInput
+    }
+
+
+{-| Encode a MoveOrderInput into a value that can be used as an argument.
+-}
+encodeMoveOrderInput : MoveOrderInput -> Value
+encodeMoveOrderInput input____ =
+    Encode.maybeObject
+        [ ( "unitId", Encode.string input____.unitId |> Just ), ( "path", (encodeCoordinateInput |> Encode.list) input____.path |> Just ) ]

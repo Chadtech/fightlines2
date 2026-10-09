@@ -62,6 +62,21 @@ setLobbyMap requiredArgs____ object____ =
     Object.selectionForCompositeField "setLobbyMap" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "mapType" requiredArgs____.mapType (Encode.enum Api.Enum.MapType.toString) ] object____ Basics.identity
 
 
+type alias SubmitTurnRequiredArguments =
+    { id : String
+    , turnNumber : Int
+    , orders : List Api.InputObject.MoveOrderInput
+    }
+
+
+submitTurn :
+    SubmitTurnRequiredArguments
+    -> SelectionSet decodesTo Api.Object.GameSnapshot
+    -> SelectionSet decodesTo RootMutation
+submitTurn requiredArgs____ object____ =
+    Object.selectionForCompositeField "submitTurn" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "turnNumber" requiredArgs____.turnNumber Encode.int, Argument.required "orders" requiredArgs____.orders (Api.InputObject.encodeMoveOrderInput |> Encode.list) ] object____ Basics.identity
+
+
 type alias StartGameRequiredArguments =
     { id : String }
 

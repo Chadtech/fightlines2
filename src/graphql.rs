@@ -81,6 +81,15 @@ impl Mutation {
         lobby::set_map_type(context, LobbyId::from_token(id), map_type)
     }
 
+    fn submit_turn(
+        context: &Context,
+        id: String,
+        turn_number: i32,
+        orders: Vec<crate::turns::MoveOrderInput>,
+    ) -> FieldResult<GameSnapshot> {
+        lobby::submit_turn(context, LobbyId::from_token(id), turn_number, orders)
+    }
+
     fn start_game(context: &Context, id: String) -> FieldResult<Snapshot> {
         lobby::start(context, LobbyId::from_token(id))
     }
@@ -416,7 +425,7 @@ mod tests {
         assert_eq!(host_view["data"]["game"]["players"][0]["isYou"], true);
         let (outsider, _) = execute!(&game, None);
         assert!(outsider["errors"].is_array());
-        let (reconnected, _) = execute!(&join, Some(guest));
+        let (reconnected, _) = execute!(&join, Some(guest.clone()));
         assert_eq!(
             reconnected["data"]["joinLobby"]["gameUrl"],
             format!("/game/{id}")
@@ -442,6 +451,54 @@ mod tests {
             );
             assert_eq!(owner["data"]["lobby"]["isHost"], true);
         }
+        let submit = |side: &str| {
+            let orders = scenario["units"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|unit| unit["side"] == side)
+                .map(|unit| {
+                    format!(
+                        "{{unitId: \"{}\", path: [{{x: {}, y: {}}}]}}",
+                        unit["id"].as_str().unwrap(),
+                        unit["position"]["x"],
+                        unit["position"]["y"]
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(
+                "mutation {{ submitTurn(id: \"{id}\", turnNumber: 1, orders: [{orders}]) {{ turnNumber submitted opponentSubmitted lastResolution {{ turnNumber events {{ kind unitId }} }} }} }}"
+            )
+        };
+        for identity in [None, Some(cookie.clone())] {
+            let (denied, _) = execute!(submit("WEST"), identity);
+            assert!(denied["errors"].is_array());
+        }
+        let (foreign, _) = execute!(submit("EAST"), Some(host.clone()));
+        assert!(foreign["errors"].is_array());
+        let (submitted, _) = execute!(submit("WEST"), Some(host.clone()));
+        assert_eq!(submitted["data"]["submitTurn"]["turnNumber"], 1);
+        assert_eq!(submitted["data"]["submitTurn"]["submitted"], true);
+        let turn_query =
+            format!("{{ game(id: \"{id}\") {{ turnNumber submitted opponentSubmitted }} }}");
+        let (waiting, _) = execute!(&turn_query, Some(guest.clone()));
+        assert_eq!(waiting["data"]["game"]["opponentSubmitted"], true);
+        assert_eq!(waiting["data"]["game"]["submitted"], false);
+        let (retry, _) = execute!(submit("WEST"), Some(host.clone()));
+        assert_eq!(retry["data"]["submitTurn"]["turnNumber"], 1);
+        let (resolved, _) = execute!(submit("EAST"), Some(guest));
+        assert_eq!(resolved["data"]["submitTurn"]["turnNumber"], 2);
+        assert_eq!(resolved["data"]["submitTurn"]["submitted"], false);
+        assert_eq!(
+            resolved["data"]["submitTurn"]["lastResolution"]["events"]
+                .as_array()
+                .unwrap()
+                .len(),
+            16
+        );
+        let (stale, _) = execute!(submit("WEST"), Some(host));
+        assert!(stale["errors"].is_array());
         let old = test::TestRequest::get().uri("/api/health").to_request();
         assert_eq!(
             test::call_service(&app, old).await.status(),

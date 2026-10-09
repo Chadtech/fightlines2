@@ -1,5 +1,6 @@
 use crate::map::{Coordinate, Map, MapError};
 use juniper::{GraphQLEnum, GraphQLObject, graphql_object};
+use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
 pub enum Side {
@@ -18,6 +19,18 @@ pub enum UnitKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct UnitId(u16);
 
+impl UnitId {
+    pub fn parse(value: &str) -> Option<Self> {
+        value.parse::<u16>().ok().filter(|id| *id > 0).map(Self)
+    }
+}
+
+impl fmt::Display for UnitId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unit {
     id: UnitId,
@@ -28,19 +41,19 @@ pub struct Unit {
 
 #[graphql_object]
 impl Unit {
-    fn id(&self) -> String {
-        self.id.0.to_string()
+    pub fn id(&self) -> String {
+        self.id.to_string()
     }
 
-    fn side(&self) -> Side {
+    pub fn side(&self) -> Side {
         self.side
     }
 
-    fn kind(&self) -> UnitKind {
+    pub fn kind(&self) -> UnitKind {
         self.kind
     }
 
-    fn position(&self) -> Coordinate {
+    pub fn position(&self) -> Coordinate {
         self.position
     }
 }
@@ -52,12 +65,22 @@ pub struct Depot {
     owner: Option<Side>,
 }
 
-/// Initial board state. Resource quantities and turn rules are not defined yet.
+/// Current board state. Resources and combat remain future work.
 #[derive(Clone, Debug, PartialEq, Eq, GraphQLObject)]
 pub struct Scenario {
-    map: Map,
+    pub(crate) map: Map,
     depots: Vec<Depot>,
-    units: Vec<Unit>,
+    pub(crate) units: Vec<Unit>,
+}
+
+impl Unit {
+    pub fn unit_id(&self) -> UnitId {
+        self.id
+    }
+
+    pub fn move_to(&mut self, position: Coordinate) {
+        self.position = position;
+    }
 }
 
 impl Scenario {
