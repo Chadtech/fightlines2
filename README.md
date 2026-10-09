@@ -67,7 +67,10 @@ move yet. Units can travel through allied units; enemies block travel, and occup
 squares cannot be destinations. A saved move reserves its destination so other
 units cannot choose it; changing or clearing the move frees that square. Routes
 can pass through reserved destinations. Depots are passable.
-No submitted orders or resource quantities exist yet.
+The unit status panel shows the selected unit's illustration, name, and side,
+with expandable unit and gauge explanations. Hit points, supply, and vehicle
+fuel gauges currently show labeled sample values. No submitted orders or
+authoritative resource quantities exist yet.
 
 New players cannot join after a game starts. All lobbies and games disappear
 when the server restarts.

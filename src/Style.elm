@@ -1,6 +1,7 @@
 module Style exposing
     ( absolute
     , batch
+    , bgBlue1
     , bgGray0
     , bgGray1
     , bgGray2
@@ -13,8 +14,10 @@ module Style exposing
     , bgNightwoodGrain
     , bgNone
     , bgRed0
+    , bgRed1
     , bgYellow1
     , bgYellow2
+    , bgYellow4
     , block
     , border
     , border0
@@ -1504,6 +1507,21 @@ bgYellow1 =
 bgYellow2 : Css.Style
 bgYellow2 =
     Css.property "background" yellow2Str
+
+
+bgYellow4 : Css.Style
+bgYellow4 =
+    Css.property "background" yellow4Str
+
+
+bgBlue1 : Css.Style
+bgBlue1 =
+    Css.property "background" blue1Str
+
+
+bgRed1 : Css.Style
+bgRed1 =
+    Css.property "background" red1Str
 
 
 bgNightwood0 : Css.Style

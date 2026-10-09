@@ -50,6 +50,7 @@ import Html.Styled as H
         ( Html
         )
 import Html.Styled.Attributes as A
+import Html.Styled.Keyed as Keyed
 import Json.Decode as Decode
 import KeyCmd
 import LobbyId
@@ -72,6 +73,7 @@ import View.Button as Button
 import View.Card as Card
 import View.GameBoard as Board
 import View.GamePanel as GamePanel
+import View.UnitStatus as UnitStatus
 
 
 
@@ -362,13 +364,21 @@ selectionView model =
         ]
         [ H.h2
             []
-            [ H.text "selection"
+            [ H.text "unit status"
             ]
-        , H.p
-            [ A.attribute "role" "status"
-            ]
-            [ H.text (selectionText model)
-            ]
+        , case selectedUnit model of
+            Just unit ->
+                Keyed.node "div"
+                    []
+                    [ ( UnitId.toString unit.id, UnitStatus.toHtml unit )
+                    ]
+
+            Nothing ->
+                H.p
+                    [ A.attribute "role" "status"
+                    ]
+                    [ H.text (selectionText model)
+                    ]
         , movementView model
         ]
 

@@ -547,10 +547,12 @@ pageSubscriptions shared page =
     Sub.batch
         [ case page of
             Lobby id model ->
-                LobbyPage.subscriptions model |> Sub.map (LobbyMsg id)
+                LobbyPage.subscriptions model
+                    |> Sub.map (LobbyMsg id)
 
             Game id model ->
-                GamePage.subscriptions model |> Sub.map (GameMsg id)
+                GamePage.subscriptions model
+                    |> Sub.map (GameMsg id)
 
             _ ->
                 Sub.none

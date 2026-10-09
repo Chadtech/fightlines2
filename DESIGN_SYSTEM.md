@@ -95,6 +95,16 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   the top and view controls at the bottom. The panel is 18rem wide, capped at
   45vw on narrow screens, and scrolls when needed. Reserve its width beside the
   battlefield. Omit the roster and other floating cards.
+- Selected units use a `unit status` heading, their illustration in a nightwood3
+  inset screen, and their name and side without position coordinates. Display
+  sample hit points, supply, and (for tanks and supply trucks) fuel as horizontal
+  gauges with `current / maximum` labels. Use red1 below 25%, yellow4 from
+  25–75%, and blue1 above 75%; retain the numeric labels alongside color.
+- Unit and gauge info markers expand keyboard-accessible explanations. The
+  flat `about this unit` section spans the panel width, with nightwood3 body,
+  yellow2 title strip, yellow5 heading text, and internal padding. It has no
+  bevel. Keep resource values visibly identified as samples until game rules
+  provide them.
 - Primary-button dragging pans after a 6px threshold. A drag never selects a tile;
   a click still inspects units, depots and terrain. Scroll zooms around the cursor,
   bounded to 35–300%; the panel supplies zoom and reset controls. Keyboard
