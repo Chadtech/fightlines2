@@ -121,7 +121,6 @@ type alias Model =
 type MovementStatus
     = NoMovementStatus
     | PlannedMoveCleared
-    | PathRestarted
     | MovePlanned
     | DestinationUnavailable
 
@@ -134,9 +133,6 @@ movementStatusText status =
 
         PlannedMoveCleared ->
             "planned move cleared."
-
-        PathRestarted ->
-            "trace a new path from the unit."
 
         MovePlanned ->
             "move planned."
@@ -157,7 +153,6 @@ type Msg
     | AnimationTimerElapsed Time.Posix
     | ClearMoveClicked
     | InspectClicked
-    | RestartPathClicked
     | EscapePressed
 
 
@@ -251,14 +246,6 @@ update msg model =
                 | plannedMoves = List.filter (\plan -> Just plan.unitId /= Maybe.map .id (selectedUnit model)) model.plannedMoves
                 , pathPreview = selectedUnit model |> Maybe.map Movement.start
                 , movementStatus = PlannedMoveCleared
-              }
-            , E.none
-            )
-
-        RestartPathClicked ->
-            ( { model
-                | pathPreview = selectedUnit model |> Maybe.map Movement.start
-                , movementStatus = PathRestarted
               }
             , E.none
             )
@@ -437,7 +424,7 @@ movementView model =
                                     []
                                     [ H.text
                                         (if model.pathPreview == Nothing then
-                                            "restart path to resume drawing, or click a new destination."
+                                            "reselect the unit to resume drawing, or click a new destination."
 
                                          else
                                             "retrace to shorten. if the route exceeds the budget, an affordable route is chosen."
@@ -451,8 +438,6 @@ movementView model =
                                             |> Maybe.withDefault ""
                                         )
                                     ]
-                                , Button.secondary "restart path" RestartPathClicked
-                                    |> Button.toHtml
                                 ]
 
                             plannedDetails : List (Html Msg)
@@ -493,8 +478,6 @@ movementView model =
                 []
                 [ H.text (String.fromInt (List.length model.plannedMoves) ++ " planned moves · local drafts; refresh clears them.")
                 ]
-            , Button.secondary "inspect tiles" InspectClicked
-                |> Button.toHtml
             ]
     in
     H.div

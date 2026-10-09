@@ -132,9 +132,9 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   squares, trim on backtracking, and connect gaps from the path tip. If the trace
   cannot reach a square within budget, fall back to an affordable route from the
   unit. Saving ends hover editing and hides reachable-square highlights;
-  restarting restores both.
+  reselecting the unit restores both.
   Keep the selected unit active while choosing or replacing a destination. Show
-  movement budget, preview cost, planned destination/cost, restart and clear
+  movement budget, preview cost, planned destination/cost, clear move
   controls, and local-draft status
   in the right panel. Reachable tiles support Tab and Enter/Space.
 - Units and depots support keyboard focus and Enter/Space activation. Illustrated

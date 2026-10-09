@@ -59,9 +59,9 @@ square to save a move. Hover across squares to preview your exact route; retrace
 the line to shorten it. Skipped squares connect from the current path tip within
 the remaining budget. If the traced route exceeds the budget, an affordable
 route from the unit is chosen when one exists. Saving stops hover previews and hides reachable-square highlights.
-Use **restart path** to trace a different route or
+Reselect the unit to trace a different route or use
 **clear move** to remove the saved plan. Reachable squares support Tab and Enter/Space.
-Use **inspect tiles** to leave movement selection. Paths remain visible when
+Press Escape or click the selected unit to leave movement selection. Paths remain visible when
 switching units. Plans are local drafts and disappear on refresh; units do not
 move yet. Units can travel through allied units; enemies block travel, and occupied
 squares cannot be destinations. A saved move reserves its destination so other
