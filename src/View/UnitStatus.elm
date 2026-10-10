@@ -13,7 +13,7 @@ import View.UnitSprite as UnitSprite
 
 
 
--- These quantities are presentation fixtures until Rust owns resource state.
+-- Hit points and supply remain presentation fixtures. Fuel comes from Rust.
 
 
 type alias Level =
@@ -25,24 +25,19 @@ type alias Level =
 type Resource
     = HitPoints
     | Supply
-    | Fuel
+    | Fuel Unit.Fuel
 
 
 toHtml : Unit -> Html msg
 toHtml unit =
     let
+        fuelResources : List Resource
+        fuelResources =
+            unit.fuel |> Maybe.map (\fuel -> [ Fuel fuel ]) |> Maybe.withDefault []
+
         resources : List Resource
         resources =
-            if usesOil unit.kind then
-                [ HitPoints
-                , Supply
-                , Fuel
-                ]
-
-            else
-                [ HitPoints
-                , Supply
-                ]
+            [ HitPoints, Supply ] ++ fuelResources
     in
     H.div
         [ A.css
@@ -65,7 +60,7 @@ toHtml unit =
                 [ S.textGray4
                 ]
             ]
-            [ H.text "sample resource values"
+            [ H.text "hit points and supply are sample values"
             ]
         ]
 
@@ -228,7 +223,7 @@ gauge resource =
                 Supply ->
                     "supply"
 
-                Fuel ->
+                Fuel _ ->
                     "fuel"
 
         level : Level
@@ -240,8 +235,8 @@ gauge resource =
                 Supply ->
                     { current = 34, maximum = 60 }
 
-                Fuel ->
-                    { current = 16, maximum = 80 }
+                Fuel fuel ->
+                    fuel
 
         fraction : Float
         fraction =
@@ -267,8 +262,8 @@ gauge resource =
                 Supply ->
                     "how many supplies the unit has left. the second number is how much it can carry."
 
-                Fuel ->
-                    "how much fuel the unit has left. only units that use oil show this gauge."
+                Fuel _ ->
+                    "each traversed tile uses 1 fuel. holds and canceled moves use none. end a turn on your home depot to fill the tank."
     in
     H.div
         [ A.css

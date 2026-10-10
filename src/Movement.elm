@@ -73,14 +73,46 @@ optionsAvoiding blocked rules board unit =
             []
 
         Just rule ->
-            search rule
+            search (Maybe.map .current unit.fuel)
+                rule
                 board
                 blocked
                 unit.side
                 [ { destination = unit.position, cost = 0, path = [ unit.position ] } ]
-                (Dict.singleton (key unit.position) 0)
+                (Dict.singleton (searchKey (Maybe.map .current unit.fuel) (start unit)) 0)
                 []
                 |> List.filter (\option -> option.destination /= unit.position)
+                |> List.foldl cheapestDestination Dict.empty
+                |> Dict.values
+
+
+cheapestDestination : Option -> Dict ( Int, Int ) Option -> Dict ( Int, Int ) Option
+cheapestDestination option best =
+    case Dict.get (key option.destination) best of
+        Just previous ->
+            let
+                previousIsBetter : Bool
+                previousIsBetter =
+                    previous.cost
+                        < option.cost
+                        || (previous.cost == option.cost && List.length previous.path <= List.length option.path)
+            in
+            if previousIsBetter then
+                best
+
+            else
+                Dict.insert (key option.destination) option best
+
+        Nothing ->
+            Dict.insert (key option.destination) option best
+
+
+searchKey : Maybe Int -> Option -> ( Int, Int, Int )
+searchKey fuel option =
+    ( option.destination.x
+    , option.destination.y
+    , fuel |> Maybe.map (\_ -> List.length option.path - 1) |> Maybe.withDefault 0
+    )
 
 
 key : Coordinate -> ( Int, Int )
@@ -97,23 +129,24 @@ neighbors position =
     ]
 
 
-{-| Search affordable routes. The dictionary keys are (column x, row y);
-its integer values are the cheapest known accumulated costs, stored in half
-movement points just like the rule budgets and terrain costs.
+{-| Search affordable routes. Keys include column, row and fuel spent.
+Units without fuel use zero for that third component. Retaining a cheapest
+route for each fuel expenditure preserves short routes through expensive terrain.
+Costs are stored in half movement points, independently of fuel.
 -}
-search : Rule -> GameBoard -> List Coordinate -> Side -> List Option -> Dict ( Int, Int ) Int -> List Option -> List Option
-search rule board blocked side frontier costs reached =
+search : Maybe Int -> Rule -> GameBoard -> List Coordinate -> Side -> List Option -> Dict ( Int, Int, Int ) Int -> List Option -> List Option
+search fuel rule board blocked side frontier costs reached =
     case List.sortBy .cost frontier of
         [] ->
             List.reverse reached
 
         current :: remaining ->
-            if Dict.get (key current.destination) costs /= Just current.cost then
-                search rule board blocked side remaining costs reached
+            if Dict.get (searchKey fuel current) costs /= Just current.cost then
+                search fuel rule board blocked side remaining costs reached
 
             else
                 let
-                    visit : Coordinate -> ( List Option, Dict ( Int, Int ) Int ) -> ( List Option, Dict ( Int, Int ) Int )
+                    visit : Coordinate -> ( List Option, Dict ( Int, Int, Int ) Int ) -> ( List Option, Dict ( Int, Int, Int ) Int )
                     visit position ( pending, best ) =
                         let
                             leftOfMap : Bool
@@ -170,24 +203,32 @@ search rule board blocked side frontier costs reached =
                                         exceedsBudget =
                                             cost > rule.budget
 
+                                        candidate : Option
+                                        candidate =
+                                            { destination = position, cost = cost, path = current.path ++ [ position ] }
+
+                                        exceedsFuel : Bool
+                                        exceedsFuel =
+                                            fuel |> Maybe.map (\available -> List.length candidate.path - 1 > available) |> Maybe.withDefault False
+
                                         alreadyReachedAtLowerOrEqualCost : Bool
                                         alreadyReachedAtLowerOrEqualCost =
-                                            Dict.get (key position) best
+                                            Dict.get (searchKey fuel candidate) best
                                                 |> Maybe.map (\previous -> previous <= cost)
                                                 |> Maybe.withDefault False
                                     in
-                                    if impassableTerrain || exceedsBudget || alreadyReachedAtLowerOrEqualCost then
+                                    if impassableTerrain || exceedsBudget || exceedsFuel || alreadyReachedAtLowerOrEqualCost then
                                         ( pending, best )
 
                                     else
-                                        ( { destination = position, cost = cost, path = current.path ++ [ position ] } :: pending
-                                        , Dict.insert (key position) cost best
+                                        ( candidate :: pending
+                                        , Dict.insert (searchKey fuel candidate) cost best
                                         )
 
                     ( next, nextCosts ) =
                         List.foldl visit ( remaining, costs ) (neighbors current.destination)
                 in
-                search rule board blocked side next nextCosts (current :: reached)
+                search fuel rule board blocked side next nextCosts (current :: reached)
 
 
 start : Unit -> Option
@@ -236,6 +277,13 @@ trace rules board unit current destination =
                     remainingRule =
                         { movementRule | budget = movementRule.budget - current.cost }
 
+                    remainingUnit : Unit
+                    remainingUnit =
+                        { unit
+                            | position = current.destination
+                            , fuel = Maybe.map (\fuel -> { fuel | current = fuel.current - (List.length current.path - 1) }) unit.fuel
+                        }
+
                     extendPath : Option -> Option
                     extendPath extension =
                         { destination = destination
@@ -245,7 +293,7 @@ trace rules board unit current destination =
                 in
                 -- Fill mouse-event gaps from the current tip, keeping every traced
                 -- square. Never silently replace the prefix with a cheaper route.
-                optionsAvoiding current.path [ remainingRule ] board { unit | position = current.destination }
+                optionsAvoiding current.path [ remainingRule ] board remainingUnit
                     |> List.filter (\option -> option.destination == destination)
                     |> List.head
                     |> Maybe.map extendPath

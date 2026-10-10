@@ -13,6 +13,10 @@ type Depot
     = Depot
 
 
+type Fuel
+    = Fuel
+
+
 type GamePlayerView
     = GamePlayerView
 

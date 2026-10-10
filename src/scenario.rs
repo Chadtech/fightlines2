@@ -58,6 +58,25 @@ impl fmt::Display for UnitId {
     }
 }
 
+/// One fuel unit powers one traversed tile, independently of movement points.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLObject)]
+pub struct Fuel {
+    pub(crate) current: i32,
+    maximum: i32,
+}
+
+impl Fuel {
+    fn for_kind(kind: UnitKind) -> Option<Self> {
+        match kind {
+            UnitKind::Tank | UnitKind::SupplyTruck => Some(Self {
+                current: 16,
+                maximum: 16,
+            }),
+            UnitKind::Infantry | UnitKind::FieldGun => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unit {
     id: UnitId,
@@ -65,6 +84,7 @@ pub struct Unit {
     kind: UnitKind,
     position: Coordinate,
     direction: Option<Direction>,
+    fuel: Option<Fuel>,
 }
 
 #[graphql_object]
@@ -79,6 +99,10 @@ impl Unit {
 
     pub fn kind(&self) -> UnitKind {
         self.kind
+    }
+
+    pub fn fuel(&self) -> Option<Fuel> {
+        self.fuel
     }
 
     pub fn direction(&self) -> Option<Direction> {
@@ -97,7 +121,7 @@ pub struct Depot {
     owner: Option<Side>,
 }
 
-/// Current board state. Resources and combat remain future work.
+/// Current board state, including vehicle fuel. Supplies and combat remain future work.
 #[derive(Clone, Debug, PartialEq, Eq, GraphQLObject)]
 pub struct Scenario {
     pub(crate) map: Map,
@@ -118,6 +142,9 @@ impl Unit {
                 self.direction = Some(direction);
             }
         }
+        if let Some(fuel) = &mut self.fuel {
+            fuel.current -= path.len().saturating_sub(1) as i32;
+        }
         if let Some(position) = path.last() {
             self.move_to(*position);
         }
@@ -129,6 +156,18 @@ impl Unit {
 }
 
 impl Scenario {
+    pub fn refuel_at_home_depots(&mut self) {
+        for unit in &mut self.units {
+            let at_home_depot = self
+                .depots
+                .iter()
+                .any(|depot| depot.owner == Some(unit.side) && depot.position == unit.position);
+            if at_home_depot && let Some(fuel) = &mut unit.fuel {
+                fuel.current = fuel.maximum;
+            }
+        }
+    }
+
     pub fn supply_point() -> Result<Self, MapError> {
         // Space = grass, # = forest, % = hills. Each row is 17 cells.
         let map = Map::from_ascii(concat!(
@@ -184,6 +223,7 @@ impl Scenario {
                     id: UnitId(offset + index as u16 + 1),
                     side,
                     kind,
+                    fuel: Fuel::for_kind(kind),
                     position: Coordinate::new(x, y),
                     direction: match kind {
                         UnitKind::SupplyTruck => None,
@@ -205,6 +245,7 @@ impl Scenario {
                     id: UnitId(first_id + index as u16),
                     side,
                     kind,
+                    fuel: Fuel::for_kind(kind),
                     position: Coordinate::new(x, y),
                     direction: match kind {
                         UnitKind::SupplyTruck => None,

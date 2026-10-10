@@ -337,3 +337,20 @@ The next milestone is one small, complete scenario for two players. Keep the
 Rust rules independent of HTTP and the Elm interface independent of rule
 implementation. Decide the exact simultaneous-resolution rules and resource
 model as part of that experiment rather than copying the old engine.
+
+## Vehicle fuel
+
+Rust units carry optional `Fuel` state: tanks and supply trucks start at 16/16;
+infantry and field guns have none. One traversed path edge consumes one fuel,
+independent of terrain movement points. Validation rejects paths exceeding
+available fuel before locking orders. Resolution consumes fuel only on
+successful movement, then refills vehicles ending on a depot owned by their
+side. Neutral and enemy depots do not refuel. Holds and destination conflicts
+spend no fuel.
+
+Snapshots expose current and maximum fuel through GraphQL. Elm selects it into
+`Unit`, displays the authoritative gauge and bounds both reachable paths and
+traced extensions by remaining fuel. Search tracks both terrain cost and path
+length so a shorter, more expensive route is retained when a cheaper detour
+exceeds fuel. Equal-cost routes favor fewer tiles. Playback uses the completed
+snapshot fuel values; it does not calculate resource outcomes.

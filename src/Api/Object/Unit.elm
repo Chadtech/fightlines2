@@ -37,6 +37,13 @@ kind =
     Object.selectionForField "Enum.UnitKind.UnitKind" "kind" [] Api.Enum.UnitKind.decoder
 
 
+fuel :
+    SelectionSet decodesTo Api.Object.Fuel
+    -> SelectionSet (Maybe decodesTo) Api.Object.Unit
+fuel object____ =
+    Object.selectionForCompositeField "fuel" [] object____ (Basics.identity >> Decode.nullable)
+
+
 direction : SelectionSet (Maybe Api.Enum.Direction.Direction) Api.Object.Unit
 direction =
     Object.selectionForField "(Maybe Enum.Direction.Direction)" "direction" [] (Api.Enum.Direction.decoder |> Decode.nullable)

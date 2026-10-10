@@ -5,7 +5,8 @@ A strategy game about supplies and logistics, built with Rust and Elm.
 The current prototype supports creating a lobby, joining through an invite link,
 and starting a game. The game page shows a free-floating animated SVG board with selectable units and depots.
 Both players can plan and submit turns, with sequential movement playback.
-Combat, resources, and persistent storage are not implemented yet.
+Vehicle fuel is authoritative; combat, supplies, hit points, and persistent
+storage are not implemented yet.
 
 ## Run locally
 
@@ -75,8 +76,13 @@ squares cannot be destinations. A saved move reserves its destination so other
 units cannot choose it; changing or clearing the move frees that square. Routes
 can pass through reserved destinations. Depots are passable.
 The unit status panel shows the selected unit's illustration, name, and side,
-with expandable unit and gauge explanations. Hit points, supply, and vehicle
-fuel gauges currently show labeled sample values. Authoritative resource quantities do not exist yet.
+with expandable unit and gauge explanations. Hit points and supply gauges show
+labeled sample values. Tanks and supply trucks start with 16/16 fuel. Each
+successfully traversed tile costs 1 fuel, independently of terrain movement
+costs. Holds and destination conflicts consume none. At the end of resolution,
+vehicles on their own starting depot refill to 16; neutral and enemy depots do
+not refuel them. Movement previews and submitted paths must fit both remaining
+fuel and the per-turn movement budget.
 
 Selecting your own unit while planning opens an anchored menu with illustrated
 command icons. Options and the separated cancel footer are flat until hovered

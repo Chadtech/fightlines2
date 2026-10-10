@@ -163,6 +163,11 @@ pub fn validate(
         if cost > rule.budget {
             return Err("movement exceeds the unit's budget.");
         }
+        if let Some(fuel) = unit.fuel()
+            && path.len() - 1 > fuel.current as usize
+        {
+            return Err("movement exceeds the unit's available fuel.");
+        }
         let destination = *path.last().unwrap();
         if scenario
             .units
@@ -245,6 +250,7 @@ impl Turns {
                     .unwrap()
                     .follow_path(&event.path);
             }
+            scenario.refuel_at_home_depots();
             self.last_resolution = Some(TurnResolution {
                 turn_number: self.number,
                 events,
@@ -283,6 +289,138 @@ mod tests {
             .iter()
             .map(|&(x, y)| CoordinateInput { x, y })
             .collect();
+    }
+
+    fn vehicle<'a>(scenario: &'a mut Scenario, id: &str) -> &'a mut crate::scenario::Unit {
+        scenario
+            .units
+            .iter_mut()
+            .find(|unit| unit.id() == id)
+            .unwrap()
+    }
+
+    fn resolve_holds(scenario: &mut Scenario, turns: &mut Turns) {
+        let west = holds(scenario, Side::West);
+        let east = holds(scenario, Side::East);
+        let number = turns.number;
+        turns.submit(scenario, Side::West, number, west).unwrap();
+        turns.submit(scenario, Side::East, number, east).unwrap();
+    }
+
+    #[test]
+    fn fuel_is_vehicle_only_and_successful_tiles_consume_it_once() {
+        let mut scenario = Scenario::supply_point().unwrap();
+        assert!(vehicle(&mut scenario, "1").fuel().is_none());
+        assert!(vehicle(&mut scenario, "12").fuel().is_none());
+        assert_eq!(vehicle(&mut scenario, "11").fuel().unwrap().current, 16);
+        let mut turns = Turns::default();
+        let mut west = holds(&scenario, Side::West);
+        set_path(&mut west, "4", &[(2, 7), (2, 6), (3, 6)]);
+        turns.submit(&mut scenario, Side::West, 1, west).unwrap();
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 16);
+        turns.submit(&mut scenario, Side::West, 1, vec![]).unwrap();
+        let east = holds(&scenario, Side::East);
+        turns.submit(&mut scenario, Side::East, 1, east).unwrap();
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 14);
+        assert_eq!(vehicle(&mut scenario, "11").fuel().unwrap().current, 16);
+        resolve_holds(&mut scenario, &mut turns);
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 14);
+    }
+
+    #[test]
+    fn fuel_rejection_is_atomic_and_empty_vehicles_can_hold() {
+        let mut scenario = Scenario::supply_point().unwrap();
+        for _ in 0..8 {
+            vehicle(&mut scenario, "4").follow_path(&[
+                Coordinate::new(2, 7),
+                Coordinate::new(2, 6),
+                Coordinate::new(2, 7),
+            ]);
+        }
+        let mut turns = Turns::default();
+        let mut west = holds(&scenario, Side::West);
+        set_path(&mut west, "4", &[(2, 7), (2, 6)]);
+        assert_eq!(
+            turns.submit(&mut scenario, Side::West, 1, west),
+            Err("movement exceeds the unit's available fuel.")
+        );
+        assert!(turns.orders[0].is_none());
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 0);
+        resolve_holds(&mut scenario, &mut turns);
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 0);
+        vehicle(&mut scenario, "4").move_to(Coordinate::new(2, 8));
+        resolve_holds(&mut scenario, &mut turns);
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 16);
+    }
+
+    #[test]
+    fn tank_paths_must_fit_remaining_fuel_even_with_movement_points_left() {
+        let mut scenario = Scenario::supply_point().unwrap();
+        for _ in 0..7 {
+            vehicle(&mut scenario, "11").follow_path(&[
+                Coordinate::new(4, 8),
+                Coordinate::new(5, 8),
+                Coordinate::new(4, 8),
+            ]);
+        }
+        let mut west = holds(&scenario, Side::West);
+        set_path(&mut west, "11", &[(4, 8), (5, 8), (6, 8), (7, 8)]);
+        assert_eq!(
+            validate(&scenario, Side::West, west).unwrap_err(),
+            "movement exceeds the unit's available fuel."
+        );
+        let mut west = holds(&scenario, Side::West);
+        set_path(&mut west, "11", &[(4, 8), (5, 8), (6, 8)]);
+        let mut turns = Turns::default();
+        turns.submit(&mut scenario, Side::West, 1, west).unwrap();
+        let east = holds(&scenario, Side::East);
+        turns.submit(&mut scenario, Side::East, 1, east).unwrap();
+        assert_eq!(vehicle(&mut scenario, "11").fuel().unwrap().current, 0);
+        assert_eq!(
+            vehicle(&mut scenario, "11").position(),
+            Coordinate::new(6, 8)
+        );
+    }
+
+    #[test]
+    fn home_depot_refills_after_arrival_and_holding_but_other_depots_do_not() {
+        let mut scenario = Scenario::supply_point().unwrap();
+        let mut turns = Turns::default();
+        let mut west = holds(&scenario, Side::West);
+        set_path(&mut west, "4", &[(2, 7), (2, 8)]);
+        turns.submit(&mut scenario, Side::West, 1, west).unwrap();
+        let east = holds(&scenario, Side::East);
+        turns.submit(&mut scenario, Side::East, 1, east).unwrap();
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 16);
+        vehicle(&mut scenario, "4").follow_path(&[Coordinate::new(2, 8), Coordinate::new(2, 8)]);
+        vehicle(&mut scenario, "5").follow_path(&[Coordinate::new(2, 9), Coordinate::new(8, 8)]);
+        vehicle(&mut scenario, "9").follow_path(&[Coordinate::new(14, 7), Coordinate::new(2, 8)]);
+        // Place the eastern truck on the western depot, away from its home.
+        vehicle(&mut scenario, "4").move_to(Coordinate::new(14, 8));
+        resolve_holds(&mut scenario, &mut turns);
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 15);
+        assert_eq!(vehicle(&mut scenario, "5").fuel().unwrap().current, 15);
+        assert_eq!(vehicle(&mut scenario, "9").fuel().unwrap().current, 15);
+        vehicle(&mut scenario, "9").move_to(Coordinate::new(14, 8));
+        vehicle(&mut scenario, "4").move_to(Coordinate::new(2, 8));
+        resolve_holds(&mut scenario, &mut turns);
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 16);
+        assert_eq!(vehicle(&mut scenario, "9").fuel().unwrap().current, 16);
+    }
+
+    #[test]
+    fn vehicle_destination_conflicts_consume_no_fuel() {
+        let mut scenario = Scenario::supply_point().unwrap();
+        vehicle(&mut scenario, "9").move_to(Coordinate::new(4, 6));
+        let mut west = holds(&scenario, Side::West);
+        let mut east = holds(&scenario, Side::East);
+        set_path(&mut west, "4", &[(2, 7), (2, 6), (3, 6)]);
+        set_path(&mut east, "9", &[(4, 6), (3, 6)]);
+        let initial = scenario.clone();
+        let mut turns = Turns::default();
+        turns.submit(&mut scenario, Side::West, 1, west).unwrap();
+        turns.submit(&mut scenario, Side::East, 1, east).unwrap();
+        assert_eq!(scenario, initial);
     }
 
     #[test]

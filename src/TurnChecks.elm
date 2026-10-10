@@ -42,8 +42,8 @@ playbackChecks first second =
             { map = { width = 3, height = 3, baseTile = Terrain.GrassPlain, features = [] }
             , depots = []
             , units =
-                [ { id = first, side = Side.West, direction = Just Direction.East, kind = Kind.Infantry, position = { x = 1, y = 0 } }
-                , { id = second, side = Side.East, direction = Just Direction.West, kind = Kind.Infantry, position = { x = 1, y = 1 } }
+                [ { fuel = Nothing, id = first, side = Side.West, direction = Just Direction.East, kind = Kind.Infantry, position = { x = 1, y = 0 } }
+                , { fuel = Nothing, id = second, side = Side.East, direction = Just Direction.West, kind = Kind.Infantry, position = { x = 1, y = 1 } }
                 ]
             }
 
@@ -129,7 +129,7 @@ truckPlaybackChecks unitId =
         board =
             { map = { width = 3, height = 3, baseTile = Terrain.GrassPlain, features = [] }
             , depots = []
-            , units = [ { id = unitId, side = Side.West, direction = Nothing, kind = Kind.SupplyTruck, position = { x = 1, y = 1 } } ]
+            , units = [ { fuel = Just { current = 15, maximum = 16 }, id = unitId, side = Side.West, direction = Nothing, kind = Kind.SupplyTruck, position = { x = 1, y = 1 } } ]
             }
 
         snapshot : Turn.Snapshot

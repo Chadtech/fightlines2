@@ -61,9 +61,21 @@ check rules fixture =
 
         Ok id ->
             let
+                fuel : Maybe Unit.Fuel
+                fuel =
+                    case fixture.kind of
+                        UnitKind.Tank ->
+                            Just { current = 16, maximum = 16 }
+
+                        UnitKind.SupplyTruck ->
+                            Just { current = 16, maximum = 16 }
+
+                        _ ->
+                            Nothing
+
                 unit : Unit.Unit
                 unit =
-                    { id = id, kind = fixture.kind, position = fixture.origin, side = Side.West, direction = Just Direction.East }
+                    { fuel = fuel, id = id, kind = fixture.kind, position = fixture.origin, side = Side.West, direction = Just Direction.East }
 
                 rows : List String
                 rows =
@@ -148,7 +160,7 @@ traceChecks rules =
 
                 unit : Unit.Unit
                 unit =
-                    { id = id, kind = UnitKind.Infantry, position = origin, side = Side.West, direction = Just Direction.East }
+                    { fuel = Nothing, id = id, kind = UnitKind.Infantry, position = origin, side = Side.West, direction = Just Direction.East }
 
                 board : GameBoard.GameBoard
                 board =
@@ -264,7 +276,7 @@ reservationChecks rules =
             let
                 unit : Unit.Unit
                 unit =
-                    { id = id, kind = UnitKind.Infantry, position = { x = 0, y = 0 }, side = Side.West, direction = Just Direction.East }
+                    { fuel = Nothing, id = id, kind = UnitKind.Infantry, position = { x = 0, y = 0 }, side = Side.West, direction = Just Direction.East }
 
                 board : GameBoard.GameBoard
                 board =
@@ -310,6 +322,64 @@ reservationChecks rules =
                 ]
 
 
+fuelChecks : List Movement.Rule -> List String
+fuelChecks rules =
+    case UnitId.parse "1" of
+        Err error ->
+            [ error ]
+
+        Ok id ->
+            let
+                unit : Unit.Unit
+                unit =
+                    { id = id, kind = UnitKind.Tank, position = { x = 0, y = 0 }, side = Side.West, direction = Just Direction.East, fuel = Just { current = 2, maximum = 16 } }
+
+                board : GameBoard.GameBoard
+                board =
+                    { map = { width = 5, height = 3, baseTile = Terrain.GrassPlain, features = [ { position = { x = 1, y = 0 }, terrain = Terrain.Forest } ] }, units = [ unit ], depots = [] }
+
+                reachable : List Movement.Option
+                reachable =
+                    Movement.options [] rules board unit
+
+                emptyUnit : Unit.Unit
+                emptyUnit =
+                    { unit | fuel = Just { current = 0, maximum = 16 } }
+
+                traced : Maybe Movement.Option
+                traced =
+                    Movement.trace rules board unit (Movement.start unit) { x = 0, y = 1 }
+                        |> Maybe.andThen (\path -> Movement.trace rules board unit path { x = 1, y = 1 })
+
+                test : String -> Bool -> List String
+                test name passed =
+                    if passed then
+                        []
+
+                    else
+                        [ name ]
+            in
+            List.concat
+                [ test "empty vehicles have no movement choices" (List.isEmpty (Movement.options [] rules board emptyUnit))
+                , test "fuel bounds every returned path" (List.all (\option -> List.length option.path <= 3) reachable)
+                , test "short expensive routes remain reachable when cheaper detours exceed fuel"
+                    (List.any (\option -> option.destination == { x = 2, y = 0 } && option.cost == 8 && List.length option.path == 3) reachable)
+                , test "tracing spends remaining fuel across extensions"
+                    (traced |> Maybe.andThen (\path -> Movement.trace rules board unit path { x = 2, y = 1 }) |> (==) Nothing)
+                , test "backtracking refunds fuel for later extensions"
+                    (traced
+                        |> Maybe.andThen (\path -> Movement.trace rules board unit path { x = 0, y = 1 })
+                        |> Maybe.andThen (\path -> Movement.trace rules board unit path { x = 0, y = 2 })
+                        |> Maybe.map (\path -> List.length path.path == 3)
+                        |> Maybe.withDefault False
+                    )
+                , test "fuel-limited previews reroute to an affordable path"
+                    (traced |> Maybe.andThen (\path -> Movement.preview rules board unit path { x = 1, y = 0 }) |> Maybe.map (\path -> List.length path.path == 2) |> Maybe.withDefault False)
+                , test "full fuel does not override the movement budget"
+                    (Movement.options [] rules board { unit | fuel = Just { current = 16, maximum = 16 } } |> List.all (\option -> option.cost <= 12))
+                ]
+
+
 main : Program D.Value () Never
 main =
     Platform.worker
@@ -322,7 +392,7 @@ main =
                             [ D.errorToString error ]
 
                         Ok ( rules, cases ) ->
-                            List.concatMap (check rules) cases ++ traceChecks rules ++ reservationChecks rules
+                            List.concatMap (check rules) cases ++ traceChecks rules ++ reservationChecks rules ++ fuelChecks rules
                     )
                 )
         , update = \msg model -> never msg

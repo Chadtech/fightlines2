@@ -1,4 +1,4 @@
-module Unit exposing (Unit, label)
+module Unit exposing (Fuel, Unit, label)
 
 import Api.Enum.Direction exposing (Direction)
 import Api.Enum.Side exposing (Side)
@@ -8,11 +8,18 @@ import Side
 import UnitId exposing (UnitId)
 
 
+type alias Fuel =
+    { current : Int
+    , maximum : Int
+    }
+
+
 type alias Unit =
     { id : UnitId
     , side : Side
     , kind : UnitKind
     , direction : Maybe Direction
+    , fuel : Maybe Fuel
     , position : Coordinate
     }
 

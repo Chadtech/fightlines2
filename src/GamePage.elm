@@ -27,6 +27,7 @@ import Api.Mutation
 import Api.Object
 import Api.Object.Coordinate as CoordinateApi
 import Api.Object.Depot as DepotApi
+import Api.Object.Fuel as FuelApi
 import Api.Object.GamePlayerView as PlayerView
 import Api.Object.GameSnapshot as SnapshotApi
 import Api.Object.Map as MapApi
@@ -438,11 +439,12 @@ snapshotSelection =
                 )
                 (Scenario.depots (SS.map Depot.Depot (DepotApi.position coordinateSelection)))
                 (Scenario.units
-                    (SS.map5 Unit.Unit
+                    (SS.map6 Unit.Unit
                         (UnitApi.id |> SS.mapOrFail UnitId.parse)
                         UnitApi.side
                         UnitApi.kind
                         UnitApi.direction
+                        (UnitApi.fuel (SS.map2 Unit.Fuel FuelApi.current FuelApi.maximum))
                         (UnitApi.position coordinateSelection)
                     )
                 )
@@ -1042,6 +1044,19 @@ movementView model =
                                             ]
                                         ]
 
+                            fuelDetails : List (Html Msg)
+                            fuelDetails =
+                                case unit.fuel of
+                                    Nothing ->
+                                        []
+
+                                    Just fuel ->
+                                        [ H.p
+                                            []
+                                            [ H.text ("fuel permits up to " ++ String.fromInt fuel.current ++ " tiles. each tile uses 1 fuel; terrain also spends movement points. end on your home depot to refill.")
+                                            ]
+                                        ]
+
                             plannedDetails : List (Html Msg)
                             plannedDetails =
                                 case planned of
@@ -1068,7 +1083,7 @@ movementView model =
                                         |> Button.toHtml
                                     ]
                             in
-                            List.concat [ pathDetails, holdControls, plannedDetails ]
+                            List.concat [ pathDetails, fuelDetails, holdControls, plannedDetails ]
 
                     else
                         [ H.p
