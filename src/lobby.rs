@@ -156,6 +156,7 @@ pub struct GameSnapshot {
     game_url: Option<String>,
     scenario: Scenario,
     movement_rules: Vec<crate::movement::MovementRule>,
+    visible_tiles: Vec<crate::map::Coordinate>,
 }
 
 /// Public roster entry; `is_you` compares the player with the requesting session.
@@ -236,11 +237,15 @@ fn game_snapshot(game: &Game, session: Option<&SessionToken>) -> Snapshot {
 
 fn game_view(game: &Game, session: &SessionToken) -> GameSnapshot {
     let index = usize::from(session != &game.host);
+    let side = if index == 0 { Side::West } else { Side::East };
+    let visible = crate::visibility::visible_tiles(&game.scenario, side);
     GameSnapshot {
         turn_number: game.turns.number,
         submitted: game.turns.orders[index].is_some(),
         opponent_submitted: game.turns.orders[1 - index].is_some(),
-        last_resolution: game.turns.last_resolution.clone(),
+        last_resolution: game.turns.last_resolution.as_ref().map(|resolution| {
+            crate::visibility::observed_resolution(&game.scenario, side, &visible, resolution)
+        }),
         id: game.source_lobby.to_string(),
         name: game.name.to_string(),
         map_type: game.map_type,
@@ -258,7 +263,8 @@ fn game_view(game: &Game, session: &SessionToken) -> GameSnapshot {
         is_host: session == &game.host,
         is_member: true,
         game_url: Some(format!("/game/{}", game.source_lobby)),
-        scenario: game.scenario.clone(),
+        scenario: crate::visibility::observed_scenario(&game.scenario, side, &visible),
+        visible_tiles: visible.into_iter().collect(),
         movement_rules: crate::movement::rules(),
     }
 }

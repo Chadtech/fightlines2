@@ -37,6 +37,13 @@ kind =
     Object.selectionForField "Enum.UnitKind.UnitKind" "kind" [] Api.Enum.UnitKind.decoder
 
 
+hitPoints :
+    SelectionSet decodesTo Api.Object.HitPoints
+    -> SelectionSet decodesTo Api.Object.Unit
+hitPoints object____ =
+    Object.selectionForCompositeField "hitPoints" [] object____ Basics.identity
+
+
 supplies :
     SelectionSet decodesTo Api.Object.Supplies
     -> SelectionSet decodesTo Api.Object.Unit

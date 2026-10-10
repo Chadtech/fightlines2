@@ -169,7 +169,7 @@ mod tests {
 
     #[actix_web::test]
     async fn development_game_is_opt_in_and_does_not_replace_identity() {
-        let query = "{ game(id: \"00000000000000000000000000000000\") { id name isHost players { side isYou } movementRules { kind budget terrainCosts { terrain cost } } scenario { units { id } depots { owner } } } }";
+        let query = "{ game(id: \"00000000000000000000000000000000\") { id name isHost players { side isYou } movementRules { kind budget terrainCosts { terrain cost } } visibleTiles { x y } scenario { units { id side } depots { owner } } } }";
         for development in [false, true] {
             let seed = crate::seed::Seed::new([7; 32]);
             let store = if development {
@@ -207,7 +207,15 @@ mod tests {
                     assert_eq!(game["players"][0]["isYou"], true);
                     assert_eq!(game["players"][1]["side"], "EAST");
                     assert_eq!(game["players"][1]["isYou"], false);
-                    assert_eq!(game["scenario"]["units"].as_array().unwrap().len(), 16);
+                    assert_eq!(game["scenario"]["units"].as_array().unwrap().len(), 8);
+                    assert!(
+                        game["scenario"]["units"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .all(|unit| unit["side"] == "WEST")
+                    );
+                    assert!(!game["visibleTiles"].as_array().unwrap().is_empty());
                     assert_eq!(game["scenario"]["depots"].as_array().unwrap().len(), 3);
                 } else {
                     assert!(body["errors"].is_array());
@@ -404,7 +412,7 @@ mod tests {
                 .contains("already started")
         );
         let game = format!(
-            "{{ game(id: \"{id}\") {{ {FIELDS} players {{ side isYou }} scenario {{ map {{ width height baseTile features {{ position {{ x y }} terrain }} }} depots {{ position {{ x y }} owner }} units {{ id side kind position {{ x y }} }} }} }} }}"
+            "{{ game(id: \"{id}\") {{ {FIELDS} visibleTiles {{ x y }} players {{ side isYou }} scenario {{ map {{ width height baseTile features {{ position {{ x y }} terrain }} }} depots {{ position {{ x y }} owner }} units {{ id side kind position {{ x y }} }} }} }} }}"
         );
         let (member, _) = execute!(&game, Some(guest.clone()));
         assert_eq!(member["data"]["game"]["name"], "Friday Night");
@@ -416,12 +424,31 @@ mod tests {
         assert_eq!(scenario["map"]["baseTile"], "GRASS_PLAIN");
         assert_eq!(scenario["map"]["features"].as_array().unwrap().len(), 102);
         assert_eq!(scenario["depots"].as_array().unwrap().len(), 3);
-        assert_eq!(scenario["units"].as_array().unwrap().len(), 16);
+        assert_eq!(scenario["units"].as_array().unwrap().len(), 8);
         assert_eq!(member["data"]["game"]["players"][0]["side"], "WEST");
         assert_eq!(member["data"]["game"]["players"][1]["side"], "EAST");
         assert_eq!(member["data"]["game"]["players"][1]["isYou"], true);
         let (host_view, _) = execute!(&game, Some(host.clone()));
-        assert_eq!(host_view["data"]["game"]["scenario"], *scenario);
+        let host_scenario = &host_view["data"]["game"]["scenario"];
+        assert_eq!(host_scenario["map"], scenario["map"]);
+        assert!(
+            scenario["units"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|unit| unit["side"] == "EAST")
+        );
+        assert!(
+            host_scenario["units"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|unit| unit["side"] == "WEST")
+        );
+        assert_ne!(
+            host_view["data"]["game"]["visibleTiles"],
+            member["data"]["game"]["visibleTiles"]
+        );
         assert_eq!(host_view["data"]["game"]["players"][0]["isYou"], true);
         let (outsider, _) = execute!(&game, None);
         assert!(outsider["errors"].is_array());
@@ -452,7 +479,12 @@ mod tests {
             assert_eq!(owner["data"]["lobby"]["isHost"], true);
         }
         let submit = |side: &str| {
-            let orders = scenario["units"]
+            let own_scenario = if side == "WEST" {
+                host_scenario
+            } else {
+                scenario
+            };
+            let orders = own_scenario["units"]
                 .as_array()
                 .unwrap()
                 .iter()
@@ -495,7 +527,7 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .len(),
-            16
+            8
         );
         let (stale, _) = execute!(submit("WEST"), Some(host));
         assert!(stale["errors"].is_array());

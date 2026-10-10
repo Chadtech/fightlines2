@@ -41,7 +41,7 @@ SupplyPoint terrain is authored as an ASCII sketch in `scenario.rs`.
 `scenario.rs` owns the fixed SupplyPoint layout, separate supply-depot buildings with optional
 side ownership, and units with stable typed IDs, kinds, sides, positions, and optional
 four-way `Direction` values. Supply trucks have no direction.
-Resource quantities, combat, and victory resolution remain future work.
+Hit points, supplies and vehicle fuel are authoritative. Combat and victory resolution remain future work.
 Starting requires exactly two players and initializes the scenario once before
 consuming the lobby. The host owns West and the second player East. Repeated
 start requests return the existing game. Joining is capped at two players,
@@ -340,7 +340,7 @@ model as part of that experiment rather than copying the old engine.
 
 ## Vehicle fuel
 
-Rust units carry optional `Fuel` state: tanks and supply trucks start at 16/16;
+Rust units carry optional `Fuel` state: tanks and supply trucks start at 64/64;
 infantry and field guns have none. One traversed path edge consumes one fuel,
 independent of terrain movement points. Validation rejects paths exceeding
 available fuel before locking orders. Resolution consumes fuel only on
@@ -358,7 +358,7 @@ snapshot fuel values; it does not calculate resource outcomes.
 ## Unit supplies
 
 Every Rust unit carries `Supplies` with current and maximum quantities plus
-`upkeepPerTurn` and `movementPerTile` rates. All kinds start at 16/16 and have
+`upkeepPerTurn` and `movementPerTile` rates. All kinds start at 64/64 and have
 upkeep 1. Infantry and field guns spend 1 additional supply per traversed tile;
 tanks and trucks spend none for movement. These are unit provisions, separate
 from fuel and future supply-truck cargo.
@@ -376,3 +376,30 @@ and supplies after reserving upkeep, separately from terrain movement costs.
 Traced extensions subtract supplies already committed to the prefix without
 charging upkeep twice; backtracking refunds that movement allowance. Playback
 continues to use the completed snapshot's authoritative resource quantities.
+
+## Observability and fog of war
+
+`visibility.rs` owns per-kind sight ranges and the side's union of observable
+tiles. Circular distance uses ranges 4/4/3/2 for infantry/field guns/trucks/tanks;
+an observer on hills gains one tile. A supercover ray treats intervening hills
+and forests as blockers, including corner-touching terrain. Forest tiles also
+conceal their contents. Own occupied squares remain known, while
+enemies in forests remain concealed even on a known occupied square.
+
+`game_view` projects the authoritative scenario for the requesting side,
+including the development preview. `GameSnapshot.visibleTiles` supplies the
+fog mask; the scenario includes all own units and only observable enemies.
+Terrain and static depots remain public map knowledge. Turn resolution events
+are also projected: enemy routes must be observable throughout under both
+the initial and final sight masks to be replayed. Other sightings snap to the
+final observed position; own paths are retained. Stored units and authoritative
+movement validation still use the complete board. `GamePage` stores the mask
+and refreshes it on resolved turns; `View.GameBoard` darkens and desaturates unseen terrain and known depots
+with the same image filter, preserving artwork detail and crisp tile boundaries. Playback uses the resolved turn's sight mask.
+
+## Unit hit points
+
+Every Rust unit starts with authoritative `HitPoints` at 16/16. GraphQL exposes
+current and maximum health; Elm stores them in `Unit` and renders the status
+gauge. Movement and turn upkeep preserve health. Damage, healing and unit
+destruction remain future work alongside combat.

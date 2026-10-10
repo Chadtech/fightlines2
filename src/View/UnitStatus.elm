@@ -13,7 +13,7 @@ import View.UnitSprite as UnitSprite
 
 
 
--- Hit points remain a presentation fixture. Fuel and supplies come from Rust.
+-- Resource levels come from the authoritative Rust unit state.
 
 
 type alias Level =
@@ -23,7 +23,7 @@ type alias Level =
 
 
 type Resource
-    = HitPoints
+    = HitPoints Unit.HitPoints
     | Supply Unit.Supplies
     | Fuel Unit.Fuel
 
@@ -37,7 +37,7 @@ toHtml unit =
 
         resources : List Resource
         resources =
-            [ HitPoints, Supply unit.supplies ] ++ fuelResources
+            [ HitPoints unit.hitPoints, Supply unit.supplies ] ++ fuelResources
     in
     H.div
         [ A.css
@@ -55,13 +55,6 @@ toHtml unit =
                 ]
             ]
             (List.map gauge resources)
-        , H.p
-            [ A.css
-                [ S.textGray4
-                ]
-            ]
-            [ H.text "hit points are sample values"
-            ]
         ]
 
 
@@ -217,7 +210,7 @@ gauge resource =
         label : String
         label =
             case resource of
-                HitPoints ->
+                HitPoints _ ->
                     "hit points"
 
                 Supply _ ->
@@ -229,8 +222,8 @@ gauge resource =
         level : Level
         level =
             case resource of
-                HitPoints ->
-                    { current = 82, maximum = 100 }
+                HitPoints hitPoints ->
+                    hitPoints
 
                 Supply supplies ->
                     { current = supplies.current, maximum = supplies.maximum }
@@ -256,8 +249,8 @@ gauge resource =
         explanation : String
         explanation =
             case resource of
-                HitPoints ->
-                    "how much health the unit has left. the second number is its maximum."
+                HitPoints _ ->
+                    "how much health the unit has left. the second number is its maximum. damage and healing are not implemented yet."
 
                 Supply supplies ->
                     "provisions for this unit: " ++ String.fromInt supplies.upkeepPerTurn ++ " per resolved turn plus " ++ String.fromInt supplies.movementPerTile ++ " per traversed tile. holds and canceled moves still pay upkeep. supplies cannot be replenished yet."

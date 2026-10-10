@@ -110,14 +110,13 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   submit anyway actions; confirmation fills missing orders with holds.
 - Selected units use a `unit status` heading, their illustration in a nightwood3
   inset screen, and their name and side without position coordinates. Display
-  sample hit points, authoritative supplies, and authoritative fuel (for tanks
+  authoritative hit points (out of 16), supplies (out of 64), and fuel (out of 64) (for tanks
   and supply trucks) as horizontal gauges with `current / maximum` labels. Use red1 below 25%, yellow4 from
   25–75%, and green1 (`#4BBF63`) above 75%; retain the numeric labels alongside color.
 - Unit and gauge info markers expand keyboard-accessible explanations. The
   flat `about this unit` section spans the panel width, with nightwood3 body,
   yellow2 title strip, yellow5 heading text, and internal padding. It has no
-  bevel. Keep resource values visibly identified as samples until game rules
-  provide them.
+  bevel. Resource gauges show the server-provided current and maximum values.
 - While planning, selecting your own unit opens an illustrated command menu
   beside its board sprite. Tailor commands to the unit kind: infantry gets stand
   ground, hold position, move, attack move and dig in; tanks omit dig in; trucks
@@ -149,6 +148,9 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   pointed tree crowns and trunks exaggerated enough to read at 30px display size.
   Terrain features stay inside their own cells. Keep tile hit targets separate
   from the artwork and use subtle square grid strokes to clarify cell boundaries.
+- Unseen terrain and known depots use 18% saturation and 58% brightness,
+  preserving the artwork's internal shading instead of covering it with an opaque
+  tint. Keep visibility boundaries crisp at tile edges.
 - Keep comparable square footprints with transparent padding. Illustrated
   infantry, tanks, trucks and field guns fit within 232 x 232px bounds in 256px
   cells, preserving each master’s aspect ratio. Keep side-profile vehicles, a substantial tank turret and thick barrel,
@@ -165,8 +167,8 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   unit. Saving ends hover editing and hides reachable-square highlights;
   reselecting the unit and choosing move restores both.
   Keep the selected unit active while choosing or replacing a destination. Show
-  movement budget, preview cost, planned destination/cost, clear move
-  and hold position controls, and order status
+  movement budget, preview cost, planned destination/cost, the clear move
+  control, and order status
   in the right panel. Reachable tiles support Tab and Enter/Space.
 - Units and depots support keyboard focus and Enter/Space activation. Illustrated
   unit sprites face right for the western side and mirror left for the eastern

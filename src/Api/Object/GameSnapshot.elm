@@ -91,3 +91,10 @@ movementRules :
     -> SelectionSet (List decodesTo) Api.Object.GameSnapshot
 movementRules object____ =
     Object.selectionForCompositeField "movementRules" [] object____ (Basics.identity >> Decode.list)
+
+
+visibleTiles :
+    SelectionSet decodesTo Api.Object.Coordinate
+    -> SelectionSet (List decodesTo) Api.Object.GameSnapshot
+visibleTiles object____ =
+    Object.selectionForCompositeField "visibleTiles" [] object____ (Basics.identity >> Decode.list)

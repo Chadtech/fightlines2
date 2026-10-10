@@ -65,19 +65,20 @@ check rules fixture =
                 fuel =
                     case fixture.kind of
                         UnitKind.Tank ->
-                            Just { current = 16, maximum = 16 }
+                            Just { current = 64, maximum = 64 }
 
                         UnitKind.SupplyTruck ->
-                            Just { current = 16, maximum = 16 }
+                            Just { current = 64, maximum = 64 }
 
                         _ ->
                             Nothing
 
                 unit : Unit.Unit
                 unit =
-                    { supplies =
-                        { current = 16
-                        , maximum = 16
+                    { hitPoints = { current = 16, maximum = 16 }
+                    , supplies =
+                        { current = 64
+                        , maximum = 64
                         , upkeepPerTurn = 1
                         , movementPerTile =
                             if fixture.kind == UnitKind.Infantry || fixture.kind == UnitKind.FieldGun then
@@ -177,7 +178,7 @@ traceChecks rules =
 
                 unit : Unit.Unit
                 unit =
-                    { supplies = { current = 16, maximum = 16, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = id, kind = UnitKind.Infantry, position = origin, side = Side.West, direction = Just Direction.East }
+                    { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = id, kind = UnitKind.Infantry, position = origin, side = Side.West, direction = Just Direction.East }
 
                 board : GameBoard.GameBoard
                 board =
@@ -293,7 +294,7 @@ reservationChecks rules =
             let
                 unit : Unit.Unit
                 unit =
-                    { supplies = { current = 16, maximum = 16, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = id, kind = UnitKind.Infantry, position = { x = 0, y = 0 }, side = Side.West, direction = Just Direction.East }
+                    { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = id, kind = UnitKind.Infantry, position = { x = 0, y = 0 }, side = Side.West, direction = Just Direction.East }
 
                 board : GameBoard.GameBoard
                 board =
@@ -349,7 +350,7 @@ fuelChecks rules =
             let
                 unit : Unit.Unit
                 unit =
-                    { supplies = { current = 16, maximum = 16, upkeepPerTurn = 1, movementPerTile = 0 }, id = id, kind = UnitKind.Tank, position = { x = 0, y = 0 }, side = Side.West, direction = Just Direction.East, fuel = Just { current = 2, maximum = 16 } }
+                    { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, id = id, kind = UnitKind.Tank, position = { x = 0, y = 0 }, side = Side.West, direction = Just Direction.East, fuel = Just { current = 2, maximum = 64 } }
 
                 board : GameBoard.GameBoard
                 board =
@@ -361,7 +362,7 @@ fuelChecks rules =
 
                 emptyUnit : Unit.Unit
                 emptyUnit =
-                    { unit | fuel = Just { current = 0, maximum = 16 } }
+                    { unit | fuel = Just { current = 0, maximum = 64 } }
 
                 traced : Maybe Movement.Option
                 traced =
@@ -393,7 +394,7 @@ fuelChecks rules =
                 , test "fuel-limited previews reroute to an affordable path"
                     (traced |> Maybe.andThen (\path -> Movement.preview rules board unit path { x = 1, y = 0 }) |> Maybe.map (\path -> List.length path.path == 2) |> Maybe.withDefault False)
                 , test "full fuel does not override the movement budget"
-                    (Movement.options [] rules board { unit | fuel = Just { current = 16, maximum = 16 } } |> List.all (\option -> option.cost <= 12))
+                    (Movement.options [] rules board { unit | fuel = Just { current = 64, maximum = 64 } } |> List.all (\option -> option.cost <= 12))
                 ]
 
 
@@ -407,11 +408,11 @@ supplyChecks rules =
             let
                 supplies : Unit.Supplies
                 supplies =
-                    { current = 3, maximum = 16, upkeepPerTurn = 1, movementPerTile = 1 }
+                    { current = 3, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }
 
                 unit : Unit.Unit
                 unit =
-                    { id = id, kind = UnitKind.Infantry, position = { x = 0, y = 0 }, side = Side.West, direction = Just Direction.East, fuel = Nothing, supplies = supplies }
+                    { hitPoints = { current = 16, maximum = 16 }, id = id, kind = UnitKind.Infantry, position = { x = 0, y = 0 }, side = Side.West, direction = Just Direction.East, fuel = Nothing, supplies = supplies }
 
                 board : GameBoard.GameBoard
                 board =
@@ -432,7 +433,7 @@ supplyChecks rules =
 
                 vehicle : Unit.Unit
                 vehicle =
-                    { unit | kind = UnitKind.Tank, fuel = Just { current = 2, maximum = 16 }, supplies = { supplies | current = 0, movementPerTile = 0 } }
+                    { unit | kind = UnitKind.Tank, fuel = Just { current = 2, maximum = 64 }, supplies = { supplies | current = 0, movementPerTile = 0 } }
 
                 test : String -> Bool -> List String
                 test name passed =

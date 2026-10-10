@@ -58,6 +58,22 @@ impl fmt::Display for UnitId {
     }
 }
 
+/// Authoritative health; damage and healing rules remain future work.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLObject)]
+pub struct HitPoints {
+    current: i32,
+    maximum: i32,
+}
+
+impl HitPoints {
+    fn full() -> Self {
+        Self {
+            current: 16,
+            maximum: 16,
+        }
+    }
+}
+
 /// One fuel unit powers one traversed tile, independently of movement points.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLObject)]
 pub struct Fuel {
@@ -69,8 +85,8 @@ impl Fuel {
     fn for_kind(kind: UnitKind) -> Option<Self> {
         match kind {
             UnitKind::Tank | UnitKind::SupplyTruck => Some(Self {
-                current: 16,
-                maximum: 16,
+                current: 64,
+                maximum: 64,
             }),
             UnitKind::Infantry | UnitKind::FieldGun => None,
         }
@@ -109,8 +125,8 @@ impl Supplies {
             UnitKind::Tank | UnitKind::SupplyTruck => 0,
         };
         Self {
-            current: 16,
-            maximum: 16,
+            current: 64,
+            maximum: 64,
             upkeep_per_turn: 1,
             movement_per_tile,
         }
@@ -129,6 +145,7 @@ pub struct Unit {
     kind: UnitKind,
     position: Coordinate,
     direction: Option<Direction>,
+    hit_points: HitPoints,
     fuel: Option<Fuel>,
     supplies: Supplies,
 }
@@ -145,6 +162,10 @@ impl Unit {
 
     pub fn kind(&self) -> UnitKind {
         self.kind
+    }
+
+    pub fn hit_points(&self) -> HitPoints {
+        self.hit_points
     }
 
     pub fn supplies(&self) -> Supplies {
@@ -171,7 +192,7 @@ pub struct Depot {
     owner: Option<Side>,
 }
 
-/// Current board state, including fuel and supplies. Combat remains future work.
+/// Current board state, including hit points, fuel and supplies. Combat remains future work.
 #[derive(Clone, Debug, PartialEq, Eq, GraphQLObject)]
 pub struct Scenario {
     pub(crate) map: Map,
@@ -276,6 +297,7 @@ impl Scenario {
                     id: UnitId(offset + index as u16 + 1),
                     side,
                     kind,
+                    hit_points: HitPoints::full(),
                     fuel: Fuel::for_kind(kind),
                     supplies: Supplies::for_kind(kind),
                     position: Coordinate::new(x, y),
@@ -299,6 +321,7 @@ impl Scenario {
                     id: UnitId(first_id + index as u16),
                     side,
                     kind,
+                    hit_points: HitPoints::full(),
                     fuel: Fuel::for_kind(kind),
                     supplies: Supplies::for_kind(kind),
                     position: Coordinate::new(x, y),
@@ -327,6 +350,42 @@ mod tests {
     use super::*;
     use crate::map::Terrain;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn units_start_with_full_health_and_resources() {
+        let mut scenario = Scenario::supply_point().unwrap();
+        for unit in &scenario.units {
+            assert_eq!(
+                unit.hit_points(),
+                HitPoints {
+                    current: 16,
+                    maximum: 16
+                }
+            );
+            assert_eq!(unit.supplies.current, 64);
+            assert_eq!(unit.supplies.maximum, 64);
+            match unit.kind {
+                UnitKind::Tank | UnitKind::SupplyTruck => {
+                    assert_eq!(
+                        unit.fuel(),
+                        Some(Fuel {
+                            current: 64,
+                            maximum: 64
+                        })
+                    );
+                }
+                UnitKind::Infantry | UnitKind::FieldGun => assert_eq!(unit.fuel(), None),
+            }
+        }
+        scenario.units[0].follow_path(&[Coordinate::new(3, 7), Coordinate::new(3, 6)]);
+        scenario.finish_turn_resources();
+        assert!(
+            scenario
+                .units
+                .iter()
+                .all(|unit| unit.hit_points() == HitPoints::full())
+        );
+    }
 
     #[test]
     fn following_paths_turns_units_and_keeps_facing_on_hold() {

@@ -314,7 +314,7 @@ mod tests {
     fn supplies_charge_upkeep_once_and_walking_movement_only() {
         let mut scenario = Scenario::supply_point().unwrap();
         let mut turns = Turns::default();
-        for _ in 0..13 {
+        for _ in 0..61 {
             resolve_holds(&mut scenario, &mut turns);
         }
         let number = turns.number;
@@ -344,15 +344,15 @@ mod tests {
         for id in ["2", "4", "11", "6"] {
             assert_eq!(vehicle(&mut scenario, id).supplies().current(), 2);
         }
-        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 15);
-        assert_eq!(vehicle(&mut scenario, "11").fuel().unwrap().current, 15);
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 63);
+        assert_eq!(vehicle(&mut scenario, "11").fuel().unwrap().current, 63);
     }
 
     #[test]
     fn supplies_reserve_upkeep_reject_movement_and_stop_at_zero() {
         let mut scenario = Scenario::supply_point().unwrap();
         let mut turns = Turns::default();
-        for _ in 0..15 {
+        for _ in 0..63 {
             resolve_holds(&mut scenario, &mut turns);
         }
         let number = turns.number;
@@ -385,15 +385,15 @@ mod tests {
         let mut turns = Turns::default();
         resolve_holds(&mut scenario, &mut turns);
         for id in ["4", "5", "9"] {
-            assert_eq!(vehicle(&mut scenario, id).supplies().current(), 15);
+            assert_eq!(vehicle(&mut scenario, id).supplies().current(), 63);
         }
         vehicle(&mut scenario, "4").move_to(Coordinate::new(2, 8));
         vehicle(&mut scenario, "9").move_to(Coordinate::new(14, 8));
         resolve_holds(&mut scenario, &mut turns);
         for id in ["4", "9"] {
-            assert_eq!(vehicle(&mut scenario, id).supplies().current(), 14);
+            assert_eq!(vehicle(&mut scenario, id).supplies().current(), 62);
         }
-        assert_eq!(vehicle(&mut scenario, "5").supplies().current(), 14);
+        assert_eq!(vehicle(&mut scenario, "5").supplies().current(), 62);
     }
 
     #[test]
@@ -407,8 +407,8 @@ mod tests {
         let mut turns = Turns::default();
         turns.submit(&mut scenario, Side::West, 1, west).unwrap();
         turns.submit(&mut scenario, Side::East, 1, east).unwrap();
-        assert_eq!(vehicle(&mut scenario, "1").supplies().current(), 15);
-        assert_eq!(vehicle(&mut scenario, "6").supplies().current(), 15);
+        assert_eq!(vehicle(&mut scenario, "1").supplies().current(), 63);
+        assert_eq!(vehicle(&mut scenario, "6").supplies().current(), 63);
         assert_eq!(
             vehicle(&mut scenario, "1").position(),
             Coordinate::new(3, 7)
@@ -424,25 +424,25 @@ mod tests {
         let mut scenario = Scenario::supply_point().unwrap();
         assert!(vehicle(&mut scenario, "1").fuel().is_none());
         assert!(vehicle(&mut scenario, "12").fuel().is_none());
-        assert_eq!(vehicle(&mut scenario, "11").fuel().unwrap().current, 16);
+        assert_eq!(vehicle(&mut scenario, "11").fuel().unwrap().current, 64);
         let mut turns = Turns::default();
         let mut west = holds(&scenario, Side::West);
         set_path(&mut west, "4", &[(2, 7), (2, 6), (3, 6)]);
         turns.submit(&mut scenario, Side::West, 1, west).unwrap();
-        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 16);
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 64);
         turns.submit(&mut scenario, Side::West, 1, vec![]).unwrap();
         let east = holds(&scenario, Side::East);
         turns.submit(&mut scenario, Side::East, 1, east).unwrap();
-        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 14);
-        assert_eq!(vehicle(&mut scenario, "11").fuel().unwrap().current, 16);
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 62);
+        assert_eq!(vehicle(&mut scenario, "11").fuel().unwrap().current, 64);
         resolve_holds(&mut scenario, &mut turns);
-        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 14);
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 62);
     }
 
     #[test]
     fn fuel_rejection_is_atomic_and_empty_vehicles_can_hold() {
         let mut scenario = Scenario::supply_point().unwrap();
-        for _ in 0..8 {
+        for _ in 0..32 {
             vehicle(&mut scenario, "4").follow_path(&[
                 Coordinate::new(2, 7),
                 Coordinate::new(2, 6),
@@ -462,13 +462,13 @@ mod tests {
         assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 0);
         vehicle(&mut scenario, "4").move_to(Coordinate::new(2, 8));
         resolve_holds(&mut scenario, &mut turns);
-        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 16);
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 64);
     }
 
     #[test]
     fn tank_paths_must_fit_remaining_fuel_even_with_movement_points_left() {
         let mut scenario = Scenario::supply_point().unwrap();
-        for _ in 0..7 {
+        for _ in 0..31 {
             vehicle(&mut scenario, "11").follow_path(&[
                 Coordinate::new(4, 8),
                 Coordinate::new(5, 8),
@@ -503,21 +503,21 @@ mod tests {
         turns.submit(&mut scenario, Side::West, 1, west).unwrap();
         let east = holds(&scenario, Side::East);
         turns.submit(&mut scenario, Side::East, 1, east).unwrap();
-        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 16);
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 64);
         vehicle(&mut scenario, "4").follow_path(&[Coordinate::new(2, 8), Coordinate::new(2, 8)]);
         vehicle(&mut scenario, "5").follow_path(&[Coordinate::new(2, 9), Coordinate::new(8, 8)]);
         vehicle(&mut scenario, "9").follow_path(&[Coordinate::new(14, 7), Coordinate::new(2, 8)]);
         // Place the eastern truck on the western depot, away from its home.
         vehicle(&mut scenario, "4").move_to(Coordinate::new(14, 8));
         resolve_holds(&mut scenario, &mut turns);
-        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 15);
-        assert_eq!(vehicle(&mut scenario, "5").fuel().unwrap().current, 15);
-        assert_eq!(vehicle(&mut scenario, "9").fuel().unwrap().current, 15);
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 63);
+        assert_eq!(vehicle(&mut scenario, "5").fuel().unwrap().current, 63);
+        assert_eq!(vehicle(&mut scenario, "9").fuel().unwrap().current, 63);
         vehicle(&mut scenario, "9").move_to(Coordinate::new(14, 8));
         vehicle(&mut scenario, "4").move_to(Coordinate::new(2, 8));
         resolve_holds(&mut scenario, &mut turns);
-        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 16);
-        assert_eq!(vehicle(&mut scenario, "9").fuel().unwrap().current, 16);
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 64);
+        assert_eq!(vehicle(&mut scenario, "9").fuel().unwrap().current, 64);
     }
 
     #[test]
@@ -536,7 +536,7 @@ mod tests {
             assert_eq!(unit.position(), original.position());
             assert_eq!(unit.direction(), original.direction());
             assert_eq!(unit.fuel(), original.fuel());
-            assert_eq!(unit.supplies().current(), 15);
+            assert_eq!(unit.supplies().current(), 63);
         }
     }
 
@@ -654,7 +654,7 @@ mod tests {
             assert_eq!(unit.position(), original.position());
             assert_eq!(unit.direction(), original.direction());
             assert_eq!(unit.fuel(), original.fuel());
-            assert_eq!(unit.supplies().current(), 15);
+            assert_eq!(unit.supplies().current(), 63);
         }
     }
 }

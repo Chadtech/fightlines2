@@ -139,11 +139,11 @@ struct TerrainFeature {
 
 #[graphql_object]
 impl Map {
-    fn width(&self) -> i32 {
+    pub fn width(&self) -> i32 {
         i32::from(self.width)
     }
 
-    fn height(&self) -> i32 {
+    pub fn height(&self) -> i32 {
         i32::from(self.height)
     }
 

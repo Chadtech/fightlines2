@@ -25,6 +25,10 @@ type GameSnapshot
     = GameSnapshot
 
 
+type HitPoints
+    = HitPoints
+
+
 type Map
     = Map
 

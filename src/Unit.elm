@@ -1,4 +1,4 @@
-module Unit exposing (Fuel, Supplies, Unit, label, supplyMovementLimit)
+module Unit exposing (Fuel, HitPoints, Supplies, Unit, label, supplyMovementLimit)
 
 import Api.Enum.Direction exposing (Direction)
 import Api.Enum.Side exposing (Side)
@@ -6,6 +6,12 @@ import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Coordinate exposing (Coordinate)
 import Side
 import UnitId exposing (UnitId)
+
+
+type alias HitPoints =
+    { current : Int
+    , maximum : Int
+    }
 
 
 type alias Fuel =
@@ -27,6 +33,7 @@ type alias Unit =
     , side : Side
     , kind : UnitKind
     , direction : Maybe Direction
+    , hitPoints : HitPoints
     , supplies : Supplies
     , fuel : Maybe Fuel
     , position : Coordinate

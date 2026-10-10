@@ -85,6 +85,7 @@ onClickWithDetail toMsg =
 
 toHtml :
     { frame : Frame
+    , visibleTiles : List Coordinate
     , reachable : List Coordinate
     , paths : List (List Coordinate)
     , previewPath : List Coordinate
@@ -161,6 +162,14 @@ toHtml config model =
                     []
                 ]
 
+        terrainFilter : Coordinate -> String
+        terrainFilter position =
+            if List.member position config.visibleTiles then
+                "none"
+
+            else
+                "saturate(0.18) brightness(0.58)"
+
         depotView : Depot -> Svg Msg
         depotView depot =
             at depot.position
@@ -168,6 +177,7 @@ toHtml config model =
                     [ SA.width "16"
                     , SA.height "16"
                     , SA.xlinkHref "/assets/supply-depot-illustrated-v1.png"
+                    , HA.style "filter" (terrainFilter depot.position)
                     , HA.style "image-rendering" "auto"
                     , SA.pointerEvents "none"
                     , HA.attribute "aria-hidden" "true"
@@ -244,26 +254,43 @@ toHtml config model =
                 |> List.concatMap
                     (\y -> List.range 0 (model.map.width - 1) |> List.map (\x -> { x = x, y = y }))
 
+        terrainTile : Coordinate -> Svg Msg
+        terrainTile position =
+            let
+                fogAttributes : List (Svg.Attribute Msg)
+                fogAttributes =
+                    if List.member position config.visibleTiles then
+                        []
+
+                    else
+                        [ HA.attribute "data-fog" "unseen"
+                        ]
+
+                appearanceAttributes : List (Svg.Attribute Msg)
+                appearanceAttributes =
+                    [ HA.style "filter" (terrainFilter position)
+                    , SA.pointerEvents "none"
+                    ]
+            in
+            Svg.g
+                (appearanceAttributes ++ fogAttributes)
+                [ at position
+                    [ Svg.image
+                        [ SA.width "16"
+                        , SA.height "16"
+                        , SA.xlinkHref "/assets/terrain-grass-illustrated-v2.png"
+                        ]
+                        []
+                    ]
+                , terrainView position
+                ]
+
         terrain : Svg Msg
         terrain =
             Svg.g
                 [ HA.style "image-rendering" "auto"
                 ]
-                (List.map
-                    (\position ->
-                        at position
-                            [ Svg.image
-                                [ SA.width "16"
-                                , SA.height "16"
-                                , SA.xlinkHref "/assets/terrain-grass-illustrated-v2.png"
-                                , SA.pointerEvents "none"
-                                ]
-                                []
-                            ]
-                    )
-                    positions
-                    ++ List.map terrainView positions
-                )
+                (List.map terrainTile positions)
 
         reachableTile : Coordinate -> Svg Msg
         reachableTile position =

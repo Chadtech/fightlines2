@@ -30,6 +30,7 @@ import Api.Object.Depot as DepotApi
 import Api.Object.Fuel as FuelApi
 import Api.Object.GamePlayerView as PlayerView
 import Api.Object.GameSnapshot as SnapshotApi
+import Api.Object.HitPoints as HitPointsApi
 import Api.Object.Map as MapApi
 import Api.Object.MovementRule as MovementRuleApi
 import Api.Object.Scenario as Scenario
@@ -101,6 +102,7 @@ type alias Snapshot =
     , mapType : MapType
     , players : List Player
     , board : GameBoard.GameBoard
+    , visibleTiles : List Coordinate.Coordinate
     , movementRules : List Movement.Rule
     , turn : Turn.Snapshot
     }
@@ -125,6 +127,7 @@ type alias Model =
     , mapType : MapType
     , players : List Player
     , board : GameBoard.GameBoard
+    , visibleTiles : List Coordinate.Coordinate
     , movementRules : List Movement.Rule
     , pathPreview : Maybe Movement.Option
     , moveOptions : List Movement.Option
@@ -226,6 +229,7 @@ init shared flags =
     , mapType = flags.snapshot.mapType
     , players = flags.snapshot.players
     , board = flags.snapshot.board
+    , visibleTiles = flags.snapshot.visibleTiles
     , movementRules = flags.snapshot.movementRules
     , pathPreview = Nothing
     , moveOptions = []
@@ -440,18 +444,19 @@ snapshotSelection =
                 )
                 (Scenario.depots (SS.map Depot.Depot (DepotApi.position coordinateSelection)))
                 (Scenario.units
-                    (SS.map7 Unit.Unit
+                    (SS.map8 Unit.Unit
                         (UnitApi.id |> SS.mapOrFail UnitId.parse)
                         UnitApi.side
                         UnitApi.kind
                         UnitApi.direction
+                        (UnitApi.hitPoints (SS.map2 Unit.HitPoints HitPointsApi.current HitPointsApi.maximum))
                         (UnitApi.supplies (SS.map4 Unit.Supplies SuppliesApi.current SuppliesApi.maximum SuppliesApi.upkeepPerTurn SuppliesApi.movementPerTile))
                         (UnitApi.fuel (SS.map2 Unit.Fuel FuelApi.current FuelApi.maximum))
                         (UnitApi.position coordinateSelection)
                     )
                 )
     in
-    SS.map6 Snapshot
+    SS.map7 Snapshot
         SnapshotApi.name
         SnapshotApi.mapType
         (SnapshotApi.players
@@ -463,6 +468,7 @@ snapshotSelection =
             )
         )
         (SnapshotApi.scenario boardSelection)
+        (SnapshotApi.visibleTiles coordinateSelection)
         (SnapshotApi.movementRules
             (SS.map3
                 Movement.Rule
@@ -832,6 +838,7 @@ view model =
                 model
                 (Board.toHtml
                     { frame = model.frame
+                    , visibleTiles = model.visibleTiles
                     , moving = Turn.movingPosition model.playback
                     , selected = selectedPosition model
                     , reachable =
@@ -1095,14 +1102,7 @@ movementView model =
                             [ H.p [] [ H.text "orders are locked while waiting or playing the turn." ] ]
 
                         else
-                            let
-                                holdControls : List (Html Msg)
-                                holdControls =
-                                    [ Button.secondary "hold position" (UnitCommandsMsg (UnitCommands.CommandPicked UnitCommand.HoldPosition))
-                                        |> Button.toHtml
-                                    ]
-                            in
-                            List.concat [ pathDetails, fuelDetails, supplyDetails, holdControls, plannedDetails ]
+                            List.concat [ pathDetails, fuelDetails, supplyDetails, plannedDetails ]
 
                     else
                         [ H.p
@@ -1432,6 +1432,7 @@ receiveSnapshot snapshot model =
             | dialog = Nothing
             , turn = snapshot.turn
             , board = Turn.rewind snapshot.turn snapshot.board
+            , visibleTiles = snapshot.visibleTiles
             , playback = Turn.start snapshot.turn
             , plannedMoves = []
             , selected = Nothing

@@ -10,6 +10,7 @@ mod scenario;
 mod seed;
 mod session_token;
 mod turns;
+mod visibility;
 
 use actix_files::{Files, NamedFile};
 use actix_web::{App, HttpServer, middleware::DefaultHeaders, web};
