@@ -43,7 +43,7 @@ type alias Event =
     { kind : TurnEventKind
     , unitId : UnitId
     , path : List Coordinate
-    , initialDirection : Direction
+    , initialDirection : Maybe Direction
     }
 
 
@@ -153,11 +153,11 @@ tick delta playback board =
                                 edge =
                                     floor (elapsed / 180)
 
-                                direction : Direction
+                                direction : Maybe Direction
                                 direction =
                                     case List.drop edge event.path of
                                         from :: to :: _ ->
-                                            Direction.between from to |> Maybe.withDefault unit.direction
+                                            unit.direction |> Maybe.map (\initial -> Direction.between from to |> Maybe.withDefault initial)
 
                                         _ ->
                                             unit.direction

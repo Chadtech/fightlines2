@@ -1,6 +1,6 @@
 # Runtime sprite assets
 
-Only the six images used by `View.GameBoard` are committed. Normal builds use
+The six board images and small illustrated command-menu experiment exports are committed. Normal builds use
 these exports directly. Source artwork, prompts, previews and obsolete exports
 are retained locally and ignored by Git; back them up separately. The scripts in
 `tools/` and `make sprites` can regenerate exports when the local `artwork/`
@@ -22,3 +22,12 @@ Terrain, buildings and units use smooth scaling. Selection corners use pixelated
 rendering. Eastern units are mirrored to face west. Depots have no ownership
 outlines or team labels. The illustrated assets were generated and edited with
 built-in imagegen on October 6–7, 2026.
+
+## Illustrated command experiment
+
+`commands-anime-v1/` contains seven transparent 128px command icons, displayed at
+30px. The original SVG comparison source is preserved locally in `artwork/commands/`.
+Ambush depicts a concealed field gun and is offered only to field guns.
+Built-in imagegen produced the high-detail 1980s military anime illustrations;
+local masters and exact prompts are in `artwork/commands/anime-v1/`.
+Run `node tools/build-command-icons.cjs` to export those local masters again.

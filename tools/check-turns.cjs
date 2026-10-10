@@ -13,7 +13,7 @@ try {
       console.error(failures.join('\n'));
       process.exitCode = 1;
     } else {
-      console.log('11 sequential playback and direction checks passed.');
+      console.log('12 sequential playback and direction checks passed.');
     }
   });
 } finally {

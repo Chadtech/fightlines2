@@ -20,8 +20,8 @@ type Msg
     | KeyPressed String
 
 
-toHtml : (Msg -> msg) -> { a | offset : Point, zoom : Float, drag : Maybe Drag } -> Html msg -> Html msg
-toHtml toMsg model board =
+toHtml : (Msg -> msg) -> { a | offset : Point, zoom : Float, drag : Maybe Drag } -> Html msg -> Html msg -> Html msg
+toHtml toMsg model board overlay =
     H.div
         [ A.attribute "tabindex" "0"
         , A.attribute "aria-label" "battlefield navigation"
@@ -51,13 +51,16 @@ toHtml toMsg model board =
         ]
         [ H.div
             [ A.css
-                [ Css.property "width" "min(80%, 76vh)"
+                [ S.relative
+                , Css.property "width" "min(80%, 76vh)"
                 , S.shrink0
                 , Css.property "transform"
                     ("translate(" ++ String.fromFloat model.offset.x ++ "px, " ++ String.fromFloat model.offset.y ++ "px) scale(" ++ String.fromFloat model.zoom ++ ")")
                 ]
             ]
-            [ board ]
+            [ board
+            , overlay
+            ]
         ]
 
 

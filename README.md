@@ -49,7 +49,8 @@ illustrations, with a grass tile in every square, defined hill ridges and tree
 silhouettes, and a subtle grid.
 Units use detailed illustrated anime sprites with red and blue team colors,
 packed into 256px square cells and smoothly scaled to the board.
-Each unit has an inset edge triangle indicating its stored up/right/down/left facing.
+Infantry, tanks and field guns have an inset edge triangle indicating their stored
+up/right/down/left facing. Supply trucks have no direction or facing marker.
 Movement turns units along each path segment and leaves them facing the final
 segment; holds and destination conflicts preserve their direction.
 Markers overlay the artwork, brighten on selection, and pulse in unison over two seconds,
@@ -60,12 +61,12 @@ operator bending naturally at the rear controls and the carriage staying planted
 neutral material colors and no team-colored outlines.
 Click the selected unit again to deselect it while keeping its saved move.
 Press Escape to clear the current selection and path preview while keeping saved moves.
-Select one of your units to highlight reachable squares, then click a highlighted
-square to save a move. Hover across squares to preview your exact route; retrace
+Select one of your units, choose **move**, and confirm to highlight reachable
+squares. Click a highlighted square to save a move. Hover across squares to preview your exact route; retrace
 the line to shorten it. Skipped squares connect from the current path tip within
 the remaining budget. If the traced route exceeds the budget, an affordable
 route from the unit is chosen when one exists. Saving stops hover previews and hides reachable-square highlights.
-Reselect the unit to trace a different route or use
+Reselect the unit and confirm **move** to trace a different route, or use
 **clear move** to remove the saved plan. Reachable squares support Tab and Enter/Space.
 Press Escape or click the selected unit to leave movement selection. Paths remain visible when
 switching units. Unsubmitted plans are local drafts and disappear on refresh.
@@ -76,6 +77,20 @@ can pass through reserved destinations. Depots are passable.
 The unit status panel shows the selected unit's illustration, name, and side,
 with expandable unit and gauge explanations. Hit points, supply, and vehicle
 fuel gauges currently show labeled sample values. Authoritative resource quantities do not exist yet.
+
+Selecting your own unit while planning opens an anchored menu with illustrated
+command icons. Options and the separated cancel footer are flat until hovered
+or keyboard-focused. Cancel closes
+the menu without changing saved orders; click the unit again to reopen it.
+Picking a command shows its name in the header above **confirm** and **cancel**, arranged
+horizontally in a panel sized to its contents. Confirm is gold and Enter accepts it; cancel dismisses it.
+Infantry offers stand ground, hold position, move, attack move and dig in;
+tanks offer stand ground, hold position, move and attack move; trucks offer move
+and hold position; field guns offer hold position, move, indirect fire, dig in
+and ambush. Ambush uses a camouflaged field-gun illustration.
+Confirming move opens destination planning, and confirming hold position saves
+a hold order. The other commands are visible placeholders and do nothing when clicked;
+their authoritative rules are not implemented yet.
 
 The fixed-size bottom-left control panel sits flush with the screen edges, with
 a large **submit turn** button on the left, the turn number and readiness beside

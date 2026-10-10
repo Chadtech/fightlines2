@@ -33,10 +33,20 @@ styles =
 
 toSvg : Bool -> Unit -> Svg msg
 toSvg selected unit =
+    case unit.direction of
+        Nothing ->
+            Svg.g [] []
+
+        Just direction ->
+            marker selected direction
+
+
+marker : Bool -> Direction.Direction -> Svg msg
+marker selected direction =
     let
         angle : String
         angle =
-            case unit.direction of
+            case direction of
                 Direction.North ->
                     "0"
 

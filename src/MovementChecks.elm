@@ -63,7 +63,7 @@ check rules fixture =
             let
                 unit : Unit.Unit
                 unit =
-                    { id = id, kind = fixture.kind, position = fixture.origin, side = Side.West, direction = Direction.East }
+                    { id = id, kind = fixture.kind, position = fixture.origin, side = Side.West, direction = Just Direction.East }
 
                 rows : List String
                 rows =
@@ -148,7 +148,7 @@ traceChecks rules =
 
                 unit : Unit.Unit
                 unit =
-                    { id = id, kind = UnitKind.Infantry, position = origin, side = Side.West, direction = Direction.East }
+                    { id = id, kind = UnitKind.Infantry, position = origin, side = Side.West, direction = Just Direction.East }
 
                 board : GameBoard.GameBoard
                 board =
@@ -264,7 +264,7 @@ reservationChecks rules =
             let
                 unit : Unit.Unit
                 unit =
-                    { id = id, kind = UnitKind.Infantry, position = { x = 0, y = 0 }, side = Side.West, direction = Direction.East }
+                    { id = id, kind = UnitKind.Infantry, position = { x = 0, y = 0 }, side = Side.West, direction = Just Direction.East }
 
                 board : GameBoard.GameBoard
                 board =

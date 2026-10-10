@@ -64,7 +64,7 @@ pub struct Unit {
     side: Side,
     kind: UnitKind,
     position: Coordinate,
-    direction: Direction,
+    direction: Option<Direction>,
 }
 
 #[graphql_object]
@@ -81,7 +81,7 @@ impl Unit {
         self.kind
     }
 
-    pub fn direction(&self) -> Direction {
+    pub fn direction(&self) -> Option<Direction> {
         self.direction
     }
 
@@ -112,8 +112,10 @@ impl Unit {
 
     pub fn follow_path(&mut self, path: &[Coordinate]) {
         for step in path.windows(2) {
-            if let Some(direction) = Direction::between(step[0], step[1]) {
-                self.direction = direction;
+            if self.direction.is_some()
+                && let Some(direction) = Direction::between(step[0], step[1])
+            {
+                self.direction = Some(direction);
             }
         }
         if let Some(position) = path.last() {
@@ -183,7 +185,10 @@ impl Scenario {
                     side,
                     kind,
                     position: Coordinate::new(x, y),
-                    direction: Direction::starting(side),
+                    direction: match kind {
+                        UnitKind::SupplyTruck => None,
+                        _ => Some(Direction::starting(side)),
+                    },
                 });
             }
         }
@@ -201,7 +206,10 @@ impl Scenario {
                     side,
                     kind,
                     position: Coordinate::new(x, y),
-                    direction: Direction::starting(side),
+                    direction: match kind {
+                        UnitKind::SupplyTruck => None,
+                        _ => Some(Direction::starting(side)),
+                    },
                 });
             }
         }
@@ -234,18 +242,38 @@ mod tests {
             ((4, 7), (3, 7), Direction::West),
         ] {
             unit.follow_path(&[Coordinate::new(from.0, from.1), Coordinate::new(to.0, to.1)]);
-            assert_eq!(unit.direction(), expected);
+            assert_eq!(unit.direction(), Some(expected));
             assert_eq!(unit.position(), Coordinate::new(to.0, to.1));
         }
         unit.follow_path(&[unit.position()]);
-        assert_eq!(unit.direction(), Direction::West);
+        assert_eq!(unit.direction(), Some(Direction::West));
         unit.follow_path(&[
             Coordinate::new(3, 7),
             Coordinate::new(4, 7),
             Coordinate::new(5, 7),
             Coordinate::new(5, 8),
         ]);
-        assert_eq!(unit.direction(), Direction::South);
+        assert_eq!(unit.direction(), Some(Direction::South));
+    }
+
+    #[test]
+    fn trucks_have_no_direction_after_moves_or_holds() {
+        let mut unit = Scenario::supply_point()
+            .unwrap()
+            .units
+            .into_iter()
+            .find(|unit| unit.kind == UnitKind::SupplyTruck)
+            .unwrap();
+        assert_eq!(unit.direction(), None);
+        unit.follow_path(&[
+            unit.position(),
+            Coordinate::new(3, 7),
+            Coordinate::new(3, 8),
+        ]);
+        assert_eq!(unit.position(), Coordinate::new(3, 8));
+        assert_eq!(unit.direction(), None);
+        unit.follow_path(&[unit.position()]);
+        assert_eq!(unit.direction(), None);
     }
 
     #[test]
@@ -302,8 +330,12 @@ mod tests {
         let west_units = scenario.units.iter().filter(|unit| unit.side == Side::West);
         let east_units = scenario.units.iter().filter(|unit| unit.side == Side::East);
         for (west, east) in west_units.zip(east_units) {
-            assert_eq!(west.direction(), Direction::East);
-            assert_eq!(east.direction(), Direction::West);
+            let (west_direction, east_direction) = match west.kind {
+                UnitKind::SupplyTruck => (None, None),
+                _ => (Some(Direction::East), Some(Direction::West)),
+            };
+            assert_eq!(west.direction(), west_direction);
+            assert_eq!(east.direction(), east_direction);
             assert_eq!(west.kind, east.kind);
             assert_eq!(west.position.y(), east.position.y());
             assert_eq!(west.position.x() + east.position.x(), 16);

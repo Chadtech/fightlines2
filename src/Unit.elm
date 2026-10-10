@@ -12,7 +12,7 @@ type alias Unit =
     { id : UnitId
     , side : Side
     , kind : UnitKind
-    , direction : Direction
+    , direction : Maybe Direction
     , position : Coordinate
     }
 

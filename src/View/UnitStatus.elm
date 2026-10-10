@@ -253,7 +253,7 @@ gauge resource =
                 S.bgRed1
 
             else if fraction > 0.75 then
-                S.bgBlue1
+                S.bgGreen1
 
             else
                 S.bgYellow4

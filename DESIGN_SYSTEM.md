@@ -112,12 +112,30 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   inset screen, and their name and side without position coordinates. Display
   sample hit points, supply, and (for tanks and supply trucks) fuel as horizontal
   gauges with `current / maximum` labels. Use red1 below 25%, yellow4 from
-  25–75%, and blue1 above 75%; retain the numeric labels alongside color.
+  25–75%, and green1 (`#4BBF63`) above 75%; retain the numeric labels alongside color.
 - Unit and gauge info markers expand keyboard-accessible explanations. The
   flat `about this unit` section spans the panel width, with nightwood3 body,
   yellow2 title strip, yellow5 heading text, and internal padding. It has no
   bevel. Keep resource values visibly identified as samples until game rules
   provide them.
+- While planning, selecting your own unit opens an illustrated command menu
+  beside its board sprite. Tailor commands to the unit kind: infantry gets stand
+  ground, hold position, move, attack move and dig in; tanks omit dig in; trucks
+  get move and hold position; field guns get hold position, move, indirect fire,
+  dig in and ambush. Ambush depicts a field gun concealed in foliage.
+  Rows are flush with transparent borders at rest; hover and keyboard focus add
+  an outset bevel, and pressing reverses it. Keep icons and text fixed in size
+  when zooming. Omit an information panel beneath the options.
+  Cancel is a full-width flat footer row below a subtle divider, with a small
+  × aligned to the icon column and the same hover bevel as command rows.
+  It closes the menu while preserving selection and saved orders. Picking
+  an option names only that command in the header and replaces the options with confirm and cancel
+  buttons in a horizontal row. Size confirmation to its contents, without an
+  icon or description. Confirm is gold and
+  Enter accepts it; cancel dismisses it. Move and hold use existing planning
+  behavior; unimplemented commands remain visible but inert until their game
+  rules exist. Preserve the original
+  SVG source locally, without a style-switch button in the game.
 - Primary-button dragging pans after a 6px threshold. A drag never selects a tile;
   a click still inspects units, depots and terrain. Scroll zooms around the cursor,
   bounded to 35–300%; the bottom-left panel supplies pan arrows, zoom and reset controls. Keyboard
@@ -140,13 +158,14 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
 - Render terrain below depots and units, with a thin, muted gold square inset inside the selected
   tile. Keep its entire stroke within that cell, without a fill or animation. The red side starts west and the blue side east. Show side names and
   selected-unit details so color is not the only identifier.
-- Selecting your own unit highlights reachable squares with inset gold outlines
+- Selecting your own unit opens the command menu without enabling movement.
+  Confirming move highlights reachable squares with inset gold outlines
   and a faint fill. Planned routes use dashed gold lines and a destination dot.
   A solid gold line previews the hovered route before saving; preserve traced
   squares, trim on backtracking, and connect gaps from the path tip. If the trace
   cannot reach a square within budget, fall back to an affordable route from the
   unit. Saving ends hover editing and hides reachable-square highlights;
-  reselecting the unit restores both.
+  reselecting the unit and confirming move restores both.
   Keep the selected unit active while choosing or replacing a destination. Show
   movement budget, preview cost, planned destination/cost, clear move
   and hold position controls, and order status
@@ -154,8 +173,9 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
 - Units and depots support keyboard focus and Enter/Space activation. Illustrated
   unit sprites face right for the western side and mirror left for the eastern
   side. Stored direction follows movement and is shown by the facing marker. Overlay a small filled edge
-  triangle for each unit's current facing, keeping its outline entirely inside
+  triangle for each infantry, tank or field gun's current facing, keeping its outline entirely inside
   the cell. Use gray5 with a gray0 outline, and yellow5 for the selected unit.
+  Supply trucks have no stored direction or facing marker.
   Markers show the unit's stored north/east/south/west direction, turning with
   each movement segment and retaining the last direction afterward. Their two-second
   brightness pulse fades to zero, pauses invisibly, then returns in unison

@@ -27,3 +27,7 @@
 !/public/assets/terrain-grass-illustrated-v2.png
 !/public/assets/terrain-hills-illustrated-v3.png
 !/public/assets/units_illustrated-v4.png
+
+# Small illustrated command-menu experiment exports.
+!/public/assets/commands-anime-v1/
+!/public/assets/commands-anime-v1/*.png

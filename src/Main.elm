@@ -487,8 +487,11 @@ shell page =
                         |> Card.toHtml Card.simple
                     ]
 
-                GameLoadFailed _ id error ->
-                    GamePage.loadFailedView id error GameRetryButtonClicked
+                GameLoadFailed _ _ error ->
+                    GamePage.loadFailedView error
+                        { retry = GameRetryButtonClicked
+                        , returnHome = ReturnHomeButtonClicked
+                        }
 
                 Game id model ->
                     List.map (H.map (GameMsg id)) (GamePage.view model)

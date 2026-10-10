@@ -7,6 +7,7 @@ module KeyCmd exposing
     , comma
     , ctrl
     , downArrow
+    , enter
     , escape
     , leftArrow
     , map
@@ -133,6 +134,11 @@ shift =
 period : msg -> KeyCmd msg
 period =
     fromKeys [ "period", "." ]
+
+
+enter : msg -> KeyCmd msg
+enter =
+    fromKeys [ "Enter" ]
 
 
 escape : msg -> KeyCmd msg

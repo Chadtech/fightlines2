@@ -31,11 +31,11 @@ between from to =
         Nothing
 
 
-alongPath : List Coordinate -> Direction -> Direction
+alongPath : List Coordinate -> Maybe Direction -> Maybe Direction
 alongPath path initial =
     case path of
         from :: to :: remaining ->
-            alongPath (to :: remaining) (between from to |> Maybe.withDefault initial)
+            alongPath (to :: remaining) (initial |> Maybe.map (\direction -> between from to |> Maybe.withDefault direction))
 
         _ ->
             initial

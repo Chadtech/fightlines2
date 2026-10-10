@@ -36,7 +36,7 @@ pub enum TurnEventKind {
 /// clients replay these outcomes rather than reimplementing resolution rules.
 #[derive(Clone, Debug)]
 pub struct TurnEvent {
-    pub initial_direction: Direction,
+    pub initial_direction: Option<Direction>,
     pub kind: TurnEventKind,
     pub unit_id: UnitId,
     pub path: Vec<Coordinate>,
@@ -44,7 +44,7 @@ pub struct TurnEvent {
 
 #[graphql_object]
 impl TurnEvent {
-    fn initial_direction(&self) -> Direction {
+    fn initial_direction(&self) -> Option<Direction> {
         self.initial_direction
     }
     fn kind(&self) -> TurnEventKind {
@@ -300,13 +300,16 @@ mod tests {
         turns.submit(&mut scenario, Side::East, 1, east).unwrap();
         assert_eq!(turns.number, 2);
         assert_eq!(scenario.units[0].position(), Coordinate::new(3, 6));
-        assert_eq!(scenario.units[0].direction(), Direction::North);
-        assert_eq!(scenario.units[1].direction(), Direction::East);
+        assert_eq!(scenario.units[0].direction(), Some(Direction::North));
+        assert_eq!(scenario.units[1].direction(), Some(Direction::East));
         assert!(turns.orders.iter().all(Option::is_none));
         let resolution = turns.last_resolution.as_ref().unwrap();
         assert_eq!(resolution.events.len(), 16);
         assert_eq!(resolution.events[0].kind, TurnEventKind::Move);
-        assert_eq!(resolution.events[0].initial_direction, Direction::East);
+        assert_eq!(
+            resolution.events[0].initial_direction,
+            Some(Direction::East)
+        );
         assert_eq!(resolution.turn_number, 1);
         assert!(turns.submit(&mut scenario, Side::East, 1, vec![]).is_err());
     }

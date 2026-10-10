@@ -39,7 +39,8 @@ with `#` for forests, `%` for hills, and spaces or `.` for grass. Spaces are
 preserved; malformed rows and unknown symbols return explicit errors.
 SupplyPoint terrain is authored as an ASCII sketch in `scenario.rs`.
 `scenario.rs` owns the fixed SupplyPoint layout, separate supply-depot buildings with optional
-side ownership, and units with stable typed IDs, kinds, sides, positions, and four-way `Direction` values.
+side ownership, and units with stable typed IDs, kinds, sides, positions, and optional
+four-way `Direction` values. Supply trucks have no direction.
 Resource quantities, combat, and victory resolution remain future work.
 Starting requires exactly two players and initializes the scenario once before
 consuming the lobby. The host owns West and the second player East. Repeated
@@ -159,6 +160,17 @@ functions fix the operation's argument and result scopes; Elm compilation
 catches callers incompatible with a regenerated schema. The current server uses
 synchronous resolvers for its in-memory operations.
 
+`UnitCommand` owns the command vocabulary and per-kind menu availability.
+`GamePage` owns selection as either a unit ID with optional command-menu state or
+a tile coordinate. Only a unit selection can carry choosing/confirming state;
+absence of that state closes the menu. `View.UnitCommands` renders only open
+menus and exposes its own messages, mapped through `GamePage`. Selection changes reset pending
+confirmation, and cancel preserves saved movement drafts. Enter is subscribed
+only during confirmation. Selection and clearing a draft do not start path
+tracing; only confirming move initializes its preview and reachability options.
+Confirmed move/hold reuse existing movement planning;
+unimplemented choices are inert and never open confirmation or change drafts.
+
 `GamePage` owns unit/tile selection and an explicit four-state `AnimationFrame`.
 Board data types live in `Coordinate`, `TerrainFeature`, `Map`, `Depot`, `Unit`
 and `GameBoard`; the view composes them without owning domain data.
@@ -194,7 +206,8 @@ stores the active dialog as `Maybe Dialog`; `EscapePressed` dismisses an open
 dialog before clearing board selection.
 `View.GameBoard` renders raster sprite-sheet cells in nested SVG viewports;
 terrain, depots, units, and an inset SVG selection square are separate layers. Eastern
-units initially face west and western units east. Movement updates stored direction
+infantry, tanks and field guns initially face west and western ones east. Supply
+trucks have no direction or facing marker. Movement updates stored direction
 from the last traversed path edge; holds and conflicts preserve it. `View.UnitFacing` overlays inset edge markers
 using each unit's direction, with selected-unit color and a synchronized
 two-second opacity pulse. Component-owned styles keep the markers steady for
@@ -274,7 +287,7 @@ square. Future impassable terrain can omit its cost entry.
 
 `Movement.elm` calculates cheapest four-direction paths from those rules and
 the current board. Allied units allow passage, while enemy units block travel. Occupied unit
-squares cannot be destinations; depots do not block travel. `GamePage` caches options on selection and retains
+squares cannot be destinations; depots do not block travel. `GamePage` calculates options only after the move command is confirmed and retains
 one editable local draft per unit owned by the viewer, plus a separate live path
 preview. Hovering extends that preview from its tip without replacing its prefix;
 mouse-event gaps use the cheapest connector within the remaining budget, with

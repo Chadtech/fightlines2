@@ -37,9 +37,9 @@ kind =
     Object.selectionForField "Enum.UnitKind.UnitKind" "kind" [] Api.Enum.UnitKind.decoder
 
 
-direction : SelectionSet Api.Enum.Direction.Direction Api.Object.Unit
+direction : SelectionSet (Maybe Api.Enum.Direction.Direction) Api.Object.Unit
 direction =
-    Object.selectionForField "Enum.Direction.Direction" "direction" [] Api.Enum.Direction.decoder
+    Object.selectionForField "(Maybe Enum.Direction.Direction)" "direction" [] (Api.Enum.Direction.decoder |> Decode.nullable)
 
 
 position :

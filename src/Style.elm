@@ -9,6 +9,7 @@ module Style exposing
     , bgGray2
     , bgGray3
     , bgGray4
+    , bgGreen1
     , bgNightwood0
     , bgNightwood1
     , bgNightwood2
@@ -245,6 +246,7 @@ module Style exposing
     , selfCenter
     , setBgColorVar
     , setPrimaryColorVar
+    , shadowMenu
     , shrink0
     , squareBL
     , squareBR
@@ -275,6 +277,7 @@ module Style exposing
     , top8
     , topFull
     , topNeg4
+    , transformOriginTopLeft
     , translateXNeg50pct
     , transparent
     , underline
@@ -311,6 +314,7 @@ module Style exposing
     , z1
     , z2
     , z3
+    , z4
     , zoomInCursor
     )
 
@@ -423,6 +427,11 @@ blue0Str =
 blue1Str : String
 blue1Str =
     "#0ABAB5"
+
+
+green1Str : String
+green1Str =
+    "#4BBF63"
 
 
 red0Str : String
@@ -1572,6 +1581,11 @@ bgBlue1 =
     Css.property "background" blue1Str
 
 
+bgGreen1 : Css.Style
+bgGreen1 =
+    Css.property "background" green1Str
+
+
 bgRed1 : Css.Style
 bgRed1 =
     Css.property "background" red1Str
@@ -2456,3 +2470,18 @@ selectableListRow index =
             , textGray5
             ]
         ]
+
+
+z4 : Css.Style
+z4 =
+    Css.zIndex (Css.int 40)
+
+
+transformOriginTopLeft : Css.Style
+transformOriginTopLeft =
+    Css.property "transform-origin" "top left"
+
+
+shadowMenu : Css.Style
+shadowMenu =
+    Css.property "box-shadow" "3px 5px 0 rgba(0, 0, 0, 0.3)"
