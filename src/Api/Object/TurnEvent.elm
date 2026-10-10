@@ -21,6 +21,11 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+rotationDirection : SelectionSet (Maybe Api.Enum.Direction.Direction) Api.Object.TurnEvent
+rotationDirection =
+    Object.selectionForField "(Maybe Enum.Direction.Direction)" "rotationDirection" [] (Api.Enum.Direction.decoder |> Decode.nullable)
+
+
 initialCarrier : SelectionSet (Maybe String) Api.Object.TurnEvent
 initialCarrier =
     Object.selectionForField "(Maybe String)" "initialCarrier" [] (Decode.string |> Decode.nullable)

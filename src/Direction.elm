@@ -1,4 +1,9 @@
-module Direction exposing (alongPath, between)
+module Direction exposing
+    ( alongPath
+    , between
+    , label
+    , step
+    )
 
 import Api.Enum.Direction as Direction exposing (Direction)
 import Coordinate exposing (Coordinate)
@@ -39,3 +44,37 @@ alongPath path initial =
 
         _ ->
             initial
+
+
+label : Direction -> String
+label direction =
+    case direction of
+        Direction.North ->
+            "north"
+
+        Direction.East ->
+            "east"
+
+        Direction.South ->
+            "south"
+
+        Direction.West ->
+            "west"
+
+
+{-| Move one tile in a cardinal direction. The caller validates map bounds.
+-}
+step : Coordinate -> Direction -> Coordinate
+step origin direction =
+    case direction of
+        Direction.North ->
+            { origin | y = origin.y - 1 }
+
+        Direction.East ->
+            { origin | x = origin.x + 1 }
+
+        Direction.South ->
+            { origin | y = origin.y + 1 }
+
+        Direction.West ->
+            { origin | x = origin.x - 1 }

@@ -1,5 +1,6 @@
 module Style exposing
     ( absolute
+    , appearanceNone
     , basisFull
     , batch
     , belowWidth
@@ -72,6 +73,7 @@ module Style exposing
     , gray0Str
     , gray3Str
     , gray5Str
+    , grid
     , grow
     , h0
     , h1
@@ -87,6 +89,7 @@ module Style exposing
     , h320
     , h4
     , h40
+    , h5
     , h6
     , h64
     , h72
@@ -199,6 +202,7 @@ module Style exposing
     , pl16
     , pl2
     , pl4
+    , placeContentCenter
     , pointerCursor
     , pr1
     , pr16
@@ -1090,6 +1094,11 @@ h4 =
     Css.height s4
 
 
+h5 : Css.Style
+h5 =
+    Css.height s5
+
+
 h6 : Css.Style
 h6 =
     Css.height s6
@@ -1261,6 +1270,21 @@ row =
         [ Css.display Css.flex_
         , Css.flexDirection Css.row
         ]
+
+
+grid : Css.Style
+grid =
+    Css.display Css.grid_
+
+
+placeContentCenter : Css.Style
+placeContentCenter =
+    Css.property "place-content" "center"
+
+
+appearanceNone : Css.Style
+appearanceNone =
+    Css.property "appearance" "none"
 
 
 inlineBlock : Css.Style

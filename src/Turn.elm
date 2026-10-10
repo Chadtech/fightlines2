@@ -46,6 +46,7 @@ type alias Event =
     , path : List Coordinate
     , initialDirection : Maybe Direction
     , initialCarrier : Maybe UnitId
+    , rotationDirection : Maybe Direction
     , carrierId : Maybe UnitId
     }
 
@@ -65,12 +66,13 @@ selection =
 
         event : SelectionSet Event Api.Object.TurnEvent
         event =
-            SS.map6 Event
+            SS.map7 Event
                 EventApi.kind
                 (EventApi.unitId |> SS.mapOrFail UnitId.parse)
                 (EventApi.path coordinate)
                 EventApi.initialDirection
                 (EventApi.initialCarrier |> SS.mapOrFail parseOptionalId)
+                EventApi.rotationDirection
                 (EventApi.carrierId |> SS.mapOrFail parseOptionalId)
     in
     SS.map4 Snapshot
@@ -87,6 +89,9 @@ start snapshot =
         plays event =
             case event.kind of
                 EventKind.Move ->
+                    True
+
+                EventKind.Rotate ->
                     True
 
                 EventKind.Load ->
@@ -153,7 +158,11 @@ tick delta playback board =
 
                 duration : Float
                 duration =
-                    toFloat (List.length event.path - 1) * 180
+                    if event.kind == EventKind.Rotate then
+                        180
+
+                    else
+                        toFloat (List.length event.path - 1) * 180
 
                 finishUnit : Unit -> Unit
                 finishUnit unit =
@@ -172,7 +181,13 @@ tick delta playback board =
 
                                     _ ->
                                         List.reverse event.path |> List.head |> Maybe.map Unit.OnMap |> Maybe.withDefault unit.location
-                            , direction = Direction.alongPath event.path unit.direction
+                            , direction =
+                                case event.rotationDirection of
+                                    Just direction ->
+                                        Just direction
+
+                                    Nothing ->
+                                        Direction.alongPath event.path unit.direction
                         }
 
                     else

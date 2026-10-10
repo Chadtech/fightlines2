@@ -25,7 +25,7 @@ toSvg column unit =
                 Kind.Tank ->
                     3
 
-                Kind.SupplyTruck ->
+                Kind.Truck ->
                     6
 
                 Kind.FieldGun ->

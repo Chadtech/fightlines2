@@ -37,10 +37,23 @@ terrain overrides. Lookup returns no tile outside the map; missing in-bounds
 coordinates fall back to the base tile. There is no stored dense grid. `Map::from_ascii` parses rectangular sketches
 with `#` for forests, `%` for hills, and spaces or `.` for grass. Spaces are
 preserved; malformed rows and unknown symbols return explicit errors.
-SupplyPoint terrain is authored as an ASCII sketch in `scenario.rs`.
-`scenario.rs` owns the fixed SupplyPoint layout, separate supply-depot buildings with optional
-side ownership, and units with stable typed IDs, kinds, sides, positions, and optional
-four-way `Direction` values. Supply trucks have no direction.
+Terrain for SupplyPoint, ElAlamein, BloodGulch, and Arabia is authored as fixed
+ASCII sketches in `scenario.rs`. Maps carry a separate typed `MapTheme`
+(`GreenForest`, `Desert`, or `Snow`), exposed through GraphQL and stored in Elm's
+`Map`. Arabia and ElAlamein use Desert; SupplyPoint and BloodGulch use GreenForest.
+BloodGulch forest patches provide concealed hiding spots along its canyon walls.
+Themes affect only artwork in `View.TerrainTile`; base and feature terrain types,
+movement costs, visibility, and scenario geometry remain independent of theme.
+Each new map authors its own `StartingUnit` formation. `Scenario::with_deployment`
+mirrors that formation for player 2, with a three-tile southward offset for
+ElAlamein's eastern base, assigns stable unique IDs, initializes full
+resources, and applies facing. ElAlamein has 17 units per side (5 infantry,
+6 tanks, 2 guns, 4 trucks); BloodGulch has 10 (6 infantry, 1 tank, 1 gun, 2 trucks);
+Arabia has 6 (3 infantry, 1 tank, 2 guns). SupplyPoint retains its original roster
+and IDs. Tests validate counts, clear starting ground, depot access, unique
+occupancy, resources, and mirrored positions.
+`scenario.rs` owns the fixed map layouts, separate neutral supply-depot buildings,
+and units with stable typed IDs, kinds, sides, positions, and optional four-way `Direction` values. Trucks have no direction.
 Hit points, supplies and vehicle fuel are authoritative. Combat and victory resolution remain future work.
 Starting requires exactly two players and initializes the scenario once before
 consuming the lobby. The host is `Player1` and the second player is `Player2`. Player ownership is
@@ -163,11 +176,16 @@ synchronous resolvers for its in-memory operations.
 
 `UnitCommand` owns the command vocabulary and per-unit availability.
 `GamePage` owns unit or tile selection, path previews and saved orders.
-`View.UnitCommands` renders the side-panel command list and emits command choices
+`View.UnitCommands` renders the board-anchored command popup and emits command choices
 and arrow-key events. `GamePage.update` chooses the adjacent enabled command,
-wrapping at the ends, and `Effect.focus` uses Elm's DOM API to focus its HTML ID. Up/Down is handled within command buttons without reaching page-level
-map panning. Commands, destination planning and a saved order are mutually
-exclusive panel views derived from `GamePage` state.
+wrapping at the ends, and `Effect.focus` uses Elm's DOM API to focus its HTML ID. Selection tracks the focused command. While the popup is open, page-level
+arrow commands navigate its enabled options instead of panning, including
+before a command button receives focus. Buttons handle arrows locally without
+propagating them. Cancel clears selection. Commands, destination planning and a saved order are mutually
+exclusive views derived from `GamePage` state. Commands appear beside the unit
+(or its carrier for passengers); destination planning and saved orders remain
+in the side panel. The popup scales inversely to camera zoom and stops mouse
+presses from starting a battlefield drag.
 
 `GamePage` owns unit/tile selection and an explicit four-state `AnimationFrame`.
 Board data types live in `Coordinate`, `TerrainFeature`, `Map`, `Depot`, `Unit`
@@ -204,8 +222,7 @@ stores the active dialog as `Maybe Dialog`; `EscapePressed` dismisses an open
 dialog before clearing board selection.
 `View.GameBoard` renders raster sprite-sheet cells in nested SVG viewports;
 terrain, depots, units, and an inset SVG selection square are separate layers. Player 2's
-infantry, tanks and field guns initially face west and player 1's east. Supply
-trucks have no direction or facing marker. Movement updates stored direction
+infantry, tanks and field guns initially face west and player 1's east. Trucks have no direction or facing marker. Movement updates stored direction
 from the last traversed path edge; holds and conflicts preserve it. `View.UnitFacing` overlays inset edge markers
 using each unit's direction, with selected-unit color and a synchronized
 two-second opacity pulse. Component-owned styles keep the markers steady for
@@ -340,13 +357,12 @@ model as part of that experiment rather than copying the old engine.
 
 ## Vehicle fuel
 
-Rust units carry optional `Fuel` state: tanks and supply trucks start at 64/64;
+Rust units carry optional `Fuel` state: tanks and trucks start at 64/64;
 infantry and field guns have none. One traversed path edge consumes one fuel,
 independent of terrain movement points. Validation rejects paths exceeding
 available fuel before locking orders. Resolution consumes fuel only on
-successful movement, then refills vehicles ending on a depot owned by their
-side. Neutral and enemy depots do not refuel. Holds and destination conflicts
-spend no fuel.
+successful movement, then refills vehicles ending on any depot, regardless of
+side. Holds and destination conflicts spend no fuel.
 
 Snapshots expose current and maximum fuel through GraphQL. Elm selects it into
 `Unit`, displays the authoritative gauge and bounds both reachable paths and
@@ -361,13 +377,13 @@ Every Rust unit carries `Supplies` with current and maximum quantities plus
 `upkeepPerTurn` and `movementPerTile` rates. All kinds start at 64/64 and have
 upkeep 1. Infantry and field guns spend 1 additional supply per traversed tile;
 tanks and trucks spend none for movement. These are unit provisions, separate
-from fuel and future supply-truck cargo.
+from fuel and future truck supply cargo.
 
 Validation reserves upkeep before allowing movement expenditure. Resolution
 spends supplies on successful movement, then charges upkeep once to every unit,
 including holds and destination conflicts. Upkeep stops at zero, so empty units
 can still submit holds; there is no starvation damage. Depots do not replenish supplies yet;
-vehicle fuel still refills at home depots. Waiting for another player and retrying submissions never
+vehicle fuel refills at any depot. Waiting for another player and retrying submissions never
 charge upkeep.
 
 GraphQL supplies state and consumption rates initialize Elm `Unit` values and
@@ -381,8 +397,9 @@ continues to use the completed snapshot's authoritative resource quantities.
 
 `visibility.rs` owns per-kind sight ranges and the side's union of observable
 tiles. Circular distance uses ranges 4/4/3/2 for infantry/field guns/trucks/tanks;
-an observer on hills gains one tile. A supercover ray treats intervening hills
-and forests as blockers, including corner-touching terrain. Forest tiles also
+an observer on hills gains one tile. A center-to-center ray treats intervening
+hills and forests as blockers only when it crosses their tile interior; terrain
+touched only at a corner does not obstruct open diagonals. Forest tiles also
 conceal their contents. Own occupied squares remain known, while
 enemies in forests remain concealed even on a known occupied square.
 
@@ -421,13 +438,22 @@ boarding paths to share a truck destination. Paths for carried units are holds
 or one-edge unloads onto empty squares; unloading requires the truck to hold.
 The submission still includes every unit, with Elm filling passenger holds
 without counting them as missing orders. Riding consumes only turn upkeep.
+Truck move inputs additionally accept optional `unloads { unitId destination }`.
+Validation checks cargo ownership, passenger holds, adjacent destinations,
+resources, occupancy and reservations. After vehicle movement, resolution
+unloads passengers at their chosen squares. A conflicted truck or an occupied
+exit leaves the passenger aboard.
 
 `GamePage` offers loading squares with movement destinations and saves the
 receiving unit's hold alongside a loading or unloading draft. It reserves
 remaining berths across drafts and prevents moving a receiver while its loading
 or unloading drafts exist. The truck's status panel exposes cargo buttons;
-carried-unit commands offer unload and hold. `Movement.elm` bounds unloading and
-traced extensions to one edge while retaining terrain and resource limits.
+carried units have no independent commands. Saving a truck destination opens
+an unload checklist. `UnloadSelection` owns the current passenger and remaining
+queue while choosing squares. Unload choices belong to the truck's `PlannedMove`
+and disappear when it is revoked. Elm projects the truck at its planned
+destination to reuse `Movement.options` for adjacent passenger exits, retaining
+terrain and resource limits and reserving chosen exits.
 
 Resolution emits ordinary movement followed by explicit `Load` events; `Unload`
 events walk a passenger onto the board. Event initial carrier IDs restore cargo
@@ -441,3 +467,15 @@ Every Rust unit starts with authoritative `HitPoints` at 16/16. GraphQL exposes
 current and maximum health; Elm stores them in `Unit` and renders the status
 gauge. Movement and turn upkeep preserve health. Damage, healing and unit
 destruction remain future work alongside combat.
+
+
+## Rotation orders
+
+`MoveOrderInput.direction` optionally turns a stationary on-map unit with a
+stored facing. Validation rejects rotation combined with movement, unloading,
+or receiving a load. Trucks and carried units cannot rotate. A rotation replaces
+the unit's move/hold order, spends only normal turn upkeep, and emits a `Rotate`
+event with initial facing and `rotationDirection`. Playback rewinds the initial
+facing and applies the chosen direction at the event's end without moving.
+`GamePage` stores direction selection in the selected unit's interaction state;
+choosing a cardinal direction saves a revocable draft and counts toward readiness.

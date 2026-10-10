@@ -1,42 +1,107 @@
 module View.UnitCommands exposing
-    ( Msg(..)
-    , commandHtmlId
+    ( MenuOption(..)
+    , Msg(..)
+    , enabledOptions
+    , optionHtmlId
     , toHtml
     )
 
+import Coordinate exposing (Coordinate)
 import Css
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Json.Decode as Decode
+import Map exposing (Map)
 import Style as S
 import Unit exposing (Unit)
 import UnitCommand as Command exposing (Command)
 
 
+type MenuOption
+    = CommandOption Command
+    | CancelOption
+
+
 type Msg
-    = CommandPicked Command
-    | ArrowedUpCommandMenu Command
-    | ArrowedDownCommandMenu Command
+    = MenuPressed
+    | CancelClicked
+    | CommandFocused MenuOption
+    | PreviousCommandPressed
+    | NextCommandPressed
+    | CommandPicked Command
+    | ArrowedUpCommandMenu MenuOption
+    | ArrowedDownCommandMenu MenuOption
     | CommandFocusCompleted
 
 
-toHtml : Unit -> Html Msg
-toHtml unit =
+toHtml : Map -> Float -> Coordinate -> Unit -> Html Msg
+toHtml map zoom position unit =
     let
+        opensLeft : Bool
+        opensLeft =
+            position.x >= map.width // 2
+
+        horizontalEdge : Int
+        horizontalEdge =
+            if opensLeft then
+                position.x
+
+            else
+                position.x + 1
+
+        anchorX : Float
+        anchorX =
+            toFloat horizontalEdge / toFloat map.width * 100
+
+        anchorY : Float
+        anchorY =
+            (toFloat position.y + 0.5) / toFloat map.height * 100
+
+        horizontalOffset : String
+        horizontalOffset =
+            if opensLeft then
+                "calc(-100% - 0.5rem)"
+
+            else
+                "0.5rem"
+
+        translation : String
+        translation =
+            "translate(" ++ horizontalOffset ++ ", -50%)"
+
         commands : List Command
         commands =
             Command.available unit
     in
     H.section
         [ A.attribute "aria-label" "unit commands"
+        , Ev.stopPropagationOn "mousedown" (Decode.succeed ( MenuPressed, True ))
         , A.css
-            [ S.col
+            [ S.absolute
+            , Css.left (Css.pct anchorX)
+            , Css.property "top" ("clamp(9rem, " ++ String.fromFloat anchorY ++ "%, calc(100% - 9rem))")
+            , S.z4
+            , Css.width (Css.rem 13)
+            , S.transformOriginTopLeft
+            , Css.property "transform" ("scale(" ++ String.fromFloat (1 / zoom) ++ ") " ++ translation)
+            , S.bgGray1
+            , S.textGray4
+            , S.outdent
+            , S.shadowMenu
+            , S.p1
+            , S.defaultCursor
+            , S.col
             , S.g1
             ]
         ]
         [ H.h3
-            []
+            [ A.css
+                [ S.bgGray3
+                , S.textGray0
+                , S.p2
+                ]
+            ]
             [ H.text "commands"
             ]
         , H.div
@@ -47,19 +112,58 @@ toHtml unit =
                 ]
             ]
             (List.map commandButton commands)
-        , H.p
-            [ A.css
-                [ S.textGray4
-                ]
-            ]
-            [ H.text "↑ ↓ choose · enter confirm"
-            ]
+        , cancelRow
         ]
 
 
 commandHtmlId : Command -> String
 commandHtmlId command =
     "unit-command-" ++ Command.assetName command ++ "-" ++ String.replace " " "-" (Command.label command)
+
+
+optionHtmlId : MenuOption -> String
+optionHtmlId option =
+    case option of
+        CommandOption command ->
+            commandHtmlId command
+
+        CancelOption ->
+            "unit-command-cancel"
+
+
+enabledOptions : Unit -> List MenuOption
+enabledOptions unit =
+    let
+        commands : List MenuOption
+        commands =
+            Command.available unit
+                |> List.filter Command.isImplemented
+                |> List.map CommandOption
+    in
+    commands ++ [ CancelOption ]
+
+
+cancelRow : Html Msg
+cancelRow =
+    H.button
+        [ A.id (optionHtmlId CancelOption)
+        , A.type_ "button"
+        , Ev.onClick CancelClicked
+        , Ev.onFocus (CommandFocused CancelOption)
+        , Ev.custom "keydown" (navigationDecoder CancelOption)
+        , A.css commandRowStyles
+        ]
+        [ H.span
+            [ A.attribute "aria-hidden" "true"
+            , A.css
+                [ S.shrink0
+                , Css.width (Css.rem 1.875)
+                , Css.height (Css.rem 1.875)
+                ]
+            ]
+            []
+        , H.text "cancel"
+        ]
 
 
 commandButton : Command -> Html Msg
@@ -91,7 +195,8 @@ commandButton command =
         , A.disabled (not implemented)
         , A.title title
         , Ev.onClick (CommandPicked command)
-        , Ev.custom "keydown" (navigationDecoder command)
+        , Ev.onFocus (CommandFocused (CommandOption command))
+        , Ev.custom "keydown" (navigationDecoder (CommandOption command))
         , A.css styles
         ]
         [ commandIcon command
@@ -99,7 +204,7 @@ commandButton command =
         ]
 
 
-navigationDecoder : Command -> Decode.Decoder { message : Msg, stopPropagation : Bool, preventDefault : Bool }
+navigationDecoder : MenuOption -> Decode.Decoder { message : Msg, stopPropagation : Bool, preventDefault : Bool }
 navigationDecoder current =
     let
         fromKey : String -> Decode.Decoder { message : Msg, stopPropagation : Bool, preventDefault : Bool }
@@ -107,6 +212,12 @@ navigationDecoder current =
             case key of
                 "ArrowDown" ->
                     Decode.succeed { message = ArrowedDownCommandMenu current, stopPropagation = True, preventDefault = True }
+
+                "ArrowRight" ->
+                    Decode.succeed { message = ArrowedDownCommandMenu current, stopPropagation = True, preventDefault = True }
+
+                "ArrowLeft" ->
+                    Decode.succeed { message = ArrowedUpCommandMenu current, stopPropagation = True, preventDefault = True }
 
                 "ArrowUp" ->
                     Decode.succeed { message = ArrowedUpCommandMenu current, stopPropagation = True, preventDefault = True }
@@ -151,10 +262,10 @@ commandIcon command =
     H.img
         [ A.src ("/assets/commands-anime-v1/" ++ Command.assetName command ++ ".png")
         , A.alt ""
-        , A.width 30
-        , A.height 30
         , A.css
             [ S.shrink0
+            , Css.width (Css.rem 1.875)
+            , Css.height (Css.rem 1.875)
             , Css.property "object-fit" "contain"
             , Css.property "image-rendering" "auto"
             ]

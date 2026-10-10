@@ -4,7 +4,6 @@
 
 module Api.Object.Depot exposing (..)
 
-import Api.Enum.Side
 import Api.InputObject
 import Api.Interface
 import Api.Object
@@ -25,8 +24,3 @@ position :
     -> SelectionSet decodesTo Api.Object.Depot
 position object____ =
     Object.selectionForCompositeField "position" [] object____ Basics.identity
-
-
-owner : SelectionSet (Maybe Api.Enum.Side.Side) Api.Object.Depot
-owner =
-    Object.selectionForField "(Maybe Enum.Side.Side)" "owner" [] (Api.Enum.Side.decoder |> Decode.nullable)

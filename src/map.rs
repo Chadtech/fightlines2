@@ -31,12 +31,22 @@ pub enum Terrain {
     Forest,
 }
 
+/// Appearance is independent of terrain movement and visibility rules.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, GraphQLEnum)]
+pub enum MapTheme {
+    #[default]
+    GreenForest,
+    Desert,
+    Snow,
+}
+
 /// Only terrain exceptions are stored. Depots and units live separately.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Map {
     width: u16,
     height: u16,
     base_tile: Terrain,
+    theme: MapTheme,
     features: BTreeMap<Coordinate, Terrain>,
 }
 
@@ -70,6 +80,7 @@ impl Map {
             width,
             height,
             base_tile,
+            theme: MapTheme::default(),
             features,
         };
         if let Some(position) = map
@@ -117,6 +128,11 @@ impl Map {
         Self::new(map_width, map_height, Terrain::GrassPlain, features)
     }
 
+    pub fn with_theme(mut self, theme: MapTheme) -> Self {
+        self.theme = theme;
+        self
+    }
+
     pub fn contains(&self, position: Coordinate) -> bool {
         position.x < self.width && position.y < self.height
     }
@@ -147,6 +163,10 @@ impl Map {
         i32::from(self.height)
     }
 
+    pub fn theme(&self) -> MapTheme {
+        self.theme
+    }
+
     fn base_tile(&self) -> Terrain {
         self.base_tile
     }
@@ -165,6 +185,24 @@ impl Map {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn themes_preserve_terrain_and_bounds() {
+        let original = Map::from_ascii(".#%\n...").unwrap();
+        assert_eq!(original.theme(), MapTheme::GreenForest);
+        for theme in [MapTheme::GreenForest, MapTheme::Desert, MapTheme::Snow] {
+            let themed = original.clone().with_theme(theme);
+            assert_eq!(themed.theme(), theme);
+            assert_eq!(themed.width(), original.width());
+            assert_eq!(themed.height(), original.height());
+            for y in 0..3 {
+                for x in 0..4 {
+                    let position = Coordinate::new(x, y);
+                    assert_eq!(themed.tile_at(position), original.tile_at(position));
+                }
+            }
+        }
+    }
 
     #[test]
     fn ascii_preserves_spaces_and_parses_terrain_with_unix_or_windows_lines() {

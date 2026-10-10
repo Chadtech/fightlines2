@@ -1,6 +1,7 @@
 port module MovementChecks exposing (main)
 
 import Api.Enum.Direction as Direction
+import Api.Enum.MapTheme as MapTheme
 import Api.Enum.Side as Side
 import Api.Enum.Terrain as Terrain
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
@@ -68,7 +69,7 @@ check rules fixture =
                         UnitKind.Tank ->
                             Just { current = 64, maximum = 64 }
 
-                        UnitKind.SupplyTruck ->
+                        UnitKind.Truck ->
                             Just { current = 64, maximum = 64 }
 
                         _ ->
@@ -126,7 +127,7 @@ check rules fixture =
 
                 board : GameBoard.GameBoard
                 board =
-                    { map = { width = rows |> List.head |> Maybe.map String.length |> Maybe.withDefault 0, height = List.length rows, baseTile = Terrain.GrassPlain, features = features }
+                    { map = { width = rows |> List.head |> Maybe.map String.length |> Maybe.withDefault 0, height = List.length rows, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = features }
                     , units = unit :: (List.map (\position -> { unit | location = Unit.OnMap position, side = Side.Player2 }) fixture.occupied ++ List.map (\position -> { unit | location = Unit.OnMap position }) fixture.allies)
                     , depots = []
                     }
@@ -184,7 +185,7 @@ traceChecks rules =
 
                 board : GameBoard.GameBoard
                 board =
-                    { map = { width = 4, height = 4, baseTile = Terrain.GrassPlain, features = [] }
+                    { map = { width = 4, height = 4, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
                     , units = [ unit ]
                     , depots = []
                     }
@@ -269,7 +270,7 @@ traceChecks rules =
                     (let
                         roughBoard : GameBoard.GameBoard
                         roughBoard =
-                            { board | map = { width = 4, height = 4, baseTile = Terrain.GrassPlain, features = [ { position = down, terrain = Terrain.Hills } ] } }
+                            { board | map = { width = 4, height = 4, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [ { position = down, terrain = Terrain.Hills } ] } }
                      in
                      Movement.trace rules roughBoard unit (Movement.start origin) down
                         |> Maybe.andThen
@@ -300,7 +301,7 @@ reservationChecks rules =
 
                 board : GameBoard.GameBoard
                 board =
-                    { map = { width = 3, height = 1, baseTile = Terrain.GrassPlain, features = [] }
+                    { map = { width = 3, height = 1, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
                     , units = [ unit ]
                     , depots = []
                     }
@@ -356,7 +357,7 @@ fuelChecks rules =
 
                 board : GameBoard.GameBoard
                 board =
-                    { map = { width = 5, height = 3, baseTile = Terrain.GrassPlain, features = [ { position = { x = 1, y = 0 }, terrain = Terrain.Forest } ] }, units = [ unit ], depots = [] }
+                    { map = { width = 5, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [ { position = { x = 1, y = 0 }, terrain = Terrain.Forest } ] }, units = [ unit ], depots = [] }
 
                 reachable : List Movement.Option
                 reachable =
@@ -418,7 +419,7 @@ supplyChecks rules =
 
                 board : GameBoard.GameBoard
                 board =
-                    { map = { width = 5, height = 3, baseTile = Terrain.GrassPlain, features = [] }, units = [ unit ], depots = [] }
+                    { map = { width = 5, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }, units = [ unit ], depots = [] }
 
                 exhausted : Unit.Unit
                 exhausted =
@@ -496,11 +497,11 @@ transportChecks rules =
 
                 truck : Unit.Unit
                 truck =
-                    { passenger | id = truckId, kind = UnitKind.SupplyTruck, cargoCapacity = 2, direction = Nothing, location = Unit.OnMap { x = 1, y = 0 }, fuel = Just { current = 64, maximum = 64 } }
+                    { passenger | id = truckId, kind = UnitKind.Truck, cargoCapacity = 2, direction = Nothing, location = Unit.OnMap { x = 1, y = 0 }, fuel = Just { current = 64, maximum = 64 } }
 
                 board : GameBoard.GameBoard
                 board =
-                    { map = { width = 4, height = 3, baseTile = Terrain.GrassPlain, features = [] }
+                    { map = { width = 4, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
                     , depots = []
                     , units = [ passenger, truck ]
                     }

@@ -11,11 +11,16 @@ import Json.Decode as Decode exposing (Decoder)
 -}
 type MapType
     = SupplyPoint
+    | ElAlamein
+    | BloodGulch
+    | Arabia
+    | Sidewinder
+    | BlackForest
 
 
 list : List MapType
 list =
-    [ SupplyPoint ]
+    [ SupplyPoint, ElAlamein, BloodGulch, Arabia, Sidewinder, BlackForest ]
 
 
 decoder : Decoder MapType
@@ -26,6 +31,21 @@ decoder =
                 case string of
                     "SUPPLY_POINT" ->
                         Decode.succeed SupplyPoint
+
+                    "EL_ALAMEIN" ->
+                        Decode.succeed ElAlamein
+
+                    "BLOOD_GULCH" ->
+                        Decode.succeed BloodGulch
+
+                    "ARABIA" ->
+                        Decode.succeed Arabia
+
+                    "SIDEWINDER" ->
+                        Decode.succeed Sidewinder
+
+                    "BLACK_FOREST" ->
+                        Decode.succeed BlackForest
 
                     _ ->
                         Decode.fail ("Invalid MapType type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
@@ -39,6 +59,21 @@ toString enum____ =
     case enum____ of
         SupplyPoint ->
             "SUPPLY_POINT"
+
+        ElAlamein ->
+            "EL_ALAMEIN"
+
+        BloodGulch ->
+            "BLOOD_GULCH"
+
+        Arabia ->
+            "ARABIA"
+
+        Sidewinder ->
+            "SIDEWINDER"
+
+        BlackForest ->
+            "BLACK_FOREST"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -57,6 +92,21 @@ fromString enumString____ =
     case enumString____ of
         "SUPPLY_POINT" ->
             Just SupplyPoint
+
+        "EL_ALAMEIN" ->
+            Just ElAlamein
+
+        "BLOOD_GULCH" ->
+            Just BloodGulch
+
+        "ARABIA" ->
+            Just Arabia
+
+        "SIDEWINDER" ->
+            Just Sidewinder
+
+        "BLACK_FOREST" ->
+            Just BlackForest
 
         _ ->
             Nothing

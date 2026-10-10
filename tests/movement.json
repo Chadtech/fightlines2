@@ -55,7 +55,7 @@
       ]
     },
     {
-      "kind": "SUPPLY_TRUCK",
+      "kind": "TRUCK",
       "budget": 14,
       "terrainCosts": [
         {
@@ -94,7 +94,7 @@
     },
     {
       "name": "truck exact budget",
-      "kind": "SUPPLY_TRUCK",
+      "kind": "TRUCK",
       "sketch": ".%#..",
       "origin": [
         0,
@@ -211,7 +211,7 @@
     },
     {
       "name": "cheaper route around forest",
-      "kind": "SUPPLY_TRUCK",
+      "kind": "TRUCK",
       "sketch": ".....\n.###.\n.....",
       "origin": [
         0,
@@ -399,7 +399,7 @@
     },
     {
       "name": "truck seven grass squares",
-      "kind": "SUPPLY_TRUCK",
+      "kind": "TRUCK",
       "sketch": ".........",
       "origin": [
         0,

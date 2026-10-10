@@ -4,6 +4,7 @@
 
 module Api.InputObject exposing (..)
 
+import Api.Enum.Direction
 import Api.Interface
 import Api.Object
 import Api.Scalar
@@ -48,9 +49,15 @@ encodeCoordinateInput input____ =
 
 buildMoveOrderInput :
     MoveOrderInputRequiredFields
+    -> (MoveOrderInputOptionalFields -> MoveOrderInputOptionalFields)
     -> MoveOrderInput
-buildMoveOrderInput required____ =
-    { unitId = required____.unitId, path = required____.path }
+buildMoveOrderInput required____ fillOptionals____ =
+    let
+        optionals____ =
+            fillOptionals____
+                { direction = Absent, unloads = Absent }
+    in
+    { unitId = required____.unitId, path = required____.path, direction = optionals____.direction, unloads = optionals____.unloads }
 
 
 type alias MoveOrderInputRequiredFields =
@@ -59,11 +66,19 @@ type alias MoveOrderInputRequiredFields =
     }
 
 
+type alias MoveOrderInputOptionalFields =
+    { direction : OptionalArgument Api.Enum.Direction.Direction
+    , unloads : OptionalArgument (List UnloadOrderInput)
+    }
+
+
 {-| Type for the MoveOrderInput input object.
 -}
 type alias MoveOrderInput =
     { unitId : String
     , path : List CoordinateInput
+    , direction : OptionalArgument Api.Enum.Direction.Direction
+    , unloads : OptionalArgument (List UnloadOrderInput)
     }
 
 
@@ -72,4 +87,33 @@ type alias MoveOrderInput =
 encodeMoveOrderInput : MoveOrderInput -> Value
 encodeMoveOrderInput input____ =
     Encode.maybeObject
-        [ ( "unitId", Encode.string input____.unitId |> Just ), ( "path", (encodeCoordinateInput |> Encode.list) input____.path |> Just ) ]
+        [ ( "unitId", Encode.string input____.unitId |> Just ), ( "path", (encodeCoordinateInput |> Encode.list) input____.path |> Just ), ( "direction", Encode.enum Api.Enum.Direction.toString |> Encode.optional input____.direction ), ( "unloads", (encodeUnloadOrderInput |> Encode.list) |> Encode.optional input____.unloads ) ]
+
+
+buildUnloadOrderInput :
+    UnloadOrderInputRequiredFields
+    -> UnloadOrderInput
+buildUnloadOrderInput required____ =
+    { unitId = required____.unitId, destination = required____.destination }
+
+
+type alias UnloadOrderInputRequiredFields =
+    { unitId : String
+    , destination : CoordinateInput
+    }
+
+
+{-| Type for the UnloadOrderInput input object.
+-}
+type alias UnloadOrderInput =
+    { unitId : String
+    , destination : CoordinateInput
+    }
+
+
+{-| Encode a UnloadOrderInput into a value that can be used as an argument.
+-}
+encodeUnloadOrderInput : UnloadOrderInput -> Value
+encodeUnloadOrderInput input____ =
+    Encode.maybeObject
+        [ ( "unitId", Encode.string input____.unitId |> Just ), ( "destination", encodeCoordinateInput input____.destination |> Just ) ]

@@ -17,17 +17,36 @@ pub struct MoveOrderInput {
     unit_id: String,
     /// Includes the starting square. A single square is an explicit hold order.
     path: Vec<CoordinateInput>,
+    /// Facing for an in-place rotation order.
+    direction: Option<Direction>,
+    /// Passenger destinations after this truck moves.
+    unloads: Option<Vec<UnloadOrderInput>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct MoveOrder {
+    pub direction: Option<Direction>,
     pub unit_id: UnitId,
     pub path: Vec<Coordinate>,
+    pub unloads: Vec<UnloadOrder>,
+}
+
+#[derive(GraphQLInputObject)]
+pub struct UnloadOrderInput {
+    unit_id: String,
+    destination: CoordinateInput,
+}
+
+#[derive(Clone, Debug)]
+pub struct UnloadOrder {
+    pub unit_id: UnitId,
+    pub destination: Coordinate,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
 pub enum TurnEventKind {
     Move,
+    Rotate,
     Load,
     Unload,
     Hold,
@@ -38,6 +57,7 @@ pub enum TurnEventKind {
 /// clients replay these outcomes rather than reimplementing resolution rules.
 #[derive(Clone, Debug)]
 pub struct TurnEvent {
+    pub rotation_direction: Option<Direction>,
     pub initial_direction: Option<Direction>,
     pub initial_carrier: Option<UnitId>,
     pub carrier_id: Option<UnitId>,
@@ -48,6 +68,9 @@ pub struct TurnEvent {
 
 #[graphql_object]
 impl TurnEvent {
+    fn rotation_direction(&self) -> Option<Direction> {
+        self.rotation_direction
+    }
     fn initial_carrier(&self) -> Option<String> {
         self.initial_carrier.map(|id| id.to_string())
     }
@@ -147,6 +170,14 @@ pub fn validate(
         if Some(path[0]) != scenario.physical_position(unit) {
             return Err("movement must start at the unit's current position.");
         }
+        if input.direction.is_some() {
+            if unit.direction().is_none() || unit.carrier_id().is_some() {
+                return Err("only units on the map with a facing can rotate.");
+            }
+            if path.len() != 1 || !input.unloads.as_ref().is_none_or(Vec::is_empty) {
+                return Err("rotation must be an in-place order without unloading.");
+            }
+        }
         let mut visited = BTreeSet::from([path[0]]);
         let mut cost = 0;
         for step in path.windows(2) {
@@ -212,7 +243,56 @@ pub fn validate(
         {
             return Err("units must have different destinations.");
         }
-        orders.push(MoveOrder { unit_id, path });
+        let mut unloads: Vec<UnloadOrder> = Vec::new();
+        for unload in input.unloads.unwrap_or_default() {
+            let passenger_id = UnitId::parse(&unload.unit_id).ok_or("invalid passenger id.")?;
+            if unloads.iter().any(|other| other.unit_id == passenger_id) {
+                return Err("each passenger may only be unloaded once.");
+            }
+            let passenger = scenario
+                .units
+                .iter()
+                .find(|passenger| {
+                    passenger.unit_id() == passenger_id
+                        && passenger.side() == side
+                        && passenger.carrier_id() == Some(unit_id)
+                })
+                .ok_or("only passengers aboard this truck can be unloaded.")?;
+            let x =
+                u16::try_from(unload.destination.x).map_err(|_| "unloading is outside the map.")?;
+            let y =
+                u16::try_from(unload.destination.y).map_err(|_| "unloading is outside the map.")?;
+            let exit = Coordinate::new(x, y);
+            if (exit.x() - destination.x()).abs() + (exit.y() - destination.y()).abs() != 1 {
+                return Err("unloading must end beside the truck's destination.");
+            }
+            if !legal_unload(scenario, passenger, exit, Some(unit_id)) {
+                return Err("unloading requires an empty affordable adjacent square.");
+            }
+            if !destinations.insert(exit) {
+                return Err("units must have different destinations.");
+            }
+            unloads.push(UnloadOrder {
+                unit_id: passenger_id,
+                destination: exit,
+            });
+        }
+        orders.push(MoveOrder {
+            direction: input.direction,
+            unit_id,
+            path,
+            unloads,
+        });
+    }
+    for order in &orders {
+        for unload in &order.unloads {
+            if !orders
+                .iter()
+                .any(|other| other.unit_id == unload.unit_id && other.path.len() == 1)
+            {
+                return Err("passengers unloading with a truck must have hold orders.");
+            }
+        }
     }
     let mut loading_passengers = BTreeSet::new();
     let mut loading_counts = BTreeMap::new();
@@ -241,7 +321,7 @@ pub fn validate(
                 .iter()
                 .find(|order| order.unit_id == target.unit_id())
                 .unwrap();
-            if target_order.path.len() != 1 {
+            if target_order.path.len() != 1 || target_order.direction.is_some() {
                 return Err("the receiving unit must hold while loading.");
             }
             let (truck, passenger) = scenario.loading_pair(unit, target).unwrap();
@@ -316,6 +396,8 @@ impl Turns {
                     });
                 let kind = if conflict {
                     TurnEventKind::DestinationConflict
+                } else if order.direction.is_some() {
+                    TurnEventKind::Rotate
                 } else if order.path.len() == 1 {
                     TurnEventKind::Hold
                 } else if unit.carrier_id().is_some() {
@@ -341,6 +423,7 @@ impl Turns {
                     loads.push(pair);
                 }
                 events.push(TurnEvent {
+                    rotation_direction: order.direction,
                     initial_direction: unit.direction(),
                     initial_carrier: unit.carrier_id(),
                     carrier_id: None,
@@ -356,6 +439,9 @@ impl Turns {
                     .find(|unit| unit.unit_id() == event.unit_id)
                     .unwrap();
                 unit.follow_path(&event.path);
+                if let Some(direction) = event.rotation_direction {
+                    unit.rotate(direction);
+                }
             }
             // Attach after movement, so stable event order cannot move cargo back
             // to its old hold position. The explicit event makes playback reversible.
@@ -366,6 +452,7 @@ impl Turns {
                     .find(|unit| unit.unit_id() == passenger)
                     .unwrap();
                 events.push(TurnEvent {
+                    rotation_direction: None,
                     initial_direction: unit.direction(),
                     initial_carrier: None,
                     carrier_id: Some(truck),
@@ -374,6 +461,46 @@ impl Turns {
                     path: vec![unit.board_position().unwrap()],
                 });
                 unit.board(truck);
+            }
+
+            // Resolve unloading after all vehicle movement and loading. A blocked
+            // truck or a passenger without a legal exit keeps its cargo aboard.
+            for order in &orders {
+                let truck_arrived = events.iter().any(|event| {
+                    event.unit_id == order.unit_id
+                        && event.kind != TurnEventKind::DestinationConflict
+                });
+                if !truck_arrived {
+                    continue;
+                }
+                for unload in &order.unloads {
+                    let passenger = scenario
+                        .units
+                        .iter()
+                        .find(|unit| unit.unit_id() == unload.unit_id)
+                        .unwrap();
+                    let origin = scenario.physical_position(passenger).unwrap();
+                    let destination = unload.destination;
+                    if !legal_unload(scenario, passenger, destination, None) {
+                        continue;
+                    }
+                    let event = TurnEvent {
+                        rotation_direction: None,
+                        initial_direction: passenger.direction(),
+                        initial_carrier: Some(order.unit_id),
+                        carrier_id: None,
+                        kind: TurnEventKind::Unload,
+                        unit_id: unload.unit_id,
+                        path: vec![origin, destination],
+                    };
+                    scenario
+                        .units
+                        .iter_mut()
+                        .find(|unit| unit.unit_id() == unload.unit_id)
+                        .unwrap()
+                        .follow_path(&event.path);
+                    events.push(event);
+                }
             }
 
             scenario.finish_turn_resources();
@@ -387,6 +514,34 @@ impl Turns {
     }
 }
 
+fn legal_unload(
+    scenario: &Scenario,
+    passenger: &crate::scenario::Unit,
+    destination: Coordinate,
+    moving_truck: Option<UnitId>,
+) -> bool {
+    if !passenger.supplies().can_move(1) {
+        return false;
+    }
+    let Some(rule) = movement::rules()
+        .into_iter()
+        .find(|rule| rule.kind == passenger.kind())
+    else {
+        return false;
+    };
+    let Some(terrain) = scenario.map.tile_at(destination) else {
+        return false;
+    };
+    let affordable = rule
+        .terrain_costs
+        .iter()
+        .any(|entry| entry.terrain == terrain && entry.cost <= rule.budget);
+    let occupied = scenario.units.iter().any(|unit| {
+        Some(unit.unit_id()) != moving_truck && unit.board_position() == Some(destination)
+    });
+    affordable && !occupied
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -397,13 +552,88 @@ mod tests {
             .iter()
             .filter(|unit| unit.side() == side)
             .map(|unit| MoveOrderInput {
+                direction: None,
                 unit_id: unit.id(),
+                unloads: None,
                 path: vec![CoordinateInput {
                     x: scenario.physical_position(unit).unwrap().x(),
                     y: scenario.physical_position(unit).unwrap().y(),
                 }],
             })
             .collect()
+    }
+
+    #[test]
+    fn rotations_resolve_in_place_with_only_upkeep_and_preserve_health_and_fuel() {
+        for direction in [
+            Direction::North,
+            Direction::East,
+            Direction::South,
+            Direction::West,
+        ] {
+            let mut scenario = Scenario::supply_point().unwrap();
+            let originals = scenario.units.clone();
+            let mut orders = holds(&scenario, Side::Player1);
+            for order in &mut orders {
+                let unit = originals
+                    .iter()
+                    .find(|unit| unit.id() == order.unit_id)
+                    .unwrap();
+                if unit.direction().is_some() {
+                    order.direction = Some(direction);
+                }
+            }
+            let mut turns = Turns::default();
+            turns
+                .submit(&mut scenario, Side::Player1, 1, orders)
+                .unwrap();
+            assert_eq!(scenario.units[0].direction(), originals[0].direction());
+            let opposing = holds(&scenario, Side::Player2);
+            turns
+                .submit(&mut scenario, Side::Player2, 1, opposing)
+                .unwrap();
+            for (unit, original) in scenario.units.iter().zip(&originals) {
+                assert_eq!(unit.board_position(), original.board_position());
+                assert_eq!(unit.fuel(), original.fuel());
+                assert_eq!(unit.hit_points(), original.hit_points());
+                assert_eq!(unit.supplies().current(), 63);
+                let expected = if unit.side() == Side::Player1 && original.direction().is_some() {
+                    Some(direction)
+                } else {
+                    original.direction()
+                };
+                assert_eq!(unit.direction(), expected);
+            }
+            let event = &turns.last_resolution.as_ref().unwrap().events[0];
+            assert_eq!(event.kind, TurnEventKind::Rotate);
+            assert_eq!(event.rotation_direction, Some(direction));
+            assert_eq!(event.initial_direction, originals[0].direction());
+        }
+    }
+
+    #[test]
+    fn rotation_rejects_trucks_passengers_movement_and_rotating_load_receivers() {
+        let mut scenario = Scenario::supply_point().unwrap();
+        let mut orders = holds(&scenario, Side::Player1);
+        orders
+            .iter_mut()
+            .find(|order| order.unit_id == "4")
+            .unwrap()
+            .direction = Some(Direction::North);
+        assert!(validate(&scenario, Side::Player1, orders).is_err());
+        let mut orders = holds(&scenario, Side::Player1);
+        orders[0].direction = Some(Direction::North);
+        set_path(&mut orders, "1", &[(3, 7), (3, 6)]);
+        assert!(validate(&scenario, Side::Player1, orders).is_err());
+        vehicle(&mut scenario, "1").board(UnitId::parse("4").unwrap());
+        let mut orders = holds(&scenario, Side::Player1);
+        orders[0].direction = Some(Direction::North);
+        assert!(validate(&scenario, Side::Player1, orders).is_err());
+        vehicle(&mut scenario, "1").move_to(Coordinate::new(3, 7));
+        let mut orders = holds(&scenario, Side::Player1);
+        orders[0].direction = Some(Direction::North);
+        set_path(&mut orders, "4", &[(2, 7), (3, 7)]);
+        assert!(validate(&scenario, Side::Player1, orders).is_err());
     }
 
     fn set_path(orders: &mut [MoveOrderInput], id: &str, path: &[(i32, i32)]) {
@@ -511,6 +741,125 @@ mod tests {
             Coordinate::new(1, 7)
         );
         assert_eq!(vehicle(&mut scenario, "1").supplies().current(), 59);
+    }
+
+    #[test]
+    fn truck_moves_then_unloads_selected_passengers_at_chosen_squares() {
+        let mut scenario = Scenario::supply_point().unwrap();
+        let mut turns = Turns::default();
+        let truck = UnitId::parse("4").unwrap();
+        vehicle(&mut scenario, "1").board(truck);
+        vehicle(&mut scenario, "2").board(truck);
+        let mut orders = holds(&scenario, Side::Player1);
+        set_path(&mut orders, "4", &[(2, 7), (2, 8), (1, 8)]);
+        orders
+            .iter_mut()
+            .find(|order| order.unit_id == "4")
+            .unwrap()
+            .unloads = Some(vec![UnloadOrderInput {
+            unit_id: "1".into(),
+            destination: CoordinateInput { x: 0, y: 8 },
+        }]);
+        resolve_orders(&mut scenario, &mut turns, orders);
+        assert_eq!(
+            vehicle(&mut scenario, "1").board_position(),
+            Some(Coordinate::new(0, 8))
+        );
+        assert_eq!(vehicle(&mut scenario, "2").carrier_id(), Some(truck));
+        assert_eq!(vehicle(&mut scenario, "1").supplies().current(), 62);
+        assert_eq!(vehicle(&mut scenario, "2").supplies().current(), 63);
+        let events = &turns.last_resolution.as_ref().unwrap().events;
+        let movement_index = events
+            .iter()
+            .position(|event| event.unit_id == truck)
+            .unwrap();
+        let unload_index = events
+            .iter()
+            .position(|event| event.kind == TurnEventKind::Unload)
+            .unwrap();
+        assert!(unload_index > movement_index);
+        assert_eq!(
+            events[unload_index].path,
+            vec![Coordinate::new(1, 8), Coordinate::new(0, 8)]
+        );
+    }
+
+    #[test]
+    fn truck_unloads_validate_cargo_adjacency_and_reserved_destinations() {
+        let mut scenario = Scenario::supply_point().unwrap();
+        let truck = UnitId::parse("4").unwrap();
+        vehicle(&mut scenario, "1").board(truck);
+        vehicle(&mut scenario, "2").board(truck);
+        for (passenger, x, y) in [("3", 1, 8), ("1", 0, 8), ("1", 2, 9)] {
+            let mut orders = holds(&scenario, Side::Player1);
+            set_path(&mut orders, "4", &[(2, 7), (2, 8)]);
+            orders
+                .iter_mut()
+                .find(|order| order.unit_id == "4")
+                .unwrap()
+                .unloads = Some(vec![UnloadOrderInput {
+                unit_id: passenger.into(),
+                destination: CoordinateInput { x, y },
+            }]);
+            if passenger == "1" && x == 2 {
+                // Two passengers cannot share one exit.
+                orders
+                    .iter_mut()
+                    .find(|order| order.unit_id == "4")
+                    .unwrap()
+                    .unloads
+                    .as_mut()
+                    .unwrap()
+                    .push(UnloadOrderInput {
+                        unit_id: "2".into(),
+                        destination: CoordinateInput { x, y },
+                    });
+            }
+            assert!(validate(&scenario, Side::Player1, orders).is_err());
+        }
+    }
+
+    #[test]
+    fn blocked_truck_and_occupied_exit_keep_passengers_aboard() {
+        for block_truck in [false, true] {
+            let mut scenario = Scenario::supply_point().unwrap();
+            let mut turns = Turns::default();
+            let truck = UnitId::parse("4").unwrap();
+            vehicle(&mut scenario, "1").board(truck);
+            vehicle(&mut scenario, "6").move_to(Coordinate::new(0, 9));
+            let mut orders = holds(&scenario, Side::Player1);
+            set_path(&mut orders, "4", &[(2, 7), (2, 8), (1, 8)]);
+            orders
+                .iter_mut()
+                .find(|order| order.unit_id == "4")
+                .unwrap()
+                .unloads = Some(vec![UnloadOrderInput {
+                unit_id: "1".into(),
+                destination: CoordinateInput { x: 0, y: 8 },
+            }]);
+            let mut opponent = holds(&scenario, Side::Player2);
+            if block_truck {
+                set_path(&mut opponent, "6", &[(0, 9), (1, 9), (1, 8)]);
+            } else {
+                set_path(&mut opponent, "6", &[(0, 9), (0, 8)]);
+            }
+            turns
+                .submit(&mut scenario, Side::Player1, 1, orders)
+                .unwrap();
+            turns
+                .submit(&mut scenario, Side::Player2, 1, opponent)
+                .unwrap();
+            assert_eq!(vehicle(&mut scenario, "1").carrier_id(), Some(truck));
+            assert!(
+                !turns
+                    .last_resolution
+                    .as_ref()
+                    .unwrap()
+                    .events
+                    .iter()
+                    .any(|event| event.kind == TurnEventKind::Unload)
+            );
+        }
     }
 
     #[test]
@@ -796,7 +1145,7 @@ mod tests {
     }
 
     #[test]
-    fn home_depot_refills_after_arrival_and_holding_but_other_depots_do_not() {
+    fn any_depot_refills_either_side_after_arrival_and_holding() {
         let mut scenario = Scenario::supply_point().unwrap();
         let mut turns = Turns::default();
         let mut player1 = holds(&scenario, Side::Player1);
@@ -812,17 +1161,19 @@ mod tests {
         vehicle(&mut scenario, "4").follow_path(&[Coordinate::new(2, 8), Coordinate::new(2, 8)]);
         vehicle(&mut scenario, "5").follow_path(&[Coordinate::new(2, 9), Coordinate::new(8, 8)]);
         vehicle(&mut scenario, "9").follow_path(&[Coordinate::new(14, 7), Coordinate::new(2, 8)]);
-        // Place player 2's truck on player 1's depot, away from its home.
+        // Refuel at the center and both starting depots, regardless of side.
         vehicle(&mut scenario, "4").move_to(Coordinate::new(14, 8));
         resolve_holds(&mut scenario, &mut turns);
-        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 63);
-        assert_eq!(vehicle(&mut scenario, "5").fuel().unwrap().current, 63);
-        assert_eq!(vehicle(&mut scenario, "9").fuel().unwrap().current, 63);
-        vehicle(&mut scenario, "9").move_to(Coordinate::new(14, 8));
-        vehicle(&mut scenario, "4").move_to(Coordinate::new(2, 8));
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 64);
+        assert_eq!(vehicle(&mut scenario, "5").fuel().unwrap().current, 64);
+        assert_eq!(vehicle(&mut scenario, "9").fuel().unwrap().current, 64);
+        vehicle(&mut scenario, "9").follow_path(&[Coordinate::new(2, 8), Coordinate::new(8, 8)]);
+        vehicle(&mut scenario, "4").follow_path(&[Coordinate::new(14, 8), Coordinate::new(2, 8)]);
+        vehicle(&mut scenario, "5").follow_path(&[Coordinate::new(8, 8), Coordinate::new(8, 7)]);
         resolve_holds(&mut scenario, &mut turns);
         assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 64);
         assert_eq!(vehicle(&mut scenario, "9").fuel().unwrap().current, 64);
+        assert_eq!(vehicle(&mut scenario, "5").fuel().unwrap().current, 63);
     }
 
     #[test]

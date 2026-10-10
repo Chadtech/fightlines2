@@ -1,11 +1,12 @@
-module View.GameBoard exposing (Msg(..), toHtml)
+module View.GameBoard exposing (Msg(..), UnloadRoute, toHtml)
 
 import AnimationFrame exposing (Frame)
-import Api.Enum.Terrain as Terrain
+import Api.Enum.Direction exposing (Direction)
 import Coordinate exposing (Coordinate)
 import Css
 import Css.Global
 import Depot exposing (Depot)
+import Direction
 import GameBoard exposing (GameBoard)
 import Html.Attributes as HA
 import Html.Styled as H
@@ -29,8 +30,17 @@ import UnitId
     exposing
         ( UnitId
         )
+import View.TerrainTile as TerrainTile
 import View.UnitFacing as UnitFacing
 import View.UnitSprite as UnitSprite
+
+
+{-| An unload preview always connects the truck to one adjacent tile.
+-}
+type alias UnloadRoute =
+    { origin : Coordinate
+    , direction : Direction
+    }
 
 
 type Msg
@@ -88,6 +98,7 @@ toHtml :
     , visibleTiles : List Coordinate
     , reachable : List Coordinate
     , paths : List (List Coordinate)
+    , unloads : List UnloadRoute
     , previewPath : List Coordinate
     , moving : Maybe { unitId : UnitId, position : Point }
     , selected : Maybe Coordinate
@@ -96,36 +107,6 @@ toHtml :
     -> Html Msg
 toHtml config model =
     let
-        terrainView : Coordinate -> Svg Msg
-        terrainView position =
-            let
-                path : Maybe String
-                path =
-                    case Map.terrainAt model.map position of
-                        Terrain.GrassPlain ->
-                            Nothing
-
-                        Terrain.Hills ->
-                            Just "/assets/terrain-hills-illustrated-v3.png"
-
-                        Terrain.Forest ->
-                            Just "/assets/terrain-forest-illustrated-v3.png"
-            in
-            path
-                |> Maybe.map
-                    (\imagePath ->
-                        at position
-                            [ Svg.image
-                                [ SA.width "16"
-                                , SA.height "16"
-                                , SA.xlinkHref imagePath
-                                , SA.pointerEvents "none"
-                                ]
-                                []
-                            ]
-                    )
-                |> Maybe.withDefault (Svg.g [] [])
-
         tileTarget : Coordinate -> Svg Msg
         tileTarget position =
             let
@@ -275,14 +256,12 @@ toHtml config model =
             Svg.g
                 (appearanceAttributes ++ fogAttributes)
                 [ at position
-                    [ Svg.image
-                        [ SA.width "16"
-                        , SA.height "16"
-                        , SA.xlinkHref "/assets/terrain-grass-illustrated-v2.png"
-                        ]
-                        []
+                    [ TerrainTile.toSvg
+                        { theme = model.map.theme
+                        , terrain = Map.terrainAt model.map position
+                        }
+                        |> StyledSvg.toUnstyled
                     ]
-                , terrainView position
                 ]
 
         terrain : Svg Msg
@@ -395,6 +374,42 @@ toHtml config model =
                 ]
                 (reachableTiles ++ plannedPaths ++ preview)
 
+        unloadRoute : UnloadRoute -> Svg Msg
+        unloadRoute route =
+            let
+                destination : Coordinate
+                destination =
+                    Direction.step route.origin route.direction
+            in
+            Svg.g
+                []
+                [ Svg.polyline
+                    [ SA.points (pathPoints [ route.origin, destination ])
+                    , SA.fill "none"
+                    , SA.stroke S.yellow5Str
+                    , SA.strokeWidth "1.25"
+                    ]
+                    []
+                , at destination
+                    [ Svg.polygon
+                        [ SA.points "8,5 11,8 8,11 5,8"
+                        , SA.fill S.nightwood2Str
+                        , SA.stroke S.yellow5Str
+                        , SA.strokeWidth "1.25"
+                        ]
+                        []
+                    ]
+                ]
+
+        unloadOverlay : Svg Msg
+        unloadOverlay =
+            Svg.g
+                [ SA.pointerEvents "none"
+                , HA.attribute "aria-hidden" "true"
+                , HA.attribute "data-planned-unloads" (String.fromInt (List.length config.unloads))
+                ]
+                (List.map unloadRoute config.unloads)
+
         selectionMarker : Coordinate -> Svg Msg
         selectionMarker position =
             at position
@@ -440,8 +455,16 @@ toHtml config model =
             [ SA.viewBox ("0 0 " ++ String.fromInt (model.map.width * 16) ++ " " ++ String.fromInt (model.map.height * 16))
             , SA.width "100%"
             , HA.attribute "role" "group"
-            , HA.attribute "aria-label" "supply point battlefield"
+            , HA.attribute "aria-label" "battlefield"
             ]
-            (terrain :: movementOverlay :: (List.map tileTarget positions ++ List.map depotView model.depots ++ List.filterMap (\unit -> Unit.boardPosition unit |> Maybe.map (unitView unit)) model.units ++ selection))
+            (List.concat
+                [ [ terrain, movementOverlay ]
+                , List.map tileTarget positions
+                , List.map depotView model.depots
+                , List.filterMap (\unit -> Unit.boardPosition unit |> Maybe.map (unitView unit)) model.units
+                , [ unloadOverlay ]
+                , selection
+                ]
+            )
             |> H.fromUnstyled
         ]

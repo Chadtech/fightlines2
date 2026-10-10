@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 pub fn sight_range(kind: UnitKind) -> i32 {
     match kind {
         UnitKind::Infantry | UnitKind::FieldGun => 4,
-        UnitKind::SupplyTruck => 3,
+        UnitKind::Truck => 3,
         UnitKind::Tank => 2,
     }
 }
@@ -46,8 +46,8 @@ pub fn visible_tiles(scenario: &Scenario, side: Side) -> BTreeSet<Coordinate> {
     visible
 }
 
-/// Trace every crossed cell. At an exact corner both adjacent cells must be
-/// clear, so sight cannot slip diagonally past blocking hills or forests.
+/// Trace cells crossed by the center-to-center sight line. Touching a corner
+/// does not enter the adjacent cells, so their terrain does not block sight.
 /// Target hills remain visible; forests conceal their contents. Intervening
 /// hills and forests block even elevated observers; the origin never blocks.
 fn clear_line(map: &Map, origin: Coordinate, target: Coordinate) -> bool {
@@ -71,9 +71,6 @@ fn clear_line(map: &Map, origin: Coordinate, target: Coordinate) -> bool {
         let decision =
             i64::from(1 + 2 * ix) * i64::from(ny) - i64::from(1 + 2 * iy) * i64::from(nx);
         if decision == 0 {
-            if blocks(x + dx.signum(), y) || blocks(x, y + dy.signum()) {
-                return false;
-            }
             x += dx.signum();
             y += dy.signum();
             ix += 1;
@@ -175,7 +172,7 @@ mod tests {
 
     #[test]
     fn passengers_do_not_grant_sight_or_reveal_enemy_cargo() {
-        let mut board = scenario(UnitKind::SupplyTruck, ".........");
+        let mut board = scenario(UnitKind::Truck, ".........");
         let truck = board.units[0].unit_id();
         let mut passenger = Scenario::supply_point().unwrap().units.remove(0);
         passenger.move_to(Coordinate::new(0, 0));
@@ -203,7 +200,7 @@ mod tests {
         for (kind, range) in [
             (UnitKind::Infantry, 4),
             (UnitKind::FieldGun, 4),
-            (UnitKind::SupplyTruck, 3),
+            (UnitKind::Truck, 3),
             (UnitKind::Tank, 2),
         ] {
             for (sketch, bonus) in [(".......", 0), ("%......", 1)] {
@@ -222,7 +219,7 @@ mod tests {
         for kind in [
             UnitKind::Infantry,
             UnitKind::FieldGun,
-            UnitKind::SupplyTruck,
+            UnitKind::Truck,
             UnitKind::Tank,
         ] {
             for bonus in [0, 1] {
@@ -270,8 +267,65 @@ mod tests {
             };
             assert!(!visible.contains(&hidden));
         }
-        let board = scenario(UnitKind::Infantry, ".#...\n.....\n.....\n.....\n.....");
-        assert!(!visible_tiles(&board, Side::Player1).contains(&Coordinate::new(2, 2)));
+    }
+
+    #[test]
+    fn corner_touching_terrain_leaves_open_diagonals_visible() {
+        let origin = Coordinate::new(3, 3);
+        for terrain in [Terrain::Forest, Terrain::Hills] {
+            for dx in [-1, 1] {
+                for dy in [-1, 1] {
+                    let horizontal = Coordinate::new((3 + dx) as u16, 3);
+                    let vertical = Coordinate::new(3, (3 + dy) as u16);
+                    for blockers in [vec![horizontal], vec![vertical], vec![horizontal, vertical]] {
+                        let mut board = scenario(UnitKind::Infantry, &["......."; 7].join("\n"));
+                        board.units[0].move_to(origin);
+                        board.map = Map::new(
+                            7,
+                            7,
+                            Terrain::GrassPlain,
+                            blockers
+                                .into_iter()
+                                .map(|position| (position, terrain))
+                                .collect(),
+                        )
+                        .unwrap();
+                        let visible = visible_tiles(&board, Side::Player1);
+                        for distance in [1, 2] {
+                            let target = Coordinate::new(
+                                (3 + distance * dx) as u16,
+                                (3 + distance * dy) as u16,
+                            );
+                            assert!(visible.contains(&target), "{terrain:?}, {target:?}");
+                            assert!(clear_line(&board.map, target, origin));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn terrain_crossed_by_the_sight_line_still_blocks() {
+        for terrain in [Terrain::Forest, Terrain::Hills] {
+            let map = Map::new(
+                5,
+                5,
+                Terrain::GrassPlain,
+                std::collections::BTreeMap::from([(Coordinate::new(1, 1), terrain)]),
+            )
+            .unwrap();
+            let origin = Coordinate::new(0, 0);
+            // Check diagonal and oblique lines that actually enter the blocker.
+            for target in [
+                Coordinate::new(2, 2),
+                Coordinate::new(3, 2),
+                Coordinate::new(2, 3),
+            ] {
+                assert!(!clear_line(&map, origin, target));
+                assert!(!clear_line(&map, target, origin));
+            }
+        }
     }
 
     #[test]
@@ -322,8 +376,8 @@ mod tests {
     }
 
     #[test]
-    fn diagonal_corner_hills_block_and_allies_share_sight() {
-        let mut board = scenario(UnitKind::Infantry, ".%...\n.....\n.....\n.....\n.....");
+    fn allies_share_sight_around_blocking_terrain() {
+        let mut board = scenario(UnitKind::Infantry, ".....\n.%...\n.....\n.....\n.....");
         let visible = visible_tiles(&board, Side::Player1);
         assert!(!visible.contains(&Coordinate::new(2, 2)));
         let mut ally = board.units[0].clone();
@@ -347,6 +401,7 @@ mod tests {
         let resolution = TurnResolution {
             turn_number: 1,
             events: vec![TurnEvent {
+                rotation_direction: None,
                 initial_direction: None,
                 initial_carrier: None,
                 carrier_id: None,

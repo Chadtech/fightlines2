@@ -14,7 +14,7 @@ type Command
     = StandGround
     | HoldPosition
     | Move
-    | Unload
+    | Rotate
     | AttackMove
     | IndirectFire
     | DigIn
@@ -24,21 +24,21 @@ type Command
 available : Unit -> List Command
 available unit =
     if Unit.carrierId unit /= Nothing then
-        [ Unload, HoldPosition ]
+        []
 
     else
         case unit.kind of
             Kind.Infantry ->
-                [ Move, HoldPosition, StandGround, AttackMove, DigIn ]
+                [ Move, HoldPosition, Rotate, StandGround, AttackMove, DigIn ]
 
             Kind.Tank ->
-                [ Move, HoldPosition, StandGround, AttackMove ]
+                [ Move, HoldPosition, Rotate, StandGround, AttackMove ]
 
-            Kind.SupplyTruck ->
+            Kind.Truck ->
                 [ Move, HoldPosition ]
 
             Kind.FieldGun ->
-                [ Move, HoldPosition, IndirectFire, DigIn, Ambush ]
+                [ Move, HoldPosition, Rotate, IndirectFire, DigIn, Ambush ]
 
 
 isImplemented : Command -> Bool
@@ -47,7 +47,7 @@ isImplemented command =
         Move ->
             True
 
-        Unload ->
+        Rotate ->
             True
 
         HoldPosition ->
@@ -60,14 +60,14 @@ isImplemented command =
 label : Command -> String
 label command =
     case command of
-        Unload ->
-            "unload"
-
         StandGround ->
             "stand ground"
 
         HoldPosition ->
             "hold position"
+
+        Rotate ->
+            "rotate"
 
         Move ->
             "move"
@@ -88,14 +88,14 @@ label command =
 assetName : Command -> String
 assetName command =
     case command of
-        Unload ->
-            "move"
-
         StandGround ->
             "stand-ground"
 
         HoldPosition ->
             "hold-position"
+
+        Rotate ->
+            "rotate"
 
         Move ->
             "move"

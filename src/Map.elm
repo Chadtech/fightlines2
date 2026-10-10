@@ -1,5 +1,6 @@
 module Map exposing (Map, terrainAt)
 
+import Api.Enum.MapTheme exposing (MapTheme)
 import Api.Enum.Terrain exposing (Terrain)
 import Coordinate exposing (Coordinate)
 import ListUtil
@@ -10,6 +11,7 @@ type alias Map =
     { width : Int
     , height : Int
     , baseTile : Terrain
+    , theme : MapTheme
     , features : List TerrainFeature
     }
 

@@ -21,7 +21,7 @@ pub fn rules() -> Vec<MovementRule> {
         (UnitKind::Tank, 12, [2, 4, 6]),
         // One adjacent passable square, regardless of terrain.
         (UnitKind::FieldGun, 2, [2, 2, 2]),
-        (UnitKind::SupplyTruck, 14, [2, 6, 8]),
+        (UnitKind::Truck, 14, [2, 6, 8]),
     ]
     .into_iter()
     .map(|(kind, budget, costs)| MovementRule {
@@ -48,7 +48,7 @@ mod tests {
             "INFANTRY" => UnitKind::Infantry,
             "TANK" => UnitKind::Tank,
             "FIELD_GUN" => UnitKind::FieldGun,
-            "SUPPLY_TRUCK" => UnitKind::SupplyTruck,
+            "TRUCK" => UnitKind::Truck,
             _ => panic!("unknown fixture unit"),
         }
     }

@@ -256,7 +256,7 @@ gauge resource =
                     "provisions for this unit: " ++ String.fromInt supplies.upkeepPerTurn ++ " per resolved turn plus " ++ String.fromInt supplies.movementPerTile ++ " per traversed tile. holds and canceled moves still pay upkeep. supplies cannot be replenished yet."
 
                 Fuel _ ->
-                    "each traversed tile uses 1 fuel. holds and canceled moves use none. end a turn on your home depot to fill the tank."
+                    "each traversed tile uses 1 fuel. holds and canceled moves use none. end a turn on any supply depot to fill the tank."
     in
     H.div
         [ A.css
@@ -335,7 +335,7 @@ usesOil kind =
         Kind.Tank ->
             True
 
-        Kind.SupplyTruck ->
+        Kind.Truck ->
             True
 
         Kind.Infantry ->
@@ -354,8 +354,8 @@ kindLabel kind =
         Kind.Tank ->
             "tank"
 
-        Kind.SupplyTruck ->
-            "supply truck"
+        Kind.Truck ->
+            "truck"
 
         Kind.FieldGun ->
             "field gun"
@@ -370,7 +370,7 @@ roleText kind =
         Kind.Tank ->
             "an armored ground unit."
 
-        Kind.SupplyTruck ->
+        Kind.Truck ->
             "a vehicle that carries up to two infantry or field guns. supply delivery is not implemented yet."
 
         Kind.FieldGun ->

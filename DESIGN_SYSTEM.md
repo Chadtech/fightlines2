@@ -114,27 +114,32 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   Units show their name and side above their illustration in a nightwood3
   inset screen, without position coordinates. Display
   authoritative hit points (out of 16), supplies (out of 64), and fuel (out of 64) (for tanks
-  and supply trucks) as horizontal gauges with `current / maximum` labels. Use red1 below 25%, yellow4 from
+  and trucks) as horizontal gauges with `current / maximum` labels. Use red1 below 25%, yellow4 from
   25–75%, and green1 (`#4BBF63`) above 75%; retain the numeric labels alongside color.
 - Unit and gauge info markers expand keyboard-accessible explanations. The
   flat `about this unit` section spans the panel width, with nightwood3 body,
   yellow2 title strip, yellow5 heading text, and internal padding. It has no
   bevel. Resource gauges show the server-provided current and maximum values.
-- While planning, selecting your own unit shows illustrated command rows beneath
-  its gauges in the side panel. Put move (or unload) and hold position first.
+- While planning, selecting your own unit shows illustrated command rows in a
+  popup beside it on the battlefield. Anchor passenger commands beside their
+  truck. Keep the popup at a fixed display size as the board zooms. Put move and hold position first. Carried units have no command popup.
+  Rotate follows move and hold for infantry, tanks, and field guns. It closes
+  the popup and offers north/east/south/west buttons and back to commands in the
+  side panel. Saving shows the chosen facing and revoke order.
   Rows are flat at rest; hover and keyboard focus add an outset bevel, and
   pressing reverses it. Unimplemented commands are disabled. Tab enters the
-  list; Up/Down cycles enabled commands and Enter/Space chooses one, without
-  panning the map. Escape clears selection while preserving saved orders.
-  Move/unload replaces commands with a destination prompt, preview cost/budget,
+  list; arrows cycle enabled commands whenever the popup is open, including
+  before list focus, and Enter/Space chooses the focused command. Cancel and
+  Escape clear selection while preserving saved orders.
+  Move closes the popup and shows a destination prompt, preview cost/budget,
   and back to commands. Saving a destination or choosing hold position replaces
-  commands with the chosen order and revoke order. Revoking restores commands;
+  the popup with the chosen order and revoke order in the side panel. Revoking restores commands;
   do not show commands and a saved order simultaneously. Locked orders cannot
   be revoked. Keep resource explanations in the expandable gauge help.
 - Primary-button dragging pans after a 6px threshold. A drag never selects a tile;
   a click still inspects units, depots and terrain. Scroll zooms around the cursor,
   bounded to 35–300%; the bottom-left panel supplies pan arrows, zoom and reset controls. Keyboard
-  arrows pan through game-page window commands outside command-list focus,
+  arrows pan through game-page window commands while the command popup is closed,
   without requiring battlefield focus.
   Plus/minus and Home work while the battlefield is focused.
 - Use smooth image rendering for illustrated terrain, building and unit sprites. SVG scales the
@@ -147,6 +152,13 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   pointed tree crowns and trunks exaggerated enough to read at 30px display size.
   Terrain features stay inside their own cells. Keep tile hit targets separate
   from the artwork and use subtle square grid strokes to clarify cell boundaries.
+- Maps have a visual theme independent of terrain rules. `View.TerrainTile`
+  renders each grass, hill, or forest cell with its map's theme. GreenForest uses
+  the original artwork; Desert uses a sandy SVG floor with warm-tinted hills and
+  forests; Snow uses a pale ground and desaturated, brighter features. Fog applies
+  after theme styling. BloodGulch uses GreenForest, including ordinary forest
+  artwork for its hiding spots. Arabia and ElAlamein use Desert. Tile inspection and
+  movement costs continue to use the underlying grass, hills, and forest rules.
 - Unseen terrain and known depots use 18% saturation and 58% brightness,
   preserving the artwork's internal shading instead of covering it with an opaque
   tint. Keep visibility boundaries crisp at tile edges.
@@ -172,7 +184,7 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   unit sprites face right for player 1 and mirror left for player 2. Stored direction follows movement and is shown by the facing marker. Overlay a small filled edge
   triangle for each infantry, tank or field gun's current facing, keeping its outline entirely inside
   the cell. Use gray5 with a gray0 outline, and yellow5 for the selected unit.
-  Supply trucks have no stored direction or facing marker.
+  Trucks have no stored direction or facing marker.
   Markers show the unit's stored north/east/south/west direction, turning with
   each movement segment and retaining the last direction afterward. Their two-second
   brightness pulse fades to zero, pauses invisibly, then returns in unison
@@ -199,8 +211,21 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   Enter/Space, and preserves that unit's selection. Show load/unload destination
   labels and explain the receiving unit's hold requirement in the right panel.
 - Truck status shows `cargo: current / capacity` and one button per passenger.
-  Passenger selection opens unload/hold commands in the side panel. Unload
-  uses empty adjacent destination choices; passengers appear on the board after
+  Passenger selection shows inspection details. Saving a loaded truck's move
+  destination opens a modal titled `unload`, with one styled native checkbox per
+  passenger, a small unit portrait, the kind name alone, and compact health and
+  supply meters. Use the usual red/yellow/green resource thresholds and include
+  numeric values plus a `low` label below 25%. `View.Checkbox` owns the inset
+  nightwood checkbox, light gray checked fill with a dark checkmark, and visible
+  keyboard focus. A single action
+  says `proceed without unloading` when nothing is checked and becomes the gold
+  `choose unload squares` action when passengers are checked. Checked passengers choose empty adjacent
+  squares around the truck's planned destination one at a time. Show the current
+  passenger and a skip-remaining action in the side panel, and list saved unload
+  choices under the truck's order. Extend a solid gold branch from the truck's
+  destination dot to an outlined diamond on each saved unloading square. Keep
+  these markers visible above unit artwork and preserve tile interaction.
+  Passengers appear after truck movement during
   resolution. Carried units do not have independent board sprites or focus targets.
 
 ## Decision log

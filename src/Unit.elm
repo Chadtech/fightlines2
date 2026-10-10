@@ -78,8 +78,8 @@ label unit =
                 UnitKind.FieldGun ->
                     "field gun"
 
-                UnitKind.SupplyTruck ->
-                    "supply truck"
+                UnitKind.Truck ->
+                    "truck"
     in
     Side.label unit.side ++ " " ++ kind ++ " " ++ UnitId.toString unit.id
 
@@ -110,7 +110,7 @@ loadingPartner units mover destination =
                 hasRoom : Unit -> Bool
                 hasRoom truck =
                     truck.kind
-                        == UnitKind.SupplyTruck
+                        == UnitKind.Truck
                         && List.length (List.filter (\passenger -> carrierId passenger == Just truck.id) units)
                         < truck.cargoCapacity
 

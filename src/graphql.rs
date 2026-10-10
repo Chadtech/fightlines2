@@ -169,7 +169,7 @@ mod tests {
 
     #[actix_web::test]
     async fn development_game_is_opt_in_and_does_not_replace_identity() {
-        let query = "{ game(id: \"00000000000000000000000000000000\") { id name isHost players { side isYou } movementRules { kind budget terrainCosts { terrain cost } } visibleTiles { x y } scenario { units { id side } depots { owner } } } }";
+        let query = "{ game(id: \"00000000000000000000000000000000\") { id name isHost players { side isYou } movementRules { kind budget terrainCosts { terrain cost } } visibleTiles { x y } scenario { units { id side } depots { position { x y } } } } }";
         for development in [false, true] {
             let seed = crate::seed::Seed::new([7; 32]);
             let store = if development {
@@ -412,7 +412,7 @@ mod tests {
                 .contains("already started")
         );
         let game = format!(
-            "{{ game(id: \"{id}\") {{ {FIELDS} visibleTiles {{ x y }} players {{ side isYou }} scenario {{ map {{ width height baseTile features {{ position {{ x y }} terrain }} }} depots {{ position {{ x y }} owner }} units {{ id side kind location {{ __typename ... on OnMap {{ position {{ x y }} }} ... on Aboard {{ carrierId }} }} }} }} }} }}"
+            "{{ game(id: \"{id}\") {{ {FIELDS} visibleTiles {{ x y }} players {{ side isYou }} scenario {{ map {{ width height baseTile theme features {{ position {{ x y }} terrain }} }} depots {{ position {{ x y }} }} units {{ id side kind location {{ __typename ... on OnMap {{ position {{ x y }} }} ... on Aboard {{ carrierId }} }} }} }} }} }}"
         );
         let (member, _) = execute!(&game, Some(guest.clone()));
         assert_eq!(member["data"]["game"]["name"], "Friday Night");
@@ -422,6 +422,7 @@ mod tests {
         assert_eq!(scenario["map"]["width"], 17);
         assert_eq!(scenario["map"]["height"], 17);
         assert_eq!(scenario["map"]["baseTile"], "GRASS_PLAIN");
+        assert_eq!(scenario["map"]["theme"], "GREEN_FOREST");
         assert_eq!(scenario["map"]["features"].as_array().unwrap().len(), 102);
         assert_eq!(scenario["depots"].as_array().unwrap().len(), 3);
         assert_eq!(scenario["units"].as_array().unwrap().len(), 8);

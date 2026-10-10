@@ -1,6 +1,6 @@
 # Runtime sprite assets
 
-The six board images and small illustrated command-menu experiment exports are committed. Normal builds use
+The board images, desert SVG, and small illustrated command-menu experiment exports are committed. Normal builds use
 these exports directly. Source artwork, prompts, previews and obsolete exports
 are retained locally and ignored by Git; back them up separately. The scripts in
 `tools/` and `make sprites` can regenerate exports when the local `artwork/`
@@ -8,7 +8,9 @@ directory is available. A fresh clone does not include that directory.
 
 - `misc_sheet.png`: 16 x 464 legacy atlas, with 16px cells. Selection corners
   use row 2. Copied from the original FightLines sprite sheet.
-- `terrain-grass-illustrated-v2.png`: opaque grass tile, rendered in every cell.
+- `terrain-grass-illustrated-v2.png`: opaque grass tile, rendered in each grass-map cell.
+- `terrain-desert.svg`: editable sandy floor used under every desert-themed cell,
+  including Arabia and El Alamein.
 - `terrain-hills-illustrated-v3.png`: transparent illustrated hill overlay.
 - `terrain-forest-illustrated-v3.png`: transparent illustrated forest overlay.
 - `supply-depot-illustrated-v1.png`: neutral concrete building with a rounded
@@ -25,9 +27,14 @@ built-in imagegen on October 6–7, 2026.
 
 ## Illustrated command experiment
 
-`commands-anime-v1/` contains seven transparent 128px command icons, displayed at
-30px. The original SVG comparison source is preserved locally in `artwork/commands/`.
+`commands-anime-v1/` contains eight transparent 128px command icons, displayed at
+1.875rem. The original SVG comparison source is preserved locally in `artwork/commands/`.
 Ambush depicts a concealed field gun and is offered only to field guns.
 Built-in imagegen produced the high-detail 1980s military anime illustrations;
 local masters and exact prompts are in `artwork/commands/anime-v1/`.
 Run `node tools/build-command-icons.cjs` to export those local masters again.
+
+The rotate icon was generated with built-in imagegen on October 10, 2026: a
+simple circular clockwise arrow with textured golden metal, beveled edges,
+painted highlights, and dark ink outlines matching the move arrow. Its background
+and open center are transparent.

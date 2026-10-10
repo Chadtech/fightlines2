@@ -4,6 +4,7 @@
 
 module Api.Object.Map exposing (..)
 
+import Api.Enum.MapTheme
 import Api.Enum.Terrain
 import Api.InputObject
 import Api.Interface
@@ -28,6 +29,11 @@ width =
 height : SelectionSet Int Api.Object.Map
 height =
     Object.selectionForField "Int" "height" [] Decode.int
+
+
+theme : SelectionSet Api.Enum.MapTheme.MapTheme Api.Object.Map
+theme =
+    Object.selectionForField "Enum.MapTheme.MapTheme" "theme" [] Api.Enum.MapTheme.decoder
 
 
 baseTile : SelectionSet Api.Enum.Terrain.Terrain Api.Object.Map

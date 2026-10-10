@@ -1,6 +1,7 @@
 port module TurnChecks exposing (main)
 
 import Api.Enum.Direction as Direction
+import Api.Enum.MapTheme as MapTheme
 import Api.Enum.Side as Side
 import Api.Enum.Terrain as Terrain
 import Api.Enum.TurnEventKind as EventKind
@@ -40,7 +41,7 @@ playbackChecks first second =
     let
         board : GameBoard
         board =
-            { map = { width = 3, height = 3, baseTile = Terrain.GrassPlain, features = [] }
+            { map = { width = 3, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
             , depots = []
             , units =
                 [ { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = first, side = Side.Player1, direction = Just Direction.East, kind = Kind.Infantry, location = Unit.OnMap { x = 1, y = 0 } }
@@ -57,8 +58,8 @@ playbackChecks first second =
                 Just
                     { number = 1
                     , events =
-                        [ { initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialDirection = Just Direction.South, unitId = first, path = [ { x = 0, y = 0 }, { x = 1, y = 0 } ] }
-                        , { initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialDirection = Just Direction.North, unitId = second, path = [ { x = 2, y = 1 }, { x = 1, y = 1 } ] }
+                        [ { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialDirection = Just Direction.South, unitId = first, path = [ { x = 0, y = 0 }, { x = 1, y = 0 } ] }
+                        , { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialDirection = Just Direction.North, unitId = second, path = [ { x = 2, y = 1 }, { x = 1, y = 1 } ] }
                         ]
                     }
             }
@@ -80,13 +81,35 @@ playbackChecks first second =
         ( finished, finalBoard ) =
             next |> Maybe.map (\playing -> Turn.tick 180 playing firstFinished) |> Maybe.withDefault ( Nothing, firstFinished )
 
+        rotation : Turn.Event
+        rotation =
+            { rotationDirection = Just Direction.West, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Rotate, initialDirection = Just Direction.East, unitId = first, path = [ { x = 1, y = 0 } ] }
+
+        rotationSnapshot : Turn.Snapshot
+        rotationSnapshot =
+            { snapshot | resolution = Just { number = 1, events = [ rotation ] } }
+
+        rotationBoard : GameBoard
+        rotationBoard =
+            Turn.rewind rotationSnapshot board
+
+        rotationPlayback : Turn.Playback
+        rotationPlayback =
+            Turn.start rotationSnapshot |> Maybe.withDefault { events = [], elapsed = 0 }
+
+        ( rotationPending, rotationHalfway ) =
+            Turn.tick 90 rotationPlayback rotationBoard
+
+        ( rotationFinished, rotatedBoard ) =
+            Turn.tick 180 rotationPlayback rotationBoard
+
         cornerPath : List { x : Int, y : Int }
         cornerPath =
             [ { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 1, y = 1 } ]
 
         cornerPlayback : Turn.Playback
         cornerPlayback =
-            { events = [ { initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, unitId = first, initialDirection = Just Direction.West, path = cornerPath } ]
+            { events = [ { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, unitId = first, initialDirection = Just Direction.West, path = cornerPath } ]
             , elapsed = 0
             }
 
@@ -105,7 +128,9 @@ playbackChecks first second =
                 [ name ]
     in
     List.concat
-        [ expect "rewind restores the event origins" (List.map Unit.boardPosition rewound.units == [ Just { x = 0, y = 0 }, Just { x = 2, y = 1 } ])
+        [ expect "rotation rewinds facing and stays still until its event completes" (rotationPending /= Nothing && rotationHalfway == rotationBoard && Turn.movingPosition rotationPending == Nothing)
+        , expect "rotation playback applies the chosen facing without moving" (rotationFinished == Nothing && List.map .direction rotatedBoard.units == [ Just Direction.West, Just Direction.West ] && List.map .location rotatedBoard.units == List.map .location board.units)
+        , expect "rewind restores the event origins" (List.map Unit.boardPosition rewound.units == [ Just { x = 0, y = 0 }, Just { x = 2, y = 1 } ])
         , expect "halfway position interpolates the first unit only" (Turn.movingPosition halfway == Just { unitId = first, position = { x = 0.5, y = 0 } })
         , expect "animation never mutates authoritative cell positions mid-edge" (List.map Unit.boardPosition halfwayBoard.units == List.map Unit.boardPosition rewound.units)
         , expect "second event starts after the first finishes" (Turn.movingPosition next == Just { unitId = second, position = { x = 2, y = 1 } })
@@ -128,9 +153,9 @@ truckPlaybackChecks unitId =
     let
         board : GameBoard
         board =
-            { map = { width = 3, height = 3, baseTile = Terrain.GrassPlain, features = [] }
+            { map = { width = 3, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
             , depots = []
-            , units = [ { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 15, maximum = 64 }, id = unitId, side = Side.Player1, direction = Nothing, kind = Kind.SupplyTruck, location = Unit.OnMap { x = 1, y = 1 } } ]
+            , units = [ { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 15, maximum = 64 }, id = unitId, side = Side.Player1, direction = Nothing, kind = Kind.Truck, location = Unit.OnMap { x = 1, y = 1 } } ]
             }
 
         snapshot : Turn.Snapshot
@@ -138,7 +163,7 @@ truckPlaybackChecks unitId =
             { number = 2
             , submitted = False
             , opponentSubmitted = False
-            , resolution = Just { number = 1, events = [ { initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialDirection = Nothing, unitId = unitId, path = [ { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 1, y = 1 } ] } ] }
+            , resolution = Just { number = 1, events = [ { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialDirection = Nothing, unitId = unitId, path = [ { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 1, y = 1 } ] } ] }
             }
 
         rewound : GameBoard
@@ -173,7 +198,7 @@ transportPlaybackChecks passengerId truckId =
         truck =
             { id = truckId
             , side = Side.Player1
-            , kind = Kind.SupplyTruck
+            , kind = Kind.Truck
             , direction = Nothing
             , hitPoints = { current = 16, maximum = 16 }
             , supplies = { current = 62, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }
@@ -188,11 +213,11 @@ transportPlaybackChecks passengerId truckId =
 
         board : GameBoard
         board =
-            { map = { width = 3, height = 3, baseTile = Terrain.GrassPlain, features = [] }, depots = [], units = [ passenger, truck ] }
+            { map = { width = 3, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }, depots = [], units = [ passenger, truck ] }
 
         event : Turn.Event
         event =
-            { kind = EventKind.Move, unitId = truckId, path = [ { x = 0, y = 0 }, { x = 1, y = 0 } ], initialDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing }
+            { kind = EventKind.Move, unitId = truckId, path = [ { x = 0, y = 0 }, { x = 1, y = 0 } ], initialDirection = Nothing, rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing }
 
         loading : Turn.Snapshot
         loading =

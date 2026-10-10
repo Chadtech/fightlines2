@@ -11,12 +11,12 @@ type UnitKind
     = Infantry
     | Tank
     | FieldGun
-    | SupplyTruck
+    | Truck
 
 
 list : List UnitKind
 list =
-    [ Infantry, Tank, FieldGun, SupplyTruck ]
+    [ Infantry, Tank, FieldGun, Truck ]
 
 
 decoder : Decoder UnitKind
@@ -34,8 +34,8 @@ decoder =
                     "FIELD_GUN" ->
                         Decode.succeed FieldGun
 
-                    "SUPPLY_TRUCK" ->
-                        Decode.succeed SupplyTruck
+                    "TRUCK" ->
+                        Decode.succeed Truck
 
                     _ ->
                         Decode.fail ("Invalid UnitKind type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
@@ -56,8 +56,8 @@ toString enum____ =
         FieldGun ->
             "FIELD_GUN"
 
-        SupplyTruck ->
-            "SUPPLY_TRUCK"
+        Truck ->
+            "TRUCK"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -83,8 +83,8 @@ fromString enumString____ =
         "FIELD_GUN" ->
             Just FieldGun
 
-        "SUPPLY_TRUCK" ->
-            Just SupplyTruck
+        "TRUCK" ->
+            Just Truck
 
         _ ->
             Nothing
