@@ -29,6 +29,7 @@ import UnitId
     exposing
         ( UnitId
         )
+import View.UnitFacing as UnitFacing
 import View.UnitSprite as UnitSprite
 
 
@@ -213,6 +214,8 @@ toHtml config model =
                 [ SA.transform transform
                 ]
                 [ UnitSprite.toSvg (AnimationFrame.unitColumn config.frame unit.id) unit
+                    |> StyledSvg.toUnstyled
+                , UnitFacing.toSvg (config.selected == Just unit.position) unit
                     |> StyledSvg.toUnstyled
                 , Svg.rect
                     [ SA.width "16"
@@ -405,7 +408,8 @@ toHtml config model =
                 ]
             ]
         ]
-        [ Svg.svg
+        [ UnitFacing.styles
+        , Svg.svg
             [ SA.viewBox ("0 0 " ++ String.fromInt (model.map.width * 16) ++ " " ++ String.fromInt (model.map.height * 16))
             , SA.width "100%"
             , HA.attribute "role" "group"

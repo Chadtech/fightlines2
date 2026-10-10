@@ -189,7 +189,12 @@ Control elsewhere. `GamePage` offers Escape to clear selection, reachable
 squares, and the live path preview while preserving saved move drafts.
 `View.GameBoard` renders raster sprite-sheet cells in nested SVG viewports;
 terrain, depots, units, and an inset SVG selection square are separate layers. Eastern
-units are mirrored to face west. SVG events send typed unit IDs and coordinates
+units are mirrored to face west. `View.UnitFacing` overlays inset edge markers
+using that same side-based facing, with selected-unit color and a synchronized
+two-second opacity pulse. Component-owned styles keep the markers steady for
+reduced-motion preferences. Markers do not receive pointer events or appear in
+status portraits. Independent facing state and turning orders remain future work.
+SVG events send typed unit IDs and coordinates
 directly to Elm; keyboard activation works on units and depots. The selection square ignores pointer events and stays within its cell.
 Illustrated terrain, buildings and units use smooth downsampling.
 Assets live in `public/assets/`, with provenance and sheet coordinates in its

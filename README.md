@@ -48,8 +48,11 @@ The panel remains fixed while the board moves. Terrain uses detailed 80s anime
 illustrations, with a grass tile in every square, defined hill ridges and tree
 silhouettes, and a subtle grid.
 Units use detailed illustrated anime sprites with red and blue team colors,
-packed into 256px square cells and smoothly scaled to the board. The infantry,
-tanks, and supply trucks use four-frame rigid-part idle loops in light sky blue
+packed into 256px square cells and smoothly scaled to the board.
+Each unit has an inset edge triangle indicating its current east/west facing.
+Markers overlay the artwork, brighten on selection, and pulse in unison over two seconds,
+fading completely out briefly before returning. Reduced-motion preferences keep them steady.
+The infantry, tanks, and supply trucks use four-frame rigid-part idle loops in light sky blue
 and warm orange-red, with staggered phases and fixed part shapes. Field guns use four independently drawn howitzer elevation frames, with the
 operator bending naturally at the rear controls and the carriage staying planted. Supply depots are separate concrete buildings with rounded roofs,
 neutral material colors and no team-colored outlines.

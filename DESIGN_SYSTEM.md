@@ -149,7 +149,14 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   and hold position controls, and order status
   in the right panel. Reachable tiles support Tab and Enter/Space.
 - Units and depots support keyboard focus and Enter/Space activation. Illustrated
-  units face right; eastern units are mirrored. Use four-frame rigid-part idle
+  units face right; eastern units are mirrored. Overlay a small filled edge
+  triangle for each unit's current facing, keeping its outline entirely inside
+  the cell. Use gray5 with a gray0 outline, and yellow5 for the selected unit.
+  Markers follow the existing side-based east/west sprite facing. Their two-second
+  brightness pulse fades to zero, pauses invisibly, then returns in unison
+  across all units. Keep marker size fixed and ignore pointer events.
+  Reduced-motion preferences keep markers fully visible and steady.
+  Use four-frame rigid-part idle
   loops: infantry crouches through bending knees with small head adjustments,
   keeping the rifle angle steady;
   truck and tank bodies bounce on their suspension above fixed wheels/tracks.

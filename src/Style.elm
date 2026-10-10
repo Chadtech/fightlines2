@@ -68,6 +68,8 @@ module Style exposing
     , g4
     , g8
     , global
+    , gray0Str
+    , gray5Str
     , grow
     , h0
     , h1
