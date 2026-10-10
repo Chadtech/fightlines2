@@ -7,14 +7,16 @@ module Api.Enum.Side exposing (..)
 import Json.Decode as Decode exposing (Decoder)
 
 
+{-| Player ownership, independent of starting position on a map.
+-}
 type Side
-    = West
-    | East
+    = Player1
+    | Player2
 
 
 list : List Side
 list =
-    [ West, East ]
+    [ Player1, Player2 ]
 
 
 decoder : Decoder Side
@@ -23,11 +25,11 @@ decoder =
         |> Decode.andThen
             (\string ->
                 case string of
-                    "WEST" ->
-                        Decode.succeed West
+                    "PLAYER1" ->
+                        Decode.succeed Player1
 
-                    "EAST" ->
-                        Decode.succeed East
+                    "PLAYER2" ->
+                        Decode.succeed Player2
 
                     _ ->
                         Decode.fail ("Invalid Side type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
@@ -39,11 +41,11 @@ decoder =
 toString : Side -> String
 toString enum____ =
     case enum____ of
-        West ->
-            "WEST"
+        Player1 ->
+            "PLAYER1"
 
-        East ->
-            "EAST"
+        Player2 ->
+            "PLAYER2"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -60,11 +62,11 @@ This can be useful for generating Strings to use for <select> menus to check whi
 fromString : String -> Maybe Side
 fromString enumString____ =
     case enumString____ of
-        "WEST" ->
-            Just West
+        "PLAYER1" ->
+            Just Player1
 
-        "EAST" ->
-            Just East
+        "PLAYER2" ->
+            Just Player2
 
         _ ->
             Nothing

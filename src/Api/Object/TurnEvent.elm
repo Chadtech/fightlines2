@@ -21,6 +21,16 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+initialCarrier : SelectionSet (Maybe String) Api.Object.TurnEvent
+initialCarrier =
+    Object.selectionForField "(Maybe String)" "initialCarrier" [] (Decode.string |> Decode.nullable)
+
+
+carrierId : SelectionSet (Maybe String) Api.Object.TurnEvent
+carrierId =
+    Object.selectionForField "(Maybe String)" "carrierId" [] (Decode.string |> Decode.nullable)
+
+
 initialDirection : SelectionSet (Maybe Api.Enum.Direction.Direction) Api.Object.TurnEvent
 initialDirection =
     Object.selectionForField "(Maybe Enum.Direction.Direction)" "initialDirection" [] (Api.Enum.Direction.decoder |> Decode.nullable)

@@ -32,20 +32,20 @@ toSvg column unit =
                     9
             )
                 + (case unit.side of
-                    Side.West ->
+                    Side.Player1 ->
                         0
 
-                    Side.East ->
+                    Side.Player2 ->
                         1
                   )
 
         sideProfile : String
         sideProfile =
             case unit.side of
-                Side.West ->
+                Side.Player1 ->
                     ""
 
-                Side.East ->
+                Side.Player2 ->
                     "translate(16 0) scale(-1 1)"
     in
     Svg.g

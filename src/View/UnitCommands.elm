@@ -1,6 +1,6 @@
 module View.UnitCommands exposing
     ( Msg(..)
-    , State(..)
+    , commandHtmlId
     , toHtml
     )
 
@@ -9,145 +9,112 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Json.Decode as Decode
-import Map exposing (Map)
 import Style as S
 import Unit exposing (Unit)
 import UnitCommand as Command exposing (Command)
 
 
-type State
-    = Open
-    | Closed
-
-
 type Msg
-    = MenuPressed
-    | CommandPicked Command
-    | CancelClicked
+    = CommandPicked Command
+    | ArrowedUpCommandMenu Command
+    | ArrowedDownCommandMenu Command
+    | CommandFocusCompleted
 
 
-toHtml : Map -> Float -> Unit -> Html Msg
-toHtml map zoom unit =
+toHtml : Unit -> Html Msg
+toHtml unit =
     let
-        opensLeft : Bool
-        opensLeft =
-            unit.position.x >= map.width // 2
-
-        horizontalEdge : Int
-        horizontalEdge =
-            if opensLeft then
-                unit.position.x
-
-            else
-                unit.position.x + 1
-
-        anchorX : Float
-        anchorX =
-            toFloat horizontalEdge / toFloat map.width * 100
-
-        anchorY : Float
-        anchorY =
-            (toFloat unit.position.y + 0.5) / toFloat map.height * 100
-
-        horizontalOffset : String
-        horizontalOffset =
-            if opensLeft then
-                "calc(-100% - 0.5rem)"
-
-            else
-                "0.5rem"
-
-        translation : String
-        translation =
-            "translate(" ++ horizontalOffset ++ ", -50%)"
+        commands : List Command
+        commands =
+            Command.available unit
     in
     H.section
-        [ A.attribute "aria-label" "unit command preview"
-        , Ev.stopPropagationOn "mousedown" (Decode.succeed ( MenuPressed, True ))
+        [ A.attribute "aria-label" "unit commands"
         , A.css
-            [ Css.position Css.absolute
-            , Css.left (Css.pct anchorX)
-            , Css.property "top" ("clamp(9rem, " ++ String.fromFloat anchorY ++ "%, calc(100% - 9rem))")
-            , S.z4
-            , Css.width (Css.rem 13)
-            , S.transformOriginTopLeft
-            , Css.property "transform" ("scale(" ++ String.fromFloat (1 / zoom) ++ ") " ++ translation)
-            , S.bgGray1
-            , S.textGray4
-            , S.outdent
-            , S.shadowMenu
-            , S.p1
-            , S.defaultCursor
+            [ S.col
+            , S.g1
             ]
         ]
-        [ menuHeader "commands"
+        [ H.h3
+            []
+            [ H.text "commands"
+            ]
         , H.div
             [ A.attribute "role" "group"
-            , A.attribute "aria-label" "unit commands"
+            , A.attribute "aria-label" "choose a command"
             , A.css
                 [ S.col
-                , S.py1
                 ]
             ]
-            (List.map commandButton (Command.available unit.kind))
-        , cancelFooter
-        ]
-
-
-menuHeader : String -> Html msg
-menuHeader title =
-    H.div
-        [ A.css
-            [ S.bgGray3
-            , S.textGray0
-            , S.p2
+            (List.map commandButton commands)
+        , H.p
+            [ A.css
+                [ S.textGray4
+                ]
+            ]
+            [ H.text "↑ ↓ choose · enter confirm"
             ]
         ]
-        [ H.text title
-        ]
+
+
+commandHtmlId : Command -> String
+commandHtmlId command =
+    "unit-command-" ++ Command.assetName command ++ "-" ++ String.replace " " "-" (Command.label command)
 
 
 commandButton : Command -> Html Msg
 commandButton command =
+    let
+        implemented : Bool
+        implemented =
+            Command.isImplemented command
+
+        title : String
+        title =
+            if implemented then
+                Command.label command
+
+            else
+                "not available yet"
+
+        styles : List Css.Style
+        styles =
+            if implemented then
+                commandRowStyles
+
+            else
+                commandRowStyles ++ [ Css.opacity (Css.num 0.45), Css.cursor Css.notAllowed ]
+    in
     H.button
-        [ A.type_ "button"
+        [ A.id (commandHtmlId command)
+        , A.type_ "button"
+        , A.disabled (not implemented)
+        , A.title title
         , Ev.onClick (CommandPicked command)
-        , A.css commandRowStyles
+        , Ev.custom "keydown" (navigationDecoder command)
+        , A.css styles
         ]
         [ commandIcon command
         , H.text (Command.label command)
         ]
 
 
-cancelFooter : Html Msg
-cancelFooter =
-    H.div
-        [ A.css
-            [ Css.borderTop3 (Css.px 1) Css.solid (Css.hex S.gray0Str)
-            , Css.paddingTop (Css.rem 0.25)
-            ]
-        ]
-        [ H.button
-            [ A.type_ "button"
-            , Ev.onClick CancelClicked
-            , A.css commandRowStyles
-            ]
-            [ H.span
-                [ A.attribute "aria-hidden" "true"
-                , A.css
-                    [ Css.width (Css.px 30)
-                    , Css.height (Css.px 30)
-                    , S.row
-                    , S.itemsCenter
-                    , S.justifyCenter
-                    , S.shrink0
-                    ]
-                ]
-                [ H.text "×"
-                ]
-            , H.text "cancel"
-            ]
-        ]
+navigationDecoder : Command -> Decode.Decoder { message : Msg, stopPropagation : Bool, preventDefault : Bool }
+navigationDecoder current =
+    let
+        fromKey : String -> Decode.Decoder { message : Msg, stopPropagation : Bool, preventDefault : Bool }
+        fromKey key =
+            case key of
+                "ArrowDown" ->
+                    Decode.succeed { message = ArrowedDownCommandMenu current, stopPropagation = True, preventDefault = True }
+
+                "ArrowUp" ->
+                    Decode.succeed { message = ArrowedUpCommandMenu current, stopPropagation = True, preventDefault = True }
+
+                _ ->
+                    Decode.fail "not command navigation"
+    in
+    Decode.field "key" Decode.string |> Decode.andThen fromKey
 
 
 commandRowStyles : List Css.Style

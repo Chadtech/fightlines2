@@ -204,8 +204,8 @@ toHtml config model =
                     ]
                 ]
 
-        unitView : Unit -> Svg Msg
-        unitView unit =
+        unitView : Unit -> Coordinate -> Svg Msg
+        unitView unit position =
             let
                 transform : String
                 transform =
@@ -215,17 +215,17 @@ toHtml config model =
                                 "translate(" ++ String.fromFloat (moving.position.x * 16) ++ " " ++ String.fromFloat (moving.position.y * 16) ++ ")"
 
                             else
-                                "translate(" ++ String.fromInt (unit.position.x * 16) ++ " " ++ String.fromInt (unit.position.y * 16) ++ ")"
+                                "translate(" ++ String.fromInt (position.x * 16) ++ " " ++ String.fromInt (position.y * 16) ++ ")"
 
                         Nothing ->
-                            "translate(" ++ String.fromInt (unit.position.x * 16) ++ " " ++ String.fromInt (unit.position.y * 16) ++ ")"
+                            "translate(" ++ String.fromInt (position.x * 16) ++ " " ++ String.fromInt (position.y * 16) ++ ")"
             in
             Svg.g
                 [ SA.transform transform
                 ]
                 [ UnitSprite.toSvg (AnimationFrame.unitColumn config.frame unit.id) unit
                     |> StyledSvg.toUnstyled
-                , UnitFacing.toSvg (config.selected == Just unit.position) unit
+                , UnitFacing.toSvg (config.selected == Just position) unit
                     |> StyledSvg.toUnstyled
                 , Svg.rect
                     [ SA.width "16"
@@ -442,6 +442,6 @@ toHtml config model =
             , HA.attribute "role" "group"
             , HA.attribute "aria-label" "supply point battlefield"
             ]
-            (terrain :: movementOverlay :: (List.map tileTarget positions ++ List.map depotView model.depots ++ List.map unitView model.units ++ selection))
+            (terrain :: movementOverlay :: (List.map tileTarget positions ++ List.map depotView model.depots ++ List.filterMap (\unit -> Unit.boardPosition unit |> Maybe.map (unitView unit)) model.units ++ selection))
             |> H.fromUnstyled
         ]

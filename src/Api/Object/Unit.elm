@@ -63,8 +63,13 @@ direction =
     Object.selectionForField "(Maybe Enum.Direction.Direction)" "direction" [] (Api.Enum.Direction.decoder |> Decode.nullable)
 
 
-position :
-    SelectionSet decodesTo Api.Object.Coordinate
+cargoCapacity : SelectionSet Int Api.Object.Unit
+cargoCapacity =
+    Object.selectionForField "Int" "cargoCapacity" [] Decode.int
+
+
+location :
+    SelectionSet decodesTo Api.Union.UnitLocation
     -> SelectionSet decodesTo Api.Object.Unit
-position object____ =
-    Object.selectionForCompositeField "position" [] object____ Basics.identity
+location object____ =
+    Object.selectionForCompositeField "location" [] object____ Basics.identity

@@ -20,6 +20,7 @@ import Coordinate exposing (Coordinate)
 import Direction
 import GameBoard exposing (GameBoard)
 import Graphql.SelectionSet as SS exposing (SelectionSet)
+import ListUtil
 import Point exposing (Point)
 import Unit exposing (Unit)
 import UnitId exposing (UnitId)
@@ -44,6 +45,8 @@ type alias Event =
     , unitId : UnitId
     , path : List Coordinate
     , initialDirection : Maybe Direction
+    , initialCarrier : Maybe UnitId
+    , carrierId : Maybe UnitId
     }
 
 
@@ -62,7 +65,13 @@ selection =
 
         event : SelectionSet Event Api.Object.TurnEvent
         event =
-            SS.map4 Event EventApi.kind (EventApi.unitId |> SS.mapOrFail UnitId.parse) (EventApi.path coordinate) EventApi.initialDirection
+            SS.map6 Event
+                EventApi.kind
+                (EventApi.unitId |> SS.mapOrFail UnitId.parse)
+                (EventApi.path coordinate)
+                EventApi.initialDirection
+                (EventApi.initialCarrier |> SS.mapOrFail parseOptionalId)
+                (EventApi.carrierId |> SS.mapOrFail parseOptionalId)
     in
     SS.map4 Snapshot
         GameApi.turnNumber
@@ -73,8 +82,24 @@ selection =
 
 start : Snapshot -> Maybe Playback
 start snapshot =
+    let
+        plays : Event -> Bool
+        plays event =
+            case event.kind of
+                EventKind.Move ->
+                    True
+
+                EventKind.Load ->
+                    True
+
+                EventKind.Unload ->
+                    True
+
+                _ ->
+                    False
+    in
     snapshot.resolution
-        |> Maybe.map (\resolution -> { events = List.filter (\event -> event.kind == EventKind.Move) resolution.events, elapsed = 0 })
+        |> Maybe.map (\resolution -> { events = List.filter plays resolution.events, elapsed = 0 })
         |> Maybe.andThen nonempty
 
 
@@ -93,11 +118,17 @@ rewind snapshot board =
         resetUnit : Unit -> Unit
         resetUnit unit =
             snapshot.resolution
-                |> Maybe.andThen (\resolution -> List.filter (\event -> event.unitId == unit.id) resolution.events |> List.head)
+                |> Maybe.andThen (\resolution -> ListUtil.find (\event -> event.unitId == unit.id) resolution.events)
                 |> Maybe.map
                     (\event ->
                         { unit
-                            | position = List.head event.path |> Maybe.withDefault unit.position
+                            | location =
+                                case event.initialCarrier of
+                                    Just carrier ->
+                                        Unit.Aboard carrier
+
+                                    Nothing ->
+                                        List.head event.path |> Maybe.map Unit.OnMap |> Maybe.withDefault unit.location
                             , direction = event.initialDirection
                         }
                     )
@@ -128,10 +159,19 @@ tick delta playback board =
                 finishUnit unit =
                     if unit.id == event.unitId then
                         { unit
-                            | position =
-                                List.reverse event.path
-                                    |> List.head
-                                    |> Maybe.withDefault unit.position
+                            | location =
+                                case event.kind of
+                                    EventKind.Load ->
+                                        event.carrierId |> Maybe.map Unit.Aboard |> Maybe.withDefault unit.location
+
+                                    EventKind.Hold ->
+                                        unit.location
+
+                                    EventKind.DestinationConflict ->
+                                        unit.location
+
+                                    _ ->
+                                        List.reverse event.path |> List.head |> Maybe.map Unit.OnMap |> Maybe.withDefault unit.location
                             , direction = Direction.alongPath event.path unit.direction
                         }
 
@@ -203,3 +243,13 @@ movingPosition playback =
                             Nothing
     in
     Maybe.andThen position playback
+
+
+parseOptionalId : Maybe String -> Result String (Maybe UnitId)
+parseOptionalId value =
+    case value of
+        Nothing ->
+            Ok Nothing
+
+        Just id ->
+            UnitId.parse id |> Result.map Just

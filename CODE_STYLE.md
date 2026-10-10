@@ -33,6 +33,9 @@ prototype; do not update it unless the task explicitly requires that.
   documentation, including half-points, pixels, milliseconds, and atlas indices.
 - Capitalize acronyms like ordinary words in names we control: `Html`, `Ai`,
   and `Id`, rather than `HTML`, `AI`, and `ID`.
+- Name HTML element identifiers explicitly with `HtmlId` (Elm) or `html_id`
+  (Rust), such as `commandHtmlId` and `htmlId`, to distinguish them from
+  server and domain identifiers.
 - Extract helpers when they clarify a concept or remove meaningful duplication;
   keep helpers near their callers and expose only what other modules need.
 - Give domain concepts their own modules when they need controlled APIs. Keep

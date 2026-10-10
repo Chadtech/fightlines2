@@ -43,7 +43,8 @@ side ownership, and units with stable typed IDs, kinds, sides, positions, and op
 four-way `Direction` values. Supply trucks have no direction.
 Hit points, supplies and vehicle fuel are authoritative. Combat and victory resolution remain future work.
 Starting requires exactly two players and initializes the scenario once before
-consuming the lobby. The host owns West and the second player East. Repeated
+consuming the lobby. The host is `Player1` and the second player is `Player2`. Player ownership is
+independent of map position; the current scenario and lobby still require two players. Repeated
 start requests return the existing game. Joining is capped at two players,
 while reconnecting members can rejoin a full lobby.
 
@@ -56,7 +57,7 @@ With the explicit `--dev-game` server flag, `Store::development` seeds one
 started game at ID `00000000000000000000000000000000`, using the current
 `MapType` scenario and two dummy players. It uses the ordinary `/game/<id>`
 route, game query and page. Only this fixture has
-`GameAccess::DevelopmentPreview`: its game query previews the host/West without
+`GameAccess::DevelopmentPreview`: its game query previews the host/Player1 without
 requiring or setting a session cookie. Normal games retain member authorization.
 The fixture resets on restart and does not consume the normal token seed.
 
@@ -160,14 +161,13 @@ functions fix the operation's argument and result scopes; Elm compilation
 catches callers incompatible with a regenerated schema. The current server uses
 synchronous resolvers for its in-memory operations.
 
-`UnitCommand` owns the command vocabulary and per-kind menu availability.
-`GamePage` owns selection as either a unit ID with open/closed command-menu state or
-a tile coordinate. `View.UnitCommands` renders only open menus and exposes its own
-messages, mapped through `GamePage`. Cancel closes the menu and preserves saved
-movement drafts. Picking move immediately initializes its preview and reachability
-options; picking hold immediately saves a hold order. Both close the menu, and
-orders remain editable until submission. Unimplemented choices are inert and
-never change drafts.
+`UnitCommand` owns the command vocabulary and per-unit availability.
+`GamePage` owns unit or tile selection, path previews and saved orders.
+`View.UnitCommands` renders the side-panel command list and emits command choices
+and arrow-key events. `GamePage.update` chooses the adjacent enabled command,
+wrapping at the ends, and `Effect.focus` uses Elm's DOM API to focus its HTML ID. Up/Down is handled within command buttons without reaching page-level
+map panning. Commands, destination planning and a saved order are mutually
+exclusive panel views derived from `GamePage` state.
 
 `GamePage` owns unit/tile selection and an explicit four-state `AnimationFrame`.
 Board data types live in `Coordinate`, `TerrainFeature`, `Map`, `Depot`, `Unit`
@@ -203,15 +203,15 @@ squares, and the live path preview while preserving saved move drafts. The page
 stores the active dialog as `Maybe Dialog`; `EscapePressed` dismisses an open
 dialog before clearing board selection.
 `View.GameBoard` renders raster sprite-sheet cells in nested SVG viewports;
-terrain, depots, units, and an inset SVG selection square are separate layers. Eastern
-infantry, tanks and field guns initially face west and western ones east. Supply
+terrain, depots, units, and an inset SVG selection square are separate layers. Player 2's
+infantry, tanks and field guns initially face west and player 1's east. Supply
 trucks have no direction or facing marker. Movement updates stored direction
 from the last traversed path edge; holds and conflicts preserve it. `View.UnitFacing` overlays inset edge markers
 using each unit's direction, with selected-unit color and a synchronized
 two-second opacity pulse. Component-owned styles keep the markers steady for
 reduced-motion preferences. Markers do not receive pointer events or appear in
-status portraits. Side-profile artwork uses `Side`: western units face right and
-eastern units are mirrored left. The marker represents the unit's independent
+status portraits. Side-profile artwork uses `Side`: player 1 units face right and
+player 2 units are mirrored left. The marker represents the unit's independent
 four-way direction.
 Explicit turning orders remain future work.
 SVG events send typed unit IDs and coordinates
@@ -285,7 +285,7 @@ square. Future impassable terrain can omit its cost entry.
 
 `Movement.elm` calculates cheapest four-direction paths from those rules and
 the current board. Allied units allow passage, while enemy units block travel. Occupied unit
-squares cannot be destinations; depots do not block travel. `GamePage` calculates options only after the move command is chosen and retains
+squares cannot be destinations except for compatible truck loading; depots do not block travel. `GamePage` calculates options only after the move command is chosen and retains
 one editable local draft per unit owned by the viewer, plus a separate live path
 preview. Hovering extends that preview from its tip without replacing its prefix;
 mouse-event gaps use the cheapest connector within the remaining budget, with
@@ -396,6 +396,44 @@ final observed position; own paths are retained. Stored units and authoritative
 movement validation still use the complete board. `GamePage` stores the mask
 and refreshes it on resolved turns; `View.GameBoard` darkens and desaturates unseen terrain and known depots
 with the same image filter, preserving artwork detail and crisp tile boundaries. Playback uses the resolved turn's sight mask.
+
+## Unit transport
+
+Rust `Location` and Elm `Unit.Location` distinguish `OnMap Coordinate` from
+`Aboard UnitId`. A passenger stores only its carrier ID, retaining its own
+resources and direction. GraphQL exposes `Unit.location` as a union: `OnMap`
+contains `position`, and `Aboard` contains `carrierId`. Snapshot selections decode
+that union directly into the Elm type. `cargoCapacity` exposes the authoritative
+two-unit capacity for trucks (zero for other kinds).
+
+`board_position` / `Unit.boardPosition` return a coordinate only for units on the
+map. Occupancy, sight, selection markers and independent board sprites use this
+meaning. `Scenario.physical_position` / `Unit.physicalPosition` resolve a
+passenger through its carrier for hold paths and unloading. Missing carriers and
+carriers that are themselves aboard return no position. Moving a truck needs no
+passenger synchronization. Loading changes a passenger to `Aboard`; unloading
+changes it to `OnMap`. Own cargo remains in snapshots for inspection and unload
+planning; enemy cargo is withheld.
+
+Paths ending on compatible allies load at their destination. Validation checks
+the receiving unit holds and counts existing plus incoming cargo, allowing two
+boarding paths to share a truck destination. Paths for carried units are holds
+or one-edge unloads onto empty squares; unloading requires the truck to hold.
+The submission still includes every unit, with Elm filling passenger holds
+without counting them as missing orders. Riding consumes only turn upkeep.
+
+`GamePage` offers loading squares with movement destinations and saves the
+receiving unit's hold alongside a loading or unloading draft. It reserves
+remaining berths across drafts and prevents moving a receiver while its loading
+or unloading drafts exist. The truck's status panel exposes cargo buttons;
+carried-unit commands offer unload and hold. `Movement.elm` bounds unloading and
+traced extensions to one edge while retaining terrain and resource limits.
+
+Resolution emits ordinary movement followed by explicit `Load` events; `Unload`
+events walk a passenger onto the board. Event initial carrier IDs restore cargo
+when rewinding, and load carrier IDs identify the truck. Playback applies those
+events as location transitions; riding positions are derived from the truck.
+Supply delivery cargo remains future work.
 
 ## Unit hit points
 

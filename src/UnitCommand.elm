@@ -6,39 +6,48 @@ module UnitCommand exposing
     , label
     )
 
-import Api.Enum.UnitKind as Kind exposing (UnitKind)
+import Api.Enum.UnitKind as Kind
+import Unit exposing (Unit)
 
 
 type Command
     = StandGround
     | HoldPosition
     | Move
+    | Unload
     | AttackMove
     | IndirectFire
     | DigIn
     | Ambush
 
 
-available : UnitKind -> List Command
-available kind =
-    case kind of
-        Kind.Infantry ->
-            [ StandGround, HoldPosition, Move, AttackMove, DigIn ]
+available : Unit -> List Command
+available unit =
+    if Unit.carrierId unit /= Nothing then
+        [ Unload, HoldPosition ]
 
-        Kind.Tank ->
-            [ StandGround, HoldPosition, Move, AttackMove ]
+    else
+        case unit.kind of
+            Kind.Infantry ->
+                [ Move, HoldPosition, StandGround, AttackMove, DigIn ]
 
-        Kind.SupplyTruck ->
-            [ Move, HoldPosition ]
+            Kind.Tank ->
+                [ Move, HoldPosition, StandGround, AttackMove ]
 
-        Kind.FieldGun ->
-            [ HoldPosition, Move, IndirectFire, DigIn, Ambush ]
+            Kind.SupplyTruck ->
+                [ Move, HoldPosition ]
+
+            Kind.FieldGun ->
+                [ Move, HoldPosition, IndirectFire, DigIn, Ambush ]
 
 
 isImplemented : Command -> Bool
 isImplemented command =
     case command of
         Move ->
+            True
+
+        Unload ->
             True
 
         HoldPosition ->
@@ -51,6 +60,9 @@ isImplemented command =
 label : Command -> String
 label command =
     case command of
+        Unload ->
+            "unload"
+
         StandGround ->
             "stand ground"
 
@@ -76,6 +88,9 @@ label command =
 assetName : Command -> String
 assetName command =
     case command of
+        Unload ->
+            "move"
+
         StandGround ->
             "stand-ground"
 

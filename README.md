@@ -38,12 +38,12 @@ The initial map type is **supply point**. Joined players see the selected map;
 only the host can change it before starting. The game retains that selection.
 The scenario is a 17 x 17 grass map with mirrored starting forces, 60 forest tiles, and 42 hill tiles,
 three supply depots (one per side and a neutral depot at the exact center), and three infantry,
-one tank, two field guns, and two supply trucks per player. The host takes the red western side; the second
-player takes the blue eastern side. Click a unit or depot to inspect it; units
+one tank, two field guns, and two supply trucks per player. The host is player 1 with red units; the second
+player is player 2 with blue units. Click a unit or depot to inspect it; units
 and depots can also be selected with Tab and Enter/Space. Drag the battlefield
 with the primary mouse button to pan; scroll to zoom around the cursor. The right-side
 panel has selection details and unit actions; the bottom-left control panel has
-pan arrows, zoom and reset controls. Arrow keys pan anywhere on the game page.
+pan arrows, zoom and reset controls. Arrow keys pan the map outside the command list.
 With the battlefield focused, plus/minus zoom and Home resets the view. Dragging does not select a tile.
 The panel remains fixed while the board moves. Terrain uses detailed 80s anime
 illustrations, with a grass tile in every square, defined hill ridges and tree
@@ -67,21 +67,36 @@ squares. Click a highlighted square to save a move. Hover across squares to prev
 the line to shorten it. Skipped squares connect from the current path tip within
 the remaining budget. If the traced route exceeds the budget, an affordable
 route from the unit is chosen when one exists. Saving stops hover previews and hides reachable-square highlights.
-Reselect the unit and choose **move** to trace a different route, or use
-**clear move** to remove the saved plan. Reachable squares support Tab and Enter/Space.
+Select the unit and choose **revoke order** to remove the saved plan and
+return to the commands. Choose **move** to trace a new route. Reachable squares support Tab and Enter/Space.
 Press Escape or click the selected unit to leave movement selection. Paths remain visible when
 switching units. Unsubmitted plans are local drafts and disappear on refresh.
 Units can travel through allied units; enemies block travel, and occupied
-squares cannot be destinations. A saved move reserves its destination so other
+squares cannot be destinations except when loading a truck. A saved move reserves its destination so other
 units cannot choose it; changing or clearing the move frees that square. Routes
 can pass through reserved destinations. Depots are passable.
-The unit status panel shows the selected unit's illustration, name, and side,
+The selection panel shows the selected unit's illustration, name, and side,
 with expandable unit and gauge explanations. Every unit starts with 16/16 hit points, supplied by the server. Damage and healing are not implemented yet. Tanks and supply trucks start with 64/64 fuel. Each
 successfully traversed tile costs 1 fuel, independently of terrain movement
 costs. Holds and destination conflicts consume none. At the end of resolution,
 vehicles on their own starting depot refill to 64; neutral and enemy depots do
 not refuel them. Movement previews and submitted paths must fit both remaining
 fuel and the per-turn movement budget.
+
+Trucks carry up to two allied infantry or field guns; tanks cannot board.
+Loading is part of a move: move a truck onto a waiting unit, or move a unit onto
+a waiting truck. Compatible occupied squares appear alongside ordinary movement
+choices. Loading happens only at the destination, after paying the moving unit's
+usual movement costs. The receiving unit gets a hold order automatically. Two
+units may board the same holding truck in one turn when it has room. Clear the
+loading move before changing the receiving unit's order.
+Passengers disappear from the board and travel with the truck. They still pay
+turn upkeep but spend no walking supplies while riding, grant no sight, and need
+no separate hold order. Select a truck to see its cargo count and select a
+passenger from its cargo buttons. Choose **unload**, then an empty adjacent square;
+unloading uses the passenger's normal terrain and supply costs and makes the
+truck hold. Both passengers may unload onto different squares in the same turn.
+Enemy passengers are concealed. Unit transport is separate from supply delivery.
 
 Sight is shared by all units on your side. Infantry and field guns see 4 tiles,
 supply trucks 3, and tanks 2, using a circular radius measured between tile
@@ -101,22 +116,21 @@ also spend 1 supply per successfully traversed tile; tanks and trucks use fuel
 for movement instead. Movement reserves the turn's upkeep before spending
 supplies. A walking unit with 1 or fewer supplies can hold but cannot move.
 Supplies stop at zero; starvation damage is not implemented. Depots do not
-replenish supplies yet. These provisions belong to the unit; truck cargo
-and supply delivery remain future work.
+replenish supplies yet. These provisions belong to the unit; supply cargo
+and supply delivery remain future work. Trucks can now carry units.
 
-Selecting your own unit while planning opens an anchored menu with illustrated
-command icons. Options and the separated cancel footer are flat until hovered
-or keyboard-focused. Cancel closes
-the menu without changing saved orders; click the unit again to reopen it.
-Picking a command applies it immediately and closes the menu. Orders remain editable
+The full-height right panel stays in place when selection clears. Its main area
+is empty until a unit, depot or tile is selected, with a quiet inspection hint at
+its lower edge. Selected units show their name and side, inset portrait, gauges,
+and illustrated commands in the panel; there is no command popup on the board.
+Move (or unload for a carried unit) and hold position appear first. Tab into the
+command list, use Up/Down to cycle available commands, and Enter or Space to
+choose. These arrows do not pan the map. Unimplemented commands are disabled.
+Choosing move opens destination planning; **back to commands** cancels that
+preview. Choosing hold position or saving a destination replaces the command
+list with the chosen order and **revoke order**. Revoking returns to the commands.
+Escape clears selection without removing saved orders. Orders remain editable
 until the turn is submitted.
-Infantry offers stand ground, hold position, move, attack move and dig in;
-tanks offer stand ground, hold position, move and attack move; trucks offer move
-and hold position; field guns offer hold position, move, indirect fire, dig in
-and ambush. Ambush uses a camouflaged field-gun illustration.
-Choosing move opens destination planning, and choosing hold position saves
-a hold order. The other commands are visible placeholders and do nothing when clicked;
-their authoritative rules are not implemented yet.
 
 The fixed-size bottom-left control panel sits flush with the screen edges, with
 a large **submit turn** button on the left, the turn number and readiness beside
@@ -131,7 +145,7 @@ then opens planning with empty drafts. Refresh during playback shows the complet
 board. Paths may cross without combat; opposing units choosing the same destination
 both hold their starting positions, with a message in the right-side panel. Destination
 occupancy is validated against the starting board, so moving into another unit's
-starting square is not yet allowed, even if that unit plans to leave.
+starting square is not yet allowed, even if that unit plans to leave, except for loading.
 
 New players cannot join after a game starts. All lobbies and games disappear
 when the server restarts.
@@ -141,7 +155,7 @@ when the server restarts.
 For a ready-to-view test game, run `make dev` and open
 [http://127.0.0.1:8080/game/00000000000000000000000000000000](http://127.0.0.1:8080/game/00000000000000000000000000000000).
 This seeds the current Supply Point scenario with two dummy players and previews
-the western player without creating a lobby, joining, or changing your identity
+player 1 without creating a lobby, joining, or changing your identity
 cookie. Refresh or bookmark that URL as you work. Restart the server to reset
 the fixture and load scenario changes. Stop an existing server before switching
 from `make run` to `make dev`.

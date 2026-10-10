@@ -5,6 +5,8 @@ module LobbyId exposing
     , toString
     )
 
+import ListUtil
+
 
 type LobbyId
     = LobbyId String
@@ -16,7 +18,7 @@ fromString value =
         Err ("Invalid lobby ID: expected 32 characters, got " ++ String.fromInt (String.length value) ++ ".")
 
     else
-        case String.toList value |> List.filter (\char -> not (String.contains (String.fromChar char) "0123456789abcdef")) |> List.head of
+        case String.toList value |> ListUtil.find (\char -> not (String.contains (String.fromChar char) "0123456789abcdef")) of
             Just char ->
                 Err ("Invalid lobby ID: invalid character '" ++ String.fromChar char ++ "'; expected lowercase hexadecimal characters (0-9, a-f).")
 

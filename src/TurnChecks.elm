@@ -9,6 +9,7 @@ import Direction
 import GameBoard exposing (GameBoard)
 import Platform
 import Turn
+import Unit
 import UnitId exposing (UnitId)
 
 
@@ -28,7 +29,7 @@ checks : List String
 checks =
     case ( UnitId.parse "1", UnitId.parse "2" ) of
         ( Ok first, Ok second ) ->
-            playbackChecks first second ++ truckPlaybackChecks first
+            playbackChecks first second ++ truckPlaybackChecks first ++ transportPlaybackChecks first second
 
         _ ->
             [ "could not construct fixture IDs" ]
@@ -42,8 +43,8 @@ playbackChecks first second =
             { map = { width = 3, height = 3, baseTile = Terrain.GrassPlain, features = [] }
             , depots = []
             , units =
-                [ { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = first, side = Side.West, direction = Just Direction.East, kind = Kind.Infantry, position = { x = 1, y = 0 } }
-                , { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = second, side = Side.East, direction = Just Direction.West, kind = Kind.Infantry, position = { x = 1, y = 1 } }
+                [ { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = first, side = Side.Player1, direction = Just Direction.East, kind = Kind.Infantry, location = Unit.OnMap { x = 1, y = 0 } }
+                , { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = second, side = Side.Player2, direction = Just Direction.West, kind = Kind.Infantry, location = Unit.OnMap { x = 1, y = 1 } }
                 ]
             }
 
@@ -56,8 +57,8 @@ playbackChecks first second =
                 Just
                     { number = 1
                     , events =
-                        [ { kind = EventKind.Move, initialDirection = Just Direction.South, unitId = first, path = [ { x = 0, y = 0 }, { x = 1, y = 0 } ] }
-                        , { kind = EventKind.Move, initialDirection = Just Direction.North, unitId = second, path = [ { x = 2, y = 1 }, { x = 1, y = 1 } ] }
+                        [ { initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialDirection = Just Direction.South, unitId = first, path = [ { x = 0, y = 0 }, { x = 1, y = 0 } ] }
+                        , { initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialDirection = Just Direction.North, unitId = second, path = [ { x = 2, y = 1 }, { x = 1, y = 1 } ] }
                         ]
                     }
             }
@@ -85,7 +86,7 @@ playbackChecks first second =
 
         cornerPlayback : Turn.Playback
         cornerPlayback =
-            { events = [ { kind = EventKind.Move, unitId = first, initialDirection = Just Direction.West, path = cornerPath } ]
+            { events = [ { initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, unitId = first, initialDirection = Just Direction.West, path = cornerPath } ]
             , elapsed = 0
             }
 
@@ -104,9 +105,9 @@ playbackChecks first second =
                 [ name ]
     in
     List.concat
-        [ expect "rewind restores the event origins" (List.map .position rewound.units == [ { x = 0, y = 0 }, { x = 2, y = 1 } ])
+        [ expect "rewind restores the event origins" (List.map Unit.boardPosition rewound.units == [ Just { x = 0, y = 0 }, Just { x = 2, y = 1 } ])
         , expect "halfway position interpolates the first unit only" (Turn.movingPosition halfway == Just { unitId = first, position = { x = 0.5, y = 0 } })
-        , expect "animation never mutates authoritative cell positions mid-edge" (List.map .position halfwayBoard.units == List.map .position rewound.units)
+        , expect "animation never mutates authoritative cell positions mid-edge" (List.map Unit.boardPosition halfwayBoard.units == List.map Unit.boardPosition rewound.units)
         , expect "second event starts after the first finishes" (Turn.movingPosition next == Just { unitId = second, position = { x = 2, y = 1 } })
         , expect "rewind restores initial facing" (List.map .direction rewound.units == [ Just Direction.South, Just Direction.North ])
         , expect "moving unit turns while waiting unit keeps its facing" (List.map .direction halfwayBoard.units == [ Just Direction.East, Just Direction.North ])
@@ -129,7 +130,7 @@ truckPlaybackChecks unitId =
         board =
             { map = { width = 3, height = 3, baseTile = Terrain.GrassPlain, features = [] }
             , depots = []
-            , units = [ { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 15, maximum = 64 }, id = unitId, side = Side.West, direction = Nothing, kind = Kind.SupplyTruck, position = { x = 1, y = 1 } } ]
+            , units = [ { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 15, maximum = 64 }, id = unitId, side = Side.Player1, direction = Nothing, kind = Kind.SupplyTruck, location = Unit.OnMap { x = 1, y = 1 } } ]
             }
 
         snapshot : Turn.Snapshot
@@ -137,7 +138,7 @@ truckPlaybackChecks unitId =
             { number = 2
             , submitted = False
             , opponentSubmitted = False
-            , resolution = Just { number = 1, events = [ { kind = EventKind.Move, initialDirection = Nothing, unitId = unitId, path = [ { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 1, y = 1 } ] } ] }
+            , resolution = Just { number = 1, events = [ { initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialDirection = Nothing, unitId = unitId, path = [ { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 1, y = 1 } ] } ] }
             }
 
         rewound : GameBoard
@@ -163,3 +164,104 @@ truckPlaybackChecks unitId =
 
     else
         [ "truck playback must move without acquiring a direction" ]
+
+
+transportPlaybackChecks : UnitId -> UnitId -> List String
+transportPlaybackChecks passengerId truckId =
+    let
+        truck : Unit.Unit
+        truck =
+            { id = truckId
+            , side = Side.Player1
+            , kind = Kind.SupplyTruck
+            , direction = Nothing
+            , hitPoints = { current = 16, maximum = 16 }
+            , supplies = { current = 62, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }
+            , fuel = Just { current = 63, maximum = 64 }
+            , cargoCapacity = 2
+            , location = Unit.OnMap { x = 1, y = 0 }
+            }
+
+        passenger : Unit.Unit
+        passenger =
+            { truck | id = passengerId, kind = Kind.Infantry, direction = Just Direction.East, fuel = Nothing, cargoCapacity = 0, location = Unit.Aboard truckId }
+
+        board : GameBoard
+        board =
+            { map = { width = 3, height = 3, baseTile = Terrain.GrassPlain, features = [] }, depots = [], units = [ passenger, truck ] }
+
+        event : Turn.Event
+        event =
+            { kind = EventKind.Move, unitId = truckId, path = [ { x = 0, y = 0 }, { x = 1, y = 0 } ], initialDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing }
+
+        loading : Turn.Snapshot
+        loading =
+            { number = 2
+            , submitted = False
+            , opponentSubmitted = False
+            , resolution =
+                Just
+                    { number = 1
+                    , events =
+                        [ { event | unitId = passengerId, kind = EventKind.Hold, path = [ { x = 1, y = 0 } ], initialDirection = passenger.direction }
+                        , event
+                        , { event | unitId = passengerId, kind = EventKind.Load, path = [ { x = 1, y = 0 } ], carrierId = Just truckId, initialDirection = passenger.direction }
+                        ]
+                    }
+            }
+
+        rewound : GameBoard
+        rewound =
+            Turn.rewind loading board
+
+        afterMovement : GameBoard
+        afterMovement =
+            Turn.start loading |> Maybe.map (\playback -> Turn.tick 180 playback rewound |> Tuple.second) |> Maybe.withDefault rewound
+
+        afterLoading : GameBoard
+        afterLoading =
+            Turn.start loading
+                |> Maybe.andThen (\playback -> Turn.tick 180 playback rewound |> Tuple.first)
+                |> Maybe.map (\playback -> Turn.tick 1 playback afterMovement |> Tuple.second)
+                |> Maybe.withDefault afterMovement
+
+        unloading : Turn.Snapshot
+        unloading =
+            { loading | resolution = Just { number = 1, events = [ { event | kind = EventKind.Unload, unitId = passengerId, path = [ { x = 1, y = 0 }, { x = 2, y = 0 } ], initialCarrier = Just truckId, initialDirection = passenger.direction } ] } }
+
+        unloadBoard : GameBoard
+        unloadBoard =
+            { board | units = [ { passenger | location = Unit.OnMap { x = 2, y = 0 } }, truck ] }
+
+        unloadRewound : GameBoard
+        unloadRewound =
+            Turn.rewind unloading unloadBoard
+
+        afterUnloading : GameBoard
+        afterUnloading =
+            Turn.start unloading |> Maybe.map (\playback -> Turn.tick 180 playback unloadRewound |> Tuple.second) |> Maybe.withDefault unloadRewound
+
+        riding : GameBoard
+        riding =
+            Turn.tick 180 { events = [ event ], elapsed = 0 } { board | units = [ passenger, { truck | location = Unit.OnMap { x = 0, y = 0 } } ] } |> Tuple.second
+    in
+    List.concat
+        [ transportExpect "loading rewind restores passengers to the board" (List.map Unit.carrierId rewound.units == [ Nothing, Nothing ])
+        , transportExpect "load event attaches cargo after movement" (afterLoading == board)
+        , transportExpect "riding passengers follow their truck" (riding == board)
+        , transportExpect "unload rewind restores cargo" (unloadRewound == board)
+        , transportExpect "unload event puts passenger on the board" (afterUnloading == unloadBoard)
+        , transportExpect "passengers have no board position" (Unit.boardPosition passenger == Nothing)
+        , transportExpect "riding position derives from the moved truck" (Unit.physicalPosition riding.units passenger == Just { x = 1, y = 0 })
+        , transportExpect "missing carriers have no physical position" (Unit.physicalPosition [ passenger ] passenger == Nothing)
+        , transportExpect "aboard carriers have no physical position" (Unit.physicalPosition [ passenger, { truck | location = Unit.Aboard passengerId } ] passenger == Nothing)
+        ]
+
+
+transportExpect : String -> Bool -> List String
+transportExpect name valid =
+    if valid then
+        []
+
+    else
+        [ name ]

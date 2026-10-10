@@ -7,6 +7,7 @@ import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Coordinate exposing (Coordinate)
 import GameBoard
 import Json.Decode as D
+import ListUtil
 import Movement
 import Platform
 import TerrainFeature
@@ -75,7 +76,8 @@ check rules fixture =
 
                 unit : Unit.Unit
                 unit =
-                    { hitPoints = { current = 16, maximum = 16 }
+                    { cargoCapacity = 0
+                    , hitPoints = { current = 16, maximum = 16 }
                     , supplies =
                         { current = 64
                         , maximum = 64
@@ -90,8 +92,8 @@ check rules fixture =
                     , fuel = fuel
                     , id = id
                     , kind = fixture.kind
-                    , position = fixture.origin
-                    , side = Side.West
+                    , location = Unit.OnMap fixture.origin
+                    , side = Side.Player1
                     , direction = Just Direction.East
                     }
 
@@ -125,7 +127,7 @@ check rules fixture =
                 board : GameBoard.GameBoard
                 board =
                     { map = { width = rows |> List.head |> Maybe.map String.length |> Maybe.withDefault 0, height = List.length rows, baseTile = Terrain.GrassPlain, features = features }
-                    , units = unit :: (List.map (\position -> { unit | position = position, side = Side.East }) fixture.occupied ++ List.map (\position -> { unit | position = position }) fixture.allies)
+                    , units = unit :: (List.map (\position -> { unit | location = Unit.OnMap position, side = Side.Player2 }) fixture.occupied ++ List.map (\position -> { unit | location = Unit.OnMap position }) fixture.allies)
                     , depots = []
                     }
 
@@ -146,7 +148,7 @@ check rules fixture =
 
                         entryCost : Coordinate -> Int
                         entryCost position =
-                            features |> List.filter (\feature -> feature.position == position) |> List.head |> Maybe.andThen (\feature -> rules |> List.filter (\rule -> rule.kind == fixture.kind) |> List.head |> Maybe.andThen (\rule -> rule.terrainCosts |> List.filter (\entry -> entry.terrain == feature.terrain) |> List.head |> Maybe.map .cost)) |> Maybe.withDefault 1000
+                            features |> ListUtil.find (\feature -> feature.position == position) |> Maybe.andThen (\feature -> rules |> ListUtil.find (\rule -> rule.kind == fixture.kind) |> Maybe.andThen (\rule -> rule.terrainCosts |> ListUtil.find (\entry -> entry.terrain == feature.terrain) |> Maybe.map .cost)) |> Maybe.withDefault 1000
                     in
                     List.head option.path
                         == Just fixture.origin
@@ -178,7 +180,7 @@ traceChecks rules =
 
                 unit : Unit.Unit
                 unit =
-                    { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = id, kind = UnitKind.Infantry, position = origin, side = Side.West, direction = Just Direction.East }
+                    { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = id, kind = UnitKind.Infantry, location = Unit.OnMap origin, side = Side.Player1, direction = Just Direction.East }
 
                 board : GameBoard.GameBoard
                 board =
@@ -201,7 +203,7 @@ traceChecks rules =
 
                 traced : Maybe Movement.Option
                 traced =
-                    Just (Movement.start unit)
+                    Just (Movement.start origin)
                         |> Maybe.andThen (\path -> Movement.trace rules board unit path down)
                         |> Maybe.andThen (\path -> Movement.trace rules board unit path right)
 
@@ -225,7 +227,7 @@ traceChecks rules =
                 , test "hovering the tip leaves the path unchanged"
                     (traceFrom right == traced)
                 , test "returning to origin resets the path"
-                    (traceFrom origin == Just (Movement.start unit))
+                    (traceFrom origin == Just (Movement.start origin))
                 , test "over-budget extension is rejected without rerouting"
                     (traceFrom { x = 3, y = 0 } == Nothing)
                 , test "preview reroutes an over-budget detour to an affordable destination"
@@ -239,28 +241,28 @@ traceChecks rules =
                 , test "preview still rejects destinations beyond the full budget"
                     (traced |> Maybe.andThen (\path -> Movement.preview rules board unit path { x = 3, y = 3 }) |> (==) Nothing)
                 , test "skipped cells extend the existing prefix"
-                    (Movement.trace rules board unit (Movement.start unit) { x = 0, y = 2 }
+                    (Movement.trace rules board unit (Movement.start origin) { x = 0, y = 2 }
                         |> Maybe.map (\path -> path.path == [ origin, down, { x = 0, y = 2 } ] && path.cost == 4)
                         |> Maybe.withDefault False
                     )
                 , test "enemy cells reject extension"
-                    (Movement.trace rules { board | units = [ unit, { unit | position = down, side = Side.East } ] } unit (Movement.start unit) down == Nothing)
+                    (Movement.trace rules { board | units = [ unit, { unit | location = Unit.OnMap down, side = Side.Player2 } ] } unit (Movement.start origin) down == Nothing)
                 , test "allied squares can be traced through but cannot be destinations"
                     (let
                         alliedBoard : GameBoard.GameBoard
                         alliedBoard =
-                            { board | units = [ unit, { unit | position = down } ] }
+                            { board | units = [ unit, { unit | location = Unit.OnMap down } ] }
                      in
-                     Movement.trace rules alliedBoard unit (Movement.start unit) down
+                     Movement.trace rules alliedBoard unit (Movement.start origin) down
                         |> Maybe.andThen
                             (\path ->
-                                if Movement.canStop [] alliedBoard path then
+                                if Movement.canStop [] alliedBoard unit path then
                                     Nothing
 
                                 else
                                     Movement.trace rules alliedBoard unit path { x = 0, y = 2 }
                             )
-                        |> Maybe.map (\path -> path.path == [ origin, down, { x = 0, y = 2 } ] && path.cost == 4 && Movement.canStop [] alliedBoard path)
+                        |> Maybe.map (\path -> path.path == [ origin, down, { x = 0, y = 2 } ] && path.cost == 4 && Movement.canStop [] alliedBoard unit path)
                         |> Maybe.withDefault False
                     )
                 , test "fractional terrain cost is refunded on backtracking"
@@ -269,7 +271,7 @@ traceChecks rules =
                         roughBoard =
                             { board | map = { width = 4, height = 4, baseTile = Terrain.GrassPlain, features = [ { position = down, terrain = Terrain.Hills } ] } }
                      in
-                     Movement.trace rules roughBoard unit (Movement.start unit) down
+                     Movement.trace rules roughBoard unit (Movement.start origin) down
                         |> Maybe.andThen
                             (\path ->
                                 if path.cost == 3 then
@@ -294,7 +296,7 @@ reservationChecks rules =
             let
                 unit : Unit.Unit
                 unit =
-                    { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = id, kind = UnitKind.Infantry, position = { x = 0, y = 0 }, side = Side.West, direction = Just Direction.East }
+                    { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = id, kind = UnitKind.Infantry, location = Unit.OnMap { x = 0, y = 0 }, side = Side.Player1, direction = Just Direction.East }
 
                 board : GameBoard.GameBoard
                 board =
@@ -327,12 +329,12 @@ reservationChecks rules =
                 [ test "reserved destinations are excluded from movement choices"
                     (not (List.any (\option -> option.destination == reserved) options))
                 , test "reserved destinations reject saving a traced route"
-                    (Movement.trace rules board unit (Movement.start unit) reserved
-                        |> Maybe.map (Movement.canStop [ reserved ] board >> not)
+                    (Movement.trace rules board unit (Movement.start { x = 0, y = 0 }) reserved
+                        |> Maybe.map (Movement.canStop [ reserved ] board unit >> not)
                         |> Maybe.withDefault False
                     )
                 , test "routes can pass through reserved destinations"
-                    (List.any (\option -> option.destination == beyond && option.path == [ unit.position, reserved, beyond ]) options)
+                    (List.any (\option -> option.destination == beyond && option.path == [ { x = 0, y = 0 }, reserved, beyond ]) options)
                 , test "releasing a reservation restores its movement choice"
                     (Movement.options [] rules board unit
                         |> List.any (\option -> option.destination == reserved)
@@ -350,7 +352,7 @@ fuelChecks rules =
             let
                 unit : Unit.Unit
                 unit =
-                    { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, id = id, kind = UnitKind.Tank, position = { x = 0, y = 0 }, side = Side.West, direction = Just Direction.East, fuel = Just { current = 2, maximum = 64 } }
+                    { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, id = id, kind = UnitKind.Tank, location = Unit.OnMap { x = 0, y = 0 }, side = Side.Player1, direction = Just Direction.East, fuel = Just { current = 2, maximum = 64 } }
 
                 board : GameBoard.GameBoard
                 board =
@@ -366,7 +368,7 @@ fuelChecks rules =
 
                 traced : Maybe Movement.Option
                 traced =
-                    Movement.trace rules board unit (Movement.start unit) { x = 0, y = 1 }
+                    Movement.trace rules board unit (Movement.start { x = 0, y = 0 }) { x = 0, y = 1 }
                         |> Maybe.andThen (\path -> Movement.trace rules board unit path { x = 1, y = 1 })
 
                 test : String -> Bool -> List String
@@ -412,7 +414,7 @@ supplyChecks rules =
 
                 unit : Unit.Unit
                 unit =
-                    { hitPoints = { current = 16, maximum = 16 }, id = id, kind = UnitKind.Infantry, position = { x = 0, y = 0 }, side = Side.West, direction = Just Direction.East, fuel = Nothing, supplies = supplies }
+                    { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, id = id, kind = UnitKind.Infantry, location = Unit.OnMap { x = 0, y = 0 }, side = Side.Player1, direction = Just Direction.East, fuel = Nothing, supplies = supplies }
 
                 board : GameBoard.GameBoard
                 board =
@@ -424,7 +426,7 @@ supplyChecks rules =
 
                 traced : Maybe Movement.Option
                 traced =
-                    Movement.trace rules board unit (Movement.start unit) { x = 0, y = 1 }
+                    Movement.trace rules board unit (Movement.start { x = 0, y = 0 }) { x = 0, y = 1 }
                         |> Maybe.andThen (\path -> Movement.trace rules board unit path { x = 1, y = 1 })
 
                 fieldGun : Unit.Unit
@@ -466,9 +468,85 @@ main =
                             [ D.errorToString error ]
 
                         Ok ( rules, cases ) ->
-                            List.concatMap (check rules) cases ++ traceChecks rules ++ reservationChecks rules ++ fuelChecks rules ++ supplyChecks rules
+                            List.concatMap (check rules) cases ++ traceChecks rules ++ reservationChecks rules ++ fuelChecks rules ++ supplyChecks rules ++ transportChecks rules
                     )
                 )
         , update = \msg model -> never msg
         , subscriptions = \_ -> Sub.none
         }
+
+
+transportChecks : List Movement.Rule -> List String
+transportChecks rules =
+    case ( UnitId.parse "1", UnitId.parse "4", UnitId.parse "2" ) of
+        ( Ok passengerId, Ok truckId, Ok otherId ) ->
+            let
+                passenger : Unit.Unit
+                passenger =
+                    { id = passengerId
+                    , side = Side.Player1
+                    , kind = UnitKind.Infantry
+                    , direction = Just Direction.East
+                    , hitPoints = { current = 16, maximum = 16 }
+                    , supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }
+                    , fuel = Nothing
+                    , cargoCapacity = 0
+                    , location = Unit.OnMap { x = 0, y = 0 }
+                    }
+
+                truck : Unit.Unit
+                truck =
+                    { passenger | id = truckId, kind = UnitKind.SupplyTruck, cargoCapacity = 2, direction = Nothing, location = Unit.OnMap { x = 1, y = 0 }, fuel = Just { current = 64, maximum = 64 } }
+
+                board : GameBoard.GameBoard
+                board =
+                    { map = { width = 4, height = 3, baseTile = Terrain.GrassPlain, features = [] }
+                    , depots = []
+                    , units = [ passenger, truck ]
+                    }
+
+                aboard : Unit.Unit
+                aboard =
+                    { passenger | location = Unit.Aboard truckId }
+
+                fullBoard : GameBoard.GameBoard
+                fullBoard =
+                    { board | units = [ passenger, truck, aboard, { aboard | id = otherId } ] }
+
+                rideBoard : GameBoard.GameBoard
+                rideBoard =
+                    { board | units = [ aboard, truck ] }
+
+                canReach : GameBoard.GameBoard -> Unit.Unit -> Coordinate -> Bool
+                canReach current unit destination =
+                    Movement.options [] rules current unit |> List.any (\option -> option.destination == destination)
+
+                unload : Maybe Movement.Option
+                unload =
+                    Movement.preview rules rideBoard aboard (Movement.start { x = 1, y = 0 }) { x = 2, y = 0 }
+
+                extendingUnload : Maybe Movement.Option
+                extendingUnload =
+                    unload |> Maybe.andThen (\path -> Movement.trace rules rideBoard aboard path { x = 3, y = 0 })
+
+                expect : String -> Bool -> List String
+                expect name valid =
+                    if valid then
+                        []
+
+                    else
+                        [ name ]
+            in
+            List.concat
+                [ expect "infantry can board" (canReach board passenger { x = 1, y = 0 })
+                , expect "truck can collect infantry" (canReach board truck { x = 0, y = 0 })
+                , expect "field guns can board" (canReach board { passenger | kind = UnitKind.FieldGun } { x = 1, y = 0 })
+                , expect "tanks cannot board" (not (canReach board { passenger | kind = UnitKind.Tank } { x = 1, y = 0 }))
+                , expect "full trucks reject boarding" (not (canReach fullBoard passenger { x = 1, y = 0 }))
+                , expect "unload offers adjacent squares" (canReach rideBoard aboard { x = 2, y = 0 })
+                , expect "unload does not offer distant squares" (not (canReach rideBoard aboard { x = 3, y = 0 }))
+                , expect "traced unload cannot extend beyond one tile" (extendingUnload == Nothing)
+                ]
+
+        _ ->
+            [ "invalid transport fixture IDs" ]

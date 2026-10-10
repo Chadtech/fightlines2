@@ -46,8 +46,8 @@ toHtml unit =
             , S.textGray5
             ]
         ]
-        [ portrait unit
-        , unitHelp unit
+        [ unitHelp unit
+        , portrait unit
         , H.div
             [ A.css
                 [ S.col
@@ -72,7 +72,7 @@ portrait unit =
         [ Svg.svg
             [ SA.viewBox "0 0 16 16"
             , SA.width "100%"
-            , SA.height "160"
+            , SA.height "128"
             , SA.css
                 [ S.block
                 ]
@@ -98,7 +98,7 @@ unitHelp unit =
                     , S.g2
                     ]
                 ]
-                [ H.h3
+                [ H.h2
                     [ A.css
                         [ S.textGray5
                         ]
@@ -150,7 +150,7 @@ unitHelp unit =
                      else
                         "watch its supply level when planning a move."
                     )
-                , helpEntry "movement" "enemy units block travel. occupied squares cannot be destinations."
+                , helpEntry "movement" "enemy units block travel. move onto compatible allies to load a truck; other occupied squares cannot be destinations."
                 ]
             ]
         ]
@@ -371,7 +371,7 @@ roleText kind =
             "an armored ground unit."
 
         Kind.SupplyTruck ->
-            "a vehicle for carrying supplies."
+            "a vehicle that carries up to two infantry or field guns. supply delivery is not implemented yet."
 
         Kind.FieldGun ->
             "a ground unit with a crew-operated gun."

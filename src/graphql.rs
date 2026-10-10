@@ -203,9 +203,9 @@ mod tests {
                     assert_eq!(game["movementRules"].as_array().unwrap().len(), 4);
                     assert_eq!(game["movementRules"][0]["budget"], 4);
                     assert_eq!(game["name"], "Test game");
-                    assert_eq!(game["players"][0]["side"], "WEST");
+                    assert_eq!(game["players"][0]["side"], "PLAYER1");
                     assert_eq!(game["players"][0]["isYou"], true);
-                    assert_eq!(game["players"][1]["side"], "EAST");
+                    assert_eq!(game["players"][1]["side"], "PLAYER2");
                     assert_eq!(game["players"][1]["isYou"], false);
                     assert_eq!(game["scenario"]["units"].as_array().unwrap().len(), 8);
                     assert!(
@@ -213,7 +213,7 @@ mod tests {
                             .as_array()
                             .unwrap()
                             .iter()
-                            .all(|unit| unit["side"] == "WEST")
+                            .all(|unit| unit["side"] == "PLAYER1")
                     );
                     assert!(!game["visibleTiles"].as_array().unwrap().is_empty());
                     assert_eq!(game["scenario"]["depots"].as_array().unwrap().len(), 3);
@@ -412,7 +412,7 @@ mod tests {
                 .contains("already started")
         );
         let game = format!(
-            "{{ game(id: \"{id}\") {{ {FIELDS} visibleTiles {{ x y }} players {{ side isYou }} scenario {{ map {{ width height baseTile features {{ position {{ x y }} terrain }} }} depots {{ position {{ x y }} owner }} units {{ id side kind position {{ x y }} }} }} }} }}"
+            "{{ game(id: \"{id}\") {{ {FIELDS} visibleTiles {{ x y }} players {{ side isYou }} scenario {{ map {{ width height baseTile features {{ position {{ x y }} terrain }} }} depots {{ position {{ x y }} owner }} units {{ id side kind location {{ __typename ... on OnMap {{ position {{ x y }} }} ... on Aboard {{ carrierId }} }} }} }} }} }}"
         );
         let (member, _) = execute!(&game, Some(guest.clone()));
         assert_eq!(member["data"]["game"]["name"], "Friday Night");
@@ -425,8 +425,13 @@ mod tests {
         assert_eq!(scenario["map"]["features"].as_array().unwrap().len(), 102);
         assert_eq!(scenario["depots"].as_array().unwrap().len(), 3);
         assert_eq!(scenario["units"].as_array().unwrap().len(), 8);
-        assert_eq!(member["data"]["game"]["players"][0]["side"], "WEST");
-        assert_eq!(member["data"]["game"]["players"][1]["side"], "EAST");
+        assert!(scenario["units"].as_array().unwrap().iter().all(|unit| {
+            unit["location"]["__typename"] == "OnMap"
+                && unit["location"]["position"]["x"].is_number()
+                && unit["location"].get("carrierId").is_none()
+        }));
+        assert_eq!(member["data"]["game"]["players"][0]["side"], "PLAYER1");
+        assert_eq!(member["data"]["game"]["players"][1]["side"], "PLAYER2");
         assert_eq!(member["data"]["game"]["players"][1]["isYou"], true);
         let (host_view, _) = execute!(&game, Some(host.clone()));
         let host_scenario = &host_view["data"]["game"]["scenario"];
@@ -436,14 +441,14 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .iter()
-                .all(|unit| unit["side"] == "EAST")
+                .all(|unit| unit["side"] == "PLAYER2")
         );
         assert!(
             host_scenario["units"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .all(|unit| unit["side"] == "WEST")
+                .all(|unit| unit["side"] == "PLAYER1")
         );
         assert_ne!(
             host_view["data"]["game"]["visibleTiles"],
@@ -479,7 +484,7 @@ mod tests {
             assert_eq!(owner["data"]["lobby"]["isHost"], true);
         }
         let submit = |side: &str| {
-            let own_scenario = if side == "WEST" {
+            let own_scenario = if side == "PLAYER1" {
                 host_scenario
             } else {
                 scenario
@@ -493,8 +498,8 @@ mod tests {
                     format!(
                         "{{unitId: \"{}\", path: [{{x: {}, y: {}}}]}}",
                         unit["id"].as_str().unwrap(),
-                        unit["position"]["x"],
-                        unit["position"]["y"]
+                        unit["location"]["position"]["x"],
+                        unit["location"]["position"]["y"]
                     )
                 })
                 .collect::<Vec<_>>()
@@ -504,12 +509,12 @@ mod tests {
             )
         };
         for identity in [None, Some(cookie.clone())] {
-            let (denied, _) = execute!(submit("WEST"), identity);
+            let (denied, _) = execute!(submit("PLAYER1"), identity);
             assert!(denied["errors"].is_array());
         }
-        let (foreign, _) = execute!(submit("EAST"), Some(host.clone()));
+        let (foreign, _) = execute!(submit("PLAYER2"), Some(host.clone()));
         assert!(foreign["errors"].is_array());
-        let (submitted, _) = execute!(submit("WEST"), Some(host.clone()));
+        let (submitted, _) = execute!(submit("PLAYER1"), Some(host.clone()));
         assert_eq!(submitted["data"]["submitTurn"]["turnNumber"], 1);
         assert_eq!(submitted["data"]["submitTurn"]["submitted"], true);
         let turn_query =
@@ -517,9 +522,9 @@ mod tests {
         let (waiting, _) = execute!(&turn_query, Some(guest.clone()));
         assert_eq!(waiting["data"]["game"]["opponentSubmitted"], true);
         assert_eq!(waiting["data"]["game"]["submitted"], false);
-        let (retry, _) = execute!(submit("WEST"), Some(host.clone()));
+        let (retry, _) = execute!(submit("PLAYER1"), Some(host.clone()));
         assert_eq!(retry["data"]["submitTurn"]["turnNumber"], 1);
-        let (resolved, _) = execute!(submit("EAST"), Some(guest));
+        let (resolved, _) = execute!(submit("PLAYER2"), Some(guest));
         assert_eq!(resolved["data"]["submitTurn"]["turnNumber"], 2);
         assert_eq!(resolved["data"]["submitTurn"]["submitted"], false);
         assert_eq!(
@@ -529,7 +534,7 @@ mod tests {
                 .len(),
             8
         );
-        let (stale, _) = execute!(submit("WEST"), Some(host));
+        let (stale, _) = execute!(submit("PLAYER1"), Some(host));
         assert!(stale["errors"].is_array());
         let old = test::TestRequest::get().uri("/api/health").to_request();
         assert_eq!(

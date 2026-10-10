@@ -22,9 +22,11 @@ import Api.Enum.Side
         ( Side
         )
 import Api.Enum.TurnEventKind as EventKind
+import Api.Enum.UnitKind as UnitKind
 import Api.InputObject
 import Api.Mutation
 import Api.Object
+import Api.Object.Aboard as AboardApi
 import Api.Object.Coordinate as CoordinateApi
 import Api.Object.Depot as DepotApi
 import Api.Object.Fuel as FuelApi
@@ -33,12 +35,15 @@ import Api.Object.GameSnapshot as SnapshotApi
 import Api.Object.HitPoints as HitPointsApi
 import Api.Object.Map as MapApi
 import Api.Object.MovementRule as MovementRuleApi
+import Api.Object.OnMap as OnMapApi
 import Api.Object.Scenario as Scenario
 import Api.Object.Supplies as SuppliesApi
 import Api.Object.TerrainFeature as FeatureApi
 import Api.Object.TerrainMovementCost as MovementCostApi
 import Api.Object.Unit as UnitApi
 import Api.Query
+import Api.Union
+import Api.Union.UnitLocation as LocationApi
 import ApiRequest
 import Browser.Events
 import Coordinate
@@ -59,6 +64,7 @@ import Html.Styled.Attributes as A
 import Html.Styled.Keyed as Keyed
 import Json.Decode as Decode
 import KeyCmd
+import ListUtil
 import LobbyId
     exposing
         ( LobbyId
@@ -73,7 +79,7 @@ import Terrain
 import TerrainFeature
 import Time
 import Turn
-import Unit
+import Unit exposing (Unit)
 import UnitCommand
 import UnitId
 import View.BoardViewport as Viewport
@@ -149,7 +155,6 @@ type Selection
 
 type alias SelectedUnit =
     { id : UnitId.UnitId
-    , commands : UnitCommands.State
     }
 
 
@@ -199,6 +204,7 @@ type Msg
     | ResetViewClicked
     | AnimationTimerElapsed Time.Posix
     | ClearMoveClicked
+    | CargoUnitClicked UnitId.UnitId
     | InspectClicked
     | EscapePressed
     | DialogDismissed
@@ -425,6 +431,13 @@ resetViewport model =
 snapshotSelection : SelectionSet Snapshot Api.Object.GameSnapshot
 snapshotSelection =
     let
+        locationSelection : SelectionSet Unit.Location Api.Union.UnitLocation
+        locationSelection =
+            LocationApi.fragments
+                { onOnMap = SS.map Unit.OnMap (OnMapApi.position coordinateSelection)
+                , onAboard = AboardApi.carrierId |> SS.mapOrFail UnitId.parse |> SS.map Unit.Aboard
+                }
+
         boardSelection : SelectionSet GameBoard.GameBoard Api.Object.Scenario
         boardSelection =
             SS.map3 GameBoard.GameBoard
@@ -444,7 +457,7 @@ snapshotSelection =
                 )
                 (Scenario.depots (SS.map Depot.Depot (DepotApi.position coordinateSelection)))
                 (Scenario.units
-                    (SS.map8 Unit.Unit
+                    (SS.map8 Unit
                         (UnitApi.id |> SS.mapOrFail UnitId.parse)
                         UnitApi.side
                         UnitApi.kind
@@ -452,7 +465,8 @@ snapshotSelection =
                         (UnitApi.hitPoints (SS.map2 Unit.HitPoints HitPointsApi.current HitPointsApi.maximum))
                         (UnitApi.supplies (SS.map4 Unit.Supplies SuppliesApi.current SuppliesApi.maximum SuppliesApi.upkeepPerTurn SuppliesApi.movementPerTile))
                         (UnitApi.fuel (SS.map2 Unit.Fuel FuelApi.current FuelApi.maximum))
-                        (UnitApi.position coordinateSelection)
+                        UnitApi.cargoCapacity
+                        |> SS.with (UnitApi.location locationSelection)
                     )
                 )
     in
@@ -499,26 +513,25 @@ clearSelection model =
 
 selectUnit : UnitId.UnitId -> Model -> Model
 selectUnit id model =
-    case List.filter (\unit -> unit.id == id) model.board.units |> List.head of
+    case ListUtil.find (\unit -> unit.id == id) model.board.units of
         Nothing ->
             model
 
         Just unit ->
-            if not (planningLocked model) && Maybe.map .id (selectedUnit model) == Just id && commandMenuState model == UnitCommands.Open then
+            let
+                choosingOccupiedDestination : Bool
+                choosingOccupiedDestination =
+                    model.pathPreview /= Nothing && not (planningLocked model) && Maybe.map .id (selectedUnit model) /= Just id
+            in
+            if choosingOccupiedDestination then
+                Unit.boardPosition unit |> Maybe.map (\position -> selectTile position model) |> Maybe.withDefault model
+
+            else if Maybe.map .id (selectedUnit model) == Just id then
                 clearSelection model
 
             else
-                let
-                    commands : UnitCommands.State
-                    commands =
-                        if isOwnUnit model unit && not (planningLocked model) then
-                            UnitCommands.Open
-
-                        else
-                            UnitCommands.Closed
-                in
                 { model
-                    | selected = Just (UnitSelection { id = id, commands = commands })
+                    | selected = Just (UnitSelection { id = id })
                     , moveOptions = []
                     , pathPreview = Nothing
                     , movementStatus = NoMovementStatus
@@ -547,7 +560,7 @@ selectTile position model =
                     let
                         destinationOption : Movement.Option -> Maybe Movement.Option
                         destinationOption preview =
-                            if Movement.canStop (reservedDestinations unit model) model.board preview then
+                            if Movement.canStop (reservedDestinations unit model) model.board unit preview then
                                 Just preview
 
                             else
@@ -556,11 +569,10 @@ selectTile position model =
                     case traceTo position model |> Maybe.andThen destinationOption of
                         Just move ->
                             { model
-                                | plannedMoves = { unitId = unit.id, move = move } :: List.filter (\plan -> plan.unitId /= unit.id) model.plannedMoves
+                                | plannedMoves = saveMove unit move model
                                 , pathPreview = Nothing
                                 , movementStatus = MovePlanned
                             }
-                                |> setCommandMenuState UnitCommands.Closed
 
                         Nothing ->
                             { model | movementStatus = DestinationUnavailable }
@@ -586,6 +598,51 @@ previewTile position model =
                 model
 
 
+focusAdjacentCommand : (List UnitCommand.Command -> List UnitCommand.Command) -> UnitCommand.Command -> Model -> Eff Msg
+focusAdjacentCommand orderCommands current model =
+    let
+        afterCurrent : List UnitCommand.Command -> List UnitCommand.Command
+        afterCurrent remaining =
+            case remaining of
+                [] ->
+                    []
+
+                command :: rest ->
+                    if command == current then
+                        rest
+
+                    else
+                        afterCurrent rest
+    in
+    case selectedUnit model of
+        Just unit ->
+            let
+                commands : List UnitCommand.Command
+                commands =
+                    UnitCommand.available unit
+                        |> List.filter UnitCommand.isImplemented
+                        |> orderCommands
+
+                adjacent : Maybe UnitCommand.Command
+                adjacent =
+                    case afterCurrent commands |> List.head of
+                        Just command ->
+                            Just command
+
+                        Nothing ->
+                            List.head commands
+            in
+            case adjacent of
+                Just command ->
+                    E.focus { htmlId = UnitCommands.commandHtmlId command } (UnitCommandsMsg UnitCommands.CommandFocusCompleted)
+
+                Nothing ->
+                    E.none
+
+        Nothing ->
+            E.none
+
+
 
 ----------------------------------------------------------------
 -- UPDATE --
@@ -595,6 +652,9 @@ previewTile position model =
 update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 update lobbyId msg model =
     case msg of
+        CargoUnitClicked id ->
+            selectUnit id (clearSelection model) |> E.withOut
+
         BoardMsg boardMsg ->
             handleBoardMsg boardMsg model
                 |> E.withOut
@@ -603,8 +663,18 @@ update lobbyId msg model =
             ( updateViewport viewportMsg model, E.none )
 
         UnitCommandsMsg commandMsg ->
-            handleUnitCommands lobbyId commandMsg model
-                |> E.withOut
+            case commandMsg of
+                UnitCommands.CommandPicked command ->
+                    applyCommand lobbyId command model |> E.withOut
+
+                UnitCommands.ArrowedUpCommandMenu current ->
+                    ( model, focusAdjacentCommand List.reverse current model )
+
+                UnitCommands.ArrowedDownCommandMenu current ->
+                    ( model, focusAdjacentCommand identity current model )
+
+                UnitCommands.CommandFocusCompleted ->
+                    ( model, E.none )
 
         PanLeftClicked ->
             panLeft model
@@ -658,12 +728,7 @@ update lobbyId msg model =
                     ( { model | dialog = Nothing }, E.none )
 
                 Nothing ->
-                    if commandMenuState model == UnitCommands.Open then
-                        ( setCommandMenuState UnitCommands.Closed model, E.none )
-
-                    else
-                        clearSelection model
-                            |> E.withOut
+                    clearSelection model |> E.withOut
 
         SubmitTurnClicked ->
             if planningLocked model then
@@ -761,9 +826,9 @@ handleBoardMsg boardMsg model =
 
             else
                 model.board.units
-                    |> List.filter (\unit -> unit.id == id)
-                    |> List.head
-                    |> Maybe.map (\unit -> previewTile unit.position model)
+                    |> ListUtil.find (\unit -> unit.id == id)
+                    |> Maybe.andThen Unit.boardPosition
+                    |> Maybe.map (\position -> previewTile position model)
                     |> Maybe.withDefault model
 
         Board.ClickedDepot position click ->
@@ -853,12 +918,12 @@ view model =
                     model.board
                     |> H.map BoardMsg
                 )
-                (commandMenu model)
+                (H.text "")
             , turnPanel model
             ]
         , GamePanel.toHtml
             [ selectionView model
-            , resolutionSummary model
+            , panelFooter model
             ]
         ]
     , dialogView model
@@ -869,24 +934,35 @@ applyCommand : LobbyId -> UnitCommand.Command -> Model -> Model
 applyCommand lobbyId command model =
     case selectedUnit model of
         Just unit ->
-            if isOwnUnit model unit && not (planningLocked model) && List.member command (UnitCommand.available unit.kind) && UnitCommand.isImplemented command then
+            let
+                canApply : Bool
+                canApply =
+                    isOwnUnit model unit
+                        && not (planningLocked model)
+                        && not (receivingLoad unit model)
+                        && List.member command (UnitCommand.available unit)
+                        && UnitCommand.isImplemented command
+            in
+            if canApply then
                 case command of
                     UnitCommand.Move ->
-                        { model
-                            | pathPreview = Just (Movement.start unit)
-                            , moveOptions = Movement.options (reservedDestinations unit model) model.movementRules model.board unit
-                            , movementStatus = NoMovementStatus
-                        }
-                            |> setCommandMenuState UnitCommands.Closed
+                        beginMovement unit model
+
+                    UnitCommand.Unload ->
+                        beginMovement unit model
 
                     UnitCommand.HoldPosition ->
-                        { model
-                            | plannedMoves = { unitId = unit.id, move = Movement.start unit } :: List.filter (\plan -> plan.unitId /= unit.id) model.plannedMoves
-                            , pathPreview = Nothing
-                            , moveOptions = []
-                            , movementStatus = MovePlanned
-                        }
-                            |> setCommandMenuState UnitCommands.Closed
+                        case holdOrder model.board.units unit of
+                            Just hold ->
+                                { model
+                                    | plannedMoves = hold :: List.filter (\plan -> plan.unitId /= unit.id) model.plannedMoves
+                                    , pathPreview = Nothing
+                                    , moveOptions = []
+                                    , movementStatus = MovePlanned
+                                }
+
+                            Nothing ->
+                                model
 
                     _ ->
                         model
@@ -898,57 +974,90 @@ applyCommand lobbyId command model =
             model
 
 
-commandMenu : Model -> Html Msg
-commandMenu model =
-    case ( selectedUnit model, commandMenuState model ) of
-        ( Just unit, UnitCommands.Open ) ->
-            if isOwnUnit model unit && not (planningLocked model) then
-                UnitCommands.toHtml model.board.map model.zoom unit
-                    |> H.map UnitCommandsMsg
-
-            else
-                H.text ""
-
-        _ ->
-            H.text ""
-
-
 selectionView : Model -> Html Msg
 selectionView model =
+    let
+        content : List (Html Msg)
+        content =
+            case selectedUnit model of
+                Just unit ->
+                    [ Keyed.node "div"
+                        []
+                        [ ( UnitId.toString unit.id
+                          , H.div
+                                [ A.css
+                                    [ S.col
+                                    , S.g3
+                                    ]
+                                ]
+                                [ UnitStatus.toHtml unit
+                                , cargoView model unit
+                                , movementView model
+                                ]
+                          )
+                        ]
+                    ]
+
+                Nothing ->
+                    case selectedPosition model of
+                        Just _ ->
+                            [ H.h2
+                                []
+                                [ H.text (selectionText model)
+                                ]
+                            ]
+
+                        Nothing ->
+                            []
+    in
     H.section
         [ A.attribute "aria-label" "selection"
         , A.css
             [ S.col
             , S.g3
+            , S.shrink0
             ]
         ]
-        [ H.h2
-            []
-            [ H.text "unit status"
-            ]
-        , case selectedUnit model of
-            Just unit ->
-                Keyed.node "div"
-                    []
-                    [ ( UnitId.toString unit.id, UnitStatus.toHtml unit )
-                    ]
+        content
 
-            Nothing ->
-                H.p
-                    [ A.attribute "role" "status"
-                    ]
-                    [ H.text (selectionText model)
-                    ]
-        , movementView model
+
+panelFooter : Model -> Html Msg
+panelFooter model =
+    let
+        hint : String
+        hint =
+            if model.selected == Nothing then
+                "select a unit, depot or tile to inspect"
+
+            else
+                "esc to clear selection"
+    in
+    H.footer
+        [ A.css
+            [ S.col
+            , S.g3
+            , S.shrink0
+            ]
+        ]
+        [ resolutionSummary model
+        , H.p
+            [ A.css
+                [ S.borderT
+                , S.borderGray2
+                , S.pt3
+                , S.textGray4
+                ]
+            ]
+            [ H.text hint
+            ]
         ]
 
 
-selectedUnit : Model -> Maybe Unit.Unit
+selectedUnit : Model -> Maybe Unit
 selectedUnit model =
     case model.selected of
         Just (UnitSelection selection) ->
-            List.filter (\unit -> unit.id == selection.id) model.board.units
-                |> List.head
+            ListUtil.find (\unit -> unit.id == selection.id) model.board.units
 
         _ ->
             Nothing
@@ -961,46 +1070,13 @@ selectedPosition model =
             Just position
 
         Just (UnitSelection _) ->
-            Maybe.map .position (selectedUnit model)
+            Maybe.andThen Unit.boardPosition (selectedUnit model)
 
         Nothing ->
             Nothing
 
 
-commandMenuState : Model -> UnitCommands.State
-commandMenuState model =
-    case model.selected of
-        Just (UnitSelection selection) ->
-            selection.commands
-
-        _ ->
-            UnitCommands.Closed
-
-
-setCommandMenuState : UnitCommands.State -> Model -> Model
-setCommandMenuState commands model =
-    case model.selected of
-        Just (UnitSelection selection) ->
-            { model | selected = Just (UnitSelection { selection | commands = commands }) }
-
-        _ ->
-            model
-
-
-handleUnitCommands : LobbyId -> UnitCommands.Msg -> Model -> Model
-handleUnitCommands lobbyId msg model =
-    case msg of
-        UnitCommands.CommandPicked command ->
-            applyCommand lobbyId command model
-
-        UnitCommands.CancelClicked ->
-            setCommandMenuState UnitCommands.Closed model
-
-        UnitCommands.MenuPressed ->
-            model
-
-
-isOwnUnit : Model -> Unit.Unit -> Bool
+isOwnUnit : Model -> Unit -> Bool
 isOwnUnit model unit =
     List.any (\player -> player.isYou && player.side == unit.side) model.players
 
@@ -1012,116 +1088,39 @@ movementView model =
         details =
             case selectedUnit model of
                 Just unit ->
-                    if isOwnUnit model unit then
-                        let
-                            budget : String
-                            budget =
-                                model.movementRules
-                                    |> List.filter (\rule -> rule.kind == unit.kind)
-                                    |> List.head
-                                    |> Maybe.map (.budget >> Movement.pointsLabel)
-                                    |> Maybe.withDefault "?"
+                    if not (isOwnUnit model unit) then
+                        []
 
-                            planned : Maybe PlannedMove
-                            planned =
-                                model.plannedMoves
-                                    |> List.filter (\plan -> plan.unitId == unit.id)
-                                    |> List.head
-
-                            pathDetails : List (Html Msg)
-                            pathDetails =
-                                case model.pathPreview of
-                                    Nothing ->
-                                        [ H.p
-                                            []
-                                            [ H.text ("movement budget: " ++ budget ++ ". choose move to plan a destination.")
-                                            ]
-                                        ]
-
-                                    Just preview ->
-                                        [ H.p
-                                            []
-                                            [ H.text ("movement budget: " ++ budget ++ ". hover to trace a path; click to save it.")
-                                            ]
-                                        , H.p
-                                            []
-                                            [ H.text "retrace to shorten. if the route exceeds the budget, an affordable route is chosen."
-                                            ]
-                                        , H.p
-                                            []
-                                            [ H.text ("preview cost: " ++ Movement.pointsLabel preview.cost ++ "/" ++ budget)
-                                            ]
-                                        ]
-
-                            fuelDetails : List (Html Msg)
-                            fuelDetails =
-                                case unit.fuel of
-                                    Nothing ->
-                                        []
-
-                                    Just fuel ->
-                                        [ H.p
-                                            []
-                                            [ H.text ("fuel permits up to " ++ String.fromInt fuel.current ++ " tiles. each tile uses 1 fuel; terrain also spends movement points. end on your home depot to refill.")
-                                            ]
-                                        ]
-
-                            supplyMovementText : String
-                            supplyMovementText =
-                                case Unit.supplyMovementLimit unit.supplies of
-                                    Nothing ->
-                                        "movement uses no supplies."
-
-                                    Just limit ->
-                                        "supplies permit up to " ++ String.fromInt limit ++ " tiles after upkeep."
-
-                            supplyDetails : List (Html Msg)
-                            supplyDetails =
-                                [ H.p
-                                    []
-                                    [ H.text ("supplies: " ++ String.fromInt unit.supplies.upkeepPerTurn ++ " upkeep per turn; " ++ String.fromInt unit.supplies.movementPerTile ++ " per tile. " ++ supplyMovementText ++ " supplies cannot be replenished yet.")
-                                    ]
-                                ]
-
-                            plannedDetails : List (Html Msg)
-                            plannedDetails =
-                                case planned of
-                                    Nothing ->
-                                        []
-
-                                    Just plan ->
-                                        [ H.p
-                                            []
-                                            [ H.text ("planned destination: (" ++ String.fromInt plan.move.destination.x ++ ", " ++ String.fromInt plan.move.destination.y ++ ") · cost: " ++ Movement.pointsLabel plan.move.cost ++ "/" ++ budget)
-                                            ]
-                                        , Button.secondary "clear move" ClearMoveClicked
-                                            |> Button.toHtml
-                                        ]
-                        in
-                        if planningLocked model then
-                            [ H.p [] [ H.text "orders are locked while waiting or playing the turn." ] ]
-
-                        else
-                            List.concat [ pathDetails, fuelDetails, supplyDetails, plannedDetails ]
-
-                    else
+                    else if planningLocked model then
                         [ H.p
                             []
-                            [ H.text "this unit belongs to the other player."
+                            [ H.text "orders are locked while waiting or playing the turn."
                             ]
                         ]
+
+                    else if receivingLoad unit model then
+                        transportDetails model unit
+
+                    else
+                        unitOrderView model unit
 
                 Nothing ->
                     []
 
-        statusDetails : List (Html Msg)
-        statusDetails =
-            [ H.p
-                [ A.attribute "role" "status"
+        feedback : List (Html Msg)
+        feedback =
+            if model.movementStatus == DestinationUnavailable then
+                [ H.p
+                    [ A.attribute "role" "status" ]
+                    [ H.text (movementStatusText model.movementStatus) ]
                 ]
-                [ H.text (movementStatusText model.movementStatus)
-                ]
-            ]
+
+            else
+                []
+
+        content : List (Html Msg)
+        content =
+            details ++ feedback
     in
     H.div
         [ A.css
@@ -1129,7 +1128,72 @@ movementView model =
             , S.g2
             ]
         ]
-        (details ++ statusDetails)
+        content
+
+
+unitOrderView : Model -> Unit -> List (Html Msg)
+unitOrderView model unit =
+    let
+        budget : String
+        budget =
+            let
+                ruleAppliesToUnit : Movement.Rule -> Bool
+                ruleAppliesToUnit rule =
+                    rule.kind == unit.kind
+            in
+            model.movementRules
+                |> ListUtil.find ruleAppliesToUnit
+                |> Maybe.map (.budget >> Movement.pointsLabel)
+                |> Maybe.withDefault "?"
+
+        planned : Maybe PlannedMove
+        planned =
+            ListUtil.find (\plan -> plan.unitId == unit.id) model.plannedMoves
+
+        commandView : Html Msg
+        commandView =
+            UnitCommands.toHtml unit |> H.map UnitCommandsMsg
+    in
+    case ( model.pathPreview, planned ) of
+        ( Just preview, _ ) ->
+            [ H.p
+                []
+                [ H.text "choose a destination on the map"
+                ]
+            , H.p
+                []
+                [ H.text ("movement: " ++ Movement.pointsLabel preview.cost ++ " / " ++ budget)
+                ]
+            , Button.secondary "back to commands" ClearMoveClicked
+                |> Button.toHtml
+            ]
+
+        ( Nothing, Just plan ) ->
+            [ H.h3
+                []
+                [ H.text (chosenOrderText model unit plan.move)
+                ]
+            , Button.secondary "revoke order" ClearMoveClicked
+                |> Button.toHtml
+            ]
+
+        ( Nothing, Nothing ) ->
+            [ commandView ]
+
+
+chosenOrderText : Model -> Unit -> Movement.Option -> String
+chosenOrderText model unit move =
+    if List.length move.path <= 1 then
+        "hold position"
+
+    else
+        plannedAction model unit move
+            ++ ": ("
+            ++ String.fromInt move.destination.x
+            ++ ", "
+            ++ String.fromInt move.destination.y
+            ++ ") · movement: "
+            ++ Movement.pointsLabel move.cost
 
 
 viewControls : Model -> Html Msg
@@ -1198,30 +1262,14 @@ selectionText : Model -> String
 selectionText model =
     case selectedPosition model of
         Nothing ->
-            "select a unit, depot or tile to inspect it."
+            ""
 
         Just position ->
-            let
-                coordinate =
-                    " at (" ++ String.fromInt position.x ++ ", " ++ String.fromInt position.y ++ ")"
+            if List.any (\depot -> depot.position == position) model.board.depots then
+                "supply depot"
 
-                unit =
-                    model.board.units |> List.filter (\item -> item.position == position) |> List.head
-
-                depot =
-                    model.board.depots |> List.filter (\item -> item.position == position) |> List.head
-            in
-            case unit of
-                Just item ->
-                    Unit.label item ++ coordinate
-
-                Nothing ->
-                    case depot of
-                        Just _ ->
-                            "supply depot" ++ coordinate
-
-                        Nothing ->
-                            Terrain.label (Map.terrainAt model.board.map position) ++ coordinate
+            else
+                Terrain.label (Map.terrainAt model.board.map position)
 
 
 loadFailedView : Graphql.Http.Error Flags -> { retry : msg, returnHome : msg } -> List (Html msg)
@@ -1283,14 +1331,18 @@ viewportSubscriptions model =
 traceTo : Coordinate.Coordinate -> Model -> Maybe Movement.Option
 traceTo position model =
     let
-        previewForUnit : Unit.Unit -> Maybe Movement.Option
+        previewForUnit : Unit -> Maybe Movement.Option
         previewForUnit unit =
             if isOwnUnit model unit then
-                Movement.preview model.movementRules
-                    model.board
-                    unit
-                    (model.pathPreview |> Maybe.withDefault (Movement.start unit))
-                    position
+                Unit.physicalPosition model.board.units unit
+                    |> Maybe.andThen
+                        (\origin ->
+                            Movement.preview model.movementRules
+                                model.board
+                                unit
+                                (model.pathPreview |> Maybe.withDefault (Movement.start origin))
+                                position
+                        )
 
             else
                 Nothing
@@ -1299,11 +1351,201 @@ traceTo position model =
         |> Maybe.andThen previewForUnit
 
 
-reservedDestinations : Unit.Unit -> Model -> List Coordinate.Coordinate
+beginMovement : Unit -> Model -> Model
+beginMovement unit model =
+    { model
+        | pathPreview = Unit.physicalPosition model.board.units unit |> Maybe.map Movement.start
+        , moveOptions = Movement.options (reservedDestinations unit model) model.movementRules model.board unit
+        , movementStatus = NoMovementStatus
+    }
+
+
+boardingSpace : Unit -> Unit -> Model -> Bool
+boardingSpace mover truck model =
+    let
+        alreadyAboard : Int
+        alreadyAboard =
+            List.length (List.filter (\unit -> Unit.carrierId unit == Just truck.id) model.board.units)
+
+        boarding : PlannedMove -> Bool
+        boarding plan =
+            plan.unitId /= mover.id && List.length plan.move.path > 1 && Just plan.move.destination == Unit.boardPosition truck
+
+        truckMoving : Bool
+        truckMoving =
+            List.any (\plan -> plan.unitId == truck.id && List.length plan.move.path > 1) model.plannedMoves
+
+        fitsCargo : Bool
+        fitsCargo =
+            alreadyAboard + List.length (List.filter boarding model.plannedMoves) < truck.cargoCapacity
+
+        compatible : Bool
+        compatible =
+            Unit.boardPosition truck |> Maybe.andThen (Unit.loadingPartner model.board.units mover) |> (==) (Just truck)
+    in
+    compatible && not truckMoving && fitsCargo
+
+
+plannedAction : Model -> Unit -> Movement.Option -> String
+plannedAction model unit move =
+    if Unit.carrierId unit /= Nothing && List.length move.path > 1 then
+        "unload at"
+
+    else if Unit.loadingPartner model.board.units unit move.destination /= Nothing then
+        "load at"
+
+    else
+        "move to"
+
+
+reservedDestinations : Unit -> Model -> List Coordinate.Coordinate
 reservedDestinations unit model =
-    model.plannedMoves
-        |> List.filter (\plan -> plan.unitId /= unit.id)
-        |> List.map (.move >> .destination)
+    let
+        reserves : PlannedMove -> Bool
+        reserves plan =
+            let
+                partner : Maybe Unit
+                partner =
+                    Unit.loadingPartner model.board.units unit plan.move.destination
+
+                isWaitingPartner : Unit -> Bool
+                isWaitingPartner target =
+                    target.id == plan.unitId && not (receivingLoad target model && target.cargoCapacity == 0)
+
+                waitingPartner : Bool
+                waitingPartner =
+                    List.length plan.move.path == 1 && (partner |> Maybe.map isWaitingPartner |> Maybe.withDefault False)
+
+                boardingDestination : Bool
+                boardingDestination =
+                    partner |> Maybe.map (\target -> boardingSpace unit target model) |> Maybe.withDefault False
+            in
+            plan.unitId /= unit.id && not waitingPartner && not boardingDestination
+
+        unavailableReceiver : Unit -> Bool
+        unavailableReceiver target =
+            target.id /= unit.id && receivingLoad target model && not (boardingSpace unit target model)
+
+        unavailableReceivers : List Coordinate.Coordinate
+        unavailableReceivers =
+            model.board.units
+                |> List.filter unavailableReceiver
+                |> List.filterMap Unit.boardPosition
+
+        savedDestinations : List Coordinate.Coordinate
+        savedDestinations =
+            List.map (.move >> .destination) (List.filter reserves model.plannedMoves)
+    in
+    savedDestinations ++ unavailableReceivers
+
+
+receivingLoad : Unit -> Model -> Bool
+receivingLoad unit model =
+    let
+        receives : PlannedMove -> Bool
+        receives plan =
+            if List.length plan.move.path <= 1 then
+                False
+
+            else
+                case ListUtil.find (\mover -> mover.id == plan.unitId) model.board.units of
+                    Just mover ->
+                        if Unit.carrierId mover == Just unit.id then
+                            True
+
+                        else
+                            Unit.loadingPartner model.board.units mover plan.move.destination |> Maybe.map .id |> (==) (Just unit.id)
+
+                    Nothing ->
+                        False
+    in
+    List.any receives model.plannedMoves
+
+
+saveMove : Unit -> Movement.Option -> Model -> List PlannedMove
+saveMove unit move model =
+    let
+        receiver : Maybe Unit
+        receiver =
+            case Unit.carrierId unit of
+                Just carrier ->
+                    model.board.units |> ListUtil.find (\truck -> truck.id == carrier)
+
+                Nothing ->
+                    Unit.loadingPartner model.board.units unit move.destination
+
+        retained : List PlannedMove
+        retained =
+            model.plannedMoves |> List.filter (\plan -> plan.unitId /= unit.id && Just plan.unitId /= Maybe.map .id receiver)
+
+        receiverHold : List PlannedMove
+        receiverHold =
+            receiver |> Maybe.andThen (holdOrder model.board.units) |> Maybe.map List.singleton |> Maybe.withDefault []
+    in
+    { unitId = unit.id, move = move } :: receiverHold ++ retained
+
+
+cargoView : Model -> Unit -> Html Msg
+cargoView model unit =
+    let
+        cargo : List Unit
+        cargo =
+            List.filter (\passenger -> Unit.carrierId passenger == Just unit.id) model.board.units
+
+        passengerButton : Unit -> Html Msg
+        passengerButton passenger =
+            Button.secondary ("cargo: " ++ Unit.label passenger) (CargoUnitClicked passenger.id)
+                |> Button.toHtml
+
+        cargoSummary : Html Msg
+        cargoSummary =
+            H.p
+                []
+                [ H.text ("cargo: " ++ String.fromInt (List.length cargo) ++ "/" ++ String.fromInt unit.cargoCapacity)
+                ]
+
+        cargoContents : List (Html Msg)
+        cargoContents =
+            cargoSummary :: List.map passengerButton cargo
+    in
+    if unit.cargoCapacity > 0 then
+        H.div
+            [ A.css
+                [ S.col
+                , S.g2
+                ]
+            ]
+            cargoContents
+
+    else
+        H.text ""
+
+
+transportDetails : Model -> Unit -> List (Html Msg)
+transportDetails model unit =
+    let
+        description : String
+        description =
+            if receivingLoad unit model then
+                "holding for loading or unloading. revoke the other unit's order before changing this order."
+
+            else if Unit.carrierId unit /= Nothing then
+                "aboard a truck. choose unload to enter an empty adjacent square; the truck will hold."
+
+            else if unit.kind == UnitKind.SupplyTruck then
+                "move onto allied infantry or a field gun to load it. the unit will hold. trucks carry two units."
+
+            else if unit.kind == UnitKind.Tank then
+                "tanks cannot board trucks."
+
+            else
+                "move onto an allied truck with room to board. the truck will hold. trucks carry two units."
+    in
+    [ H.p
+        []
+        [ H.text description
+        ]
+    ]
 
 
 planningLocked : Model -> Bool
@@ -1311,12 +1553,12 @@ planningLocked model =
     model.busy || model.turn.submitted || model.playback /= Nothing
 
 
-unitsWithoutOrders : Model -> List Unit.Unit
+unitsWithoutOrders : Model -> List Unit
 unitsWithoutOrders model =
     let
-        missingOrder : Unit.Unit -> Bool
+        missingOrder : Unit -> Bool
         missingOrder unit =
-            isOwnUnit model unit && not (List.any (\plan -> plan.unitId == unit.id) model.plannedMoves)
+            isOwnUnit model unit && Unit.onBoard unit && not (List.any (\plan -> plan.unitId == unit.id) model.plannedMoves)
     in
     List.filter missingOrder model.board.units
 
@@ -1387,16 +1629,26 @@ submissionWarning model =
         ]
 
 
+holdOrder : List Unit -> Unit -> Maybe PlannedMove
+holdOrder units unit =
+    Unit.physicalPosition units unit
+        |> Maybe.map (\position -> { unitId = unit.id, move = Movement.start position })
+
+
 submitRequest : LobbyId -> Model -> Graphql.Http.Request Snapshot
 submitRequest lobbyId model =
     let
-        hold : Unit.Unit -> PlannedMove
-        hold unit =
-            { unitId = unit.id, move = Movement.start unit }
+        missingOrder : Unit -> Bool
+        missingOrder unit =
+            isOwnUnit model unit && not (List.any (\plan -> plan.unitId == unit.id) model.plannedMoves)
+
+        defaultHolds : List PlannedMove
+        defaultHolds =
+            model.board.units |> List.filter missingOrder |> List.filterMap (holdOrder model.board.units)
 
         orders : List PlannedMove
         orders =
-            model.plannedMoves ++ List.map hold (unitsWithoutOrders model)
+            model.plannedMoves ++ defaultHolds
 
         order : PlannedMove -> Api.InputObject.MoveOrderInput
         order plan =
@@ -1448,7 +1700,7 @@ turnPanel model =
     let
         ownCount : Int
         ownCount =
-            List.length (List.filter (isOwnUnit model) model.board.units)
+            List.length (List.filter (\unit -> isOwnUnit model unit && Unit.onBoard unit) model.board.units)
 
         status : String
         status =
@@ -1462,7 +1714,7 @@ turnPanel model =
                 "orders submitted"
 
             else
-                String.fromInt (List.length model.plannedMoves)
+                String.fromInt (ownCount - List.length (unitsWithoutOrders model))
                     ++ "/"
                     ++ String.fromInt ownCount
                     ++ " units ready"

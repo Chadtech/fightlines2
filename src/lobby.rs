@@ -33,7 +33,7 @@ impl Store {
 
     pub fn development(seed: Seed) -> Result<Self, MapError> {
         let mut state = State::new(seed);
-        let host = SessionToken::from_token("development-west".into());
+        let host = SessionToken::from_token("development-player-1".into());
         let map_type = MapType::default();
         let mut game = Game::from_lobby(
             Lobby {
@@ -44,11 +44,11 @@ impl Store {
                 players: vec![
                     Player {
                         session: host,
-                        name: PlayerName::parse("Test west").expect("valid fixture name"),
+                        name: PlayerName::parse("Test player 1").expect("valid fixture name"),
                     },
                     Player {
-                        session: SessionToken::from_token("development-east".into()),
-                        name: PlayerName::parse("Test east").expect("valid fixture name"),
+                        session: SessionToken::from_token("development-player-2".into()),
+                        name: PlayerName::parse("Test player 2").expect("valid fixture name"),
                     },
                 ],
             },
@@ -237,7 +237,11 @@ fn game_snapshot(game: &Game, session: Option<&SessionToken>) -> Snapshot {
 
 fn game_view(game: &Game, session: &SessionToken) -> GameSnapshot {
     let index = usize::from(session != &game.host);
-    let side = if index == 0 { Side::West } else { Side::East };
+    let side = if index == 0 {
+        Side::Player1
+    } else {
+        Side::Player2
+    };
     let visible = crate::visibility::visible_tiles(&game.scenario, side);
     GameSnapshot {
         turn_number: game.turns.number,
@@ -252,7 +256,7 @@ fn game_view(game: &Game, session: &SessionToken) -> GameSnapshot {
         players: game
             .players
             .iter()
-            .zip([Side::West, Side::East])
+            .zip([Side::Player1, Side::Player2])
             .map(|(player, side)| GamePlayerView {
                 name: player.name.to_string(),
                 is_host: player.session == game.host,
@@ -436,7 +440,7 @@ pub fn game(context: &Context, id: LobbyId) -> FieldResult<GameSnapshot> {
             error("This lobby no longer exists. Create a new lobby from the home page.")
         };
     };
-    // The opt-in fixture always previews West, without changing browser identity.
+    // The opt-in fixture always previews Player1, without changing browser identity.
     if matches!(game.access, GameAccess::DevelopmentPreview) {
         return Ok(game_view(game, &game.host));
     }
@@ -487,7 +491,11 @@ pub fn submit_turn(
                 juniper::Value::null(),
             )
         })?;
-    let side = if index == 0 { Side::West } else { Side::East };
+    let side = if index == 0 {
+        Side::Player1
+    } else {
+        Side::Player2
+    };
     game.turns
         .submit(&mut game.scenario, side, turn_number, orders)
         .map_err(|message| FieldError::new(message, juniper::Value::null()))?;

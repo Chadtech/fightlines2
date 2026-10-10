@@ -1,11 +1,12 @@
 use crate::map::{Coordinate, Map, MapError};
-use juniper::{GraphQLEnum, GraphQLObject, graphql_object};
+use juniper::{GraphQLEnum, GraphQLObject, GraphQLUnion, graphql_object};
 use std::fmt;
 
+/// Player ownership, independent of starting position on a map.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
 pub enum Side {
-    West,
-    East,
+    Player1,
+    Player2,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
@@ -27,8 +28,8 @@ pub enum Direction {
 impl Direction {
     fn starting(side: Side) -> Self {
         match side {
-            Side::West => Self::East,
-            Side::East => Self::West,
+            Side::Player1 => Self::East,
+            Side::Player2 => Self::West,
         }
     }
 
@@ -138,12 +139,42 @@ impl Supplies {
     }
 }
 
+/// A unit either occupies a board square or rides in a carrier.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Location {
+    OnMap(Coordinate),
+    Aboard(UnitId),
+}
+
+#[derive(Clone, Copy, GraphQLObject)]
+pub struct OnMap {
+    position: Coordinate,
+}
+
+#[derive(Clone, Copy)]
+pub struct Aboard {
+    carrier_id: UnitId,
+}
+
+#[graphql_object]
+impl Aboard {
+    fn carrier_id(&self) -> String {
+        self.carrier_id.to_string()
+    }
+}
+
+#[derive(Clone, Copy, GraphQLUnion)]
+pub enum UnitLocation {
+    OnMap(OnMap),
+    Aboard(Aboard),
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unit {
     id: UnitId,
     side: Side,
     kind: UnitKind,
-    position: Coordinate,
+    location: Location,
     direction: Option<Direction>,
     hit_points: HitPoints,
     fuel: Option<Fuel>,
@@ -180,8 +211,18 @@ impl Unit {
         self.direction
     }
 
-    pub fn position(&self) -> Coordinate {
-        self.position
+    pub fn cargo_capacity(&self) -> i32 {
+        match self.kind {
+            UnitKind::SupplyTruck => 2,
+            _ => 0,
+        }
+    }
+
+    pub fn location(&self) -> UnitLocation {
+        match self.location {
+            Location::OnMap(position) => UnitLocation::OnMap(OnMap { position }),
+            Location::Aboard(carrier_id) => UnitLocation::Aboard(Aboard { carrier_id }),
+        }
     }
 }
 
@@ -201,6 +242,24 @@ pub struct Scenario {
 }
 
 impl Unit {
+    pub fn carrier_id(&self) -> Option<UnitId> {
+        match self.location {
+            Location::OnMap(_) => None,
+            Location::Aboard(carrier) => Some(carrier),
+        }
+    }
+
+    pub fn board_position(&self) -> Option<Coordinate> {
+        match self.location {
+            Location::OnMap(position) => Some(position),
+            Location::Aboard(_) => None,
+        }
+    }
+
+    pub fn board(&mut self, carrier: UnitId) {
+        self.location = Location::Aboard(carrier);
+    }
+
     pub fn unit_id(&self) -> UnitId {
         self.id
     }
@@ -218,24 +277,64 @@ impl Unit {
         }
         self.supplies.current -=
             path.len().saturating_sub(1) as i32 * self.supplies.movement_per_tile;
-        if let Some(position) = path.last() {
+        if path.len() > 1
+            && let Some(position) = path.last()
+        {
             self.move_to(*position);
         }
     }
 
     pub fn move_to(&mut self, position: Coordinate) {
-        self.position = position;
+        self.location = Location::OnMap(position);
     }
 }
 
 impl Scenario {
+    /// A truck has two unit berths. Unit provisions are independent of cargo.
+    pub fn loading_pair(&self, mover: &Unit, target: &Unit) -> Option<(UnitId, UnitId)> {
+        if mover.side != target.side
+            || mover.carrier_id().is_some()
+            || target.carrier_id().is_some()
+        {
+            return None;
+        }
+        let (truck, passenger) = match (mover.kind, target.kind) {
+            (UnitKind::SupplyTruck, UnitKind::Infantry | UnitKind::FieldGun) => (mover, target),
+            (UnitKind::Infantry | UnitKind::FieldGun, UnitKind::SupplyTruck) => (target, mover),
+            _ => return None,
+        };
+        if self
+            .units
+            .iter()
+            .filter(|unit| unit.carrier_id() == Some(truck.id))
+            .count()
+            >= truck.cargo_capacity() as usize
+        {
+            None
+        } else {
+            Some((truck.id, passenger.id))
+        }
+    }
+
+    /// Resolve physical location without assigning passengers board occupancy.
+    /// Missing carriers and carriers that are themselves aboard have no position.
+    pub fn physical_position(&self, unit: &Unit) -> Option<Coordinate> {
+        match unit.location {
+            Location::OnMap(position) => Some(position),
+            Location::Aboard(carrier) => self
+                .units
+                .iter()
+                .find(|truck| truck.id == carrier)
+                .and_then(Unit::board_position),
+        }
+    }
+
     pub fn finish_turn_resources(&mut self) {
         for unit in &mut self.units {
             unit.supplies.current = (unit.supplies.current - unit.supplies.upkeep_per_turn).max(0);
-            let at_home_depot = self
-                .depots
-                .iter()
-                .any(|depot| depot.owner == Some(unit.side) && depot.position == unit.position);
+            let at_home_depot = self.depots.iter().any(|depot| {
+                depot.owner == Some(unit.side) && Some(depot.position) == unit.board_position()
+            });
             if at_home_depot && let Some(fuel) = &mut unit.fuel {
                 fuel.current = fuel.maximum;
             }
@@ -266,7 +365,7 @@ impl Scenario {
         let depots = vec![
             Depot {
                 position: Coordinate::new(2, 8),
-                owner: Some(Side::West),
+                owner: Some(Side::Player1),
             },
             Depot {
                 position: Coordinate::new(8, 8),
@@ -274,11 +373,11 @@ impl Scenario {
             },
             Depot {
                 position: Coordinate::new(14, 8),
-                owner: Some(Side::East),
+                owner: Some(Side::Player2),
             },
         ];
         let mut units = Vec::new();
-        for side in [Side::West, Side::East] {
+        for side in [Side::Player1, Side::Player2] {
             for (index, (kind, x, y)) in [
                 (UnitKind::Infantry, 3, 7),
                 (UnitKind::Infantry, 3, 8),
@@ -290,8 +389,8 @@ impl Scenario {
             .enumerate()
             {
                 let (offset, x) = match side {
-                    Side::West => (0, x),
-                    Side::East => (5, 16 - x),
+                    Side::Player1 => (0, x),
+                    Side::Player2 => (5, 16 - x),
                 };
                 units.push(Unit {
                     id: UnitId(offset + index as u16 + 1),
@@ -300,7 +399,7 @@ impl Scenario {
                     hit_points: HitPoints::full(),
                     fuel: Fuel::for_kind(kind),
                     supplies: Supplies::for_kind(kind),
-                    position: Coordinate::new(x, y),
+                    location: Location::OnMap(Coordinate::new(x, y)),
                     direction: match kind {
                         UnitKind::SupplyTruck => None,
                         _ => Some(Direction::starting(side)),
@@ -308,7 +407,7 @@ impl Scenario {
                 });
             }
         }
-        for (side, first_id, x) in [(Side::West, 11, 4), (Side::East, 14, 12)] {
+        for (side, first_id, x) in [(Side::Player1, 11, 4), (Side::Player2, 14, 12)] {
             for (index, (kind, y)) in [
                 (UnitKind::Tank, 8),
                 (UnitKind::FieldGun, 7),
@@ -324,7 +423,7 @@ impl Scenario {
                     hit_points: HitPoints::full(),
                     fuel: Fuel::for_kind(kind),
                     supplies: Supplies::for_kind(kind),
-                    position: Coordinate::new(x, y),
+                    location: Location::OnMap(Coordinate::new(x, y)),
                     direction: match kind {
                         UnitKind::SupplyTruck => None,
                         _ => Some(Direction::starting(side)),
@@ -334,7 +433,7 @@ impl Scenario {
         }
         for position in units
             .iter()
-            .map(|unit| unit.position)
+            .filter_map(Unit::board_position)
             .chain(depots.iter().map(|depot| depot.position))
         {
             if map.tile_at(position).is_none() {
@@ -350,6 +449,55 @@ mod tests {
     use super::*;
     use crate::map::Terrain;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn passengers_derive_physical_position_without_board_occupancy() {
+        let mut scenario = Scenario::supply_point().unwrap();
+        let truck_id = UnitId::parse("4").unwrap();
+        let passenger_id = UnitId::parse("1").unwrap();
+        scenario
+            .units
+            .iter_mut()
+            .find(|unit| unit.unit_id() == passenger_id)
+            .unwrap()
+            .board(truck_id);
+        let destination = Coordinate::new(1, 7);
+        scenario
+            .units
+            .iter_mut()
+            .find(|unit| unit.unit_id() == truck_id)
+            .unwrap()
+            .move_to(destination);
+        let passenger = scenario
+            .units
+            .iter()
+            .find(|unit| unit.unit_id() == passenger_id)
+            .unwrap();
+        assert_eq!(passenger.location, Location::Aboard(truck_id));
+        assert_eq!(passenger.board_position(), None);
+        assert_eq!(scenario.physical_position(passenger), Some(destination));
+
+        let mut missing_carrier = passenger.clone();
+        missing_carrier.board(UnitId::parse("999").unwrap());
+        assert_eq!(scenario.physical_position(&missing_carrier), None);
+        scenario
+            .units
+            .iter_mut()
+            .find(|unit| unit.unit_id() == truck_id)
+            .unwrap()
+            .board(passenger_id);
+        assert_eq!(scenario.physical_position(&missing_carrier), None);
+        assert_eq!(
+            scenario.physical_position(
+                scenario
+                    .units
+                    .iter()
+                    .find(|unit| unit.unit_id() == passenger_id)
+                    .unwrap()
+            ),
+            None
+        );
+    }
 
     #[test]
     fn units_start_with_full_health_and_resources() {
@@ -398,9 +546,9 @@ mod tests {
         ] {
             unit.follow_path(&[Coordinate::new(from.0, from.1), Coordinate::new(to.0, to.1)]);
             assert_eq!(unit.direction(), Some(expected));
-            assert_eq!(unit.position(), Coordinate::new(to.0, to.1));
+            assert_eq!(unit.board_position().unwrap(), Coordinate::new(to.0, to.1));
         }
-        unit.follow_path(&[unit.position()]);
+        unit.follow_path(&[unit.board_position().unwrap()]);
         assert_eq!(unit.direction(), Some(Direction::West));
         unit.follow_path(&[
             Coordinate::new(3, 7),
@@ -421,13 +569,13 @@ mod tests {
             .unwrap();
         assert_eq!(unit.direction(), None);
         unit.follow_path(&[
-            unit.position(),
+            unit.board_position().unwrap(),
             Coordinate::new(3, 7),
             Coordinate::new(3, 8),
         ]);
-        assert_eq!(unit.position(), Coordinate::new(3, 8));
+        assert_eq!(unit.board_position().unwrap(), Coordinate::new(3, 8));
         assert_eq!(unit.direction(), None);
-        unit.follow_path(&[unit.position()]);
+        unit.follow_path(&[unit.board_position().unwrap()]);
         assert_eq!(unit.direction(), None);
     }
 
@@ -448,12 +596,12 @@ mod tests {
             scenario
                 .units
                 .iter()
-                .map(|unit| unit.position)
+                .filter_map(Unit::board_position)
                 .collect::<BTreeSet<_>>()
                 .len(),
             16
         );
-        for side in [Side::West, Side::East] {
+        for side in [Side::Player1, Side::Player2] {
             for (kind, expected) in [
                 (UnitKind::Infantry, 3),
                 (UnitKind::SupplyTruck, 2),
@@ -472,28 +620,40 @@ mod tests {
         }
         for unit in &scenario.units {
             assert_eq!(
-                scenario.map.tile_at(unit.position),
+                scenario.map.tile_at(unit.board_position().unwrap()),
                 Some(Terrain::GrassPlain)
             );
             assert!(
                 !scenario
                     .depots
                     .iter()
-                    .any(|depot| depot.position == unit.position)
+                    .any(|depot| Some(depot.position) == unit.board_position())
             );
         }
-        let west_units = scenario.units.iter().filter(|unit| unit.side == Side::West);
-        let east_units = scenario.units.iter().filter(|unit| unit.side == Side::East);
-        for (west, east) in west_units.zip(east_units) {
-            let (west_direction, east_direction) = match west.kind {
+        let player1_units = scenario
+            .units
+            .iter()
+            .filter(|unit| unit.side == Side::Player1);
+        let player2_units = scenario
+            .units
+            .iter()
+            .filter(|unit| unit.side == Side::Player2);
+        for (player1, player2) in player1_units.zip(player2_units) {
+            let (player1_direction, player2_direction) = match player1.kind {
                 UnitKind::SupplyTruck => (None, None),
                 _ => (Some(Direction::East), Some(Direction::West)),
             };
-            assert_eq!(west.direction(), west_direction);
-            assert_eq!(east.direction(), east_direction);
-            assert_eq!(west.kind, east.kind);
-            assert_eq!(west.position.y(), east.position.y());
-            assert_eq!(west.position.x() + east.position.x(), 16);
+            assert_eq!(player1.direction(), player1_direction);
+            assert_eq!(player2.direction(), player2_direction);
+            assert_eq!(player1.kind, player2.kind);
+            assert_eq!(
+                player1.board_position().unwrap().y(),
+                player2.board_position().unwrap().y()
+            );
+            assert_eq!(
+                player1.board_position().unwrap().x() + player2.board_position().unwrap().x(),
+                16
+            );
         }
         for y in 0..17 {
             for x in 0..17 {
@@ -538,10 +698,10 @@ mod tests {
     fn depots_are_separate_from_terrain_and_include_a_neutral_center() {
         let scenario = Scenario::supply_point().unwrap();
         assert_eq!(scenario.depots.len(), 3);
-        assert_eq!(scenario.depots[0].owner, Some(Side::West));
+        assert_eq!(scenario.depots[0].owner, Some(Side::Player1));
         assert_eq!(scenario.depots[1].owner, None);
         assert_eq!(scenario.depots[1].position, Coordinate::new(8, 8));
-        assert_eq!(scenario.depots[2].owner, Some(Side::East));
+        assert_eq!(scenario.depots[2].owner, Some(Side::Player2));
         for depot in &scenario.depots {
             assert_eq!(
                 scenario.map.tile_at(depot.position),

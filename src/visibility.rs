@@ -16,8 +16,12 @@ pub fn sight_range(kind: UnitKind) -> i32 {
 
 pub fn visible_tiles(scenario: &Scenario, side: Side) -> BTreeSet<Coordinate> {
     let mut visible = BTreeSet::new();
-    for unit in scenario.units.iter().filter(|unit| unit.side() == side) {
-        let origin = unit.position();
+    for (unit, origin) in scenario
+        .units
+        .iter()
+        .filter(|unit| unit.side() == side)
+        .filter_map(|unit| unit.board_position().map(|origin| (unit, origin)))
+    {
         // The occupied square is known even when the unit is in a forest.
         visible.insert(origin);
         let bonus = i32::from(scenario.map.tile_at(origin) == Some(Terrain::Hills));
@@ -98,9 +102,12 @@ pub fn observed_scenario(
     visible: &BTreeSet<Coordinate>,
 ) -> Scenario {
     let mut observed = scenario.clone();
-    observed
-        .units
-        .retain(|unit| unit.side() == side || observable(&scenario.map, visible, unit.position()));
+    observed.units.retain(|unit| {
+        unit.side() == side
+            || unit
+                .board_position()
+                .is_some_and(|position| observable(&scenario.map, visible, position))
+    });
     observed
 }
 
@@ -114,13 +121,19 @@ pub fn observed_resolution(
 ) -> TurnResolution {
     let mut before = scenario.clone();
     for unit in &mut before.units {
-        if let Some(origin) = resolution
+        if let Some(event) = resolution
             .events
             .iter()
             .find(|event| event.unit_id == unit.unit_id())
-            .and_then(|event| event.path.first())
         {
-            unit.move_to(*origin);
+            match event.initial_carrier {
+                Some(carrier) => unit.board(carrier),
+                None => {
+                    if let Some(origin) = event.path.first() {
+                        unit.move_to(*origin);
+                    }
+                }
+            }
         }
     }
     let initial_visible = visible_tiles(&before, side);
@@ -132,7 +145,9 @@ pub fn observed_resolution(
             .find(|unit| unit.unit_id() == event.unit_id);
         unit.is_some_and(|unit| {
             unit.side() == side
-                || (observable(&scenario.map, visible, unit.position())
+                || (unit
+                    .board_position()
+                    .is_some_and(|position| observable(&scenario.map, visible, position))
                     && event.path.iter().all(|position| {
                         observable(&scenario.map, &initial_visible, *position)
                             && observable(&scenario.map, visible, *position)
@@ -152,10 +167,35 @@ mod tests {
         scenario.map = Map::from_ascii(sketch).unwrap();
         scenario
             .units
-            .retain(|unit| unit.side() == Side::West && unit.kind() == kind);
+            .retain(|unit| unit.side() == Side::Player1 && unit.kind() == kind);
         scenario.units.truncate(1);
         scenario.units[0].move_to(Coordinate::new(0, 0));
         scenario
+    }
+
+    #[test]
+    fn passengers_do_not_grant_sight_or_reveal_enemy_cargo() {
+        let mut board = scenario(UnitKind::SupplyTruck, ".........");
+        let truck = board.units[0].unit_id();
+        let mut passenger = Scenario::supply_point().unwrap().units.remove(0);
+        passenger.move_to(Coordinate::new(0, 0));
+        passenger.board(truck);
+        board.units.push(passenger);
+        let visible = visible_tiles(&board, Side::Player1);
+        assert!(!visible.contains(&Coordinate::new(4, 0)));
+        assert_eq!(
+            observed_scenario(&board, Side::Player1, &visible)
+                .units
+                .len(),
+            2
+        );
+        let enemy_visible = BTreeSet::from([Coordinate::new(0, 0)]);
+        assert_eq!(
+            observed_scenario(&board, Side::Player2, &enemy_visible)
+                .units
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -168,7 +208,7 @@ mod tests {
         ] {
             for (sketch, bonus) in [(".......", 0), ("%......", 1)] {
                 let board = scenario(kind, sketch);
-                let visible = visible_tiles(&board, Side::West);
+                let visible = visible_tiles(&board, Side::Player1);
                 assert!(visible.contains(&Coordinate::new(range + bonus, 0)));
                 assert!(!visible.contains(&Coordinate::new(range + bonus + 1, 0)));
             }
@@ -198,7 +238,7 @@ mod tests {
                     .unwrap();
                 }
                 let range = sight_range(kind) + bonus;
-                let visible = visible_tiles(&board, Side::West);
+                let visible = visible_tiles(&board, Side::Player1);
                 for y in 0..13 {
                     for x in 0..13 {
                         let dx = x - origin.x();
@@ -222,7 +262,7 @@ mod tests {
             ".....\n.#...\n.....\n.....\n.....",
         ] {
             let board = scenario(UnitKind::Infantry, sketch);
-            let visible = visible_tiles(&board, Side::West);
+            let visible = visible_tiles(&board, Side::Player1);
             let hidden = match sketch {
                 sketch if sketch.starts_with(".#") => Coordinate::new(3, 0),
                 sketch if sketch.contains("\n#") => Coordinate::new(0, 3),
@@ -231,22 +271,22 @@ mod tests {
             assert!(!visible.contains(&hidden));
         }
         let board = scenario(UnitKind::Infantry, ".#...\n.....\n.....\n.....\n.....");
-        assert!(!visible_tiles(&board, Side::West).contains(&Coordinate::new(2, 2)));
+        assert!(!visible_tiles(&board, Side::Player1).contains(&Coordinate::new(2, 2)));
     }
 
     #[test]
     fn hills_are_visible_and_cast_shadows_in_both_directions() {
         let mut board = scenario(UnitKind::Infantry, ".%...");
         assert_eq!(
-            visible_tiles(&board, Side::West),
+            visible_tiles(&board, Side::Player1),
             BTreeSet::from([Coordinate::new(0, 0), Coordinate::new(1, 0)])
         );
         board.units[0].move_to(Coordinate::new(4, 0));
-        let visible = visible_tiles(&board, Side::West);
+        let visible = visible_tiles(&board, Side::Player1);
         assert!(visible.contains(&Coordinate::new(1, 0)));
         assert!(!visible.contains(&Coordinate::new(0, 0)));
         board.units[0].move_to(Coordinate::new(1, 0));
-        assert!(visible_tiles(&board, Side::West).contains(&Coordinate::new(4, 0)));
+        assert!(visible_tiles(&board, Side::Player1).contains(&Coordinate::new(4, 0)));
     }
 
     #[test]
@@ -256,23 +296,27 @@ mod tests {
             .unwrap()
             .units
             .into_iter()
-            .find(|unit| unit.side() == Side::East)
+            .find(|unit| unit.side() == Side::Player2)
             .unwrap();
         enemy.move_to(Coordinate::new(1, 0));
         board.units.push(enemy);
-        let visible = visible_tiles(&board, Side::West);
+        let visible = visible_tiles(&board, Side::Player1);
         assert!(!visible.contains(&Coordinate::new(1, 0)));
         assert!(!visible.contains(&Coordinate::new(2, 0)));
         assert_eq!(
-            observed_scenario(&board, Side::West, &visible).units.len(),
+            observed_scenario(&board, Side::Player1, &visible)
+                .units
+                .len(),
             1
         );
         board.units[0].move_to(Coordinate::new(1, 0));
-        let visible = visible_tiles(&board, Side::West);
+        let visible = visible_tiles(&board, Side::Player1);
         assert!(visible.contains(&Coordinate::new(1, 0)));
         assert!(visible.contains(&Coordinate::new(2, 0)));
         assert_eq!(
-            observed_scenario(&board, Side::West, &visible).units.len(),
+            observed_scenario(&board, Side::Player1, &visible)
+                .units
+                .len(),
             1
         );
     }
@@ -280,12 +324,12 @@ mod tests {
     #[test]
     fn diagonal_corner_hills_block_and_allies_share_sight() {
         let mut board = scenario(UnitKind::Infantry, ".%...\n.....\n.....\n.....\n.....");
-        let visible = visible_tiles(&board, Side::West);
+        let visible = visible_tiles(&board, Side::Player1);
         assert!(!visible.contains(&Coordinate::new(2, 2)));
         let mut ally = board.units[0].clone();
         ally.move_to(Coordinate::new(4, 4));
         board.units.push(ally);
-        assert!(visible_tiles(&board, Side::West).contains(&Coordinate::new(2, 2)));
+        assert!(visible_tiles(&board, Side::Player1).contains(&Coordinate::new(2, 2)));
     }
 
     #[test]
@@ -295,7 +339,7 @@ mod tests {
             .unwrap()
             .units
             .into_iter()
-            .find(|unit| unit.side() == Side::East)
+            .find(|unit| unit.side() == Side::Player2)
             .unwrap();
         enemy.move_to(Coordinate::new(3, 0));
         let enemy_id = enemy.unit_id();
@@ -304,6 +348,8 @@ mod tests {
             turn_number: 1,
             events: vec![TurnEvent {
                 initial_direction: None,
+                initial_carrier: None,
+                carrier_id: None,
                 kind: TurnEventKind::Move,
                 unit_id: enemy_id,
                 path: vec![
@@ -313,16 +359,16 @@ mod tests {
                 ],
             }],
         };
-        let visible = visible_tiles(&board, Side::West);
+        let visible = visible_tiles(&board, Side::Player1);
         assert!(
-            observed_resolution(&board, Side::West, &visible, &resolution)
+            observed_resolution(&board, Side::Player1, &visible, &resolution)
                 .events
                 .is_empty()
         );
         let mut observable = resolution;
         observable.events[0].path.remove(0);
         assert_eq!(
-            observed_resolution(&board, Side::West, &visible, &observable)
+            observed_resolution(&board, Side::Player1, &visible, &observable)
                 .events
                 .len(),
             1

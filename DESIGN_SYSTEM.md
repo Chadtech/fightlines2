@@ -96,7 +96,9 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   turn-resolution information, with a warm gray body and an outset bevel only
   on its left edge. Place selection at the top. The panel is 18rem wide, capped at
   45vw on narrow screens, and scrolls when needed. Reserve its width beside the
-  battlefield. Omit the roster and other floating cards.
+  battlefield. Keep the panel present when selection clears: leave its main area
+  blank and place a quiet inspection hint against the lower edge. With a selection,
+  the footer says esc to clear selection. Omit the roster and other floating cards.
 - The bottom-left control panel is flush with the screen's bottom and left edges,
   overlaying the battlefield without reducing its height. It is 30rem wide, capped
   by the battlefield width, and 10rem tall (20rem on narrow screens). Only its top
@@ -108,8 +110,9 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   keep it enabled while planning and disable it while orders are locked.
   Submitting with unassigned units opens a modal warning with keep planning and
   submit anyway actions; confirmation fills missing orders with holds.
-- Selected units use a `unit status` heading, their illustration in a nightwood3
-  inset screen, and their name and side without position coordinates. Display
+- Selected objects supply their own titles; omit a generic selection/status heading.
+  Units show their name and side above their illustration in a nightwood3
+  inset screen, without position coordinates. Display
   authoritative hit points (out of 16), supplies (out of 64), and fuel (out of 64) (for tanks
   and supply trucks) as horizontal gauges with `current / maximum` labels. Use red1 below 25%, yellow4 from
   25–75%, and green1 (`#4BBF63`) above 75%; retain the numeric labels alongside color.
@@ -117,26 +120,22 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   flat `about this unit` section spans the panel width, with nightwood3 body,
   yellow2 title strip, yellow5 heading text, and internal padding. It has no
   bevel. Resource gauges show the server-provided current and maximum values.
-- While planning, selecting your own unit opens an illustrated command menu
-  beside its board sprite. Tailor commands to the unit kind: infantry gets stand
-  ground, hold position, move, attack move and dig in; tanks omit dig in; trucks
-  get move and hold position; field guns get hold position, move, indirect fire,
-  dig in and ambush. Ambush depicts a field gun concealed in foliage.
-  Rows are flush with transparent borders at rest; hover and keyboard focus add
-  an outset bevel, and pressing reverses it. Keep icons and text fixed in size
-  when zooming. Omit an information panel beneath the options.
-  Cancel is a full-width flat footer row below a subtle divider, with a small
-  × aligned to the icon column and the same hover bevel as command rows.
-  It closes the menu while preserving selection and saved orders. Picking
-  an implemented command applies it immediately and closes the menu. Move opens
-  destination planning; hold position saves a hold order. Orders remain editable
-  until the turn is submitted. Unimplemented commands remain visible but inert
-  until their game rules exist. Preserve the original
-  SVG source locally, without a style-switch button in the game.
+- While planning, selecting your own unit shows illustrated command rows beneath
+  its gauges in the side panel. Put move (or unload) and hold position first.
+  Rows are flat at rest; hover and keyboard focus add an outset bevel, and
+  pressing reverses it. Unimplemented commands are disabled. Tab enters the
+  list; Up/Down cycles enabled commands and Enter/Space chooses one, without
+  panning the map. Escape clears selection while preserving saved orders.
+  Move/unload replaces commands with a destination prompt, preview cost/budget,
+  and back to commands. Saving a destination or choosing hold position replaces
+  commands with the chosen order and revoke order. Revoking restores commands;
+  do not show commands and a saved order simultaneously. Locked orders cannot
+  be revoked. Keep resource explanations in the expandable gauge help.
 - Primary-button dragging pans after a 6px threshold. A drag never selects a tile;
   a click still inspects units, depots and terrain. Scroll zooms around the cursor,
   bounded to 35–300%; the bottom-left panel supplies pan arrows, zoom and reset controls. Keyboard
-  arrows pan through game-page window commands, without requiring battlefield focus.
+  arrows pan through game-page window commands outside command-list focus,
+  without requiring battlefield focus.
   Plus/minus and Home work while the battlefield is focused.
 - Use smooth image rendering for illustrated terrain, building and unit sprites. SVG scales the
   board to the camera width and handles selection events directly in Elm.
@@ -156,9 +155,9 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   cells, preserving each master’s aspect ratio. Keep side-profile vehicles, a substantial tank turret and thick barrel,
   and tall truck cab/canopy so their bulk reads as clearly as the infantry.
 - Render terrain below depots and units, with a thin, muted gold square inset inside the selected
-  tile. Keep its entire stroke within that cell, without a fill or animation. The red side starts west and the blue side east. Show side names and
+  tile. Keep its entire stroke within that cell, without a fill or animation. Identify ownership as player 1 and player 2, independently of map position. Show player labels and
   selected-unit details so color is not the only identifier.
-- Selecting your own unit opens the command menu without enabling movement.
+- Selecting your own unit shows commands without enabling movement.
   Choosing move highlights reachable squares with inset gold outlines
   and a faint fill. Planned routes use dashed gold lines and a destination dot.
   A solid gold line previews the hovered route before saving; preserve traced
@@ -166,13 +165,11 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   cannot reach a square within budget, fall back to an affordable route from the
   unit. Saving ends hover editing and hides reachable-square highlights;
   reselecting the unit and choosing move restores both.
-  Keep the selected unit active while choosing or replacing a destination. Show
-  movement budget, preview cost, planned destination/cost, the clear move
-  control, and order status
-  in the right panel. Reachable tiles support Tab and Enter/Space.
+  Keep the selected unit active while choosing a destination. Show movement
+  budget and preview cost while planning, then the chosen destination/cost and
+  revoke order in the right panel. Reachable tiles support Tab and Enter/Space.
 - Units and depots support keyboard focus and Enter/Space activation. Illustrated
-  unit sprites face right for the western side and mirror left for the eastern
-  side. Stored direction follows movement and is shown by the facing marker. Overlay a small filled edge
+  unit sprites face right for player 1 and mirror left for player 2. Stored direction follows movement and is shown by the facing marker. Overlay a small filled edge
   triangle for each infantry, tank or field gun's current facing, keeping its outline entirely inside
   the cell. Use gray5 with a gray0 outline, and yellow5 for the selected unit.
   Supply trucks have no stored direction or facing marker.
@@ -196,6 +193,15 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   roof seen head-on with slight elevation, detailed 1980s anime ink work and painted shading. They fill a comparable
   square cell with neutral material colors and no ownership outlines or team labels.
   Buildings are separate from terrain and units.
+
+- Compatible loading squares appear with ordinary move destinations. Clicking
+  an occupied loading square saves the selected unit's move, including keyboard
+  Enter/Space, and preserves that unit's selection. Show load/unload destination
+  labels and explain the receiving unit's hold requirement in the right panel.
+- Truck status shows `cargo: current / capacity` and one button per passenger.
+  Passenger selection opens unload/hold commands in the side panel. Unload
+  uses empty adjacent destination choices; passengers appear on the board after
+  resolution. Carried units do not have independent board sprites or focus targets.
 
 ## Decision log
 

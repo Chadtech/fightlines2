@@ -6,8 +6,8 @@ import Api.Enum.Side as Side exposing (Side)
 label : Side -> String
 label side =
     case side of
-        Side.West ->
-            "red / west"
+        Side.Player1 ->
+            "player 1"
 
-        Side.East ->
-            "blue / east"
+        Side.Player2 ->
+            "player 2"

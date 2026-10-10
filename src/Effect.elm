@@ -1,6 +1,7 @@
 module Effect exposing
     ( Eff
     , after
+    , focus
     , load
     , map
     , navigate
@@ -16,6 +17,7 @@ import ApiRequest
     exposing
         ( Response
         )
+import Browser.Dom
 import Browser.Navigation as Navigation
 import Graphql.Http
 import Ports.Js.To as ToJs
@@ -64,6 +66,14 @@ after : Float -> msg -> Eff msg
 after milliseconds msg =
     Process.sleep milliseconds
         |> Task.map (always msg)
+        |> Request
+
+
+focus : { htmlId : String } -> msg -> Eff msg
+focus { htmlId } completed =
+    Browser.Dom.focus htmlId
+        |> Task.map (always completed)
+        |> Task.onError (always (Task.succeed completed))
         |> Request
 
 

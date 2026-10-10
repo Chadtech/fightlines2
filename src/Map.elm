@@ -2,6 +2,7 @@ module Map exposing (Map, terrainAt)
 
 import Api.Enum.Terrain exposing (Terrain)
 import Coordinate exposing (Coordinate)
+import ListUtil
 import TerrainFeature exposing (TerrainFeature)
 
 
@@ -16,7 +17,6 @@ type alias Map =
 terrainAt : Map -> Coordinate -> Terrain
 terrainAt map position =
     map.features
-        |> List.filter (\feature -> feature.position == position)
-        |> List.head
+        |> ListUtil.find (\feature -> feature.position == position)
         |> Maybe.map .terrain
         |> Maybe.withDefault map.baseTile

@@ -17,6 +17,7 @@ import Api.Enum.UnitKind exposing (UnitKind)
 import Coordinate exposing (Coordinate)
 import Dict exposing (Dict)
 import GameBoard exposing (GameBoard)
+import ListUtil
 import Map
 import Unit exposing (Unit)
 
@@ -64,27 +65,27 @@ pointsLabel points =
 options : List Coordinate -> List Rule -> GameBoard -> Unit -> List Option
 options reserved rules board unit =
     optionsAvoiding [] rules board unit
-        |> List.filter (canStop reserved board)
+        |> List.filter (canStop reserved board unit)
 
 
 optionsAvoiding : List Coordinate -> List Rule -> GameBoard -> Unit -> List Option
 optionsAvoiding blocked rules board unit =
-    case List.filter (\rule -> rule.kind == unit.kind) rules |> List.head of
-        Nothing ->
-            []
-
-        Just rule ->
+    case ( ListUtil.find (\rule -> rule.kind == unit.kind) rules, Unit.physicalPosition board.units unit ) of
+        ( Just rule, Just origin ) ->
             search (tileLimit unit)
                 rule
                 board
                 blocked
                 unit.side
-                [ { destination = unit.position, cost = 0, path = [ unit.position ] } ]
-                (Dict.singleton (searchKey (tileLimit unit) (start unit)) 0)
+                [ start origin ]
+                (Dict.singleton (searchKey (tileLimit unit) (start origin)) 0)
                 []
-                |> List.filter (\option -> option.destination /= unit.position)
+                |> List.filter (\option -> option.destination /= origin)
                 |> List.foldl cheapestDestination Dict.empty
                 |> Dict.values
+
+        _ ->
+            []
 
 
 {-| Reserve upkeep once; only walking units spend supplies per tile.
@@ -101,15 +102,19 @@ tileLimit unit =
         fuelLimit =
             Maybe.map .current unit.fuel
     in
-    case ( fuelLimit, supplyLimit ) of
-        ( Just fuel, Just supplies ) ->
-            Just (min fuel supplies)
+    if Unit.carrierId unit /= Nothing then
+        Just (min 1 (Maybe.withDefault 1 supplyLimit))
 
-        ( Just fuel, Nothing ) ->
-            Just fuel
+    else
+        case ( fuelLimit, supplyLimit ) of
+            ( Just fuel, Just supplies ) ->
+                Just (min fuel supplies)
 
-        ( Nothing, supplies ) ->
-            supplies
+            ( Just fuel, Nothing ) ->
+                Just fuel
+
+            ( Nothing, supplies ) ->
+                supplies
 
 
 cheapestDestination : Option -> Dict ( Int, Int ) Option -> Dict ( Int, Int ) Option
@@ -201,7 +206,7 @@ search limit rule board blocked side frontier costs reached =
 
                             enemyAtPosition : Unit -> Bool
                             enemyAtPosition unit =
-                                unit.position == position && unit.side /= side
+                                Unit.boardPosition unit == Just position && unit.side /= side
 
                             occupiedByEnemy : Bool
                             occupiedByEnemy =
@@ -211,7 +216,7 @@ search limit rule board blocked side frontier costs reached =
                             ( pending, best )
 
                         else
-                            case rule.terrainCosts |> List.filter (\entry -> entry.terrain == Map.terrainAt board.map position) |> List.head of
+                            case rule.terrainCosts |> ListUtil.find (\entry -> entry.terrain == Map.terrainAt board.map position) of
                                 Nothing ->
                                     ( pending, best )
 
@@ -257,11 +262,11 @@ search limit rule board blocked side frontier costs reached =
                 search limit rule board blocked side next nextCosts (current :: reached)
 
 
-start : Unit -> Option
-start unit =
-    { destination = unit.position
+start : Coordinate -> Option
+start position =
+    { destination = position
     , cost = 0
-    , path = [ unit.position ]
+    , path = [ position ]
     }
 
 
@@ -271,14 +276,12 @@ trace rules board unit current destination =
         rule : Maybe Rule
         rule =
             rules
-                |> List.filter (\entry -> entry.kind == unit.kind)
-                |> List.head
+                |> ListUtil.find (\entry -> entry.kind == unit.kind)
 
         costAt : Rule -> Coordinate -> Maybe Int
         costAt movementRule position =
             movementRule.terrainCosts
-                |> List.filter (\entry -> entry.terrain == Map.terrainAt board.map position)
-                |> List.head
+                |> ListUtil.find (\entry -> entry.terrain == Map.terrainAt board.map position)
                 |> Maybe.map .cost
 
         prefix : List Coordinate
@@ -306,7 +309,7 @@ trace rules board unit current destination =
                     remainingUnit : Unit
                     remainingUnit =
                         { unit
-                            | position = current.destination
+                            | location = Unit.OnMap current.destination
                             , supplies = remainingSupplies unit current
                             , fuel = Maybe.map (\fuel -> { fuel | current = fuel.current - (List.length current.path - 1) }) unit.fuel
                         }
@@ -321,9 +324,9 @@ trace rules board unit current destination =
                 -- Fill mouse-event gaps from the current tip, keeping every traced
                 -- square. Never silently replace the prefix with a cheaper route.
                 optionsAvoiding current.path [ remainingRule ] board remainingUnit
-                    |> List.filter (\option -> option.destination == destination)
-                    |> List.head
+                    |> ListUtil.find (\option -> option.destination == destination)
                     |> Maybe.map extendPath
+                    |> Maybe.andThen (withinTileLimit unit)
 
 
 remainingSupplies : Unit -> Option -> Unit.Supplies
@@ -350,12 +353,22 @@ takeThrough destination path =
                 position :: takeThrough destination rest
 
 
-canStop : List Coordinate -> GameBoard -> Option -> Bool
-canStop reserved board option =
-    option.cost
-        > 0
-        && not (List.member option.destination reserved)
-        && not (List.any (\unit -> unit.position == option.destination) board.units)
+canStop : List Coordinate -> GameBoard -> Unit -> Option -> Bool
+canStop reserved board mover option =
+    let
+        occupied : Bool
+        occupied =
+            List.any (\unit -> Unit.boardPosition unit == Just option.destination) board.units
+
+        canLoad : Bool
+        canLoad =
+            Unit.loadingPartner board.units mover option.destination /= Nothing
+
+        reservedDestination : Bool
+        reservedDestination =
+            List.member option.destination reserved
+    in
+    option.cost > 0 && not reservedDestination && (not occupied || canLoad)
 
 
 preview : List Rule -> GameBoard -> Unit -> Option -> Coordinate -> Maybe Option
@@ -365,4 +378,19 @@ preview rules board unit current destination =
             Just path
 
         Nothing ->
-            trace rules board unit (start unit) destination
+            Unit.physicalPosition board.units unit
+                |> Maybe.andThen (\origin -> trace rules board unit (start origin) destination)
+
+
+withinTileLimit : Unit -> Option -> Maybe Option
+withinTileLimit unit option =
+    let
+        exceedsLimit : Bool
+        exceedsLimit =
+            tileLimit unit |> Maybe.map (\limit -> List.length option.path - 1 > limit) |> Maybe.withDefault False
+    in
+    if exceedsLimit then
+        Nothing
+
+    else
+        Just option

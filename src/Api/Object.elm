@@ -5,6 +5,10 @@
 module Api.Object exposing (..)
 
 
+type Aboard
+    = Aboard
+
+
 type Coordinate
     = Coordinate
 
@@ -35,6 +39,10 @@ type Map
 
 type MovementRule
     = MovementRule
+
+
+type OnMap
+    = OnMap
 
 
 type PlayerView
