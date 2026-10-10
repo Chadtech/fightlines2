@@ -61,12 +61,12 @@ operator bending naturally at the rear controls and the carriage staying planted
 neutral material colors and no team-colored outlines.
 Click the selected unit again to deselect it while keeping its saved move.
 Press Escape to clear the current selection and path preview while keeping saved moves.
-Select one of your units, choose **move**, and confirm to highlight reachable
+Select one of your units, choose **move** to highlight reachable
 squares. Click a highlighted square to save a move. Hover across squares to preview your exact route; retrace
 the line to shorten it. Skipped squares connect from the current path tip within
 the remaining budget. If the traced route exceeds the budget, an affordable
 route from the unit is chosen when one exists. Saving stops hover previews and hides reachable-square highlights.
-Reselect the unit and confirm **move** to trace a different route, or use
+Reselect the unit and choose **move** to trace a different route, or use
 **clear move** to remove the saved plan. Reachable squares support Tab and Enter/Space.
 Press Escape or click the selected unit to leave movement selection. Paths remain visible when
 switching units. Unsubmitted plans are local drafts and disappear on refresh.
@@ -82,13 +82,13 @@ Selecting your own unit while planning opens an anchored menu with illustrated
 command icons. Options and the separated cancel footer are flat until hovered
 or keyboard-focused. Cancel closes
 the menu without changing saved orders; click the unit again to reopen it.
-Picking a command shows its name in the header above **confirm** and **cancel**, arranged
-horizontally in a panel sized to its contents. Confirm is gold and Enter accepts it; cancel dismisses it.
+Picking a command applies it immediately and closes the menu. Orders remain editable
+until the turn is submitted.
 Infantry offers stand ground, hold position, move, attack move and dig in;
 tanks offer stand ground, hold position, move and attack move; trucks offer move
 and hold position; field guns offer hold position, move, indirect fire, dig in
 and ambush. Ambush uses a camouflaged field-gun illustration.
-Confirming move opens destination planning, and confirming hold position saves
+Choosing move opens destination planning, and choosing hold position saves
 a hold order. The other commands are visible placeholders and do nothing when clicked;
 their authoritative rules are not implemented yet.
 

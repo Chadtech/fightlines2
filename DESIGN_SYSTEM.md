@@ -129,12 +129,10 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   Cancel is a full-width flat footer row below a subtle divider, with a small
   × aligned to the icon column and the same hover bevel as command rows.
   It closes the menu while preserving selection and saved orders. Picking
-  an option names only that command in the header and replaces the options with confirm and cancel
-  buttons in a horizontal row. Size confirmation to its contents, without an
-  icon or description. Confirm is gold and
-  Enter accepts it; cancel dismisses it. Move and hold use existing planning
-  behavior; unimplemented commands remain visible but inert until their game
-  rules exist. Preserve the original
+  an implemented command applies it immediately and closes the menu. Move opens
+  destination planning; hold position saves a hold order. Orders remain editable
+  until the turn is submitted. Unimplemented commands remain visible but inert
+  until their game rules exist. Preserve the original
   SVG source locally, without a style-switch button in the game.
 - Primary-button dragging pans after a 6px threshold. A drag never selects a tile;
   a click still inspects units, depots and terrain. Scroll zooms around the cursor,
@@ -159,13 +157,13 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   tile. Keep its entire stroke within that cell, without a fill or animation. The red side starts west and the blue side east. Show side names and
   selected-unit details so color is not the only identifier.
 - Selecting your own unit opens the command menu without enabling movement.
-  Confirming move highlights reachable squares with inset gold outlines
+  Choosing move highlights reachable squares with inset gold outlines
   and a faint fill. Planned routes use dashed gold lines and a destination dot.
   A solid gold line previews the hovered route before saving; preserve traced
   squares, trim on backtracking, and connect gaps from the path tip. If the trace
   cannot reach a square within budget, fall back to an affordable route from the
   unit. Saving ends hover editing and hides reachable-square highlights;
-  reselecting the unit and confirming move restores both.
+  reselecting the unit and choosing move restores both.
   Keep the selected unit active while choosing or replacing a destination. Show
   movement budget, preview cost, planned destination/cost, clear move
   and hold position controls, and order status

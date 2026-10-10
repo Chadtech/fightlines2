@@ -13,23 +13,21 @@ import Map exposing (Map)
 import Style as S
 import Unit exposing (Unit)
 import UnitCommand as Command exposing (Command)
-import View.Button as Button
 
 
 type State
-    = Choosing
-    | Confirming Command
+    = Open
+    | Closed
 
 
 type Msg
     = MenuPressed
     | CommandPicked Command
-    | ConfirmClicked
     | CancelClicked
 
 
-toHtml : State -> Map -> Float -> Unit -> Html Msg
-toHtml state map zoom unit =
+toHtml : Map -> Float -> Unit -> Html Msg
+toHtml map zoom unit =
     let
         opensLeft : Bool
         opensLeft =
@@ -59,15 +57,6 @@ toHtml state map zoom unit =
             else
                 "0.5rem"
 
-        menuWidth : Css.Style
-        menuWidth =
-            case state of
-                Confirming _ ->
-                    Css.property "width" "max-content"
-
-                _ ->
-                    Css.width (Css.rem 13)
-
         translation : String
         translation =
             "translate(" ++ horizontalOffset ++ ", -50%)"
@@ -80,7 +69,7 @@ toHtml state map zoom unit =
             , Css.left (Css.pct anchorX)
             , Css.property "top" ("clamp(9rem, " ++ String.fromFloat anchorY ++ "%, calc(100% - 9rem))")
             , S.z4
-            , menuWidth
+            , Css.width (Css.rem 13)
             , S.transformOriginTopLeft
             , Css.property "transform" ("scale(" ++ String.fromFloat (1 / zoom) ++ ") " ++ translation)
             , S.bgGray1
@@ -91,37 +80,18 @@ toHtml state map zoom unit =
             , S.defaultCursor
             ]
         ]
-        (case state of
-            Choosing ->
-                [ menuHeader "commands"
-                , H.div
-                    [ A.attribute "role" "group"
-                    , A.attribute "aria-label" "unit commands"
-                    , A.css
-                        [ S.col
-                        , S.py1
-                        ]
-                    ]
-                    (List.map commandButton (Command.available unit.kind))
-                , cancelFooter
+        [ menuHeader "commands"
+        , H.div
+            [ A.attribute "role" "group"
+            , A.attribute "aria-label" "unit commands"
+            , A.css
+                [ S.col
+                , S.py1
                 ]
-
-            Confirming command ->
-                [ menuHeader (Command.label command)
-                , H.div
-                    [ A.css
-                        [ S.row
-                        , S.g2
-                        , S.p2
-                        ]
-                    ]
-                    [ Button.primary "confirm" ConfirmClicked
-                        |> Button.toHtml
-                    , Button.secondary "cancel" CancelClicked
-                        |> Button.toHtml
-                    ]
-                ]
-        )
+            ]
+            (List.map commandButton (Command.available unit.kind))
+        , cancelFooter
+        ]
 
 
 menuHeader : String -> Html msg

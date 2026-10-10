@@ -144,7 +144,7 @@ type Selection
 
 type alias SelectedUnit =
     { id : UnitId.UnitId
-    , commands : Maybe UnitCommands.State
+    , commands : UnitCommands.State
     }
 
 
@@ -196,7 +196,6 @@ type Msg
     | ClearMoveClicked
     | InspectClicked
     | EscapePressed
-    | HoldPositionClicked
     | DialogDismissed
     | SubmissionConfirmed
     | SubmitTurnClicked
@@ -258,36 +257,14 @@ loadSnapshot id =
 
 
 keyCommands : Model -> KeyCmd.KeyCmd Msg
-keyCommands model =
-    let
-        confirmationCommands : List (KeyCmd.KeyCmd Msg)
-        confirmationCommands =
-            if pendingCommand model /= Nothing && model.dialog == Nothing then
-                [ KeyCmd.enter (UnitCommandsMsg UnitCommands.ConfirmClicked) ]
-
-            else
-                []
-
-        navigationCommands : List (KeyCmd.KeyCmd Msg)
-        navigationCommands =
-            [ KeyCmd.escape EscapePressed
-            , KeyCmd.leftArrow PanLeftClicked
-            , KeyCmd.rightArrow PanRightClicked
-            , KeyCmd.upArrow PanUpClicked
-            , KeyCmd.downArrow PanDownClicked
-            ]
-    in
-    KeyCmd.batch (navigationCommands ++ confirmationCommands)
-
-
-pendingCommand : Model -> Maybe UnitCommand.Command
-pendingCommand model =
-    case commandMenuState model of
-        Just (UnitCommands.Confirming command) ->
-            Just command
-
-        _ ->
-            Nothing
+keyCommands _ =
+    KeyCmd.batch
+        [ KeyCmd.escape EscapePressed
+        , KeyCmd.leftArrow PanLeftClicked
+        , KeyCmd.rightArrow PanRightClicked
+        , KeyCmd.upArrow PanUpClicked
+        , KeyCmd.downArrow PanDownClicked
+        ]
 
 
 setShared : Shared.Model -> Model -> Model
@@ -517,18 +494,18 @@ selectUnit id model =
             model
 
         Just unit ->
-            if not (planningLocked model) && Maybe.map .id (selectedUnit model) == Just id && commandMenuState model /= Nothing then
+            if not (planningLocked model) && Maybe.map .id (selectedUnit model) == Just id && commandMenuState model == UnitCommands.Open then
                 clearSelection model
 
             else
                 let
-                    commands : Maybe UnitCommands.State
+                    commands : UnitCommands.State
                     commands =
                         if isOwnUnit model unit && not (planningLocked model) then
-                            Just UnitCommands.Choosing
+                            UnitCommands.Open
 
                         else
-                            Nothing
+                            UnitCommands.Closed
                 in
                 { model
                     | selected = Just (UnitSelection { id = id, commands = commands })
@@ -540,10 +517,7 @@ selectUnit id model =
 
 selectTile : Coordinate.Coordinate -> Model -> Model
 selectTile position model =
-    if pendingCommand model /= Nothing then
-        model
-
-    else if planningLocked model then
+    if planningLocked model then
         { model | selected = Just (TileSelection position) }
 
     else
@@ -576,7 +550,7 @@ selectTile position model =
                                 , pathPreview = Nothing
                                 , movementStatus = MovePlanned
                             }
-                                |> setCommandMenuState Nothing
+                                |> setCommandMenuState UnitCommands.Closed
 
                         Nothing ->
                             { model | movementStatus = DestinationUnavailable }
@@ -590,7 +564,7 @@ selectTile position model =
 
 previewTile : Coordinate.Coordinate -> Model -> Model
 previewTile position model =
-    if model.drag /= Nothing || model.pathPreview == Nothing || pendingCommand model /= Nothing then
+    if model.drag /= Nothing || model.pathPreview == Nothing then
         model
 
     else
@@ -619,7 +593,8 @@ update lobbyId msg model =
             ( updateViewport viewportMsg model, E.none )
 
         UnitCommandsMsg commandMsg ->
-            updateUnitCommands lobbyId commandMsg model
+            handleUnitCommands lobbyId commandMsg model
+                |> E.withOut
 
         PanLeftClicked ->
             panLeft model
@@ -673,31 +648,12 @@ update lobbyId msg model =
                     ( { model | dialog = Nothing }, E.none )
 
                 Nothing ->
-                    if commandMenuState model /= Nothing then
-                        ( setCommandMenuState Nothing model, E.none )
+                    if commandMenuState model == UnitCommands.Open then
+                        ( setCommandMenuState UnitCommands.Closed model, E.none )
 
                     else
                         clearSelection model
                             |> E.withOut
-
-        HoldPositionClicked ->
-            case selectedUnit model of
-                Just unit ->
-                    if isOwnUnit model unit && not (planningLocked model) then
-                        ( { model
-                            | plannedMoves = { unitId = unit.id, move = Movement.start unit } :: List.filter (\plan -> plan.unitId /= unit.id) model.plannedMoves
-                            , pathPreview = Nothing
-                            , moveOptions = []
-                            , movementStatus = MovePlanned
-                          }
-                        , E.none
-                        )
-
-                    else
-                        ( model, E.none )
-
-                Nothing ->
-                    ( model, E.none )
 
         SubmitTurnClicked ->
             if planningLocked model then
@@ -898,41 +854,45 @@ view model =
     ]
 
 
-confirmCommand : LobbyId -> Model -> ( Model, Eff Msg )
-confirmCommand lobbyId model =
-    case ( selectedUnit model, pendingCommand model ) of
-        ( Just unit, Just command ) ->
+applyCommand : LobbyId -> UnitCommand.Command -> Model -> Model
+applyCommand lobbyId command model =
+    case selectedUnit model of
+        Just unit ->
             if isOwnUnit model unit && not (planningLocked model) && List.member command (UnitCommand.available unit.kind) && UnitCommand.isImplemented command then
                 case command of
                     UnitCommand.Move ->
-                        ( { model
+                        { model
                             | pathPreview = Just (Movement.start unit)
                             , moveOptions = Movement.options (reservedDestinations unit model) model.movementRules model.board unit
                             , movementStatus = NoMovementStatus
-                          }
-                            |> setCommandMenuState Nothing
-                        , E.none
-                        )
+                        }
+                            |> setCommandMenuState UnitCommands.Closed
 
                     UnitCommand.HoldPosition ->
-                        update lobbyId HoldPositionClicked (setCommandMenuState Nothing model)
+                        { model
+                            | plannedMoves = { unitId = unit.id, move = Movement.start unit } :: List.filter (\plan -> plan.unitId /= unit.id) model.plannedMoves
+                            , pathPreview = Nothing
+                            , moveOptions = []
+                            , movementStatus = MovePlanned
+                        }
+                            |> setCommandMenuState UnitCommands.Closed
 
                     _ ->
-                        ( model, E.none )
+                        model
 
             else
-                ( setCommandMenuState Nothing model, E.none )
+                model
 
         _ ->
-            ( model, E.none )
+            model
 
 
 commandMenu : Model -> Html Msg
 commandMenu model =
     case ( selectedUnit model, commandMenuState model ) of
-        ( Just unit, Just state ) ->
+        ( Just unit, UnitCommands.Open ) ->
             if isOwnUnit model unit && not (planningLocked model) then
-                UnitCommands.toHtml state model.board.map model.zoom unit
+                UnitCommands.toHtml model.board.map model.zoom unit
                     |> H.map UnitCommandsMsg
 
             else
@@ -996,17 +956,17 @@ selectedPosition model =
             Nothing
 
 
-commandMenuState : Model -> Maybe UnitCommands.State
+commandMenuState : Model -> UnitCommands.State
 commandMenuState model =
     case model.selected of
         Just (UnitSelection selection) ->
             selection.commands
 
         _ ->
-            Nothing
+            UnitCommands.Closed
 
 
-setCommandMenuState : Maybe UnitCommands.State -> Model -> Model
+setCommandMenuState : UnitCommands.State -> Model -> Model
 setCommandMenuState commands model =
     case model.selected of
         Just (UnitSelection selection) ->
@@ -1016,34 +976,17 @@ setCommandMenuState commands model =
             model
 
 
-updateUnitCommands : LobbyId -> UnitCommands.Msg -> Model -> ( Model, Eff Msg )
-updateUnitCommands lobbyId msg model =
+handleUnitCommands : LobbyId -> UnitCommands.Msg -> Model -> Model
+handleUnitCommands lobbyId msg model =
     case msg of
         UnitCommands.CommandPicked command ->
-            case selectedUnit model of
-                Just unit ->
-                    let
-                        canPick : Bool
-                        canPick =
-                            isOwnUnit model unit && not (planningLocked model) && List.member command (UnitCommand.available unit.kind) && UnitCommand.isImplemented command
-                    in
-                    if canPick then
-                        ( setCommandMenuState (Just (UnitCommands.Confirming command)) model, E.none )
-
-                    else
-                        ( model, E.none )
-
-                Nothing ->
-                    ( model, E.none )
-
-        UnitCommands.ConfirmClicked ->
-            confirmCommand lobbyId model
+            applyCommand lobbyId command model
 
         UnitCommands.CancelClicked ->
-            ( setCommandMenuState Nothing model, E.none )
+            setCommandMenuState UnitCommands.Closed model
 
         UnitCommands.MenuPressed ->
-            ( model, E.none )
+            model
 
 
 isOwnUnit : Model -> Unit.Unit -> Bool
