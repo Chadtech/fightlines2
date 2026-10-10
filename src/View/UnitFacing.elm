@@ -3,7 +3,7 @@ module View.UnitFacing exposing
     , toSvg
     )
 
-import Api.Enum.Side as Side
+import Api.Enum.Direction as Direction
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
@@ -36,11 +36,17 @@ toSvg selected unit =
     let
         angle : String
         angle =
-            case unit.side of
-                Side.West ->
+            case unit.direction of
+                Direction.North ->
+                    "0"
+
+                Direction.East ->
                     "90"
 
-                Side.East ->
+                Direction.South ->
+                    "180"
+
+                Direction.West ->
                     "270"
 
         color : String

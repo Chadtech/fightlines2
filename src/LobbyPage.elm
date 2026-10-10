@@ -279,7 +279,7 @@ update msg model =
 
             else
                 ( { model | copyStatus = Copying }
-                , E.toJs (ToJs.CopyLink (inviteUrl model))
+                , E.toJs (ToJs.CopyLink { url = inviteUrl model })
                 )
 
         CopyLinkResultReceived result ->

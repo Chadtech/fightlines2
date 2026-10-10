@@ -3,6 +3,7 @@ module View.Dialog exposing
     , first
     , fromBody
     , map
+    , modal
     , none
     , toHtml
     , withHtmlId
@@ -14,6 +15,8 @@ import Html.Styled as Html
         ( Html
         )
 import Html.Styled.Attributes as Attr
+import Html.Styled.Events as Ev
+import Json.Decode as Decode
 import Style as S
 
 
@@ -128,3 +131,39 @@ toHtml dialog =
 
         None ->
             Html.text ""
+
+
+{-| Native modal dialogs trap keyboard focus and make the board inert.
+Open after Elm renders through the OpenDialog port effect.
+-}
+modal : String -> String -> msg -> List (Html msg) -> Html msg
+modal id title onCancel body =
+    Html.node "dialog"
+        [ Attr.id id
+        , Attr.attribute "aria-labelledby" (id ++ "-title")
+        , Ev.preventDefaultOn "cancel" (Decode.succeed ( onCancel, True ))
+        , Attr.css
+            [ Css.margin Css.auto
+            , Css.maxWidth (Css.calc (Css.vw 100) (Css.minus (Css.rem 2)))
+            , Css.width (Css.rem 24)
+            , S.p3
+            , S.bgGray1
+            , S.textGray4
+            , S.outdent
+            ]
+        ]
+        [ Html.div
+            [ Attr.css
+                [ S.col
+                , S.g3
+                ]
+            ]
+            (Html.h2
+                [ Attr.id (id ++ "-title")
+                , Attr.css [ S.textGray5 ]
+                ]
+                [ Html.text title
+                ]
+                :: body
+            )
+        ]

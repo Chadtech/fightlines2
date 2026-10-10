@@ -7,7 +7,8 @@ import Json.Encode as Je
 
 
 type Msg
-    = CopyLink String
+    = CopyLink { url : String }
+    | OpenDialog { htmlId : String }
 
 
 toCmd : Msg -> Cmd msg
@@ -18,6 +19,9 @@ toCmd message =
 tagName : Msg -> String
 tagName msg =
     case msg of
+        OpenDialog _ ->
+            "openDialog"
+
         CopyLink _ ->
             "copyLink"
 
@@ -28,7 +32,11 @@ encode message =
         payload : List ( String, Je.Value )
         payload =
             case message of
-                CopyLink url ->
+                OpenDialog { htmlId } ->
+                    [ ( "htmlId", Je.string htmlId )
+                    ]
+
+                CopyLink { url } ->
                     [ ( "url", Je.string url )
                     ]
     in

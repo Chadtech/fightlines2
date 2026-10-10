@@ -9,6 +9,7 @@ module Turn exposing
     , tick
     )
 
+import Api.Enum.Direction exposing (Direction)
 import Api.Enum.TurnEventKind as EventKind exposing (TurnEventKind)
 import Api.Object
 import Api.Object.Coordinate as CoordinateApi
@@ -16,6 +17,7 @@ import Api.Object.GameSnapshot as GameApi
 import Api.Object.TurnEvent as EventApi
 import Api.Object.TurnResolution as ResolutionApi
 import Coordinate exposing (Coordinate)
+import Direction
 import GameBoard exposing (GameBoard)
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import Point exposing (Point)
@@ -41,6 +43,7 @@ type alias Event =
     { kind : TurnEventKind
     , unitId : UnitId
     , path : List Coordinate
+    , initialDirection : Direction
     }
 
 
@@ -59,7 +62,7 @@ selection =
 
         event : SelectionSet Event Api.Object.TurnEvent
         event =
-            SS.map3 Event EventApi.kind (EventApi.unitId |> SS.mapOrFail UnitId.parse) (EventApi.path coordinate)
+            SS.map4 Event EventApi.kind (EventApi.unitId |> SS.mapOrFail UnitId.parse) (EventApi.path coordinate) EventApi.initialDirection
     in
     SS.map4 Snapshot
         GameApi.turnNumber
@@ -91,8 +94,13 @@ rewind snapshot board =
         resetUnit unit =
             snapshot.resolution
                 |> Maybe.andThen (\resolution -> List.filter (\event -> event.unitId == unit.id) resolution.events |> List.head)
-                |> Maybe.andThen (.path >> List.head)
-                |> Maybe.map (\position -> { unit | position = position })
+                |> Maybe.map
+                    (\event ->
+                        { unit
+                            | position = List.head event.path |> Maybe.withDefault unit.position
+                            , direction = event.initialDirection
+                        }
+                    )
                 |> Maybe.withDefault unit
     in
     { board | units = List.map resetUnit board.units }
@@ -124,6 +132,7 @@ tick delta playback board =
                                 List.reverse event.path
                                     |> List.head
                                     |> Maybe.withDefault unit.position
+                            , direction = Direction.alongPath event.path unit.direction
                         }
 
                     else
@@ -135,7 +144,30 @@ tick delta playback board =
                 )
 
             else
-                ( Just { playback | elapsed = elapsed }, board )
+                let
+                    turnUnit : Unit -> Unit
+                    turnUnit unit =
+                        if unit.id == event.unitId then
+                            let
+                                edge : Int
+                                edge =
+                                    floor (elapsed / 180)
+
+                                direction : Direction
+                                direction =
+                                    case List.drop edge event.path of
+                                        from :: to :: _ ->
+                                            Direction.between from to |> Maybe.withDefault unit.direction
+
+                                        _ ->
+                                            unit.direction
+                            in
+                            { unit | direction = direction }
+
+                        else
+                            unit
+                in
+                ( Just { playback | elapsed = elapsed }, { board | units = List.map turnUnit board.units } )
 
 
 movingPosition : Maybe Playback -> Maybe { unitId : UnitId, position : Point }

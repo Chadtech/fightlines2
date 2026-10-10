@@ -1,5 +1,6 @@
 port module MovementChecks exposing (main)
 
+import Api.Enum.Direction as Direction
 import Api.Enum.Side as Side
 import Api.Enum.Terrain as Terrain
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
@@ -62,7 +63,7 @@ check rules fixture =
             let
                 unit : Unit.Unit
                 unit =
-                    { id = id, kind = fixture.kind, position = fixture.origin, side = Side.West }
+                    { id = id, kind = fixture.kind, position = fixture.origin, side = Side.West, direction = Direction.East }
 
                 rows : List String
                 rows =
@@ -147,7 +148,7 @@ traceChecks rules =
 
                 unit : Unit.Unit
                 unit =
-                    { id = id, kind = UnitKind.Infantry, position = origin, side = Side.West }
+                    { id = id, kind = UnitKind.Infantry, position = origin, side = Side.West, direction = Direction.East }
 
                 board : GameBoard.GameBoard
                 board =
@@ -263,7 +264,7 @@ reservationChecks rules =
             let
                 unit : Unit.Unit
                 unit =
-                    { id = id, kind = UnitKind.Infantry, position = { x = 0, y = 0 }, side = Side.West }
+                    { id = id, kind = UnitKind.Infantry, position = { x = 0, y = 0 }, side = Side.West, direction = Direction.East }
 
                 board : GameBoard.GameBoard
                 board =

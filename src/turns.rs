@@ -1,7 +1,7 @@
 use crate::{
     map::Coordinate,
     movement,
-    scenario::{Scenario, Side, UnitId},
+    scenario::{Direction, Scenario, Side, UnitId},
 };
 use juniper::{GraphQLEnum, GraphQLInputObject, GraphQLObject, graphql_object};
 use std::collections::BTreeSet;
@@ -36,6 +36,7 @@ pub enum TurnEventKind {
 /// clients replay these outcomes rather than reimplementing resolution rules.
 #[derive(Clone, Debug)]
 pub struct TurnEvent {
+    pub initial_direction: Direction,
     pub kind: TurnEventKind,
     pub unit_id: UnitId,
     pub path: Vec<Coordinate>,
@@ -43,6 +44,9 @@ pub struct TurnEvent {
 
 #[graphql_object]
 impl TurnEvent {
+    fn initial_direction(&self) -> Direction {
+        self.initial_direction
+    }
     fn kind(&self) -> TurnEventKind {
         self.kind
     }
@@ -219,7 +223,14 @@ impl Turns {
                     } else {
                         order.path.clone()
                     };
+                    let initial_direction = scenario
+                        .units
+                        .iter()
+                        .find(|unit| unit.unit_id() == order.unit_id)
+                        .unwrap()
+                        .direction();
                     TurnEvent {
+                        initial_direction,
                         kind,
                         unit_id: order.unit_id,
                         path,
@@ -232,7 +243,7 @@ impl Turns {
                     .iter_mut()
                     .find(|unit| unit.unit_id() == event.unit_id)
                     .unwrap()
-                    .move_to(*event.path.last().unwrap());
+                    .follow_path(&event.path);
             }
             self.last_resolution = Some(TurnResolution {
                 turn_number: self.number,
@@ -289,10 +300,13 @@ mod tests {
         turns.submit(&mut scenario, Side::East, 1, east).unwrap();
         assert_eq!(turns.number, 2);
         assert_eq!(scenario.units[0].position(), Coordinate::new(3, 6));
+        assert_eq!(scenario.units[0].direction(), Direction::North);
+        assert_eq!(scenario.units[1].direction(), Direction::East);
         assert!(turns.orders.iter().all(Option::is_none));
         let resolution = turns.last_resolution.as_ref().unwrap();
         assert_eq!(resolution.events.len(), 16);
         assert_eq!(resolution.events[0].kind, TurnEventKind::Move);
+        assert_eq!(resolution.events[0].initial_direction, Direction::East);
         assert_eq!(resolution.turn_number, 1);
         assert!(turns.submit(&mut scenario, Side::East, 1, vec![]).is_err());
     }
@@ -360,6 +374,7 @@ mod tests {
             .find(|unit| unit.id() == "6")
             .unwrap()
             .move_to(Coordinate::new(5, 6));
+        let initial = scenario.clone();
         let mut west = holds(&scenario, Side::West);
         let mut east = holds(&scenario, Side::East);
         set_path(&mut west, "1", &[(3, 7), (3, 6), (4, 6)]);
@@ -377,6 +392,6 @@ mod tests {
                 .count(),
             2
         );
-        assert_eq!(scenario.units[0].position(), Coordinate::new(3, 7));
+        assert_eq!(scenario, initial);
     }
 }

@@ -63,6 +63,7 @@ import LobbyId
 import Map
 import Movement
 import Point exposing (Point)
+import Ports.Js.To as ToJs
 import Route
 import Shared
 import Style as S
@@ -75,6 +76,7 @@ import UnitId
 import View.BoardViewport as Viewport
 import View.Button as Button
 import View.Card as Card
+import View.Dialog as DialogView
 import View.GameBoard as Board
 import View.GamePanel as GamePanel
 import View.UnitStatus as UnitStatus
@@ -109,6 +111,7 @@ type alias Player =
 
 type alias Model =
     { turn : Turn.Snapshot
+    , dialog : Maybe Dialog
     , busy : Bool
     , refreshing : Bool
     , turnError : Maybe String
@@ -130,6 +133,10 @@ type alias Model =
     , suppressClick : Bool
     , frame : AnimationFrame.Frame
     }
+
+
+type Dialog
+    = PartialOrdersWarning
 
 
 type MovementStatus
@@ -164,11 +171,20 @@ type alias PlannedMove =
 type Msg
     = BoardMsg Board.Msg
     | ViewportMsg Viewport.Msg
+    | PanLeftClicked
+    | PanRightClicked
+    | PanUpClicked
+    | PanDownClicked
+    | ZoomInClicked
+    | ZoomOutClicked
+    | ResetViewClicked
     | AnimationTimerElapsed Time.Posix
     | ClearMoveClicked
     | InspectClicked
     | EscapePressed
     | HoldPositionClicked
+    | DialogDismissed
+    | SubmissionConfirmed
     | SubmitTurnClicked
     | SubmitResponseReceived (ApiRequest.Response Snapshot)
     | PollTimerElapsed Time.Posix
@@ -185,6 +201,7 @@ type Msg
 init : Shared.Model -> Flags -> Model
 init shared flags =
     { turn = flags.snapshot.turn
+    , dialog = Nothing
     , busy = False
     , refreshing = False
     , turnError = Nothing
@@ -274,43 +291,64 @@ updateViewport viewportMsg model =
         Viewport.WheelScrolled anchor delta ->
             zoomAt anchor (e ^ (negate (clamp -100 100 delta) * 0.002)) model
 
-        Viewport.ZoomInClicked ->
-            zoomAt { x = 0, y = 0 } 1.25 model
-
-        Viewport.ZoomOutClicked ->
-            zoomAt { x = 0, y = 0 } 0.8 model
-
-        Viewport.ResetClicked ->
-            resetViewport model
-
         Viewport.KeyPressed key ->
             case key of
                 "+" ->
-                    updateViewport Viewport.ZoomInClicked model
+                    zoomIn model
 
                 "=" ->
-                    updateViewport Viewport.ZoomInClicked model
+                    zoomIn model
 
                 "-" ->
-                    updateViewport Viewport.ZoomOutClicked model
+                    zoomOut model
 
                 "Home" ->
                     resetViewport model
 
                 "ArrowLeft" ->
-                    { model | offset = { x = model.offset.x + 48, y = model.offset.y } }
+                    panLeft model
 
                 "ArrowRight" ->
-                    { model | offset = { x = model.offset.x - 48, y = model.offset.y } }
+                    panRight model
 
                 "ArrowUp" ->
-                    { model | offset = { x = model.offset.x, y = model.offset.y + 48 } }
+                    panUp model
 
                 "ArrowDown" ->
-                    { model | offset = { x = model.offset.x, y = model.offset.y - 48 } }
+                    panDown model
 
                 _ ->
                     model
+
+
+panLeft : Model -> Model
+panLeft model =
+    { model | offset = { x = model.offset.x + 48, y = model.offset.y } }
+
+
+panRight : Model -> Model
+panRight model =
+    { model | offset = { x = model.offset.x - 48, y = model.offset.y } }
+
+
+panUp : Model -> Model
+panUp model =
+    { model | offset = { x = model.offset.x, y = model.offset.y + 48 } }
+
+
+panDown : Model -> Model
+panDown model =
+    { model | offset = { x = model.offset.x, y = model.offset.y - 48 } }
+
+
+zoomIn : Model -> Model
+zoomIn model =
+    zoomAt { x = 0, y = 0 } 1.25 model
+
+
+zoomOut : Model -> Model
+zoomOut model =
+    zoomAt { x = 0, y = 0 } 0.8 model
 
 
 pan : Point -> Model -> Model
@@ -393,10 +431,11 @@ snapshotSelection =
                 )
                 (Scenario.depots (SS.map Depot.Depot (DepotApi.position coordinateSelection)))
                 (Scenario.units
-                    (SS.map4 Unit.Unit
+                    (SS.map5 Unit.Unit
                         (UnitApi.id |> SS.mapOrFail UnitId.parse)
                         UnitApi.side
                         UnitApi.kind
+                        UnitApi.direction
                         (UnitApi.position coordinateSelection)
                     )
                 )
@@ -553,6 +592,34 @@ update lobbyId msg model =
         ViewportMsg viewportMsg ->
             ( updateViewport viewportMsg model, E.none )
 
+        PanLeftClicked ->
+            panLeft model
+                |> E.withOut
+
+        PanRightClicked ->
+            panRight model
+                |> E.withOut
+
+        PanUpClicked ->
+            panUp model
+                |> E.withOut
+
+        PanDownClicked ->
+            panDown model
+                |> E.withOut
+
+        ZoomInClicked ->
+            zoomIn model
+                |> E.withOut
+
+        ZoomOutClicked ->
+            zoomOut model
+                |> E.withOut
+
+        ResetViewClicked ->
+            resetViewport model
+                |> E.withOut
+
         ClearMoveClicked ->
             if planningLocked model then
                 ( model, E.none )
@@ -571,8 +638,13 @@ update lobbyId msg model =
                 |> E.withOut
 
         EscapePressed ->
-            clearSelection model
-                |> E.withOut
+            case model.dialog of
+                Just _ ->
+                    ( { model | dialog = Nothing }, E.none )
+
+                Nothing ->
+                    clearSelection model
+                        |> E.withOut
 
         HoldPositionClicked ->
             case selectedUnit model of
@@ -594,10 +666,23 @@ update lobbyId msg model =
                     ( model, E.none )
 
         SubmitTurnClicked ->
-            if readyToSubmit model then
-                ( { model | busy = True, turnError = Nothing, pathPreview = Nothing, moveOptions = [] }
-                , E.request SubmitResponseReceived (submitRequest lobbyId model)
+            if planningLocked model then
+                ( model, E.none )
+
+            else if List.isEmpty (unitsWithoutOrders model) then
+                submitTurn lobbyId model
+
+            else
+                ( { model | dialog = Just PartialOrdersWarning }
+                , E.toJs (ToJs.OpenDialog { htmlId = partialOrdersDialogId })
                 )
+
+        DialogDismissed ->
+            ( { model | dialog = Nothing }, E.none )
+
+        SubmissionConfirmed ->
+            if model.dialog == Just PartialOrdersWarning && not (planningLocked model) then
+                submitTurn lobbyId model
 
             else
                 ( model, E.none )
@@ -774,6 +859,7 @@ view model =
             , resolutionSummary model
             ]
         ]
+    , dialogView model
     ]
 
 
@@ -948,9 +1034,23 @@ viewControls model =
             , S.g2
             ]
         ]
-        [ H.span
-            []
-            [ H.text "zoom"
+        [ H.div
+            [ A.attribute "role" "group"
+            , A.attribute "aria-label" "pan map"
+            , A.css
+                [ S.row
+                , S.itemsCenter
+                , S.g1
+                ]
+            ]
+            [ H.span
+                []
+                [ H.text "pan"
+                ]
+            , panButton "←" "pan left" PanLeftClicked
+            , panButton "↑" "pan up" PanUpClicked
+            , panButton "↓" "pan down" PanDownClicked
+            , panButton "→" "pan right" PanRightClicked
             ]
         , H.div
             [ A.css
@@ -960,18 +1060,29 @@ viewControls model =
                 , S.g2
                 ]
             ]
-            [ Button.secondary "−" (ViewportMsg Viewport.ZoomOutClicked)
+            [ H.span
+                []
+                [ H.text "zoom"
+                ]
+            , Button.secondary "−" ZoomOutClicked
                 |> Button.toHtml
             , H.span
                 []
                 [ H.text (String.fromInt (round (model.zoom * 100)) ++ "%")
                 ]
-            , Button.secondary "+" (ViewportMsg Viewport.ZoomInClicked)
+            , Button.secondary "+" ZoomInClicked
                 |> Button.toHtml
-            , Button.secondary "reset view" (ViewportMsg Viewport.ResetClicked)
+            , Button.secondary "reset view" ResetViewClicked
                 |> Button.toHtml
             ]
         ]
+
+
+panButton : String -> String -> Msg -> Html Msg
+panButton arrow label msg =
+    Button.secondary arrow msg
+        |> Button.accessibleLabel label
+        |> Button.toHtml
 
 
 selectionText : Model -> String
@@ -1077,23 +1188,93 @@ planningLocked model =
     model.busy || model.turn.submitted || model.playback /= Nothing
 
 
+unitsWithoutOrders : Model -> List Unit.Unit
+unitsWithoutOrders model =
+    let
+        missingOrder : Unit.Unit -> Bool
+        missingOrder unit =
+            isOwnUnit model unit && not (List.any (\plan -> plan.unitId == unit.id) model.plannedMoves)
+    in
+    List.filter missingOrder model.board.units
+
+
 readyToSubmit : Model -> Bool
 readyToSubmit model =
-    let
-        ownUnits : List Unit.Unit
-        ownUnits =
-            List.filter (isOwnUnit model) model.board.units
+    not (planningLocked model) && List.isEmpty (unitsWithoutOrders model)
 
-        hasOrder : Unit.Unit -> Bool
-        hasOrder unit =
-            List.any (\plan -> plan.unitId == unit.id) model.plannedMoves
+
+submitTurn : LobbyId -> Model -> ( Model, Eff Msg )
+submitTurn lobbyId model =
+    ( { model | busy = True, dialog = Nothing, turnError = Nothing, pathPreview = Nothing, moveOptions = [] }
+    , E.request SubmitResponseReceived (submitRequest lobbyId model)
+    )
+
+
+partialOrdersDialogId : String
+partialOrdersDialogId =
+    "submit-turn-warning"
+
+
+dialogView : Model -> Html Msg
+dialogView model =
+    case model.dialog of
+        Nothing ->
+            H.text ""
+
+        Just PartialOrdersWarning ->
+            submissionWarning model
+
+
+submissionWarning : Model -> Html Msg
+submissionWarning model =
+    let
+        missingCount : Int
+        missingCount =
+            List.length (unitsWithoutOrders model)
+
+        warning : String
+        warning =
+            if missingCount == 1 then
+                "1 unit has no orders. it will hold position if you submit this turn."
+
+            else
+                String.fromInt missingCount
+                    ++ " units have no orders. they will hold position if you submit this turn."
     in
-    not (planningLocked model) && not (List.isEmpty ownUnits) && List.all hasOrder ownUnits
+    DialogView.modal partialOrdersDialogId
+        "units without orders"
+        DialogDismissed
+        [ H.p
+            []
+            [ H.text warning
+            ]
+        , H.form
+            [ A.attribute "method" "dialog"
+            , A.css
+                [ S.row
+                , S.flexWrap
+                , S.g3
+                ]
+            ]
+            [ Button.secondary "keep planning" DialogDismissed
+                |> Button.toHtml
+            , Button.primary "submit anyway" SubmissionConfirmed
+                |> Button.toHtml
+            ]
+        ]
 
 
 submitRequest : LobbyId -> Model -> Graphql.Http.Request Snapshot
 submitRequest lobbyId model =
     let
+        hold : Unit.Unit -> PlannedMove
+        hold unit =
+            { unitId = unit.id, move = Movement.start unit }
+
+        orders : List PlannedMove
+        orders =
+            model.plannedMoves ++ List.map hold (unitsWithoutOrders model)
+
         order : PlannedMove -> Api.InputObject.MoveOrderInput
         order plan =
             Api.InputObject.buildMoveOrderInput
@@ -1104,7 +1285,7 @@ submitRequest lobbyId model =
     Api.Mutation.submitTurn
         { id = LobbyId.toString lobbyId
         , turnNumber = model.turn.number
-        , orders = List.map order model.plannedMoves
+        , orders = List.map order orders
         }
         snapshotSelection
         |> ApiRequest.mutationRequest
@@ -1125,7 +1306,8 @@ receiveSnapshot snapshot model =
 
     else
         { model
-            | turn = snapshot.turn
+            | dialog = Nothing
+            , turn = snapshot.turn
             , board = Turn.rewind snapshot.turn snapshot.board
             , playback = Turn.start snapshot.turn
             , plannedMoves = []
@@ -1169,7 +1351,7 @@ turnPanel model =
              else
                 Button.secondary "submit turn" SubmitTurnClicked
             )
-                |> Button.disabled (not (readyToSubmit model))
+                |> Button.disabled (planningLocked model)
                 |> Button.large
                 |> Button.toHtml
 

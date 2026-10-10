@@ -4,6 +4,7 @@
 
 module Api.Object.TurnEvent exposing (..)
 
+import Api.Enum.Direction
 import Api.Enum.TurnEventKind
 import Api.InputObject
 import Api.Interface
@@ -18,6 +19,11 @@ import Graphql.Operation exposing (RootMutation, RootQuery, RootSubscription)
 import Graphql.OptionalArgument exposing (OptionalArgument(..))
 import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
+
+
+initialDirection : SelectionSet Api.Enum.Direction.Direction Api.Object.TurnEvent
+initialDirection =
+    Object.selectionForField "Enum.Direction.Direction" "initialDirection" [] Api.Enum.Direction.decoder
 
 
 kind : SelectionSet Api.Enum.TurnEventKind.TurnEventKind Api.Object.TurnEvent

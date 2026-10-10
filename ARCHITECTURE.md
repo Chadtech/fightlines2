@@ -39,7 +39,7 @@ with `#` for forests, `%` for hills, and spaces or `.` for grass. Spaces are
 preserved; malformed rows and unknown symbols return explicit errors.
 SupplyPoint terrain is authored as an ASCII sketch in `scenario.rs`.
 `scenario.rs` owns the fixed SupplyPoint layout, separate supply-depot buildings with optional
-side ownership, and units with stable typed IDs, kinds, sides, and positions.
+side ownership, and units with stable typed IDs, kinds, sides, positions, and four-way `Direction` values.
 Resource quantities, combat, and victory resolution remain future work.
 Starting requires exactly two players and initializes the scenario once before
 consuming the lobby. The host owns West and the second player East. Repeated
@@ -167,7 +167,8 @@ using styled SVG. `View.UnitSprite` owns the shared unit atlas, kind/side row
 mapping, and facing for both animated board units and static status portraits.
 `GamePage` also owns local camera offset, zoom, drag and click-suppression fields,
 and handles viewport events directly. `View.BoardViewport` owns only the view
-and event messages. The viewport wraps the pure board renderer in a pan/zoom surface beside a
+and event messages. Control-panel button messages live in `GamePage`; button and
+viewport keyboard handlers share pan, zoom and reset functions. The viewport wraps the pure board renderer in a pan/zoom surface beside a
 full-height right panel containing selection details and resolution information.
 `GamePage.turnPanel` overlays fixed-size game controls at the battlefield's bottom-left
 edge, with the submit action beside turn status and camera controls below.
@@ -186,14 +187,20 @@ state, subscriptions, or route handling. Pages expose keyboard commands through
 `keyCommands`; `Main` maps active-page messages and passes the shared operating
 system to `KeyCmd.subscriptions`. Command shortcuts use Meta on macOS/iOS and
 Control elsewhere. `GamePage` offers Escape to clear selection, reachable
-squares, and the live path preview while preserving saved move drafts.
+squares, and the live path preview while preserving saved move drafts. The page
+stores the active dialog as `Maybe Dialog`; `EscapePressed` dismisses an open
+dialog before clearing board selection.
 `View.GameBoard` renders raster sprite-sheet cells in nested SVG viewports;
 terrain, depots, units, and an inset SVG selection square are separate layers. Eastern
-units are mirrored to face west. `View.UnitFacing` overlays inset edge markers
-using that same side-based facing, with selected-unit color and a synchronized
+units initially face west and western units east. Movement updates stored direction
+from the last traversed path edge; holds and conflicts preserve it. `View.UnitFacing` overlays inset edge markers
+using each unit's direction, with selected-unit color and a synchronized
 two-second opacity pulse. Component-owned styles keep the markers steady for
 reduced-motion preferences. Markers do not receive pointer events or appear in
-status portraits. Independent facing state and turning orders remain future work.
+status portraits. Side-profile artwork uses `Side`: western units face right and
+eastern units are mirrored left. The marker represents the unit's independent
+four-way direction.
+Explicit turning orders remain future work.
 SVG events send typed unit IDs and coordinates
 directly to Elm; keyboard activation works on units and depots. The selection square ignores pointer events and stays within its cell.
 Illustrated terrain, buildings and units use smooth downsampling.
@@ -282,7 +289,8 @@ Drafts do not change occupancy. Reachable tiles and planned paths render in
 Unsubmitted drafts disappear on reload. `turns.rs` owns full-path validation,
 locked submissions and deterministic resolution, independently of HTTP. Each
 submission includes the expected turn number and exactly one move/hold order per
-owned unit. Validation checks ownership, unique orders/destinations, origin,
+owned unit. The frontend warns before submitting incomplete drafts; confirmation
+adds hold orders for unassigned units at the submission boundary. Validation checks ownership, unique orders/destinations, origin,
 bounds, adjacency, terrain costs, budgets and starting occupancy. The store locks
 membership checks, submission and resolution together. Repeated submission for
 an already locked side is idempotent; stale turn numbers are rejected.
@@ -298,8 +306,8 @@ rules in the animation player.
 
 `GamePage` polls snapshots every two seconds and locks order editing while a
 submission is pending, submitted, or playing. `Turn.elm` rewinds the completed
-snapshot to the event origins and interpolates each move along its path at 180ms
-per edge, one unit at a time. Cell positions update after each event; fractional
+snapshot to the event origins and initial directions and interpolates each move along its path at 180ms
+per edge, one unit at a time. Facing updates along each path edge during playback. Cell positions update after each event; fractional
 presentation positions go only to `View.GameBoard`. Refresh starts directly at
 the completed snapshot; it does not replay old turns. Same-turn polling preserves
 local drafts and monotonic submission flags. Page response messages retain the

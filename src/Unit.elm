@@ -1,5 +1,6 @@
 module Unit exposing (Unit, label)
 
+import Api.Enum.Direction exposing (Direction)
 import Api.Enum.Side exposing (Side)
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Coordinate exposing (Coordinate)
@@ -11,6 +12,7 @@ type alias Unit =
     { id : UnitId
     , side : Side
     , kind : UnitKind
+    , direction : Direction
     , position : Coordinate
     }
 

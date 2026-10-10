@@ -102,10 +102,12 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   by the battlefield width, and 10rem tall (20rem on narrow screens). Only its top
   and right edges have a bevel. Place a large submit button on the left, with the
   turn number and readiness together beside it and opponent status below. Keep
-  zoom and reset controls in the panel's bottom row. The panel retains its size
+  pan arrows, zoom and reset controls in the panel's bottom row. The panel retains its size
   during pending, waiting, playback and failure states; longer feedback scrolls
-  within the status area. Submit becomes gold and enabled when every unit has an
-  explicit move or hold order; disable it while orders are locked.
+  within the status area. Submit becomes gold when every unit has an explicit move or hold order;
+  keep it enabled while planning and disable it while orders are locked.
+  Submitting with unassigned units opens a modal warning with keep planning and
+  submit anyway actions; confirmation fills missing orders with holds.
 - Selected units use a `unit status` heading, their illustration in a nightwood3
   inset screen, and their name and side without position coordinates. Display
   sample hit points, supply, and (for tanks and supply trucks) fuel as horizontal
@@ -118,7 +120,7 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   provide them.
 - Primary-button dragging pans after a 6px threshold. A drag never selects a tile;
   a click still inspects units, depots and terrain. Scroll zooms around the cursor,
-  bounded to 35–300%; the bottom-left panel supplies zoom and reset controls. Keyboard
+  bounded to 35–300%; the bottom-left panel supplies pan arrows, zoom and reset controls. Keyboard
   navigation supports arrows, plus/minus and Home while the battlefield is focused.
 - Use smooth image rendering for illustrated terrain, building and unit sprites. SVG scales the
   board to the camera width and handles selection events directly in Elm.
@@ -149,10 +151,12 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   and hold position controls, and order status
   in the right panel. Reachable tiles support Tab and Enter/Space.
 - Units and depots support keyboard focus and Enter/Space activation. Illustrated
-  units face right; eastern units are mirrored. Overlay a small filled edge
+  unit sprites face right for the western side and mirror left for the eastern
+  side. Stored direction follows movement and is shown by the facing marker. Overlay a small filled edge
   triangle for each unit's current facing, keeping its outline entirely inside
   the cell. Use gray5 with a gray0 outline, and yellow5 for the selected unit.
-  Markers follow the existing side-based east/west sprite facing. Their two-second
+  Markers show the unit's stored north/east/south/west direction, turning with
+  each movement segment and retaining the last direction afterward. Their two-second
   brightness pulse fades to zero, pauses invisibly, then returns in unison
   across all units. Keep marker size fixed and ignore pointer events.
   Reduced-motion preferences keep markers fully visible and steady.

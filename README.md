@@ -42,14 +42,16 @@ player takes the blue eastern side. Click a unit or depot to inspect it; units
 and depots can also be selected with Tab and Enter/Space. Drag the battlefield
 with the primary mouse button to pan; scroll to zoom around the cursor. The right-side
 panel has selection details and unit actions; the bottom-left control panel has
-zoom and reset controls. With the battlefield focused, arrow keys
+pan arrows, zoom and reset controls. With the battlefield focused, arrow keys
 pan, plus/minus zoom, and Home resets the view. Dragging does not select a tile.
 The panel remains fixed while the board moves. Terrain uses detailed 80s anime
 illustrations, with a grass tile in every square, defined hill ridges and tree
 silhouettes, and a subtle grid.
 Units use detailed illustrated anime sprites with red and blue team colors,
 packed into 256px square cells and smoothly scaled to the board.
-Each unit has an inset edge triangle indicating its current east/west facing.
+Each unit has an inset edge triangle indicating its stored up/right/down/left facing.
+Movement turns units along each path segment and leaves them facing the final
+segment; holds and destination conflicts preserve their direction.
 Markers overlay the artwork, brighten on selection, and pulse in unison over two seconds,
 fading completely out briefly before returning. Reduced-motion preferences keep them steady.
 The infantry, tanks, and supply trucks use four-frame rigid-part idle loops in light sky blue
@@ -77,9 +79,11 @@ fuel gauges currently show labeled sample values. Authoritative resource quantit
 
 The fixed-size bottom-left control panel sits flush with the screen edges, with
 a large **submit turn** button on the left, the turn number and readiness beside
-it, and zoom controls below. It also shows the other player's submission status.
-Give every unit a move or **hold position** order. **submit turn**
-becomes primary when all units are ready. Submission locks your orders, and that
+it, and pan arrows and zoom controls below. It also shows the other player's submission status.
+Give units a move or **hold position** order. **submit turn**
+becomes primary when all units are ready. Submitting with unassigned units opens
+a warning: choose **keep planning** or **submit anyway**, which makes those
+units hold position. Submission locks your orders, and that
 waiting state survives refresh. Once both players submit, the server moves the
 units and advances the turn. Each client plays the saved paths one unit at a time,
 then opens planning with empty drafts. Refresh during playback shows the completed

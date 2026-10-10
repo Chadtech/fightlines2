@@ -18,9 +18,6 @@ type Msg
     | WindowVisibilityChanged Browser.Events.Visibility
     | WheelScrolled Point Float
     | KeyPressed String
-    | ZoomInClicked
-    | ZoomOutClicked
-    | ResetClicked
 
 
 toHtml : (Msg -> msg) -> { a | offset : Point, zoom : Float, drag : Maybe Drag } -> Html msg -> Html msg

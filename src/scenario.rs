@@ -16,6 +16,33 @@ pub enum UnitKind {
     SupplyTruck,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
+pub enum Direction {
+    North,
+    East,
+    South,
+    West,
+}
+
+impl Direction {
+    fn starting(side: Side) -> Self {
+        match side {
+            Side::West => Self::East,
+            Side::East => Self::West,
+        }
+    }
+
+    pub fn between(from: Coordinate, to: Coordinate) -> Option<Self> {
+        match (to.x() - from.x(), to.y() - from.y()) {
+            (0, -1) => Some(Self::North),
+            (1, 0) => Some(Self::East),
+            (0, 1) => Some(Self::South),
+            (-1, 0) => Some(Self::West),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct UnitId(u16);
 
@@ -37,6 +64,7 @@ pub struct Unit {
     side: Side,
     kind: UnitKind,
     position: Coordinate,
+    direction: Direction,
 }
 
 #[graphql_object]
@@ -51,6 +79,10 @@ impl Unit {
 
     pub fn kind(&self) -> UnitKind {
         self.kind
+    }
+
+    pub fn direction(&self) -> Direction {
+        self.direction
     }
 
     pub fn position(&self) -> Coordinate {
@@ -76,6 +108,17 @@ pub struct Scenario {
 impl Unit {
     pub fn unit_id(&self) -> UnitId {
         self.id
+    }
+
+    pub fn follow_path(&mut self, path: &[Coordinate]) {
+        for step in path.windows(2) {
+            if let Some(direction) = Direction::between(step[0], step[1]) {
+                self.direction = direction;
+            }
+        }
+        if let Some(position) = path.last() {
+            self.move_to(*position);
+        }
     }
 
     pub fn move_to(&mut self, position: Coordinate) {
@@ -140,6 +183,7 @@ impl Scenario {
                     side,
                     kind,
                     position: Coordinate::new(x, y),
+                    direction: Direction::starting(side),
                 });
             }
         }
@@ -157,6 +201,7 @@ impl Scenario {
                     side,
                     kind,
                     position: Coordinate::new(x, y),
+                    direction: Direction::starting(side),
                 });
             }
         }
@@ -178,6 +223,30 @@ mod tests {
     use super::*;
     use crate::map::Terrain;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn following_paths_turns_units_and_keeps_facing_on_hold() {
+        let mut unit = Scenario::supply_point().unwrap().units.remove(0);
+        for (from, to, expected) in [
+            ((3, 7), (3, 6), Direction::North),
+            ((3, 6), (4, 6), Direction::East),
+            ((4, 6), (4, 7), Direction::South),
+            ((4, 7), (3, 7), Direction::West),
+        ] {
+            unit.follow_path(&[Coordinate::new(from.0, from.1), Coordinate::new(to.0, to.1)]);
+            assert_eq!(unit.direction(), expected);
+            assert_eq!(unit.position(), Coordinate::new(to.0, to.1));
+        }
+        unit.follow_path(&[unit.position()]);
+        assert_eq!(unit.direction(), Direction::West);
+        unit.follow_path(&[
+            Coordinate::new(3, 7),
+            Coordinate::new(4, 7),
+            Coordinate::new(5, 7),
+            Coordinate::new(5, 8),
+        ]);
+        assert_eq!(unit.direction(), Direction::South);
+    }
 
     #[test]
     fn starting_forces_are_unique_in_bounds_and_mirrored() {
@@ -233,6 +302,8 @@ mod tests {
         let west_units = scenario.units.iter().filter(|unit| unit.side == Side::West);
         let east_units = scenario.units.iter().filter(|unit| unit.side == Side::East);
         for (west, east) in west_units.zip(east_units) {
+            assert_eq!(west.direction(), Direction::East);
+            assert_eq!(east.direction(), Direction::West);
             assert_eq!(west.kind, east.kind);
             assert_eq!(west.position.y(), east.position.y());
             assert_eq!(west.position.x() + east.position.x(), 16);

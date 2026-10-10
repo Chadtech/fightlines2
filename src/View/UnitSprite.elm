@@ -10,7 +10,7 @@ import View.Sprite as Sprite
 
 
 
--- Board animation and static portraits share the same atlas and facing.
+-- Board animation and static portraits share the same atlas and side profile.
 
 
 toSvg : Int -> Unit -> Svg msg
@@ -39,8 +39,8 @@ toSvg column unit =
                         1
                   )
 
-        facing : String
-        facing =
+        sideProfile : String
+        sideProfile =
             case unit.side of
                 Side.West ->
                     ""
@@ -49,7 +49,7 @@ toSvg column unit =
                     "translate(16 0) scale(-1 1)"
     in
     Svg.g
-        [ SA.transform facing
+        [ SA.transform sideProfile
         , SA.css
             [ Css.property "image-rendering" "auto"
             ]

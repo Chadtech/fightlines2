@@ -4,6 +4,7 @@
 
 module Api.Object.Unit exposing (..)
 
+import Api.Enum.Direction
 import Api.Enum.Side
 import Api.Enum.UnitKind
 import Api.InputObject
@@ -34,6 +35,11 @@ side =
 kind : SelectionSet Api.Enum.UnitKind.UnitKind Api.Object.Unit
 kind =
     Object.selectionForField "Enum.UnitKind.UnitKind" "kind" [] Api.Enum.UnitKind.decoder
+
+
+direction : SelectionSet Api.Enum.Direction.Direction Api.Object.Unit
+direction =
+    Object.selectionForField "Enum.Direction.Direction" "direction" [] Api.Enum.Direction.decoder
 
 
 position :

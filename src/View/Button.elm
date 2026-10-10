@@ -1,5 +1,6 @@
 module View.Button exposing
-    ( disabled
+    ( accessibleLabel
+    , disabled
     , large
     , onClick
     , primary
@@ -25,7 +26,8 @@ import Style as S
 
 
 type alias Button msg =
-    { disabled : Bool
+    { accessibleLabel : Maybe String
+    , disabled : Bool
     , onClick : Maybe msg
     , label : String
     , variant : Variant
@@ -51,7 +53,8 @@ type Size
 
 fromLabelAndVariant : String -> Variant -> Button msg
 fromLabelAndVariant label variant =
-    { disabled = False
+    { accessibleLabel = Nothing
+    , disabled = False
     , onClick = Nothing
     , label = label
     , variant = variant
@@ -84,6 +87,11 @@ onClick msg button =
     }
 
 
+accessibleLabel : String -> Button msg -> Button msg
+accessibleLabel label button =
+    { button | accessibleLabel = Just label }
+
+
 disabled : Bool -> Button msg -> Button msg
 disabled value button =
     { button | disabled = value }
@@ -100,6 +108,8 @@ toHtml button =
         conditionalAttrs : List (Attribute msg)
         conditionalAttrs =
             [ Maybe.map Ev.onClick button.onClick
+            , Maybe.map (A.attribute "aria-label") button.accessibleLabel
+            , Maybe.map A.title button.accessibleLabel
             ]
                 |> List.filterMap identity
 
