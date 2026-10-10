@@ -106,6 +106,13 @@ prototype; do not update it unless the task explicitly requires that.
   configuration and error translation in `ApiRequest`. Generate `Api.*` with
   `make generate-api`; do not edit those generated modules manually.
 
+### GraphQL selections
+
+- Build record selections with `SS.succeed Constructor` followed by one
+  `SS.with` pipeline step per field. Use this by default rather than `SS.mapN`,
+  including records that fit within the available `mapN` arities. Use `SS.map`
+  for transforming a single selected value.
+
 ### Views
 
 - Follow [DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) for visual conventions. Write all

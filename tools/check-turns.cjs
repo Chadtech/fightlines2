@@ -13,7 +13,7 @@ try {
       console.error(failures.join('\n'));
       process.exitCode = 1;
     } else {
-      console.log('14 sequential playback and direction checks and 9 transport playback checks passed.');
+      console.log('Shared playback, visibility, direction, and transport checks passed.');
     }
   });
 } finally {

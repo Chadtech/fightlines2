@@ -73,6 +73,10 @@ type TurnEvent
     = TurnEvent
 
 
+type TurnFrame
+    = TurnFrame
+
+
 type TurnResolution
     = TurnResolution
 

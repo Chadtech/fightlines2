@@ -122,13 +122,17 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   bevel. Resource gauges show the server-provided current and maximum values.
 - While planning, selecting your own unit shows illustrated command rows in a
   popup beside it on the battlefield. Anchor passenger commands beside their
-  truck. Keep the popup at a fixed display size as the board zooms. Put move and hold position first. Carried units have no command popup.
+  truck. Keep the popup at a fixed display size as the board zooms, constrain it
+  inside the battlefield edges, and scroll its contents when the viewport is
+  shorter than the menu. Put move and hold position first. Carried units have no command popup.
   Rotate follows move and hold for infantry, tanks, and field guns. It closes
-  the popup and offers north/east/south/west buttons and back to commands in the
-  side panel. Saving shows the chosen facing and revoke order.
+  the popup and labels north/east/south/west around the unit on the map. Pointer
+  position previews a steady facing marker; clicking saves the facing. Arrow keys or WASD
+  save their corresponding direction while rotation is active. The side panel
+  gives brief instructions without direction buttons. Saving shows the chosen facing and revoke order.
   Rows are flat at rest; hover and keyboard focus add an outset bevel, and
   pressing reverses it. Unimplemented commands are disabled. Tab enters the
-  list; arrows cycle enabled commands whenever the popup is open, including
+  list; up/down arrows or W/S cycle enabled commands whenever the popup is open, including
   before list focus, and Enter/Space chooses the focused command. Cancel and
   Escape clear selection while preserving saved orders.
   Move closes the popup and shows a destination prompt, preview cost/budget,
@@ -139,9 +143,11 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
 - Primary-button dragging pans after a 6px threshold. A drag never selects a tile;
   a click still inspects units, depots and terrain. Scroll zooms around the cursor,
   bounded to 35–300%; the bottom-left panel supplies pan arrows, zoom and reset controls. Keyboard
-  arrows pan through game-page window commands while the command popup is closed,
+  arrows or WASD pan through game-page window commands while the command popup is closed
+  and movement and rotation selection are inactive,
   without requiring battlefield focus.
-  Plus/minus and Home work while the battlefield is focused.
+  Plus/minus zoom through game-page window commands without requiring battlefield
+  focus. Home resets the view while the battlefield is focused.
 - Use smooth image rendering for illustrated terrain, building and unit sprites. SVG scales the
   board to the camera width and handles selection events directly in Elm.
 - Use highly detailed 1980s anime OVA terrain with fine ink contours, richly
@@ -171,7 +177,11 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   selected-unit details so color is not the only identifier.
 - Selecting your own unit shows commands without enabling movement.
   Choosing move highlights reachable squares with inset gold outlines
-  and a faint fill. Planned routes use dashed gold lines and a destination dot.
+  and a faint fill. While choosing a move or unload destination, dim unavailable
+  terrain and depots to 60% of their normal brightness, preserving existing fog
+  shading. Keep available destinations and the selected tile at their normal
+  brightness; units and route markers remain readable above the terrain.
+  Planned routes use dashed gold lines and a destination dot.
   A solid gold line previews the hovered route before saving; preserve traced
   squares, trim on backtracking, and connect gaps from the path tip. If the trace
   cannot reach a square within budget, fall back to an affordable route from the
@@ -179,7 +189,11 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   reselecting the unit and choosing move restores both.
   Keep the selected unit active while choosing a destination. Show movement
   budget and preview cost while planning, then the chosen destination/cost and
-  revoke order in the right panel. Reachable tiles support Tab and Enter/Space.
+  revoke order in the right panel. Arrow keys or WASD extend or retrace the
+  previewed route without panning; Enter saves that route. Reachable tiles support Tab and Enter/Space.
+  Units with saved move, hold, or rotation orders render their board artwork at
+  60% brightness until the order is revoked or the turn resolves. Keep facing
+  markers and selection outlines bright and readable.
 - Units and depots support keyboard focus and Enter/Space activation. Illustrated
   unit sprites face right for player 1 and mirror left for player 2. Stored direction follows movement and is shown by the facing marker. Overlay a small filled edge
   triangle for each infantry, tank or field gun's current facing, keeping its outline entirely inside
@@ -211,6 +225,14 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   Enter/Space, and preserves that unit's selection. Show load/unload destination
   labels and explain the receiving unit's hold requirement in the right panel.
 - Truck status shows `cargo: current / capacity` and one button per passenger.
+  Loaded trucks also show a small dark square badge with a cream border and
+  head-and-shoulders silhouette in the tile's lower-right corner. Two passengers
+  widen the badge slightly and add `2`. The badge pulses in unison over two seconds
+  between full and 30% opacity, remaining visible during the dim phase and above
+  ordered-sprite dimming. Reduced-motion preferences keep it steady. Derive cargo
+  from current passenger locations, so loading and unloading update the badge
+  during playback. Empty trucks have no badge; concealed enemy cargo stays hidden.
+  The badge ignores pointer events; the truck's accessible label includes its cargo count.
   Passenger selection shows inspection details. Saving a loaded truck's move
   destination opens a modal titled `unload`, with one styled native checkbox per
   passenger, a small unit portrait, the kind name alone, and compact health and

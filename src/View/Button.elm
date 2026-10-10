@@ -1,5 +1,6 @@
 module View.Button exposing
-    ( accessibleLabel
+    ( Button
+    , accessibleLabel
     , disabled
     , large
     , onClick
@@ -27,7 +28,6 @@ import Style as S
 
 type alias Button msg =
     { accessibleLabel : Maybe String
-    , disabled : Bool
     , onClick : Maybe msg
     , label : String
     , variant : Variant
@@ -38,6 +38,7 @@ type alias Button msg =
 type Variant
     = Variant__Primary
     | Variant__Secondary
+    | Disabled
 
 
 type Size
@@ -54,7 +55,6 @@ type Size
 fromLabelAndVariant : String -> Variant -> Button msg
 fromLabelAndVariant label variant =
     { accessibleLabel = Nothing
-    , disabled = False
     , onClick = Nothing
     , label = label
     , variant = variant
@@ -92,9 +92,9 @@ accessibleLabel label button =
     { button | accessibleLabel = Just label }
 
 
-disabled : Bool -> Button msg -> Button msg
-disabled value button =
-    { button | disabled = value }
+disabled : String -> Button msg
+disabled label =
+    fromLabelAndVariant label Disabled
 
 
 large : Button msg -> Button msg
@@ -119,6 +119,13 @@ toHtml button =
                 variantStyles : List Css.Style
                 variantStyles =
                     case button.variant of
+                        Disabled ->
+                            [ S.bgGray1
+                            , S.textGray3
+                            , S.indent
+                            , Css.cursor Css.notAllowed
+                            ]
+
                         Variant__Primary ->
                             [ S.bgYellow2
                             , S.textYellow5
@@ -157,7 +164,7 @@ toHtml button =
                             , Css.minHeight (Css.rem 3)
                             ]
             in
-            [ A.disabled button.disabled
+            [ A.disabled (button.variant == Disabled)
             , A.css
                 [ S.batch sizeStyles
                 , Css.alignSelf Css.flexStart

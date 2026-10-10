@@ -30,7 +30,8 @@ remain strings.
 carries the selected type into the game, where it cannot be changed. Elm keeps
 the generated enum typed and uses `MapType.label` for display. The host saves a
 draft selection; lobby polling updates the authoritative map without replacing
-that draft.
+that draft. Starting saves the current draft through `setLobbyMap` before
+requesting `startGame`; a failed save leaves the lobby open and shows the error.
 
 `map.rs` stores width/height, a base terrain tile, and a `BTreeMap` of coordinate
 terrain overrides. Lookup returns no tile outside the map; missing in-bounds
@@ -179,13 +180,16 @@ synchronous resolvers for its in-memory operations.
 `View.UnitCommands` renders the board-anchored command popup and emits command choices
 and arrow-key events. `GamePage.update` chooses the adjacent enabled command,
 wrapping at the ends, and `Effect.focus` uses Elm's DOM API to focus its HTML ID. Selection tracks the focused command. While the popup is open, page-level
-arrow commands navigate its enabled options instead of panning, including
+up/down arrow and W/S commands navigate its enabled options instead of panning, including
 before a command button receives focus. Buttons handle arrows locally without
 propagating them. Cancel clears selection. Commands, destination planning and a saved order are mutually
 exclusive views derived from `GamePage` state. Commands appear beside the unit
 (or its carrier for passengers); destination planning and saved orders remain
-in the side panel. The popup scales inversely to camera zoom and stops mouse
-presses from starting a battlefield drag.
+in the side panel. The popup sits beside the transformed board inside the battlefield
+viewport, retaining its display size at every zoom. Viewport container units place
+it beside the unit using the camera offset and zoom; its translation is constrained
+by its actual dimensions and the battlefield edges. Oversized menus scroll. The
+popup stops mouse presses from starting a battlefield drag.
 
 `GamePage` owns unit/tile selection and an explicit four-state `AnimationFrame`.
 Board data types live in `Coordinate`, `TerrainFeature`, `Map`, `Depot`, `Unit`
@@ -196,8 +200,8 @@ mapping, and facing for both animated board units and static status portraits.
 `GamePage` also owns local camera offset, zoom, drag and click-suppression fields,
 and handles viewport events directly. `View.BoardViewport` owns only the view
 and event messages. Control-panel button messages live in `GamePage`; button and
-window arrow commands share pan functions; viewport keyboard handlers share zoom
-and reset functions. The viewport wraps the pure board renderer in a pan/zoom surface beside a
+window arrow commands share pan functions; window plus/minus commands share zoom
+functions, and the viewport Home handler shares the reset function. The viewport wraps the pure board renderer in a pan/zoom surface beside a
 full-height right panel containing selection details and resolution information.
 `GamePage.turnPanel` overlays fixed-size game controls at the battlefield's bottom-left
 edge, with the submit action beside turn status and camera controls below.
@@ -215,8 +219,13 @@ for unrecognized platform strings. Missing or malformed flags instead open an
 state, subscriptions, or route handling. Pages expose keyboard commands through
 `keyCommands`; `Main` maps active-page messages and passes the shared operating
 system to `KeyCmd.subscriptions`. Command shortcuts use Meta on macOS/iOS and
-Control elsewhere. `GamePage` offers window-level arrow commands to pan without
-battlefield focus and Escape to clear selection, reachable
+Control elsewhere. While choosing a move, `GamePage` routes arrow and WASD
+commands to extend or retrace the preview from its current tip, and Enter saves
+the preview through the same destination validation as a click. Board Enter
+events confirm that preview when focus remains on the selected unit. Enter on
+another unit, depot, or reachable tile activates that focused destination.
+Outside command, movement, and rotation selection, arrow and WASD commands pan.
+Plus/minus commands zoom without battlefield focus, and Escape clears selection, reachable
 squares, and the live path preview while preserving saved move drafts. The page
 stores the active dialog as `Maybe Dialog`; `EscapePressed` dismisses an open
 dialog before clearing board selection.
@@ -325,9 +334,20 @@ bounds, adjacency, terrain costs, budgets and starting occupancy. The store lock
 membership checks, submission and resolution together. Repeated submission for
 an already locked side is idempotent; stale turn numbers are rejected.
 
-Both submitted sides resolve together. Opposing destination conflicts hold both
-units; other paths may intersect without combat. Events use stable numeric unit
-order, independently of arrival order. `TurnEventKind` distinguishes moves, holds
+Both submitted sides resolve together. An explicit conflict-analysis pass reads
+both complete submissions against the unchanged starting board before movement
+events are built or positions/resources change. Opposing destination conflicts
+hold both units; other paths may intersect without combat. Future combat must
+extend this advance analysis to settle path intersections, encounters and route
+interruptions before computing movement outcomes; playback order must never
+choose a winner.
+
+Resolved movement and rotation events are interleaved between players, retaining
+stable numeric unit order within each side, independently of submission arrival.
+Player 1 opens odd turns and player 2 opens even turns. After the opening event,
+normalized queue midpoints spread unequal action counts proportionally; equal
+counts alternate. Holds/conflicts do not add animation delays. Loading and
+unloading follow movement, with each transport phase interleaved the same way. `TurnEventKind` distinguishes moves, holds
 and destination conflicts. The server stores the latest `TurnResolution`, applies
 its outcomes and increments the turn once. Snapshots reveal submission flags,
 never the opponent's pending paths. Later attacks, path interruptions and battle
@@ -335,14 +355,18 @@ events should extend this resolution stream rather than putting authoritative
 rules in the animation player.
 
 `GamePage` polls snapshots every two seconds and locks order editing while a
-submission is pending, submitted, or playing. `Turn.elm` rewinds the completed
-snapshot to the event origins and initial directions and interpolates each move along its path at 180ms
-per edge, one unit at a time. Facing updates along each path edge during playback. Cell positions update after each event; fractional
-presentation positions go only to `View.GameBoard`. Refresh starts directly at
+submission is pending, submitted, or playing. `TurnPlayback.elm` starts from the
+server-projected initial frame and advances one unit through its entire route
+before starting the next, at 180ms per path edge. Frames contain the observable
+units and sight mask at each tile boundary. It interpolates units observed at both ends
+of an edge, updates facing during movement, and applies transport transitions
+after movement. Fractional presentation positions go only to `View.GameBoard`.
+Refresh starts directly at
 the completed snapshot; it does not replay old turns. Same-turn polling preserves
 local drafts and monotonic submission flags. Page response messages retain the
 originating game ID through `Main`. `TurnChecks.elm` verifies sequential playback,
-interpolation and reconstruction of the final board.
+visibility boundaries, interpolation,
+transport, facing, and reconstruction of the final board.
 
 `tests/movement.json` contains shared rule and reachability cases. `make check`
 checks the Rust rules against them and runs `MovementChecks.elm` in Node,
@@ -406,13 +430,17 @@ enemies in forests remain concealed even on a known occupied square.
 `game_view` projects the authoritative scenario for the requesting side,
 including the development preview. `GameSnapshot.visibleTiles` supplies the
 fog mask; the scenario includes all own units and only observable enemies.
-Terrain and static depots remain public map knowledge. Turn resolution events
-are also projected: enemy routes must be observable throughout under both
-the initial and final sight masks to be replayed. Other sightings snap to the
-final observed position; own paths are retained. Stored units and authoritative
-movement validation still use the complete board. `GamePage` stores the mask
-and refreshes it on resolved turns; `View.GameBoard` darkens and desaturates unseen terrain and known depots
-with the same image filter, preserving artwork detail and crisp tile boundaries. Playback uses the resolved turn's sight mask.
+Terrain and static depots remain public map knowledge. Turn resolutions include
+a shared timeline generated from the full resolved
+events: one unit completes its path at a time, then loading and unloading apply.
+`visibility.rs` projects every frame independently, including only observable
+enemies and the side's current sight mask. Hidden paths remain withheld from
+the summary events; transient sightings are carried by frames rather than by
+complete enemy paths. Stored units and authoritative movement validation still use the complete board. `GamePage` stores the mask
+and refreshes it at each playback tile boundary; `View.GameBoard` darkens and desaturates unseen
+terrain and known depots
+with the same image filter, preserving artwork detail and crisp tile boundaries.
+Both players receive the same timeline timing with their own projected visibility.
 
 ## Unit transport
 
@@ -460,6 +488,13 @@ events walk a passenger onto the board. Event initial carrier IDs restore cargo
 when rewinding, and load carrier IDs identify the truck. Playback applies those
 events as location transitions; riding positions are derived from the truck.
 Supply delivery cargo remains future work.
+`View.GameBoard` counts passengers from the current board's `Aboard` locations
+and overlays `View.UnitCargo` on loaded trucks, outside the sprite's order-dimming
+filter and side-mirroring transform. Load/unload playback therefore updates the
+badge without additional state. Its component owns the synchronized opacity
+pulse and reduced-motion styles. The badge ignores pointer events; cargo counts
+also appear in each loaded truck's accessible label. Enemy cargo remains withheld
+by the existing snapshot visibility rules.
 
 ## Unit hit points
 
@@ -478,4 +513,6 @@ the unit's move/hold order, spends only normal turn upkeep, and emits a `Rotate`
 event with initial facing and `rotationDirection`. Playback rewinds the initial
 facing and applies the chosen direction at the event's end without moving.
 `GamePage` stores direction selection in the selected unit's interaction state;
-choosing a cardinal direction saves a revocable draft and counts toward readiness.
+`View.RotationChoices` overlays cardinal pointer sectors and labels on the board.
+Hover changes only the selection preview, rendered as a steady facing marker;
+clicking or pressing an arrow key or WASD saves a revocable draft and counts toward readiness.

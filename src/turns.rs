@@ -1,7 +1,7 @@
 use crate::{
     map::Coordinate,
     movement,
-    scenario::{Direction, Scenario, Side, UnitId},
+    scenario::{Direction, Scenario, Side, Unit, UnitId},
 };
 use juniper::{GraphQLEnum, GraphQLInputObject, GraphQLObject, graphql_object};
 use std::collections::{BTreeMap, BTreeSet};
@@ -92,9 +92,17 @@ impl TurnEvent {
 }
 
 #[derive(Clone, Debug, GraphQLObject)]
+pub struct TurnFrame {
+    pub units: Vec<Unit>,
+    pub visible_tiles: Vec<Coordinate>,
+}
+
+#[derive(Clone, Debug, GraphQLObject)]
 pub struct TurnResolution {
     pub turn_number: i32,
     pub events: Vec<TurnEvent>,
+    /// Viewer-specific frames are populated when visibility projects the resolution.
+    pub frames: Vec<TurnFrame>,
 }
 
 pub struct Turns {
@@ -349,6 +357,97 @@ pub fn validate(
     Ok(orders)
 }
 
+/// Analyze both locked submissions against the unchanged starting board. Future
+/// combat must extend this pass to settle path intersections and interruptions
+/// before constructing movement events or applying any unit/resource changes.
+fn destination_conflicts(scenario: &Scenario, orders: &[MoveOrder]) -> BTreeSet<UnitId> {
+    let sides: BTreeMap<_, _> = scenario
+        .units
+        .iter()
+        .map(|unit| (unit.unit_id(), unit.side()))
+        .collect();
+    orders
+        .iter()
+        .filter(|order| {
+            order.path.len() > 1
+                && orders.iter().any(|other| {
+                    sides[&other.unit_id] != sides[&order.unit_id]
+                        && other.path.last() == order.path.last()
+                        && scenario
+                            .units
+                            .iter()
+                            .find(|unit| unit.unit_id() == other.unit_id)
+                            .is_some_and(|unit| unit.carrier_id().is_none())
+                })
+        })
+        .map(|order| order.unit_id)
+        .collect()
+}
+
+/// Presentation order never determines outcomes. Complete routes alternate when
+/// counts match and spread proportionally when counts differ. Initiative switches
+/// each turn; both viewers replay the same schedule, regardless of submission order.
+fn playback_order(scenario: &Scenario, turn_number: i32, events: Vec<TurnEvent>) -> Vec<TurnEvent> {
+    let sides: BTreeMap<_, _> = scenario
+        .units
+        .iter()
+        .map(|unit| (unit.unit_id(), side_index(unit.side())))
+        .collect();
+    let mut ordered = Vec::with_capacity(events.len());
+    // Keep transport dependencies: complete movement before boarding/unloading.
+    // Holds remain before loads so the first event still restores a unit's origin.
+    for kinds in [
+        &[TurnEventKind::Move, TurnEventKind::Rotate][..],
+        &[TurnEventKind::Hold, TurnEventKind::DestinationConflict][..],
+        &[TurnEventKind::Load][..],
+        &[TurnEventKind::Unload][..],
+    ] {
+        let mut queues: [Vec<_>; 2] = std::array::from_fn(|side| {
+            let mut queue: Vec<_> = events
+                .iter()
+                .filter(|event| kinds.contains(&event.kind) && sides[&event.unit_id] == side)
+                .cloned()
+                .collect();
+            queue.sort_by_key(|event| event.unit_id);
+            queue
+        });
+        let counts = queues.each_ref().map(Vec::len);
+        // Reverse for efficient removal while preserving stable within-side order.
+        for queue in &mut queues {
+            queue.reverse();
+        }
+        let mut emitted = [0usize; 2];
+        let initiative = if turn_number % 2 == 1 { 0 } else { 1 };
+        let mut preferred = initiative;
+        while !queues.iter().all(Vec::is_empty) {
+            let side = if queues[0].is_empty() {
+                1
+            } else if queues[1].is_empty() {
+                0
+            } else if emitted == [0, 0] {
+                initiative
+            } else {
+                // Compare the next normalized midpoint without floating point.
+                let next = [
+                    (2 * emitted[0] + 1) * counts[1],
+                    (2 * emitted[1] + 1) * counts[0],
+                ];
+                match next[0].cmp(&next[1]) {
+                    std::cmp::Ordering::Less => 0,
+                    std::cmp::Ordering::Greater => 1,
+                    std::cmp::Ordering::Equal => preferred,
+                }
+            };
+            if let Some(event) = queues[side].pop() {
+                ordered.push(event);
+                emitted[side] += 1;
+                preferred = 1 - side;
+            }
+        }
+    }
+    ordered
+}
+
 impl Turns {
     pub fn submit(
         &mut self,
@@ -374,6 +473,7 @@ impl Turns {
                 .collect();
             // Stable unit order, independent of which player's request arrives first.
             orders.sort_by_key(|order| order.unit_id);
+            let conflicts = destination_conflicts(scenario, &orders);
             let mut events = Vec::new();
             let mut loads = Vec::new();
             for order in &orders {
@@ -383,17 +483,7 @@ impl Turns {
                     .find(|unit| unit.unit_id() == order.unit_id)
                     .unwrap();
                 let destination = *order.path.last().unwrap();
-                let conflict = order.path.len() > 1
-                    && orders.iter().any(|other| {
-                        let other_unit = scenario
-                            .units
-                            .iter()
-                            .find(|unit| unit.unit_id() == other.unit_id)
-                            .unwrap();
-                        other_unit.side() != unit.side()
-                            && other.path.last() == Some(&destination)
-                            && other_unit.carrier_id().is_none()
-                    });
+                let conflict = conflicts.contains(&order.unit_id);
                 let kind = if conflict {
                     TurnEventKind::DestinationConflict
                 } else if order.direction.is_some() {
@@ -506,7 +596,8 @@ impl Turns {
             scenario.finish_turn_resources();
             self.last_resolution = Some(TurnResolution {
                 turn_number: self.number,
-                events,
+                events: playback_order(scenario, self.number, events),
+                frames: Vec::new(),
             });
             self.number += 1;
         }
@@ -545,6 +636,104 @@ fn legal_unload(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn playback_fixture(scenario: &Scenario, counts: [usize; 2]) -> Vec<TurnEvent> {
+        [Side::Player1, Side::Player2]
+            .into_iter()
+            .flat_map(|side| {
+                scenario
+                    .units
+                    .iter()
+                    .filter(move |unit| unit.side() == side)
+                    .take(counts[side_index(side)])
+            })
+            .map(|unit| TurnEvent {
+                unit_id: unit.unit_id(),
+                kind: TurnEventKind::Move,
+                path: vec![Coordinate::new(0, 0), Coordinate::new(1, 0)],
+                initial_direction: unit.direction(),
+                rotation_direction: None,
+                initial_carrier: None,
+                carrier_id: None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn playback_interleaves_three_moves_and_two_moves_and_switches_initiative() {
+        let scenario = Scenario::supply_point().unwrap();
+        let events = playback_fixture(&scenario, [3, 2]);
+        let ids: Vec<_> = events.iter().map(|event| event.unit_id).collect();
+        let order = |turn, events| {
+            playback_order(&scenario, turn, events)
+                .into_iter()
+                .map(|event| event.unit_id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            order(1, events.clone()),
+            vec![ids[0], ids[3], ids[1], ids[4], ids[2]]
+        );
+        assert_eq!(
+            order(2, events.clone()),
+            vec![ids[3], ids[0], ids[1], ids[4], ids[2]]
+        );
+        let mut reversed = events.clone();
+        reversed.reverse();
+        assert_eq!(order(1, events), order(1, reversed));
+    }
+
+    #[test]
+    fn playback_spreads_unequal_forces_and_handles_empty_sides() {
+        let scenario = Scenario::supply_point().unwrap();
+        for counts in [[8, 3], [3, 8], [8, 8], [0, 3], [3, 0], [0, 0]] {
+            for turn in [1, 2] {
+                let events = playback_fixture(&scenario, counts);
+                let ordered = playback_order(&scenario, turn, events.clone());
+                assert_eq!(ordered.len(), counts.iter().sum::<usize>());
+                assert_eq!(
+                    ordered
+                        .iter()
+                        .map(|event| event.unit_id)
+                        .collect::<BTreeSet<_>>(),
+                    events.iter().map(|event| event.unit_id).collect()
+                );
+                let mut seen = [0usize; 2];
+                for event in ordered {
+                    let unit = scenario
+                        .units
+                        .iter()
+                        .find(|unit| unit.unit_id() == event.unit_id)
+                        .unwrap();
+                    seen[side_index(unit.side())] += 1;
+                    let total = seen.iter().sum::<usize>();
+                    let expected =
+                        total as f64 * counts[0] as f64 / counts.iter().sum::<usize>() as f64;
+                    assert!((seen[0] as f64 - expected).abs() <= 1.0);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn playback_keeps_transport_after_all_movement() {
+        let scenario = Scenario::supply_point().unwrap();
+        let mut events = playback_fixture(&scenario, [2, 2]);
+        let mut load = events[0].clone();
+        load.kind = TurnEventKind::Load;
+        let mut unload = events[1].clone();
+        unload.kind = TurnEventKind::Unload;
+        events.insert(0, unload);
+        events.insert(1, load);
+        let ordered = playback_order(&scenario, 2, events);
+        assert!(
+            ordered[..4]
+                .iter()
+                .all(|event| event.kind == TurnEventKind::Move)
+        );
+        assert_eq!(ordered[4].kind, TurnEventKind::Load);
+        assert_eq!(ordered[5].kind, TurnEventKind::Unload);
+    }
 
     fn holds(scenario: &Scenario, side: Side) -> Vec<MoveOrderInput> {
         scenario

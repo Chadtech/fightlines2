@@ -1,5 +1,6 @@
 module View.UnitCommands exposing
-    ( MenuOption(..)
+    ( Camera
+    , MenuOption(..)
     , Msg(..)
     , enabledOptions
     , optionHtmlId
@@ -13,6 +14,7 @@ import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Json.Decode as Decode
 import Map exposing (Map)
+import Point exposing (Point)
 import Style as S
 import Unit exposing (Unit)
 import UnitCommand as Command exposing (Command)
@@ -27,16 +29,19 @@ type Msg
     = MenuPressed
     | CancelClicked
     | CommandFocused MenuOption
-    | PreviousCommandPressed
-    | NextCommandPressed
     | CommandPicked Command
     | ArrowedUpCommandMenu MenuOption
     | ArrowedDownCommandMenu MenuOption
-    | CommandFocusCompleted
 
 
-toHtml : Map -> Float -> Coordinate -> Unit -> Html Msg
-toHtml map zoom position unit =
+type alias Camera =
+    { offset : Point
+    , zoom : Float
+    }
+
+
+toHtml : Map -> Camera -> Coordinate -> Unit -> Html Msg
+toHtml map camera position unit =
     let
         opensLeft : Bool
         opensLeft =
@@ -50,25 +55,39 @@ toHtml map zoom position unit =
             else
                 position.x + 1
 
-        anchorX : Float
+        anchorX : String
         anchorX =
-            toFloat horizontalEdge / toFloat map.width * 100
+            anchor "50cqw" camera.offset.x (toFloat horizontalEdge / toFloat map.width - 0.5)
 
-        anchorY : Float
+        anchorY : String
         anchorY =
-            (toFloat position.y + 0.5) / toFloat map.height * 100
+            anchor "50cqh" camera.offset.y ((toFloat position.y + 0.5 - toFloat map.height / 2) / toFloat map.width)
+
+        anchor : String -> Float -> Float -> String
+        anchor center offset fraction =
+            -- Match BoardViewport's centered board width, then apply its camera.
+            "calc(" ++ center ++ " + min(80cqw, 76vh) * " ++ String.fromFloat (fraction * camera.zoom) ++ " + " ++ String.fromFloat offset ++ "px)"
 
         horizontalOffset : String
         horizontalOffset =
             if opensLeft then
-                "calc(-100% - 0.5rem)"
+                "calc(-100% - 0.25rem)"
 
             else
-                "0.5rem"
+                "0.25rem"
 
         translation : String
         translation =
-            "translate(" ++ horizontalOffset ++ ", -50%)"
+            "translate("
+                ++ constrainedOffset "100cqw" anchorX horizontalOffset
+                ++ ", "
+                ++ constrainedOffset "100cqh" anchorY "-3rem"
+                ++ ")"
+
+        constrainedOffset : String -> String -> String -> String
+        constrainedOffset viewportSize origin preferred =
+            -- Transform percentages measure the menu itself, including wrapped content.
+            "clamp(calc(0.5rem - " ++ origin ++ "), " ++ preferred ++ ", calc(" ++ viewportSize ++ " - " ++ origin ++ " - 100% - 0.5rem))"
 
         commands : List Command
         commands =
@@ -79,12 +98,15 @@ toHtml map zoom position unit =
         , Ev.stopPropagationOn "mousedown" (Decode.succeed ( MenuPressed, True ))
         , A.css
             [ S.absolute
-            , Css.left (Css.pct anchorX)
-            , Css.property "top" ("clamp(9rem, " ++ String.fromFloat anchorY ++ "%, calc(100% - 9rem))")
+            , Css.property "left" anchorX
+            , Css.property "top" anchorY
             , S.z4
             , Css.width (Css.rem 13)
+            , Css.property "max-width" "calc(100cqw - 1rem)"
+            , Css.property "max-height" "calc(100cqh - 1rem)"
+            , S.overflowAuto
             , S.transformOriginTopLeft
-            , Css.property "transform" ("scale(" ++ String.fromFloat (1 / zoom) ++ ") " ++ translation)
+            , Css.property "transform" translation
             , S.bgGray1
             , S.textGray4
             , S.outdent
@@ -98,6 +120,7 @@ toHtml map zoom position unit =
         [ H.h3
             [ A.css
                 [ S.bgGray3
+                , S.shrink0
                 , S.textGray0
                 , S.p2
                 ]
@@ -109,6 +132,7 @@ toHtml map zoom position unit =
             , A.attribute "aria-label" "choose a command"
             , A.css
                 [ S.col
+                , S.shrink0
                 ]
             ]
             (List.map commandButton commands)
@@ -231,6 +255,7 @@ navigationDecoder current =
 commandRowStyles : List Css.Style
 commandRowStyles =
     [ S.row
+    , S.shrink0
     , S.itemsCenter
     , S.g2
     , S.p2

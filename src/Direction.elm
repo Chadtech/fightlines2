@@ -1,5 +1,6 @@
 module Direction exposing
-    ( alongPath
+    ( all
+    , alongPath
     , between
     , label
     , step
@@ -7,6 +8,11 @@ module Direction exposing
 
 import Api.Enum.Direction as Direction exposing (Direction)
 import Coordinate exposing (Coordinate)
+
+
+all : List Direction
+all =
+    Direction.list
 
 
 between : Coordinate -> Coordinate -> Maybe Direction

@@ -44,6 +44,8 @@ import Url
 import View.Button as Button
 import View.Card as Card
 import View.Dropdown as Dropdown
+import View.UnitCargo as UnitCargo
+import View.UnitFacing as UnitFacing
 
 
 
@@ -514,6 +516,14 @@ shell page =
                     ++ [ Dropdown.globalStyles
                        ]
                 )
+
+        shellContent : List (Html Msg)
+        shellContent =
+            [ globalStyles
+            , UnitFacing.styles
+            , UnitCargo.styles
+            ]
+                ++ content
     in
     [ H.main_
         [ A.css
@@ -525,7 +535,7 @@ shell page =
             , S.g3
             ]
         ]
-        (globalStyles :: content)
+        shellContent
     ]
 
 

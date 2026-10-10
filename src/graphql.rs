@@ -506,7 +506,7 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(",");
             format!(
-                "mutation {{ submitTurn(id: \"{id}\", turnNumber: 1, orders: [{orders}]) {{ turnNumber submitted opponentSubmitted lastResolution {{ turnNumber events {{ kind unitId }} }} }} }}"
+                "mutation {{ submitTurn(id: \"{id}\", turnNumber: 1, orders: [{orders}]) {{ turnNumber submitted opponentSubmitted lastResolution {{ turnNumber events {{ kind unitId }} frames {{ units {{ id side }} visibleTiles {{ x y }} }} }} }} }}"
             )
         };
         for identity in [None, Some(cookie.clone())] {
@@ -528,6 +528,19 @@ mod tests {
         let (resolved, _) = execute!(submit("PLAYER2"), Some(guest));
         assert_eq!(resolved["data"]["submitTurn"]["turnNumber"], 2);
         assert_eq!(resolved["data"]["submitTurn"]["submitted"], false);
+        let frames = resolved["data"]["submitTurn"]["lastResolution"]["frames"]
+            .as_array()
+            .unwrap();
+        assert_eq!(frames.len(), 1);
+        assert!(!frames[0]["visibleTiles"].as_array().unwrap().is_empty());
+        assert!(
+            frames[0]["units"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|unit| unit["side"] == "PLAYER2")
+        );
+
         assert_eq!(
             resolved["data"]["submitTurn"]["lastResolution"]["events"]
                 .as_array()

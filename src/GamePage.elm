@@ -66,7 +66,7 @@ import Html.Styled as H
 import Html.Styled.Attributes as A
 import Html.Styled.Keyed as Keyed
 import Json.Decode as Decode
-import KeyCmd
+import KeyCmd exposing (KeyCmd)
 import ListUtil
 import LobbyId
     exposing
@@ -82,6 +82,7 @@ import Terrain
 import TerrainFeature
 import Time
 import Turn
+import TurnPlayback
 import Unit exposing (Unit)
 import UnitCommand
 import UnitId exposing (UnitId)
@@ -92,6 +93,7 @@ import View.CardHeader as CardHeader
 import View.Dialog as DialogView
 import View.GameBoard as Board
 import View.GamePanel as GamePanel
+import View.RotationChoices as RotationChoices
 import View.UnitCommands as UnitCommands
 import View.UnitStatus as UnitStatus
 import View.UnloadPassenger as UnloadPassenger
@@ -115,6 +117,7 @@ type alias Snapshot =
     , visibleTiles : List Coordinate.Coordinate
     , movementRules : List Movement.Rule
     , turn : Turn.Snapshot
+    , playbackFrames : List TurnPlayback.Frame
     }
 
 
@@ -131,7 +134,7 @@ type alias Model =
     , busy : Bool
     , refreshing : Bool
     , turnError : Maybe String
-    , playback : Maybe Turn.Playback
+    , playback : Maybe TurnPlayback.Playback
     , shared : Shared.Model
     , name : String
     , mapType : MapType
@@ -166,7 +169,7 @@ type alias SelectedUnit =
 
 type UnitInteraction
     = CommandMenu (Maybe UnitCommands.MenuOption)
-    | ChoosingDirection
+    | ChoosingDirection Direction
 
 
 type alias UnloadPlanning =
@@ -228,15 +231,26 @@ type Msg
     = BoardMsg Board.Msg
     | ViewportMsg Viewport.Msg
     | UnitCommandsMsg UnitCommands.Msg
+    | PreviousCommandPressed
+    | NextCommandPressed
+    | CommandFocusCompleted
     | PanLeftClicked
     | PanRightClicked
     | PanUpClicked
     | PanDownClicked
+    | PanLeftKeyPressed
+    | PanRightKeyPressed
+    | PanUpKeyPressed
+    | PanDownKeyPressed
     | ZoomInClicked
     | ZoomOutClicked
+    | ZoomInKeyPressed
+    | ZoomOutKeyPressed
     | ResetViewClicked
     | AnimationTimerElapsed Time.Posix
-    | DirectionClicked Direction
+    | DirectionKeyPressed Direction
+    | PathDirectionKeyPressed Direction
+    | PathEnterPressed
     | ClearMoveClicked
     | CargoUnitClicked UnitId
     | UnloadUnitToggled UnitId Bool
@@ -305,27 +319,82 @@ loadSnapshot id =
 ----------------------------------------------------------------
 
 
-keyCommands : Model -> KeyCmd.KeyCmd Msg
+keyCommands : Model -> KeyCmd Msg
 keyCommands model =
     let
-        navigation : List (KeyCmd.KeyCmd Msg)
+        navigation : List (KeyCmd Msg)
         navigation =
-            case commandMenuUnit model of
-                Just _ ->
-                    [ KeyCmd.leftArrow (UnitCommandsMsg UnitCommands.PreviousCommandPressed)
-                    , KeyCmd.rightArrow (UnitCommandsMsg UnitCommands.NextCommandPressed)
-                    , KeyCmd.upArrow (UnitCommandsMsg UnitCommands.PreviousCommandPressed)
-                    , KeyCmd.downArrow (UnitCommandsMsg UnitCommands.NextCommandPressed)
-                    ]
+            if choosingDirection model then
+                [ leftKeys (DirectionKeyPressed Facing.West)
+                , rightKeys (DirectionKeyPressed Facing.East)
+                , upKeys (DirectionKeyPressed Facing.North)
+                , downKeys (DirectionKeyPressed Facing.South)
+                ]
 
-                Nothing ->
-                    [ KeyCmd.leftArrow PanLeftClicked
-                    , KeyCmd.rightArrow PanRightClicked
-                    , KeyCmd.upArrow PanUpClicked
-                    , KeyCmd.downArrow PanDownClicked
-                    ]
+            else if model.pathPreview /= Nothing && not (planningLocked model) then
+                [ leftKeys (PathDirectionKeyPressed Facing.West)
+                , rightKeys (PathDirectionKeyPressed Facing.East)
+                , upKeys (PathDirectionKeyPressed Facing.North)
+                , downKeys (PathDirectionKeyPressed Facing.South)
+                , KeyCmd.enter PathEnterPressed
+                ]
+
+            else if commandMenuUnit model /= Nothing then
+                [ upKeys PreviousCommandPressed
+                , downKeys NextCommandPressed
+                ]
+
+            else
+                [ leftKeys PanLeftKeyPressed
+                , rightKeys PanRightKeyPressed
+                , upKeys PanUpKeyPressed
+                , downKeys PanDownKeyPressed
+                ]
+
+        camera : KeyCmd Msg
+        camera =
+            [ KeyCmd.plus ZoomInKeyPressed
+            , KeyCmd.minus ZoomOutKeyPressed
+            ]
+                |> KeyCmd.batch
     in
-    KeyCmd.batch (KeyCmd.escape EscapePressed :: navigation)
+    KeyCmd.batch
+        [ KeyCmd.escape EscapePressed
+        , camera
+        , KeyCmd.batch navigation
+        ]
+
+
+leftKeys : msg -> KeyCmd msg
+leftKeys msg =
+    KeyCmd.batch
+        [ KeyCmd.leftArrow msg
+        , KeyCmd.a msg
+        ]
+
+
+rightKeys : msg -> KeyCmd msg
+rightKeys msg =
+    KeyCmd.batch
+        [ KeyCmd.rightArrow msg
+        , KeyCmd.d msg
+        ]
+
+
+upKeys : msg -> KeyCmd msg
+upKeys msg =
+    KeyCmd.batch
+        [ KeyCmd.upArrow msg
+        , KeyCmd.w msg
+        ]
+
+
+downKeys : msg -> KeyCmd msg
+downKeys msg =
+    KeyCmd.batch
+        [ KeyCmd.downArrow msg
+        , KeyCmd.s msg
+        ]
 
 
 setShared : Shared.Model -> Model -> Model
@@ -373,15 +442,6 @@ updateViewport viewportMsg model =
 
         Viewport.KeyPressed key ->
             case key of
-                "+" ->
-                    zoomIn model
-
-                "=" ->
-                    zoomIn model
-
-                "-" ->
-                    zoomOut model
-
                 "Home" ->
                     resetViewport model
 
@@ -487,68 +547,97 @@ snapshotSelection =
                 , onAboard = AboardApi.carrierId |> SS.mapOrFail UnitId.parse |> SS.map Unit.Aboard
                 }
 
+        hitPointsSelection : SelectionSet Unit.HitPoints Api.Object.HitPoints
+        hitPointsSelection =
+            SS.succeed Unit.HitPoints
+                |> SS.with HitPointsApi.current
+                |> SS.with HitPointsApi.maximum
+
+        suppliesSelection : SelectionSet Unit.Supplies Api.Object.Supplies
+        suppliesSelection =
+            SS.succeed Unit.Supplies
+                |> SS.with SuppliesApi.current
+                |> SS.with SuppliesApi.maximum
+                |> SS.with SuppliesApi.upkeepPerTurn
+                |> SS.with SuppliesApi.movementPerTile
+
+        fuelSelection : SelectionSet Unit.Fuel Api.Object.Fuel
+        fuelSelection =
+            SS.succeed Unit.Fuel
+                |> SS.with FuelApi.current
+                |> SS.with FuelApi.maximum
+
+        unitSelection : SelectionSet Unit Api.Object.Unit
+        unitSelection =
+            SS.succeed Unit
+                |> SS.with (UnitApi.id |> SS.mapOrFail UnitId.parse)
+                |> SS.with UnitApi.side
+                |> SS.with UnitApi.kind
+                |> SS.with UnitApi.direction
+                |> SS.with (UnitApi.hitPoints hitPointsSelection)
+                |> SS.with (UnitApi.supplies suppliesSelection)
+                |> SS.with (UnitApi.fuel fuelSelection)
+                |> SS.with UnitApi.cargoCapacity
+                |> SS.with (UnitApi.location locationSelection)
+
+        featureSelection : SelectionSet TerrainFeature.TerrainFeature Api.Object.TerrainFeature
+        featureSelection =
+            SS.succeed TerrainFeature.TerrainFeature
+                |> SS.with (FeatureApi.position coordinateSelection)
+                |> SS.with FeatureApi.terrain
+
+        mapSelection : SelectionSet Map Api.Object.Map
+        mapSelection =
+            SS.succeed Map
+                |> SS.with MapApi.width
+                |> SS.with MapApi.height
+                |> SS.with MapApi.baseTile
+                |> SS.with MapApi.theme
+                |> SS.with (MapApi.features featureSelection)
+
         boardSelection : SelectionSet GameBoard.GameBoard Api.Object.Scenario
         boardSelection =
-            SS.map3 GameBoard.GameBoard
-                (Scenario.map
-                    (SS.map5 Map
-                        MapApi.width
-                        MapApi.height
-                        MapApi.baseTile
-                        MapApi.theme
-                        (MapApi.features
-                            (SS.map2
-                                TerrainFeature.TerrainFeature
-                                (FeatureApi.position coordinateSelection)
-                                FeatureApi.terrain
-                            )
-                        )
-                    )
-                )
-                (Scenario.depots (SS.map Depot.Depot (DepotApi.position coordinateSelection)))
-                (Scenario.units
-                    (SS.map8 Unit
-                        (UnitApi.id |> SS.mapOrFail UnitId.parse)
-                        UnitApi.side
-                        UnitApi.kind
-                        UnitApi.direction
-                        (UnitApi.hitPoints (SS.map2 Unit.HitPoints HitPointsApi.current HitPointsApi.maximum))
-                        (UnitApi.supplies (SS.map4 Unit.Supplies SuppliesApi.current SuppliesApi.maximum SuppliesApi.upkeepPerTurn SuppliesApi.movementPerTile))
-                        (UnitApi.fuel (SS.map2 Unit.Fuel FuelApi.current FuelApi.maximum))
-                        UnitApi.cargoCapacity
-                        |> SS.with (UnitApi.location locationSelection)
-                    )
-                )
+            SS.succeed GameBoard.GameBoard
+                |> SS.with (Scenario.map mapSelection)
+                |> SS.with (Scenario.depots (SS.map Depot.Depot (DepotApi.position coordinateSelection)))
+                |> SS.with (Scenario.units unitSelection)
+
+        playerSelection : SelectionSet Player Api.Object.GamePlayerView
+        playerSelection =
+            SS.succeed Player
+                |> SS.with PlayerView.name
+                |> SS.with PlayerView.side
+                |> SS.with PlayerView.isYou
+
+        terrainCostSelection : SelectionSet Movement.TerrainCost Api.Object.TerrainMovementCost
+        terrainCostSelection =
+            SS.succeed Movement.TerrainCost
+                |> SS.with MovementCostApi.terrain
+                |> SS.with MovementCostApi.cost
+
+        movementRuleSelection : SelectionSet Movement.Rule Api.Object.MovementRule
+        movementRuleSelection =
+            SS.succeed Movement.Rule
+                |> SS.with MovementRuleApi.kind
+                |> SS.with MovementRuleApi.budget
+                |> SS.with (MovementRuleApi.terrainCosts terrainCostSelection)
     in
-    SS.map7 Snapshot
-        SnapshotApi.name
-        SnapshotApi.mapType
-        (SnapshotApi.players
-            (SS.map3
-                Player
-                PlayerView.name
-                PlayerView.side
-                PlayerView.isYou
-            )
-        )
-        (SnapshotApi.scenario boardSelection)
-        (SnapshotApi.visibleTiles coordinateSelection)
-        (SnapshotApi.movementRules
-            (SS.map3
-                Movement.Rule
-                MovementRuleApi.kind
-                MovementRuleApi.budget
-                (MovementRuleApi.terrainCosts
-                    (SS.map2 Movement.TerrainCost MovementCostApi.terrain MovementCostApi.cost)
-                )
-            )
-        )
-        Turn.selection
+    SS.succeed Snapshot
+        |> SS.with SnapshotApi.name
+        |> SS.with SnapshotApi.mapType
+        |> SS.with (SnapshotApi.players playerSelection)
+        |> SS.with (SnapshotApi.scenario boardSelection)
+        |> SS.with (SnapshotApi.visibleTiles coordinateSelection)
+        |> SS.with (SnapshotApi.movementRules movementRuleSelection)
+        |> SS.with Turn.selection
+        |> SS.with (TurnPlayback.selection unitSelection coordinateSelection)
 
 
 coordinateSelection : SelectionSet Coordinate.Coordinate Api.Object.Coordinate
 coordinateSelection =
-    SS.map2 Coordinate.Coordinate CoordinateApi.x CoordinateApi.y
+    SS.succeed Coordinate.Coordinate
+        |> SS.with CoordinateApi.x
+        |> SS.with CoordinateApi.y
 
 
 clearSelection : Model -> Model
@@ -660,6 +749,26 @@ previewTile position model =
                 model
 
 
+extendPath : Direction -> Model -> Model
+extendPath direction model =
+    case model.pathPreview of
+        Just preview ->
+            previewTile (Direction.step preview.destination direction) model
+
+        Nothing ->
+            model
+
+
+confirmPath : Model -> Model
+confirmPath model =
+    case model.pathPreview of
+        Just preview ->
+            selectMovementTile preview.destination model
+
+        Nothing ->
+            model
+
+
 focusAdjacentCommand : (List UnitCommands.MenuOption -> List UnitCommands.MenuOption) -> Maybe UnitCommands.MenuOption -> Model -> Eff Msg
 focusAdjacentCommand orderCommands current model =
     let
@@ -695,7 +804,7 @@ focusAdjacentCommand orderCommands current model =
             in
             case adjacent of
                 Just command ->
-                    E.focus { htmlId = UnitCommands.optionHtmlId command } (UnitCommandsMsg UnitCommands.CommandFocusCompleted)
+                    E.focus { htmlId = UnitCommands.optionHtmlId command } CommandFocusCompleted
 
                 Nothing ->
                     E.none
@@ -781,12 +890,6 @@ update lobbyId msg model =
                         _ ->
                             ( model, E.none )
 
-                UnitCommands.PreviousCommandPressed ->
-                    ( model, focusAdjacentCommand List.reverse (focusedCommand model) model )
-
-                UnitCommands.NextCommandPressed ->
-                    ( model, focusAdjacentCommand identity (focusedCommand model) model )
-
                 UnitCommands.CommandPicked command ->
                     applyCommand lobbyId command model |> E.withOut
 
@@ -796,8 +899,14 @@ update lobbyId msg model =
                 UnitCommands.ArrowedDownCommandMenu current ->
                     ( model, focusAdjacentCommand identity (Just current) model )
 
-                UnitCommands.CommandFocusCompleted ->
-                    ( model, E.none )
+        PreviousCommandPressed ->
+            ( model, focusAdjacentCommand List.reverse (focusedCommand model) model )
+
+        NextCommandPressed ->
+            ( model, focusAdjacentCommand identity (focusedCommand model) model )
+
+        CommandFocusCompleted ->
+            ( model, E.none )
 
         PanLeftClicked ->
             panLeft model
@@ -815,6 +924,22 @@ update lobbyId msg model =
             panDown model
                 |> E.withOut
 
+        PanLeftKeyPressed ->
+            panLeft model
+                |> E.withOut
+
+        PanRightKeyPressed ->
+            panRight model
+                |> E.withOut
+
+        PanUpKeyPressed ->
+            panUp model
+                |> E.withOut
+
+        PanDownKeyPressed ->
+            panDown model
+                |> E.withOut
+
         ZoomInClicked ->
             zoomIn model
                 |> E.withOut
@@ -823,12 +948,26 @@ update lobbyId msg model =
             zoomOut model
                 |> E.withOut
 
+        ZoomInKeyPressed ->
+            zoomIn model
+                |> E.withOut
+
+        ZoomOutKeyPressed ->
+            zoomOut model
+                |> E.withOut
+
         ResetViewClicked ->
             resetViewport model
                 |> E.withOut
 
-        DirectionClicked direction ->
+        DirectionKeyPressed direction ->
             saveRotation direction model |> E.withOut
+
+        PathDirectionKeyPressed direction ->
+            extendPath direction model |> E.withOut
+
+        PathEnterPressed ->
+            confirmPath model |> E.withOut
 
         ClearMoveClicked ->
             if planningLocked model then
@@ -920,10 +1059,16 @@ update lobbyId msg model =
 
                 Just playback ->
                     let
-                        ( remaining, board ) =
-                            Turn.tick (min 50 delta) playback model.board
+                        ( remaining, frame ) =
+                            TurnPlayback.tick delta playback
                     in
-                    ( { model | playback = remaining, board = board }, E.none )
+                    ( { model
+                        | playback = remaining
+                        , board = GameBoard.setUnits frame.units model.board
+                        , visibleTiles = frame.visibleTiles
+                      }
+                    , E.none
+                    )
 
         AnimationTimerElapsed _ ->
             ( { model | frame = AnimationFrame.next model.frame }
@@ -934,6 +1079,18 @@ update lobbyId msg model =
 handleBoardMsg : Board.Msg -> Model -> Model
 handleBoardMsg boardMsg model =
     case boardMsg of
+        Board.RotationChoicesMsg rotationMsg ->
+            case rotationMsg of
+                RotationChoices.MouseMovedOverDirection direction ->
+                    previewRotation direction model
+
+                RotationChoices.ClickedDirection direction ->
+                    if model.suppressClick then
+                        model
+
+                    else
+                        saveRotation direction model
+
         Board.ClickedUnit id click ->
             if click.detail /= 0 && model.suppressClick then
                 model
@@ -942,7 +1099,16 @@ handleBoardMsg boardMsg model =
                 selectUnit id model
 
         Board.PressedEnterOnUnit id ->
-            selectUnit id model
+            let
+                confirmsSelectedUnitPreview : Bool
+                confirmsSelectedUnitPreview =
+                    model.pathPreview /= Nothing && Maybe.map .id (selectedUnit model) == Just id
+            in
+            if confirmsSelectedUnitPreview then
+                confirmPath model
+
+            else
+                selectUnit id model
 
         Board.PressedSpaceOnUnit id ->
             selectUnit id model
@@ -1030,8 +1196,10 @@ view model =
                 model
                 (Board.toHtml
                     { frame = model.frame
+                    , rotation = rotationSelection model
                     , visibleTiles = model.visibleTiles
-                    , moving = Turn.movingPosition model.playback
+                    , choosingDestination = model.pathPreview /= Nothing || isChoosingUnload model
+                    , moving = TurnPlayback.movingPositions model.playback
                     , selected = selectedPosition model
                     , reachable =
                         if model.pathPreview == Nothing && not (isChoosingUnload model) then
@@ -1040,6 +1208,7 @@ view model =
                         else
                             List.map .destination model.moveOptions
                     , paths = List.map (.move >> .path) model.plannedMoves
+                    , orderedUnits = List.map .unitId model.plannedMoves
                     , unloads = plannedUnloadRoutes model
                     , previewPath = model.pathPreview |> Maybe.map .path |> Maybe.withDefault []
                     }
@@ -1089,7 +1258,7 @@ focusedCommand model =
                 CommandMenu focused ->
                     focused
 
-                ChoosingDirection ->
+                ChoosingDirection _ ->
                     Nothing
 
         _ ->
@@ -1132,7 +1301,7 @@ commandMenu model =
         Just unit ->
             case Unit.physicalPosition model.board.units unit of
                 Just position ->
-                    UnitCommands.toHtml model.board.map model.zoom position unit
+                    UnitCommands.toHtml model.board.map { offset = model.offset, zoom = model.zoom } position unit
                         |> H.map UnitCommandsMsg
 
                 Nothing ->
@@ -1161,7 +1330,17 @@ applyCommand lobbyId command model =
                         beginMovement unit model
 
                     UnitCommand.Rotate ->
-                        { model | selected = Just (UnitSelection { id = unit.id, interaction = ChoosingDirection }), pathPreview = Nothing, moveOptions = [] }
+                        { model
+                            | selected =
+                                Just
+                                    (UnitSelection
+                                        { id = unit.id
+                                        , interaction = ChoosingDirection (Maybe.withDefault Facing.North unit.direction)
+                                        }
+                                    )
+                            , pathPreview = Nothing
+                            , moveOptions = []
+                        }
 
                     UnitCommand.HoldPosition ->
                         case holdOrder model.board.units unit of
@@ -2092,12 +2271,17 @@ receiveSnapshot snapshot model =
         { model | turn = { turn | submitted = model.turn.submitted || turn.submitted, opponentSubmitted = model.turn.opponentSubmitted || turn.opponentSubmitted } }
 
     else
+        let
+            frame : TurnPlayback.Frame
+            frame =
+                TurnPlayback.initial snapshot.playbackFrames { units = snapshot.board.units, visibleTiles = snapshot.visibleTiles }
+        in
         { model
             | dialog = Nothing
             , turn = snapshot.turn
-            , board = Turn.rewind snapshot.turn snapshot.board
-            , visibleTiles = snapshot.visibleTiles
-            , playback = Turn.start snapshot.turn
+            , board = GameBoard.setUnits frame.units snapshot.board
+            , visibleTiles = frame.visibleTiles
+            , playback = TurnPlayback.start snapshot.playbackFrames
             , plannedMoves = []
             , selected = Nothing
             , moveOptions = []
@@ -2131,15 +2315,38 @@ turnPanel model =
                     ++ String.fromInt ownCount
                     ++ " units ready"
 
+        submitLabel : String
+        submitLabel =
+            if model.playback /= Nothing then
+                "playing turn…"
+
+            else if model.busy then
+                "submitting…"
+
+            else if model.turn.submitted then
+                "turn submitted"
+
+            else
+                "submit turn"
+
+        submitLocked : Bool
+        submitLocked =
+            planningLocked model || isChoosingUnload model
+
+        submitAction : Button.Button Msg
+        submitAction =
+            if submitLocked then
+                Button.disabled submitLabel
+
+            else if readyToSubmit model then
+                Button.primary submitLabel SubmitTurnClicked
+
+            else
+                Button.secondary submitLabel SubmitTurnClicked
+
         submitButton : Html Msg
         submitButton =
-            (if readyToSubmit model then
-                Button.primary "submit turn" SubmitTurnClicked
-
-             else
-                Button.secondary "submit turn" SubmitTurnClicked
-            )
-                |> Button.disabled (planningLocked model || isChoosingUnload model)
+            submitAction
                 |> Button.large
                 |> Button.toHtml
 
@@ -2274,7 +2481,12 @@ choosingDirection : Model -> Bool
 choosingDirection model =
     case model.selected of
         Just (UnitSelection selection) ->
-            selection.interaction == ChoosingDirection
+            case selection.interaction of
+                ChoosingDirection _ ->
+                    True
+
+                CommandMenu _ ->
+                    False
 
         _ ->
             False
@@ -2307,15 +2519,42 @@ saveRotation direction model =
             model
 
 
+rotationSelection : Model -> Maybe Board.RotationSelection
+rotationSelection model =
+    case ( model.selected, selectedUnit model ) of
+        ( Just (UnitSelection selection), Just unit ) ->
+            case selection.interaction of
+                ChoosingDirection direction ->
+                    Unit.boardPosition unit
+                        |> Maybe.map (\position -> { unitId = unit.id, position = position, direction = direction })
+
+                CommandMenu _ ->
+                    Nothing
+
+        _ ->
+            Nothing
+
+
+previewRotation : Direction -> Model -> Model
+previewRotation direction model =
+    case model.selected of
+        Just (UnitSelection selection) ->
+            let
+                canPreview : Bool
+                canPreview =
+                    choosingDirection model && not (planningLocked model) && model.drag == Nothing
+            in
+            if canPreview then
+                { model | selected = Just (UnitSelection { selection | interaction = ChoosingDirection direction }) }
+
+            else
+                model
+
+        _ ->
+            model
+
+
 directionChoices : List (Html Msg)
 directionChoices =
-    let
-        choice : Direction -> Html Msg
-        choice direction =
-            Button.secondary (Direction.label direction) (DirectionClicked direction)
-                |> Button.toHtml
-    in
-    [ H.p [] [ H.text "choose a facing" ]
-    , H.div [ A.css [ S.row, S.flexWrap, S.g2 ] ] (List.map choice [ Facing.North, Facing.East, Facing.South, Facing.West ])
-    , Button.secondary "back to commands" ClearMoveClicked |> Button.toHtml
+    [ H.p [] [ H.text "point around the unit to preview its facing. click to save, or press an arrow key or wasd." ]
     ]

@@ -10,7 +10,8 @@ import Direction
 import GameBoard exposing (GameBoard)
 import Platform
 import Turn
-import Unit
+import TurnPlayback
+import Unit exposing (Unit)
 import UnitId exposing (UnitId)
 
 
@@ -119,6 +120,67 @@ playbackChecks first second =
         ( cornerFinished, cornerFinalBoard ) =
             Turn.tick 360 cornerPlayback rewound
 
+        firstFrame : TurnPlayback.Frame
+        firstFrame =
+            { units = rewound.units
+            , visibleTiles =
+                [ { x = 0
+                  , y = 0
+                  }
+                ]
+            }
+
+        lastFrame : TurnPlayback.Frame
+        lastFrame =
+            { units = board.units
+            , visibleTiles =
+                [ { x = 1
+                  , y = 0
+                  }
+                ]
+            }
+
+        advanceFirstUnit : Unit -> Unit
+        advanceFirstUnit unit =
+            if unit.id == first then
+                List.head board.units |> Maybe.withDefault unit
+
+            else
+                unit
+
+        middleFrame : TurnPlayback.Frame
+        middleFrame =
+            { units =
+                List.map advanceFirstUnit rewound.units
+            , visibleTiles = lastFrame.visibleTiles
+            }
+
+        sharedPlayback : TurnPlayback.Playback
+        sharedPlayback =
+            { current = firstFrame
+            , remaining = [ middleFrame, lastFrame ]
+            , elapsed = 0
+            }
+
+        ( sharedHalfway, sharedBoard ) =
+            TurnPlayback.tick 90 sharedPlayback
+
+        ( sharedFinished, sharedFinal ) =
+            TurnPlayback.tick 360 sharedPlayback
+
+        hiddenFrame : TurnPlayback.Frame
+        hiddenFrame =
+            { firstFrame | units = List.filter (\unit -> unit.id == first) firstFrame.units }
+
+        ( entering, _ ) =
+            TurnPlayback.tick 90 { sharedPlayback | current = hiddenFrame }
+
+        ( leaving, _ ) =
+            TurnPlayback.tick 90 { sharedPlayback | remaining = [ { middleFrame | units = List.filter (\unit -> unit.id == first) lastFrame.units } ] }
+
+        ( surplus, surplusFrame ) =
+            TurnPlayback.tick 270 sharedPlayback
+
         expect : String -> Bool -> List String
         expect name passed =
             if passed then
@@ -128,7 +190,17 @@ playbackChecks first second =
                 [ name ]
     in
     List.concat
-        [ expect "rotation rewinds facing and stays still until its event completes" (rotationPending /= Nothing && rotationHalfway == rotationBoard && Turn.movingPosition rotationPending == Nothing)
+        [ expect "only the first unit interpolates during its route"
+            (TurnPlayback.movingPositions sharedHalfway == [ { unitId = first, position = { x = 0.5, y = 0 } } ])
+        , expect "waiting unit preserves its facing during the first route"
+            (List.map .direction sharedBoard.units == [ Just Direction.East, Just Direction.North ])
+        , expect "fog changes only at shared tile boundaries"
+            (sharedBoard.visibleTiles == firstFrame.visibleTiles && sharedFinal == lastFrame && sharedFinished == Nothing)
+        , expect "entering and leaving sight never interpolate a hidden route"
+            (List.map .unitId (TurnPlayback.movingPositions entering) == [ first ] && List.map .unitId (TurnPlayback.movingPositions leaving) == [ first ])
+        , expect "shared playback carries surplus frame time forward"
+            (Maybe.map .elapsed surplus == Just 90 && surplusFrame.visibleTiles == middleFrame.visibleTiles && TurnPlayback.movingPositions surplus == [ { unitId = second, position = { x = 1.5, y = 1 } } ])
+        , expect "rotation rewinds facing and stays still until its event completes" (rotationPending /= Nothing && rotationHalfway == rotationBoard && Turn.movingPosition rotationPending == Nothing)
         , expect "rotation playback applies the chosen facing without moving" (rotationFinished == Nothing && List.map .direction rotatedBoard.units == [ Just Direction.West, Just Direction.West ] && List.map .location rotatedBoard.units == List.map .location board.units)
         , expect "rewind restores the event origins" (List.map Unit.boardPosition rewound.units == [ Just { x = 0, y = 0 }, Just { x = 2, y = 1 } ])
         , expect "halfway position interpolates the first unit only" (Turn.movingPosition halfway == Just { unitId = first, position = { x = 0.5, y = 0 } })
@@ -269,9 +341,18 @@ transportPlaybackChecks passengerId truckId =
         riding : GameBoard
         riding =
             Turn.tick 180 { events = [ event ], elapsed = 0 } { board | units = [ passenger, { truck | location = Unit.OnMap { x = 0, y = 0 } } ] } |> Tuple.second
+
+        ( sharedUnloading, sharedUnloadFrame ) =
+            TurnPlayback.tick 90
+                { current = { units = board.units, visibleTiles = [] }
+                , remaining = [ { units = unloadBoard.units, visibleTiles = [] } ]
+                , elapsed = 0
+                }
     in
     List.concat
-        [ transportExpect "loading rewind restores passengers to the board" (List.map Unit.carrierId rewound.units == [ Nothing, Nothing ])
+        [ transportExpect "shared unloading displays the passenger walking from its truck"
+            (TurnPlayback.movingPositions sharedUnloading == [ { unitId = passengerId, position = { x = 1.5, y = 0 } } ] && List.map Unit.boardPosition sharedUnloadFrame.units == [ Just { x = 1, y = 0 }, Just { x = 1, y = 0 } ])
+        , transportExpect "loading rewind restores passengers to the board" (List.map Unit.carrierId rewound.units == [ Nothing, Nothing ])
         , transportExpect "load event attaches cargo after movement" (afterLoading == board)
         , transportExpect "riding passengers follow their truck" (riding == board)
         , transportExpect "unload rewind restores cargo" (unloadRewound == board)

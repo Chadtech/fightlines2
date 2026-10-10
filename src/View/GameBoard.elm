@@ -1,7 +1,13 @@
-module View.GameBoard exposing (Msg(..), UnloadRoute, toHtml)
+module View.GameBoard exposing
+    ( Msg(..)
+    , RotationSelection
+    , UnloadRoute
+    , toHtml
+    )
 
 import AnimationFrame exposing (Frame)
 import Api.Enum.Direction exposing (Direction)
+import Api.Enum.UnitKind as Kind
 import Coordinate exposing (Coordinate)
 import Css
 import Css.Global
@@ -15,6 +21,7 @@ import Html.Styled as H
         )
 import Html.Styled.Attributes as A
 import Json.Decode as Decode
+import ListUtil
 import Map
 import Point exposing (Point)
 import Style as S
@@ -30,7 +37,9 @@ import UnitId
     exposing
         ( UnitId
         )
+import View.RotationChoices as RotationChoices
 import View.TerrainTile as TerrainTile
+import View.UnitCargo as UnitCargo
 import View.UnitFacing as UnitFacing
 import View.UnitSprite as UnitSprite
 
@@ -43,8 +52,16 @@ type alias UnloadRoute =
     }
 
 
+type alias RotationSelection =
+    { unitId : UnitId
+    , position : Coordinate
+    , direction : Direction
+    }
+
+
 type Msg
-    = ClickedUnit UnitId { detail : Int }
+    = RotationChoicesMsg RotationChoices.Msg
+    | ClickedUnit UnitId { detail : Int }
     | PressedEnterOnUnit UnitId
     | PressedSpaceOnUnit UnitId
     | MouseOverUnit UnitId
@@ -95,12 +112,15 @@ onClickWithDetail toMsg =
 
 toHtml :
     { frame : Frame
+    , rotation : Maybe RotationSelection
     , visibleTiles : List Coordinate
+    , choosingDestination : Bool
     , reachable : List Coordinate
     , paths : List (List Coordinate)
+    , orderedUnits : List UnitId
     , unloads : List UnloadRoute
     , previewPath : List Coordinate
-    , moving : Maybe { unitId : UnitId, position : Point }
+    , moving : List { unitId : UnitId, position : Point }
     , selected : Maybe Coordinate
     }
     -> GameBoard
@@ -145,11 +165,39 @@ toHtml config model =
 
         terrainFilter : Coordinate -> String
         terrainFilter position =
-            if List.member position config.visibleTiles then
+            let
+                visibilityFilters : List String
+                visibilityFilters =
+                    if List.member position config.visibleTiles then
+                        []
+
+                    else
+                        [ "saturate(0.18) brightness(0.58)" ]
+
+                unavailable : Bool
+                unavailable =
+                    config.choosingDestination
+                        && not (List.member position config.reachable)
+                        && config.selected
+                        /= Just position
+
+                destinationFilters : List String
+                destinationFilters =
+                    if unavailable then
+                        [ "brightness(0.6)" ]
+
+                    else
+                        []
+
+                filters : List String
+                filters =
+                    visibilityFilters ++ destinationFilters
+            in
+            if List.isEmpty filters then
                 "none"
 
             else
-                "saturate(0.18) brightness(0.58)"
+                String.join " " filters
 
         depotView : Depot -> Svg Msg
         depotView depot =
@@ -188,25 +236,77 @@ toHtml config model =
         unitView : Unit -> Coordinate -> Svg Msg
         unitView unit position =
             let
-                transform : String
-                transform =
-                    case config.moving of
-                        Just moving ->
-                            if moving.unitId == unit.id then
-                                "translate(" ++ String.fromFloat (moving.position.x * 16) ++ " " ++ String.fromFloat (moving.position.y * 16) ++ ")"
+                aboardThisTruck : Unit -> Bool
+                aboardThisTruck passenger =
+                    Unit.carrierId passenger == Just unit.id
+
+                passengerCount : Int
+                passengerCount =
+                    if unit.kind == Kind.Truck then
+                        List.length (List.filter aboardThisTruck model.units)
+
+                    else
+                        0
+
+                accessibleLabel : String
+                accessibleLabel =
+                    if passengerCount > 0 then
+                        Unit.label unit ++ ", cargo: " ++ String.fromInt passengerCount ++ " / " ++ String.fromInt unit.cargoCapacity
+
+                    else
+                        Unit.label unit
+
+                spriteFilter : String
+                spriteFilter =
+                    if List.member unit.id config.orderedUnits then
+                        "brightness(0.6)"
+
+                    else
+                        "none"
+
+                previewUnit : Unit
+                previewUnit =
+                    case config.rotation of
+                        Just rotation ->
+                            if rotation.unitId == unit.id then
+                                { unit | direction = Just rotation.direction }
 
                             else
-                                "translate(" ++ String.fromInt (position.x * 16) ++ " " ++ String.fromInt (position.y * 16) ++ ")"
+                                unit
+
+                        Nothing ->
+                            unit
+
+                facingClass : String
+                facingClass =
+                    if Maybe.map .unitId config.rotation == Just unit.id then
+                        "fightlines-rotation-preview"
+
+                    else
+                        ""
+
+                transform : String
+                transform =
+                    case ListUtil.find (\moving -> moving.unitId == unit.id) config.moving of
+                        Just moving ->
+                            "translate(" ++ String.fromFloat (moving.position.x * 16) ++ " " ++ String.fromFloat (moving.position.y * 16) ++ ")"
 
                         Nothing ->
                             "translate(" ++ String.fromInt (position.x * 16) ++ " " ++ String.fromInt (position.y * 16) ++ ")"
             in
             Svg.g
                 [ SA.transform transform
+                , SA.class facingClass
                 ]
-                [ UnitSprite.toSvg (AnimationFrame.unitColumn config.frame unit.id) unit
+                [ Svg.g
+                    [ HA.style "filter" spriteFilter
+                    ]
+                    [ UnitSprite.toSvg (AnimationFrame.unitColumn config.frame unit.id) unit
+                        |> StyledSvg.toUnstyled
+                    ]
+                , UnitFacing.toSvg (config.selected == Just position) previewUnit
                     |> StyledSvg.toUnstyled
-                , UnitFacing.toSvg (config.selected == Just position) unit
+                , UnitCargo.toSvg passengerCount
                     |> StyledSvg.toUnstyled
                 , Svg.rect
                     [ SA.width "16"
@@ -214,7 +314,7 @@ toHtml config model =
                     , SA.fill "transparent"
                     , HA.attribute "tabindex" "0"
                     , HA.attribute "role" "button"
-                    , HA.attribute "aria-label" (Unit.label unit)
+                    , HA.attribute "aria-label" accessibleLabel
                     , Ev.onMouseOver (MouseOverUnit unit.id)
                     , onClickWithDetail (ClickedUnit unit.id)
                     , onKeyDown
@@ -224,7 +324,7 @@ toHtml config model =
                     ]
                     [ Svg.title
                         []
-                        [ Svg.text (Unit.label unit)
+                        [ Svg.text accessibleLabel
                         ]
                     ]
                 ]
@@ -428,6 +528,17 @@ toHtml config model =
                     []
                 ]
 
+        rotationOverlay : List (Svg Msg)
+        rotationOverlay =
+            case config.rotation of
+                Just rotation ->
+                    [ RotationChoices.toSvg model.map rotation.position rotation.direction
+                        |> Svg.map RotationChoicesMsg
+                    ]
+
+                Nothing ->
+                    []
+
         selection : List (Svg Msg)
         selection =
             config.selected
@@ -450,8 +561,7 @@ toHtml config model =
                 ]
             ]
         ]
-        [ UnitFacing.styles
-        , Svg.svg
+        [ Svg.svg
             [ SA.viewBox ("0 0 " ++ String.fromInt (model.map.width * 16) ++ " " ++ String.fromInt (model.map.height * 16))
             , SA.width "100%"
             , HA.attribute "role" "group"
@@ -464,6 +574,7 @@ toHtml config model =
                 , List.filterMap (\unit -> Unit.boardPosition unit |> Maybe.map (unitView unit)) model.units
                 , [ unloadOverlay ]
                 , selection
+                , rotationOverlay
                 ]
             )
             |> H.fromUnstyled

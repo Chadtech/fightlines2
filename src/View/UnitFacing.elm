@@ -24,6 +24,9 @@ styles =
             .fightlines-unit-facing {
                 animation: fightlines-unit-facing-pulse 2s ease-in-out infinite;
             }
+            .fightlines-rotation-preview .fightlines-unit-facing {
+                animation: none; opacity: 1;
+            }
             @media (prefers-reduced-motion: reduce) {
                 .fightlines-unit-facing { animation: none; opacity: 1; }
             }

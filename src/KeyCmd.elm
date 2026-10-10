@@ -6,17 +6,22 @@ module KeyCmd exposing
     , cmd
     , comma
     , ctrl
+    , d
     , downArrow
     , enter
     , escape
     , leftArrow
     , map
+    , minus
     , none
     , period
+    , plus
     , rightArrow
+    , s
     , shift
     , subscriptions
     , upArrow
+    , w
     )
 
 import Browser.Events
@@ -161,6 +166,21 @@ a =
     fromKeys [ "a" ]
 
 
+d : msg -> KeyCmd msg
+d =
+    fromKeys [ "d" ]
+
+
+s : msg -> KeyCmd msg
+s =
+    fromKeys [ "s" ]
+
+
+w : msg -> KeyCmd msg
+w =
+    fromKeys [ "w" ]
+
+
 rightArrow : msg -> KeyCmd msg
 rightArrow =
     fromKeys [ "ArrowRight" ]
@@ -179,6 +199,19 @@ upArrow =
 downArrow : msg -> KeyCmd msg
 downArrow =
     fromKeys [ "ArrowDown" ]
+
+
+plus : msg -> KeyCmd msg
+plus msg =
+    batch
+        [ fromKeys [ "+", "=" ] msg
+        , shift (fromKeys [ "+" ] msg)
+        ]
+
+
+minus : msg -> KeyCmd msg
+minus =
+    fromKeys [ "-" ]
 
 
 subscriptions : OperatingSystem -> List (KeyCmd msg) -> Sub msg

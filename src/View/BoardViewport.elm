@@ -35,6 +35,7 @@ toHtml toMsg model board overlay =
             , S.justifyCenter
             , S.overflowHidden
             , S.userSelectNone
+            , Css.property "container-type" "size"
             , Css.cursor
                 (if model.drag == Nothing then
                     Css.grab
@@ -59,8 +60,8 @@ toHtml toMsg model board overlay =
                 ]
             ]
             [ board
-            , overlay
             ]
+        , overlay
         ]
 
 
@@ -139,7 +140,7 @@ navigationKeyDecoder =
 
 navigationKeyPressed : String -> Decode.Decoder Msg
 navigationKeyPressed key =
-    if List.member key [ "+", "=", "-", "Home" ] then
+    if key == "Home" then
         Decode.succeed (KeyPressed key)
 
     else

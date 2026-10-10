@@ -4,7 +4,7 @@ A strategy game about supplies and logistics, built with Rust and Elm.
 
 The current prototype supports creating a lobby, joining through an invite link,
 and starting a game. The game page shows a free-floating animated SVG board with selectable units and depots.
-Both players can plan and submit turns, with sequential movement playback.
+Both players can plan and submit turns, with shared movement playback.
 Fuel and supplies are authoritative; combat and persistent storage
 are not implemented yet.
 
@@ -22,7 +22,9 @@ make run
 Open http://127.0.0.1:8080, enter your user name and a lobby name, and choose
 **Create lobby**.
 Share the invite link with another player, who enters a name and chooses
-**Join lobby**. The host can select and save a map, then chooses **Start game**.
+**Join lobby**. The host selects a map, then chooses **Start game**, which saves
+the current selection before starting. **Save map** shares the selection with
+the other player before starting.
 Joined browsers navigate to the game page within about two seconds. The initial
 scenario requires exactly two players; a third player cannot join.
 
@@ -43,8 +45,8 @@ player is player 2 with blue units. Click a unit or depot to inspect it; units
 and depots can also be selected with Tab and Enter/Space. Drag the battlefield
 with the primary mouse button to pan; scroll to zoom around the cursor. The right-side
 panel has selection details and unit actions; the bottom-left control panel has
-pan arrows, zoom and reset controls. Arrow keys pan the map while the command popup is closed.
-With the battlefield focused, plus/minus zoom and Home resets the view. Dragging does not select a tile.
+pan arrows, zoom and reset controls. Arrow keys or WASD pan the map while the command popup is closed and no move or rotation is being chosen.
+Plus/minus zoom without requiring battlefield focus; Home resets the view while the battlefield is focused. Dragging does not select a tile.
 The panel remains fixed while the board moves. Terrain uses detailed 80s anime
 illustrations, with a grass tile in every square, defined hill ridges and tree
 silhouettes, and a subtle grid.
@@ -53,7 +55,8 @@ packed into 256px square cells and smoothly scaled to the board.
 Infantry, tanks and field guns have an inset edge triangle indicating their stored
 up/right/down/left facing. Trucks have no direction or facing marker.
 Choose **rotate** for infantry, tanks, or field guns, then select north, east,
-south, or west in the side panel. Rotation is an in-place turn order that can be
+south, or west on the map. Point around the unit to preview its facing, then
+click to save it; an arrow key or WASD also saves the corresponding direction. Rotation is an in-place turn order that can be
 revoked before submission. It changes facing when the turn resolves, costs only
 normal supply upkeep, and counts toward turn readiness. Trucks and carried units
 cannot rotate.
@@ -73,7 +76,7 @@ the line to shorten it. Skipped squares connect from the current path tip within
 the remaining budget. If the traced route exceeds the budget, an affordable
 route from the unit is chosen when one exists. Saving stops hover previews and hides reachable-square highlights.
 Select the unit and choose **revoke order** to remove the saved plan and
-return to the commands. Choose **move** to trace a new route. Reachable squares support Tab and Enter/Space.
+return to the commands. Choose **move** to trace a new route. Arrow keys or WASD extend or retrace the previewed route; Enter saves it without panning the map. Reachable squares support Tab and Enter/Space.
 Press Escape or click the selected unit to leave movement selection. Paths remain visible when
 switching units. Unsubmitted plans are local drafts and disappear on refresh.
 Units can travel through allied units; enemies block travel, and occupied
@@ -106,6 +109,9 @@ onto different squares in the same turn. Blocked truck moves or occupied exits
 leave the affected passengers aboard. Revoking the truck's order also removes
 its unload choices.
 Enemy passengers are concealed. Unit transport is separate from supply delivery.
+Loaded trucks show a small blinking passenger badge in the tile's lower-right
+corner, with `2` when both berths are occupied. It stays faintly visible between
+blinks and remains steady with reduced motion enabled. Empty trucks have no badge.
 
 Sight is shared by all units on your side. Infantry and field guns see 4 tiles,
 trucks 3, and tanks 2, using a circular radius measured between tile
@@ -116,9 +122,10 @@ hill itself remains visible. Forests
 conceal all enemy units inside, even adjacent to an observer or an allied unit
 in the same forest. Your own units and their occupied tiles are always visible. Unseen tiles are darker and desaturated, preserving terrain detail;
 the terrain and fixed depot locations remain known. Hidden enemies and their
-paths are withheld from game responses. Enemy movement is replayed only when
-its entire route is visible both before and after resolution; partial sightings
-appear at their final visible position. Sight refreshes when a turn resolves.
+paths are withheld from game responses. Both players share an interleaved playback timeline. One unit completes its route
+before the next starts, at one path tile per 180ms step. Sight refreshes at each tile boundary. Enemies appear when they enter
+sight and disappear when they leave it, including brief sightings during a turn.
+Hidden positions and route segments are withheld from responses.
 
 Every unit starts with 64/64 supplies and spends 1 supply per resolved turn,
 even when holding or losing a destination conflict. Infantry and field guns
@@ -136,7 +143,7 @@ and resource details in the panel. Illustrated commands open in a popup beside
 the selected unit on the board.
 Move and hold position appear first. Carried units have inspection details
 and no independent commands. While the
-popup is open, arrow keys cycle available commands even before the list has
+popup is open, up/down arrows or W/S cycle available commands even before the list has
 focus; Enter or Space chooses the focused command. Cancel closes the popup
 and clears selection. These arrows do not pan the map. Unimplemented commands are disabled.
 Choosing move opens destination planning; **back to commands** cancels that
@@ -154,7 +161,10 @@ a warning: choose **keep planning** or **submit anyway**, which makes those
 units hold position. Submission locks your orders, and that
 waiting state survives refresh. Once both players submit, the server moves the
 units and advances the turn. Each client plays the saved paths one unit at a time,
-then opens planning with empty drafts. Refresh during playback shows the completed
+mixing players' moves in the same order for both viewers. Equal action counts
+alternate; unequal counts are spread proportionally. The starting player switches
+each turn. Loading and unloading follow movement to preserve transport dependencies.
+Planning then opens with empty drafts. Refresh during playback shows the completed
 board. Paths may cross without combat; opposing units choosing the same destination
 both hold their starting positions, with a message in the right-side panel. Destination
 occupancy is validated against the starting board, so moving into another unit's

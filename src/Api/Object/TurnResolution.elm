@@ -29,3 +29,12 @@ events :
     -> SelectionSet (List decodesTo) Api.Object.TurnResolution
 events object____ =
     Object.selectionForCompositeField "events" [] object____ (Basics.identity >> Decode.list)
+
+
+{-| Viewer-specific frames are populated when visibility projects the resolution.
+-}
+frames :
+    SelectionSet decodesTo Api.Object.TurnFrame
+    -> SelectionSet (List decodesTo) Api.Object.TurnResolution
+frames object____ =
+    Object.selectionForCompositeField "frames" [] object____ (Basics.identity >> Decode.list)

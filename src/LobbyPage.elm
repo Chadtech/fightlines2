@@ -119,6 +119,7 @@ type Msg
     | SaveMapButtonClicked
     | MapResponseReceived (Response Flags)
     | StartButtonClicked
+    | StartMapResponseReceived (Response Flags)
     | RetryButtonClicked
     | CopyLinkButtonClicked
     | CopyLinkResultReceived CopyResult
@@ -191,6 +192,16 @@ start id =
         |> ApiRequest.mutationRequest
 
 
+saveMap : Model -> Graphql.Http.Request Flags
+saveMap model =
+    Api.Mutation.setLobbyMap
+        { id = LobbyId.toString model.id
+        , mapType = model.selectedMapType
+        }
+        flagsSelection
+        |> ApiRequest.mutationRequest
+
+
 flagsSelection : SelectionSet Flags Api.Object.Snapshot
 flagsSelection =
     SS.map7 Flags
@@ -230,13 +241,7 @@ update msg model =
                     , actionError = Nothing
                     , mapStatus = MapSaving
                   }
-                , Api.Mutation.setLobbyMap
-                    { id = LobbyId.toString model.id
-                    , mapType = model.selectedMapType
-                    }
-                    flagsSelection
-                    |> ApiRequest.mutationRequest
-                    |> E.request MapResponseReceived
+                , E.request MapResponseReceived (saveMap model)
                 )
 
         MapResponseReceived result ->
@@ -259,7 +264,18 @@ update msg model =
                     )
 
         StartButtonClicked ->
-            if model.busy || model.refreshing || List.length model.players /= 2 then
+            let
+                canStart : Bool
+                canStart =
+                    not model.busy
+                        && not model.refreshing
+                        && model.isHost
+                        && model.gameUrl
+                        == Nothing
+                        && List.length model.players
+                        == 2
+            in
+            if not canStart then
                 ( model, E.none )
 
             else
@@ -267,8 +283,26 @@ update msg model =
                     | busy = True
                     , actionError = Nothing
                   }
-                , E.request ActionResponseReceived (start model.id)
+                , E.request StartMapResponseReceived (saveMap model)
                 )
+
+        StartMapResponseReceived result ->
+            case result of
+                Ok flags ->
+                    ( { model
+                        | mapType = flags.mapType
+                        , mapStatus = MapSaved
+                      }
+                    , E.request ActionResponseReceived (start model.id)
+                    )
+
+                Err error ->
+                    ( { model
+                        | busy = False
+                        , actionError = Just (ApiRequest.errorMessage error)
+                      }
+                    , E.none
+                    )
 
         RetryButtonClicked ->
             refresh model
