@@ -42,8 +42,8 @@ player takes the blue eastern side. Click a unit or depot to inspect it; units
 and depots can also be selected with Tab and Enter/Space. Drag the battlefield
 with the primary mouse button to pan; scroll to zoom around the cursor. The right-side
 panel has selection details and unit actions; the bottom-left control panel has
-pan arrows, zoom and reset controls. With the battlefield focused, arrow keys
-pan, plus/minus zoom, and Home resets the view. Dragging does not select a tile.
+pan arrows, zoom and reset controls. Arrow keys pan anywhere on the game page.
+With the battlefield focused, plus/minus zoom and Home resets the view. Dragging does not select a tile.
 The panel remains fixed while the board moves. Terrain uses detailed 80s anime
 illustrations, with a grass tile in every square, defined hill ridges and tree
 silhouettes, and a subtle grid.

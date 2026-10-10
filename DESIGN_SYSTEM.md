@@ -121,7 +121,8 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
 - Primary-button dragging pans after a 6px threshold. A drag never selects a tile;
   a click still inspects units, depots and terrain. Scroll zooms around the cursor,
   bounded to 35–300%; the bottom-left panel supplies pan arrows, zoom and reset controls. Keyboard
-  navigation supports arrows, plus/minus and Home while the battlefield is focused.
+  arrows pan through game-page window commands, without requiring battlefield focus.
+  Plus/minus and Home work while the battlefield is focused.
 - Use smooth image rendering for illustrated terrain, building and unit sprites. SVG scales the
   board to the camera width and handles selection events directly in Elm.
 - Use highly detailed 1980s anime OVA terrain with fine ink contours, richly

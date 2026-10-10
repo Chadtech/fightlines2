@@ -136,7 +136,7 @@ navigationKeyDecoder =
 
 navigationKeyPressed : String -> Decode.Decoder Msg
 navigationKeyPressed key =
-    if List.member key [ "+", "=", "-", "Home", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown" ] then
+    if List.member key [ "+", "=", "-", "Home" ] then
         Decode.succeed (KeyPressed key)
 
     else

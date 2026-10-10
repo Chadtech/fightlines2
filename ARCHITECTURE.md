@@ -168,7 +168,8 @@ mapping, and facing for both animated board units and static status portraits.
 `GamePage` also owns local camera offset, zoom, drag and click-suppression fields,
 and handles viewport events directly. `View.BoardViewport` owns only the view
 and event messages. Control-panel button messages live in `GamePage`; button and
-viewport keyboard handlers share pan, zoom and reset functions. The viewport wraps the pure board renderer in a pan/zoom surface beside a
+window arrow commands share pan functions; viewport keyboard handlers share zoom
+and reset functions. The viewport wraps the pure board renderer in a pan/zoom surface beside a
 full-height right panel containing selection details and resolution information.
 `GamePage.turnPanel` overlays fixed-size game controls at the battlefield's bottom-left
 edge, with the submit action beside turn status and camera controls below.
@@ -186,7 +187,8 @@ for unrecognized platform strings. Missing or malformed flags instead open an
 state, subscriptions, or route handling. Pages expose keyboard commands through
 `keyCommands`; `Main` maps active-page messages and passes the shared operating
 system to `KeyCmd.subscriptions`. Command shortcuts use Meta on macOS/iOS and
-Control elsewhere. `GamePage` offers Escape to clear selection, reachable
+Control elsewhere. `GamePage` offers window-level arrow commands to pan without
+battlefield focus and Escape to clear selection, reachable
 squares, and the live path preview while preserving saved move drafts. The page
 stores the active dialog as `Maybe Dialog`; `EscapePressed` dismisses an open
 dialog before clearing board selection.

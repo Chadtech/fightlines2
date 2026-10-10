@@ -18,6 +18,7 @@ import Html.Styled.Attributes as Attr
 import Html.Styled.Events as Ev
 import Json.Decode as Decode
 import Style as S
+import View.CardHeader as CardHeader
 
 
 
@@ -146,24 +147,25 @@ modal id title onCancel body =
             [ Css.margin Css.auto
             , Css.maxWidth (Css.calc (Css.vw 100) (Css.minus (Css.rem 2)))
             , Css.width (Css.rem 24)
-            , S.p3
+            , S.p0
             , S.bgGray1
             , S.textGray4
             , S.outdent
             ]
         ]
         [ Html.div
+            [ Attr.id (id ++ "-title")
+            , Attr.css [ S.p2px ]
+            ]
+            [ CardHeader.simple title
+                |> CardHeader.toHtml
+            ]
+        , Html.div
             [ Attr.css
                 [ S.col
                 , S.g3
+                , S.p3
                 ]
             ]
-            (Html.h2
-                [ Attr.id (id ++ "-title")
-                , Attr.css [ S.textGray5 ]
-                ]
-                [ Html.text title
-                ]
-                :: body
-            )
+            body
         ]

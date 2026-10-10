@@ -245,7 +245,13 @@ loadSnapshot id =
 
 keyCommands : Model -> KeyCmd.KeyCmd Msg
 keyCommands _ =
-    KeyCmd.escape EscapePressed
+    KeyCmd.batch
+        [ KeyCmd.escape EscapePressed
+        , KeyCmd.leftArrow PanLeftClicked
+        , KeyCmd.rightArrow PanRightClicked
+        , KeyCmd.upArrow PanUpClicked
+        , KeyCmd.downArrow PanDownClicked
+        ]
 
 
 setShared : Shared.Model -> Model -> Model
@@ -304,18 +310,6 @@ updateViewport viewportMsg model =
 
                 "Home" ->
                     resetViewport model
-
-                "ArrowLeft" ->
-                    panLeft model
-
-                "ArrowRight" ->
-                    panRight model
-
-                "ArrowUp" ->
-                    panUp model
-
-                "ArrowDown" ->
-                    panDown model
 
                 _ ->
                     model
