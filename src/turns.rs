@@ -168,6 +168,9 @@ pub fn validate(
         {
             return Err("movement exceeds the unit's available fuel.");
         }
+        if !unit.supplies().can_move(path.len() - 1) {
+            return Err("movement exceeds supplies available after upkeep.");
+        }
         let destination = *path.last().unwrap();
         if scenario
             .units
@@ -250,7 +253,7 @@ impl Turns {
                     .unwrap()
                     .follow_path(&event.path);
             }
-            scenario.refuel_at_home_depots();
+            scenario.finish_turn_resources();
             self.last_resolution = Some(TurnResolution {
                 turn_number: self.number,
                 events,
@@ -305,6 +308,115 @@ mod tests {
         let number = turns.number;
         turns.submit(scenario, Side::West, number, west).unwrap();
         turns.submit(scenario, Side::East, number, east).unwrap();
+    }
+
+    #[test]
+    fn supplies_charge_upkeep_once_and_walking_movement_only() {
+        let mut scenario = Scenario::supply_point().unwrap();
+        let mut turns = Turns::default();
+        for _ in 0..13 {
+            resolve_holds(&mut scenario, &mut turns);
+        }
+        let number = turns.number;
+        let mut west = holds(&scenario, Side::West);
+        set_path(&mut west, "1", &[(3, 7), (3, 6), (4, 6)]);
+        set_path(&mut west, "13", &[(4, 9), (4, 10)]);
+        set_path(&mut west, "4", &[(2, 7), (2, 6)]);
+        set_path(&mut west, "11", &[(4, 8), (5, 8)]);
+        turns
+            .submit(&mut scenario, Side::West, number, west)
+            .unwrap();
+        turns
+            .submit(&mut scenario, Side::West, number, vec![])
+            .unwrap();
+        assert!(
+            scenario
+                .units
+                .iter()
+                .all(|unit| unit.supplies().current() == 3)
+        );
+        let east = holds(&scenario, Side::East);
+        turns
+            .submit(&mut scenario, Side::East, number, east)
+            .unwrap();
+        assert_eq!(vehicle(&mut scenario, "1").supplies().current(), 0);
+        assert_eq!(vehicle(&mut scenario, "13").supplies().current(), 1);
+        for id in ["2", "4", "11", "6"] {
+            assert_eq!(vehicle(&mut scenario, id).supplies().current(), 2);
+        }
+        assert_eq!(vehicle(&mut scenario, "4").fuel().unwrap().current, 15);
+        assert_eq!(vehicle(&mut scenario, "11").fuel().unwrap().current, 15);
+    }
+
+    #[test]
+    fn supplies_reserve_upkeep_reject_movement_and_stop_at_zero() {
+        let mut scenario = Scenario::supply_point().unwrap();
+        let mut turns = Turns::default();
+        for _ in 0..15 {
+            resolve_holds(&mut scenario, &mut turns);
+        }
+        let number = turns.number;
+        for (id, path) in [("1", vec![(3, 7), (3, 6)]), ("12", vec![(4, 7), (4, 6)])] {
+            let mut west = holds(&scenario, Side::West);
+            set_path(&mut west, id, &path);
+            assert_eq!(
+                turns.submit(&mut scenario, Side::West, number, west),
+                Err("movement exceeds supplies available after upkeep.")
+            );
+            assert!(turns.orders[0].is_none());
+            assert_eq!(vehicle(&mut scenario, id).supplies().current(), 1);
+        }
+        resolve_holds(&mut scenario, &mut turns);
+        resolve_holds(&mut scenario, &mut turns);
+        assert!(
+            scenario
+                .units
+                .iter()
+                .all(|unit| unit.supplies().current() == 0)
+        );
+    }
+
+    #[test]
+    fn depots_do_not_replenish_supplies() {
+        let mut scenario = Scenario::supply_point().unwrap();
+        vehicle(&mut scenario, "4").move_to(Coordinate::new(14, 8));
+        vehicle(&mut scenario, "9").move_to(Coordinate::new(2, 8));
+        vehicle(&mut scenario, "5").move_to(Coordinate::new(8, 8));
+        let mut turns = Turns::default();
+        resolve_holds(&mut scenario, &mut turns);
+        for id in ["4", "5", "9"] {
+            assert_eq!(vehicle(&mut scenario, id).supplies().current(), 15);
+        }
+        vehicle(&mut scenario, "4").move_to(Coordinate::new(2, 8));
+        vehicle(&mut scenario, "9").move_to(Coordinate::new(14, 8));
+        resolve_holds(&mut scenario, &mut turns);
+        for id in ["4", "9"] {
+            assert_eq!(vehicle(&mut scenario, id).supplies().current(), 14);
+        }
+        assert_eq!(vehicle(&mut scenario, "5").supplies().current(), 14);
+    }
+
+    #[test]
+    fn walking_destination_conflicts_pay_upkeep_but_no_movement_supplies() {
+        let mut scenario = Scenario::supply_point().unwrap();
+        vehicle(&mut scenario, "6").move_to(Coordinate::new(5, 6));
+        let mut west = holds(&scenario, Side::West);
+        let mut east = holds(&scenario, Side::East);
+        set_path(&mut west, "1", &[(3, 7), (3, 6), (4, 6)]);
+        set_path(&mut east, "6", &[(5, 6), (4, 6)]);
+        let mut turns = Turns::default();
+        turns.submit(&mut scenario, Side::West, 1, west).unwrap();
+        turns.submit(&mut scenario, Side::East, 1, east).unwrap();
+        assert_eq!(vehicle(&mut scenario, "1").supplies().current(), 15);
+        assert_eq!(vehicle(&mut scenario, "6").supplies().current(), 15);
+        assert_eq!(
+            vehicle(&mut scenario, "1").position(),
+            Coordinate::new(3, 7)
+        );
+        assert_eq!(
+            vehicle(&mut scenario, "6").position(),
+            Coordinate::new(5, 6)
+        );
     }
 
     #[test]
@@ -420,7 +532,12 @@ mod tests {
         let mut turns = Turns::default();
         turns.submit(&mut scenario, Side::West, 1, west).unwrap();
         turns.submit(&mut scenario, Side::East, 1, east).unwrap();
-        assert_eq!(scenario, initial);
+        for (unit, original) in scenario.units.iter().zip(&initial.units) {
+            assert_eq!(unit.position(), original.position());
+            assert_eq!(unit.direction(), original.direction());
+            assert_eq!(unit.fuel(), original.fuel());
+            assert_eq!(unit.supplies().current(), 15);
+        }
     }
 
     #[test]
@@ -533,6 +650,11 @@ mod tests {
                 .count(),
             2
         );
-        assert_eq!(scenario, initial);
+        for (unit, original) in scenario.units.iter().zip(&initial.units) {
+            assert_eq!(unit.position(), original.position());
+            assert_eq!(unit.direction(), original.direction());
+            assert_eq!(unit.fuel(), original.fuel());
+            assert_eq!(unit.supplies().current(), 15);
+        }
     }
 }

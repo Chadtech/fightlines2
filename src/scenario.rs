@@ -77,6 +77,51 @@ impl Fuel {
     }
 }
 
+/// Unit provisions, separate from fuel and any future truck delivery cargo.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Supplies {
+    current: i32,
+    maximum: i32,
+    upkeep_per_turn: i32,
+    movement_per_tile: i32,
+}
+
+#[graphql_object]
+impl Supplies {
+    pub fn current(&self) -> i32 {
+        self.current
+    }
+    pub fn maximum(&self) -> i32 {
+        self.maximum
+    }
+    pub fn upkeep_per_turn(&self) -> i32 {
+        self.upkeep_per_turn
+    }
+    pub fn movement_per_tile(&self) -> i32 {
+        self.movement_per_tile
+    }
+}
+
+impl Supplies {
+    fn for_kind(kind: UnitKind) -> Self {
+        let movement_per_tile = match kind {
+            UnitKind::Infantry | UnitKind::FieldGun => 1,
+            UnitKind::Tank | UnitKind::SupplyTruck => 0,
+        };
+        Self {
+            current: 16,
+            maximum: 16,
+            upkeep_per_turn: 1,
+            movement_per_tile,
+        }
+    }
+
+    pub fn can_move(&self, tiles: usize) -> bool {
+        let available = (self.current - self.upkeep_per_turn).max(0);
+        tiles as i32 * self.movement_per_tile <= available
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unit {
     id: UnitId,
@@ -85,6 +130,7 @@ pub struct Unit {
     position: Coordinate,
     direction: Option<Direction>,
     fuel: Option<Fuel>,
+    supplies: Supplies,
 }
 
 #[graphql_object]
@@ -99,6 +145,10 @@ impl Unit {
 
     pub fn kind(&self) -> UnitKind {
         self.kind
+    }
+
+    pub fn supplies(&self) -> Supplies {
+        self.supplies
     }
 
     pub fn fuel(&self) -> Option<Fuel> {
@@ -121,7 +171,7 @@ pub struct Depot {
     owner: Option<Side>,
 }
 
-/// Current board state, including vehicle fuel. Supplies and combat remain future work.
+/// Current board state, including fuel and supplies. Combat remains future work.
 #[derive(Clone, Debug, PartialEq, Eq, GraphQLObject)]
 pub struct Scenario {
     pub(crate) map: Map,
@@ -145,6 +195,8 @@ impl Unit {
         if let Some(fuel) = &mut self.fuel {
             fuel.current -= path.len().saturating_sub(1) as i32;
         }
+        self.supplies.current -=
+            path.len().saturating_sub(1) as i32 * self.supplies.movement_per_tile;
         if let Some(position) = path.last() {
             self.move_to(*position);
         }
@@ -156,8 +208,9 @@ impl Unit {
 }
 
 impl Scenario {
-    pub fn refuel_at_home_depots(&mut self) {
+    pub fn finish_turn_resources(&mut self) {
         for unit in &mut self.units {
+            unit.supplies.current = (unit.supplies.current - unit.supplies.upkeep_per_turn).max(0);
             let at_home_depot = self
                 .depots
                 .iter()
@@ -224,6 +277,7 @@ impl Scenario {
                     side,
                     kind,
                     fuel: Fuel::for_kind(kind),
+                    supplies: Supplies::for_kind(kind),
                     position: Coordinate::new(x, y),
                     direction: match kind {
                         UnitKind::SupplyTruck => None,
@@ -246,6 +300,7 @@ impl Scenario {
                     side,
                     kind,
                     fuel: Fuel::for_kind(kind),
+                    supplies: Supplies::for_kind(kind),
                     position: Coordinate::new(x, y),
                     direction: match kind {
                         UnitKind::SupplyTruck => None,

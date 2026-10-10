@@ -13,7 +13,7 @@ import View.UnitSprite as UnitSprite
 
 
 
--- Hit points and supply remain presentation fixtures. Fuel comes from Rust.
+-- Hit points remain a presentation fixture. Fuel and supplies come from Rust.
 
 
 type alias Level =
@@ -24,7 +24,7 @@ type alias Level =
 
 type Resource
     = HitPoints
-    | Supply
+    | Supply Unit.Supplies
     | Fuel Unit.Fuel
 
 
@@ -37,7 +37,7 @@ toHtml unit =
 
         resources : List Resource
         resources =
-            [ HitPoints, Supply ] ++ fuelResources
+            [ HitPoints, Supply unit.supplies ] ++ fuelResources
     in
     H.div
         [ A.css
@@ -60,7 +60,7 @@ toHtml unit =
                 [ S.textGray4
                 ]
             ]
-            [ H.text "hit points and supply are sample values"
+            [ H.text "hit points are sample values"
             ]
         ]
 
@@ -220,7 +220,7 @@ gauge resource =
                 HitPoints ->
                     "hit points"
 
-                Supply ->
+                Supply _ ->
                     "supply"
 
                 Fuel _ ->
@@ -232,8 +232,8 @@ gauge resource =
                 HitPoints ->
                     { current = 82, maximum = 100 }
 
-                Supply ->
-                    { current = 34, maximum = 60 }
+                Supply supplies ->
+                    { current = supplies.current, maximum = supplies.maximum }
 
                 Fuel fuel ->
                     fuel
@@ -259,8 +259,8 @@ gauge resource =
                 HitPoints ->
                     "how much health the unit has left. the second number is its maximum."
 
-                Supply ->
-                    "how many supplies the unit has left. the second number is how much it can carry."
+                Supply supplies ->
+                    "provisions for this unit: " ++ String.fromInt supplies.upkeepPerTurn ++ " per resolved turn plus " ++ String.fromInt supplies.movementPerTile ++ " per traversed tile. holds and canceled moves still pay upkeep. supplies cannot be replenished yet."
 
                 Fuel _ ->
                     "each traversed tile uses 1 fuel. holds and canceled moves use none. end a turn on your home depot to fill the tank."

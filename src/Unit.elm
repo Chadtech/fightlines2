@@ -1,4 +1,4 @@
-module Unit exposing (Fuel, Unit, label)
+module Unit exposing (Fuel, Supplies, Unit, label, supplyMovementLimit)
 
 import Api.Enum.Direction exposing (Direction)
 import Api.Enum.Side exposing (Side)
@@ -14,11 +14,20 @@ type alias Fuel =
     }
 
 
+type alias Supplies =
+    { current : Int
+    , maximum : Int
+    , upkeepPerTurn : Int
+    , movementPerTile : Int
+    }
+
+
 type alias Unit =
     { id : UnitId
     , side : Side
     , kind : UnitKind
     , direction : Maybe Direction
+    , supplies : Supplies
     , fuel : Maybe Fuel
     , position : Coordinate
     }
@@ -43,3 +52,15 @@ label unit =
                     "supply truck"
     in
     Side.label unit.side ++ " " ++ kind ++ " " ++ UnitId.toString unit.id
+
+
+{-| Upkeep is reserved before spending supplies on movement.
+Units with no per-tile supply consumption have no supply movement limit.
+-}
+supplyMovementLimit : Supplies -> Maybe Int
+supplyMovementLimit supplies =
+    if supplies.movementPerTile > 0 then
+        Just (max 0 (supplies.current - supplies.upkeepPerTurn) // supplies.movementPerTile)
+
+    else
+        Nothing

@@ -45,6 +45,10 @@ type Snapshot
     = Snapshot
 
 
+type Supplies
+    = Supplies
+
+
 type TerrainFeature
     = TerrainFeature
 

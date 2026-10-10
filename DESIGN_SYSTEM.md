@@ -110,8 +110,8 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   submit anyway actions; confirmation fills missing orders with holds.
 - Selected units use a `unit status` heading, their illustration in a nightwood3
   inset screen, and their name and side without position coordinates. Display
-  sample hit points and supply, and authoritative fuel (for tanks and supply
-  trucks) as horizontal gauges with `current / maximum` labels. Use red1 below 25%, yellow4 from
+  sample hit points, authoritative supplies, and authoritative fuel (for tanks
+  and supply trucks) as horizontal gauges with `current / maximum` labels. Use red1 below 25%, yellow4 from
   25–75%, and green1 (`#4BBF63`) above 75%; retain the numeric labels alongside color.
 - Unit and gauge info markers expand keyboard-accessible explanations. The
   flat `about this unit` section spans the panel width, with nightwood3 body,

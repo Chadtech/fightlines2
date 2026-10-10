@@ -37,6 +37,13 @@ kind =
     Object.selectionForField "Enum.UnitKind.UnitKind" "kind" [] Api.Enum.UnitKind.decoder
 
 
+supplies :
+    SelectionSet decodesTo Api.Object.Supplies
+    -> SelectionSet decodesTo Api.Object.Unit
+supplies object____ =
+    Object.selectionForCompositeField "supplies" [] object____ Basics.identity
+
+
 fuel :
     SelectionSet decodesTo Api.Object.Fuel
     -> SelectionSet (Maybe decodesTo) Api.Object.Unit

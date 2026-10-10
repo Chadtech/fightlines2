@@ -354,3 +354,25 @@ traced extensions by remaining fuel. Search tracks both terrain cost and path
 length so a shorter, more expensive route is retained when a cheaper detour
 exceeds fuel. Equal-cost routes favor fewer tiles. Playback uses the completed
 snapshot fuel values; it does not calculate resource outcomes.
+
+## Unit supplies
+
+Every Rust unit carries `Supplies` with current and maximum quantities plus
+`upkeepPerTurn` and `movementPerTile` rates. All kinds start at 16/16 and have
+upkeep 1. Infantry and field guns spend 1 additional supply per traversed tile;
+tanks and trucks spend none for movement. These are unit provisions, separate
+from fuel and future supply-truck cargo.
+
+Validation reserves upkeep before allowing movement expenditure. Resolution
+spends supplies on successful movement, then charges upkeep once to every unit,
+including holds and destination conflicts. Upkeep stops at zero, so empty units
+can still submit holds; there is no starvation damage. Depots do not replenish supplies yet;
+vehicle fuel still refills at home depots. Waiting for another player and retrying submissions never
+charge upkeep.
+
+GraphQL supplies state and consumption rates initialize Elm `Unit` values and
+the supply gauge. Movement search uses the available tile count from both fuel
+and supplies after reserving upkeep, separately from terrain movement costs.
+Traced extensions subtract supplies already committed to the prefix without
+charging upkeep twice; backtracking refunds that movement allowance. Playback
+continues to use the completed snapshot's authoritative resource quantities.

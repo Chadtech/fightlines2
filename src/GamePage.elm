@@ -33,6 +33,7 @@ import Api.Object.GameSnapshot as SnapshotApi
 import Api.Object.Map as MapApi
 import Api.Object.MovementRule as MovementRuleApi
 import Api.Object.Scenario as Scenario
+import Api.Object.Supplies as SuppliesApi
 import Api.Object.TerrainFeature as FeatureApi
 import Api.Object.TerrainMovementCost as MovementCostApi
 import Api.Object.Unit as UnitApi
@@ -439,11 +440,12 @@ snapshotSelection =
                 )
                 (Scenario.depots (SS.map Depot.Depot (DepotApi.position coordinateSelection)))
                 (Scenario.units
-                    (SS.map6 Unit.Unit
+                    (SS.map7 Unit.Unit
                         (UnitApi.id |> SS.mapOrFail UnitId.parse)
                         UnitApi.side
                         UnitApi.kind
                         UnitApi.direction
+                        (UnitApi.supplies (SS.map4 Unit.Supplies SuppliesApi.current SuppliesApi.maximum SuppliesApi.upkeepPerTurn SuppliesApi.movementPerTile))
                         (UnitApi.fuel (SS.map2 Unit.Fuel FuelApi.current FuelApi.maximum))
                         (UnitApi.position coordinateSelection)
                     )
@@ -1057,6 +1059,23 @@ movementView model =
                                             ]
                                         ]
 
+                            supplyMovementText : String
+                            supplyMovementText =
+                                case Unit.supplyMovementLimit unit.supplies of
+                                    Nothing ->
+                                        "movement uses no supplies."
+
+                                    Just limit ->
+                                        "supplies permit up to " ++ String.fromInt limit ++ " tiles after upkeep."
+
+                            supplyDetails : List (Html Msg)
+                            supplyDetails =
+                                [ H.p
+                                    []
+                                    [ H.text ("supplies: " ++ String.fromInt unit.supplies.upkeepPerTurn ++ " upkeep per turn; " ++ String.fromInt unit.supplies.movementPerTile ++ " per tile. " ++ supplyMovementText ++ " supplies cannot be replenished yet.")
+                                    ]
+                                ]
+
                             plannedDetails : List (Html Msg)
                             plannedDetails =
                                 case planned of
@@ -1083,7 +1102,7 @@ movementView model =
                                         |> Button.toHtml
                                     ]
                             in
-                            List.concat [ pathDetails, fuelDetails, holdControls, plannedDetails ]
+                            List.concat [ pathDetails, fuelDetails, supplyDetails, holdControls, plannedDetails ]
 
                     else
                         [ H.p

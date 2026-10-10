@@ -75,7 +75,24 @@ check rules fixture =
 
                 unit : Unit.Unit
                 unit =
-                    { fuel = fuel, id = id, kind = fixture.kind, position = fixture.origin, side = Side.West, direction = Just Direction.East }
+                    { supplies =
+                        { current = 16
+                        , maximum = 16
+                        , upkeepPerTurn = 1
+                        , movementPerTile =
+                            if fixture.kind == UnitKind.Infantry || fixture.kind == UnitKind.FieldGun then
+                                1
+
+                            else
+                                0
+                        }
+                    , fuel = fuel
+                    , id = id
+                    , kind = fixture.kind
+                    , position = fixture.origin
+                    , side = Side.West
+                    , direction = Just Direction.East
+                    }
 
                 rows : List String
                 rows =
@@ -160,7 +177,7 @@ traceChecks rules =
 
                 unit : Unit.Unit
                 unit =
-                    { fuel = Nothing, id = id, kind = UnitKind.Infantry, position = origin, side = Side.West, direction = Just Direction.East }
+                    { supplies = { current = 16, maximum = 16, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = id, kind = UnitKind.Infantry, position = origin, side = Side.West, direction = Just Direction.East }
 
                 board : GameBoard.GameBoard
                 board =
@@ -276,7 +293,7 @@ reservationChecks rules =
             let
                 unit : Unit.Unit
                 unit =
-                    { fuel = Nothing, id = id, kind = UnitKind.Infantry, position = { x = 0, y = 0 }, side = Side.West, direction = Just Direction.East }
+                    { supplies = { current = 16, maximum = 16, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = id, kind = UnitKind.Infantry, position = { x = 0, y = 0 }, side = Side.West, direction = Just Direction.East }
 
                 board : GameBoard.GameBoard
                 board =
@@ -332,7 +349,7 @@ fuelChecks rules =
             let
                 unit : Unit.Unit
                 unit =
-                    { id = id, kind = UnitKind.Tank, position = { x = 0, y = 0 }, side = Side.West, direction = Just Direction.East, fuel = Just { current = 2, maximum = 16 } }
+                    { supplies = { current = 16, maximum = 16, upkeepPerTurn = 1, movementPerTile = 0 }, id = id, kind = UnitKind.Tank, position = { x = 0, y = 0 }, side = Side.West, direction = Just Direction.East, fuel = Just { current = 2, maximum = 16 } }
 
                 board : GameBoard.GameBoard
                 board =
@@ -380,6 +397,62 @@ fuelChecks rules =
                 ]
 
 
+supplyChecks : List Movement.Rule -> List String
+supplyChecks rules =
+    case UnitId.parse "1" of
+        Err error ->
+            [ error ]
+
+        Ok id ->
+            let
+                supplies : Unit.Supplies
+                supplies =
+                    { current = 3, maximum = 16, upkeepPerTurn = 1, movementPerTile = 1 }
+
+                unit : Unit.Unit
+                unit =
+                    { id = id, kind = UnitKind.Infantry, position = { x = 0, y = 0 }, side = Side.West, direction = Just Direction.East, fuel = Nothing, supplies = supplies }
+
+                board : GameBoard.GameBoard
+                board =
+                    { map = { width = 5, height = 3, baseTile = Terrain.GrassPlain, features = [] }, units = [ unit ], depots = [] }
+
+                exhausted : Unit.Unit
+                exhausted =
+                    { unit | supplies = { supplies | current = 1 } }
+
+                traced : Maybe Movement.Option
+                traced =
+                    Movement.trace rules board unit (Movement.start unit) { x = 0, y = 1 }
+                        |> Maybe.andThen (\path -> Movement.trace rules board unit path { x = 1, y = 1 })
+
+                fieldGun : Unit.Unit
+                fieldGun =
+                    { exhausted | kind = UnitKind.FieldGun }
+
+                vehicle : Unit.Unit
+                vehicle =
+                    { unit | kind = UnitKind.Tank, fuel = Just { current = 2, maximum = 16 }, supplies = { supplies | current = 0, movementPerTile = 0 } }
+
+                test : String -> Bool -> List String
+                test name passed =
+                    if passed then
+                        []
+
+                    else
+                        [ name ]
+            in
+            List.concat
+                [ test "upkeep is reserved before walking" (Movement.tileLimit exhausted == Just 0 && List.isEmpty (Movement.options [] rules board exhausted))
+                , test "field guns also need supplies after upkeep" (List.isEmpty (Movement.options [] rules board fieldGun))
+                , test "tracing reserves upkeep only once" (traced |> Maybe.map (\path -> List.length path.path == 3) |> Maybe.withDefault False)
+                , test "extending a trace cannot overspend supplies" (traced |> Maybe.andThen (\path -> Movement.trace rules board unit path { x = 2, y = 1 }) |> (==) Nothing)
+                , test "backtracking refunds movement supplies" (traced |> Maybe.andThen (\path -> Movement.trace rules board unit path { x = 0, y = 1 }) |> Maybe.andThen (\path -> Movement.trace rules board unit path { x = 0, y = 2 }) |> Maybe.map (\path -> List.length path.path == 3) |> Maybe.withDefault False)
+                , test "vehicles use fuel rather than supplies for movement" (Movement.tileLimit vehicle == Just 2 && not (List.isEmpty (Movement.options [] rules board vehicle)))
+                , test "empty supplies do not underflow the walking limit" (Movement.tileLimit { unit | supplies = { supplies | current = 0 } } == Just 0)
+                ]
+
+
 main : Program D.Value () Never
 main =
     Platform.worker
@@ -392,7 +465,7 @@ main =
                             [ D.errorToString error ]
 
                         Ok ( rules, cases ) ->
-                            List.concatMap (check rules) cases ++ traceChecks rules ++ reservationChecks rules ++ fuelChecks rules
+                            List.concatMap (check rules) cases ++ traceChecks rules ++ reservationChecks rules ++ fuelChecks rules ++ supplyChecks rules
                     )
                 )
         , update = \msg model -> never msg

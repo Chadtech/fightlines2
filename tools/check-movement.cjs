@@ -13,7 +13,7 @@ try {
       console.error(failures.join('\n'));
       process.exitCode = 1;
     } else {
-      console.log('9 shared movement cases and 12 route-tracing checks and 4 destination-reservation checks and 7 fuel checks passed.');
+      console.log('9 shared movement cases and 12 route-tracing checks and 4 destination-reservation checks and 7 fuel checks and 7 supply checks passed.');
     }
   });
 } finally {
