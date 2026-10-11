@@ -1,7 +1,5 @@
 module View.UnitCommands exposing
-    ( MenuOption(..)
-    , Msg(..)
-    , enabledOptions
+    ( Msg(..)
     , optionHtmlId
     , toHtml
     )
@@ -16,12 +14,7 @@ import Json.Decode as Decode
 import Map exposing (Map)
 import Style as S
 import Unit exposing (Unit)
-import UnitCommand as Command exposing (Command)
-
-
-type MenuOption
-    = CommandOption Command
-    | CancelOption
+import UnitCommand as Command exposing (Command, MenuOption(..))
 
 
 type Msg
@@ -146,18 +139,6 @@ optionHtmlId option =
 
         CancelOption ->
             "unit-command-cancel"
-
-
-enabledOptions : Unit -> List MenuOption
-enabledOptions unit =
-    let
-        commands : List MenuOption
-        commands =
-            Command.available unit
-                |> List.filter Command.isImplemented
-                |> List.map CommandOption
-    in
-    commands ++ [ CancelOption ]
 
 
 cancelRow : Html Msg

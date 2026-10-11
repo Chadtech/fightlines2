@@ -1,6 +1,7 @@
 port module TurnLifecycleChecks exposing (main)
 
 import Coordinate
+import GamePage.OrderPlanning as OrderPlanning exposing (Model(..))
 import GamePage.Selection
     exposing
         ( DestinationFeedback(..)
@@ -10,7 +11,6 @@ import GamePage.Selection
         )
 import Movement
 import PlannedOrder
-import PlanningModel exposing (PlanningModel(..))
 import Platform
 import TurnLifecycle exposing (Phase(..))
 import TurnPlayback
@@ -187,20 +187,20 @@ unloadChecks =
 
                 checklist : Phase
                 checklist =
-                    TurnLifecycle.mapPlanning (PlanningModel.startUnload truck move) ordinary
+                    TurnLifecycle.mapPlanning (OrderPlanning.startUnload truck move) ordinary
 
                 checked : Phase
                 checked =
                     checklist
-                        |> TurnLifecycle.mapPlanning (PlanningModel.toggleUnloadPassenger first True)
-                        |> TurnLifecycle.mapPlanning (PlanningModel.toggleUnloadPassenger second True)
+                        |> TurnLifecycle.mapPlanning (OrderPlanning.toggleUnloadPassenger first True)
+                        |> TurnLifecycle.mapPlanning (OrderPlanning.toggleUnloadPassenger second True)
 
-                exitOptions : PlanningModel -> UnitId.UnitId -> List Movement.Option
+                exitOptions : OrderPlanning.Model -> UnitId.UnitId -> List Movement.Option
                 exitOptions state _ =
                     let
                         reserved : List Coordinate.Coordinate
                         reserved =
-                            PlanningModel.orders state |> List.concatMap (PlannedOrder.unloads >> List.map .destination)
+                            OrderPlanning.orders state |> List.concatMap (PlannedOrder.unloads >> List.map .destination)
 
                         option : Coordinate.Coordinate -> Movement.Option
                         option position =
@@ -212,23 +212,23 @@ unloadChecks =
 
                 firstPassenger : Phase
                 firstPassenger =
-                    TurnLifecycle.mapPlanning (PlanningModel.confirmUnloadPassengers exitOptions) checked
+                    TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers exitOptions) checked
 
                 rejectedFirstExit : Phase
                 rejectedFirstExit =
-                    TurnLifecycle.mapPlanning (PlanningModel.saveUnloadDestination exitOptions { x = 9, y = 9 }) firstPassenger
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination exitOptions { x = 9, y = 9 }) firstPassenger
 
                 secondPassenger : Phase
                 secondPassenger =
-                    TurnLifecycle.mapPlanning (PlanningModel.saveUnloadDestination exitOptions { x = 2, y = 2 }) rejectedFirstExit
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination exitOptions { x = 2, y = 2 }) rejectedFirstExit
 
                 rejectedExit : Phase
                 rejectedExit =
-                    TurnLifecycle.mapPlanning (PlanningModel.saveUnloadDestination exitOptions { x = 2, y = 2 }) secondPassenger
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination exitOptions { x = 2, y = 2 }) secondPassenger
 
                 complete : Phase
                 complete =
-                    TurnLifecycle.mapPlanning (PlanningModel.saveUnloadDestination exitOptions { x = 3, y = 1 }) rejectedExit
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination exitOptions { x = 3, y = 1 }) rejectedExit
 
                 completedOrder : PlannedOrder.PlannedOrder
                 completedOrder =
@@ -242,18 +242,18 @@ unloadChecks =
 
                 stationaryChecklist : Phase
                 stationaryChecklist =
-                    TurnLifecycle.mapPlanning (PlanningModel.startStationaryUnload truck stationaryPosition) ordinary
+                    TurnLifecycle.mapPlanning (OrderPlanning.startStationaryUnload truck stationaryPosition) ordinary
 
                 stationaryHold : PlannedOrder.PlannedOrder
                 stationaryHold =
                     { unitId = truck, action = PlannedOrder.Hold stationaryPosition }
 
-                stationaryOptions : PlanningModel -> UnitId.UnitId -> List Movement.Option
+                stationaryOptions : OrderPlanning.Model -> UnitId.UnitId -> List Movement.Option
                 stationaryOptions state _ =
                     let
                         reserved : List Coordinate.Coordinate
                         reserved =
-                            PlanningModel.orders state |> List.concatMap (PlannedOrder.unloads >> List.map .destination)
+                            OrderPlanning.orders state |> List.concatMap (PlannedOrder.unloads >> List.map .destination)
 
                         option : Coordinate.Coordinate -> Movement.Option
                         option position =
@@ -266,17 +266,17 @@ unloadChecks =
                 stationaryFirst : Phase
                 stationaryFirst =
                     stationaryChecklist
-                        |> TurnLifecycle.mapPlanning (PlanningModel.toggleUnloadPassenger first True)
-                        |> TurnLifecycle.mapPlanning (PlanningModel.toggleUnloadPassenger second True)
-                        |> TurnLifecycle.mapPlanning (PlanningModel.confirmUnloadPassengers stationaryOptions)
+                        |> TurnLifecycle.mapPlanning (OrderPlanning.toggleUnloadPassenger first True)
+                        |> TurnLifecycle.mapPlanning (OrderPlanning.toggleUnloadPassenger second True)
+                        |> TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers stationaryOptions)
 
                 stationarySecond : Phase
                 stationarySecond =
-                    TurnLifecycle.mapPlanning (PlanningModel.saveUnloadDestination stationaryOptions { x = 0, y = 1 }) stationaryFirst
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination stationaryOptions { x = 0, y = 1 }) stationaryFirst
 
                 stationaryComplete : Phase
                 stationaryComplete =
-                    TurnLifecycle.mapPlanning (PlanningModel.saveUnloadDestination stationaryOptions { x = 1, y = 2 }) stationarySecond
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination stationaryOptions { x = 1, y = 2 }) stationarySecond
 
                 stationaryOrder : PlannedOrder.PlannedOrder
                 stationaryOrder =
@@ -295,7 +295,7 @@ unloadChecks =
                 hasOneOwner =
                     case checklist of
                         Planning (ChoosingPassengers choice) ->
-                            List.isEmpty choice.otherOrders && PlanningModel.truckDestination choice.truck == move.destination
+                            List.isEmpty choice.otherOrders && OrderPlanning.truckDestination choice.truck == move.destination
 
                         _ ->
                             False
@@ -313,9 +313,9 @@ unloadChecks =
                 [ expect "stationary unloading replaces the truck move with one hold at its origin"
                     (TurnLifecycle.orders stationaryChecklist == [ stationaryHold ])
                 , expect "canceling or declining stationary unloading leaves a plain hold"
-                    (TurnLifecycle.orders (TurnLifecycle.mapPlanning PlanningModel.dismissDialog stationaryChecklist)
+                    (TurnLifecycle.orders (TurnLifecycle.mapPlanning OrderPlanning.dismissDialog stationaryChecklist)
                         == [ stationaryHold ]
-                        && TurnLifecycle.orders (TurnLifecycle.mapPlanning (PlanningModel.confirmUnloadPassengers stationaryOptions) stationaryChecklist)
+                        && TurnLifecycle.orders (TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers stationaryOptions) stationaryChecklist)
                         == [ stationaryHold ]
                     )
                 , expect "stationary unloading reserves each exit before choosing the next passenger"
@@ -337,9 +337,9 @@ unloadChecks =
                 , expect "the passenger checklist owns one truck move and derives its inspection"
                     (hasOneOwner && TurnLifecycle.orders checklist == [ order ] && TurnLifecycle.selection checklist == Just (Inspecting (UnitInspection truck)))
                 , expect "canceling the checklist retains the move and returns to ordinary planning"
-                    (TurnLifecycle.mapPlanning PlanningModel.dismissDialog checked == ordinary)
+                    (TurnLifecycle.mapPlanning OrderPlanning.dismissDialog checked == ordinary)
                 , expect "proceeding without passengers retains the move"
-                    (TurnLifecycle.mapPlanning (PlanningModel.confirmUnloadPassengers exitOptions) checklist == ordinary)
+                    (TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers exitOptions) checklist == ordinary)
                 , expect "the next passenger cannot reuse an exit already saved"
                     reservesFirstExit
                 , expect "an unavailable exit cannot advance the workflow"
@@ -365,7 +365,7 @@ unloadChecks =
                 , expect "ordinary order edits cannot replace or duplicate an active unload move"
                     (TurnLifecycle.setOrders [] checklist == checklist && TurnLifecycle.setOrders [] secondPassenger == secondPassenger)
                 , expect "submission warnings and unload stages are mutually exclusive"
-                    (TurnLifecycle.mapPlanning PlanningModel.showSubmissionWarning checklist == checklist && TurnLifecycle.mapPlanning PlanningModel.showSubmissionWarning secondPassenger == secondPassenger && planningChoice (TurnLifecycle.mapPlanning PlanningModel.showSubmissionWarning ordinary) == Nothing)
+                    (TurnLifecycle.mapPlanning OrderPlanning.showSubmissionWarning checklist == checklist && TurnLifecycle.mapPlanning OrderPlanning.showSubmissionWarning secondPassenger == secondPassenger && planningChoice (TurnLifecycle.mapPlanning OrderPlanning.showSubmissionWarning ordinary) == Nothing)
                 , expect "unfinished unloading cannot be submitted"
                     (TurnLifecycle.startSubmission 1 checklist == checklist && TurnLifecycle.startSubmission 1 secondPassenger == secondPassenger)
                 , expect "unsubmitted polls preserve both unload stages"
@@ -373,27 +373,27 @@ unloadChecks =
                 , expect "submission confirmed elsewhere retains the move and drops the workflow"
                     (TurnLifecycle.orders (TurnLifecycle.observeSubmission True checklist) == [ order ] && planningExits (TurnLifecycle.observeSubmission True secondPassenger) == Nothing && List.concatMap PlannedOrder.unloads (TurnLifecycle.orders (TurnLifecycle.observeSubmission True secondPassenger)) == [ { unitId = first, destination = { x = 2, y = 2 } } ])
                 , expect "advancing the turn discards the old unload workflow"
-                    (TurnLifecycle.startTurn False [] == Planning PlanningModel.init)
+                    (TurnLifecycle.startTurn False [] == Planning OrderPlanning.init)
                 , expect "completed unload orders can be revoked normally"
                     (TurnLifecycle.orders (TurnLifecycle.setOrders [] complete) == [])
                 , expect "submission warning dismissal preserves selection and drafts"
-                    (TurnLifecycle.mapPlanning PlanningModel.dismissDialog (TurnLifecycle.mapPlanning PlanningModel.showSubmissionWarning ordinary) == ordinary)
+                    (TurnLifecycle.mapPlanning OrderPlanning.dismissDialog (TurnLifecycle.mapPlanning OrderPlanning.showSubmissionWarning ordinary) == ordinary)
                 , expect "confirming submission accepts the warning state's drafts"
-                    (TurnLifecycle.startSubmission 1 (TurnLifecycle.mapPlanning PlanningModel.showSubmissionWarning ordinary) == TurnLifecycle.startSubmission 1 ordinary)
+                    (TurnLifecycle.startSubmission 1 (TurnLifecycle.mapPlanning OrderPlanning.showSubmissionWarning ordinary) == TurnLifecycle.startSubmission 1 ordinary)
                 ]
 
         _ ->
             [ "could not construct unload workflow fixture IDs" ]
 
 
-planningExits : Phase -> Maybe PlanningModel.UnloadPlanning
+planningExits : Phase -> Maybe OrderPlanning.UnloadPlanning
 planningExits phase =
-    TurnLifecycle.planning phase |> Maybe.andThen PlanningModel.unloadPlanning
+    TurnLifecycle.planning phase |> Maybe.andThen OrderPlanning.unloadPlanning
 
 
-planningChoice : Phase -> Maybe PlanningModel.UnloadChoice
+planningChoice : Phase -> Maybe OrderPlanning.UnloadChoice
 planningChoice phase =
-    TurnLifecycle.planning phase |> Maybe.andThen PlanningModel.unloadChoice
+    TurnLifecycle.planning phase |> Maybe.andThen OrderPlanning.unloadChoice
 
 
 expect : String -> Bool -> List String

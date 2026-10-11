@@ -11,8 +11,8 @@ module GamePage.Selection exposing
 import Api.Enum.Direction exposing (Direction)
 import Coordinate exposing (Coordinate)
 import Movement
+import UnitCommand
 import UnitId exposing (UnitId)
-import View.UnitCommands as UnitCommands
 
 
 
@@ -38,7 +38,7 @@ type alias SelectedUnit =
 
 
 type UnitInteraction
-    = CommandMenu (Maybe UnitCommands.MenuOption)
+    = CommandMenu (Maybe UnitCommand.MenuOption)
     | ChoosingMove MovePlanning
     | ChoosingDirection Direction
 

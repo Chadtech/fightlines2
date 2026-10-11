@@ -85,14 +85,16 @@ directly after decoding flags; the `Browser.application` boundary converts
 effects to commands. `Route` parses typed lobby/game routes, `Shared` owns
 navigation, and `Effect` translates page effects into commands.
 
-`NewLobby`, `JoinLobby`, `LobbyPage`, `LobbyLoadFailed`, and `GamePage` own their page state and views.
+`NewLobby`, `JoinLobby`, `LobbyPage`, `LobbyLoadFailed`, `GamePage`, and
+`GameLoadFailed` own their page state and views.
 `LobbyPage.load` and `GamePage.load` define their initial requests. `Main` owns
 initial requests and dispatches failures, and initializes each loaded page only
 after a successful response. `LobbyPage` retains its loaded roster while polling.
-`LobbyLoadFailed` owns the lobby error message, view, and button updates. Retry
-navigates to the same lobby route so `Main` starts a fresh initial request;
-return home navigates to the creation page. Page views return lists of HTML;
-`GamePage` also owns its load-failure view.
+`LobbyLoadFailed` and `GameLoadFailed` own their error messages, views, and
+button updates. Retry navigates to the same lobby or game route so `Main` starts
+a fresh initial request; return home navigates to the creation page. `Main`
+maps each failure page's messages and effects, ignoring messages for a different
+page or ID. Page views return lists of HTML.
 
 The `/lobby/<id>` route shows `JoinLobby` to visitors who are not members and
 `LobbyPage` to existing members. `Main` chooses the page after the initial lobby
@@ -184,14 +186,16 @@ catches callers incompatible with a regenerated schema. The current server uses
 synchronous resolvers for its in-memory operations.
 
 `UnitCommand` owns the command vocabulary and per-unit availability.
-`GamePage` owns unit or tile selection and saved orders. `PlannedOrder` gives
-saved orders separate `Hold`, `Move` and `Rotate` actions. Only `Move` carries
-unload choices; `Rotate` carries a stationary position and required direction.
+`GamePage.OrderPlanning` owns editable unit/tile selection and saved drafts;
+`TurnLifecycle` retains inspection while orders are locked. `PlannedOrder` gives
+saved orders separate `Hold`, `Move`, `Unload` and `Rotate` actions. Moving truck
+unloads belong to `Move`; stationary truck unloads belong to `Unload`.
+`Rotate` carries a stationary position and required direction.
 Its submission adapter converts these actions to the existing GraphQL input,
 using single-coordinate paths for holds and rotations. `PlannedOrderChecks`
 verifies that conversion, including unloading from stationary trucks.
 `TurnLifecycle.Phase` owns planning, submission, waiting and playback.
-`PlanningModel.elm` owns the planning custom type and its transitions:
+`GamePage.OrderPlanning` owns the planning custom type and its transitions:
 `OrdinaryPlanning`, `ConfirmingSubmission`,
 `ChoosingPassengers` or `ChoosingExits`. Ordinary planning and submission
 confirmation carry drafts and selection; unload stages carry the required truck
@@ -199,8 +203,17 @@ move, other units' orders and stage-specific passenger data. The submission
 warning and unload checklist are rendered directly from these alternatives;
 `GamePage.Model` has no separate dialog state. Only one workflow can be active.
 `TurnLifecycle` owns the outer phases and delegates editable planning through
-`mapPlanning`; the planning module operates only on `PlanningModel`, without
-knowing about submission, waiting or playback.
+`mapPlanning`; the planning module operates only on `OrderPlanning.Model`, without
+knowing about submission, waiting or playback. `OrderPlanning.Context` supplies
+read-only map, units, movement rules and player sides. The module owns command
+selection, move tracing and confirmation, rotation drafts, reservations, loading
+partner holds, moving/stationary truck unload workflows, readiness and default
+submission holds. `UnitCommand.MenuOption` owns command choices independently of
+the view. Page helpers delegate edits through `TurnLifecycle.mapPlanning`, so
+locked phases cannot accept draft changes. `GamePage` retains navigation guards,
+views and view messages, focus/dialog effects, GraphQL conversion and snapshot
+reconciliation. `OrderPlanningChecks` covers these planning behaviors alongside
+the lifecycle and movement checks.
 `GamePage.Selection` allows `Inspecting Inspection` or `UnitSelection SelectedUnit`.
 Unload stages derive inspection from the truck or current passenger instead of
 storing another selection. Submission, waiting and playback store only
@@ -545,11 +558,11 @@ receiving unit's hold alongside a loading or unloading draft. It reserves
 remaining berths across drafts and prevents moving a receiver while its loading
 or unloading drafts exist. The truck's status panel exposes cargo buttons;
 carried units have no independent commands. Saving a truck destination opens
-an unload checklist through `PlanningModel.ChoosingPassengers`. Confirmation
+an unload checklist through `OrderPlanning.ChoosingPassengers`. Confirmation
 advances to `ChoosingExits`. Both stages own a typed truck plan distinguishing
 movement from stationary unloading, with all passenger exits accumulated so far,
 plus other units' orders.
-There is no independently stored dialog or unload selection. `PlanningModel.orders`
+There is no independently stored dialog or unload selection. `OrderPlanning.orders`
 assembles the complete planning orders, exposed through `TurnLifecycle.orders`
 for paths, readiness, reservations and submission. Planning transitions finish
 or cancel the workflow without page-level order transfers.

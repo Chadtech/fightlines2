@@ -1,7 +1,9 @@
 module UnitCommand exposing
     ( Command(..)
+    , MenuOption(..)
     , assetName
     , available
+    , enabledOptions
     , isImplemented
     , label
     )
@@ -19,6 +21,23 @@ type Command
     | IndirectFire
     | DigIn
     | Ambush
+
+
+type MenuOption
+    = CommandOption Command
+    | CancelOption
+
+
+enabledOptions : Unit -> List MenuOption
+enabledOptions unit =
+    let
+        commands : List MenuOption
+        commands =
+            available unit
+                |> List.filter isImplemented
+                |> List.map CommandOption
+    in
+    commands ++ [ CancelOption ]
 
 
 available : Unit -> List Command

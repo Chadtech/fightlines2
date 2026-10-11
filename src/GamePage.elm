@@ -6,7 +6,6 @@ module GamePage exposing
     , init
     , keyCommands
     , load
-    , loadFailedView
     , setShared
     , subscriptions
     , update
@@ -47,6 +46,7 @@ import Effect as E
         ( Eff
         )
 import GamePage.BattlefieldNavigation as BattlefieldNavigation
+import GamePage.OrderPlanning as OrderPlanning exposing (UnloadChoice, UnloadPlanning)
 import GamePage.Selection
     exposing
         ( DestinationFeedback(..)
@@ -79,7 +79,6 @@ import PlannedOrder
         ( PlannedOrder
         , UnloadOrder
         )
-import PlanningModel exposing (PlanningModel, UnloadChoice, UnloadPlanning)
 import Point exposing (Point)
 import Ports.Js.To as ToJs
 import Shared
@@ -97,8 +96,6 @@ import Unit exposing (Unit)
 import UnitCommand
 import UnitId exposing (UnitId)
 import View.Button as Button
-import View.Card as Card
-import View.CardHeader as CardHeader
 import View.Dialog as Dialog exposing (Dialog)
 import View.RotationChoices as RotationChoices
 import View.TerrainTile as TerrainTile
@@ -246,7 +243,7 @@ init shared flags =
     , phase =
         TurnLifecycle.observeSubmission
             flags.snapshot.turn.submitted
-            (TurnLifecycle.Planning PlanningModel.init)
+            (TurnLifecycle.Planning OrderPlanning.init)
     , refreshing = False
     , turnError = Nothing
     , shared = shared
@@ -290,7 +287,16 @@ setShared shared model =
 ----------------------------------------------------------------
 
 
-mapPlanning : (PlanningModel -> PlanningModel) -> Model -> Model
+planningContext : Model -> OrderPlanning.Context
+planningContext model =
+    { map = model.map
+    , units = model.units
+    , movementRules = model.movementRules
+    , playerSides = List.filter .isYou model.players |> List.map .side
+    }
+
+
+mapPlanning : (OrderPlanning.Model -> OrderPlanning.Model) -> Model -> Model
 mapPlanning transition model =
     { model | phase = TurnLifecycle.mapPlanning transition model.phase }
 
@@ -298,12 +304,12 @@ mapPlanning transition model =
 unloadChoice : Phase -> Maybe UnloadChoice
 unloadChoice phase =
     TurnLifecycle.planning phase
-        |> Maybe.andThen PlanningModel.unloadChoice
+        |> Maybe.andThen OrderPlanning.unloadChoice
 
 
 unloadPlanning : Phase -> Maybe UnloadPlanning
 unloadPlanning phase =
-    TurnLifecycle.planning phase |> Maybe.andThen PlanningModel.unloadPlanning
+    TurnLifecycle.planning phase |> Maybe.andThen OrderPlanning.unloadPlanning
 
 
 isChoosingUnload : Model -> Bool
@@ -311,86 +317,10 @@ isChoosingUnload model =
     unloadPlanning model.phase /= Nothing
 
 
-openUnloadPrompt : Unit -> Movement.Option -> Model -> Model
-openUnloadPrompt truck move model =
-    if hasPassengers truck model then
-        model
-            |> mapPlanning (PlanningModel.startUnload truck.id move)
-
-    else
-        model
-
-
-hasPassengers : Unit -> Model -> Bool
-hasPassengers truck model =
-    List.any (\passenger -> Unit.carrierId passenger == Just truck.id) model.units
-
-
-holdPosition : Unit -> Model -> Model
-holdPosition unit model =
-    case holdOrder model.units unit of
-        Just hold ->
-            let
-                next : Model
-                next =
-                    { model
-                        | phase = TurnLifecycle.setOrders (hold :: List.filter (\plan -> plan.unitId /= unit.id) (plannedOrders model)) model.phase
-                    }
-                        |> inspectSelectedUnit
-            in
-            if hasPassengers unit model then
-                next
-                    |> mapPlanning (PlanningModel.startStationaryUnload unit.id (PlannedOrder.destination hold))
-
-            else
-                next
-
-        Nothing ->
-            model
-
-
 dismissDialog : Model -> Model
 dismissDialog model =
     model
-        |> mapPlanning PlanningModel.dismissDialog
-
-
-unloadOptions : Model -> PlanningModel -> UnitId -> List Movement.Option
-unloadOptions model state passengerId =
-    case PlanningModel.unloadPlanning state of
-        Just planning ->
-            let
-                projectTruck : Unit -> Unit
-                projectTruck unit =
-                    if unit.id == planning.truck.truckId then
-                        Unit.setOnMap (PlanningModel.truckDestination planning.truck) unit
-
-                    else
-                        unit
-
-                projectedUnits : List Unit
-                projectedUnits =
-                    List.map projectTruck model.units
-
-                next : Model
-                next =
-                    { model | phase = TurnLifecycle.Planning state }
-            in
-            case ListUtil.find (\unit -> unit.id == passengerId) projectedUnits of
-                Just passenger ->
-                    Movement.options (reservedDestinations passenger next) model.movementRules model.map projectedUnits passenger
-
-                Nothing ->
-                    []
-
-        Nothing ->
-            []
-
-
-chooseUnloadSquare : Coordinate -> Model -> Model
-chooseUnloadSquare destination model =
-    model
-        |> mapPlanning (PlanningModel.saveUnloadDestination (unloadOptions model) destination)
+        |> mapPlanning OrderPlanning.dismissDialog
 
 
 partialOrdersDialogHtmlId : String
@@ -420,12 +350,7 @@ planningLocked model =
 
 unitsWithoutOrders : Model -> List Unit
 unitsWithoutOrders model =
-    let
-        missingOrder : Unit -> Bool
-        missingOrder unit =
-            isOwnUnit model unit && Unit.onBoard unit && not (List.any (\plan -> plan.unitId == unit.id) (plannedOrders model))
-    in
-    List.filter missingOrder model.units
+    OrderPlanning.missingOrders (planningContext model) (plannedOrders model)
 
 
 readyToSubmit : Model -> Bool
@@ -457,22 +382,14 @@ unloadDialogHtmlId =
 
 selectedUnit : Model -> Maybe Unit
 selectedUnit model =
-    case currentSelection model of
-        Just (Inspecting (UnitInspection id)) ->
-            ListUtil.find (\unit -> unit.id == id) model.units
-
-        Just (UnitSelection selection) ->
-            ListUtil.find (\unit -> unit.id == selection.id) model.units
-
-        _ ->
-            Nothing
+    OrderPlanning.selectedUnitFromSelection (planningContext model) (currentSelection model)
 
 
 selectedPosition : Model -> Maybe Coordinate
 selectedPosition model =
     case unloadPlanning model.phase of
         Just planning ->
-            Just (PlanningModel.truckDestination planning.truck)
+            Just (OrderPlanning.truckDestination planning.truck)
 
         Nothing ->
             inspectionPosition model
@@ -496,44 +413,14 @@ inspectionPosition model =
 
 isOwnUnit : Model -> Unit -> Bool
 isOwnUnit model unit =
-    List.any
-        (\player -> player.isYou && player.side == unit.side)
-        model.players
+    OrderPlanning.isOwnUnit (planningContext model) unit
 
 
 applyCommand : UnitCommand.Command -> Model -> Model
 applyCommand command model =
-    case commandMenuUnit model of
-        Just unit ->
-            let
-                canApply : Bool
-                canApply =
-                    isOwnUnit model unit
-                        && not (planningLocked model)
-                        && not (receivingLoad unit model)
-                        && List.member command (UnitCommand.available unit)
-                        && UnitCommand.isImplemented command
-            in
-            if canApply then
-                case command of
-                    UnitCommand.Move ->
-                        beginMovement unit model
-
-                    UnitCommand.Rotate ->
-                        model
-                            |> setUnitInteraction unit.id (ChoosingDirection (Maybe.withDefault Facing.North unit.direction))
-
-                    UnitCommand.HoldPosition ->
-                        holdPosition unit model
-
-                    _ ->
-                        model
-
-            else
-                model
-
-        _ ->
-            model
+    model
+        |> mapPlanning
+            (OrderPlanning.applyCommand (planningContext model) command)
 
 
 plannedUnloadRoutes : Model -> List UnloadRoute
@@ -559,59 +446,22 @@ plannedUnloadRoutes model =
     List.concatMap truckUnloads (plannedOrders model)
 
 
-focusedCommand : Model -> Maybe UnitCommands.MenuOption
+focusedCommand : Model -> Maybe UnitCommand.MenuOption
 focusedCommand model =
-    case currentSelection model of
-        Just (UnitSelection selection) ->
-            case selection.interaction of
-                CommandMenu focused ->
-                    focused
-
-                ChoosingMove _ ->
-                    Nothing
-
-                ChoosingDirection _ ->
-                    Nothing
-
-        _ ->
-            Nothing
+    TurnLifecycle.planning model.phase |> Maybe.andThen OrderPlanning.focusedCommand
 
 
 commandMenuUnit : Model -> Maybe Unit
 commandMenuUnit model =
-    case ( currentSelection model, hasDialog model ) of
-        ( Just (UnitSelection { interaction }), False ) ->
-            case interaction of
-                CommandMenu _ ->
-                    selectedUnit model
-
-                _ ->
-                    Nothing
-
-        _ ->
-            Nothing
-
-
-holdOrder : List Unit -> Unit -> Maybe PlannedOrder
-holdOrder units unit =
-    Unit.physicalPosition units unit
-        |> Maybe.map (\position -> { unitId = unit.id, action = PlannedOrder.Hold position })
+    TurnLifecycle.planning model.phase |> Maybe.andThen (OrderPlanning.commandMenuUnit (planningContext model))
 
 
 submitRequest : LobbyId -> Model -> Graphql.Http.Request Snapshot
 submitRequest lobbyId model =
     let
-        missingOrder : Unit -> Bool
-        missingOrder unit =
-            isOwnUnit model unit && not (List.any (\plan -> plan.unitId == unit.id) (plannedOrders model))
-
-        defaultHolds : List PlannedOrder
-        defaultHolds =
-            model.units |> List.filter missingOrder |> List.filterMap (holdOrder model.units)
-
         orders : List PlannedOrder
         orders =
-            plannedOrders model ++ defaultHolds
+            OrderPlanning.submissionOrders (planningContext model) (plannedOrders model)
     in
     Api.Mutation.submitTurn
         { id = LobbyId.toString lobbyId
@@ -674,65 +524,6 @@ receiveSnapshot snapshot model =
         }
 
 
-traceTo : Coordinate -> Model -> Maybe Movement.Option
-traceTo position model =
-    case ( selectedUnit model, movementPlanning model ) of
-        ( Just unit, Just planning ) ->
-            if isOwnUnit model unit then
-                Movement.preview model.movementRules model.map model.units unit planning.preview position
-
-            else
-                Nothing
-
-        _ ->
-            Nothing
-
-
-beginMovement : Unit -> Model -> Model
-beginMovement unit model =
-    case Unit.physicalPosition model.units unit of
-        Just origin ->
-            let
-                planning : MovePlanning
-                planning =
-                    { preview = Movement.start origin
-                    , options = Movement.options (reservedDestinations unit model) model.movementRules model.map model.units unit
-                    , destinationFeedback = NoDestinationFeedback
-                    }
-            in
-            model
-                |> setUnitInteraction unit.id (ChoosingMove planning)
-
-        Nothing ->
-            model
-
-
-boardingSpace : Unit -> Unit -> Model -> Bool
-boardingSpace mover truck model =
-    let
-        alreadyAboard : Int
-        alreadyAboard =
-            List.length (List.filter (\unit -> Unit.carrierId unit == Just truck.id) model.units)
-
-        boarding : PlannedOrder -> Bool
-        boarding plan =
-            plan.unitId /= mover.id && PlannedOrder.isMoving plan && Just (PlannedOrder.destination plan) == Unit.boardPosition truck
-
-        truckMoving : Bool
-        truckMoving =
-            List.any (\plan -> plan.unitId == truck.id && PlannedOrder.isMoving plan) (plannedOrders model)
-
-        fitsCargo : Bool
-        fitsCargo =
-            alreadyAboard + List.length (List.filter boarding (plannedOrders model)) < truck.cargoCapacity
-
-        compatible : Bool
-        compatible =
-            Unit.boardPosition truck |> Maybe.andThen (Unit.loadingPartner model.units mover) |> (==) (Just truck)
-    in
-    compatible && not truckMoving && fitsCargo
-
-
 plannedAction : Model -> Unit -> Movement.Option -> String
 plannedAction model unit move =
     if Unit.carrierId unit /= Nothing && List.length move.path > 1 then
@@ -745,105 +536,9 @@ plannedAction model unit move =
         "move to"
 
 
-reservedDestinations : Unit -> Model -> List Coordinate
-reservedDestinations unit model =
-    let
-        reserves : PlannedOrder -> Bool
-        reserves plan =
-            let
-                partner : Maybe Unit
-                partner =
-                    Unit.loadingPartner model.units unit (PlannedOrder.destination plan)
-
-                isWaitingPartner : Unit -> Bool
-                isWaitingPartner target =
-                    target.id == plan.unitId && not (receivingLoad target model && target.cargoCapacity == 0)
-
-                waitingPartner : Bool
-                waitingPartner =
-                    not (PlannedOrder.isMoving plan) && (partner |> Maybe.map isWaitingPartner |> Maybe.withDefault False)
-
-                boardingDestination : Bool
-                boardingDestination =
-                    partner |> Maybe.map (\target -> boardingSpace unit target model) |> Maybe.withDefault False
-            in
-            plan.unitId /= unit.id && not waitingPartner && not boardingDestination
-
-        unavailableReceiver : Unit -> Bool
-        unavailableReceiver target =
-            target.id /= unit.id && receivingLoad target model && not (boardingSpace unit target model)
-
-        unavailableReceivers : List Coordinate
-        unavailableReceivers =
-            model.units
-                |> List.filter unavailableReceiver
-                |> List.filterMap Unit.boardPosition
-
-        savedDestinations : List Coordinate
-        savedDestinations =
-            List.map PlannedOrder.destination (List.filter reserves (plannedOrders model))
-                ++ List.concatMap (PlannedOrder.unloads >> List.map .destination) (plannedOrders model)
-    in
-    savedDestinations ++ unavailableReceivers
-
-
 receivingLoad : Unit -> Model -> Bool
 receivingLoad unit model =
-    let
-        receives : PlannedOrder -> Bool
-        receives plan =
-            if not (PlannedOrder.isMoving plan) then
-                False
-
-            else
-                case ListUtil.find (\mover -> mover.id == plan.unitId) model.units of
-                    Just mover ->
-                        if Unit.carrierId mover == Just unit.id then
-                            True
-
-                        else
-                            Unit.loadingPartner model.units mover (PlannedOrder.destination plan) |> Maybe.map .id |> (==) (Just unit.id)
-
-                    Nothing ->
-                        False
-    in
-    List.any receives (plannedOrders model)
-
-
-saveMove : Unit -> Movement.Option -> Model -> List PlannedOrder
-saveMove unit move model =
-    let
-        receiver : Maybe Unit
-        receiver =
-            case Unit.carrierId unit of
-                Just carrier ->
-                    model.units
-                        |> ListUtil.find
-                            (\truck -> truck.id == carrier)
-
-                Nothing ->
-                    Unit.loadingPartner
-                        model.units
-                        unit
-                        move.destination
-
-        retained : List PlannedOrder
-        retained =
-            plannedOrders model
-                |> List.filter
-                    (\plan ->
-                        (plan.unitId /= unit.id)
-                            && (Just plan.unitId /= Maybe.map .id receiver)
-                    )
-
-        receiverHold : List PlannedOrder
-        receiverHold =
-            receiver
-                |> Maybe.andThen (holdOrder model.units)
-                |> Maybe.map List.singleton
-                |> Maybe.withDefault []
-    in
-    { unitId = unit.id, action = PlannedOrder.Move { move = move, unloads = [] } } :: receiverHold ++ retained
+    OrderPlanning.receivingLoad (planningContext model) unit (plannedOrders model)
 
 
 currentSelection : Model -> Maybe Selection
@@ -856,142 +551,24 @@ setSelection selected model =
     { model | phase = TurnLifecycle.setSelection selected model.phase }
 
 
-setUnitInteraction : UnitId -> UnitInteraction -> Model -> Model
-setUnitInteraction id interaction model =
-    model
-        |> setSelection (Just (UnitSelection { id = id, interaction = interaction }))
-
-
-focusCommand : UnitCommands.MenuOption -> Model -> Model
+focusCommand : UnitCommand.MenuOption -> Model -> Model
 focusCommand command model =
-    case ( currentSelection model, commandMenuUnit model ) of
-        ( Just (UnitSelection selection), Just _ ) ->
-            case selection.interaction of
-                CommandMenu _ ->
-                    model
-                        |> setUnitInteraction selection.id (CommandMenu (Just command))
-
-                _ ->
-                    model
-
-        _ ->
-            model
+    model |> mapPlanning (OrderPlanning.focusCommand (planningContext model) command)
 
 
 revokeSelectedOrder : Model -> Model
 revokeSelectedOrder model =
-    if planningLocked model then
-        model
-
-    else
-        model
-            |> mapPlanning
-                (PlanningModel.setOrders
-                    (plannedOrders model
-                        |> List.filter
-                            (\plan ->
-                                Just plan.unitId /= Maybe.map .id (selectedUnit model)
-                            )
-                    )
-                )
-            |> restoreCommands
-
-
-inspectSelectedUnit : Model -> Model
-inspectSelectedUnit model =
-    case selectedUnit model of
-        Just unit ->
-            setSelection (Just (Inspecting (UnitInspection unit.id))) model
-
-        Nothing ->
-            model
-
-
-restoreCommands : Model -> Model
-restoreCommands model =
-    case selectedUnit model of
-        Just unit ->
-            setSelection (Just (unitSelection unit model)) model
-
-        Nothing ->
-            model
-
-
-unitSelection : Unit -> Model -> Selection
-unitSelection unit model =
-    let
-        hasOrder : Bool
-        hasOrder =
-            List.any (\order -> order.unitId == unit.id) (plannedOrders model)
-
-        canChooseCommand : Bool
-        canChooseCommand =
-            isOwnUnit model unit
-                && Unit.onBoard unit
-                && not (planningLocked model)
-                && not (receivingLoad unit model)
-                && not hasOrder
-    in
-    if canChooseCommand then
-        UnitSelection { id = unit.id, interaction = CommandMenu Nothing }
-
-    else
-        Inspecting (UnitInspection unit.id)
+    model |> mapPlanning (OrderPlanning.revokeSelectedOrder (planningContext model))
 
 
 choosingDirection : Model -> Bool
 choosingDirection model =
-    case currentSelection model of
-        Just (UnitSelection selection) ->
-            case selection.interaction of
-                ChoosingDirection _ ->
-                    True
-
-                CommandMenu _ ->
-                    False
-
-                ChoosingMove _ ->
-                    False
-
-        _ ->
-            False
+    TurnLifecycle.planning model.phase |> Maybe.map OrderPlanning.choosingDirection |> Maybe.withDefault False
 
 
 saveRotation : Direction -> Model -> Model
 saveRotation direction model =
-    case selectedUnit model of
-        Just unit ->
-            let
-                canSave : Bool
-                canSave =
-                    choosingDirection model
-                        && not (planningLocked model)
-                        && isOwnUnit model unit
-                        && not (receivingLoad unit model)
-            in
-            if canSave then
-                case Unit.boardPosition unit of
-                    Just position ->
-                        let
-                            rotation : PlannedOrder
-                            rotation =
-                                { unitId = unit.id
-                                , action = PlannedOrder.Rotate { position = position, direction = direction }
-                                }
-                        in
-                        { model
-                            | phase = TurnLifecycle.setOrders (rotation :: List.filter (\plan -> plan.unitId /= unit.id) (plannedOrders model)) model.phase
-                        }
-                            |> inspectSelectedUnit
-
-                    Nothing ->
-                        model
-
-            else
-                model
-
-        Nothing ->
-            model
+    model |> mapPlanning (OrderPlanning.saveRotation (planningContext model) direction)
 
 
 rotationSelection : Model -> Maybe RotationSelection
@@ -1015,22 +592,11 @@ rotationSelection model =
 
 previewRotation : Direction -> Model -> Model
 previewRotation direction model =
-    case currentSelection model of
-        Just (UnitSelection selection) ->
-            let
-                canPreview : Bool
-                canPreview =
-                    choosingDirection model && not (planningLocked model) && not (BattlefieldNavigation.active model.navigation)
-            in
-            if canPreview then
-                model
-                    |> setUnitInteraction selection.id (ChoosingDirection direction)
+    if BattlefieldNavigation.active model.navigation then
+        model
 
-            else
-                model
-
-        _ ->
-            model
+    else
+        model |> mapPlanning (OrderPlanning.previewRotation direction)
 
 
 loadSnapshot : LobbyId -> Graphql.Http.Request Snapshot
@@ -1077,62 +643,22 @@ snapshotSelection =
 
 movementPlanning : Model -> Maybe MovePlanning
 movementPlanning model =
-    case currentSelection model of
-        Just (UnitSelection selection) ->
-            case selection.interaction of
-                ChoosingMove planning ->
-                    Just planning
-
-                _ ->
-                    Nothing
-
-        _ ->
-            Nothing
+    TurnLifecycle.planning model.phase |> Maybe.andThen OrderPlanning.movementPlanning
 
 
 destinationFeedback : Model -> DestinationFeedback
 destinationFeedback model =
-    case unloadPlanning model.phase of
-        Just planning ->
-            planning.destinationFeedback
-
-        Nothing ->
-            movementPlanning model
-                |> Maybe.map .destinationFeedback
-                |> Maybe.withDefault NoDestinationFeedback
-
-
-setMoveDestinationFeedback : DestinationFeedback -> Model -> Model
-setMoveDestinationFeedback feedback model =
-    case currentSelection model of
-        Just (UnitSelection selection) ->
-            case selection.interaction of
-                ChoosingMove planning ->
-                    model
-                        |> setUnitInteraction selection.id (ChoosingMove { planning | destinationFeedback = feedback })
-
-                _ ->
-                    model
-
-        _ ->
-            model
+    TurnLifecycle.planning model.phase |> Maybe.map OrderPlanning.destinationFeedback |> Maybe.withDefault NoDestinationFeedback
 
 
 pathPreview : Model -> Maybe Movement.Option
 pathPreview model =
-    Maybe.map .preview (movementPlanning model)
+    TurnLifecycle.planning model.phase |> Maybe.andThen OrderPlanning.pathPreview
 
 
 moveOptions : Model -> List Movement.Option
 moveOptions model =
-    case unloadPlanning model.phase of
-        Just planning ->
-            planning.options
-
-        _ ->
-            movementPlanning model
-                |> Maybe.map .options
-                |> Maybe.withDefault []
+    TurnLifecycle.planning model.phase |> Maybe.map OrderPlanning.moveOptions |> Maybe.withDefault []
 
 
 clearSelection : Model -> Model
@@ -1142,136 +668,62 @@ clearSelection model =
 
 selectUnit : UnitId -> Model -> Model
 selectUnit id model =
-    case ListUtil.find (\unit -> unit.id == id) model.units of
-        Nothing ->
-            model
+    if planningLocked model then
+        case ListUtil.find (\unit -> unit.id == id) model.units of
+            Just unit ->
+                if Maybe.map .id (selectedUnit model) == Just id then
+                    clearSelection model
 
-        Just unit ->
-            let
-                choosingOccupiedDestination : Bool
-                choosingOccupiedDestination =
-                    (pathPreview model /= Nothing || isChoosingUnload model) && not (planningLocked model) && Maybe.map .id (selectedUnit model) /= Just id
-            in
-            if choosingOccupiedDestination then
-                Unit.boardPosition unit |> Maybe.map (\position -> selectTile position model) |> Maybe.withDefault model
+                else
+                    setSelection (Just (Inspecting (UnitInspection unit.id))) model
 
-            else if Maybe.map .id (selectedUnit model) == Just id then
-                clearSelection model
+            Nothing ->
+                model
 
-            else
-                setSelection (Just (unitSelection unit model)) model
+    else
+        model |> mapPlanning (OrderPlanning.selectUnit (planningContext model) id)
 
 
 selectTile : Coordinate -> Model -> Model
 selectTile position model =
-    case unloadPlanning model.phase of
-        Just _ ->
-            chooseUnloadSquare position model
-
-        _ ->
-            selectMovementTile position model
-
-
-selectMovementTile : Coordinate -> Model -> Model
-selectMovementTile position model =
     if planningLocked model then
         setSelection (Just (Inspecting (TileInspection position))) model
 
     else
-        let
-            notOwnUnit : () -> Model
-            notOwnUnit _ =
-                setSelection (Just (Inspecting (TileInspection position))) model
-        in
-        case selectedUnit model of
-            Just unit ->
-                if isOwnUnit model unit && pathPreview model /= Nothing then
-                    let
-                        destinationOption : Movement.Option -> Maybe Movement.Option
-                        destinationOption preview =
-                            if Movement.canStop (reservedDestinations unit model) model.units unit preview then
-                                Just preview
-
-                            else
-                                Nothing
-                    in
-                    case traceTo position model |> Maybe.andThen destinationOption of
-                        Just move ->
-                            { model
-                                | phase = TurnLifecycle.setOrders (saveMove unit move model) model.phase
-                            }
-                                |> inspectSelectedUnit
-                                |> openUnloadPrompt unit move
-
-                        Nothing ->
-                            setMoveDestinationFeedback DestinationUnavailable model
-
-                else
-                    notOwnUnit ()
-
-            Nothing ->
-                notOwnUnit ()
+        model |> mapPlanning (OrderPlanning.selectTile (planningContext model) position)
 
 
 previewTile : Coordinate -> Model -> Model
 previewTile position model =
-    case currentSelection model of
-        Just (UnitSelection selection) ->
-            case selection.interaction of
-                ChoosingMove planning ->
-                    if BattlefieldNavigation.active model.navigation then
-                        model
+    if BattlefieldNavigation.active model.navigation then
+        model
 
-                    else
-                        case traceTo position model of
-                            Just preview ->
-                                model
-                                    |> setUnitInteraction selection.id
-                                        (ChoosingMove
-                                            { planning
-                                                | preview = preview
-                                                , destinationFeedback = NoDestinationFeedback
-                                            }
-                                        )
-
-                            Nothing ->
-                                model
-
-                _ ->
-                    model
-
-        _ ->
-            model
+    else
+        model |> mapPlanning (OrderPlanning.previewTile (planningContext model) position)
 
 
 extendPath : Direction -> Model -> Model
 extendPath direction model =
-    case pathPreview model of
-        Just preview ->
-            previewTile (Direction.step preview.destination direction) model
+    if BattlefieldNavigation.active model.navigation then
+        model
 
-        Nothing ->
-            model
+    else
+        model |> mapPlanning (OrderPlanning.extendPath (planningContext model) direction)
 
 
 confirmPath : Model -> Model
 confirmPath model =
-    case pathPreview model of
-        Just preview ->
-            selectMovementTile preview.destination model
-
-        Nothing ->
-            model
+    model |> mapPlanning (OrderPlanning.confirmPath (planningContext model))
 
 
 focusAdjacentCommand :
-    (List UnitCommands.MenuOption -> List UnitCommands.MenuOption)
-    -> Maybe UnitCommands.MenuOption
+    (List UnitCommand.MenuOption -> List UnitCommand.MenuOption)
+    -> Maybe UnitCommand.MenuOption
     -> Model
     -> Eff Msg
 focusAdjacentCommand orderCommands current model =
     let
-        afterCurrent : List UnitCommands.MenuOption -> List UnitCommands.MenuOption
+        afterCurrent : List UnitCommand.MenuOption -> List UnitCommand.MenuOption
         afterCurrent remaining =
             case remaining of
                 [] ->
@@ -1287,12 +739,12 @@ focusAdjacentCommand orderCommands current model =
     case commandMenuUnit model of
         Just unit ->
             let
-                commands : List UnitCommands.MenuOption
+                commands : List UnitCommand.MenuOption
                 commands =
-                    UnitCommands.enabledOptions unit
+                    UnitCommand.enabledOptions unit
                         |> orderCommands
 
-                adjacent : Maybe UnitCommands.MenuOption
+                adjacent : Maybe UnitCommand.MenuOption
                 adjacent =
                     case afterCurrent commands |> List.head of
                         Just command ->
@@ -1544,12 +996,12 @@ update lobbyId msg model =
 
         UnloadUnitToggled id checked ->
             model
-                |> mapPlanning (PlanningModel.toggleUnloadPassenger id checked)
+                |> mapPlanning (OrderPlanning.toggleUnloadPassenger id checked)
                 |> E.withOut
 
         UnloadChoicesConfirmed ->
             model
-                |> mapPlanning (PlanningModel.confirmUnloadPassengers (unloadOptions model))
+                |> mapPlanning (OrderPlanning.confirmPassengers (planningContext model))
                 |> E.withOut
 
         UnloadSkipped ->
@@ -1766,7 +1218,7 @@ update lobbyId msg model =
 
             else
                 ( model
-                    |> mapPlanning PlanningModel.showSubmissionWarning
+                    |> mapPlanning OrderPlanning.showSubmissionWarning
                 , E.toJs (ToJs.OpenDialog { htmlId = partialOrdersDialogHtmlId })
                 )
 
@@ -1777,7 +1229,7 @@ update lobbyId msg model =
 
         SubmissionConfirmed ->
             case model.phase of
-                TurnLifecycle.Planning (PlanningModel.ConfirmingSubmission _) ->
+                TurnLifecycle.Planning (OrderPlanning.ConfirmingSubmission _) ->
                     model
                         |> submitTurn lobbyId
 
@@ -2286,50 +1738,6 @@ selectionText model =
                 Terrain.label (Map.terrainAt model.map position)
 
 
-loadFailedView :
-    Graphql.Http.Error Flags
-    -> { retry : msg, returnHome : msg }
-    -> List (Html msg)
-loadFailedView error events =
-    let
-        message : String
-        message =
-            ApiRequest.errorMessage error
-    in
-    [ H.div
-        [ A.css
-            [ S.flex1
-            , S.col
-            , S.itemsCenter
-            , S.justifyCenter
-            ]
-        ]
-        [ [ H.p
-                [ A.attribute "role" "status"
-                ]
-                [ H.text message
-                ]
-          , H.div
-                [ A.css
-                    [ S.row
-                    , S.g2
-                    , S.flexWrap
-                    ]
-                ]
-                [ Button.primary "return home" events.returnHome
-                    |> Button.toHtml
-                , Button.secondary "retry" events.retry
-                    |> Button.toHtml
-                ]
-          ]
-            |> Card.toHtml
-                (Card.compactForm
-                    |> Card.withHeader (CardHeader.simple "lobby unavailable")
-                )
-        ]
-    ]
-
-
 cargoView : Model -> Unit -> Html Msg
 cargoView model unit =
     let
@@ -2440,10 +1848,10 @@ unloadChecklist model choice =
 dialog : Model -> Maybe (Dialog Msg)
 dialog model =
     case model.phase of
-        TurnLifecycle.Planning (PlanningModel.ConfirmingSubmission _) ->
+        TurnLifecycle.Planning (OrderPlanning.ConfirmingSubmission _) ->
             Just (submissionWarning model)
 
-        TurnLifecycle.Planning (PlanningModel.ChoosingPassengers choice) ->
+        TurnLifecycle.Planning (OrderPlanning.ChoosingPassengers choice) ->
             Just (unloadChecklist model choice)
 
         _ ->

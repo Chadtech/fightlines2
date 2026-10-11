@@ -12,8 +12,8 @@ import Effect as E
     exposing
         ( Eff
         )
+import GameLoadFailed
 import GamePage
-import Graphql.Http
 import Html.Styled as H
     exposing
         ( Html
@@ -64,7 +64,7 @@ type Page
     | JoinLobby LobbyId JoinLobby.Model
     | Lobby LobbyId LobbyPage.Model
     | LoadingGame Shared.Model LobbyId
-    | GameLoadFailed Shared.Model LobbyId (Graphql.Http.Error GamePage.Flags)
+    | GameLoadFailed LobbyId GameLoadFailed.Model
     | Game LobbyId GamePage.Model
     | NotFound Shared.Model
 
@@ -84,7 +84,7 @@ type Msg
     | LobbyLoadFailedMsg LobbyId LobbyLoadFailed.Msg
     | GameMsg LobbyId GamePage.Msg
     | GameResponseReceived LobbyId (Response GamePage.Flags)
-    | GameRetryButtonClicked
+    | GameLoadFailedMsg LobbyId GameLoadFailed.Msg
     | ReturnHomeButtonClicked
     | JsErrorReceived FromJs.Error
 
@@ -184,8 +184,8 @@ getShared page =
         LoadingGame shared _ ->
             Just shared
 
-        GameLoadFailed shared _ _ ->
-            Just shared
+        GameLoadFailed _ model ->
+            Just model.shared
 
         Game _ model ->
             Just model.shared
@@ -221,8 +221,8 @@ setShared shared page =
         LoadingGame _ id ->
             LoadingGame shared id
 
-        GameLoadFailed _ id error ->
-            GameLoadFailed shared id error
+        GameLoadFailed id model ->
+            GameLoadFailed id (GameLoadFailed.setShared shared model)
 
         Game id model ->
             Game id (GamePage.setShared shared model)
@@ -416,7 +416,7 @@ update msg page =
                                 ( Game id (GamePage.init shared flags), E.none )
 
                             Err error ->
-                                ( GameLoadFailed shared id error, E.none )
+                                ( GameLoadFailed id (GameLoadFailed.init shared id error), E.none )
 
                     else
                         ( page, E.none )
@@ -424,10 +424,17 @@ update msg page =
                 _ ->
                     ( page, E.none )
 
-        GameRetryButtonClicked ->
+        GameLoadFailedMsg id pageMsg ->
             case page of
-                GameLoadFailed shared id _ ->
-                    loadGame shared id
+                GameLoadFailed currentId model ->
+                    if id == currentId then
+                        ( page
+                        , GameLoadFailed.update pageMsg model
+                            |> E.map (GameLoadFailedMsg id)
+                        )
+
+                    else
+                        ( page, E.none )
 
                 _ ->
                     ( page, E.none )
@@ -519,11 +526,8 @@ shell page =
                         |> Card.toHtml Card.simple
                     ]
 
-                GameLoadFailed _ _ error ->
-                    GamePage.loadFailedView error
-                        { retry = GameRetryButtonClicked
-                        , returnHome = ReturnHomeButtonClicked
-                        }
+                GameLoadFailed id model ->
+                    List.map (H.map (GameLoadFailedMsg id)) (GameLoadFailed.view model)
 
                 Game id model ->
                     List.map (H.map (GameMsg id)) (GamePage.view model)
