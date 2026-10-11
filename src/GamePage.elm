@@ -36,6 +36,7 @@ import Api.Object.TerrainMovementCost as MovementCostApi
 import Api.Query
 import ApiRequest
 import Browser.Events
+import Camera exposing (Camera)
 import Coordinate exposing (Coordinate)
 import Css
 import Css.Global
@@ -45,6 +46,7 @@ import Effect as E
     exposing
         ( Eff
         )
+import GamePage.BattlefieldNavigation as BattlefieldNavigation
 import GamePage.Selection
     exposing
         ( DestinationFeedback(..)
@@ -79,7 +81,6 @@ import PlannedOrder
         )
 import PlanningModel exposing (PlanningModel, UnloadChoice, UnloadPlanning)
 import Point exposing (Point)
-import PointerGesture exposing (PointerGesture)
 import Ports.Js.To as ToJs
 import Shared
 import Style as S
@@ -131,9 +132,7 @@ type alias Model =
     , depots : List Depot
     , visibleTiles : List Coordinate
     , movementRules : List Movement.Rule
-    , offset : Point
-    , zoom : Float
-    , pointerGesture : PointerGesture
+    , navigation : BattlefieldNavigation.Model
     , frame : AnimationFrame.Frame
     }
 
@@ -175,7 +174,8 @@ type alias RotationSelection =
 
 
 type Msg
-    = UnitCommandsMsg UnitCommands.Msg
+    = BattlefieldNavigationMsg BattlefieldNavigation.Msg
+    | UnitCommandsMsg UnitCommands.Msg
     | PreviousCommandPressed
     | NextCommandPressed
     | CommandFocusCompleted
@@ -224,9 +224,6 @@ type Msg
     | PressedSpaceOnTile Coordinate
     | MouseOverTile Coordinate
     | MousePressed Point
-    | MouseMoved Point Int
-    | MouseReleased Point
-    | WindowVisibilityChanged Browser.Events.Visibility
     | WheelScrolled Point Float
     | HomePressed
 
@@ -261,9 +258,7 @@ init shared flags =
     , depots = flags.snapshot.depots
     , visibleTiles = flags.snapshot.visibleTiles
     , movementRules = flags.snapshot.movementRules
-    , offset = { x = 0, y = 0 }
-    , zoom = 1
-    , pointerGesture = PointerGesture.idle
+    , navigation = BattlefieldNavigation.init
     , frame = AnimationFrame.first
     }
 
@@ -1025,7 +1020,7 @@ previewRotation direction model =
             let
                 canPreview : Bool
                 canPreview =
-                    choosingDirection model && not (planningLocked model) && not (PointerGesture.active model.pointerGesture)
+                    choosingDirection model && not (planningLocked model) && not (BattlefieldNavigation.active model.navigation)
             in
             if canPreview then
                 model
@@ -1042,79 +1037,6 @@ loadSnapshot : LobbyId -> Graphql.Http.Request Snapshot
 loadSnapshot id =
     Api.Query.game { id = LobbyId.toString id } snapshotSelection
         |> ApiRequest.queryRequest
-
-
-panLeft : Model -> Model
-panLeft model =
-    { model | offset = { x = model.offset.x + 48, y = model.offset.y } }
-
-
-panRight : Model -> Model
-panRight model =
-    { model | offset = { x = model.offset.x - 48, y = model.offset.y } }
-
-
-panUp : Model -> Model
-panUp model =
-    { model | offset = { x = model.offset.x, y = model.offset.y + 48 } }
-
-
-panDown : Model -> Model
-panDown model =
-    { model | offset = { x = model.offset.x, y = model.offset.y - 48 } }
-
-
-zoomIn : Model -> Model
-zoomIn model =
-    zoomAt { x = 0, y = 0 } 1.25 model
-
-
-zoomOut : Model -> Model
-zoomOut model =
-    zoomAt { x = 0, y = 0 } 0.8 model
-
-
-pan : Point -> Model -> Model
-pan point model =
-    let
-        moved : { gesture : PointerGesture, offset : Maybe Point }
-        moved =
-            PointerGesture.move point model.pointerGesture
-    in
-    { model
-        | pointerGesture = moved.gesture
-        , offset = Maybe.withDefault model.offset moved.offset
-    }
-
-
-zoomAt : Point -> Float -> Model -> Model
-zoomAt anchor factor model =
-    let
-        zoom : Float
-        zoom =
-            clamp 0.35 3 (model.zoom * factor)
-
-        ratio : Float
-        ratio =
-            zoom / model.zoom
-    in
-    { model
-        | zoom = zoom
-        , offset =
-            { x = anchor.x - (anchor.x - model.offset.x) * ratio
-            , y = anchor.y - (anchor.y - model.offset.y) * ratio
-            }
-        , pointerGesture = PointerGesture.finish model.pointerGesture
-    }
-
-
-resetViewport : Model -> Model
-resetViewport model =
-    { model
-        | offset = { x = 0, y = 0 }
-        , zoom = 1
-        , pointerGesture = PointerGesture.idle
-    }
 
 
 snapshotSelection : SelectionSet Snapshot Api.Object.GameSnapshot
@@ -1297,7 +1219,7 @@ previewTile position model =
         Just (UnitSelection selection) ->
             case selection.interaction of
                 ChoosingMove planning ->
-                    if PointerGesture.active model.pointerGesture then
+                    if BattlefieldNavigation.active model.navigation then
                         model
 
                     else
@@ -1390,6 +1312,11 @@ focusAdjacentCommand orderCommands current model =
 
         Nothing ->
             E.none
+
+
+mapNavigation : (BattlefieldNavigation.Model -> BattlefieldNavigation.Model) -> Model -> Model
+mapNavigation change model =
+    { model | navigation = change model.navigation }
 
 
 finishBoardInteraction : Model -> Model -> ( Model, Eff Msg )
@@ -1530,6 +1457,91 @@ preventDefault msg =
 update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 update lobbyId msg model =
     case msg of
+        PanLeftClicked ->
+            model
+                |> mapNavigation BattlefieldNavigation.panLeft
+                |> E.withOut
+
+        PanRightClicked ->
+            model
+                |> mapNavigation BattlefieldNavigation.panRight
+                |> E.withOut
+
+        PanUpClicked ->
+            model
+                |> mapNavigation BattlefieldNavigation.panUp
+                |> E.withOut
+
+        PanDownClicked ->
+            model
+                |> mapNavigation BattlefieldNavigation.panDown
+                |> E.withOut
+
+        PanLeftKeyPressed ->
+            model
+                |> mapNavigation BattlefieldNavigation.panLeft
+                |> E.withOut
+
+        PanRightKeyPressed ->
+            model
+                |> mapNavigation BattlefieldNavigation.panRight
+                |> E.withOut
+
+        PanUpKeyPressed ->
+            model
+                |> mapNavigation BattlefieldNavigation.panUp
+                |> E.withOut
+
+        PanDownKeyPressed ->
+            model
+                |> mapNavigation BattlefieldNavigation.panDown
+                |> E.withOut
+
+        ZoomInClicked ->
+            model
+                |> mapNavigation BattlefieldNavigation.zoomIn
+                |> E.withOut
+
+        ZoomOutClicked ->
+            model
+                |> mapNavigation BattlefieldNavigation.zoomOut
+                |> E.withOut
+
+        ZoomInKeyPressed ->
+            model
+                |> mapNavigation BattlefieldNavigation.zoomIn
+                |> E.withOut
+
+        ZoomOutKeyPressed ->
+            model
+                |> mapNavigation BattlefieldNavigation.zoomOut
+                |> E.withOut
+
+        ResetViewClicked ->
+            model
+                |> mapNavigation BattlefieldNavigation.resetViewport
+                |> E.withOut
+
+        HomePressed ->
+            model
+                |> mapNavigation BattlefieldNavigation.resetViewport
+                |> E.withOut
+
+        MousePressed point ->
+            model
+                |> mapNavigation (BattlefieldNavigation.press point)
+                |> E.withOut
+
+        BattlefieldNavigationMsg navigationMsg ->
+            model
+                |> mapNavigation (BattlefieldNavigation.update navigationMsg)
+                |> E.withOut
+
+        WheelScrolled anchor delta ->
+            model
+                |> mapNavigation (BattlefieldNavigation.scroll anchor delta)
+                |> E.withOut
+
         UnloadUnitToggled id checked ->
             model
                 |> mapPlanning (PlanningModel.toggleUnloadPassenger id checked)
@@ -1552,53 +1564,6 @@ update lobbyId msg model =
                 |> selectUnit id
                 |> E.withOut
 
-        MousePressed point ->
-            { model
-                | pointerGesture = PointerGesture.press { start = point, origin = model.offset }
-            }
-                |> finishBoardInteraction model
-
-        MouseMoved point buttons ->
-            let
-                next : Model
-                next =
-                    if buttons == 0 then
-                        { model | pointerGesture = PointerGesture.finish model.pointerGesture }
-
-                    else
-                        pan point model
-            in
-            next
-                |> finishBoardInteraction model
-
-        MouseReleased point ->
-            let
-                next : Model
-                next =
-                    let
-                        moved : Model
-                        moved =
-                            pan point model
-                    in
-                    { moved | pointerGesture = PointerGesture.finish moved.pointerGesture }
-            in
-            next
-                |> finishBoardInteraction model
-
-        WindowVisibilityChanged _ ->
-            { model | pointerGesture = PointerGesture.finish model.pointerGesture }
-                |> finishBoardInteraction model
-
-        WheelScrolled anchor delta ->
-            model
-                |> zoomAt anchor (e ^ (negate (clamp -100 100 delta) * 0.002))
-                |> finishBoardInteraction model
-
-        HomePressed ->
-            model
-                |> resetViewport
-                |> finishBoardInteraction model
-
         RotationChoicesMsg rotationMsg ->
             let
                 next : Model
@@ -1608,7 +1573,7 @@ update lobbyId msg model =
                             previewRotation direction model
 
                         RotationChoices.ClickedDirection direction ->
-                            if PointerGesture.suppressesClick model.pointerGesture then
+                            if BattlefieldNavigation.suppressesClick model.navigation then
                                 model
 
                             else
@@ -1621,7 +1586,7 @@ update lobbyId msg model =
             let
                 next : Model
                 next =
-                    if click.detail /= 0 && PointerGesture.suppressesClick model.pointerGesture then
+                    if click.detail /= 0 && BattlefieldNavigation.suppressesClick model.navigation then
                         model
 
                     else
@@ -1674,7 +1639,7 @@ update lobbyId msg model =
             let
                 next : Model
                 next =
-                    if click.detail /= 0 && PointerGesture.suppressesClick model.pointerGesture then
+                    if click.detail /= 0 && BattlefieldNavigation.suppressesClick model.navigation then
                         model
 
                     else
@@ -1710,7 +1675,7 @@ update lobbyId msg model =
             let
                 next : Model
                 next =
-                    if click.detail /= 0 && PointerGesture.suppressesClick model.pointerGesture then
+                    if click.detail /= 0 && BattlefieldNavigation.suppressesClick model.navigation then
                         model
 
                     else
@@ -1754,71 +1719,6 @@ update lobbyId msg model =
 
         CommandFocusCompleted ->
             model |> E.withOut
-
-        PanLeftClicked ->
-            model
-                |> panLeft
-                |> E.withOut
-
-        PanRightClicked ->
-            model
-                |> panRight
-                |> E.withOut
-
-        PanUpClicked ->
-            model
-                |> panUp
-                |> E.withOut
-
-        PanDownClicked ->
-            model
-                |> panDown
-                |> E.withOut
-
-        PanLeftKeyPressed ->
-            model
-                |> panLeft
-                |> E.withOut
-
-        PanRightKeyPressed ->
-            model
-                |> panRight
-                |> E.withOut
-
-        PanUpKeyPressed ->
-            model
-                |> panUp
-                |> E.withOut
-
-        PanDownKeyPressed ->
-            model
-                |> panDown
-                |> E.withOut
-
-        ZoomInClicked ->
-            model
-                |> zoomIn
-                |> E.withOut
-
-        ZoomOutClicked ->
-            model
-                |> zoomOut
-                |> E.withOut
-
-        ZoomInKeyPressed ->
-            model
-                |> zoomIn
-                |> E.withOut
-
-        ZoomOutKeyPressed ->
-            model
-                |> zoomOut
-                |> E.withOut
-
-        ResetViewClicked ->
-            model
-                |> resetViewport
-                |> E.withOut
 
         DirectionKeyPressed direction ->
             model
@@ -2044,7 +1944,7 @@ commandMenu model =
                 Just position ->
                     UnitCommands.toHtml
                         model.map
-                        { offset = model.offset, zoom = model.zoom }
+                        (BattlefieldNavigation.camera model.navigation)
                         position
                         unit
                         |> H.map UnitCommandsMsg
@@ -2301,6 +2201,11 @@ unitOrderView model unit =
 
 viewControls : Model -> Html Msg
 viewControls model =
+    let
+        camera : Camera
+        camera =
+            BattlefieldNavigation.camera model.navigation
+    in
     H.section
         [ A.attribute "aria-label" "view controls"
         , A.css
@@ -2344,7 +2249,7 @@ viewControls model =
                 |> Button.toHtml
             , H.span
                 []
-                [ H.text (String.fromInt (round (model.zoom * 100)) ++ "%")
+                [ H.text (String.fromInt (round (camera.zoom * 100)) ++ "%")
                 ]
             , Button.secondary "+" ZoomInClicked
                 |> Button.toHtml
@@ -2703,7 +2608,8 @@ turnPanel model =
             ]
         , H.div
             [ A.css [ S.borderT, S.borderGray2, S.pt3 ] ]
-            [ viewControls model ]
+            [ viewControls model
+            ]
         ]
 
 
@@ -2736,9 +2642,13 @@ resolutionSummary model =
 boardView : Model -> Html Msg
 boardView model =
     let
+        camera : Camera
+        camera =
+            BattlefieldNavigation.camera model.navigation
+
         cursorStyle : Css.Style
         cursorStyle =
-            if PointerGesture.active model.pointerGesture then
+            if BattlefieldNavigation.active model.navigation then
                 Css.cursor Css.grabbing
 
             else
@@ -2772,7 +2682,7 @@ boardView model =
                 , Css.property "width" "min(80%, 76vh)"
                 , S.shrink0
                 , Css.property "transform"
-                    ("translate(" ++ String.fromFloat model.offset.x ++ "px, " ++ String.fromFloat model.offset.y ++ "px) scale(" ++ String.fromFloat model.zoom ++ ")")
+                    ("translate(" ++ String.fromFloat camera.offset.x ++ "px, " ++ String.fromFloat camera.offset.y ++ "px) scale(" ++ String.fromFloat camera.zoom ++ ")")
                 ]
             ]
             [ boardHtml model
@@ -3394,23 +3304,6 @@ subscriptions model =
 
           else
             Sub.none
-        , viewportSubscriptions model.pointerGesture
+        , BattlefieldNavigation.subscriptions model.navigation
+            |> Sub.map BattlefieldNavigationMsg
         ]
-
-
-viewportSubscriptions : PointerGesture -> Sub Msg
-viewportSubscriptions pointerGesture =
-    if PointerGesture.active pointerGesture then
-        Sub.batch
-            [ Browser.Events.onMouseMove
-                (Decode.map2
-                    MouseMoved
-                    Point.decoder
-                    (Decode.field "buttons" Decode.int)
-                )
-            , Browser.Events.onMouseUp (Decode.map MouseReleased Point.decoder)
-            , Browser.Events.onVisibilityChange WindowVisibilityChanged
-            ]
-
-    else
-        Sub.none

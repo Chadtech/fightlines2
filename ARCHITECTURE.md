@@ -127,8 +127,10 @@ CORS configuration is required.
 `GamePage.Model` stores map, units, and depots directly, as does its decoded
 `Snapshot`. Movement helpers accept the map and unit list as separate arguments;
 turn playback helpers accept and return unit lists. `GamePage` owns board
-rendering, camera controls, interaction state, and all board and camera events
-directly in its page message type.
+rendering and coordinated planning/selection state. `GamePage.BattlefieldNavigation`
+owns camera state, pan/zoom/gesture functions and pointer subscriptions. The page
+owns view-related navigation messages, event decoders, the viewport surface and
+controls. Subscription events use the navigation module's `Msg` and `update`.
 
 ## GraphQL and generated client
 
@@ -232,12 +234,18 @@ and its local board view; the view composes them without owning domain data.
 `View.Sprite` clips atlas cells using named sheet dimensions and coordinates,
 using styled SVG. `View.UnitSprite` owns the shared unit atlas, kind/side row
 mapping, and facing for both animated board units and static status portraits.
-`GamePage` also owns local camera offset, zoom, and an opaque `PointerGesture`,
-and handles camera events directly. `GamePage` renders the board together with
-its camera surface and command overlay, and exposes one message type for board
-and camera events. Control-panel button messages live in `GamePage`; button and
-window arrow commands share pan functions; window plus/minus commands share zoom
-functions, and the Home handler shares the reset function. The board appears beside a
+`Camera` names the shared offset/zoom data used by navigation, the page viewport
+and command positioning. `GamePage.BattlefieldNavigation` owns camera offset, zoom and an opaque
+`PointerGesture`. The page handles pointer, button and keyboard events by calling
+its direct transition functions. Pointer subscriptions emit its own `Msg` for mouse movement, release and
+visibility changes; the page maps these messages and delegates to its `update`.
+View-related messages and rendering remain in `GamePage`.
+`GamePage.boardView` wraps the board in the camera transform and places the
+command overlay outside that transform. The page reads
+its camera for command positioning and queries `active` and `suppressesClick`
+when handling previews and selection. `GamePage.keyCommands` retains keyboard
+priority across dialogs, command menus, movement, rotation and navigation.
+The board appears beside a
 full-height right panel containing selection details and resolution information.
 `GamePage.turnPanel` overlays fixed-size game controls at the battlefield's bottom-left
 edge, with the submit action beside turn status and camera controls below.

@@ -1,12 +1,12 @@
 module View.UnitCommands exposing
-    ( Camera
-    , MenuOption(..)
+    ( MenuOption(..)
     , Msg(..)
     , enabledOptions
     , optionHtmlId
     , toHtml
     )
 
+import Camera exposing (Camera)
 import Coordinate exposing (Coordinate)
 import Css
 import Html.Styled as H exposing (Html)
@@ -14,7 +14,6 @@ import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Json.Decode as Decode
 import Map exposing (Map)
-import Point exposing (Point)
 import Style as S
 import Unit exposing (Unit)
 import UnitCommand as Command exposing (Command)
@@ -32,12 +31,6 @@ type Msg
     | CommandPicked Command
     | ArrowedUpCommandMenu MenuOption
     | ArrowedDownCommandMenu MenuOption
-
-
-type alias Camera =
-    { offset : Point
-    , zoom : Float
-    }
 
 
 toHtml : Map -> Camera -> Coordinate -> Unit -> Html Msg
