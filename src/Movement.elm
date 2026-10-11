@@ -14,11 +14,10 @@ module Movement exposing
 import Api.Enum.Side exposing (Side)
 import Api.Enum.Terrain exposing (Terrain)
 import Api.Enum.UnitKind exposing (UnitKind)
-import Board exposing (Board)
 import Coordinate exposing (Coordinate)
 import Dict exposing (Dict)
 import ListUtil
-import Map
+import Map exposing (Map)
 import Unit exposing (Unit)
 import Unit.Supplies exposing (Supplies)
 
@@ -63,19 +62,20 @@ pointsLabel points =
            )
 
 
-options : List Coordinate -> List Rule -> Board -> Unit -> List Option
-options reserved rules board unit =
-    optionsAvoiding [] rules board unit
-        |> List.filter (canStop reserved board unit)
+options : List Coordinate -> List Rule -> Map -> List Unit -> Unit -> List Option
+options reserved rules map units unit =
+    optionsAvoiding [] rules map units unit
+        |> List.filter (canStop reserved units unit)
 
 
-optionsAvoiding : List Coordinate -> List Rule -> Board -> Unit -> List Option
-optionsAvoiding blocked rules board unit =
-    case ( ListUtil.find (\rule -> rule.kind == unit.kind) rules, Unit.physicalPosition board.units unit ) of
+optionsAvoiding : List Coordinate -> List Rule -> Map -> List Unit -> Unit -> List Option
+optionsAvoiding blocked rules map units unit =
+    case ( ListUtil.find (\rule -> rule.kind == unit.kind) rules, Unit.physicalPosition units unit ) of
         ( Just rule, Just origin ) ->
             search (tileLimit unit)
                 rule
-                board
+                map
+                units
                 blocked
                 unit.side
                 [ start origin ]
@@ -166,15 +166,15 @@ Units without a resource movement limit use zero for that third component.
 Keeping costs for each path length preserves short routes through expensive terrain.
 Costs are stored in half movement points, independently of fuel.
 -}
-search : Maybe Int -> Rule -> Board -> List Coordinate -> Side -> List Option -> Dict ( Int, Int, Int ) Int -> List Option -> List Option
-search limit rule board blocked side frontier costs reached =
+search : Maybe Int -> Rule -> Map -> List Unit -> List Coordinate -> Side -> List Option -> Dict ( Int, Int, Int ) Int -> List Option -> List Option
+search limit rule map units blocked side frontier costs reached =
     case List.sortBy .cost frontier of
         [] ->
             List.reverse reached
 
         current :: remaining ->
             if Dict.get (searchKey limit current) costs /= Just current.cost then
-                search limit rule board blocked side remaining costs reached
+                search limit rule map units blocked side remaining costs reached
 
             else
                 let
@@ -191,11 +191,11 @@ search limit rule board blocked side frontier costs reached =
 
                             rightOfMap : Bool
                             rightOfMap =
-                                position.x >= board.map.width
+                                position.x >= map.width
 
                             belowMap : Bool
                             belowMap =
-                                position.y >= board.map.height
+                                position.y >= map.height
 
                             outsideMap : Bool
                             outsideMap =
@@ -211,13 +211,13 @@ search limit rule board blocked side frontier costs reached =
 
                             occupiedByEnemy : Bool
                             occupiedByEnemy =
-                                List.any enemyAtPosition board.units
+                                List.any enemyAtPosition units
                         in
                         if outsideMap || alreadyInPath || occupiedByEnemy then
                             ( pending, best )
 
                         else
-                            case rule.terrainCosts |> ListUtil.find (\entry -> entry.terrain == Map.terrainAt board.map position) of
+                            case rule.terrainCosts |> ListUtil.find (\entry -> entry.terrain == Map.terrainAt map position) of
                                 Nothing ->
                                     ( pending, best )
 
@@ -260,7 +260,7 @@ search limit rule board blocked side frontier costs reached =
                     ( next, nextCosts ) =
                         List.foldl visit ( remaining, costs ) (neighbors current.destination)
                 in
-                search limit rule board blocked side next nextCosts (current :: reached)
+                search limit rule map units blocked side next nextCosts (current :: reached)
 
 
 start : Coordinate -> Option
@@ -271,8 +271,8 @@ start position =
     }
 
 
-trace : List Rule -> Board -> Unit -> Option -> Coordinate -> Maybe Option
-trace rules board unit current destination =
+trace : List Rule -> Map -> List Unit -> Unit -> Option -> Coordinate -> Maybe Option
+trace rules map units unit current destination =
     let
         rule : Maybe Rule
         rule =
@@ -282,7 +282,7 @@ trace rules board unit current destination =
         costAt : Rule -> Coordinate -> Maybe Int
         costAt movementRule position =
             movementRule.terrainCosts
-                |> ListUtil.find (\entry -> entry.terrain == Map.terrainAt board.map position)
+                |> ListUtil.find (\entry -> entry.terrain == Map.terrainAt map position)
                 |> Maybe.map .cost
 
         prefix : List Coordinate
@@ -324,7 +324,7 @@ trace rules board unit current destination =
                 in
                 -- Fill mouse-event gaps from the current tip, keeping every traced
                 -- square. Never silently replace the prefix with a cheaper route.
-                optionsAvoiding current.path [ remainingRule ] board remainingUnit
+                optionsAvoiding current.path [ remainingRule ] map units remainingUnit
                     |> ListUtil.find (\option -> option.destination == destination)
                     |> Maybe.map extendPath
                     |> Maybe.andThen (withinTileLimit unit)
@@ -354,16 +354,16 @@ takeThrough destination path =
                 position :: takeThrough destination rest
 
 
-canStop : List Coordinate -> Board -> Unit -> Option -> Bool
-canStop reserved board mover option =
+canStop : List Coordinate -> List Unit -> Unit -> Option -> Bool
+canStop reserved units mover option =
     let
         occupied : Bool
         occupied =
-            List.any (\unit -> Unit.boardPosition unit == Just option.destination) board.units
+            List.any (\unit -> Unit.boardPosition unit == Just option.destination) units
 
         canLoad : Bool
         canLoad =
-            Unit.loadingPartner board.units mover option.destination /= Nothing
+            Unit.loadingPartner units mover option.destination /= Nothing
 
         reservedDestination : Bool
         reservedDestination =
@@ -372,15 +372,15 @@ canStop reserved board mover option =
     option.cost > 0 && not reservedDestination && (not occupied || canLoad)
 
 
-preview : List Rule -> Board -> Unit -> Option -> Coordinate -> Maybe Option
-preview rules board unit current destination =
-    case trace rules board unit current destination of
+preview : List Rule -> Map -> List Unit -> Unit -> Option -> Coordinate -> Maybe Option
+preview rules map units unit current destination =
+    case trace rules map units unit current destination of
         Just path ->
             Just path
 
         Nothing ->
-            Unit.physicalPosition board.units unit
-                |> Maybe.andThen (\origin -> trace rules board unit (start origin) destination)
+            Unit.physicalPosition units unit
+                |> Maybe.andThen (\origin -> trace rules map units unit (start origin) destination)
 
 
 withinTileLimit : Unit -> Option -> Maybe Option

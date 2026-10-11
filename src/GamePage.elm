@@ -35,7 +35,6 @@ import Api.Object.Scenario as Scenario
 import Api.Object.TerrainMovementCost as MovementCostApi
 import Api.Query
 import ApiRequest
-import Board exposing (Board)
 import Browser.Events
 import Coordinate exposing (Coordinate)
 import Css
@@ -127,7 +126,9 @@ type alias Model =
     , name : String
     , mapType : MapType
     , players : List Player
-    , board : Board
+    , map : Map
+    , units : List Unit
+    , depots : List Depot
     , visibleTiles : List Coordinate
     , movementRules : List Movement.Rule
     , offset : Point
@@ -141,7 +142,9 @@ type alias Snapshot =
     { name : String
     , mapType : MapType
     , players : List Player
-    , board : Board
+    , map : Map
+    , units : List Unit
+    , depots : List Depot
     , visibleTiles : List Coordinate
     , movementRules : List Movement.Rule
     , turn : Turn.Snapshot
@@ -253,7 +256,9 @@ init shared flags =
     , name = flags.snapshot.name
     , mapType = flags.snapshot.mapType
     , players = flags.snapshot.players
-    , board = flags.snapshot.board
+    , map = flags.snapshot.map
+    , units = flags.snapshot.units
+    , depots = flags.snapshot.depots
     , visibleTiles = flags.snapshot.visibleTiles
     , movementRules = flags.snapshot.movementRules
     , offset = { x = 0, y = 0 }
@@ -265,7 +270,9 @@ init shared flags =
 
 load : LobbyId -> Graphql.Http.Request Flags
 load id =
-    Api.Query.game { id = LobbyId.toString id } (SS.map Flags snapshotSelection)
+    Api.Query.game
+        { id = LobbyId.toString id }
+        (SS.map Flags snapshotSelection)
         |> ApiRequest.queryRequest
 
 
@@ -314,7 +321,7 @@ openUnloadPrompt truck move model =
     let
         hasPassengers : Bool
         hasPassengers =
-            List.any (\passenger -> Unit.carrierId passenger == Just truck.id) model.board.units
+            List.any (\passenger -> Unit.carrierId passenger == Just truck.id) model.units
     in
     if hasPassengers then
         model
@@ -343,17 +350,17 @@ unloadOptions model state passengerId =
                     else
                         unit
 
-                projected : Board
-                projected =
-                    { map = model.board.map, units = List.map projectTruck model.board.units, depots = model.board.depots }
+                projectedUnits : List Unit
+                projectedUnits =
+                    List.map projectTruck model.units
 
                 next : Model
                 next =
                     { model | phase = TurnLifecycle.Planning state }
             in
-            case ListUtil.find (\unit -> unit.id == passengerId) projected.units of
+            case ListUtil.find (\unit -> unit.id == passengerId) projectedUnits of
                 Just passenger ->
-                    Movement.options (reservedDestinations passenger next) model.movementRules projected passenger
+                    Movement.options (reservedDestinations passenger next) model.movementRules model.map projectedUnits passenger
 
                 Nothing ->
                     []
@@ -400,7 +407,7 @@ unitsWithoutOrders model =
         missingOrder unit =
             isOwnUnit model unit && Unit.onBoard unit && not (List.any (\plan -> plan.unitId == unit.id) (plannedOrders model))
     in
-    List.filter missingOrder model.board.units
+    List.filter missingOrder model.units
 
 
 readyToSubmit : Model -> Bool
@@ -434,10 +441,10 @@ selectedUnit : Model -> Maybe Unit
 selectedUnit model =
     case currentSelection model of
         Just (Inspecting (UnitInspection id)) ->
-            ListUtil.find (\unit -> unit.id == id) model.board.units
+            ListUtil.find (\unit -> unit.id == id) model.units
 
         Just (UnitSelection selection) ->
-            ListUtil.find (\unit -> unit.id == selection.id) model.board.units
+            ListUtil.find (\unit -> unit.id == selection.id) model.units
 
         _ ->
             Nothing
@@ -499,7 +506,7 @@ applyCommand command model =
                             |> setUnitInteraction unit.id (ChoosingDirection (Maybe.withDefault Facing.North unit.direction))
 
                     UnitCommand.HoldPosition ->
-                        case holdOrder model.board.units unit of
+                        case holdOrder model.units unit of
                             Just hold ->
                                 { model
                                     | phase = TurnLifecycle.setOrders (hold :: List.filter (\plan -> plan.unitId /= unit.id) (plannedOrders model)) model.phase
@@ -590,7 +597,7 @@ submitRequest lobbyId model =
 
         defaultHolds : List PlannedOrder
         defaultHolds =
-            model.board.units |> List.filter missingOrder |> List.filterMap (holdOrder model.board.units)
+            model.units |> List.filter missingOrder |> List.filterMap (holdOrder model.units)
 
         orders : List PlannedOrder
         orders =
@@ -642,17 +649,15 @@ receiveSnapshot snapshot model =
         let
             frame : TurnPlayback.Frame
             frame =
-                TurnPlayback.initial snapshot.playbackFrames { units = snapshot.board.units, visibleTiles = snapshot.visibleTiles }
-
-            board : Board
-            board =
-                snapshot.board
+                TurnPlayback.initial snapshot.playbackFrames { units = snapshot.units, visibleTiles = snapshot.visibleTiles }
         in
         { model
             | turnNumber = snapshot.turn.number
             , opponentSubmitted = snapshot.turn.opponentSubmitted
             , turnResolution = snapshot.turn.resolution
-            , board = { board | units = frame.units }
+            , map = snapshot.map
+            , units = frame.units
+            , depots = snapshot.depots
             , visibleTiles = frame.visibleTiles
             , phase = TurnLifecycle.startTurn snapshot.turn.submitted snapshot.playbackFrames
             , turnError = Nothing
@@ -664,7 +669,7 @@ traceTo position model =
     case ( selectedUnit model, movementPlanning model ) of
         ( Just unit, Just planning ) ->
             if isOwnUnit model unit then
-                Movement.preview model.movementRules model.board unit planning.preview position
+                Movement.preview model.movementRules model.map model.units unit planning.preview position
 
             else
                 Nothing
@@ -675,13 +680,13 @@ traceTo position model =
 
 beginMovement : Unit -> Model -> Model
 beginMovement unit model =
-    case Unit.physicalPosition model.board.units unit of
+    case Unit.physicalPosition model.units unit of
         Just origin ->
             let
                 planning : MovePlanning
                 planning =
                     { preview = Movement.start origin
-                    , options = Movement.options (reservedDestinations unit model) model.movementRules model.board unit
+                    , options = Movement.options (reservedDestinations unit model) model.movementRules model.map model.units unit
                     , destinationFeedback = NoDestinationFeedback
                     }
             in
@@ -697,7 +702,7 @@ boardingSpace mover truck model =
     let
         alreadyAboard : Int
         alreadyAboard =
-            List.length (List.filter (\unit -> Unit.carrierId unit == Just truck.id) model.board.units)
+            List.length (List.filter (\unit -> Unit.carrierId unit == Just truck.id) model.units)
 
         boarding : PlannedOrder -> Bool
         boarding plan =
@@ -713,7 +718,7 @@ boardingSpace mover truck model =
 
         compatible : Bool
         compatible =
-            Unit.boardPosition truck |> Maybe.andThen (Unit.loadingPartner model.board.units mover) |> (==) (Just truck)
+            Unit.boardPosition truck |> Maybe.andThen (Unit.loadingPartner model.units mover) |> (==) (Just truck)
     in
     compatible && not truckMoving && fitsCargo
 
@@ -723,7 +728,7 @@ plannedAction model unit move =
     if Unit.carrierId unit /= Nothing && List.length move.path > 1 then
         "unload at"
 
-    else if Unit.loadingPartner model.board.units unit move.destination /= Nothing then
+    else if Unit.loadingPartner model.units unit move.destination /= Nothing then
         "load at"
 
     else
@@ -738,7 +743,7 @@ reservedDestinations unit model =
             let
                 partner : Maybe Unit
                 partner =
-                    Unit.loadingPartner model.board.units unit (PlannedOrder.destination plan)
+                    Unit.loadingPartner model.units unit (PlannedOrder.destination plan)
 
                 isWaitingPartner : Unit -> Bool
                 isWaitingPartner target =
@@ -760,7 +765,7 @@ reservedDestinations unit model =
 
         unavailableReceivers : List Coordinate
         unavailableReceivers =
-            model.board.units
+            model.units
                 |> List.filter unavailableReceiver
                 |> List.filterMap Unit.boardPosition
 
@@ -781,13 +786,13 @@ receivingLoad unit model =
                 False
 
             else
-                case ListUtil.find (\mover -> mover.id == plan.unitId) model.board.units of
+                case ListUtil.find (\mover -> mover.id == plan.unitId) model.units of
                     Just mover ->
                         if Unit.carrierId mover == Just unit.id then
                             True
 
                         else
-                            Unit.loadingPartner model.board.units mover (PlannedOrder.destination plan) |> Maybe.map .id |> (==) (Just unit.id)
+                            Unit.loadingPartner model.units mover (PlannedOrder.destination plan) |> Maybe.map .id |> (==) (Just unit.id)
 
                     Nothing ->
                         False
@@ -802,18 +807,31 @@ saveMove unit move model =
         receiver =
             case Unit.carrierId unit of
                 Just carrier ->
-                    model.board.units |> ListUtil.find (\truck -> truck.id == carrier)
+                    model.units
+                        |> ListUtil.find
+                            (\truck -> truck.id == carrier)
 
                 Nothing ->
-                    Unit.loadingPartner model.board.units unit move.destination
+                    Unit.loadingPartner
+                        model.units
+                        unit
+                        move.destination
 
         retained : List PlannedOrder
         retained =
-            plannedOrders model |> List.filter (\plan -> plan.unitId /= unit.id && Just plan.unitId /= Maybe.map .id receiver)
+            plannedOrders model
+                |> List.filter
+                    (\plan ->
+                        (plan.unitId /= unit.id)
+                            && (Just plan.unitId /= Maybe.map .id receiver)
+                    )
 
         receiverHold : List PlannedOrder
         receiverHold =
-            receiver |> Maybe.andThen (holdOrder model.board.units) |> Maybe.map List.singleton |> Maybe.withDefault []
+            receiver
+                |> Maybe.andThen (holdOrder model.units)
+                |> Maybe.map List.singleton
+                |> Maybe.withDefault []
     in
     { unitId = unit.id, action = PlannedOrder.Move { move = move, unloads = [] } } :: receiverHold ++ retained
 
@@ -1087,13 +1105,6 @@ resetViewport model =
 snapshotSelection : SelectionSet Snapshot Api.Object.GameSnapshot
 snapshotSelection =
     let
-        boardSelection : SelectionSet Board Api.Object.Scenario
-        boardSelection =
-            SS.succeed Board
-                |> SS.with (Scenario.map Map.selection)
-                |> SS.with (Scenario.depots (SS.map Depot.Depot (DepotApi.position Coordinate.selection)))
-                |> SS.with (Scenario.units Unit.selection)
-
         playerSelection : SelectionSet Player Api.Object.GamePlayerView
         playerSelection =
             SS.succeed Player
@@ -1118,7 +1129,9 @@ snapshotSelection =
         |> SS.with SnapshotApi.name
         |> SS.with SnapshotApi.mapType
         |> SS.with (SnapshotApi.players playerSelection)
-        |> SS.with (SnapshotApi.scenario boardSelection)
+        |> SS.with (SnapshotApi.scenario (Scenario.map Map.selection))
+        |> SS.with (SnapshotApi.scenario (Scenario.units Unit.selection))
+        |> SS.with (SnapshotApi.scenario (Scenario.depots (SS.map Depot (DepotApi.position Coordinate.selection))))
         |> SS.with (SnapshotApi.visibleTiles Coordinate.selection)
         |> SS.with (SnapshotApi.movementRules movementRuleSelection)
         |> SS.with Turn.selection
@@ -1192,7 +1205,7 @@ clearSelection model =
 
 selectUnit : UnitId -> Model -> Model
 selectUnit id model =
-    case ListUtil.find (\unit -> unit.id == id) model.board.units of
+    case ListUtil.find (\unit -> unit.id == id) model.units of
         Nothing ->
             model
 
@@ -1239,7 +1252,7 @@ selectMovementTile position model =
                     let
                         destinationOption : Movement.Option -> Maybe Movement.Option
                         destinationOption preview =
-                            if Movement.canStop (reservedDestinations unit model) model.board unit preview then
+                            if Movement.canStop (reservedDestinations unit model) model.units unit preview then
                                 Just preview
 
                             else
@@ -1633,7 +1646,7 @@ update lobbyId msg model =
                         model
 
                     else
-                        model.board.units
+                        model.units
                             |> ListUtil.find (\unit -> unit.id == id)
                             |> Maybe.andThen Unit.boardPosition
                             |> Maybe.map (\position -> previewTile position model)
@@ -1906,16 +1919,11 @@ update lobbyId msg model =
                         |> E.withOut
 
         PlaybackFrameElapsed delta ->
-            let
-                board : Board
-                board =
-                    model.board
-            in
             case TurnLifecycle.tick delta model.phase of
                 Just next ->
                     { model
                         | phase = next.phase
-                        , board = { board | units = next.frame.units }
+                        , units = next.frame.units
                         , visibleTiles = next.frame.visibleTiles
                     }
                         |> E.withOut
@@ -2017,10 +2025,10 @@ commandMenu : Model -> Html Msg
 commandMenu model =
     case commandMenuUnit model of
         Just unit ->
-            case Unit.physicalPosition model.board.units unit of
+            case Unit.physicalPosition model.units unit of
                 Just position ->
                     UnitCommands.toHtml
-                        model.board.map
+                        model.map
                         { offset = model.offset, zoom = model.zoom }
                         position
                         unit
@@ -2214,7 +2222,7 @@ unitOrderView model unit =
                     let
                         passengerName : String
                         passengerName =
-                            ListUtil.find (\passenger -> passenger.id == unload.unitId) model.board.units
+                            ListUtil.find (\passenger -> passenger.id == unload.unitId) model.units
                                 |> Maybe.map Unit.label
                                 |> Maybe.withDefault "unit"
                     in
@@ -2347,12 +2355,12 @@ selectionText model =
                     (\depot ->
                         depot.position == position
                     )
-                    model.board.depots
+                    model.depots
             then
                 "supply depot"
 
             else
-                Terrain.label (Map.terrainAt model.board.map position)
+                Terrain.label (Map.terrainAt model.map position)
 
 
 loadFailedView :
@@ -2404,7 +2412,7 @@ cargoView model unit =
     let
         cargo : List Unit
         cargo =
-            List.filter (\passenger -> Unit.carrierId passenger == Just unit.id) model.board.units
+            List.filter (\passenger -> Unit.carrierId passenger == Just unit.id) model.units
 
         passengerButton : Unit -> Html Msg
         passengerButton passenger =
@@ -2467,7 +2475,7 @@ unloadChecklist model choice =
     let
         passengers : List Unit
         passengers =
-            List.filter (\unit -> Unit.carrierId unit == Just choice.truck.truckId) model.board.units
+            List.filter (\unit -> Unit.carrierId unit == Just choice.truck.truckId) model.units
 
         passengerCheckbox : Unit -> Html Msg
         passengerCheckbox unit =
@@ -2563,7 +2571,7 @@ turnPanel model =
     let
         ownCount : Int
         ownCount =
-            List.length (List.filter (\unit -> isOwnUnit model unit && Unit.onBoard unit) model.board.units)
+            List.length (List.filter (\unit -> isOwnUnit model unit && Unit.onBoard unit) model.units)
 
         status : String
         status =
@@ -2766,10 +2774,6 @@ at position children =
 boardHtml : Model -> Html Msg
 boardHtml model =
     let
-        board : Board
-        board =
-            model.board
-
         rotationPreview : Maybe RotationSelection
         rotationPreview =
             rotationSelection model
@@ -2926,7 +2930,7 @@ boardHtml model =
                 passengerCount : Int
                 passengerCount =
                     if unit.kind == UnitKind.Truck then
-                        List.length (List.filter aboardThisTruck board.units)
+                        List.length (List.filter aboardThisTruck model.units)
 
                     else
                         0
@@ -3014,7 +3018,7 @@ boardHtml model =
 
         positions : List Coordinate
         positions =
-            Map.positions board.map
+            Map.positions model.map
 
         terrainTile : Coordinate -> Svg Msg
         terrainTile position =
@@ -3038,8 +3042,8 @@ boardHtml model =
                 (appearanceAttributes ++ fogAttributes)
                 [ at position
                     [ TerrainTile.toSvg
-                        { theme = board.map.theme
-                        , terrain = Map.terrainAt board.map position
+                        { theme = model.map.theme
+                        , terrain = Map.terrainAt model.map position
                         }
                         |> StyledSvg.toUnstyled
                     ]
@@ -3195,7 +3199,7 @@ boardHtml model =
         rotationOverlay =
             case rotationPreview of
                 Just rotation ->
-                    [ RotationChoices.toSvg board.map rotation.position rotation.direction
+                    [ RotationChoices.toSvg model.map rotation.position rotation.direction
                         |> Svg.map RotationChoicesMsg
                     ]
 
@@ -3225,7 +3229,7 @@ boardHtml model =
             ]
         ]
         [ Svg.svg
-            [ SA.viewBox ("0 0 " ++ String.fromInt (board.map.width * 16) ++ " " ++ String.fromInt (board.map.height * 16))
+            [ SA.viewBox ("0 0 " ++ String.fromInt (model.map.width * 16) ++ " " ++ String.fromInt (model.map.height * 16))
             , SA.width "100%"
             , HA.attribute "role" "group"
             , HA.attribute "aria-label" "battlefield"
@@ -3233,8 +3237,8 @@ boardHtml model =
             (List.concat
                 [ [ terrain, movementOverlay ]
                 , List.map tileTarget positions
-                , List.map depotView board.depots
-                , List.filterMap (\unit -> Unit.boardPosition unit |> Maybe.map (unitView unit)) board.units
+                , List.map depotView model.depots
+                , List.filterMap (\unit -> Unit.boardPosition unit |> Maybe.map (unitView unit)) model.units
                 , [ unloadOverlay ]
                 , selection
                 , rotationOverlay

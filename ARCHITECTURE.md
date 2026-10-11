@@ -124,9 +124,11 @@ page listeners rather than adding ports.
 The backend serves the frontend on the same origin, so no development proxy or
 CORS configuration is required.
 
-`Board` defines only shared domain data (map, depots, and units) for movement and
-turn calculations. `GamePage` owns board rendering, camera controls, interaction
-state, and all board and camera events directly in its page message type.
+`GamePage.Model` stores map, units, and depots directly, as does its decoded
+`Snapshot`. Movement helpers accept the map and unit list as separate arguments;
+turn playback helpers accept and return unit lists. `GamePage` owns board
+rendering, camera controls, interaction state, and all board and camera events
+directly in its page message type.
 
 ## GraphQL and generated client
 

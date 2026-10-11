@@ -17,7 +17,6 @@ import Api.Object.Coordinate as CoordinateApi
 import Api.Object.GameSnapshot as GameApi
 import Api.Object.TurnEvent as EventApi
 import Api.Object.TurnResolution as ResolutionApi
-import Board exposing (Board)
 import Coordinate exposing (Coordinate)
 import Direction
 import Graphql.SelectionSet as SS exposing (SelectionSet)
@@ -119,8 +118,8 @@ nonempty playback =
         Just playback
 
 
-rewind : Snapshot -> Board -> Board
-rewind snapshot board =
+rewind : Snapshot -> List Unit -> List Unit
+rewind snapshot units =
     let
         resetUnit : Unit -> Unit
         resetUnit unit =
@@ -143,16 +142,16 @@ rewind snapshot board =
                     )
                 |> Maybe.withDefault unit
     in
-    { board | units = List.map resetUnit board.units }
+    List.map resetUnit units
 
 
 {-| Each path edge takes 180ms. Only one event plays at a time.
 -}
-tick : Float -> Playback -> Board -> ( Maybe Playback, Board )
-tick delta playback board =
+tick : Float -> Playback -> List Unit -> ( Maybe Playback, List Unit )
+tick delta playback units =
     case playback.events of
         [] ->
-            ( Nothing, board )
+            ( Nothing, units )
 
         event :: remaining ->
             let
@@ -204,7 +203,7 @@ tick delta playback board =
             in
             if elapsed >= duration then
                 ( nonempty { events = remaining, elapsed = 0 }
-                , { board | units = List.map finishUnit board.units }
+                , List.map finishUnit units
                 )
 
             else
@@ -231,7 +230,7 @@ tick delta playback board =
                         else
                             unit
                 in
-                ( Just { playback | elapsed = elapsed }, { board | units = List.map turnUnit board.units } )
+                ( Just { playback | elapsed = elapsed }, List.map turnUnit units )
 
 
 movingPosition : Maybe Playback -> Maybe { unitId : UnitId, position : Point }

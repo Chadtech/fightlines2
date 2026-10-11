@@ -1,17 +1,15 @@
 port module TurnChecks exposing (main)
 
 import Api.Enum.Direction as Direction
-import Api.Enum.MapTheme as MapTheme
 import Api.Enum.Side as Side
-import Api.Enum.Terrain as Terrain
 import Api.Enum.TurnEventKind as EventKind
 import Api.Enum.UnitKind as Kind
-import Board exposing (Board)
 import Direction
 import Platform
 import Turn
 import TurnPlayback
 import Unit exposing (Unit)
+import Unit.Location as Location
 import UnitId exposing (UnitId)
 
 
@@ -40,15 +38,11 @@ checks =
 playbackChecks : UnitId -> UnitId -> List String
 playbackChecks first second =
     let
-        board : Board
-        board =
-            { map = { width = 3, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
-            , depots = []
-            , units =
-                [ { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = first, side = Side.Player1, direction = Just Direction.East, kind = Kind.Infantry, location = Unit.OnMap { x = 1, y = 0 } }
-                , { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = second, side = Side.Player2, direction = Just Direction.West, kind = Kind.Infantry, location = Unit.OnMap { x = 1, y = 1 } }
-                ]
-            }
+        units : List Unit
+        units =
+            [ { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = first, side = Side.Player1, direction = Just Direction.East, kind = Kind.Infantry, location = Location.OnMap { x = 1, y = 0 } }
+            , { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = second, side = Side.Player2, direction = Just Direction.West, kind = Kind.Infantry, location = Location.OnMap { x = 1, y = 1 } }
+            ]
 
         snapshot : Turn.Snapshot
         snapshot =
@@ -65,21 +59,21 @@ playbackChecks first second =
                     }
             }
 
-        rewound : Board
+        rewound : List Unit
         rewound =
-            Turn.rewind snapshot board
+            Turn.rewind snapshot units
 
         initial : Turn.Playback
         initial =
             Turn.start snapshot |> Maybe.withDefault { events = [], elapsed = 0 }
 
-        ( halfway, halfwayBoard ) =
+        ( halfway, halfwayUnits ) =
             Turn.tick 90 initial rewound
 
         ( next, firstFinished ) =
             Turn.tick 180 initial rewound
 
-        ( finished, finalBoard ) =
+        ( finished, finalUnits ) =
             next |> Maybe.map (\playing -> Turn.tick 180 playing firstFinished) |> Maybe.withDefault ( Nothing, firstFinished )
 
         rotation : Turn.Event
@@ -90,19 +84,19 @@ playbackChecks first second =
         rotationSnapshot =
             { snapshot | resolution = Just { number = 1, events = [ rotation ] } }
 
-        rotationBoard : Board
-        rotationBoard =
-            Turn.rewind rotationSnapshot board
+        rotationUnits : List Unit
+        rotationUnits =
+            Turn.rewind rotationSnapshot units
 
         rotationPlayback : Turn.Playback
         rotationPlayback =
             Turn.start rotationSnapshot |> Maybe.withDefault { events = [], elapsed = 0 }
 
         ( rotationPending, rotationHalfway ) =
-            Turn.tick 90 rotationPlayback rotationBoard
+            Turn.tick 90 rotationPlayback rotationUnits
 
-        ( rotationFinished, rotatedBoard ) =
-            Turn.tick 180 rotationPlayback rotationBoard
+        ( rotationFinished, rotatedUnits ) =
+            Turn.tick 180 rotationPlayback rotationUnits
 
         cornerPath : List { x : Int, y : Int }
         cornerPath =
@@ -114,15 +108,15 @@ playbackChecks first second =
             , elapsed = 0
             }
 
-        ( _, cornerBoard ) =
+        ( _, cornerUnits ) =
             Turn.tick 180 cornerPlayback rewound
 
-        ( cornerFinished, cornerFinalBoard ) =
+        ( cornerFinished, cornerFinalUnits ) =
             Turn.tick 360 cornerPlayback rewound
 
         firstFrame : TurnPlayback.Frame
         firstFrame =
-            { units = rewound.units
+            { units = rewound
             , visibleTiles =
                 [ { x = 0
                   , y = 0
@@ -132,7 +126,7 @@ playbackChecks first second =
 
         lastFrame : TurnPlayback.Frame
         lastFrame =
-            { units = board.units
+            { units = units
             , visibleTiles =
                 [ { x = 1
                   , y = 0
@@ -143,7 +137,7 @@ playbackChecks first second =
         advanceFirstUnit : Unit -> Unit
         advanceFirstUnit unit =
             if unit.id == first then
-                List.head board.units |> Maybe.withDefault unit
+                List.head units |> Maybe.withDefault unit
 
             else
                 unit
@@ -151,7 +145,7 @@ playbackChecks first second =
         middleFrame : TurnPlayback.Frame
         middleFrame =
             { units =
-                List.map advanceFirstUnit rewound.units
+                List.map advanceFirstUnit rewound
             , visibleTiles = lastFrame.visibleTiles
             }
 
@@ -162,7 +156,7 @@ playbackChecks first second =
             , elapsed = 0
             }
 
-        ( sharedHalfway, sharedBoard ) =
+        ( sharedHalfway, sharedFrame ) =
             TurnPlayback.tick 90 sharedPlayback
 
         ( sharedFinished, sharedFinal ) =
@@ -193,42 +187,39 @@ playbackChecks first second =
         [ expect "only the first unit interpolates during its route"
             (TurnPlayback.movingPositions sharedHalfway == [ { unitId = first, position = { x = 0.5, y = 0 } } ])
         , expect "waiting unit preserves its facing during the first route"
-            (List.map .direction sharedBoard.units == [ Just Direction.East, Just Direction.North ])
+            (List.map .direction sharedFrame.units == [ Just Direction.East, Just Direction.North ])
         , expect "fog changes only at shared tile boundaries"
-            (sharedBoard.visibleTiles == firstFrame.visibleTiles && sharedFinal == lastFrame && sharedFinished == Nothing)
+            (sharedFrame.visibleTiles == firstFrame.visibleTiles && sharedFinal == lastFrame && sharedFinished == Nothing)
         , expect "entering and leaving sight never interpolate a hidden route"
             (List.map .unitId (TurnPlayback.movingPositions entering) == [ first ] && List.map .unitId (TurnPlayback.movingPositions leaving) == [ first ])
         , expect "shared playback carries surplus frame time forward"
             (Maybe.map .elapsed surplus == Just 90 && surplusFrame.visibleTiles == middleFrame.visibleTiles && TurnPlayback.movingPositions surplus == [ { unitId = second, position = { x = 1.5, y = 1 } } ])
-        , expect "rotation rewinds facing and stays still until its event completes" (rotationPending /= Nothing && rotationHalfway == rotationBoard && Turn.movingPosition rotationPending == Nothing)
-        , expect "rotation playback applies the chosen facing without moving" (rotationFinished == Nothing && List.map .direction rotatedBoard.units == [ Just Direction.West, Just Direction.West ] && List.map .location rotatedBoard.units == List.map .location board.units)
-        , expect "rewind restores the event origins" (List.map Unit.boardPosition rewound.units == [ Just { x = 0, y = 0 }, Just { x = 2, y = 1 } ])
+        , expect "rotation rewinds facing and stays still until its event completes" (rotationPending /= Nothing && rotationHalfway == rotationUnits && Turn.movingPosition rotationPending == Nothing)
+        , expect "rotation playback applies the chosen facing without moving" (rotationFinished == Nothing && List.map .direction rotatedUnits == [ Just Direction.West, Just Direction.West ] && List.map .location rotatedUnits == List.map .location units)
+        , expect "rewind restores the event origins" (List.map Unit.boardPosition rewound == [ Just { x = 0, y = 0 }, Just { x = 2, y = 1 } ])
         , expect "halfway position interpolates the first unit only" (Turn.movingPosition halfway == Just { unitId = first, position = { x = 0.5, y = 0 } })
-        , expect "animation never mutates authoritative cell positions mid-edge" (List.map Unit.boardPosition halfwayBoard.units == List.map Unit.boardPosition rewound.units)
+        , expect "animation never mutates authoritative cell positions mid-edge" (List.map Unit.boardPosition halfwayUnits == List.map Unit.boardPosition rewound)
         , expect "second event starts after the first finishes" (Turn.movingPosition next == Just { unitId = second, position = { x = 2, y = 1 } })
-        , expect "rewind restores initial facing" (List.map .direction rewound.units == [ Just Direction.South, Just Direction.North ])
-        , expect "moving unit turns while waiting unit keeps its facing" (List.map .direction halfwayBoard.units == [ Just Direction.East, Just Direction.North ])
-        , expect "turning a corner faces down during the second edge" (List.map .direction cornerBoard.units == [ Just Direction.South, Just Direction.North ])
-        , expect "final facing follows the last edge" (cornerFinished == Nothing && List.map .direction cornerFinalBoard.units == [ Just Direction.South, Just Direction.North ])
+        , expect "rewind restores initial facing" (List.map .direction rewound == [ Just Direction.South, Just Direction.North ])
+        , expect "moving unit turns while waiting unit keeps its facing" (List.map .direction halfwayUnits == [ Just Direction.East, Just Direction.North ])
+        , expect "turning a corner faces down during the second edge" (List.map .direction cornerUnits == [ Just Direction.South, Just Direction.North ])
+        , expect "final facing follows the last edge" (cornerFinished == Nothing && List.map .direction cornerFinalUnits == [ Just Direction.South, Just Direction.North ])
         , expect "all cardinal path directions are supported"
             (List.map (\destination -> Direction.between { x = 1, y = 1 } destination)
                 [ { x = 1, y = 0 }, { x = 2, y = 1 }, { x = 1, y = 2 }, { x = 0, y = 1 } ]
                 == [ Just Direction.North, Just Direction.East, Just Direction.South, Just Direction.West ]
             )
         , expect "holding preserves facing" (Direction.alongPath [ { x = 1, y = 1 } ] (Just Direction.North) == Just Direction.North)
-        , expect "playback ends at the resolved board" (finished == Nothing && finalBoard == board)
+        , expect "playback ends at the resolved board" (finished == Nothing && finalUnits == units)
         ]
 
 
 truckPlaybackChecks : UnitId -> List String
 truckPlaybackChecks unitId =
     let
-        board : Board
-        board =
-            { map = { width = 3, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
-            , depots = []
-            , units = [ { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 15, maximum = 64 }, id = unitId, side = Side.Player1, direction = Nothing, kind = Kind.Truck, location = Unit.OnMap { x = 1, y = 1 } } ]
-            }
+        units : List Unit
+        units =
+            [ { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 15, maximum = 64 }, id = unitId, side = Side.Player1, direction = Nothing, kind = Kind.Truck, location = Location.OnMap { x = 1, y = 1 } } ]
 
         snapshot : Turn.Snapshot
         snapshot =
@@ -238,9 +229,9 @@ truckPlaybackChecks unitId =
             , resolution = Just { number = 1, events = [ { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialDirection = Nothing, unitId = unitId, path = [ { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 1, y = 1 } ] } ] }
             }
 
-        rewound : Board
+        rewound : List Unit
         rewound =
-            Turn.rewind snapshot board
+            Turn.rewind snapshot units
 
         playback : Turn.Playback
         playback =
@@ -249,14 +240,14 @@ truckPlaybackChecks unitId =
         ( _, moving ) =
             Turn.tick 180 playback rewound
 
-        ( finished, finalBoard ) =
+        ( finished, finalUnits ) =
             Turn.tick 360 playback rewound
 
-        hasNoDirection : Board -> Bool
+        hasNoDirection : List Unit -> Bool
         hasNoDirection current =
-            List.map .direction current.units == [ Nothing ]
+            List.map .direction current == [ Nothing ]
     in
-    if List.all hasNoDirection [ rewound, moving, finalBoard ] && finished == Nothing && finalBoard == board then
+    if List.all hasNoDirection [ rewound, moving, finalUnits ] && finished == Nothing && finalUnits == units then
         []
 
     else
@@ -276,16 +267,16 @@ transportPlaybackChecks passengerId truckId =
             , supplies = { current = 62, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }
             , fuel = Just { current = 63, maximum = 64 }
             , cargoCapacity = 2
-            , location = Unit.OnMap { x = 1, y = 0 }
+            , location = Location.OnMap { x = 1, y = 0 }
             }
 
         passenger : Unit.Unit
         passenger =
-            { truck | id = passengerId, kind = Kind.Infantry, direction = Just Direction.East, fuel = Nothing, cargoCapacity = 0, location = Unit.Aboard truckId }
+            { truck | id = passengerId, kind = Kind.Infantry, direction = Just Direction.East, fuel = Nothing, cargoCapacity = 0, location = Location.Aboard truckId }
 
-        board : Board
-        board =
-            { map = { width = 3, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }, depots = [], units = [ passenger, truck ] }
+        units : List Unit
+        units =
+            [ passenger, truck ]
 
         event : Turn.Event
         event =
@@ -307,15 +298,15 @@ transportPlaybackChecks passengerId truckId =
                     }
             }
 
-        rewound : Board
+        rewound : List Unit
         rewound =
-            Turn.rewind loading board
+            Turn.rewind loading units
 
-        afterMovement : Board
+        afterMovement : List Unit
         afterMovement =
             Turn.start loading |> Maybe.map (\playback -> Turn.tick 180 playback rewound |> Tuple.second) |> Maybe.withDefault rewound
 
-        afterLoading : Board
+        afterLoading : List Unit
         afterLoading =
             Turn.start loading
                 |> Maybe.andThen (\playback -> Turn.tick 180 playback rewound |> Tuple.first)
@@ -326,41 +317,41 @@ transportPlaybackChecks passengerId truckId =
         unloading =
             { loading | resolution = Just { number = 1, events = [ { event | kind = EventKind.Unload, unitId = passengerId, path = [ { x = 1, y = 0 }, { x = 2, y = 0 } ], initialCarrier = Just truckId, initialDirection = passenger.direction } ] } }
 
-        unloadBoard : Board
-        unloadBoard =
-            { board | units = [ { passenger | location = Unit.OnMap { x = 2, y = 0 } }, truck ] }
+        unloadUnits : List Unit
+        unloadUnits =
+            [ { passenger | location = Location.OnMap { x = 2, y = 0 } }, truck ]
 
-        unloadRewound : Board
+        unloadRewound : List Unit
         unloadRewound =
-            Turn.rewind unloading unloadBoard
+            Turn.rewind unloading unloadUnits
 
-        afterUnloading : Board
+        afterUnloading : List Unit
         afterUnloading =
             Turn.start unloading |> Maybe.map (\playback -> Turn.tick 180 playback unloadRewound |> Tuple.second) |> Maybe.withDefault unloadRewound
 
-        riding : Board
+        riding : List Unit
         riding =
-            Turn.tick 180 { events = [ event ], elapsed = 0 } { board | units = [ passenger, { truck | location = Unit.OnMap { x = 0, y = 0 } } ] } |> Tuple.second
+            Turn.tick 180 { events = [ event ], elapsed = 0 } [ passenger, { truck | location = Location.OnMap { x = 0, y = 0 } } ] |> Tuple.second
 
         ( sharedUnloading, sharedUnloadFrame ) =
             TurnPlayback.tick 90
-                { current = { units = board.units, visibleTiles = [] }
-                , remaining = [ { units = unloadBoard.units, visibleTiles = [] } ]
+                { current = { units = units, visibleTiles = [] }
+                , remaining = [ { units = unloadUnits, visibleTiles = [] } ]
                 , elapsed = 0
                 }
     in
     List.concat
         [ transportExpect "shared unloading displays the passenger walking from its truck"
             (TurnPlayback.movingPositions sharedUnloading == [ { unitId = passengerId, position = { x = 1.5, y = 0 } } ] && List.map Unit.boardPosition sharedUnloadFrame.units == [ Just { x = 1, y = 0 }, Just { x = 1, y = 0 } ])
-        , transportExpect "loading rewind restores passengers to the board" (List.map Unit.carrierId rewound.units == [ Nothing, Nothing ])
-        , transportExpect "load event attaches cargo after movement" (afterLoading == board)
-        , transportExpect "riding passengers follow their truck" (riding == board)
-        , transportExpect "unload rewind restores cargo" (unloadRewound == board)
-        , transportExpect "unload event puts passenger on the board" (afterUnloading == unloadBoard)
+        , transportExpect "loading rewind restores passengers to the board" (List.map Unit.carrierId rewound == [ Nothing, Nothing ])
+        , transportExpect "load event attaches cargo after movement" (afterLoading == units)
+        , transportExpect "riding passengers follow their truck" (riding == units)
+        , transportExpect "unload rewind restores cargo" (unloadRewound == units)
+        , transportExpect "unload event puts passenger on the board" (afterUnloading == unloadUnits)
         , transportExpect "passengers have no board position" (Unit.boardPosition passenger == Nothing)
-        , transportExpect "riding position derives from the moved truck" (Unit.physicalPosition riding.units passenger == Just { x = 1, y = 0 })
+        , transportExpect "riding position derives from the moved truck" (Unit.physicalPosition riding passenger == Just { x = 1, y = 0 })
         , transportExpect "missing carriers have no physical position" (Unit.physicalPosition [ passenger ] passenger == Nothing)
-        , transportExpect "aboard carriers have no physical position" (Unit.physicalPosition [ passenger, { truck | location = Unit.Aboard passengerId } ] passenger == Nothing)
+        , transportExpect "aboard carriers have no physical position" (Unit.physicalPosition [ passenger, { truck | location = Location.Aboard passengerId } ] passenger == Nothing)
         ]
 
 
