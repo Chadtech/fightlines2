@@ -5,8 +5,8 @@ import Api.Enum.MapTheme as MapTheme
 import Api.Enum.Side as Side
 import Api.Enum.Terrain as Terrain
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
+import Board exposing (Board)
 import Coordinate exposing (Coordinate)
-import GameBoard
 import Json.Decode as D
 import ListUtil
 import Movement
@@ -125,7 +125,7 @@ check rules fixture =
                             )
                         |> List.concat
 
-                board : GameBoard.GameBoard
+                board : Board
                 board =
                     { map = { width = rows |> List.head |> Maybe.map String.length |> Maybe.withDefault 0, height = List.length rows, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = features }
                     , units = unit :: (List.map (\position -> { unit | location = Unit.OnMap position, side = Side.Player2 }) fixture.occupied ++ List.map (\position -> { unit | location = Unit.OnMap position }) fixture.allies)
@@ -197,7 +197,7 @@ traceChecks rules =
                 unit =
                     { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = id, kind = UnitKind.Infantry, location = Unit.OnMap origin, side = Side.Player1, direction = Just Direction.East }
 
-                board : GameBoard.GameBoard
+                board : Board
                 board =
                     { map = { width = 4, height = 4, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
                     , units = [ unit ]
@@ -264,7 +264,7 @@ traceChecks rules =
                     (Movement.trace rules { board | units = [ unit, { unit | location = Unit.OnMap down, side = Side.Player2 } ] } unit (Movement.start origin) down == Nothing)
                 , test "allied squares can be traced through but cannot be destinations"
                     (let
-                        alliedBoard : GameBoard.GameBoard
+                        alliedBoard : Board
                         alliedBoard =
                             { board | units = [ unit, { unit | location = Unit.OnMap down } ] }
                      in
@@ -282,7 +282,7 @@ traceChecks rules =
                     )
                 , test "fractional terrain cost is refunded on backtracking"
                     (let
-                        roughBoard : GameBoard.GameBoard
+                        roughBoard : Board
                         roughBoard =
                             { board | map = { width = 4, height = 4, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [ { position = down, terrain = Terrain.Hills } ] } }
                      in
@@ -313,7 +313,7 @@ reservationChecks rules =
                 unit =
                     { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = id, kind = UnitKind.Infantry, location = Unit.OnMap { x = 0, y = 0 }, side = Side.Player1, direction = Just Direction.East }
 
-                board : GameBoard.GameBoard
+                board : Board
                 board =
                     { map = { width = 3, height = 1, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
                     , units = [ unit ]
@@ -369,7 +369,7 @@ fuelChecks rules =
                 unit =
                     { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, id = id, kind = UnitKind.Tank, location = Unit.OnMap { x = 0, y = 0 }, side = Side.Player1, direction = Just Direction.East, fuel = Just { current = 2, maximum = 64 } }
 
-                board : GameBoard.GameBoard
+                board : Board
                 board =
                     { map = { width = 5, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [ { position = { x = 1, y = 0 }, terrain = Terrain.Forest } ] }, units = [ unit ], depots = [] }
 
@@ -431,7 +431,7 @@ supplyChecks rules =
                 unit =
                     { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, id = id, kind = UnitKind.Infantry, location = Unit.OnMap { x = 0, y = 0 }, side = Side.Player1, direction = Just Direction.East, fuel = Nothing, supplies = supplies }
 
-                board : GameBoard.GameBoard
+                board : Board
                 board =
                     { map = { width = 5, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }, units = [ unit ], depots = [] }
 
@@ -520,7 +520,7 @@ transportChecks rules =
                 truck =
                     { passenger | id = truckId, kind = UnitKind.Truck, cargoCapacity = 2, direction = Nothing, location = Unit.OnMap { x = 1, y = 0 }, fuel = Just { current = 64, maximum = 64 } }
 
-                board : GameBoard.GameBoard
+                board : Board
                 board =
                     { map = { width = 4, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
                     , depots = []
@@ -531,15 +531,15 @@ transportChecks rules =
                 aboard =
                     { passenger | location = Unit.Aboard truckId }
 
-                fullBoard : GameBoard.GameBoard
+                fullBoard : Board
                 fullBoard =
                     { board | units = [ passenger, truck, aboard, { aboard | id = otherId } ] }
 
-                rideBoard : GameBoard.GameBoard
+                rideBoard : Board
                 rideBoard =
                     { board | units = [ aboard, truck ] }
 
-                canReach : GameBoard.GameBoard -> Unit.Unit -> Coordinate -> Bool
+                canReach : Board -> Unit.Unit -> Coordinate -> Bool
                 canReach current unit destination =
                     Movement.options [] rules current unit |> List.any (\option -> option.destination == destination)
 

@@ -6,8 +6,8 @@ import Api.Enum.Side as Side
 import Api.Enum.Terrain as Terrain
 import Api.Enum.TurnEventKind as EventKind
 import Api.Enum.UnitKind as Kind
+import Board exposing (Board)
 import Direction
-import GameBoard exposing (GameBoard)
 import Platform
 import Turn
 import TurnPlayback
@@ -40,7 +40,7 @@ checks =
 playbackChecks : UnitId -> UnitId -> List String
 playbackChecks first second =
     let
-        board : GameBoard
+        board : Board
         board =
             { map = { width = 3, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
             , depots = []
@@ -65,7 +65,7 @@ playbackChecks first second =
                     }
             }
 
-        rewound : GameBoard
+        rewound : Board
         rewound =
             Turn.rewind snapshot board
 
@@ -90,7 +90,7 @@ playbackChecks first second =
         rotationSnapshot =
             { snapshot | resolution = Just { number = 1, events = [ rotation ] } }
 
-        rotationBoard : GameBoard
+        rotationBoard : Board
         rotationBoard =
             Turn.rewind rotationSnapshot board
 
@@ -223,7 +223,7 @@ playbackChecks first second =
 truckPlaybackChecks : UnitId -> List String
 truckPlaybackChecks unitId =
     let
-        board : GameBoard
+        board : Board
         board =
             { map = { width = 3, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
             , depots = []
@@ -238,7 +238,7 @@ truckPlaybackChecks unitId =
             , resolution = Just { number = 1, events = [ { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialDirection = Nothing, unitId = unitId, path = [ { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 1, y = 1 } ] } ] }
             }
 
-        rewound : GameBoard
+        rewound : Board
         rewound =
             Turn.rewind snapshot board
 
@@ -252,7 +252,7 @@ truckPlaybackChecks unitId =
         ( finished, finalBoard ) =
             Turn.tick 360 playback rewound
 
-        hasNoDirection : GameBoard -> Bool
+        hasNoDirection : Board -> Bool
         hasNoDirection current =
             List.map .direction current.units == [ Nothing ]
     in
@@ -283,7 +283,7 @@ transportPlaybackChecks passengerId truckId =
         passenger =
             { truck | id = passengerId, kind = Kind.Infantry, direction = Just Direction.East, fuel = Nothing, cargoCapacity = 0, location = Unit.Aboard truckId }
 
-        board : GameBoard
+        board : Board
         board =
             { map = { width = 3, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }, depots = [], units = [ passenger, truck ] }
 
@@ -307,15 +307,15 @@ transportPlaybackChecks passengerId truckId =
                     }
             }
 
-        rewound : GameBoard
+        rewound : Board
         rewound =
             Turn.rewind loading board
 
-        afterMovement : GameBoard
+        afterMovement : Board
         afterMovement =
             Turn.start loading |> Maybe.map (\playback -> Turn.tick 180 playback rewound |> Tuple.second) |> Maybe.withDefault rewound
 
-        afterLoading : GameBoard
+        afterLoading : Board
         afterLoading =
             Turn.start loading
                 |> Maybe.andThen (\playback -> Turn.tick 180 playback rewound |> Tuple.first)
@@ -326,19 +326,19 @@ transportPlaybackChecks passengerId truckId =
         unloading =
             { loading | resolution = Just { number = 1, events = [ { event | kind = EventKind.Unload, unitId = passengerId, path = [ { x = 1, y = 0 }, { x = 2, y = 0 } ], initialCarrier = Just truckId, initialDirection = passenger.direction } ] } }
 
-        unloadBoard : GameBoard
+        unloadBoard : Board
         unloadBoard =
             { board | units = [ { passenger | location = Unit.OnMap { x = 2, y = 0 } }, truck ] }
 
-        unloadRewound : GameBoard
+        unloadRewound : Board
         unloadRewound =
             Turn.rewind unloading unloadBoard
 
-        afterUnloading : GameBoard
+        afterUnloading : Board
         afterUnloading =
             Turn.start unloading |> Maybe.map (\playback -> Turn.tick 180 playback unloadRewound |> Tuple.second) |> Maybe.withDefault unloadRewound
 
-        riding : GameBoard
+        riding : Board
         riding =
             Turn.tick 180 { events = [ event ], elapsed = 0 } { board | units = [ passenger, { truck | location = Unit.OnMap { x = 0, y = 0 } } ] } |> Tuple.second
 

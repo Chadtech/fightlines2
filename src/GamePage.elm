@@ -35,17 +35,17 @@ import Api.Object.Scenario as Scenario
 import Api.Object.TerrainMovementCost as MovementCostApi
 import Api.Query
 import ApiRequest
+import Board exposing (Board)
 import Browser.Events
 import Coordinate exposing (Coordinate)
 import Css
-import Depot
+import Css.Global
+import Depot exposing (Depot)
 import Direction
-import Drag exposing (Drag)
 import Effect as E
     exposing
         ( Eff
         )
-import GameBoard exposing (GameBoard)
 import GamePage.Selection
     exposing
         ( DestinationFeedback(..)
@@ -56,11 +56,13 @@ import GamePage.Selection
         )
 import Graphql.Http
 import Graphql.SelectionSet as SS exposing (SelectionSet)
+import Html.Attributes as HA
 import Html.Styled as H
     exposing
         ( Html
         )
 import Html.Styled.Attributes as A
+import Html.Styled.Events as HtmlEvents
 import Html.Styled.Keyed as Keyed
 import Json.Decode as Decode
 import KeyCmd exposing (KeyCmd)
@@ -78,9 +80,14 @@ import PlannedOrder
         )
 import PlanningState exposing (PlanningState, UnloadChoice, UnloadPlanning)
 import Point exposing (Point)
+import PointerGesture exposing (PointerGesture)
 import Ports.Js.To as ToJs
 import Shared
 import Style as S
+import Svg exposing (Svg)
+import Svg.Attributes as SA
+import Svg.Events as Ev
+import Svg.Styled as StyledSvg
 import Terrain
 import Time
 import Turn
@@ -89,13 +96,16 @@ import TurnPlayback
 import Unit exposing (Unit)
 import UnitCommand
 import UnitId exposing (UnitId)
-import View.BoardViewport as Viewport
 import View.Button as Button
 import View.Card as Card
 import View.CardHeader as CardHeader
 import View.Dialog as Dialog exposing (Dialog)
 import View.RotationChoices as RotationChoices
+import View.TerrainTile as TerrainTile
+import View.UnitCargo as UnitCargo
 import View.UnitCommands as UnitCommands
+import View.UnitFacing as UnitFacing
+import View.UnitSprite as UnitSprite
 import View.UnitStatus as UnitStatus
 import View.UnloadPassenger as UnloadPassenger
 
@@ -117,13 +127,12 @@ type alias Model =
     , name : String
     , mapType : MapType
     , players : List Player
-    , board : GameBoard
+    , board : Board
     , visibleTiles : List Coordinate
     , movementRules : List Movement.Rule
     , offset : Point
     , zoom : Float
-    , drag : Maybe Drag
-    , suppressClick : Bool
+    , pointerGesture : PointerGesture
     , frame : AnimationFrame.Frame
     }
 
@@ -132,7 +141,7 @@ type alias Snapshot =
     { name : String
     , mapType : MapType
     , players : List Player
-    , board : GameBoard
+    , board : Board
     , visibleTiles : List Coordinate
     , movementRules : List Movement.Rule
     , turn : Turn.Snapshot
@@ -147,10 +156,23 @@ type alias Player =
     }
 
 
+{-| An unload preview always connects the truck to one adjacent tile.
+-}
+type alias UnloadRoute =
+    { origin : Coordinate
+    , direction : Direction
+    }
+
+
+type alias RotationSelection =
+    { unitId : UnitId
+    , position : Coordinate
+    , direction : Direction
+    }
+
+
 type Msg
-    = BoardMsg GameBoard.Msg
-    | ViewportMsg Viewport.Msg
-    | UnitCommandsMsg UnitCommands.Msg
+    = UnitCommandsMsg UnitCommands.Msg
     | PreviousCommandPressed
     | NextCommandPressed
     | CommandFocusCompleted
@@ -185,6 +207,25 @@ type Msg
     | PollTimerElapsed Time.Posix
     | PollResponseReceived (ApiRequest.Response Snapshot)
     | PlaybackFrameElapsed Float
+    | RotationChoicesMsg RotationChoices.Msg
+    | ClickedUnit UnitId { detail : Int }
+    | PressedEnterOnUnit UnitId
+    | PressedSpaceOnUnit UnitId
+    | MouseOverUnit UnitId
+    | ClickedDepot Coordinate { detail : Int }
+    | PressedEnterOnDepot Coordinate
+    | PressedSpaceOnDepot Coordinate
+    | MouseOverDepot Coordinate
+    | ClickedTile Coordinate { detail : Int }
+    | PressedEnterOnTile Coordinate
+    | PressedSpaceOnTile Coordinate
+    | MouseOverTile Coordinate
+    | MousePressed Point
+    | MouseMoved Point Int
+    | MouseReleased Point
+    | WindowVisibilityChanged Browser.Events.Visibility
+    | WheelScrolled Point Float
+    | HomePressed
 
 
 
@@ -217,8 +258,7 @@ init shared flags =
     , movementRules = flags.snapshot.movementRules
     , offset = { x = 0, y = 0 }
     , zoom = 1
-    , drag = Nothing
-    , suppressClick = False
+    , pointerGesture = PointerGesture.idle
     , frame = AnimationFrame.first
     }
 
@@ -246,6 +286,541 @@ setShared shared model =
 ----------------------------------------------------------------
 -- HELPERS --
 ----------------------------------------------------------------
+
+
+unloadChoice : Phase -> Maybe UnloadChoice
+unloadChoice phase =
+    TurnLifecycle.planning phase
+        |> Maybe.andThen PlanningState.unloadChoice
+
+
+unloadPlanning : Phase -> Maybe UnloadPlanning
+unloadPlanning phase =
+    TurnLifecycle.planning phase |> Maybe.andThen PlanningState.unloadPlanning
+
+
+isChoosingUnload : Model -> Bool
+isChoosingUnload model =
+    unloadPlanning model.phase /= Nothing
+
+
+openUnloadPrompt : Unit -> Movement.Option -> Model -> Model
+openUnloadPrompt truck move model =
+    let
+        hasPassengers : Bool
+        hasPassengers =
+            List.any (\passenger -> Unit.carrierId passenger == Just truck.id) model.board.units
+    in
+    if hasPassengers then
+        { model
+            | phase =
+                TurnLifecycle.mapPlanning
+                    (PlanningState.startUnload truck.id move)
+                    model.phase
+        }
+
+    else
+        model
+
+
+dismissDialog : Model -> Model
+dismissDialog model =
+    { model
+        | phase = TurnLifecycle.mapPlanning PlanningState.dismissDialog model.phase
+    }
+
+
+unloadOptions : Model -> PlanningState -> UnitId -> List Movement.Option
+unloadOptions model state passengerId =
+    case PlanningState.unloadPlanning state of
+        Just planning ->
+            let
+                projectTruck : Unit -> Unit
+                projectTruck unit =
+                    if unit.id == planning.truck.truckId then
+                        Unit.setOnMap planning.truck.plan.move.destination unit
+
+                    else
+                        unit
+
+                projected : Board
+                projected =
+                    { map = model.board.map, units = List.map projectTruck model.board.units, depots = model.board.depots }
+
+                next : Model
+                next =
+                    { model | phase = TurnLifecycle.Planning state }
+            in
+            case ListUtil.find (\unit -> unit.id == passengerId) projected.units of
+                Just passenger ->
+                    Movement.options (reservedDestinations passenger next) model.movementRules projected passenger
+
+                Nothing ->
+                    []
+
+        Nothing ->
+            []
+
+
+chooseUnloadSquare : Coordinate -> Model -> Model
+chooseUnloadSquare destination model =
+    { model
+        | phase =
+            TurnLifecycle.mapPlanning
+                (PlanningState.saveUnloadDestination (unloadOptions model) destination)
+                model.phase
+    }
+
+
+partialOrdersDialogHtmlId : String
+partialOrdersDialogHtmlId =
+    "submit-turn-warning"
+
+
+hasDialog : Model -> Bool
+hasDialog model =
+    dialog model /= Nothing
+
+
+plannedOrders : Model -> List PlannedOrder
+plannedOrders model =
+    TurnLifecycle.orders model.phase
+
+
+playback : Model -> Maybe TurnPlayback.Playback
+playback model =
+    TurnLifecycle.playback model.phase
+
+
+planningLocked : Model -> Bool
+planningLocked model =
+    TurnLifecycle.planningLocked model.phase
+
+
+unitsWithoutOrders : Model -> List Unit
+unitsWithoutOrders model =
+    let
+        missingOrder : Unit -> Bool
+        missingOrder unit =
+            isOwnUnit model unit && Unit.onBoard unit && not (List.any (\plan -> plan.unitId == unit.id) (plannedOrders model))
+    in
+    List.filter missingOrder model.board.units
+
+
+readyToSubmit : Model -> Bool
+readyToSubmit model =
+    not (planningLocked model) && List.isEmpty (unitsWithoutOrders model)
+
+
+submitTurn : LobbyId -> Model -> ( Model, Eff Msg )
+submitTurn lobbyId model =
+    let
+        phase : Phase
+        phase =
+            TurnLifecycle.startSubmission model.turnNumber model.phase
+    in
+    case ( model.phase, phase ) of
+        ( TurnLifecycle.Planning _, TurnLifecycle.Submitting _ ) ->
+            ( { model | phase = phase, turnError = Nothing }
+            , E.request (SubmitResponseReceived model.turnNumber) (submitRequest lobbyId model)
+            )
+
+        _ ->
+            ( model, E.none )
+
+
+unloadDialogHtmlId : String
+unloadDialogHtmlId =
+    "unload-passengers"
+
+
+selectedUnit : Model -> Maybe Unit
+selectedUnit model =
+    case currentSelection model of
+        Just (Inspecting (UnitInspection id)) ->
+            ListUtil.find (\unit -> unit.id == id) model.board.units
+
+        Just (UnitSelection selection) ->
+            ListUtil.find (\unit -> unit.id == selection.id) model.board.units
+
+        _ ->
+            Nothing
+
+
+selectedPosition : Model -> Maybe Coordinate
+selectedPosition model =
+    case unloadPlanning model.phase of
+        Just planning ->
+            Just planning.truck.plan.move.destination
+
+        Nothing ->
+            inspectionPosition model
+
+
+inspectionPosition : Model -> Maybe Coordinate
+inspectionPosition model =
+    case currentSelection model of
+        Just (Inspecting (TileInspection position)) ->
+            Just position
+
+        Just (Inspecting (UnitInspection _)) ->
+            Maybe.andThen Unit.boardPosition (selectedUnit model)
+
+        Just (UnitSelection _) ->
+            Maybe.andThen Unit.boardPosition (selectedUnit model)
+
+        Nothing ->
+            Nothing
+
+
+isOwnUnit : Model -> Unit -> Bool
+isOwnUnit model unit =
+    List.any
+        (\player -> player.isYou && player.side == unit.side)
+        model.players
+
+
+applyCommand : UnitCommand.Command -> Model -> Model
+applyCommand command model =
+    case commandMenuUnit model of
+        Just unit ->
+            let
+                canApply : Bool
+                canApply =
+                    isOwnUnit model unit
+                        && not (planningLocked model)
+                        && not (receivingLoad unit model)
+                        && List.member command (UnitCommand.available unit)
+                        && UnitCommand.isImplemented command
+            in
+            if canApply then
+                case command of
+                    UnitCommand.Move ->
+                        beginMovement unit model
+
+                    UnitCommand.Rotate ->
+                        setSelection
+                            (Just (UnitSelection { id = unit.id, interaction = ChoosingDirection (Maybe.withDefault Facing.North unit.direction) }))
+                            model
+
+                    UnitCommand.HoldPosition ->
+                        case holdOrder model.board.units unit of
+                            Just hold ->
+                                { model
+                                    | phase = TurnLifecycle.setOrders (hold :: List.filter (\plan -> plan.unitId /= unit.id) (plannedOrders model)) model.phase
+                                }
+                                    |> inspectSelectedUnit
+
+                            Nothing ->
+                                model
+
+                    _ ->
+                        model
+
+            else
+                model
+
+        _ ->
+            model
+
+
+plannedUnloadRoutes : Model -> List UnloadRoute
+plannedUnloadRoutes model =
+    let
+        truckUnloads : PlannedOrder -> List UnloadRoute
+        truckUnloads plan =
+            let
+                route : UnloadOrder -> Maybe UnloadRoute
+                route unload =
+                    let
+                        withDirection : Direction -> UnloadRoute
+                        withDirection direction =
+                            { origin = PlannedOrder.destination plan
+                            , direction = direction
+                            }
+                    in
+                    Direction.between (PlannedOrder.destination plan) unload.destination
+                        |> Maybe.map withDirection
+            in
+            List.filterMap route (PlannedOrder.unloads plan)
+    in
+    List.concatMap truckUnloads (plannedOrders model)
+
+
+focusedCommand : Model -> Maybe UnitCommands.MenuOption
+focusedCommand model =
+    case currentSelection model of
+        Just (UnitSelection selection) ->
+            case selection.interaction of
+                CommandMenu focused ->
+                    focused
+
+                ChoosingMove _ ->
+                    Nothing
+
+                ChoosingDirection _ ->
+                    Nothing
+
+        _ ->
+            Nothing
+
+
+commandMenuUnit : Model -> Maybe Unit
+commandMenuUnit model =
+    case ( currentSelection model, hasDialog model ) of
+        ( Just (UnitSelection { interaction }), False ) ->
+            case interaction of
+                CommandMenu _ ->
+                    selectedUnit model
+
+                _ ->
+                    Nothing
+
+        _ ->
+            Nothing
+
+
+holdOrder : List Unit -> Unit -> Maybe PlannedOrder
+holdOrder units unit =
+    Unit.physicalPosition units unit
+        |> Maybe.map (\position -> { unitId = unit.id, action = PlannedOrder.Hold position })
+
+
+submitRequest : LobbyId -> Model -> Graphql.Http.Request Snapshot
+submitRequest lobbyId model =
+    let
+        missingOrder : Unit -> Bool
+        missingOrder unit =
+            isOwnUnit model unit && not (List.any (\plan -> plan.unitId == unit.id) (plannedOrders model))
+
+        defaultHolds : List PlannedOrder
+        defaultHolds =
+            model.board.units |> List.filter missingOrder |> List.filterMap (holdOrder model.board.units)
+
+        orders : List PlannedOrder
+        orders =
+            plannedOrders model ++ defaultHolds
+    in
+    Api.Mutation.submitTurn
+        { id = LobbyId.toString lobbyId
+        , turnNumber = model.turnNumber
+        , orders = List.map PlannedOrder.toInput orders
+        }
+        snapshotSelection
+        |> ApiRequest.mutationRequest
+
+
+receiveSnapshot : Snapshot -> Model -> Model
+receiveSnapshot snapshot model =
+    if snapshot.turn.number < model.turnNumber then
+        model
+
+    else if snapshot.turn.number == model.turnNumber then
+        let
+            phase : Phase
+            phase =
+                if snapshot.turn.submitted then
+                    TurnLifecycle.observeSubmission True model.phase
+
+                else
+                    model.phase
+
+            next : Model
+            next =
+                { model
+                    | opponentSubmitted = model.opponentSubmitted || snapshot.turn.opponentSubmitted
+                    , turnResolution = snapshot.turn.resolution
+                    , phase = phase
+                }
+        in
+        if snapshot.turn.submitted then
+            if isChoosingUnload model then
+                clearSelection next
+
+            else
+                next
+
+        else
+            next
+
+    else
+        let
+            frame : TurnPlayback.Frame
+            frame =
+                TurnPlayback.initial snapshot.playbackFrames { units = snapshot.board.units, visibleTiles = snapshot.visibleTiles }
+
+            board : Board
+            board =
+                snapshot.board
+        in
+        { model
+            | turnNumber = snapshot.turn.number
+            , opponentSubmitted = snapshot.turn.opponentSubmitted
+            , turnResolution = snapshot.turn.resolution
+            , board = { board | units = frame.units }
+            , visibleTiles = frame.visibleTiles
+            , phase = TurnLifecycle.startTurn snapshot.turn.submitted snapshot.playbackFrames
+            , turnError = Nothing
+        }
+
+
+traceTo : Coordinate -> Model -> Maybe Movement.Option
+traceTo position model =
+    case ( selectedUnit model, movementPlanning model ) of
+        ( Just unit, Just planning ) ->
+            if isOwnUnit model unit then
+                Movement.preview model.movementRules model.board unit planning.preview position
+
+            else
+                Nothing
+
+        _ ->
+            Nothing
+
+
+beginMovement : Unit -> Model -> Model
+beginMovement unit model =
+    case Unit.physicalPosition model.board.units unit of
+        Just origin ->
+            let
+                planning : MovePlanning
+                planning =
+                    { preview = Movement.start origin
+                    , options = Movement.options (reservedDestinations unit model) model.movementRules model.board unit
+                    , destinationFeedback = NoDestinationFeedback
+                    }
+            in
+            setSelection (Just (UnitSelection { id = unit.id, interaction = ChoosingMove planning }))
+                model
+
+        Nothing ->
+            model
+
+
+boardingSpace : Unit -> Unit -> Model -> Bool
+boardingSpace mover truck model =
+    let
+        alreadyAboard : Int
+        alreadyAboard =
+            List.length (List.filter (\unit -> Unit.carrierId unit == Just truck.id) model.board.units)
+
+        boarding : PlannedOrder -> Bool
+        boarding plan =
+            plan.unitId /= mover.id && PlannedOrder.isMoving plan && Just (PlannedOrder.destination plan) == Unit.boardPosition truck
+
+        truckMoving : Bool
+        truckMoving =
+            List.any (\plan -> plan.unitId == truck.id && PlannedOrder.isMoving plan) (plannedOrders model)
+
+        fitsCargo : Bool
+        fitsCargo =
+            alreadyAboard + List.length (List.filter boarding (plannedOrders model)) < truck.cargoCapacity
+
+        compatible : Bool
+        compatible =
+            Unit.boardPosition truck |> Maybe.andThen (Unit.loadingPartner model.board.units mover) |> (==) (Just truck)
+    in
+    compatible && not truckMoving && fitsCargo
+
+
+plannedAction : Model -> Unit -> Movement.Option -> String
+plannedAction model unit move =
+    if Unit.carrierId unit /= Nothing && List.length move.path > 1 then
+        "unload at"
+
+    else if Unit.loadingPartner model.board.units unit move.destination /= Nothing then
+        "load at"
+
+    else
+        "move to"
+
+
+reservedDestinations : Unit -> Model -> List Coordinate
+reservedDestinations unit model =
+    let
+        reserves : PlannedOrder -> Bool
+        reserves plan =
+            let
+                partner : Maybe Unit
+                partner =
+                    Unit.loadingPartner model.board.units unit (PlannedOrder.destination plan)
+
+                isWaitingPartner : Unit -> Bool
+                isWaitingPartner target =
+                    target.id == plan.unitId && not (receivingLoad target model && target.cargoCapacity == 0)
+
+                waitingPartner : Bool
+                waitingPartner =
+                    not (PlannedOrder.isMoving plan) && (partner |> Maybe.map isWaitingPartner |> Maybe.withDefault False)
+
+                boardingDestination : Bool
+                boardingDestination =
+                    partner |> Maybe.map (\target -> boardingSpace unit target model) |> Maybe.withDefault False
+            in
+            plan.unitId /= unit.id && not waitingPartner && not boardingDestination
+
+        unavailableReceiver : Unit -> Bool
+        unavailableReceiver target =
+            target.id /= unit.id && receivingLoad target model && not (boardingSpace unit target model)
+
+        unavailableReceivers : List Coordinate
+        unavailableReceivers =
+            model.board.units
+                |> List.filter unavailableReceiver
+                |> List.filterMap Unit.boardPosition
+
+        savedDestinations : List Coordinate
+        savedDestinations =
+            List.map PlannedOrder.destination (List.filter reserves (plannedOrders model))
+                ++ List.concatMap (PlannedOrder.unloads >> List.map .destination) (plannedOrders model)
+    in
+    savedDestinations ++ unavailableReceivers
+
+
+receivingLoad : Unit -> Model -> Bool
+receivingLoad unit model =
+    let
+        receives : PlannedOrder -> Bool
+        receives plan =
+            if not (PlannedOrder.isMoving plan) then
+                False
+
+            else
+                case ListUtil.find (\mover -> mover.id == plan.unitId) model.board.units of
+                    Just mover ->
+                        if Unit.carrierId mover == Just unit.id then
+                            True
+
+                        else
+                            Unit.loadingPartner model.board.units mover (PlannedOrder.destination plan) |> Maybe.map .id |> (==) (Just unit.id)
+
+                    Nothing ->
+                        False
+    in
+    List.any receives (plannedOrders model)
+
+
+saveMove : Unit -> Movement.Option -> Model -> List PlannedOrder
+saveMove unit move model =
+    let
+        receiver : Maybe Unit
+        receiver =
+            case Unit.carrierId unit of
+                Just carrier ->
+                    model.board.units |> ListUtil.find (\truck -> truck.id == carrier)
+
+                Nothing ->
+                    Unit.loadingPartner model.board.units unit move.destination
+
+        retained : List PlannedOrder
+        retained =
+            plannedOrders model |> List.filter (\plan -> plan.unitId /= unit.id && Just plan.unitId /= Maybe.map .id receiver)
+
+        receiverHold : List PlannedOrder
+        receiverHold =
+            receiver |> Maybe.andThen (holdOrder model.board.units) |> Maybe.map List.singleton |> Maybe.withDefault []
+    in
+    { unitId = unit.id, action = PlannedOrder.Move { move = move, unloads = [] } } :: receiverHold ++ retained
 
 
 currentSelection : Model -> Maybe Selection
@@ -355,7 +930,7 @@ saveRotation direction model =
             model
 
 
-rotationSelection : Model -> Maybe GameBoard.RotationSelection
+rotationSelection : Model -> Maybe RotationSelection
 rotationSelection model =
     case ( currentSelection model, selectedUnit model ) of
         ( Just (UnitSelection selection), Just unit ) ->
@@ -381,7 +956,7 @@ previewRotation direction model =
             let
                 canPreview : Bool
                 canPreview =
-                    choosingDirection model && not (planningLocked model) && model.drag == Nothing
+                    choosingDirection model && not (planningLocked model) && not (PointerGesture.active model.pointerGesture)
             in
             if canPreview then
                 setSelection (Just (UnitSelection { selection | interaction = ChoosingDirection direction })) model
@@ -431,29 +1006,15 @@ zoomOut model =
 
 pan : Point -> Model -> Model
 pan point model =
-    case model.drag of
-        Nothing ->
-            model
-
-        Just drag ->
-            let
-                dx : Float
-                dx =
-                    point.x - (Drag.start drag).x
-
-                dy : Float
-                dy =
-                    point.y - (Drag.start drag).y
-            in
-            -- Once a gesture becomes a drag, returning to its start cannot select a tile.
-            if model.suppressClick || dx * dx + dy * dy >= 36 then
-                { model
-                    | offset = { x = (Drag.origin drag).x + dx, y = (Drag.origin drag).y + dy }
-                    , suppressClick = True
-                }
-
-            else
-                model
+    let
+        moved : { gesture : PointerGesture, offset : Maybe Point }
+        moved =
+            PointerGesture.move point model.pointerGesture
+    in
+    { model
+        | pointerGesture = moved.gesture
+        , offset = Maybe.withDefault model.offset moved.offset
+    }
 
 
 zoomAt : Point -> Float -> Model -> Model
@@ -473,7 +1034,7 @@ zoomAt anchor factor model =
             { x = anchor.x - (anchor.x - model.offset.x) * ratio
             , y = anchor.y - (anchor.y - model.offset.y) * ratio
             }
-        , drag = Nothing
+        , pointerGesture = PointerGesture.finish model.pointerGesture
     }
 
 
@@ -482,17 +1043,16 @@ resetViewport model =
     { model
         | offset = { x = 0, y = 0 }
         , zoom = 1
-        , drag = Nothing
-        , suppressClick = False
+        , pointerGesture = PointerGesture.idle
     }
 
 
 snapshotSelection : SelectionSet Snapshot Api.Object.GameSnapshot
 snapshotSelection =
     let
-        boardSelection : SelectionSet GameBoard Api.Object.Scenario
+        boardSelection : SelectionSet Board Api.Object.Scenario
         boardSelection =
-            SS.succeed GameBoard.GameBoard
+            SS.succeed Board
                 |> SS.with (Scenario.map Map.selection)
                 |> SS.with (Scenario.depots (SS.map Depot.Depot (DepotApi.position Coordinate.selection)))
                 |> SS.with (Scenario.units Unit.selection)
@@ -673,7 +1233,7 @@ previewTile position model =
         Just (UnitSelection selection) ->
             case selection.interaction of
                 ChoosingMove planning ->
-                    if model.drag /= Nothing then
+                    if PointerGesture.active model.pointerGesture then
                         model
 
                     else
@@ -724,7 +1284,11 @@ confirmPath model =
             model
 
 
-focusAdjacentCommand : (List UnitCommands.MenuOption -> List UnitCommands.MenuOption) -> Maybe UnitCommands.MenuOption -> Model -> Eff Msg
+focusAdjacentCommand :
+    (List UnitCommands.MenuOption -> List UnitCommands.MenuOption)
+    -> Maybe UnitCommands.MenuOption
+    -> Model
+    -> Eff Msg
 focusAdjacentCommand orderCommands current model =
     let
         afterCurrent : List UnitCommands.MenuOption -> List UnitCommands.MenuOption
@@ -770,6 +1334,135 @@ focusAdjacentCommand orderCommands current model =
             E.none
 
 
+finishBoardInteraction : Model -> Model -> ( Model, Eff Msg )
+finishBoardInteraction previous next =
+    let
+        effect : Eff Msg
+        effect =
+            case ( unloadChoice previous.phase, unloadChoice next.phase ) of
+                ( Nothing, Just _ ) ->
+                    E.toJs (ToJs.OpenDialog { htmlId = unloadDialogHtmlId })
+
+                _ ->
+                    E.none
+    in
+    ( next, effect )
+
+
+onKeyDown : { pressedEnter : msg, pressedSpace : msg } -> Svg.Attribute msg
+onKeyDown messages =
+    Ev.preventDefaultOn "keydown"
+        (Decode.field "key" Decode.string
+            |> Decode.andThen
+                (\key ->
+                    case key of
+                        "Enter" ->
+                            Decode.succeed ( messages.pressedEnter, True )
+
+                        " " ->
+                            Decode.succeed ( messages.pressedSpace, True )
+
+                        _ ->
+                            Decode.fail "not Enter or Space"
+                )
+        )
+
+
+onClickWithDetail : ({ detail : Int } -> msg) -> Svg.Attribute msg
+onClickWithDetail toMsg =
+    Ev.on "click"
+        (Decode.field "detail" Decode.int
+            |> Decode.map (\detail -> toMsg { detail = detail })
+        )
+
+
+mousePressedDecoder : Decode.Decoder Msg
+mousePressedDecoder =
+    Decode.field "button" Decode.int
+        |> Decode.andThen primaryMousePressed
+
+
+primaryMousePressed : Int -> Decode.Decoder Msg
+primaryMousePressed button =
+    if button == 0 then
+        Decode.map MousePressed Point.decoder
+
+    else
+        Decode.fail "only the primary button pans"
+
+
+type alias WheelEvent =
+    { pointer : Point
+    , viewportSize : Point
+    , delta : Float
+    }
+
+
+wheelScrolledDecoder : Decode.Decoder Msg
+wheelScrolledDecoder =
+    let
+        wheelScrolled : WheelEvent -> Msg
+        wheelScrolled event =
+            WheelScrolled
+                { x = event.pointer.x - event.viewportSize.x / 2
+                , y = event.pointer.y - event.viewportSize.y / 2
+                }
+                event.delta
+    in
+    Decode.map3 WheelEvent
+        Point.decoder
+        viewportSizeDecoder
+        wheelDeltaDecoder
+        |> Decode.map wheelScrolled
+
+
+viewportSizeDecoder : Decode.Decoder Point
+viewportSizeDecoder =
+    Decode.map2 Point
+        (Decode.at [ "currentTarget", "clientWidth" ] Decode.float)
+        (Decode.at [ "currentTarget", "clientHeight" ] Decode.float)
+
+
+wheelDeltaDecoder : Decode.Decoder Float
+wheelDeltaDecoder =
+    Decode.map2 normalizeWheelDelta
+        (Decode.field "deltaMode" Decode.int)
+        (Decode.field "deltaY" Decode.float)
+
+
+normalizeWheelDelta : Int -> Float -> Float
+normalizeWheelDelta mode delta =
+    case mode of
+        1 ->
+            delta * 16
+
+        2 ->
+            delta * 800
+
+        _ ->
+            delta
+
+
+navigationKeyDecoder : Decode.Decoder Msg
+navigationKeyDecoder =
+    Decode.field "key" Decode.string
+        |> Decode.andThen navigationKeyPressed
+
+
+navigationKeyPressed : String -> Decode.Decoder Msg
+navigationKeyPressed key =
+    if key == "Home" then
+        Decode.succeed HomePressed
+
+    else
+        Decode.fail "not a navigation key"
+
+
+preventDefault : Msg -> ( Msg, Bool )
+preventDefault msg =
+    ( msg, True )
+
+
 
 ----------------------------------------------------------------
 -- UPDATE --
@@ -780,10 +1473,24 @@ update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 update lobbyId msg model =
     case msg of
         UnloadUnitToggled id checked ->
-            ( { model | phase = TurnLifecycle.mapPlanning (PlanningState.toggleUnloadPassenger id checked) model.phase }, E.none )
+            ( { model
+                | phase =
+                    TurnLifecycle.mapPlanning
+                        (PlanningState.toggleUnloadPassenger id checked)
+                        model.phase
+              }
+            , E.none
+            )
 
         UnloadChoicesConfirmed ->
-            ( { model | phase = TurnLifecycle.mapPlanning (PlanningState.confirmUnloadPassengers (unloadOptions model)) model.phase }, E.none )
+            ( { model
+                | phase =
+                    TurnLifecycle.mapPlanning
+                        (PlanningState.confirmUnloadPassengers (unloadOptions model))
+                        model.phase
+              }
+            , E.none
+            )
 
         UnloadSkipped ->
             clearSelection (dismissDialog model) |> E.withOut
@@ -791,55 +1498,217 @@ update lobbyId msg model =
         CargoUnitClicked id ->
             selectUnit id (clearSelection model) |> E.withOut
 
-        BoardMsg boardMsg ->
+        MousePressed point ->
             let
                 next : Model
                 next =
-                    handleBoardMsg boardMsg model
-
-                effect : Eff Msg
-                effect =
-                    case ( unloadChoice model.phase, unloadChoice next.phase ) of
-                        ( Nothing, Just _ ) ->
-                            E.toJs (ToJs.OpenDialog { htmlId = unloadDialogId })
-
-                        _ ->
-                            E.none
+                    { model
+                        | pointerGesture = PointerGesture.press { start = point, origin = model.offset }
+                    }
             in
-            ( next, effect )
+            finishBoardInteraction model next
 
-        ViewportMsg viewportMsg ->
-            ( handleViewportMsg viewportMsg model, E.none )
+        MouseMoved point buttons ->
+            let
+                next : Model
+                next =
+                    if buttons == 0 then
+                        { model | pointerGesture = PointerGesture.finish model.pointerGesture }
+
+                    else
+                        pan point model
+            in
+            finishBoardInteraction model next
+
+        MouseReleased point ->
+            let
+                next : Model
+                next =
+                    let
+                        moved : Model
+                        moved =
+                            pan point model
+                    in
+                    { moved | pointerGesture = PointerGesture.finish moved.pointerGesture }
+            in
+            finishBoardInteraction model next
+
+        WindowVisibilityChanged _ ->
+            let
+                next : Model
+                next =
+                    { model | pointerGesture = PointerGesture.finish model.pointerGesture }
+            in
+            finishBoardInteraction model next
+
+        WheelScrolled anchor delta ->
+            let
+                next : Model
+                next =
+                    zoomAt anchor (e ^ (negate (clamp -100 100 delta) * 0.002)) model
+            in
+            finishBoardInteraction model next
+
+        HomePressed ->
+            let
+                next : Model
+                next =
+                    resetViewport model
+            in
+            finishBoardInteraction model next
+
+        RotationChoicesMsg rotationMsg ->
+            let
+                next : Model
+                next =
+                    case rotationMsg of
+                        RotationChoices.MouseMovedOverDirection direction ->
+                            previewRotation direction model
+
+                        RotationChoices.ClickedDirection direction ->
+                            if PointerGesture.suppressesClick model.pointerGesture then
+                                model
+
+                            else
+                                saveRotation direction model
+            in
+            finishBoardInteraction model next
+
+        ClickedUnit id click ->
+            let
+                next : Model
+                next =
+                    if click.detail /= 0 && PointerGesture.suppressesClick model.pointerGesture then
+                        model
+
+                    else
+                        selectUnit id model
+            in
+            finishBoardInteraction model next
+
+        PressedEnterOnUnit id ->
+            let
+                next : Model
+                next =
+                    let
+                        confirmsSelectedUnitPreview : Bool
+                        confirmsSelectedUnitPreview =
+                            pathPreview model /= Nothing && Maybe.map .id (selectedUnit model) == Just id
+                    in
+                    if confirmsSelectedUnitPreview then
+                        confirmPath model
+
+                    else
+                        selectUnit id model
+            in
+            finishBoardInteraction model next
+
+        PressedSpaceOnUnit id ->
+            let
+                next : Model
+                next =
+                    selectUnit id model
+            in
+            finishBoardInteraction model next
+
+        MouseOverUnit id ->
+            let
+                next : Model
+                next =
+                    if planningLocked model then
+                        model
+
+                    else
+                        model.board.units
+                            |> ListUtil.find (\unit -> unit.id == id)
+                            |> Maybe.andThen Unit.boardPosition
+                            |> Maybe.map (\position -> previewTile position model)
+                            |> Maybe.withDefault model
+            in
+            finishBoardInteraction model next
+
+        ClickedDepot position click ->
+            let
+                next : Model
+                next =
+                    if click.detail /= 0 && PointerGesture.suppressesClick model.pointerGesture then
+                        model
+
+                    else
+                        selectTile position model
+            in
+            finishBoardInteraction model next
+
+        PressedEnterOnDepot position ->
+            let
+                next : Model
+                next =
+                    selectTile position model
+            in
+            finishBoardInteraction model next
+
+        PressedSpaceOnDepot position ->
+            let
+                next : Model
+                next =
+                    selectTile position model
+            in
+            finishBoardInteraction model next
+
+        MouseOverDepot position ->
+            let
+                next : Model
+                next =
+                    if planningLocked model then
+                        model
+
+                    else
+                        previewTile position model
+            in
+            finishBoardInteraction model next
+
+        ClickedTile position click ->
+            let
+                next : Model
+                next =
+                    if click.detail /= 0 && PointerGesture.suppressesClick model.pointerGesture then
+                        model
+
+                    else
+                        selectTile position model
+            in
+            finishBoardInteraction model next
+
+        PressedEnterOnTile position ->
+            let
+                next : Model
+                next =
+                    selectTile position model
+            in
+            finishBoardInteraction model next
+
+        PressedSpaceOnTile position ->
+            let
+                next : Model
+                next =
+                    selectTile position model
+            in
+            finishBoardInteraction model next
+
+        MouseOverTile position ->
+            let
+                next : Model
+                next =
+                    if planningLocked model then
+                        model
+
+                    else
+                        previewTile position model
+            in
+            finishBoardInteraction model next
 
         UnitCommandsMsg commandMsg ->
-            case commandMsg of
-                UnitCommands.MenuPressed ->
-                    ( model, E.none )
-
-                UnitCommands.CancelClicked ->
-                    clearSelection model |> E.withOut
-
-                UnitCommands.CommandFocused command ->
-                    case ( currentSelection model, commandMenuUnit model ) of
-                        ( Just (UnitSelection selection), Just _ ) ->
-                            case selection.interaction of
-                                CommandMenu _ ->
-                                    ( setSelection (Just (UnitSelection { selection | interaction = CommandMenu (Just command) })) model, E.none )
-
-                                _ ->
-                                    ( model, E.none )
-
-                        _ ->
-                            ( model, E.none )
-
-                UnitCommands.CommandPicked command ->
-                    applyCommand lobbyId command model |> E.withOut
-
-                UnitCommands.ArrowedUpCommandMenu current ->
-                    ( model, focusAdjacentCommand List.reverse (Just current) model )
-
-                UnitCommands.ArrowedDownCommandMenu current ->
-                    ( model, focusAdjacentCommand identity (Just current) model )
+            handleCommandMsg commandMsg model
 
         PreviousCommandPressed ->
             ( model, focusAdjacentCommand List.reverse (focusedCommand model) model )
@@ -917,7 +1786,15 @@ update lobbyId msg model =
 
             else
                 ( { model
-                    | phase = TurnLifecycle.setOrders (List.filter (\plan -> Just plan.unitId /= Maybe.map .id (selectedUnit model)) (plannedOrders model)) model.phase
+                    | phase =
+                        TurnLifecycle.setOrders
+                            (List.filter
+                                (\plan ->
+                                    Just plan.unitId /= Maybe.map .id (selectedUnit model)
+                                )
+                                (plannedOrders model)
+                            )
+                            model.phase
                   }
                     |> restoreCommands
                 , E.none
@@ -942,8 +1819,13 @@ update lobbyId msg model =
                 submitTurn lobbyId model
 
             else
-                ( { model | phase = TurnLifecycle.mapPlanning PlanningState.showSubmissionWarning model.phase }
-                , E.toJs (ToJs.OpenDialog { htmlId = partialOrdersDialogId })
+                ( { model
+                    | phase =
+                        TurnLifecycle.mapPlanning
+                            PlanningState.showSubmissionWarning
+                            model.phase
+                  }
+                , E.toJs (ToJs.OpenDialog { htmlId = partialOrdersDialogHtmlId })
                 )
 
         DialogDismissed ->
@@ -964,7 +1846,13 @@ update lobbyId msg model =
             else
                 case result of
                     Ok snapshot ->
-                        { model | phase = TurnLifecycle.finishSubmission turnNumber model.phase, turnError = Nothing }
+                        { model
+                            | phase =
+                                TurnLifecycle.finishSubmission
+                                    turnNumber
+                                    model.phase
+                            , turnError = Nothing
+                        }
                             |> receiveSnapshot snapshot
                             |> E.withOut
 
@@ -1006,11 +1894,16 @@ update lobbyId msg model =
                     )
 
         PlaybackFrameElapsed delta ->
+            let
+                board : Board
+                board =
+                    model.board
+            in
             case TurnLifecycle.tick delta model.phase of
                 Just next ->
                     ( { model
                         | phase = next.phase
-                        , board = GameBoard.setUnits next.frame.units model.board
+                        , board = { board | units = next.frame.units }
                         , visibleTiles = next.frame.visibleTiles
                       }
                     , E.none
@@ -1025,127 +1918,52 @@ update lobbyId msg model =
             )
 
 
-handleViewportMsg : Viewport.Msg -> Model -> Model
-handleViewportMsg viewportMsg model =
-    case viewportMsg of
-        Viewport.MousePressed point ->
-            { model
-                | drag = Just (Drag.startAt { start = point, origin = model.offset })
-                , suppressClick = False
-            }
+handleCommandMsg : UnitCommands.Msg -> Model -> ( Model, Eff Msg )
+handleCommandMsg commandMsg model =
+    case commandMsg of
+        UnitCommands.MenuPressed ->
+            ( model, E.none )
 
-        Viewport.MouseMoved point buttons ->
-            if buttons == 0 then
-                { model | drag = Nothing }
+        UnitCommands.CancelClicked ->
+            clearSelection model |> E.withOut
 
-            else
-                pan point model
+        UnitCommands.CommandFocused command ->
+            case ( currentSelection model, commandMenuUnit model ) of
+                ( Just (UnitSelection selection), Just _ ) ->
+                    case selection.interaction of
+                        CommandMenu _ ->
+                            ( setSelection
+                                (Just
+                                    (UnitSelection
+                                        { selection
+                                            | interaction =
+                                                CommandMenu (Just command)
+                                        }
+                                    )
+                                )
+                                model
+                            , E.none
+                            )
 
-        Viewport.MouseReleased point ->
-            let
-                moved : Model
-                moved =
-                    pan point model
-            in
-            { moved | drag = Nothing }
+                        _ ->
+                            ( model, E.none )
 
-        Viewport.WindowVisibilityChanged _ ->
-            { model | drag = Nothing }
+                _ ->
+                    ( model, E.none )
 
-        Viewport.WheelScrolled anchor delta ->
-            zoomAt anchor (e ^ (negate (clamp -100 100 delta) * 0.002)) model
+        UnitCommands.CommandPicked command ->
+            applyCommand command model
+                |> E.withOut
 
-        Viewport.HomePressed ->
-            resetViewport model
+        UnitCommands.ArrowedUpCommandMenu current ->
+            ( model
+            , focusAdjacentCommand List.reverse (Just current) model
+            )
 
-
-handleBoardMsg : GameBoard.Msg -> Model -> Model
-handleBoardMsg boardMsg model =
-    case boardMsg of
-        GameBoard.RotationChoicesMsg rotationMsg ->
-            case rotationMsg of
-                RotationChoices.MouseMovedOverDirection direction ->
-                    previewRotation direction model
-
-                RotationChoices.ClickedDirection direction ->
-                    if model.suppressClick then
-                        model
-
-                    else
-                        saveRotation direction model
-
-        GameBoard.ClickedUnit id click ->
-            if click.detail /= 0 && model.suppressClick then
-                model
-
-            else
-                selectUnit id model
-
-        GameBoard.PressedEnterOnUnit id ->
-            let
-                confirmsSelectedUnitPreview : Bool
-                confirmsSelectedUnitPreview =
-                    pathPreview model /= Nothing && Maybe.map .id (selectedUnit model) == Just id
-            in
-            if confirmsSelectedUnitPreview then
-                confirmPath model
-
-            else
-                selectUnit id model
-
-        GameBoard.PressedSpaceOnUnit id ->
-            selectUnit id model
-
-        GameBoard.MouseOverUnit id ->
-            if planningLocked model then
-                model
-
-            else
-                model.board.units
-                    |> ListUtil.find (\unit -> unit.id == id)
-                    |> Maybe.andThen Unit.boardPosition
-                    |> Maybe.map (\position -> previewTile position model)
-                    |> Maybe.withDefault model
-
-        GameBoard.ClickedDepot position click ->
-            if click.detail /= 0 && model.suppressClick then
-                model
-
-            else
-                selectTile position model
-
-        GameBoard.PressedEnterOnDepot position ->
-            selectTile position model
-
-        GameBoard.PressedSpaceOnDepot position ->
-            selectTile position model
-
-        GameBoard.MouseOverDepot position ->
-            if planningLocked model then
-                model
-
-            else
-                previewTile position model
-
-        GameBoard.ClickedTile position click ->
-            if click.detail /= 0 && model.suppressClick then
-                model
-
-            else
-                selectTile position model
-
-        GameBoard.PressedEnterOnTile position ->
-            selectTile position model
-
-        GameBoard.PressedSpaceOnTile position ->
-            selectTile position model
-
-        GameBoard.MouseOverTile position ->
-            if planningLocked model then
-                model
-
-            else
-                previewTile position model
+        UnitCommands.ArrowedDownCommandMenu current ->
+            ( model
+            , focusAdjacentCommand identity (Just current) model
+            )
 
 
 
@@ -1175,25 +1993,7 @@ view model =
                 , S.col
                 ]
             ]
-            [ Viewport.toHtml ViewportMsg
-                model
-                (GameBoard.toHtml
-                    { frame = model.frame
-                    , rotation = rotationSelection model
-                    , visibleTiles = model.visibleTiles
-                    , choosingDestination = pathPreview model /= Nothing || isChoosingUnload model
-                    , moving = TurnPlayback.movingPositions (playback model)
-                    , selected = selectedPosition model
-                    , reachable = List.map .destination (moveOptions model)
-                    , paths = List.map PlannedOrder.path (plannedOrders model)
-                    , orderedUnits = List.map .unitId (plannedOrders model)
-                    , unloads = plannedUnloadRoutes model
-                    , previewPath = pathPreview model |> Maybe.map .path |> Maybe.withDefault []
-                    }
-                    model.board
-                    |> H.map BoardMsg
-                )
-                (commandMenu model)
+            [ boardView model
             , turnPanel model
             ]
         , H.aside
@@ -1219,69 +2019,17 @@ view model =
     ]
 
 
-plannedUnloadRoutes : Model -> List GameBoard.UnloadRoute
-plannedUnloadRoutes model =
-    let
-        truckUnloads : PlannedOrder -> List GameBoard.UnloadRoute
-        truckUnloads plan =
-            let
-                route : UnloadOrder -> Maybe GameBoard.UnloadRoute
-                route unload =
-                    let
-                        withDirection : Direction -> GameBoard.UnloadRoute
-                        withDirection direction =
-                            { origin = PlannedOrder.destination plan
-                            , direction = direction
-                            }
-                    in
-                    Direction.between (PlannedOrder.destination plan) unload.destination
-                        |> Maybe.map withDirection
-            in
-            List.filterMap route (PlannedOrder.unloads plan)
-    in
-    List.concatMap truckUnloads (plannedOrders model)
-
-
-focusedCommand : Model -> Maybe UnitCommands.MenuOption
-focusedCommand model =
-    case currentSelection model of
-        Just (UnitSelection selection) ->
-            case selection.interaction of
-                CommandMenu focused ->
-                    focused
-
-                ChoosingMove _ ->
-                    Nothing
-
-                ChoosingDirection _ ->
-                    Nothing
-
-        _ ->
-            Nothing
-
-
-commandMenuUnit : Model -> Maybe Unit
-commandMenuUnit model =
-    case ( currentSelection model, hasDialog model ) of
-        ( Just (UnitSelection { interaction }), False ) ->
-            case interaction of
-                CommandMenu _ ->
-                    selectedUnit model
-
-                _ ->
-                    Nothing
-
-        _ ->
-            Nothing
-
-
 commandMenu : Model -> Html Msg
 commandMenu model =
     case commandMenuUnit model of
         Just unit ->
             case Unit.physicalPosition model.board.units unit of
                 Just position ->
-                    UnitCommands.toHtml model.board.map { offset = model.offset, zoom = model.zoom } position unit
+                    UnitCommands.toHtml
+                        model.board.map
+                        { offset = model.offset, zoom = model.zoom }
+                        position
+                        unit
                         |> H.map UnitCommandsMsg
 
                 Nothing ->
@@ -1289,50 +2037,6 @@ commandMenu model =
 
         Nothing ->
             H.text ""
-
-
-applyCommand : LobbyId -> UnitCommand.Command -> Model -> Model
-applyCommand lobbyId command model =
-    case commandMenuUnit model of
-        Just unit ->
-            let
-                canApply : Bool
-                canApply =
-                    isOwnUnit model unit
-                        && not (planningLocked model)
-                        && not (receivingLoad unit model)
-                        && List.member command (UnitCommand.available unit)
-                        && UnitCommand.isImplemented command
-            in
-            if canApply then
-                case command of
-                    UnitCommand.Move ->
-                        beginMovement unit model
-
-                    UnitCommand.Rotate ->
-                        setSelection
-                            (Just (UnitSelection { id = unit.id, interaction = ChoosingDirection (Maybe.withDefault Facing.North unit.direction) }))
-                            model
-
-                    UnitCommand.HoldPosition ->
-                        case holdOrder model.board.units unit of
-                            Just hold ->
-                                { model
-                                    | phase = TurnLifecycle.setOrders (hold :: List.filter (\plan -> plan.unitId /= unit.id) (plannedOrders model)) model.phase
-                                }
-                                    |> inspectSelectedUnit
-
-                            Nothing ->
-                                model
-
-                    _ ->
-                        model
-
-            else
-                model
-
-        _ ->
-            model
 
 
 selectionView : Model -> Html Msg
@@ -1414,50 +2118,6 @@ panelFooter model =
         ]
 
 
-selectedUnit : Model -> Maybe Unit
-selectedUnit model =
-    case currentSelection model of
-        Just (Inspecting (UnitInspection id)) ->
-            ListUtil.find (\unit -> unit.id == id) model.board.units
-
-        Just (UnitSelection selection) ->
-            ListUtil.find (\unit -> unit.id == selection.id) model.board.units
-
-        _ ->
-            Nothing
-
-
-selectedPosition : Model -> Maybe Coordinate
-selectedPosition model =
-    case unloadPlanning model.phase of
-        Just planning ->
-            Just planning.truck.plan.move.destination
-
-        Nothing ->
-            inspectionPosition model
-
-
-inspectionPosition : Model -> Maybe Coordinate
-inspectionPosition model =
-    case currentSelection model of
-        Just (Inspecting (TileInspection position)) ->
-            Just position
-
-        Just (Inspecting (UnitInspection _)) ->
-            Maybe.andThen Unit.boardPosition (selectedUnit model)
-
-        Just (UnitSelection _) ->
-            Maybe.andThen Unit.boardPosition (selectedUnit model)
-
-        Nothing ->
-            Nothing
-
-
-isOwnUnit : Model -> Unit -> Bool
-isOwnUnit model unit =
-    List.any (\player -> player.isYou && player.side == unit.side) model.players
-
-
 movementView : Model -> Html Msg
 movementView model =
     let
@@ -1520,24 +2180,27 @@ movementView model =
 unitOrderView : Model -> Unit -> List (Html Msg)
 unitOrderView model unit =
     let
-        budget : String
-        budget =
-            let
-                ruleAppliesToUnit : Movement.Rule -> Bool
-                ruleAppliesToUnit rule =
-                    rule.kind == unit.kind
-            in
-            model.movementRules
-                |> ListUtil.find ruleAppliesToUnit
-                |> Maybe.map (.budget >> Movement.pointsLabel)
-                |> Maybe.withDefault "?"
-
-        planned : Maybe PlannedOrder
-        planned =
-            ListUtil.find (\plan -> plan.unitId == unit.id) (plannedOrders model)
+        maybePlan : Maybe PlannedOrder
+        maybePlan =
+            ListUtil.find
+                (\plan -> plan.unitId == unit.id)
+                (plannedOrders model)
     in
-    case ( pathPreview model, planned ) of
+    case ( pathPreview model, maybePlan ) of
         ( Just preview, _ ) ->
+            let
+                budget : String
+                budget =
+                    let
+                        ruleAppliesToUnit : Movement.Rule -> Bool
+                        ruleAppliesToUnit rule =
+                            rule.kind == unit.kind
+                    in
+                    model.movementRules
+                        |> ListUtil.find ruleAppliesToUnit
+                        |> Maybe.map (.budget >> Movement.pointsLabel)
+                        |> Maybe.withDefault "?"
+            in
             [ H.p
                 []
                 [ H.text "choose a destination on the map"
@@ -1580,37 +2243,40 @@ unitOrderView model unit =
 
                 orderDetails : List (Html Msg)
                 orderDetails =
-                    [ H.h3 [] [ H.text (chosenOrderText model unit plan) ]
-                    , Button.secondary "revoke order" ClearMoveClicked |> Button.toHtml
+                    let
+                        chosenOrderText : String
+                        chosenOrderText =
+                            case plan.action of
+                                PlannedOrder.Hold _ ->
+                                    "hold position"
+
+                                PlannedOrder.Rotate rotation ->
+                                    "rotate: " ++ Direction.label rotation.direction
+
+                                PlannedOrder.Move movePlan ->
+                                    if List.length movePlan.move.path <= 1 then
+                                        "hold position"
+
+                                    else
+                                        [ plannedAction model unit movePlan.move
+                                        , ": ("
+                                        , String.fromInt movePlan.move.destination.x
+                                        , ", "
+                                        , String.fromInt movePlan.move.destination.y
+                                        , ") · movement: "
+                                        , Movement.pointsLabel movePlan.move.cost
+                                        ]
+                                            |> String.concat
+                    in
+                    [ H.h3 [] [ H.text chosenOrderText ]
+                    , Button.secondary "revoke order" ClearMoveClicked
+                        |> Button.toHtml
                     ]
             in
             orderDetails ++ unloadDetails
 
         ( Nothing, Nothing ) ->
             []
-
-
-chosenOrderText : Model -> Unit -> PlannedOrder -> String
-chosenOrderText model unit order =
-    case order.action of
-        PlannedOrder.Hold _ ->
-            "hold position"
-
-        PlannedOrder.Rotate rotation ->
-            "rotate: " ++ Direction.label rotation.direction
-
-        PlannedOrder.Move plan ->
-            if List.length plan.move.path <= 1 then
-                "hold position"
-
-            else
-                plannedAction model unit plan.move
-                    ++ ": ("
-                    ++ String.fromInt plan.move.destination.x
-                    ++ ", "
-                    ++ String.fromInt plan.move.destination.y
-                    ++ ") · movement: "
-                    ++ Movement.pointsLabel plan.move.cost
 
 
 viewControls : Model -> Html Msg
@@ -1682,14 +2348,23 @@ selectionText model =
             ""
 
         Just position ->
-            if List.any (\depot -> depot.position == position) model.board.depots then
+            if
+                List.any
+                    (\depot ->
+                        depot.position == position
+                    )
+                    model.board.depots
+            then
                 "supply depot"
 
             else
                 Terrain.label (Map.terrainAt model.board.map position)
 
 
-loadFailedView : Graphql.Http.Error Flags -> { retry : msg, returnHome : msg } -> List (Html msg)
+loadFailedView :
+    Graphql.Http.Error Flags
+    -> { retry : msg, returnHome : msg }
+    -> List (Html msg)
 loadFailedView error events =
     let
         message : String
@@ -1728,180 +2403,6 @@ loadFailedView error events =
                 )
         ]
     ]
-
-
-viewportSubscriptions : Model -> Sub Msg
-viewportSubscriptions model =
-    case model.drag of
-        Nothing ->
-            Sub.none
-
-        Just _ ->
-            Sub.batch
-                [ Browser.Events.onMouseMove
-                    (Decode.map2 (\point buttons -> ViewportMsg (Viewport.MouseMoved point buttons)) Point.decoder (Decode.field "buttons" Decode.int))
-                , Browser.Events.onMouseUp (Decode.map (Viewport.MouseReleased >> ViewportMsg) Point.decoder)
-                , Browser.Events.onVisibilityChange (Viewport.WindowVisibilityChanged >> ViewportMsg)
-                ]
-
-
-traceTo : Coordinate -> Model -> Maybe Movement.Option
-traceTo position model =
-    case ( selectedUnit model, movementPlanning model ) of
-        ( Just unit, Just planning ) ->
-            if isOwnUnit model unit then
-                Movement.preview model.movementRules model.board unit planning.preview position
-
-            else
-                Nothing
-
-        _ ->
-            Nothing
-
-
-beginMovement : Unit -> Model -> Model
-beginMovement unit model =
-    case Unit.physicalPosition model.board.units unit of
-        Just origin ->
-            let
-                planning : MovePlanning
-                planning =
-                    { preview = Movement.start origin
-                    , options = Movement.options (reservedDestinations unit model) model.movementRules model.board unit
-                    , destinationFeedback = NoDestinationFeedback
-                    }
-            in
-            setSelection (Just (UnitSelection { id = unit.id, interaction = ChoosingMove planning }))
-                model
-
-        Nothing ->
-            model
-
-
-boardingSpace : Unit -> Unit -> Model -> Bool
-boardingSpace mover truck model =
-    let
-        alreadyAboard : Int
-        alreadyAboard =
-            List.length (List.filter (\unit -> Unit.carrierId unit == Just truck.id) model.board.units)
-
-        boarding : PlannedOrder -> Bool
-        boarding plan =
-            plan.unitId /= mover.id && PlannedOrder.isMoving plan && Just (PlannedOrder.destination plan) == Unit.boardPosition truck
-
-        truckMoving : Bool
-        truckMoving =
-            List.any (\plan -> plan.unitId == truck.id && PlannedOrder.isMoving plan) (plannedOrders model)
-
-        fitsCargo : Bool
-        fitsCargo =
-            alreadyAboard + List.length (List.filter boarding (plannedOrders model)) < truck.cargoCapacity
-
-        compatible : Bool
-        compatible =
-            Unit.boardPosition truck |> Maybe.andThen (Unit.loadingPartner model.board.units mover) |> (==) (Just truck)
-    in
-    compatible && not truckMoving && fitsCargo
-
-
-plannedAction : Model -> Unit -> Movement.Option -> String
-plannedAction model unit move =
-    if Unit.carrierId unit /= Nothing && List.length move.path > 1 then
-        "unload at"
-
-    else if Unit.loadingPartner model.board.units unit move.destination /= Nothing then
-        "load at"
-
-    else
-        "move to"
-
-
-reservedDestinations : Unit -> Model -> List Coordinate
-reservedDestinations unit model =
-    let
-        reserves : PlannedOrder -> Bool
-        reserves plan =
-            let
-                partner : Maybe Unit
-                partner =
-                    Unit.loadingPartner model.board.units unit (PlannedOrder.destination plan)
-
-                isWaitingPartner : Unit -> Bool
-                isWaitingPartner target =
-                    target.id == plan.unitId && not (receivingLoad target model && target.cargoCapacity == 0)
-
-                waitingPartner : Bool
-                waitingPartner =
-                    not (PlannedOrder.isMoving plan) && (partner |> Maybe.map isWaitingPartner |> Maybe.withDefault False)
-
-                boardingDestination : Bool
-                boardingDestination =
-                    partner |> Maybe.map (\target -> boardingSpace unit target model) |> Maybe.withDefault False
-            in
-            plan.unitId /= unit.id && not waitingPartner && not boardingDestination
-
-        unavailableReceiver : Unit -> Bool
-        unavailableReceiver target =
-            target.id /= unit.id && receivingLoad target model && not (boardingSpace unit target model)
-
-        unavailableReceivers : List Coordinate
-        unavailableReceivers =
-            model.board.units
-                |> List.filter unavailableReceiver
-                |> List.filterMap Unit.boardPosition
-
-        savedDestinations : List Coordinate
-        savedDestinations =
-            List.map PlannedOrder.destination (List.filter reserves (plannedOrders model))
-                ++ List.concatMap (PlannedOrder.unloads >> List.map .destination) (plannedOrders model)
-    in
-    savedDestinations ++ unavailableReceivers
-
-
-receivingLoad : Unit -> Model -> Bool
-receivingLoad unit model =
-    let
-        receives : PlannedOrder -> Bool
-        receives plan =
-            if not (PlannedOrder.isMoving plan) then
-                False
-
-            else
-                case ListUtil.find (\mover -> mover.id == plan.unitId) model.board.units of
-                    Just mover ->
-                        if Unit.carrierId mover == Just unit.id then
-                            True
-
-                        else
-                            Unit.loadingPartner model.board.units mover (PlannedOrder.destination plan) |> Maybe.map .id |> (==) (Just unit.id)
-
-                    Nothing ->
-                        False
-    in
-    List.any receives (plannedOrders model)
-
-
-saveMove : Unit -> Movement.Option -> Model -> List PlannedOrder
-saveMove unit move model =
-    let
-        receiver : Maybe Unit
-        receiver =
-            case Unit.carrierId unit of
-                Just carrier ->
-                    model.board.units |> ListUtil.find (\truck -> truck.id == carrier)
-
-                Nothing ->
-                    Unit.loadingPartner model.board.units unit move.destination
-
-        retained : List PlannedOrder
-        retained =
-            plannedOrders model |> List.filter (\plan -> plan.unitId /= unit.id && Just plan.unitId /= Maybe.map .id receiver)
-
-        receiverHold : List PlannedOrder
-        receiverHold =
-            receiver |> Maybe.andThen (holdOrder model.board.units) |> Maybe.map List.singleton |> Maybe.withDefault []
-    in
-    { unitId = unit.id, action = PlannedOrder.Move { move = move, unloads = [] } } :: receiverHold ++ retained
 
 
 cargoView : Model -> Unit -> Html Msg
@@ -1967,58 +2468,6 @@ transportDetails model unit =
     ]
 
 
-plannedOrders : Model -> List PlannedOrder
-plannedOrders model =
-    TurnLifecycle.orders model.phase
-
-
-playback : Model -> Maybe TurnPlayback.Playback
-playback model =
-    TurnLifecycle.playback model.phase
-
-
-planningLocked : Model -> Bool
-planningLocked model =
-    TurnLifecycle.planningLocked model.phase
-
-
-unitsWithoutOrders : Model -> List Unit
-unitsWithoutOrders model =
-    let
-        missingOrder : Unit -> Bool
-        missingOrder unit =
-            isOwnUnit model unit && Unit.onBoard unit && not (List.any (\plan -> plan.unitId == unit.id) (plannedOrders model))
-    in
-    List.filter missingOrder model.board.units
-
-
-readyToSubmit : Model -> Bool
-readyToSubmit model =
-    not (planningLocked model) && List.isEmpty (unitsWithoutOrders model)
-
-
-submitTurn : LobbyId -> Model -> ( Model, Eff Msg )
-submitTurn lobbyId model =
-    let
-        phase : Phase
-        phase =
-            TurnLifecycle.startSubmission model.turnNumber model.phase
-    in
-    case ( model.phase, phase ) of
-        ( TurnLifecycle.Planning _, TurnLifecycle.Submitting _ ) ->
-            ( { model | phase = phase, turnError = Nothing }
-            , E.request (SubmitResponseReceived model.turnNumber) (submitRequest lobbyId model)
-            )
-
-        _ ->
-            ( model, E.none )
-
-
-unloadDialogId : String
-unloadDialogId =
-    "unload-passengers"
-
-
 unloadChecklist : Model -> UnloadChoice -> Dialog Msg
 unloadChecklist model choice =
     let
@@ -2058,100 +2507,7 @@ unloadChecklist model choice =
         content =
             choices ++ [ actions ]
     in
-    Dialog.make unloadDialogId "unload" DialogDismissed content
-
-
-unloadChoice : Phase -> Maybe UnloadChoice
-unloadChoice phase =
-    TurnLifecycle.planning phase |> Maybe.andThen PlanningState.unloadChoice
-
-
-unloadPlanning : Phase -> Maybe UnloadPlanning
-unloadPlanning phase =
-    TurnLifecycle.planning phase |> Maybe.andThen PlanningState.unloadPlanning
-
-
-isChoosingUnload : Model -> Bool
-isChoosingUnload model =
-    unloadPlanning model.phase /= Nothing
-
-
-openUnloadPrompt : Unit -> Movement.Option -> Model -> Model
-openUnloadPrompt truck move model =
-    let
-        hasPassengers : Bool
-        hasPassengers =
-            List.any (\passenger -> Unit.carrierId passenger == Just truck.id) model.board.units
-    in
-    if hasPassengers then
-        { model
-            | phase =
-                TurnLifecycle.mapPlanning
-                    (PlanningState.startUnload truck.id move)
-                    model.phase
-        }
-
-    else
-        model
-
-
-dismissDialog : Model -> Model
-dismissDialog model =
-    { model
-        | phase = TurnLifecycle.mapPlanning PlanningState.dismissDialog model.phase
-    }
-
-
-unloadOptions : Model -> PlanningState -> UnitId -> List Movement.Option
-unloadOptions model state passengerId =
-    case PlanningState.unloadPlanning state of
-        Just planning ->
-            let
-                projectTruck : Unit -> Unit
-                projectTruck unit =
-                    if unit.id == planning.truck.truckId then
-                        Unit.setOnMap planning.truck.plan.move.destination unit
-
-                    else
-                        unit
-
-                projected : GameBoard
-                projected =
-                    { map = model.board.map, units = List.map projectTruck model.board.units, depots = model.board.depots }
-
-                next : Model
-                next =
-                    { model | phase = TurnLifecycle.Planning state }
-            in
-            case ListUtil.find (\unit -> unit.id == passengerId) projected.units of
-                Just passenger ->
-                    Movement.options (reservedDestinations passenger next) model.movementRules projected passenger
-
-                Nothing ->
-                    []
-
-        Nothing ->
-            []
-
-
-chooseUnloadSquare : Coordinate -> Model -> Model
-chooseUnloadSquare destination model =
-    { model
-        | phase =
-            TurnLifecycle.mapPlanning
-                (PlanningState.saveUnloadDestination (unloadOptions model) destination)
-                model.phase
-    }
-
-
-partialOrdersDialogId : String
-partialOrdersDialogId =
-    "submit-turn-warning"
-
-
-hasDialog : Model -> Bool
-hasDialog model =
-    dialog model /= Nothing
+    Dialog.make unloadDialogHtmlId "unload" DialogDismissed content
 
 
 {-| The active planning alternative determines the dialog; no dialog state is stored.
@@ -2185,7 +2541,7 @@ submissionWarning model =
                 String.fromInt missingCount
                     ++ " units have no orders. they will hold position if you submit this turn."
     in
-    Dialog.make partialOrdersDialogId
+    Dialog.make partialOrdersDialogHtmlId
         "units without orders"
         DialogDismissed
         [ H.p
@@ -2206,86 +2562,6 @@ submissionWarning model =
                 |> Button.toHtml
             ]
         ]
-
-
-holdOrder : List Unit -> Unit -> Maybe PlannedOrder
-holdOrder units unit =
-    Unit.physicalPosition units unit
-        |> Maybe.map (\position -> { unitId = unit.id, action = PlannedOrder.Hold position })
-
-
-submitRequest : LobbyId -> Model -> Graphql.Http.Request Snapshot
-submitRequest lobbyId model =
-    let
-        missingOrder : Unit -> Bool
-        missingOrder unit =
-            isOwnUnit model unit && not (List.any (\plan -> plan.unitId == unit.id) (plannedOrders model))
-
-        defaultHolds : List PlannedOrder
-        defaultHolds =
-            model.board.units |> List.filter missingOrder |> List.filterMap (holdOrder model.board.units)
-
-        orders : List PlannedOrder
-        orders =
-            plannedOrders model ++ defaultHolds
-    in
-    Api.Mutation.submitTurn
-        { id = LobbyId.toString lobbyId
-        , turnNumber = model.turnNumber
-        , orders = List.map PlannedOrder.toInput orders
-        }
-        snapshotSelection
-        |> ApiRequest.mutationRequest
-
-
-receiveSnapshot : Snapshot -> Model -> Model
-receiveSnapshot snapshot model =
-    if snapshot.turn.number < model.turnNumber then
-        model
-
-    else if snapshot.turn.number == model.turnNumber then
-        let
-            phase : Phase
-            phase =
-                if snapshot.turn.submitted then
-                    TurnLifecycle.observeSubmission True model.phase
-
-                else
-                    model.phase
-
-            next : Model
-            next =
-                { model
-                    | opponentSubmitted = model.opponentSubmitted || snapshot.turn.opponentSubmitted
-                    , turnResolution = snapshot.turn.resolution
-                    , phase = phase
-                }
-        in
-        if snapshot.turn.submitted then
-            if isChoosingUnload model then
-                clearSelection next
-
-            else
-                next
-
-        else
-            next
-
-    else
-        let
-            frame : TurnPlayback.Frame
-            frame =
-                TurnPlayback.initial snapshot.playbackFrames { units = snapshot.board.units, visibleTiles = snapshot.visibleTiles }
-        in
-        { model
-            | turnNumber = snapshot.turn.number
-            , opponentSubmitted = snapshot.turn.opponentSubmitted
-            , turnResolution = snapshot.turn.resolution
-            , board = GameBoard.setUnits frame.units snapshot.board
-            , visibleTiles = frame.visibleTiles
-            , phase = TurnLifecycle.startTurn snapshot.turn.submitted snapshot.playbackFrames
-            , turnError = Nothing
-        }
 
 
 turnPanel : Model -> Html Msg
@@ -2437,6 +2713,562 @@ resolutionSummary model =
         [ H.text summary ]
 
 
+boardView : Model -> Html Msg
+boardView model =
+    let
+        cursorStyle : Css.Style
+        cursorStyle =
+            if PointerGesture.active model.pointerGesture then
+                Css.cursor Css.grabbing
+
+            else
+                Css.cursor Css.grab
+    in
+    H.div
+        [ A.attribute "tabindex" "0"
+        , A.attribute "aria-label" "battlefield navigation"
+        , A.css
+            [ S.relative
+            , S.flex1
+            , S.minW0
+            , S.hFull
+            , S.row
+            , S.itemsCenter
+            , S.justifyCenter
+            , S.overflowHidden
+            , S.userSelectNone
+            , Css.property "container-type" "size"
+            , cursorStyle
+            ]
+        , HtmlEvents.on "mousedown" mousePressedDecoder
+        , HtmlEvents.preventDefaultOn "wheel"
+            (Decode.map preventDefault wheelScrolledDecoder)
+        , HtmlEvents.preventDefaultOn "keydown"
+            (Decode.map preventDefault navigationKeyDecoder)
+        ]
+        [ H.div
+            [ A.css
+                [ S.relative
+                , Css.property "width" "min(80%, 76vh)"
+                , S.shrink0
+                , Css.property "transform"
+                    ("translate(" ++ String.fromFloat model.offset.x ++ "px, " ++ String.fromFloat model.offset.y ++ "px) scale(" ++ String.fromFloat model.zoom ++ ")")
+                ]
+            ]
+            [ boardHtml model
+            ]
+        , commandMenu model
+        ]
+
+
+at : Coordinate -> List (Svg msg) -> Svg msg
+at position children =
+    Svg.g
+        [ SA.transform ("translate(" ++ String.fromInt (position.x * 16) ++ " " ++ String.fromInt (position.y * 16) ++ ")")
+        ]
+        children
+
+
+boardHtml : Model -> Html Msg
+boardHtml model =
+    let
+        board : Board
+        board =
+            model.board
+
+        rotationPreview : Maybe RotationSelection
+        rotationPreview =
+            rotationSelection model
+
+        visibleTiles : List Coordinate
+        visibleTiles =
+            model.visibleTiles
+
+        choosingDestination : Bool
+        choosingDestination =
+            pathPreview model /= Nothing || isChoosingUnload model
+
+        reachable : List Coordinate
+        reachable =
+            List.map .destination (moveOptions model)
+
+        paths : List (List Coordinate)
+        paths =
+            List.map PlannedOrder.path (plannedOrders model)
+
+        orderedUnits : List UnitId
+        orderedUnits =
+            List.map .unitId (plannedOrders model)
+
+        unloads : List UnloadRoute
+        unloads =
+            plannedUnloadRoutes model
+
+        previewedPath : List Coordinate
+        previewedPath =
+            pathPreview model |> Maybe.map .path |> Maybe.withDefault []
+
+        movingPositions : List { unitId : UnitId, position : Point }
+        movingPositions =
+            TurnPlayback.movingPositions (playback model)
+
+        selected : Maybe Coordinate
+        selected =
+            selectedPosition model
+
+        tileTarget : Coordinate -> Svg Msg
+        tileTarget position =
+            let
+                baseAttributes : List (Svg.Attribute Msg)
+                baseAttributes =
+                    [ SA.width "16"
+                    , SA.height "16"
+                    , SA.fill "transparent"
+                    , SA.stroke S.nightwood2Str
+                    , SA.strokeOpacity "0.22"
+                    , SA.strokeWidth "0.25"
+                    , Ev.onMouseOver (MouseOverTile position)
+                    , onClickWithDetail (ClickedTile position)
+                    ]
+
+                movementAttributes : List (Svg.Attribute Msg)
+                movementAttributes =
+                    if List.member position reachable then
+                        [ HA.attribute "tabindex" "0"
+                        , HA.attribute "role" "button"
+                        , HA.attribute "aria-label" ("move to (" ++ String.fromInt position.x ++ ", " ++ String.fromInt position.y ++ ")")
+                        , onKeyDown
+                            { pressedEnter = PressedEnterOnTile position
+                            , pressedSpace = PressedSpaceOnTile position
+                            }
+                        ]
+
+                    else
+                        []
+            in
+            at position
+                [ Svg.rect
+                    (baseAttributes ++ movementAttributes)
+                    []
+                ]
+
+        terrainFilter : Coordinate -> String
+        terrainFilter position =
+            let
+                visibilityFilters : List String
+                visibilityFilters =
+                    if List.member position visibleTiles then
+                        []
+
+                    else
+                        [ "saturate(0.18) brightness(0.58)" ]
+
+                unavailable : Bool
+                unavailable =
+                    choosingDestination
+                        && not (List.member position reachable)
+                        && selected
+                        /= Just position
+
+                destinationFilters : List String
+                destinationFilters =
+                    if unavailable then
+                        [ "brightness(0.6)" ]
+
+                    else
+                        []
+
+                filters : List String
+                filters =
+                    visibilityFilters ++ destinationFilters
+            in
+            if List.isEmpty filters then
+                "none"
+
+            else
+                String.join " " filters
+
+        depotView : Depot -> Svg Msg
+        depotView depot =
+            at depot.position
+                [ Svg.image
+                    [ SA.width "16"
+                    , SA.height "16"
+                    , SA.xlinkHref "/assets/supply-depot-illustrated-v1.png"
+                    , HA.style "filter" (terrainFilter depot.position)
+                    , HA.style "image-rendering" "auto"
+                    , SA.pointerEvents "none"
+                    , HA.attribute "aria-hidden" "true"
+                    ]
+                    []
+                , Svg.rect
+                    [ SA.width "16"
+                    , SA.height "16"
+                    , SA.fill "transparent"
+                    , HA.attribute "tabindex" "0"
+                    , HA.attribute "role" "button"
+                    , HA.attribute "aria-label" "supply depot"
+                    , Ev.onMouseOver (MouseOverDepot depot.position)
+                    , onClickWithDetail (ClickedDepot depot.position)
+                    , onKeyDown
+                        { pressedEnter = PressedEnterOnDepot depot.position
+                        , pressedSpace = PressedSpaceOnDepot depot.position
+                        }
+                    ]
+                    [ Svg.title
+                        []
+                        [ Svg.text "supply depot"
+                        ]
+                    ]
+                ]
+
+        unitView : Unit -> Coordinate -> Svg Msg
+        unitView unit position =
+            let
+                aboardThisTruck : Unit -> Bool
+                aboardThisTruck passenger =
+                    Unit.carrierId passenger == Just unit.id
+
+                passengerCount : Int
+                passengerCount =
+                    if unit.kind == UnitKind.Truck then
+                        List.length (List.filter aboardThisTruck board.units)
+
+                    else
+                        0
+
+                accessibleLabel : String
+                accessibleLabel =
+                    if passengerCount > 0 then
+                        Unit.label unit ++ ", cargo: " ++ String.fromInt passengerCount ++ " / " ++ String.fromInt unit.cargoCapacity
+
+                    else
+                        Unit.label unit
+
+                spriteFilter : String
+                spriteFilter =
+                    if List.member unit.id orderedUnits then
+                        "brightness(0.6)"
+
+                    else
+                        "none"
+
+                previewUnit : Unit
+                previewUnit =
+                    case rotationPreview of
+                        Just rotation ->
+                            if rotation.unitId == unit.id then
+                                { unit | direction = Just rotation.direction }
+
+                            else
+                                unit
+
+                        Nothing ->
+                            unit
+
+                facingClass : String
+                facingClass =
+                    if Maybe.map .unitId rotationPreview == Just unit.id then
+                        "fightlines-rotation-preview"
+
+                    else
+                        ""
+
+                transform : String
+                transform =
+                    case ListUtil.find (\moving -> moving.unitId == unit.id) movingPositions of
+                        Just moving ->
+                            "translate(" ++ String.fromFloat (moving.position.x * 16) ++ " " ++ String.fromFloat (moving.position.y * 16) ++ ")"
+
+                        Nothing ->
+                            "translate(" ++ String.fromInt (position.x * 16) ++ " " ++ String.fromInt (position.y * 16) ++ ")"
+            in
+            Svg.g
+                [ SA.transform transform
+                , SA.class facingClass
+                ]
+                [ Svg.g
+                    [ HA.style "filter" spriteFilter
+                    ]
+                    [ UnitSprite.toSvg (AnimationFrame.unitColumn model.frame unit.id) unit
+                        |> StyledSvg.toUnstyled
+                    ]
+                , UnitFacing.toSvg (selected == Just position) previewUnit
+                    |> StyledSvg.toUnstyled
+                , UnitCargo.toSvg passengerCount
+                    |> StyledSvg.toUnstyled
+                , Svg.rect
+                    [ SA.width "16"
+                    , SA.height "16"
+                    , SA.fill "transparent"
+                    , HA.attribute "tabindex" "0"
+                    , HA.attribute "role" "button"
+                    , HA.attribute "aria-label" accessibleLabel
+                    , Ev.onMouseOver (MouseOverUnit unit.id)
+                    , onClickWithDetail (ClickedUnit unit.id)
+                    , onKeyDown
+                        { pressedEnter = PressedEnterOnUnit unit.id
+                        , pressedSpace = PressedSpaceOnUnit unit.id
+                        }
+                    ]
+                    [ Svg.title
+                        []
+                        [ Svg.text accessibleLabel
+                        ]
+                    ]
+                ]
+
+        positions : List Coordinate
+        positions =
+            Map.positions board.map
+
+        terrainTile : Coordinate -> Svg Msg
+        terrainTile position =
+            let
+                fogAttributes : List (Svg.Attribute Msg)
+                fogAttributes =
+                    if List.member position visibleTiles then
+                        []
+
+                    else
+                        [ HA.attribute "data-fog" "unseen"
+                        ]
+
+                appearanceAttributes : List (Svg.Attribute Msg)
+                appearanceAttributes =
+                    [ HA.style "filter" (terrainFilter position)
+                    , SA.pointerEvents "none"
+                    ]
+            in
+            Svg.g
+                (appearanceAttributes ++ fogAttributes)
+                [ at position
+                    [ TerrainTile.toSvg
+                        { theme = board.map.theme
+                        , terrain = Map.terrainAt board.map position
+                        }
+                        |> StyledSvg.toUnstyled
+                    ]
+                ]
+
+        terrain : Svg Msg
+        terrain =
+            Svg.g
+                [ HA.style "image-rendering" "auto"
+                ]
+                (List.map terrainTile positions)
+
+        reachableTile : Coordinate -> Svg Msg
+        reachableTile position =
+            at position
+                [ Svg.rect
+                    [ SA.x "1"
+                    , SA.y "1"
+                    , SA.width "14"
+                    , SA.height "14"
+                    , SA.fill S.yellow5Str
+                    , SA.fillOpacity "0.12"
+                    , SA.stroke S.yellow5Str
+                    , SA.strokeOpacity "0.65"
+                    , SA.strokeWidth "0.5"
+                    ]
+                    []
+                ]
+
+        pathPoint : Coordinate -> String
+        pathPoint position =
+            String.fromInt (position.x * 16 + 8)
+                ++ ","
+                ++ String.fromInt (position.y * 16 + 8)
+
+        pathPoints : List Coordinate -> String
+        pathPoints path =
+            path
+                |> List.map pathPoint
+                |> String.join " "
+
+        destinationMarker : Coordinate -> Svg Msg
+        destinationMarker position =
+            at position
+                [ Svg.circle
+                    [ SA.cx "8"
+                    , SA.cy "8"
+                    , SA.r "2"
+                    , SA.fill S.yellow5Str
+                    ]
+                    []
+                ]
+
+        plannedPath : List Coordinate -> List (Svg Msg)
+        plannedPath path =
+            let
+                route : List (Svg Msg)
+                route =
+                    [ Svg.polyline
+                        [ SA.points (pathPoints path)
+                        , SA.fill "none"
+                        , SA.stroke S.yellow5Str
+                        , SA.strokeWidth "1.25"
+                        , SA.strokeDasharray "2 1"
+                        ]
+                        []
+                    ]
+
+                destination : List (Svg Msg)
+                destination =
+                    path
+                        |> List.reverse
+                        |> List.head
+                        |> Maybe.map destinationMarker
+                        |> Maybe.map List.singleton
+                        |> Maybe.withDefault []
+            in
+            route ++ destination
+
+        previewPath : List Coordinate -> List (Svg Msg)
+        previewPath path =
+            if List.length path > 1 then
+                [ Svg.polyline
+                    [ SA.points (pathPoints path)
+                    , SA.fill "none"
+                    , SA.stroke S.yellow5Str
+                    , SA.strokeWidth "1.5"
+                    ]
+                    []
+                ]
+
+            else
+                []
+
+        movementOverlay : Svg Msg
+        movementOverlay =
+            let
+                reachableTiles : List (Svg Msg)
+                reachableTiles =
+                    List.map reachableTile reachable
+
+                plannedPaths : List (Svg Msg)
+                plannedPaths =
+                    List.concatMap plannedPath paths
+
+                preview : List (Svg Msg)
+                preview =
+                    previewPath previewedPath
+            in
+            Svg.g
+                [ SA.pointerEvents "none"
+                , HA.attribute "aria-hidden" "true"
+                ]
+                (reachableTiles ++ plannedPaths ++ preview)
+
+        unloadRoute : UnloadRoute -> Svg Msg
+        unloadRoute route =
+            let
+                destination : Coordinate
+                destination =
+                    Direction.step route.origin route.direction
+            in
+            Svg.g
+                []
+                [ Svg.polyline
+                    [ SA.points (pathPoints [ route.origin, destination ])
+                    , SA.fill "none"
+                    , SA.stroke S.yellow5Str
+                    , SA.strokeWidth "1.25"
+                    ]
+                    []
+                , at destination
+                    [ Svg.polygon
+                        [ SA.points "8,5 11,8 8,11 5,8"
+                        , SA.fill S.nightwood2Str
+                        , SA.stroke S.yellow5Str
+                        , SA.strokeWidth "1.25"
+                        ]
+                        []
+                    ]
+                ]
+
+        unloadOverlay : Svg Msg
+        unloadOverlay =
+            Svg.g
+                [ SA.pointerEvents "none"
+                , HA.attribute "aria-hidden" "true"
+                , HA.attribute "data-planned-unloads" (String.fromInt (List.length unloads))
+                ]
+                (List.map unloadRoute unloads)
+
+        rotationOverlay : List (Svg Msg)
+        rotationOverlay =
+            case rotationPreview of
+                Just rotation ->
+                    [ RotationChoices.toSvg board.map rotation.position rotation.direction
+                        |> Svg.map RotationChoicesMsg
+                    ]
+
+                Nothing ->
+                    []
+
+        selection : List (Svg Msg)
+        selection =
+            selected
+                |> Maybe.map selectionMarker
+                |> Maybe.map List.singleton
+                |> Maybe.withDefault []
+    in
+    H.div
+        [ A.css
+            [ S.wFull
+            , Css.Global.descendants
+                [ Css.Global.selector "rect[role=button]"
+                    [ Css.outline Css.none
+                    , Css.pseudoClass "focus-visible"
+                        [ Css.property "outline" ("0.5px solid " ++ S.yellow5Str)
+                        , Css.property "outline-offset" "-1px"
+                        , Css.property "border-radius" "0"
+                        ]
+                    ]
+                ]
+            ]
+        ]
+        [ Svg.svg
+            [ SA.viewBox ("0 0 " ++ String.fromInt (board.map.width * 16) ++ " " ++ String.fromInt (board.map.height * 16))
+            , SA.width "100%"
+            , HA.attribute "role" "group"
+            , HA.attribute "aria-label" "battlefield"
+            ]
+            (List.concat
+                [ [ terrain, movementOverlay ]
+                , List.map tileTarget positions
+                , List.map depotView board.depots
+                , List.filterMap (\unit -> Unit.boardPosition unit |> Maybe.map (unitView unit)) board.units
+                , [ unloadOverlay ]
+                , selection
+                , rotationOverlay
+                ]
+            )
+            |> H.fromUnstyled
+        ]
+
+
+selectionMarker : Coordinate -> Svg Msg
+selectionMarker position =
+    at position
+        [ Svg.rect
+            [ SA.x "0.75"
+            , SA.y "0.75"
+            , SA.width "14.5"
+            , SA.height "14.5"
+            , SA.fill "none"
+            , SA.stroke S.yellow5Str
+            , SA.strokeOpacity "0.8"
+            , SA.strokeWidth "0.5"
+            , SA.pointerEvents "none"
+            , HA.attribute "aria-hidden" "true"
+            ]
+            []
+        ]
+
+
 
 ----------------------------------------------------------------
 -- SUBSCRIPTIONS --
@@ -2546,5 +3378,23 @@ subscriptions model =
 
           else
             Sub.none
-        , viewportSubscriptions model
+        , viewportSubscriptions model.pointerGesture
         ]
+
+
+viewportSubscriptions : PointerGesture -> Sub Msg
+viewportSubscriptions pointerGesture =
+    if PointerGesture.active pointerGesture then
+        Sub.batch
+            [ Browser.Events.onMouseMove
+                (Decode.map2
+                    MouseMoved
+                    Point.decoder
+                    (Decode.field "buttons" Decode.int)
+                )
+            , Browser.Events.onMouseUp (Decode.map MouseReleased Point.decoder)
+            , Browser.Events.onVisibilityChange WindowVisibilityChanged
+            ]
+
+    else
+        Sub.none

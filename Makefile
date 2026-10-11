@@ -23,6 +23,7 @@ check:
 	node tools/check-turns.cjs
 	node tools/check-orders.cjs
 	node tools/check-lifecycle.cjs
+	node tools/check-pointer.cjs
 	$(MAKE) frontend
 	elm make src/Style.elm src/View/*.elm --output=/dev/null
 

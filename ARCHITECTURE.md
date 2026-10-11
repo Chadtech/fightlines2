@@ -124,9 +124,9 @@ page listeners rather than adding ports.
 The backend serves the frontend on the same origin, so no development proxy or
 CORS configuration is required.
 
-`GameBoard` defines board data (map, depots, and units), renders the board, and
-emits interaction messages. `GamePage` owns interaction state and handles those
-messages; `GameBoard` has no interaction model or update function.
+`Board` defines only shared domain data (map, depots, and units) for movement and
+turn calculations. `GamePage` owns board rendering, camera controls, interaction
+state, and all board and camera events directly in its page message type.
 
 ## GraphQL and generated client
 
@@ -226,20 +226,24 @@ popup stops mouse presses from starting a battlefield drag.
 
 `GamePage` owns unit/tile selection and an explicit four-state `AnimationFrame`.
 Board data types live in `Coordinate`, `TerrainFeature`, `Map`, `Depot`, `Unit`
-and `GameBoard`; the view composes them without owning domain data.
+and its local board view; the view composes them without owning domain data.
 `View.Sprite` clips atlas cells using named sheet dimensions and coordinates,
 using styled SVG. `View.UnitSprite` owns the shared unit atlas, kind/side row
 mapping, and facing for both animated board units and static status portraits.
-`GamePage` also owns local camera offset, zoom, drag and click-suppression fields,
-and handles viewport events directly. `View.BoardViewport` owns only the view
-and event messages. Control-panel button messages live in `GamePage`; button and
+`GamePage` also owns local camera offset, zoom, and an opaque `PointerGesture`,
+and handles camera events directly. `GamePage` renders the board together with
+its camera surface and command overlay, and exposes one message type for board
+and camera events. Control-panel button messages live in `GamePage`; button and
 window arrow commands share pan functions; window plus/minus commands share zoom
-functions, and the viewport Home handler shares the reset function. The viewport wraps the pure board renderer in a pan/zoom surface beside a
+functions, and the Home handler shares the reset function. The board appears beside a
 full-height right panel containing selection details and resolution information.
 `GamePage.turnPanel` overlays fixed-size game controls at the battlefield's bottom-left
 edge, with the submit action beside turn status and camera controls below.
-Mouse movement/release subscriptions run only during a drag. A 6px drag threshold
-suppresses mouse selection in the page update, while keyboard activation remains
+The gesture transitions from idle to pressed to panning, then retains click
+suppression after release until a fresh press or viewport reset. Zoom and lost
+mouse/visibility events finish the gesture while preserving suppression.
+Mouse movement/release subscriptions run only while pressed or panning. A 6px
+drag threshold suppresses mouse selection in the page update, while keyboard activation remains
 independent. Wheel zoom uses the battlefield dimensions to anchor to the cursor; button zoom anchors to the viewport
 center, and reset restores the initial centered view. Camera changes never alter
 authoritative board coordinates or the selected tile.
@@ -269,7 +273,7 @@ derives its active dialog through `GamePage.dialog : Model -> Maybe (Dialog Msg)
 into application messages. `Main.view` renders the optional dialog through
 `View.Dialog.toHtml`, which creates the native modal; dialogs are not part of
 the individual page's view content.
-`GameBoard` renders raster sprite-sheet cells in nested SVG viewports;
+`GamePage` renders raster sprite-sheet cells in nested SVG viewports;
 terrain, depots, units, and an inset SVG selection square are separate layers. Player 2's
 infantry, tanks and field guns initially face west and player 1's east. Trucks have no direction or facing marker. Movement updates stored direction
 from the last traversed path edge; holds and conflicts preserve it. `View.UnitFacing` overlays inset edge markers
@@ -301,7 +305,7 @@ Field guns use four complete drawn howitzer poses and color-only team sheets
 in `artwork/units/illustrated/rigged/field-gun/drawn-{neutral,red,blue}/`. Their
 exporter registers complete drawings against wheel anchors, then packs them
 without articulated body cutouts.
-`GameBoard` offsets the four-frame cycle using each unit's stable ID so
+`GamePage` offsets the four-frame cycle using each unit's stable ID so
 units do not animate in unison. The exporter also retains the older generated
 pose atlases and legacy pixel-art depot atlases. Terrain renders one 16px grass image per coordinate, then transparent
 16px hills/forest overlays in their own cells, with subtle grid strokes above.
@@ -366,7 +370,7 @@ destinations for that unit; other units cannot choose those squares, but can
 travel through them. Replacing or clearing a draft releases
 its old destination. The selected unit’s own draft does not restrict its choices.
 Drafts do not change occupancy. Reachable tiles and planned paths render in
-`GameBoard`, with keyboard activation for reachable destinations.
+`GamePage`, with keyboard activation for reachable destinations.
 Unsubmitted drafts disappear on reload. `turns.rs` owns full-path validation,
 locked submissions and deterministic resolution, independently of HTTP. Each
 submission includes the expected turn number and exactly one move/hold order per
@@ -414,7 +418,7 @@ server-projected initial frame and advances one unit through its entire route
 before starting the next, at 180ms per path edge. Frames contain the observable
 units and sight mask at each tile boundary. It interpolates units observed at both ends
 of an edge, updates facing during movement, and applies transport transitions
-after movement. Fractional presentation positions go only to `GameBoard`.
+after movement. Fractional presentation positions go only to `GamePage`.
 Refresh starts directly at
 the completed snapshot; it does not replay old turns. Same-turn polling preserves
 local drafts and monotonic submission flags. Page response messages retain the
@@ -491,7 +495,7 @@ events: one unit completes its path at a time, then loading and unloading apply.
 enemies and the side's current sight mask. Hidden paths remain withheld from
 the summary events; transient sightings are carried by frames rather than by
 complete enemy paths. Stored units and authoritative movement validation still use the complete board. `GamePage` stores the mask
-and refreshes it at each playback tile boundary; `GameBoard` darkens and desaturates unseen
+and refreshes it at each playback tile boundary; `GamePage` darkens and desaturates unseen
 terrain and known depots
 with the same image filter, preserving artwork detail and crisp tile boundaries.
 Both players receive the same timeline timing with their own projected visibility.
@@ -551,7 +555,7 @@ events walk a passenger onto the board. Event initial carrier IDs restore cargo
 when rewinding, and load carrier IDs identify the truck. Playback applies those
 events as location transitions; riding positions are derived from the truck.
 Supply delivery cargo remains future work.
-`GameBoard` counts passengers from the current board's `Aboard` locations
+`GamePage` counts passengers from the current board's `Aboard` locations
 and overlays `View.UnitCargo` on loaded trucks, outside the sprite's order-dimming
 filter and side-mirroring transform. Load/unload playback therefore updates the
 badge without additional state. Its component owns the synchronized opacity

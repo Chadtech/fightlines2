@@ -1,5 +1,6 @@
 module Map exposing
     ( Map
+    , positions
     , selection
     , terrainAt
     )
@@ -21,6 +22,16 @@ type alias Map =
     , theme : MapTheme
     , features : List TerrainFeature
     }
+
+
+positions : Map -> List Coordinate
+positions map =
+    List.range 0 (map.height - 1)
+        |> List.concatMap
+            (\y ->
+                List.range 0 (map.width - 1)
+                    |> List.map (\x -> { x = x, y = y })
+            )
 
 
 terrainAt : Map -> Coordinate -> Terrain

@@ -14,9 +14,9 @@ module Movement exposing
 import Api.Enum.Side exposing (Side)
 import Api.Enum.Terrain exposing (Terrain)
 import Api.Enum.UnitKind exposing (UnitKind)
+import Board exposing (Board)
 import Coordinate exposing (Coordinate)
 import Dict exposing (Dict)
-import GameBoard exposing (GameBoard)
 import ListUtil
 import Map
 import Unit exposing (Unit)
@@ -63,13 +63,13 @@ pointsLabel points =
            )
 
 
-options : List Coordinate -> List Rule -> GameBoard -> Unit -> List Option
+options : List Coordinate -> List Rule -> Board -> Unit -> List Option
 options reserved rules board unit =
     optionsAvoiding [] rules board unit
         |> List.filter (canStop reserved board unit)
 
 
-optionsAvoiding : List Coordinate -> List Rule -> GameBoard -> Unit -> List Option
+optionsAvoiding : List Coordinate -> List Rule -> Board -> Unit -> List Option
 optionsAvoiding blocked rules board unit =
     case ( ListUtil.find (\rule -> rule.kind == unit.kind) rules, Unit.physicalPosition board.units unit ) of
         ( Just rule, Just origin ) ->
@@ -166,7 +166,7 @@ Units without a resource movement limit use zero for that third component.
 Keeping costs for each path length preserves short routes through expensive terrain.
 Costs are stored in half movement points, independently of fuel.
 -}
-search : Maybe Int -> Rule -> GameBoard -> List Coordinate -> Side -> List Option -> Dict ( Int, Int, Int ) Int -> List Option -> List Option
+search : Maybe Int -> Rule -> Board -> List Coordinate -> Side -> List Option -> Dict ( Int, Int, Int ) Int -> List Option -> List Option
 search limit rule board blocked side frontier costs reached =
     case List.sortBy .cost frontier of
         [] ->
@@ -271,7 +271,7 @@ start position =
     }
 
 
-trace : List Rule -> GameBoard -> Unit -> Option -> Coordinate -> Maybe Option
+trace : List Rule -> Board -> Unit -> Option -> Coordinate -> Maybe Option
 trace rules board unit current destination =
     let
         rule : Maybe Rule
@@ -354,7 +354,7 @@ takeThrough destination path =
                 position :: takeThrough destination rest
 
 
-canStop : List Coordinate -> GameBoard -> Unit -> Option -> Bool
+canStop : List Coordinate -> Board -> Unit -> Option -> Bool
 canStop reserved board mover option =
     let
         occupied : Bool
@@ -372,7 +372,7 @@ canStop reserved board mover option =
     option.cost > 0 && not reservedDestination && (not occupied || canLoad)
 
 
-preview : List Rule -> GameBoard -> Unit -> Option -> Coordinate -> Maybe Option
+preview : List Rule -> Board -> Unit -> Option -> Coordinate -> Maybe Option
 preview rules board unit current destination =
     case trace rules board unit current destination of
         Just path ->

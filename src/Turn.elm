@@ -17,9 +17,9 @@ import Api.Object.Coordinate as CoordinateApi
 import Api.Object.GameSnapshot as GameApi
 import Api.Object.TurnEvent as EventApi
 import Api.Object.TurnResolution as ResolutionApi
+import Board exposing (Board)
 import Coordinate exposing (Coordinate)
 import Direction
-import GameBoard exposing (GameBoard)
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import ListUtil
 import Point exposing (Point)
@@ -119,7 +119,7 @@ nonempty playback =
         Just playback
 
 
-rewind : Snapshot -> GameBoard -> GameBoard
+rewind : Snapshot -> Board -> Board
 rewind snapshot board =
     let
         resetUnit : Unit -> Unit
@@ -148,7 +148,7 @@ rewind snapshot board =
 
 {-| Each path edge takes 180ms. Only one event plays at a time.
 -}
-tick : Float -> Playback -> GameBoard -> ( Maybe Playback, GameBoard )
+tick : Float -> Playback -> Board -> ( Maybe Playback, Board )
 tick delta playback board =
     case playback.events of
         [] ->

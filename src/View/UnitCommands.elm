@@ -65,7 +65,7 @@ toHtml map camera position unit =
 
         anchor : String -> Float -> Float -> String
         anchor center offset fraction =
-            -- Match BoardViewport's centered board width, then apply its camera.
+            -- Match GamePage's centered board width, then apply its camera.
             "calc(" ++ center ++ " + min(80cqw, 76vh) * " ++ String.fromFloat (fraction * camera.zoom) ++ " + " ++ String.fromFloat offset ++ "px)"
 
         horizontalOffset : String
