@@ -97,7 +97,9 @@ import View.UnloadPassenger as UnloadPassenger
 
 
 type alias Model =
-    { turn : TurnDetails
+    { turnNumber : Int
+    , opponentSubmitted : Bool
+    , turnResolution : Maybe Turn.Resolution
     , phase : Phase
     , dialog : Maybe Dialog
     , refreshing : Bool
@@ -135,13 +137,6 @@ type alias Player =
     { name : String
     , side : Side
     , isYou : Bool
-    }
-
-
-type alias TurnDetails =
-    { number : Int
-    , opponentSubmitted : Bool
-    , resolution : Maybe Turn.Resolution
     }
 
 
@@ -247,7 +242,9 @@ type alias Flags =
 
 init : Shared.Model -> Flags -> Model
 init shared flags =
-    { turn = turnDetails flags.snapshot.turn
+    { turnNumber = flags.snapshot.turn.number
+    , opponentSubmitted = flags.snapshot.turn.opponentSubmitted
+    , turnResolution = flags.snapshot.turn.resolution
     , phase =
         TurnLifecycle.observeSubmission
             flags.snapshot.turn.submitted
@@ -398,14 +395,6 @@ previewRotation direction model =
 
         _ ->
             model
-
-
-turnDetails : Turn.Snapshot -> TurnDetails
-turnDetails snapshot =
-    { number = snapshot.number
-    , opponentSubmitted = snapshot.opponentSubmitted
-    , resolution = snapshot.resolution
-    }
 
 
 movementStatusText : MovementStatus -> String
@@ -981,7 +970,7 @@ update lobbyId msg model =
                 ( model, E.none )
 
         SubmitResponseReceived turnNumber result ->
-            if turnNumber /= model.turn.number then
+            if turnNumber /= model.turnNumber then
                 ( model, E.none )
 
             else
@@ -2050,12 +2039,12 @@ submitTurn lobbyId model =
     case model.phase of
         Planning drafts ->
             ( { model
-                | phase = Submitting { turnNumber = model.turn.number, orders = drafts }
+                | phase = Submitting { turnNumber = model.turnNumber, orders = drafts }
                 , dialog = Nothing
                 , turnError = Nothing
                 , selected = resetCommandMenu model.selected
               }
-            , E.request (SubmitResponseReceived model.turn.number) (submitRequest lobbyId model)
+            , E.request (SubmitResponseReceived model.turnNumber) (submitRequest lobbyId model)
             )
 
         _ ->
@@ -2300,7 +2289,7 @@ submitRequest lobbyId model =
     in
     Api.Mutation.submitTurn
         { id = LobbyId.toString lobbyId
-        , turnNumber = model.turn.number
+        , turnNumber = model.turnNumber
         , orders = List.map PlannedOrder.toInput orders
         }
         snapshotSelection
@@ -2309,19 +2298,16 @@ submitRequest lobbyId model =
 
 receiveSnapshot : Snapshot -> Model -> Model
 receiveSnapshot snapshot model =
-    if snapshot.turn.number < model.turn.number then
+    if snapshot.turn.number < model.turnNumber then
         model
 
-    else if snapshot.turn.number == model.turn.number then
+    else if snapshot.turn.number == model.turnNumber then
         let
-            turn : TurnDetails
-            turn =
-                turnDetails snapshot.turn
-
             next : Model
             next =
                 { model
-                    | turn = { turn | opponentSubmitted = model.turn.opponentSubmitted || turn.opponentSubmitted }
+                    | opponentSubmitted = model.opponentSubmitted || snapshot.turn.opponentSubmitted
+                    , turnResolution = snapshot.turn.resolution
                     , phase = TurnLifecycle.observeSubmission snapshot.turn.submitted model.phase
                 }
         in
@@ -2343,7 +2329,9 @@ receiveSnapshot snapshot model =
         in
         { model
             | dialog = Nothing
-            , turn = turnDetails snapshot.turn
+            , turnNumber = snapshot.turn.number
+            , opponentSubmitted = snapshot.turn.opponentSubmitted
+            , turnResolution = snapshot.turn.resolution
             , board = GameBoard.setUnits frame.units snapshot.board
             , visibleTiles = frame.visibleTiles
             , phase = TurnLifecycle.startTurn snapshot.turn.submitted snapshot.playbackFrames
@@ -2364,7 +2352,7 @@ turnPanel model =
         status =
             case model.phase of
                 Playing _ ->
-                    "playing turn " ++ String.fromInt (model.turn.number - 1)
+                    "playing turn " ++ String.fromInt (model.turnNumber - 1)
 
                 Submitting _ ->
                     "submitting orders…"
@@ -2400,7 +2388,7 @@ turnPanel model =
                     "waiting for the other player"
 
                 _ ->
-                    if model.turn.opponentSubmitted then
+                    if model.opponentSubmitted then
                         "other player: submitted"
 
                     else
@@ -2439,7 +2427,7 @@ turnPanel model =
         content : List (Html Msg)
         content =
             [ H.p [ A.attribute "role" "status" ]
-                [ H.text ("turn " ++ String.fromInt model.turn.number ++ " · " ++ status) ]
+                [ H.text ("turn " ++ String.fromInt model.turnNumber ++ " · " ++ status) ]
             , H.p [] [ H.text opponentStatus ]
             ]
     in
@@ -2492,7 +2480,7 @@ resolutionSummary model =
     let
         summary : String
         summary =
-            case model.turn.resolution of
+            case model.turnResolution of
                 Nothing ->
                     ""
 
