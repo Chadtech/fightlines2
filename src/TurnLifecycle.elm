@@ -1,25 +1,38 @@
 module TurnLifecycle exposing
     ( Phase(..)
+    , PlanningState
     , Submission
     , canPoll
+    , editing
     , finishSubmission
+    , initPlanningState
     , observeSubmission
     , orders
+    , planningLocked
     , playback
+    , setEditing
     , setOrders
     , startTurn
     , tick
+    , toLabel
     )
 
+import GamePage.EditingSelection exposing (EditingSelection)
 import PlannedOrder exposing (PlannedOrder)
 import TurnPlayback
 
 
 type Phase
-    = Planning (List PlannedOrder)
+    = Planning PlanningState
     | Submitting Submission
     | WaitingForOpponent (List PlannedOrder)
     | Playing PlaybackState
+
+
+type alias PlanningState =
+    { orders : List PlannedOrder
+    , editing : Maybe EditingSelection
+    }
 
 
 type alias PlaybackState =
@@ -39,11 +52,34 @@ type alias Submission =
     }
 
 
+initPlanningState : PlanningState
+initPlanningState =
+    { orders = []
+    , editing = Nothing
+    }
+
+
+toLabel : Phase -> String
+toLabel phase =
+    case phase of
+        Playing _ ->
+            "playing turn…"
+
+        Submitting _ ->
+            "submitting…"
+
+        WaitingForOpponent _ ->
+            "turn submitted"
+
+        Planning _ ->
+            "submit turn"
+
+
 orders : Phase -> List PlannedOrder
 orders phase =
     case phase of
-        Planning drafts ->
-            drafts
+        Planning planning ->
+            planning.orders
 
         Submitting submission ->
             submission.orders
@@ -55,11 +91,50 @@ orders phase =
             []
 
 
+planningLocked : Phase -> Bool
+planningLocked phase =
+    case phase of
+        Planning _ ->
+            False
+
+        Submitting _ ->
+            True
+
+        WaitingForOpponent _ ->
+            True
+
+        Playing _ ->
+            True
+
+
 setOrders : List PlannedOrder -> Phase -> Phase
 setOrders drafts phase =
     case phase of
-        Planning _ ->
-            Planning drafts
+        Planning planning ->
+            Planning { planning | orders = drafts }
+
+        _ ->
+            phase
+
+
+{-| Editable page interactions exist only while planning. Locking orders or
+starting playback discards them without requiring the page to clear fields.
+-}
+editing : Phase -> Maybe EditingSelection
+editing phase =
+    case phase of
+        Planning planning ->
+            planning.editing
+
+        _ ->
+            Nothing
+
+
+setEditing : Maybe EditingSelection -> Phase -> Phase
+setEditing interaction phase =
+    case phase of
+        Planning planning ->
+            Planning { planning | editing = interaction }
 
         _ ->
             phase
@@ -73,7 +148,7 @@ finishSubmission turnNumber phase =
     case phase of
         Submitting submission ->
             if submission.turnNumber == turnNumber then
-                Planning submission.orders
+                Planning { orders = submission.orders, editing = Nothing }
 
             else
                 phase
@@ -86,8 +161,8 @@ observeSubmission : Bool -> Phase -> Phase
 observeSubmission submitted phase =
     if submitted then
         case phase of
-            Planning drafts ->
-                WaitingForOpponent drafts
+            Planning planning ->
+                WaitingForOpponent planning.orders
 
             Submitting submission ->
                 WaitingForOpponent submission.orders
@@ -133,7 +208,7 @@ startTurn submitted frames =
     let
         ready : Phase
         ready =
-            observeSubmission submitted (Planning [])
+            observeSubmission submitted (Planning initPlanningState)
 
         afterPlayback : AfterPlayback
         afterPlayback =
@@ -163,7 +238,7 @@ tick delta phase =
                 ready =
                     case playing.afterPlayback of
                         StartPlanning ->
-                            Planning []
+                            Planning initPlanningState
 
                         WaitForOpponent ->
                             WaitingForOpponent []

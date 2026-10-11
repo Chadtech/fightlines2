@@ -45,6 +45,14 @@ import Effect as E
         ( Eff
         )
 import GameBoard exposing (GameBoard)
+import GamePage.EditingSelection
+    exposing
+        ( EditingSelection(..)
+        , MovePlanning
+        , SelectedUnit
+        , UnitInteraction(..)
+        , UnloadPlanning
+        )
 import Graphql.Http
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import Html.Styled as H
@@ -74,7 +82,7 @@ import Style as S
 import Terrain
 import Time
 import Turn
-import TurnLifecycle exposing (Phase(..))
+import TurnLifecycle exposing (Phase)
 import TurnPlayback
 import Unit exposing (Unit)
 import UnitCommand
@@ -112,7 +120,7 @@ type alias Model =
     , visibleTiles : List Coordinate
     , movementRules : List Movement.Rule
     , movementStatus : MovementStatus
-    , selected : Maybe Selection
+    , inspection : Maybe Inspection
     , offset : Point
     , zoom : Float
     , drag : Maybe Drag
@@ -141,35 +149,15 @@ type alias Player =
 
 
 type Selection
-    = UnitSelection SelectedUnit
+    = InspectingUnit UnitId
+    | UnitSelection SelectedUnit
     | TileSelection Coordinate
     | UnloadSelection UnloadPlanning
 
 
-type alias SelectedUnit =
-    { id : UnitId
-    , interaction : UnitInteraction
-    }
-
-
-type UnitInteraction
-    = CommandMenu (Maybe UnitCommands.MenuOption)
-    | ChoosingMove MovePlanning
-    | ChoosingDirection Direction
-
-
-type alias MovePlanning =
-    { preview : Movement.Option
-    , options : List Movement.Option
-    }
-
-
-type alias UnloadPlanning =
-    { truckId : UnitId
-    , passengerId : UnitId
-    , remaining : List UnitId
-    , options : List Movement.Option
-    }
+type Inspection
+    = UnitInspection UnitId
+    | TileInspection Coordinate
 
 
 type alias UnloadChoice =
@@ -248,7 +236,7 @@ init shared flags =
     , phase =
         TurnLifecycle.observeSubmission
             flags.snapshot.turn.submitted
-            (Planning [])
+            (TurnLifecycle.Planning TurnLifecycle.initPlanningState)
     , dialog = Nothing
     , refreshing = False
     , turnError = Nothing
@@ -260,7 +248,7 @@ init shared flags =
     , visibleTiles = flags.snapshot.visibleTiles
     , movementRules = flags.snapshot.movementRules
     , movementStatus = NoMovementStatus
-    , selected = Nothing
+    , inspection = Nothing
     , offset = { x = 0, y = 0 }
     , zoom = 1
     , drag = Nothing
@@ -294,19 +282,111 @@ setShared shared model =
 ----------------------------------------------------------------
 
 
-resetCommandMenu : Maybe Selection -> Maybe Selection
-resetCommandMenu selection =
-    case selection of
-        Just (UnitSelection unit) ->
-            Just (UnitSelection { unit | interaction = CommandMenu Nothing })
+currentSelection : Model -> Maybe Selection
+currentSelection model =
+    case TurnLifecycle.editing model.phase of
+        Just (EditingUnit unit) ->
+            Just (UnitSelection unit)
 
-        _ ->
-            selection
+        Just (EditingUnload planning) ->
+            Just (UnloadSelection planning)
+
+        Nothing ->
+            case model.inspection of
+                Just (UnitInspection id) ->
+                    Just (InspectingUnit id)
+
+                Just (TileInspection position) ->
+                    Just (TileSelection position)
+
+                Nothing ->
+                    Nothing
+
+
+setSelection : Maybe Selection -> Model -> Model
+setSelection selected model =
+    let
+        inspection : Maybe Inspection
+        inspection =
+            case selected of
+                Just (InspectingUnit id) ->
+                    Just (UnitInspection id)
+
+                Just (UnitSelection unit) ->
+                    Just (UnitInspection unit.id)
+
+                Just (UnloadSelection planning) ->
+                    Just (UnitInspection planning.passengerId)
+
+                Just (TileSelection position) ->
+                    Just (TileInspection position)
+
+                Nothing ->
+                    Nothing
+
+        editing : Maybe EditingSelection
+        editing =
+            case selected of
+                Just (UnitSelection unit) ->
+                    Just (EditingUnit unit)
+
+                Just (UnloadSelection planning) ->
+                    Just (EditingUnload planning)
+
+                _ ->
+                    Nothing
+    in
+    { model
+        | inspection = inspection
+        , phase = TurnLifecycle.setEditing editing model.phase
+    }
+
+
+inspectSelectedUnit : Model -> Model
+inspectSelectedUnit model =
+    case selectedUnit model of
+        Just unit ->
+            setSelection (Just (InspectingUnit unit.id)) model
+
+        Nothing ->
+            model
+
+
+restoreCommands : Model -> Model
+restoreCommands model =
+    case selectedUnit model of
+        Just unit ->
+            setSelection (Just (unitSelection unit model)) model
+
+        Nothing ->
+            model
+
+
+unitSelection : Unit -> Model -> Selection
+unitSelection unit model =
+    let
+        hasOrder : Bool
+        hasOrder =
+            List.any (\order -> order.unitId == unit.id) (plannedOrders model)
+
+        canChooseCommand : Bool
+        canChooseCommand =
+            isOwnUnit model unit
+                && Unit.onBoard unit
+                && not (planningLocked model)
+                && not (receivingLoad unit model)
+                && not hasOrder
+    in
+    if canChooseCommand then
+        UnitSelection { id = unit.id, interaction = CommandMenu Nothing }
+
+    else
+        InspectingUnit unit.id
 
 
 choosingDirection : Model -> Bool
 choosingDirection model =
-    case model.selected of
+    case currentSelection model of
         Just (UnitSelection selection) ->
             case selection.interaction of
                 ChoosingDirection _ ->
@@ -346,8 +426,8 @@ saveRotation direction model =
                         in
                         { model
                             | phase = TurnLifecycle.setOrders (rotation :: List.filter (\plan -> plan.unitId /= unit.id) (plannedOrders model)) model.phase
-                            , selected = resetCommandMenu model.selected
                         }
+                            |> inspectSelectedUnit
 
                     Nothing ->
                         model
@@ -361,7 +441,7 @@ saveRotation direction model =
 
 rotationSelection : Model -> Maybe GameBoard.RotationSelection
 rotationSelection model =
-    case ( model.selected, selectedUnit model ) of
+    case ( currentSelection model, selectedUnit model ) of
         ( Just (UnitSelection selection), Just unit ) ->
             case selection.interaction of
                 ChoosingDirection direction ->
@@ -380,7 +460,7 @@ rotationSelection model =
 
 previewRotation : Direction -> Model -> Model
 previewRotation direction model =
-    case model.selected of
+    case currentSelection model of
         Just (UnitSelection selection) ->
             let
                 canPreview : Bool
@@ -388,7 +468,7 @@ previewRotation direction model =
                     choosingDirection model && not (planningLocked model) && model.drag == Nothing
             in
             if canPreview then
-                { model | selected = Just (UnitSelection { selection | interaction = ChoosingDirection direction }) }
+                setSelection (Just (UnitSelection { selection | interaction = ChoosingDirection direction })) model
 
             else
                 model
@@ -550,7 +630,7 @@ snapshotSelection =
 
 movementPlanning : Model -> Maybe MovePlanning
 movementPlanning model =
-    case model.selected of
+    case currentSelection model of
         Just (UnitSelection selection) ->
             case selection.interaction of
                 ChoosingMove planning ->
@@ -570,7 +650,7 @@ pathPreview model =
 
 moveOptions : Model -> List Movement.Option
 moveOptions model =
-    case model.selected of
+    case currentSelection model of
         Just (UnloadSelection planning) ->
             planning.options
 
@@ -582,10 +662,8 @@ moveOptions model =
 
 clearSelection : Model -> Model
 clearSelection model =
-    { model
-        | selected = Nothing
-        , movementStatus = NoMovementStatus
-    }
+    { model | movementStatus = NoMovementStatus }
+        |> setSelection Nothing
 
 
 selectUnit : UnitId -> Model -> Model
@@ -607,15 +685,12 @@ selectUnit id model =
                 clearSelection model
 
             else
-                { model
-                    | selected = Just (UnitSelection { id = id, interaction = CommandMenu Nothing })
-                    , movementStatus = NoMovementStatus
-                }
+                setSelection (Just (unitSelection unit model)) { model | movementStatus = NoMovementStatus }
 
 
 selectTile : Coordinate -> Model -> Model
 selectTile position model =
-    case model.selected of
+    case currentSelection model of
         Just (UnloadSelection planning) ->
             chooseUnloadSquare planning position model
 
@@ -626,16 +701,13 @@ selectTile position model =
 selectMovementTile : Coordinate -> Model -> Model
 selectMovementTile position model =
     if planningLocked model then
-        { model | selected = Just (TileSelection position) }
+        setSelection (Just (TileSelection position)) model
 
     else
         let
             notOwnUnit : () -> Model
             notOwnUnit _ =
-                { model
-                    | selected = Just (TileSelection position)
-                    , movementStatus = NoMovementStatus
-                }
+                setSelection (Just (TileSelection position)) { model | movementStatus = NoMovementStatus }
         in
         case selectedUnit model of
             Just unit ->
@@ -653,10 +725,10 @@ selectMovementTile position model =
                         Just move ->
                             { model
                                 | phase = TurnLifecycle.setOrders (saveMove unit move model) model.phase
-                                , selected = resetCommandMenu model.selected
                                 , movementStatus = MovePlanned
                                 , dialog = unloadPrompt unit model
                             }
+                                |> inspectSelectedUnit
 
                         Nothing ->
                             { model | movementStatus = DestinationUnavailable }
@@ -670,7 +742,7 @@ selectMovementTile position model =
 
 previewTile : Coordinate -> Model -> Model
 previewTile position model =
-    case model.selected of
+    case currentSelection model of
         Just (UnitSelection selection) ->
             case selection.interaction of
                 ChoosingMove planning ->
@@ -680,10 +752,19 @@ previewTile position model =
                     else
                         case traceTo position model of
                             Just preview ->
-                                { model
-                                    | selected = Just (UnitSelection { selection | interaction = ChoosingMove { planning | preview = preview } })
-                                    , movementStatus = NoMovementStatus
-                                }
+                                setSelection
+                                    (Just
+                                        (UnitSelection
+                                            { selection
+                                                | interaction =
+                                                    ChoosingMove
+                                                        { planning
+                                                            | preview = preview
+                                                        }
+                                            }
+                                        )
+                                    )
+                                    { model | movementStatus = NoMovementStatus }
 
                             Nothing ->
                                 model
@@ -731,7 +812,7 @@ focusAdjacentCommand orderCommands current model =
                     else
                         afterCurrent rest
     in
-    case selectedUnit model of
+    case commandMenuUnit model of
         Just unit ->
             let
                 commands : List UnitCommands.MenuOption
@@ -831,11 +912,11 @@ update lobbyId msg model =
                     clearSelection model |> E.withOut
 
                 UnitCommands.CommandFocused command ->
-                    case model.selected of
-                        Just (UnitSelection selection) ->
+                    case ( currentSelection model, commandMenuUnit model ) of
+                        ( Just (UnitSelection selection), Just _ ) ->
                             case selection.interaction of
                                 CommandMenu _ ->
-                                    ( { model | selected = Just (UnitSelection { selection | interaction = CommandMenu (Just command) }) }, E.none )
+                                    ( setSelection (Just (UnitSelection { selection | interaction = CommandMenu (Just command) })) model, E.none )
 
                                 _ ->
                                     ( model, E.none )
@@ -928,10 +1009,10 @@ update lobbyId msg model =
 
             else
                 ( { model
-                    | selected = resetCommandMenu model.selected
-                    , phase = TurnLifecycle.setOrders (List.filter (\plan -> Just plan.unitId /= Maybe.map .id (selectedUnit model)) (plannedOrders model)) model.phase
+                    | phase = TurnLifecycle.setOrders (List.filter (\plan -> Just plan.unitId /= Maybe.map .id (selectedUnit model)) (plannedOrders model)) model.phase
                     , movementStatus = PlannedOrderCleared
                   }
+                    |> restoreCommands
                 , E.none
                 )
 
@@ -982,7 +1063,7 @@ update lobbyId msg model =
 
                     Err error ->
                         case model.phase of
-                            Submitting _ ->
+                            TurnLifecycle.Submitting _ ->
                                 ( { model
                                     | phase = TurnLifecycle.finishSubmission turnNumber model.phase
                                     , turnError = Just (ApiRequest.errorMessage error)
@@ -1257,7 +1338,7 @@ plannedUnloadRoutes model =
 
 focusedCommand : Model -> Maybe UnitCommands.MenuOption
 focusedCommand model =
-    case model.selected of
+    case currentSelection model of
         Just (UnitSelection selection) ->
             case selection.interaction of
                 CommandMenu focused ->
@@ -1275,31 +1356,16 @@ focusedCommand model =
 
 commandMenuUnit : Model -> Maybe Unit
 commandMenuUnit model =
-    case selectedUnit model of
-        Just unit ->
-            let
-                hasOrder : Bool
-                hasOrder =
-                    List.any (\plan -> plan.unitId == unit.id) (plannedOrders model)
+    case ( currentSelection model, model.dialog ) of
+        ( Just (UnitSelection { interaction }), Nothing ) ->
+            case interaction of
+                CommandMenu _ ->
+                    selectedUnit model
 
-                canChooseCommand : Bool
-                canChooseCommand =
-                    isOwnUnit model unit
-                        && Unit.onBoard unit
-                        && not (planningLocked model)
-                        && not (receivingLoad unit model)
-                        && (pathPreview model == Nothing)
-                        && (model.dialog == Nothing)
-                        && not (choosingDirection model)
-                        && not hasOrder
-            in
-            if canChooseCommand then
-                Just unit
+                _ ->
+                    Nothing
 
-            else
-                Nothing
-
-        Nothing ->
+        _ ->
             Nothing
 
 
@@ -1321,7 +1387,7 @@ commandMenu model =
 
 applyCommand : LobbyId -> UnitCommand.Command -> Model -> Model
 applyCommand lobbyId command model =
-    case selectedUnit model of
+    case commandMenuUnit model of
         Just unit ->
             let
                 canApply : Bool
@@ -1338,24 +1404,18 @@ applyCommand lobbyId command model =
                         beginMovement unit model
 
                     UnitCommand.Rotate ->
-                        { model
-                            | selected =
-                                Just
-                                    (UnitSelection
-                                        { id = unit.id
-                                        , interaction = ChoosingDirection (Maybe.withDefault Facing.North unit.direction)
-                                        }
-                                    )
-                        }
+                        setSelection
+                            (Just (UnitSelection { id = unit.id, interaction = ChoosingDirection (Maybe.withDefault Facing.North unit.direction) }))
+                            model
 
                     UnitCommand.HoldPosition ->
                         case holdOrder model.board.units unit of
                             Just hold ->
                                 { model
                                     | phase = TurnLifecycle.setOrders (hold :: List.filter (\plan -> plan.unitId /= unit.id) (plannedOrders model)) model.phase
-                                    , selected = resetCommandMenu model.selected
                                     , movementStatus = MovePlanned
                                 }
+                                    |> inspectSelectedUnit
 
                             Nothing ->
                                 model
@@ -1422,7 +1482,7 @@ panelFooter model =
     let
         hint : String
         hint =
-            if model.selected == Nothing then
+            if currentSelection model == Nothing then
                 "select a unit, depot or tile to inspect"
 
             else
@@ -1451,7 +1511,10 @@ panelFooter model =
 
 selectedUnit : Model -> Maybe Unit
 selectedUnit model =
-    case model.selected of
+    case currentSelection model of
+        Just (InspectingUnit id) ->
+            ListUtil.find (\unit -> unit.id == id) model.board.units
+
         Just (UnitSelection selection) ->
             ListUtil.find (\unit -> unit.id == selection.id) model.board.units
 
@@ -1464,9 +1527,12 @@ selectedUnit model =
 
 selectedPosition : Model -> Maybe Coordinate
 selectedPosition model =
-    case model.selected of
+    case currentSelection model of
         Just (TileSelection position) ->
             Just position
+
+        Just (InspectingUnit _) ->
+            Maybe.andThen Unit.boardPosition (selectedUnit model)
 
         Just (UnitSelection _) ->
             Maybe.andThen Unit.boardPosition (selectedUnit model)
@@ -1795,10 +1861,8 @@ beginMovement unit model =
                     , options = Movement.options (reservedDestinations unit model) model.movementRules model.board unit
                     }
             in
-            { model
-                | selected = Just (UnitSelection { id = unit.id, interaction = ChoosingMove planning })
-                , movementStatus = NoMovementStatus
-            }
+            setSelection (Just (UnitSelection { id = unit.id, interaction = ChoosingMove planning }))
+                { model | movementStatus = NoMovementStatus }
 
         Nothing ->
             model
@@ -2005,18 +2069,7 @@ playback model =
 
 planningLocked : Model -> Bool
 planningLocked model =
-    case model.phase of
-        Planning _ ->
-            False
-
-        Submitting _ ->
-            True
-
-        WaitingForOpponent _ ->
-            True
-
-        Playing _ ->
-            True
+    TurnLifecycle.planningLocked model.phase
 
 
 unitsWithoutOrders : Model -> List Unit
@@ -2037,12 +2090,11 @@ readyToSubmit model =
 submitTurn : LobbyId -> Model -> ( Model, Eff Msg )
 submitTurn lobbyId model =
     case model.phase of
-        Planning drafts ->
+        TurnLifecycle.Planning planning ->
             ( { model
-                | phase = Submitting { turnNumber = model.turnNumber, orders = drafts }
+                | phase = TurnLifecycle.Submitting { turnNumber = model.turnNumber, orders = planning.orders }
                 , dialog = Nothing
                 , turnError = Nothing
-                , selected = resetCommandMenu model.selected
               }
             , E.request (SubmitResponseReceived model.turnNumber) (submitRequest lobbyId model)
             )
@@ -2114,7 +2166,7 @@ unloadChecklist model choice =
 
 isChoosingUnload : Model -> Bool
 isChoosingUnload model =
-    case model.selected of
+    case currentSelection model of
         Just (UnloadSelection _) ->
             True
 
@@ -2133,7 +2185,7 @@ beginUnloading : UnitId -> List UnitId -> Model -> Model
 beginUnloading truckId passengers model =
     case passengers of
         [] ->
-            { model | selected = Just (UnitSelection { id = truckId, interaction = CommandMenu Nothing }) }
+            setSelection (Just (InspectingUnit truckId)) model
 
         passengerId :: remaining ->
             let
@@ -2145,7 +2197,7 @@ beginUnloading truckId passengers model =
                     , options = unloadOptions { truckId = truckId, passengerId = passengerId } model
                     }
             in
-            { model | selected = Just (UnloadSelection planning) }
+            setSelection (Just (UnloadSelection planning)) model
 
 
 unloadOptions : { truckId : UnitId, passengerId : UnitId } -> Model -> List Movement.Option
@@ -2316,7 +2368,7 @@ receiveSnapshot snapshot model =
                 clearSelection { next | dialog = Nothing }
 
             else
-                { next | dialog = Nothing, selected = resetCommandMenu model.selected }
+                { next | dialog = Nothing }
 
         else
             next
@@ -2335,7 +2387,7 @@ receiveSnapshot snapshot model =
             , board = GameBoard.setUnits frame.units snapshot.board
             , visibleTiles = frame.visibleTiles
             , phase = TurnLifecycle.startTurn snapshot.turn.submitted snapshot.playbackFrames
-            , selected = Nothing
+            , inspection = Nothing
             , movementStatus = NoMovementStatus
             , turnError = Nothing
         }
@@ -2351,16 +2403,16 @@ turnPanel model =
         status : String
         status =
             case model.phase of
-                Playing _ ->
+                TurnLifecycle.Playing _ ->
                     "playing turn " ++ String.fromInt (model.turnNumber - 1)
 
-                Submitting _ ->
+                TurnLifecycle.Submitting _ ->
                     "submitting orders…"
 
-                WaitingForOpponent _ ->
+                TurnLifecycle.WaitingForOpponent _ ->
                     "orders submitted"
 
-                Planning _ ->
+                TurnLifecycle.Planning _ ->
                     String.fromInt (ownCount - List.length (unitsWithoutOrders model))
                         ++ "/"
                         ++ String.fromInt ownCount
@@ -2368,23 +2420,12 @@ turnPanel model =
 
         submitLabel : String
         submitLabel =
-            case model.phase of
-                Playing _ ->
-                    "playing turn…"
-
-                Submitting _ ->
-                    "submitting…"
-
-                WaitingForOpponent _ ->
-                    "turn submitted"
-
-                Planning _ ->
-                    "submit turn"
+            TurnLifecycle.toLabel model.phase
 
         opponentStatus : String
         opponentStatus =
             case model.phase of
-                WaitingForOpponent _ ->
+                TurnLifecycle.WaitingForOpponent _ ->
                     "waiting for the other player"
 
                 _ ->

@@ -186,7 +186,15 @@ unload choices; `Rotate` carries a stationary position and required direction.
 Its submission adapter converts these actions to the existing GraphQL input,
 using single-coordinate paths for holds and rotations. `PlannedOrderChecks`
 verifies that conversion, including unloading from stationary trucks.
-A selected unit's
+`GamePage.inspection` identifies the inspected unit or tile, including enemies,
+passengers and units with saved or locked orders. Editable selection belongs only
+to `TurnLifecycle.Phase`'s `Planning` variant, which wraps a `PlanningState`
+record with `orders` and `editing` fields. `GamePage.EditingSelection` owns
+the concrete editing types imported by both the page and lifecycle: `EditingUnit` carries a selected
+unit's `UnitInteraction`, and `EditingUnload` carries unload-square selection.
+The inspection remains available when a phase transition drops editing. Saving
+an order returns to inspection; revoking it restores commands when eligible.
+`currentSelection` derives the active selection without copying saved orders.
 `UnitInteraction` distinguishes `CommandMenu`, `ChoosingMove MovePlanning` and
 `ChoosingDirection`. `MovePlanning` owns a required path preview and its reachable
 options; neither can exist outside movement selection. `UnloadPlanning` owns
@@ -372,8 +380,10 @@ rules in the animation player.
 `GamePage` polls snapshots every two seconds. `TurnLifecycle.Phase` distinguishes
 `Planning`, `Submitting`, `WaitingForOpponent` and `Playing`; order drafts belong
 to the first three variants, and playback data belongs only to `Playing`.
-Only planning accepts order edits. Matching submission failures restore the
-saved drafts; request messages carry their originating turn number, so late
+Only planning accepts order edits or stores editable selection. Waiting,
+submission and playback cannot carry command menus, move previews or rotation
+previews. Matching submission failures restore the saved drafts with inspection
+preserved and editing closed; request messages carry their originating turn number, so late
 responses cannot reopen an advanced turn. A poll confirming submission transitions
 to waiting even before the submission response arrives, and a later error cannot
 unlock it. Poll request state remains separate because a request can already be
