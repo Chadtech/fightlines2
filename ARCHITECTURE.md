@@ -432,7 +432,15 @@ previews. Matching submission failures restore the saved drafts with inspection
 preserved and editing closed; request messages carry their originating turn number, so late
 responses cannot reopen an advanced turn. A poll confirming submission transitions
 to waiting even before the submission response arrives, and a later error cannot
-unlock it. Poll request state remains separate because a request can already be
+unlock it. `GamePage.CurrentTurn` owns the turn number, opponent submission status, resolution,
+errors, in-flight polling and the lifecycle phase. It reconciles snapshots, ignores
+stale responses, and owns polling and playback subscriptions. Its snapshot
+functions return only the updated current-turn model; the page initializes the
+displayed board from the snapshot when the turn number advances.
+`GamePage.handleCurrentTurnMsg` handles polling requests and playback frames
+directly, applying board changes and performing GraphQL requests. Views and view
+messages remain in the page.
+Poll request state remains separate from the phase because a request can already be
 in flight when submission begins. Playback remembers whether its completed
 snapshot's turn is already submitted and finishes in planning or waiting accordingly.
 Initialization enters planning or waiting directly, without replaying history.

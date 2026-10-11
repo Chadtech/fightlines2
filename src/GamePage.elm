@@ -46,6 +46,7 @@ import Effect as E
         ( Eff
         )
 import GamePage.BattlefieldNavigation as BattlefieldNavigation
+import GamePage.CurrentTurn as CurrentTurn
 import GamePage.OrderPlanning as OrderPlanning exposing (UnloadChoice, UnloadPlanning)
 import GamePage.Selection
     exposing
@@ -114,12 +115,7 @@ import View.UnloadPassenger as UnloadPassenger
 
 
 type alias Model =
-    { turnNumber : Int
-    , opponentSubmitted : Bool
-    , turnResolution : Maybe Turn.Resolution
-    , phase : Phase
-    , refreshing : Bool
-    , turnError : Maybe String
+    { currentTurn : CurrentTurn.Model
     , shared : Shared.Model
     , name : String
     , mapType : MapType
@@ -204,9 +200,8 @@ type Msg
     | SubmissionConfirmed
     | SubmitTurnClicked
     | SubmitResponseReceived Int (ApiRequest.Response Snapshot)
-    | PollTimerElapsed Time.Posix
+    | CurrentTurnMsg CurrentTurn.Msg
     | PollResponseReceived (ApiRequest.Response Snapshot)
-    | PlaybackFrameElapsed Float
     | RotationChoicesMsg RotationChoices.Msg
     | ClickedUnit UnitId { detail : Int }
     | PressedEnterOnUnit UnitId
@@ -237,15 +232,7 @@ type alias Flags =
 
 init : Shared.Model -> Flags -> Model
 init shared flags =
-    { turnNumber = flags.snapshot.turn.number
-    , opponentSubmitted = flags.snapshot.turn.opponentSubmitted
-    , turnResolution = flags.snapshot.turn.resolution
-    , phase =
-        TurnLifecycle.observeSubmission
-            flags.snapshot.turn.submitted
-            (TurnLifecycle.Planning OrderPlanning.init)
-    , refreshing = False
-    , turnError = Nothing
+    { currentTurn = CurrentTurn.init flags.snapshot.turn
     , shared = shared
     , name = flags.snapshot.name
     , mapType = flags.snapshot.mapType
@@ -298,7 +285,7 @@ planningContext model =
 
 mapPlanning : (OrderPlanning.Model -> OrderPlanning.Model) -> Model -> Model
 mapPlanning transition model =
-    { model | phase = TurnLifecycle.mapPlanning transition model.phase }
+    { model | currentTurn = CurrentTurn.mapPlanning transition model.currentTurn }
 
 
 unloadChoice : Phase -> Maybe UnloadChoice
@@ -314,7 +301,7 @@ unloadPlanning phase =
 
 isChoosingUnload : Model -> Bool
 isChoosingUnload model =
-    unloadPlanning model.phase /= Nothing
+    unloadPlanning model.currentTurn.phase /= Nothing
 
 
 dismissDialog : Model -> Model
@@ -335,17 +322,17 @@ hasDialog model =
 
 plannedOrders : Model -> List PlannedOrder
 plannedOrders model =
-    TurnLifecycle.orders model.phase
+    TurnLifecycle.orders model.currentTurn.phase
 
 
 playback : Model -> Maybe TurnPlayback.Playback
 playback model =
-    TurnLifecycle.playback model.phase
+    TurnLifecycle.playback model.currentTurn.phase
 
 
 planningLocked : Model -> Bool
 planningLocked model =
-    TurnLifecycle.planningLocked model.phase
+    TurnLifecycle.planningLocked model.currentTurn.phase
 
 
 unitsWithoutOrders : Model -> List Unit
@@ -360,18 +347,13 @@ readyToSubmit model =
 
 submitTurn : LobbyId -> Model -> ( Model, Eff Msg )
 submitTurn lobbyId model =
-    let
-        phase : Phase
-        phase =
-            TurnLifecycle.startSubmission model.turnNumber model.phase
-    in
-    case ( model.phase, phase ) of
-        ( TurnLifecycle.Planning _, TurnLifecycle.Submitting _ ) ->
-            ( { model | phase = phase, turnError = Nothing }
-            , E.request (SubmitResponseReceived model.turnNumber) (submitRequest lobbyId model)
+    case CurrentTurn.startSubmission model.currentTurn of
+        Just currentTurn ->
+            ( { model | currentTurn = currentTurn }
+            , E.request (SubmitResponseReceived model.currentTurn.number) (submitRequest lobbyId model)
             )
 
-        _ ->
+        Nothing ->
             ( model, E.none )
 
 
@@ -387,7 +369,7 @@ selectedUnit model =
 
 selectedPosition : Model -> Maybe Coordinate
 selectedPosition model =
-    case unloadPlanning model.phase of
+    case unloadPlanning model.currentTurn.phase of
         Just planning ->
             Just (OrderPlanning.truckDestination planning.truck)
 
@@ -448,12 +430,12 @@ plannedUnloadRoutes model =
 
 focusedCommand : Model -> Maybe UnitCommand.MenuOption
 focusedCommand model =
-    TurnLifecycle.planning model.phase |> Maybe.andThen OrderPlanning.focusedCommand
+    TurnLifecycle.planning model.currentTurn.phase |> Maybe.andThen OrderPlanning.focusedCommand
 
 
 commandMenuUnit : Model -> Maybe Unit
 commandMenuUnit model =
-    TurnLifecycle.planning model.phase |> Maybe.andThen (OrderPlanning.commandMenuUnit (planningContext model))
+    TurnLifecycle.planning model.currentTurn.phase |> Maybe.andThen (OrderPlanning.commandMenuUnit (planningContext model))
 
 
 submitRequest : LobbyId -> Model -> Graphql.Http.Request Snapshot
@@ -465,63 +447,42 @@ submitRequest lobbyId model =
     in
     Api.Mutation.submitTurn
         { id = LobbyId.toString lobbyId
-        , turnNumber = model.turnNumber
+        , turnNumber = model.currentTurn.number
         , orders = List.map PlannedOrder.toInput orders
         }
         snapshotSelection
         |> ApiRequest.mutationRequest
 
 
-receiveSnapshot : Snapshot -> Model -> Model
-receiveSnapshot snapshot model =
-    if snapshot.turn.number < model.turnNumber then
-        model
+turnObservation : Snapshot -> CurrentTurn.Observation
+turnObservation snapshot =
+    { turn = snapshot.turn
+    , playbackFrames = snapshot.playbackFrames
+    }
 
-    else if snapshot.turn.number == model.turnNumber then
-        let
-            phase : Phase
-            phase =
-                if snapshot.turn.submitted then
-                    TurnLifecycle.observeSubmission True model.phase
 
-                else
-                    model.phase
-
-            next : Model
-            next =
-                { model
-                    | opponentSubmitted = model.opponentSubmitted || snapshot.turn.opponentSubmitted
-                    , turnResolution = snapshot.turn.resolution
-                    , phase = phase
-                }
-        in
-        if snapshot.turn.submitted then
-            if isChoosingUnload model then
-                clearSelection next
-
-            else
-                next
-
-        else
-            next
-
-    else
+applyTurnSnapshot : Snapshot -> CurrentTurn.Model -> Model -> Model
+applyTurnSnapshot snapshot currentTurn model =
+    let
+        next : Model
+        next =
+            { model | currentTurn = currentTurn }
+    in
+    if currentTurn.number > model.currentTurn.number then
         let
             frame : TurnPlayback.Frame
             frame =
                 TurnPlayback.initial snapshot.playbackFrames { units = snapshot.units, visibleTiles = snapshot.visibleTiles }
         in
-        { model
-            | turnNumber = snapshot.turn.number
-            , opponentSubmitted = snapshot.turn.opponentSubmitted
-            , turnResolution = snapshot.turn.resolution
-            , map = snapshot.map
-            , units = frame.units
+        { next
+            | map = snapshot.map
             , depots = snapshot.depots
+            , units = frame.units
             , visibleTiles = frame.visibleTiles
-            , phase = TurnLifecycle.startTurn snapshot.turn.submitted snapshot.playbackFrames
-            , turnError = Nothing
         }
+
+    else
+        next
 
 
 plannedAction : Model -> Unit -> Movement.Option -> String
@@ -543,12 +504,12 @@ receivingLoad unit model =
 
 currentSelection : Model -> Maybe Selection
 currentSelection model =
-    TurnLifecycle.selection model.phase
+    TurnLifecycle.selection model.currentTurn.phase
 
 
 setSelection : Maybe Selection -> Model -> Model
 setSelection selected model =
-    { model | phase = TurnLifecycle.setSelection selected model.phase }
+    { model | currentTurn = CurrentTurn.setSelection selected model.currentTurn }
 
 
 focusCommand : UnitCommand.MenuOption -> Model -> Model
@@ -563,12 +524,16 @@ revokeSelectedOrder model =
 
 choosingDirection : Model -> Bool
 choosingDirection model =
-    TurnLifecycle.planning model.phase |> Maybe.map OrderPlanning.choosingDirection |> Maybe.withDefault False
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.map OrderPlanning.choosingDirection
+        |> Maybe.withDefault False
 
 
 saveRotation : Direction -> Model -> Model
 saveRotation direction model =
-    model |> mapPlanning (OrderPlanning.saveRotation (planningContext model) direction)
+    model
+        |> mapPlanning
+            (OrderPlanning.saveRotation (planningContext model) direction)
 
 
 rotationSelection : Model -> Maybe RotationSelection
@@ -641,24 +606,19 @@ snapshotSelection =
         |> SS.with (TurnPlayback.selection Unit.selection Coordinate.selection)
 
 
-movementPlanning : Model -> Maybe MovePlanning
-movementPlanning model =
-    TurnLifecycle.planning model.phase |> Maybe.andThen OrderPlanning.movementPlanning
-
-
 destinationFeedback : Model -> DestinationFeedback
 destinationFeedback model =
-    TurnLifecycle.planning model.phase |> Maybe.map OrderPlanning.destinationFeedback |> Maybe.withDefault NoDestinationFeedback
+    TurnLifecycle.planning model.currentTurn.phase |> Maybe.map OrderPlanning.destinationFeedback |> Maybe.withDefault NoDestinationFeedback
 
 
 pathPreview : Model -> Maybe Movement.Option
 pathPreview model =
-    TurnLifecycle.planning model.phase |> Maybe.andThen OrderPlanning.pathPreview
+    TurnLifecycle.planning model.currentTurn.phase |> Maybe.andThen OrderPlanning.pathPreview
 
 
 moveOptions : Model -> List Movement.Option
 moveOptions model =
-    TurnLifecycle.planning model.phase |> Maybe.map OrderPlanning.moveOptions |> Maybe.withDefault []
+    TurnLifecycle.planning model.currentTurn.phase |> Maybe.map OrderPlanning.moveOptions |> Maybe.withDefault []
 
 
 clearSelection : Model -> Model
@@ -776,7 +736,7 @@ finishBoardInteraction previous next =
     let
         effect : Eff Msg
         effect =
-            case ( unloadChoice previous.phase, unloadChoice next.phase ) of
+            case ( unloadChoice previous.currentTurn.phase, unloadChoice next.currentTurn.phase ) of
                 ( Nothing, Just _ ) ->
                     E.toJs (ToJs.OpenDialog { htmlId = unloadDialogHtmlId })
 
@@ -1209,7 +1169,7 @@ update lobbyId msg model =
                     |> E.withOut
 
         SubmitTurnClicked ->
-            if planningLocked model || isChoosingUnload model || unloadChoice model.phase /= Nothing then
+            if planningLocked model || isChoosingUnload model || unloadChoice model.currentTurn.phase /= Nothing then
                 model |> E.withOut
 
             else if List.isEmpty (unitsWithoutOrders model) then
@@ -1228,7 +1188,7 @@ update lobbyId msg model =
                 |> E.withOut
 
         SubmissionConfirmed ->
-            case model.phase of
+            case model.currentTurn.phase of
                 TurnLifecycle.Planning (OrderPlanning.ConfirmingSubmission _) ->
                     model
                         |> submitTurn lobbyId
@@ -1237,59 +1197,63 @@ update lobbyId msg model =
                     model |> E.withOut
 
         SubmitResponseReceived turnNumber result ->
-            if turnNumber /= model.turnNumber then
-                model |> E.withOut
+            case result of
+                Ok snapshot ->
+                    model
+                        |> applyTurnSnapshot
+                            snapshot
+                            (CurrentTurn.submissionSucceeded
+                                turnNumber
+                                (turnObservation snapshot)
+                                model.currentTurn
+                            )
+                        |> E.withOut
 
-            else
-                case result of
-                    Ok snapshot ->
-                        { model
-                            | phase = TurnLifecycle.finishSubmission turnNumber model.phase
-                            , turnError = Nothing
-                        }
-                            |> receiveSnapshot snapshot
-                            |> E.withOut
+                Err error ->
+                    { model | currentTurn = CurrentTurn.submissionFailed turnNumber (ApiRequest.errorMessage error) model.currentTurn }
+                        |> E.withOut
 
-                    Err error ->
-                        case model.phase of
-                            TurnLifecycle.Submitting _ ->
-                                { model
-                                    | phase = TurnLifecycle.finishSubmission turnNumber model.phase
-                                    , turnError = Just (ApiRequest.errorMessage error)
-                                }
-                                    |> E.withOut
-
-                            _ ->
-                                model |> E.withOut
-
-        PollTimerElapsed _ ->
-            if model.refreshing || not (TurnLifecycle.canPoll model.phase) then
-                model |> E.withOut
-
-            else
-                ( { model | refreshing = True }
-                , E.request PollResponseReceived (loadSnapshot lobbyId)
-                )
+        CurrentTurnMsg turnMsg ->
+            handleCurrentTurnMsg lobbyId turnMsg model
 
         PollResponseReceived result ->
             case result of
                 Ok snapshot ->
-                    { model | refreshing = False }
-                        |> receiveSnapshot snapshot
+                    model
+                        |> applyTurnSnapshot snapshot (CurrentTurn.pollSucceeded (turnObservation snapshot) model.currentTurn)
                         |> E.withOut
 
                 Err error ->
-                    { model
-                        | refreshing = False
-                        , turnError = Just (ApiRequest.errorMessage error)
-                    }
+                    { model | currentTurn = CurrentTurn.pollFailed (ApiRequest.errorMessage error) model.currentTurn }
                         |> E.withOut
 
-        PlaybackFrameElapsed delta ->
-            case TurnLifecycle.tick delta model.phase of
+        AnimationTimerElapsed _ ->
+            { model | frame = AnimationFrame.next model.frame }
+                |> E.withOut
+
+
+handleCurrentTurnMsg : LobbyId -> CurrentTurn.Msg -> Model -> ( Model, Eff Msg )
+handleCurrentTurnMsg lobbyId msg model =
+    let
+        currentTurn : CurrentTurn.Model
+        currentTurn =
+            model.currentTurn
+    in
+    case msg of
+        CurrentTurn.PollTimerElapsed ->
+            if currentTurn.refreshing || not (TurnLifecycle.canPoll currentTurn.phase) then
+                model |> E.withOut
+
+            else
+                ( { model | currentTurn = { currentTurn | refreshing = True } }
+                , E.request PollResponseReceived (loadSnapshot lobbyId)
+                )
+
+        CurrentTurn.PlaybackFrameElapsed delta ->
+            case TurnLifecycle.tick delta currentTurn.phase of
                 Just next ->
                     { model
-                        | phase = next.phase
+                        | currentTurn = { currentTurn | phase = next.phase }
                         , units = next.frame.units
                         , visibleTiles = next.frame.visibleTiles
                     }
@@ -1297,10 +1261,6 @@ update lobbyId msg model =
 
                 Nothing ->
                     model |> E.withOut
-
-        AnimationTimerElapsed _ ->
-            { model | frame = AnimationFrame.next model.frame }
-                |> E.withOut
 
 
 handleCommandMsg : UnitCommands.Msg -> Model -> ( Model, Eff Msg )
@@ -1847,7 +1807,7 @@ unloadChecklist model choice =
 -}
 dialog : Model -> Maybe (Dialog Msg)
 dialog model =
-    case model.phase of
+    case model.currentTurn.phase of
         TurnLifecycle.Planning (OrderPlanning.ConfirmingSubmission _) ->
             Just (submissionWarning model)
 
@@ -1906,9 +1866,9 @@ turnPanel model =
 
         status : String
         status =
-            case model.phase of
+            case model.currentTurn.phase of
                 TurnLifecycle.Playing _ ->
-                    "playing turn " ++ String.fromInt (model.turnNumber - 1)
+                    "playing turn " ++ String.fromInt (model.currentTurn.number - 1)
 
                 TurnLifecycle.Submitting _ ->
                     "submitting orders…"
@@ -1924,16 +1884,16 @@ turnPanel model =
 
         submitLabel : String
         submitLabel =
-            TurnLifecycle.toLabel model.phase
+            TurnLifecycle.toLabel model.currentTurn.phase
 
         opponentStatus : String
         opponentStatus =
-            case model.phase of
+            case model.currentTurn.phase of
                 TurnLifecycle.WaitingForOpponent _ ->
                     "waiting for the other player"
 
                 _ ->
-                    if model.opponentSubmitted then
+                    if model.currentTurn.opponentSubmitted then
                         "other player: submitted"
 
                     else
@@ -1962,7 +1922,7 @@ turnPanel model =
 
         errorDetails : List (Html Msg)
         errorDetails =
-            case model.turnError of
+            case model.currentTurn.error of
                 Nothing ->
                     []
 
@@ -1972,7 +1932,7 @@ turnPanel model =
         content : List (Html Msg)
         content =
             [ H.p [ A.attribute "role" "status" ]
-                [ H.text ("turn " ++ String.fromInt model.turnNumber ++ " · " ++ status) ]
+                [ H.text ("turn " ++ String.fromInt model.currentTurn.number ++ " · " ++ status) ]
             , H.p [] [ H.text opponentStatus ]
             ]
     in
@@ -2026,7 +1986,7 @@ resolutionSummary model =
     let
         summary : String
         summary =
-            case model.turnResolution of
+            case model.currentTurn.resolution of
                 Nothing ->
                     ""
 
@@ -2706,12 +2666,8 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
         [ Time.every 400 AnimationTimerElapsed
-        , Time.every 2000 PollTimerElapsed
-        , if playback model /= Nothing then
-            Browser.Events.onAnimationFrameDelta PlaybackFrameElapsed
-
-          else
-            Sub.none
+        , CurrentTurn.subscriptions model.currentTurn
+            |> Sub.map CurrentTurnMsg
         , BattlefieldNavigation.subscriptions model.navigation
             |> Sub.map BattlefieldNavigationMsg
         ]

@@ -1,6 +1,7 @@
 port module TurnLifecycleChecks exposing (main)
 
 import Coordinate
+import GamePage.CurrentTurn as CurrentTurn
 import GamePage.OrderPlanning as OrderPlanning exposing (Model(..))
 import GamePage.Selection
     exposing
@@ -12,6 +13,7 @@ import GamePage.Selection
 import Movement
 import PlannedOrder
 import Platform
+import Turn
 import TurnLifecycle exposing (Phase(..))
 import TurnPlayback
 import UnitId
@@ -23,7 +25,7 @@ port results : List String -> Cmd msg
 main : Program () () Never
 main =
     Platform.worker
-        { init = \_ -> ( (), results (checks ++ unloadChecks) )
+        { init = \_ -> ( (), results (checks ++ unloadChecks ++ currentTurnChecks) )
         , update = \_ model -> ( model, Cmd.none )
         , subscriptions = \_ -> Sub.none
         }
@@ -403,3 +405,76 @@ expect message condition =
 
     else
         [ message ]
+
+
+currentTurnChecks : List String
+currentTurnChecks =
+    let
+        initial : CurrentTurn.Model
+        initial =
+            CurrentTurn.init { number = 1, submitted = False, opponentSubmitted = False, resolution = Nothing }
+
+        observation : CurrentTurn.Observation
+        observation =
+            { turn = { number = 1, submitted = True, opponentSubmitted = True, resolution = Nothing }
+            , playbackFrames = []
+            }
+
+        pendingPoll : CurrentTurn.Model
+        pendingPoll =
+            { initial | refreshing = True }
+
+        submitting : CurrentTurn.Model
+        submitting =
+            CurrentTurn.startSubmission pendingPoll |> Maybe.withDefault initial
+
+        waiting : CurrentTurn.Model
+        waiting =
+            CurrentTurn.pollSucceeded observation submitting
+
+        turn : Turn.Snapshot
+        turn =
+            observation.turn
+
+        advanced : CurrentTurn.Model
+        advanced =
+            CurrentTurn.pollSucceeded
+                { observation
+                    | turn = { turn | number = 2, submitted = False, opponentSubmitted = False }
+                    , playbackFrames =
+                        [ { units = [], visibleTiles = [] }
+                        , { units = [], visibleTiles = [ { x = 1, y = 1 } ] }
+                        ]
+                }
+                waiting
+
+        recovered : CurrentTurn.Model
+        recovered =
+            CurrentTurn.submissionFailed 1 "request failed" submitting
+
+        monotonic : CurrentTurn.Model
+        monotonic =
+            CurrentTurn.pollSucceeded { observation | turn = { turn | submitted = False, opponentSubmitted = False } } waiting
+    in
+    List.concat
+        [ expect "submission retains a poll already in flight"
+            submitting.refreshing
+        , expect "poll confirmation locks submission and clears in-flight status"
+            (TurnLifecycle.planningLocked waiting.phase && not waiting.refreshing)
+        , expect "late submission failures cannot unlock confirmed submission"
+            (CurrentTurn.submissionFailed 1 "late failure" waiting == waiting)
+        , expect "same-turn observations preserve monotonic submission flags"
+            (monotonic.opponentSubmitted && TurnLifecycle.planningLocked monotonic.phase)
+        , expect "new turn clears submission state and starts playback"
+            (advanced.number == 2 && not advanced.opponentSubmitted && TurnLifecycle.playback advanced.phase /= Nothing)
+        , expect "stale observations cannot replace the current turn"
+            (CurrentTurn.pollSucceeded observation advanced == advanced)
+        , expect "late success from an older turn cannot alter playback"
+            (CurrentTurn.submissionSucceeded 1 observation advanced == advanced)
+        , expect "matching submission failure restores planning and exposes the error"
+            (not (TurnLifecycle.planningLocked recovered.phase) && recovered.error == Just "request failed" && recovered.refreshing)
+        , expect "poll failure clears in-flight status so polling can retry"
+            (not (CurrentTurn.pollFailed "poll failed" pendingPoll).refreshing)
+        , expect "initialization never replays prior resolution"
+            (TurnLifecycle.playback (CurrentTurn.init observation.turn).phase == Nothing)
+        ]
