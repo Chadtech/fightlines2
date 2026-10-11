@@ -2486,62 +2486,44 @@ resolutionSummary model =
 keyCommands : Model -> KeyCmd Msg
 keyCommands model =
     let
-        leftKeys : msg -> KeyCmd msg
-        leftKeys msg =
-            KeyCmd.batch
-                [ KeyCmd.leftArrow msg
-                , KeyCmd.a msg
-                ]
-
-        rightKeys : msg -> KeyCmd msg
-        rightKeys msg =
-            KeyCmd.batch
-                [ KeyCmd.rightArrow msg
-                , KeyCmd.d msg
-                ]
-
-        upKeys : msg -> KeyCmd msg
-        upKeys msg =
-            KeyCmd.batch
-                [ KeyCmd.upArrow msg
-                , KeyCmd.w msg
-                ]
-
-        downKeys : msg -> KeyCmd msg
-        downKeys msg =
-            KeyCmd.batch
-                [ KeyCmd.downArrow msg
-                , KeyCmd.s msg
-                ]
-
         navigation : List (KeyCmd Msg)
         navigation =
-            if choosingDirection model then
-                [ leftKeys (DirectionKeyPressed Facing.West)
-                , rightKeys (DirectionKeyPressed Facing.East)
-                , upKeys (DirectionKeyPressed Facing.North)
-                , downKeys (DirectionKeyPressed Facing.South)
-                ]
+            case currentSelection model of
+                Just (UnitSelection { interaction }) ->
+                    case interaction of
+                        ChoosingDirection _ ->
+                            [ leftKeys (DirectionKeyPressed Facing.West)
+                            , rightKeys (DirectionKeyPressed Facing.East)
+                            , upKeys (DirectionKeyPressed Facing.North)
+                            , downKeys (DirectionKeyPressed Facing.South)
+                            ]
 
-            else if pathPreview model /= Nothing && not (planningLocked model) then
-                [ leftKeys (PathDirectionKeyPressed Facing.West)
-                , rightKeys (PathDirectionKeyPressed Facing.East)
-                , upKeys (PathDirectionKeyPressed Facing.North)
-                , downKeys (PathDirectionKeyPressed Facing.South)
-                , KeyCmd.enter PathEnterPressed
-                ]
+                        ChoosingMove _ ->
+                            [ leftKeys (PathDirectionKeyPressed Facing.West)
+                            , rightKeys (PathDirectionKeyPressed Facing.East)
+                            , upKeys (PathDirectionKeyPressed Facing.North)
+                            , downKeys (PathDirectionKeyPressed Facing.South)
+                            , KeyCmd.enter PathEnterPressed
+                            ]
 
-            else if commandMenuUnit model /= Nothing then
-                [ upKeys PreviousCommandPressed
-                , downKeys NextCommandPressed
-                ]
+                        CommandMenu _ ->
+                            case model.dialog of
+                                Nothing ->
+                                    [ upKeys PreviousCommandPressed
+                                    , downKeys NextCommandPressed
+                                    ]
 
-            else
-                [ leftKeys PanLeftKeyPressed
-                , rightKeys PanRightKeyPressed
-                , upKeys PanUpKeyPressed
-                , downKeys PanDownKeyPressed
-                ]
+                                Just _ ->
+                                    panNavigation ()
+
+                Just (Inspecting _) ->
+                    panNavigation ()
+
+                Just (UnloadSelection _) ->
+                    panNavigation ()
+
+                Nothing ->
+                    panNavigation ()
 
         camera : KeyCmd Msg
         camera =
@@ -2555,6 +2537,47 @@ keyCommands model =
         , camera
         , KeyCmd.batch navigation
         ]
+
+
+leftKeys : msg -> KeyCmd msg
+leftKeys msg =
+    KeyCmd.batch
+        [ KeyCmd.leftArrow msg
+        , KeyCmd.a msg
+        ]
+
+
+rightKeys : msg -> KeyCmd msg
+rightKeys msg =
+    KeyCmd.batch
+        [ KeyCmd.rightArrow msg
+        , KeyCmd.d msg
+        ]
+
+
+upKeys : msg -> KeyCmd msg
+upKeys msg =
+    KeyCmd.batch
+        [ KeyCmd.upArrow msg
+        , KeyCmd.w msg
+        ]
+
+
+downKeys : msg -> KeyCmd msg
+downKeys msg =
+    KeyCmd.batch
+        [ KeyCmd.downArrow msg
+        , KeyCmd.s msg
+        ]
+
+
+panNavigation : () -> List (KeyCmd Msg)
+panNavigation _ =
+    [ leftKeys PanLeftKeyPressed
+    , rightKeys PanRightKeyPressed
+    , upKeys PanUpKeyPressed
+    , downKeys PanDownKeyPressed
+    ]
 
 
 subscriptions : Model -> Sub Msg

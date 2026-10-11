@@ -241,7 +241,10 @@ decodes it into `OperatingSystem` and stores it in `Shared.Model`, using `Unknow
 for unrecognized platform strings. Missing or malformed flags instead open an
 `AppInitError` page with decoder details in a read-only textarea; it has no shared
 state, subscriptions, or route handling. Pages expose keyboard commands through
-`keyCommands`; `Main` maps active-page messages and passes the shared operating
+`keyCommands`; game navigation keys pattern-match the current selection and unit
+interaction, with dialog visibility deciding whether command-menu navigation is
+active. Locked phases expose inspection only, so key bindings need no separate
+planning-lock check. `Main` maps active-page messages and passes the shared operating
 system to `KeyCmd.subscriptions`. Command shortcuts use Meta on macOS/iOS and
 Control elsewhere. While choosing a move, `GamePage` routes arrow and WASD
 commands to extend or retrace the preview from its current tip, and Enter saves
