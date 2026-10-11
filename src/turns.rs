@@ -377,7 +377,9 @@ fn destination_conflicts(scenario: &Scenario, orders: &[MoveOrder]) -> BTreeSet<
                             .units
                             .iter()
                             .find(|unit| unit.unit_id() == other.unit_id)
-                            .is_some_and(|unit| unit.carrier_id().is_none())
+                            // A moving passenger claims its unload destination;
+                            // a stationary passenger only occupies its carrier.
+                            .is_some_and(|unit| other.path.len() > 1 || unit.carrier_id().is_none())
                 })
         })
         .map(|order| order.unit_id)
@@ -1493,6 +1495,100 @@ mod tests {
             validate(&scenario, Side::Player1, orders).unwrap_err(),
             "enemy units block movement."
         );
+    }
+
+    #[test]
+    fn direct_unload_destination_conflicts_hold_both_units() {
+        for both_aboard in [true, false] {
+            for unloading_side in [Side::Player1, Side::Player2] {
+                for first_side in [Side::Player1, Side::Player2] {
+                    let mut scenario = Scenario::supply_point().unwrap();
+                    scenario.map = crate::map::Map::new(
+                        17,
+                        17,
+                        crate::map::Terrain::GrassPlain,
+                        BTreeMap::new(),
+                    )
+                    .unwrap();
+                    scenario
+                        .units
+                        .retain(|unit| ["1", "4", "6", "9"].contains(&unit.id().as_str()));
+                    vehicle(&mut scenario, "4").move_to(Coordinate::new(5, 5));
+                    vehicle(&mut scenario, "9").move_to(Coordinate::new(7, 5));
+                    for (passenger, truck, origin, side) in [
+                        ("1", "4", Coordinate::new(5, 6), Side::Player1),
+                        ("6", "9", Coordinate::new(7, 6), Side::Player2),
+                    ] {
+                        let unit = vehicle(&mut scenario, passenger);
+                        if both_aboard || side == unloading_side {
+                            unit.board(UnitId::parse(truck).unwrap());
+                        } else {
+                            unit.move_to(origin);
+                        }
+                    }
+                    let initial = scenario.clone();
+                    let mut player1 = holds(&scenario, Side::Player1);
+                    let mut player2 = holds(&scenario, Side::Player2);
+                    set_path(&mut player1, "1", &[(5, 5), (6, 5)]);
+                    set_path(&mut player2, "6", &[(7, 5), (6, 5)]);
+                    if !both_aboard {
+                        if unloading_side == Side::Player1 {
+                            set_path(&mut player2, "6", &[(7, 6), (6, 6), (6, 5)]);
+                        } else {
+                            set_path(&mut player1, "1", &[(5, 6), (6, 6), (6, 5)]);
+                        }
+                    }
+                    let submissions = if first_side == Side::Player1 {
+                        [(Side::Player1, player1), (Side::Player2, player2)]
+                    } else {
+                        [(Side::Player2, player2), (Side::Player1, player1)]
+                    };
+                    let mut turns = Turns::default();
+                    for (side, orders) in submissions {
+                        turns.submit(&mut scenario, side, 1, orders).unwrap();
+                    }
+                    assert_eq!(turns.number, 2);
+                    let events = &turns.last_resolution.as_ref().unwrap().events;
+                    assert_eq!(events.len(), 4);
+                    for (unit, original) in scenario.units.iter().zip(&initial.units) {
+                        assert_eq!(unit.carrier_id(), original.carrier_id());
+                        assert_eq!(unit.board_position(), original.board_position());
+                        assert_eq!(unit.direction(), original.direction());
+                        assert_eq!(unit.fuel(), original.fuel());
+                        assert_eq!(unit.supplies().current(), 63);
+                        let event = events
+                            .iter()
+                            .find(|event| event.unit_id == unit.unit_id())
+                            .unwrap();
+                        let expected_kind = if ["1", "6"].contains(&unit.id().as_str()) {
+                            TurnEventKind::DestinationConflict
+                        } else {
+                            TurnEventKind::Hold
+                        };
+                        assert_eq!(event.kind, expected_kind);
+                        assert_eq!(
+                            event.path,
+                            vec![initial.physical_position(original).unwrap()]
+                        );
+                        assert_eq!(event.initial_carrier, original.carrier_id());
+                    }
+                    let occupied: BTreeSet<_> = scenario
+                        .units
+                        .iter()
+                        .filter_map(|unit| unit.board_position())
+                        .collect();
+                    assert_eq!(
+                        occupied.len(),
+                        scenario
+                            .units
+                            .iter()
+                            .filter(|unit| unit.board_position().is_some())
+                            .count()
+                    );
+                    assert!(!occupied.contains(&Coordinate::new(6, 5)));
+                }
+            }
+        }
     }
 
     #[test]
