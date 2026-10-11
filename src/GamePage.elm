@@ -125,8 +125,6 @@ type alias Model =
     , board : GameBoard
     , visibleTiles : List Coordinate
     , movementRules : List Movement.Rule
-    , pathPreview : Maybe Movement.Option
-    , moveOptions : List Movement.Option
     , plannedMoves : List PlannedMove
     , movementStatus : MovementStatus
     , selected : Maybe Selection
@@ -152,13 +150,21 @@ type alias SelectedUnit =
 
 type UnitInteraction
     = CommandMenu (Maybe UnitCommands.MenuOption)
+    | ChoosingMove MovePlanning
     | ChoosingDirection Direction
+
+
+type alias MovePlanning =
+    { preview : Movement.Option
+    , options : List Movement.Option
+    }
 
 
 type alias UnloadPlanning =
     { truckId : UnitId
     , passengerId : UnitId
     , remaining : List UnitId
+    , options : List Movement.Option
     }
 
 
@@ -259,8 +265,6 @@ init shared flags =
     , board = flags.snapshot.board
     , visibleTiles = flags.snapshot.visibleTiles
     , movementRules = flags.snapshot.movementRules
-    , pathPreview = Nothing
-    , moveOptions = []
     , plannedMoves = []
     , movementStatus = NoMovementStatus
     , selected = Nothing
@@ -296,7 +300,7 @@ keyCommands model =
                 , downKeys (DirectionKeyPressed Facing.South)
                 ]
 
-            else if model.pathPreview /= Nothing && not (planningLocked model) then
+            else if pathPreview model /= Nothing && not (planningLocked model) then
                 [ leftKeys (PathDirectionKeyPressed Facing.West)
                 , rightKeys (PathDirectionKeyPressed Facing.East)
                 , upKeys (PathDirectionKeyPressed Facing.North)
@@ -526,12 +530,42 @@ snapshotSelection =
         |> SS.with (TurnPlayback.selection Unit.selection Coordinate.selection)
 
 
+movementPlanning : Model -> Maybe MovePlanning
+movementPlanning model =
+    case model.selected of
+        Just (UnitSelection selection) ->
+            case selection.interaction of
+                ChoosingMove planning ->
+                    Just planning
+
+                _ ->
+                    Nothing
+
+        _ ->
+            Nothing
+
+
+pathPreview : Model -> Maybe Movement.Option
+pathPreview model =
+    Maybe.map .preview (movementPlanning model)
+
+
+moveOptions : Model -> List Movement.Option
+moveOptions model =
+    case model.selected of
+        Just (UnloadSelection planning) ->
+            planning.options
+
+        _ ->
+            movementPlanning model
+                |> Maybe.map .options
+                |> Maybe.withDefault []
+
+
 clearSelection : Model -> Model
 clearSelection model =
     { model
         | selected = Nothing
-        , moveOptions = []
-        , pathPreview = Nothing
         , movementStatus = NoMovementStatus
     }
 
@@ -546,7 +580,7 @@ selectUnit id model =
             let
                 choosingOccupiedDestination : Bool
                 choosingOccupiedDestination =
-                    (model.pathPreview /= Nothing || isChoosingUnload model) && not (planningLocked model) && Maybe.map .id (selectedUnit model) /= Just id
+                    (pathPreview model /= Nothing || isChoosingUnload model) && not (planningLocked model) && Maybe.map .id (selectedUnit model) /= Just id
             in
             if choosingOccupiedDestination then
                 Unit.boardPosition unit |> Maybe.map (\position -> selectTile position model) |> Maybe.withDefault model
@@ -557,8 +591,6 @@ selectUnit id model =
             else
                 { model
                     | selected = Just (UnitSelection { id = id, interaction = CommandMenu Nothing })
-                    , moveOptions = []
-                    , pathPreview = Nothing
                     , movementStatus = NoMovementStatus
                 }
 
@@ -584,14 +616,12 @@ selectMovementTile position model =
             notOwnUnit _ =
                 { model
                     | selected = Just (TileSelection position)
-                    , moveOptions = []
-                    , pathPreview = Nothing
                     , movementStatus = NoMovementStatus
                 }
         in
         case selectedUnit model of
             Just unit ->
-                if isOwnUnit model unit && model.pathPreview /= Nothing then
+                if isOwnUnit model unit && pathPreview model /= Nothing then
                     let
                         destinationOption : Movement.Option -> Maybe Movement.Option
                         destinationOption preview =
@@ -605,9 +635,8 @@ selectMovementTile position model =
                         Just move ->
                             { model
                                 | plannedMoves = saveMove unit move model
-                                , pathPreview = Nothing
+                                , selected = resetCommandMenu model.selected
                                 , movementStatus = MovePlanned
-                                , moveOptions = []
                                 , dialog = unloadPrompt unit model
                             }
 
@@ -623,21 +652,34 @@ selectMovementTile position model =
 
 previewTile : Coordinate -> Model -> Model
 previewTile position model =
-    if model.drag /= Nothing || model.pathPreview == Nothing then
-        model
+    case model.selected of
+        Just (UnitSelection selection) ->
+            case selection.interaction of
+                ChoosingMove planning ->
+                    if model.drag /= Nothing then
+                        model
 
-    else
-        case traceTo position model of
-            Just preview ->
-                { model | pathPreview = Just preview, movementStatus = NoMovementStatus }
+                    else
+                        case traceTo position model of
+                            Just preview ->
+                                { model
+                                    | selected = Just (UnitSelection { selection | interaction = ChoosingMove { planning | preview = preview } })
+                                    , movementStatus = NoMovementStatus
+                                }
 
-            Nothing ->
-                model
+                            Nothing ->
+                                model
+
+                _ ->
+                    model
+
+        _ ->
+            model
 
 
 extendPath : Direction -> Model -> Model
 extendPath direction model =
-    case model.pathPreview of
+    case pathPreview model of
         Just preview ->
             previewTile (Direction.step preview.destination direction) model
 
@@ -647,7 +689,7 @@ extendPath direction model =
 
 confirmPath : Model -> Model
 confirmPath model =
-    case model.pathPreview of
+    case pathPreview model of
         Just preview ->
             selectMovementTile preview.destination model
 
@@ -773,7 +815,12 @@ update lobbyId msg model =
                 UnitCommands.CommandFocused command ->
                     case model.selected of
                         Just (UnitSelection selection) ->
-                            ( { model | selected = Just (UnitSelection { selection | interaction = CommandMenu (Just command) }) }, E.none )
+                            case selection.interaction of
+                                CommandMenu _ ->
+                                    ( { model | selected = Just (UnitSelection { selection | interaction = CommandMenu (Just command) }) }, E.none )
+
+                                _ ->
+                                    ( model, E.none )
 
                         _ ->
                             ( model, E.none )
@@ -865,8 +912,6 @@ update lobbyId msg model =
                 ( { model
                     | selected = resetCommandMenu model.selected
                     , plannedMoves = List.filter (\plan -> Just plan.unitId /= Maybe.map .id (selectedUnit model)) model.plannedMoves
-                    , pathPreview = Nothing
-                    , moveOptions = []
                     , movementStatus = PlannedMoveCleared
                   }
                 , E.none
@@ -1024,7 +1069,7 @@ handleBoardMsg boardMsg model =
             let
                 confirmsSelectedUnitPreview : Bool
                 confirmsSelectedUnitPreview =
-                    model.pathPreview /= Nothing && Maybe.map .id (selectedUnit model) == Just id
+                    pathPreview model /= Nothing && Maybe.map .id (selectedUnit model) == Just id
             in
             if confirmsSelectedUnitPreview then
                 confirmPath model
@@ -1120,19 +1165,14 @@ view model =
                     { frame = model.frame
                     , rotation = rotationSelection model
                     , visibleTiles = model.visibleTiles
-                    , choosingDestination = model.pathPreview /= Nothing || isChoosingUnload model
+                    , choosingDestination = pathPreview model /= Nothing || isChoosingUnload model
                     , moving = TurnPlayback.movingPositions model.playback
                     , selected = selectedPosition model
-                    , reachable =
-                        if model.pathPreview == Nothing && not (isChoosingUnload model) then
-                            []
-
-                        else
-                            List.map .destination model.moveOptions
+                    , reachable = List.map .destination (moveOptions model)
                     , paths = List.map (.move >> .path) model.plannedMoves
                     , orderedUnits = List.map .unitId model.plannedMoves
                     , unloads = plannedUnloadRoutes model
-                    , previewPath = model.pathPreview |> Maybe.map .path |> Maybe.withDefault []
+                    , previewPath = pathPreview model |> Maybe.map .path |> Maybe.withDefault []
                     }
                     model.board
                     |> H.map BoardMsg
@@ -1195,6 +1235,9 @@ focusedCommand model =
                 CommandMenu focused ->
                     focused
 
+                ChoosingMove _ ->
+                    Nothing
+
                 ChoosingDirection _ ->
                     Nothing
 
@@ -1217,7 +1260,7 @@ commandMenuUnit model =
                         && Unit.onBoard unit
                         && not (planningLocked model)
                         && not (receivingLoad unit model)
-                        && (model.pathPreview == Nothing)
+                        && (pathPreview model == Nothing)
                         && (model.dialog == Nothing)
                         && not (choosingDirection model)
                         && not hasOrder
@@ -1275,8 +1318,6 @@ applyCommand lobbyId command model =
                                         , interaction = ChoosingDirection (Maybe.withDefault Facing.North unit.direction)
                                         }
                                     )
-                            , pathPreview = Nothing
-                            , moveOptions = []
                         }
 
                     UnitCommand.HoldPosition ->
@@ -1284,8 +1325,7 @@ applyCommand lobbyId command model =
                             Just hold ->
                                 { model
                                     | plannedMoves = hold :: List.filter (\plan -> plan.unitId /= unit.id) model.plannedMoves
-                                    , pathPreview = Nothing
-                                    , moveOptions = []
+                                    , selected = resetCommandMenu model.selected
                                     , movementStatus = MovePlanned
                                 }
 
@@ -1492,7 +1532,7 @@ unitOrderView model unit =
         planned =
             ListUtil.find (\plan -> plan.unitId == unit.id) model.plannedMoves
     in
-    case ( model.pathPreview, planned ) of
+    case ( pathPreview model, planned ) of
         ( Just preview, _ ) ->
             [ H.p
                 []
@@ -1703,34 +1743,36 @@ viewportSubscriptions model =
 
 traceTo : Coordinate -> Model -> Maybe Movement.Option
 traceTo position model =
-    let
-        previewForUnit : Unit -> Maybe Movement.Option
-        previewForUnit unit =
+    case ( selectedUnit model, movementPlanning model ) of
+        ( Just unit, Just planning ) ->
             if isOwnUnit model unit then
-                Unit.physicalPosition model.board.units unit
-                    |> Maybe.andThen
-                        (\origin ->
-                            Movement.preview model.movementRules
-                                model.board
-                                unit
-                                (model.pathPreview |> Maybe.withDefault (Movement.start origin))
-                                position
-                        )
+                Movement.preview model.movementRules model.board unit planning.preview position
 
             else
                 Nothing
-    in
-    selectedUnit model
-        |> Maybe.andThen previewForUnit
+
+        _ ->
+            Nothing
 
 
 beginMovement : Unit -> Model -> Model
 beginMovement unit model =
-    { model
-        | pathPreview = Unit.physicalPosition model.board.units unit |> Maybe.map Movement.start
-        , moveOptions = Movement.options (reservedDestinations unit model) model.movementRules model.board unit
-        , movementStatus = NoMovementStatus
-    }
+    case Unit.physicalPosition model.board.units unit of
+        Just origin ->
+            let
+                planning : MovePlanning
+                planning =
+                    { preview = Movement.start origin
+                    , options = Movement.options (reservedDestinations unit model) model.movementRules model.board unit
+                    }
+            in
+            { model
+                | selected = Just (UnitSelection { id = unit.id, interaction = ChoosingMove planning })
+                , movementStatus = NoMovementStatus
+            }
+
+        Nothing ->
+            model
 
 
 boardingSpace : Unit -> Unit -> Model -> Bool
@@ -1944,7 +1986,7 @@ readyToSubmit model =
 
 submitTurn : LobbyId -> Model -> ( Model, Eff Msg )
 submitTurn lobbyId model =
-    ( { model | busy = True, dialog = Nothing, turnError = Nothing, pathPreview = Nothing, moveOptions = [] }
+    ( { model | busy = True, dialog = Nothing, turnError = Nothing, selected = resetCommandMenu model.selected }
     , E.request SubmitResponseReceived (submitRequest lobbyId model)
     )
 
@@ -2031,24 +2073,28 @@ beginUnloading : UnitId -> List UnitId -> Model -> Model
 beginUnloading truckId passengers model =
     case passengers of
         [] ->
-            { model | selected = Just (UnitSelection { id = truckId, interaction = CommandMenu Nothing }), moveOptions = [] }
+            { model | selected = Just (UnitSelection { id = truckId, interaction = CommandMenu Nothing }) }
 
         passengerId :: remaining ->
             let
                 planning : UnloadPlanning
                 planning =
-                    { truckId = truckId, passengerId = passengerId, remaining = remaining }
+                    { truckId = truckId
+                    , passengerId = passengerId
+                    , remaining = remaining
+                    , options = unloadOptions { truckId = truckId, passengerId = passengerId } model
+                    }
             in
-            { model | selected = Just (UnloadSelection planning), moveOptions = unloadOptions planning model }
+            { model | selected = Just (UnloadSelection planning) }
 
 
-unloadOptions : UnloadPlanning -> Model -> List Movement.Option
-unloadOptions planning model =
+unloadOptions : { truckId : UnitId, passengerId : UnitId } -> Model -> List Movement.Option
+unloadOptions selection model =
     let
         projectTruck : Unit -> Unit
         projectTruck unit =
-            if unit.id == planning.truckId then
-                truckDestination planning.truckId model
+            if unit.id == selection.truckId then
+                truckDestination selection.truckId model
                     |> Maybe.map
                         (\position ->
                             Unit.setOnMap position unit
@@ -2062,7 +2108,7 @@ unloadOptions planning model =
         projected =
             { map = model.board.map, units = List.map projectTruck model.board.units, depots = model.board.depots }
     in
-    case ListUtil.find (\unit -> unit.id == planning.passengerId) projected.units of
+    case ListUtil.find (\unit -> unit.id == selection.passengerId) projected.units of
         Just passenger ->
             Movement.options (reservedDestinations passenger model) model.movementRules projected passenger
 
@@ -2075,7 +2121,7 @@ chooseUnloadSquare planning destination model =
     if planningLocked model then
         model
 
-    else if List.any (\option -> option.destination == destination) model.moveOptions then
+    else if List.any (\option -> option.destination == destination) planning.options then
         let
             addUnload : PlannedMove -> PlannedMove
             addUnload plan =
@@ -2224,8 +2270,6 @@ receiveSnapshot snapshot model =
             , playback = TurnPlayback.start snapshot.playbackFrames
             , plannedMoves = []
             , selected = Nothing
-            , moveOptions = []
-            , pathPreview = Nothing
             , movementStatus = NoMovementStatus
             , turnError = Nothing
         }
@@ -2428,6 +2472,9 @@ choosingDirection model =
                 CommandMenu _ ->
                     False
 
+                ChoosingMove _ ->
+                    False
+
         _ ->
             False
 
@@ -2469,6 +2516,9 @@ rotationSelection model =
                         |> Maybe.map (\position -> { unitId = unit.id, position = position, direction = direction })
 
                 CommandMenu _ ->
+                    Nothing
+
+                ChoosingMove _ ->
                     Nothing
 
         _ ->

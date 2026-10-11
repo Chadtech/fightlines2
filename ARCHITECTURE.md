@@ -180,7 +180,12 @@ catches callers incompatible with a regenerated schema. The current server uses
 synchronous resolvers for its in-memory operations.
 
 `UnitCommand` owns the command vocabulary and per-unit availability.
-`GamePage` owns unit or tile selection, path previews and saved orders.
+`GamePage` owns unit or tile selection and saved orders. A selected unit's
+`UnitInteraction` distinguishes `CommandMenu`, `ChoosingMove MovePlanning` and
+`ChoosingDirection`. `MovePlanning` owns a required path preview and its reachable
+options; neither can exist outside movement selection. `UnloadPlanning` owns
+its passenger's reachable options. Leaving either selection drops its planning
+data without separately clearing page-level fields.
 `View.UnitCommands` renders the board-anchored command popup and emits command choices
 and arrow-key events. `GamePage.update` chooses the adjacent enabled command,
 wrapping at the ends, and `Effect.focus` uses Elm's DOM API to focus its HTML ID. Selection tracks the focused command. While the popup is open, page-level
@@ -481,8 +486,8 @@ receiving unit's hold alongside a loading or unloading draft. It reserves
 remaining berths across drafts and prevents moving a receiver while its loading
 or unloading drafts exist. The truck's status panel exposes cargo buttons;
 carried units have no independent commands. Saving a truck destination opens
-an unload checklist. `UnloadSelection` owns the current passenger and remaining
-queue while choosing squares. Unload choices belong to the truck's `PlannedMove`
+an unload checklist. `UnloadSelection` owns the current passenger, remaining
+queue and reachable exit options while choosing squares. Unload choices belong to the truck's `PlannedMove`
 and disappear when it is revoked. Elm projects the truck at its planned
 destination to reuse `Movement.options` for adjacent passenger exits, retaining
 terrain and resource limits and reserving chosen exits.
