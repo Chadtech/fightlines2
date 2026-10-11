@@ -21,6 +21,7 @@ check:
 	elm-format src --validate
 	node tools/check-movement.cjs
 	node tools/check-turns.cjs
+	node tools/check-orders.cjs
 	$(MAKE) frontend
 	elm make src/Style.elm src/View/*.elm --output=/dev/null
 

@@ -180,7 +180,13 @@ catches callers incompatible with a regenerated schema. The current server uses
 synchronous resolvers for its in-memory operations.
 
 `UnitCommand` owns the command vocabulary and per-unit availability.
-`GamePage` owns unit or tile selection and saved orders. A selected unit's
+`GamePage` owns unit or tile selection and saved orders. `PlannedOrder` gives
+saved orders separate `Hold`, `Move` and `Rotate` actions. Only `Move` carries
+unload choices; `Rotate` carries a stationary position and required direction.
+Its submission adapter converts these actions to the existing GraphQL input,
+using single-coordinate paths for holds and rotations. `PlannedOrderChecks`
+verifies that conversion, including unloading from stationary trucks.
+A selected unit's
 `UnitInteraction` distinguishes `CommandMenu`, `ChoosingMove MovePlanning` and
 `ChoosingDirection`. `MovePlanning` owns a required path preview and its reachable
 options; neither can exist outside movement selection. `UnloadPlanning` owns
@@ -487,7 +493,7 @@ remaining berths across drafts and prevents moving a receiver while its loading
 or unloading drafts exist. The truck's status panel exposes cargo buttons;
 carried units have no independent commands. Saving a truck destination opens
 an unload checklist. `UnloadSelection` owns the current passenger, remaining
-queue and reachable exit options while choosing squares. Unload choices belong to the truck's `PlannedMove`
+queue and reachable exit options while choosing squares. Unload choices belong to the truck's `Move` order
 and disappear when it is revoked. Elm projects the truck at its planned
 destination to reuse `Movement.options` for adjacent passenger exits, retaining
 terrain and resource limits and reserving chosen exits.

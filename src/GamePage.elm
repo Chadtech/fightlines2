@@ -24,7 +24,6 @@ import Api.Enum.Side
         )
 import Api.Enum.TurnEventKind as EventKind
 import Api.Enum.UnitKind as UnitKind
-import Api.InputObject
 import Api.Mutation
 import Api.Object
 import Api.Object.Depot as DepotApi
@@ -47,7 +46,6 @@ import Effect as E
         )
 import GameBoard exposing (GameBoard)
 import Graphql.Http
-import Graphql.OptionalArgument exposing (OptionalArgument(..))
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import Html.Styled as H
     exposing
@@ -64,6 +62,11 @@ import LobbyId
         )
 import Map exposing (Map)
 import Movement
+import PlannedOrder
+    exposing
+        ( PlannedOrder
+        , UnloadOrder
+        )
 import Point exposing (Point)
 import Ports.Js.To as ToJs
 import Shared
@@ -125,7 +128,7 @@ type alias Model =
     , board : GameBoard
     , visibleTiles : List Coordinate
     , movementRules : List Movement.Rule
-    , plannedMoves : List PlannedMove
+    , plannedOrders : List PlannedOrder
     , movementStatus : MovementStatus
     , selected : Maybe Selection
     , offset : Point
@@ -174,12 +177,6 @@ type alias UnloadChoice =
     }
 
 
-type alias UnloadOrder =
-    { unitId : UnitId
-    , destination : Coordinate
-    }
-
-
 type Dialog
     = PartialOrdersWarning
     | UnloadChecklist UnloadChoice
@@ -187,17 +184,9 @@ type Dialog
 
 type MovementStatus
     = NoMovementStatus
-    | PlannedMoveCleared
+    | PlannedOrderCleared
     | MovePlanned
     | DestinationUnavailable
-
-
-type alias PlannedMove =
-    { unitId : UnitId
-    , move : Movement.Option
-    , unloads : List UnloadOrder
-    , direction : Maybe Direction
-    }
 
 
 type Msg
@@ -265,7 +254,7 @@ init shared flags =
     , board = flags.snapshot.board
     , visibleTiles = flags.snapshot.visibleTiles
     , movementRules = flags.snapshot.movementRules
-    , plannedMoves = []
+    , plannedOrders = []
     , movementStatus = NoMovementStatus
     , selected = Nothing
     , offset = { x = 0, y = 0 }
@@ -385,7 +374,7 @@ movementStatusText status =
         NoMovementStatus ->
             ""
 
-        PlannedMoveCleared ->
+        PlannedOrderCleared ->
             "planned move cleared."
 
         MovePlanned ->
@@ -634,7 +623,7 @@ selectMovementTile position model =
                     case traceTo position model |> Maybe.andThen destinationOption of
                         Just move ->
                             { model
-                                | plannedMoves = saveMove unit move model
+                                | plannedOrders = saveMove unit move model
                                 , selected = resetCommandMenu model.selected
                                 , movementStatus = MovePlanned
                                 , dialog = unloadPrompt unit model
@@ -911,8 +900,8 @@ update lobbyId msg model =
             else
                 ( { model
                     | selected = resetCommandMenu model.selected
-                    , plannedMoves = List.filter (\plan -> Just plan.unitId /= Maybe.map .id (selectedUnit model)) model.plannedMoves
-                    , movementStatus = PlannedMoveCleared
+                    , plannedOrders = List.filter (\plan -> Just plan.unitId /= Maybe.map .id (selectedUnit model)) model.plannedOrders
+                    , movementStatus = PlannedOrderCleared
                   }
                 , E.none
                 )
@@ -1169,8 +1158,8 @@ view model =
                     , moving = TurnPlayback.movingPositions model.playback
                     , selected = selectedPosition model
                     , reachable = List.map .destination (moveOptions model)
-                    , paths = List.map (.move >> .path) model.plannedMoves
-                    , orderedUnits = List.map .unitId model.plannedMoves
+                    , paths = List.map PlannedOrder.path model.plannedOrders
+                    , orderedUnits = List.map .unitId model.plannedOrders
                     , unloads = plannedUnloadRoutes model
                     , previewPath = pathPreview model |> Maybe.map .path |> Maybe.withDefault []
                     }
@@ -1207,7 +1196,7 @@ view model =
 plannedUnloadRoutes : Model -> List GameBoard.UnloadRoute
 plannedUnloadRoutes model =
     let
-        truckUnloads : PlannedMove -> List GameBoard.UnloadRoute
+        truckUnloads : PlannedOrder -> List GameBoard.UnloadRoute
         truckUnloads plan =
             let
                 route : UnloadOrder -> Maybe GameBoard.UnloadRoute
@@ -1215,16 +1204,16 @@ plannedUnloadRoutes model =
                     let
                         withDirection : Direction -> GameBoard.UnloadRoute
                         withDirection direction =
-                            { origin = plan.move.destination
+                            { origin = PlannedOrder.destination plan
                             , direction = direction
                             }
                     in
-                    Direction.between plan.move.destination unload.destination
+                    Direction.between (PlannedOrder.destination plan) unload.destination
                         |> Maybe.map withDirection
             in
-            List.filterMap route plan.unloads
+            List.filterMap route (PlannedOrder.unloads plan)
     in
-    List.concatMap truckUnloads model.plannedMoves
+    List.concatMap truckUnloads model.plannedOrders
 
 
 focusedCommand : Model -> Maybe UnitCommands.MenuOption
@@ -1252,7 +1241,7 @@ commandMenuUnit model =
             let
                 hasOrder : Bool
                 hasOrder =
-                    List.any (\plan -> plan.unitId == unit.id) model.plannedMoves
+                    List.any (\plan -> plan.unitId == unit.id) model.plannedOrders
 
                 canChooseCommand : Bool
                 canChooseCommand =
@@ -1324,7 +1313,7 @@ applyCommand lobbyId command model =
                         case holdOrder model.board.units unit of
                             Just hold ->
                                 { model
-                                    | plannedMoves = hold :: List.filter (\plan -> plan.unitId /= unit.id) model.plannedMoves
+                                    | plannedOrders = hold :: List.filter (\plan -> plan.unitId /= unit.id) model.plannedOrders
                                     , selected = resetCommandMenu model.selected
                                     , movementStatus = MovePlanned
                                 }
@@ -1528,9 +1517,9 @@ unitOrderView model unit =
                 |> Maybe.map (.budget >> Movement.pointsLabel)
                 |> Maybe.withDefault "?"
 
-        planned : Maybe PlannedMove
+        planned : Maybe PlannedOrder
         planned =
-            ListUtil.find (\plan -> plan.unitId == unit.id) model.plannedMoves
+            ListUtil.find (\plan -> plan.unitId == unit.id) model.plannedOrders
     in
     case ( pathPreview model, planned ) of
         ( Just preview, _ ) ->
@@ -1572,7 +1561,7 @@ unitOrderView model unit =
 
                 unloadDetails : List (Html Msg)
                 unloadDetails =
-                    List.map unloadSummary plan.unloads
+                    List.map unloadSummary (PlannedOrder.unloads plan)
 
                 orderDetails : List (Html Msg)
                 orderDetails =
@@ -1586,27 +1575,27 @@ unitOrderView model unit =
             []
 
 
-chosenOrderText : Model -> Unit -> PlannedMove -> String
-chosenOrderText model unit plan =
-    let
-        move : Movement.Option
-        move =
-            plan.move
-    in
-    if plan.direction /= Nothing then
-        "rotate: " ++ (plan.direction |> Maybe.map Direction.label |> Maybe.withDefault "")
+chosenOrderText : Model -> Unit -> PlannedOrder -> String
+chosenOrderText model unit order =
+    case order.action of
+        PlannedOrder.Hold _ ->
+            "hold position"
 
-    else if List.length move.path <= 1 then
-        "hold position"
+        PlannedOrder.Rotate rotation ->
+            "rotate: " ++ Direction.label rotation.direction
 
-    else
-        plannedAction model unit move
-            ++ ": ("
-            ++ String.fromInt move.destination.x
-            ++ ", "
-            ++ String.fromInt move.destination.y
-            ++ ") · movement: "
-            ++ Movement.pointsLabel move.cost
+        PlannedOrder.Move plan ->
+            if List.length plan.move.path <= 1 then
+                "hold position"
+
+            else
+                plannedAction model unit plan.move
+                    ++ ": ("
+                    ++ String.fromInt plan.move.destination.x
+                    ++ ", "
+                    ++ String.fromInt plan.move.destination.y
+                    ++ ") · movement: "
+                    ++ Movement.pointsLabel plan.move.cost
 
 
 viewControls : Model -> Html Msg
@@ -1782,17 +1771,17 @@ boardingSpace mover truck model =
         alreadyAboard =
             List.length (List.filter (\unit -> Unit.carrierId unit == Just truck.id) model.board.units)
 
-        boarding : PlannedMove -> Bool
+        boarding : PlannedOrder -> Bool
         boarding plan =
-            plan.unitId /= mover.id && List.length plan.move.path > 1 && Just plan.move.destination == Unit.boardPosition truck
+            plan.unitId /= mover.id && PlannedOrder.isMoving plan && Just (PlannedOrder.destination plan) == Unit.boardPosition truck
 
         truckMoving : Bool
         truckMoving =
-            List.any (\plan -> plan.unitId == truck.id && List.length plan.move.path > 1) model.plannedMoves
+            List.any (\plan -> plan.unitId == truck.id && PlannedOrder.isMoving plan) model.plannedOrders
 
         fitsCargo : Bool
         fitsCargo =
-            alreadyAboard + List.length (List.filter boarding model.plannedMoves) < truck.cargoCapacity
+            alreadyAboard + List.length (List.filter boarding model.plannedOrders) < truck.cargoCapacity
 
         compatible : Bool
         compatible =
@@ -1816,12 +1805,12 @@ plannedAction model unit move =
 reservedDestinations : Unit -> Model -> List Coordinate
 reservedDestinations unit model =
     let
-        reserves : PlannedMove -> Bool
+        reserves : PlannedOrder -> Bool
         reserves plan =
             let
                 partner : Maybe Unit
                 partner =
-                    Unit.loadingPartner model.board.units unit plan.move.destination
+                    Unit.loadingPartner model.board.units unit (PlannedOrder.destination plan)
 
                 isWaitingPartner : Unit -> Bool
                 isWaitingPartner target =
@@ -1829,7 +1818,7 @@ reservedDestinations unit model =
 
                 waitingPartner : Bool
                 waitingPartner =
-                    List.length plan.move.path == 1 && (partner |> Maybe.map isWaitingPartner |> Maybe.withDefault False)
+                    not (PlannedOrder.isMoving plan) && (partner |> Maybe.map isWaitingPartner |> Maybe.withDefault False)
 
                 boardingDestination : Bool
                 boardingDestination =
@@ -1849,8 +1838,8 @@ reservedDestinations unit model =
 
         savedDestinations : List Coordinate
         savedDestinations =
-            List.map (.move >> .destination) (List.filter reserves model.plannedMoves)
-                ++ List.concatMap (.unloads >> List.map .destination) model.plannedMoves
+            List.map PlannedOrder.destination (List.filter reserves model.plannedOrders)
+                ++ List.concatMap (PlannedOrder.unloads >> List.map .destination) model.plannedOrders
     in
     savedDestinations ++ unavailableReceivers
 
@@ -1858,9 +1847,9 @@ reservedDestinations unit model =
 receivingLoad : Unit -> Model -> Bool
 receivingLoad unit model =
     let
-        receives : PlannedMove -> Bool
+        receives : PlannedOrder -> Bool
         receives plan =
-            if List.length plan.move.path <= 1 then
+            if not (PlannedOrder.isMoving plan) then
                 False
 
             else
@@ -1870,15 +1859,15 @@ receivingLoad unit model =
                             True
 
                         else
-                            Unit.loadingPartner model.board.units mover plan.move.destination |> Maybe.map .id |> (==) (Just unit.id)
+                            Unit.loadingPartner model.board.units mover (PlannedOrder.destination plan) |> Maybe.map .id |> (==) (Just unit.id)
 
                     Nothing ->
                         False
     in
-    List.any receives model.plannedMoves
+    List.any receives model.plannedOrders
 
 
-saveMove : Unit -> Movement.Option -> Model -> List PlannedMove
+saveMove : Unit -> Movement.Option -> Model -> List PlannedOrder
 saveMove unit move model =
     let
         receiver : Maybe Unit
@@ -1890,15 +1879,15 @@ saveMove unit move model =
                 Nothing ->
                     Unit.loadingPartner model.board.units unit move.destination
 
-        retained : List PlannedMove
+        retained : List PlannedOrder
         retained =
-            model.plannedMoves |> List.filter (\plan -> plan.unitId /= unit.id && Just plan.unitId /= Maybe.map .id receiver)
+            model.plannedOrders |> List.filter (\plan -> plan.unitId /= unit.id && Just plan.unitId /= Maybe.map .id receiver)
 
-        receiverHold : List PlannedMove
+        receiverHold : List PlannedOrder
         receiverHold =
             receiver |> Maybe.andThen (holdOrder model.board.units) |> Maybe.map List.singleton |> Maybe.withDefault []
     in
-    { unitId = unit.id, move = move, unloads = [], direction = Nothing } :: receiverHold ++ retained
+    { unitId = unit.id, action = PlannedOrder.Move { move = move, unloads = [] } } :: receiverHold ++ retained
 
 
 cargoView : Model -> Unit -> Html Msg
@@ -1974,7 +1963,7 @@ unitsWithoutOrders model =
     let
         missingOrder : Unit -> Bool
         missingOrder unit =
-            isOwnUnit model unit && Unit.onBoard unit && not (List.any (\plan -> plan.unitId == unit.id) model.plannedMoves)
+            isOwnUnit model unit && Unit.onBoard unit && not (List.any (\plan -> plan.unitId == unit.id) model.plannedOrders)
     in
     List.filter missingOrder model.board.units
 
@@ -2064,9 +2053,9 @@ isChoosingUnload model =
 
 truckDestination : UnitId -> Model -> Maybe Coordinate
 truckDestination truckId model =
-    model.plannedMoves
+    model.plannedOrders
         |> ListUtil.find (\plan -> plan.unitId == truckId)
-        |> Maybe.map (.move >> .destination)
+        |> Maybe.map PlannedOrder.destination
 
 
 beginUnloading : UnitId -> List UnitId -> Model -> Model
@@ -2123,17 +2112,25 @@ chooseUnloadSquare planning destination model =
 
     else if List.any (\option -> option.destination == destination) planning.options then
         let
-            addUnload : PlannedMove -> PlannedMove
-            addUnload plan =
-                if plan.unitId == planning.truckId then
-                    { plan | unloads = plan.unloads ++ [ { unitId = planning.passengerId, destination = destination } ] }
+            addUnload : PlannedOrder -> PlannedOrder
+            addUnload order =
+                if order.unitId == planning.truckId then
+                    case order.action of
+                        PlannedOrder.Move plan ->
+                            { order | action = PlannedOrder.Move { plan | unloads = plan.unloads ++ [ { unitId = planning.passengerId, destination = destination } ] } }
+
+                        PlannedOrder.Hold _ ->
+                            order
+
+                        PlannedOrder.Rotate _ ->
+                            order
 
                 else
-                    plan
+                    order
 
             next : Model
             next =
-                { model | plannedMoves = List.map addUnload model.plannedMoves }
+                { model | plannedOrders = List.map addUnload model.plannedOrders }
         in
         beginUnloading planning.truckId planning.remaining next
 
@@ -2198,10 +2195,10 @@ submissionWarning model =
         ]
 
 
-holdOrder : List Unit -> Unit -> Maybe PlannedMove
+holdOrder : List Unit -> Unit -> Maybe PlannedOrder
 holdOrder units unit =
     Unit.physicalPosition units unit
-        |> Maybe.map (\position -> { unitId = unit.id, move = Movement.start position, unloads = [], direction = Nothing })
+        |> Maybe.map (\position -> { unitId = unit.id, action = PlannedOrder.Hold position })
 
 
 submitRequest : LobbyId -> Model -> Graphql.Http.Request Snapshot
@@ -2209,35 +2206,20 @@ submitRequest lobbyId model =
     let
         missingOrder : Unit -> Bool
         missingOrder unit =
-            isOwnUnit model unit && not (List.any (\plan -> plan.unitId == unit.id) model.plannedMoves)
+            isOwnUnit model unit && not (List.any (\plan -> plan.unitId == unit.id) model.plannedOrders)
 
-        defaultHolds : List PlannedMove
+        defaultHolds : List PlannedOrder
         defaultHolds =
             model.board.units |> List.filter missingOrder |> List.filterMap (holdOrder model.board.units)
 
-        orders : List PlannedMove
+        orders : List PlannedOrder
         orders =
-            model.plannedMoves ++ defaultHolds
-
-        unloadInput : UnloadOrder -> Api.InputObject.UnloadOrderInput
-        unloadInput unload =
-            Api.InputObject.buildUnloadOrderInput
-                { unitId = UnitId.toString unload.unitId
-                , destination = Api.InputObject.buildCoordinateInput unload.destination
-                }
-
-        order : PlannedMove -> Api.InputObject.MoveOrderInput
-        order plan =
-            Api.InputObject.buildMoveOrderInput
-                { unitId = UnitId.toString plan.unitId
-                , path = List.map Api.InputObject.buildCoordinateInput plan.move.path
-                }
-                (\optionals -> { optionals | unloads = Present (List.map unloadInput plan.unloads), direction = Maybe.map Present plan.direction |> Maybe.withDefault Absent })
+            model.plannedOrders ++ defaultHolds
     in
     Api.Mutation.submitTurn
         { id = LobbyId.toString lobbyId
         , turnNumber = model.turn.number
-        , orders = List.map order orders
+        , orders = List.map PlannedOrder.toInput orders
         }
         snapshotSelection
         |> ApiRequest.mutationRequest
@@ -2268,7 +2250,7 @@ receiveSnapshot snapshot model =
             , board = GameBoard.setUnits frame.units snapshot.board
             , visibleTiles = frame.visibleTiles
             , playback = TurnPlayback.start snapshot.playbackFrames
-            , plannedMoves = []
+            , plannedOrders = []
             , selected = Nothing
             , movementStatus = NoMovementStatus
             , turnError = Nothing
@@ -2492,9 +2474,19 @@ saveRotation direction model =
                         && not (receivingLoad unit model)
             in
             if canSave then
-                case holdOrder model.board.units unit of
-                    Just hold ->
-                        { model | plannedMoves = { hold | direction = Just direction } :: List.filter (\plan -> plan.unitId /= unit.id) model.plannedMoves, selected = resetCommandMenu model.selected }
+                case Unit.boardPosition unit of
+                    Just position ->
+                        let
+                            rotation : PlannedOrder
+                            rotation =
+                                { unitId = unit.id
+                                , action = PlannedOrder.Rotate { position = position, direction = direction }
+                                }
+                        in
+                        { model
+                            | plannedOrders = rotation :: List.filter (\plan -> plan.unitId /= unit.id) model.plannedOrders
+                            , selected = resetCommandMenu model.selected
+                        }
 
                     Nothing ->
                         model
