@@ -225,10 +225,11 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   Enter/Space, and preserves that unit's selection. Show load/unload destination
   labels and explain the receiving unit's hold requirement in the right panel.
 - Truck status shows `cargo: current / capacity` and one button per passenger.
-  Loaded trucks also show a small dark square badge with a cream border and
-  head-and-shoulders silhouette in the tile's lower-right corner. Two passengers
+  Loaded trucks also show a gold square badge with a dark green border and
+  head-and-shoulders silhouette in the tile's lower-right corner. The badge is
+  about five logical pixels tall (40% larger than the original). Two passengers
   widen the badge slightly and add `2`. The badge pulses in unison over two seconds
-  between full and 30% opacity, remaining visible during the dim phase and above
+  between full and 65% opacity, remaining visible during the dim phase and above
   ordered-sprite dimming. Reduced-motion preferences keep it steady. Derive cargo
   from current passenger locations, so loading and unloading update the badge
   during playback. Empty trucks have no badge; concealed enemy cargo stays hidden.

@@ -1,13 +1,13 @@
 module TurnLifecycle exposing
     ( Phase(..)
-    , PlanningState
     , Submission
     , WaitingState
     , canPoll
     , finishSubmission
-    , initPlanningState
+    , mapPlanning
     , observeSubmission
     , orders
+    , planning
     , planningLocked
     , playback
     , selection
@@ -19,12 +19,9 @@ module TurnLifecycle exposing
     , toLabel
     )
 
-import GamePage.Selection as Selection
-    exposing
-        ( Inspection
-        , Selection(..)
-        )
+import GamePage.Selection as Selection exposing (Inspection, Selection(..))
 import PlannedOrder exposing (PlannedOrder)
+import PlanningState exposing (PlanningState)
 import TurnPlayback
 
 
@@ -33,12 +30,6 @@ type Phase
     | Submitting Submission
     | WaitingForOpponent WaitingState
     | Playing PlaybackState
-
-
-type alias PlanningState =
-    { orders : List PlannedOrder
-    , selection : Maybe Selection
-    }
 
 
 type alias PlaybackState =
@@ -66,13 +57,6 @@ type alias WaitingState =
     }
 
 
-initPlanningState : PlanningState
-initPlanningState =
-    { orders = []
-    , selection = Nothing
-    }
-
-
 toLabel : Phase -> String
 toLabel phase =
     case phase of
@@ -92,8 +76,8 @@ toLabel phase =
 orders : Phase -> List PlannedOrder
 orders phase =
     case phase of
-        Planning planning ->
-            planning.orders
+        Planning state ->
+            PlanningState.orders state
 
         Submitting submission ->
             submission.orders
@@ -121,14 +105,31 @@ planningLocked phase =
             True
 
 
-setOrders : List PlannedOrder -> Phase -> Phase
-setOrders drafts phase =
+{-| Apply a planning transition only while planning remains editable.
+-}
+mapPlanning : (PlanningState -> PlanningState) -> Phase -> Phase
+mapPlanning transition phase =
     case phase of
-        Planning planning ->
-            Planning { planning | orders = drafts }
+        Planning state ->
+            Planning (transition state)
 
         _ ->
             phase
+
+
+planning : Phase -> Maybe PlanningState
+planning phase =
+    case phase of
+        Planning state ->
+            Just state
+
+        _ ->
+            Nothing
+
+
+setOrders : List PlannedOrder -> Phase -> Phase
+setOrders drafts =
+    mapPlanning (PlanningState.setOrders drafts)
 
 
 {-| Each phase owns exactly one selection. Locked phases store only inspection;
@@ -137,8 +138,8 @@ editable interactions can be stored only in PlanningState.
 selection : Phase -> Maybe Selection
 selection phase =
     case phase of
-        Planning planning ->
-            planning.selection
+        Planning state ->
+            PlanningState.selection state
 
         Submitting submission ->
             Maybe.map Inspecting submission.inspection
@@ -153,8 +154,8 @@ selection phase =
 setSelection : Maybe Selection -> Phase -> Phase
 setSelection selected phase =
     case phase of
-        Planning planning ->
-            Planning { planning | selection = selected }
+        Planning state ->
+            Planning (PlanningState.setSelection selected state)
 
         _ ->
             case selected of
@@ -171,8 +172,8 @@ setSelection selected phase =
 setInspection : Maybe Inspection -> Phase -> Phase
 setInspection inspection phase =
     case phase of
-        Planning planning ->
-            Planning { planning | selection = Maybe.map Inspecting inspection }
+        Planning state ->
+            Planning (PlanningState.setSelection (Maybe.map Inspecting inspection) state)
 
         Submitting submission ->
             Submitting { submission | inspection = inspection }
@@ -187,15 +188,25 @@ setInspection inspection phase =
 startSubmission : Int -> Phase -> Phase
 startSubmission turnNumber phase =
     case phase of
-        Planning planning ->
-            Submitting
-                { turnNumber = turnNumber
-                , orders = planning.orders
-                , inspection = Maybe.map Selection.toInspection planning.selection
-                }
+        Planning state ->
+            case PlanningState.submissionDrafts state of
+                Just drafts ->
+                    submissionFromDrafts turnNumber drafts
+
+                Nothing ->
+                    phase
 
         _ ->
             phase
+
+
+submissionFromDrafts : Int -> PlanningState.Drafts -> Phase
+submissionFromDrafts turnNumber drafts =
+    Submitting
+        { turnNumber = turnNumber
+        , orders = drafts.orders
+        , inspection = Maybe.map Selection.toInspection drafts.selection
+        }
 
 
 {-| Return drafts after the matching request finishes. A poll may already have
@@ -206,7 +217,7 @@ finishSubmission turnNumber phase =
     case phase of
         Submitting submission ->
             if submission.turnNumber == turnNumber then
-                Planning { orders = submission.orders, selection = Maybe.map Inspecting submission.inspection }
+                resumePlanning submission.orders submission.inspection
 
             else
                 phase
@@ -219,8 +230,8 @@ observeSubmission : Bool -> Phase -> Phase
 observeSubmission submitted phase =
     if submitted then
         case phase of
-            Planning planning ->
-                WaitingForOpponent { orders = planning.orders, inspection = Maybe.map Selection.toInspection planning.selection }
+            Planning _ ->
+                WaitingForOpponent { orders = orders phase, inspection = Maybe.map Selection.toInspection (selection phase) }
 
             Submitting submission ->
                 WaitingForOpponent { orders = submission.orders, inspection = submission.inspection }
@@ -266,7 +277,7 @@ startTurn submitted frames =
     let
         ready : Phase
         ready =
-            observeSubmission submitted (Planning initPlanningState)
+            observeSubmission submitted (Planning PlanningState.init)
 
         afterPlayback : AfterPlayback
         afterPlayback =
@@ -296,7 +307,7 @@ tick delta phase =
                 ready =
                     case playing.afterPlayback of
                         StartPlanning ->
-                            Planning { initPlanningState | selection = Maybe.map Inspecting playing.inspection }
+                            resumePlanning [] playing.inspection
 
                         WaitForOpponent ->
                             WaitingForOpponent { orders = [], inspection = playing.inspection }
@@ -314,3 +325,11 @@ tick delta phase =
 
         _ ->
             Nothing
+
+
+resumePlanning : List PlannedOrder -> Maybe Inspection -> Phase
+resumePlanning drafts inspection =
+    PlanningState.init
+        |> PlanningState.setOrders drafts
+        |> PlanningState.setSelection (Maybe.map Inspecting inspection)
+        |> Planning

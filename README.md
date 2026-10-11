@@ -109,8 +109,8 @@ onto different squares in the same turn. Blocked truck moves or occupied exits
 leave the affected passengers aboard. Revoking the truck's order also removes
 its unload choices.
 Enemy passengers are concealed. Unit transport is separate from supply delivery.
-Loaded trucks show a small blinking passenger badge in the tile's lower-right
-corner, with `2` when both berths are occupied. It stays faintly visible between
+Loaded trucks show a prominent gold blinking passenger badge in the tile's lower-right
+corner, with `2` when both berths are occupied. It stays clearly visible between
 blinks and remains steady with reduced motion enabled. Empty trucks have no badge.
 
 Sight is shared by all units on your side. Infantry and field guns see 4 tiles,

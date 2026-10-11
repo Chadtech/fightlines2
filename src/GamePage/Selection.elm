@@ -4,7 +4,6 @@ module GamePage.Selection exposing
     , SelectedUnit
     , Selection(..)
     , UnitInteraction(..)
-    , UnloadPlanning
     , toInspection
     )
 
@@ -24,7 +23,6 @@ import View.UnitCommands as UnitCommands
 type Selection
     = Inspecting Inspection
     | UnitSelection SelectedUnit
-    | UnloadSelection UnloadPlanning
 
 
 type Inspection
@@ -50,14 +48,6 @@ type alias MovePlanning =
     }
 
 
-type alias UnloadPlanning =
-    { truckId : UnitId
-    , passengerId : UnitId
-    , remaining : List UnitId
-    , options : List Movement.Option
-    }
-
-
 
 ----------------------------------------------------------------
 -- API --
@@ -75,6 +65,3 @@ toInspection selection =
 
         UnitSelection unit ->
             UnitInspection unit.id
-
-        UnloadSelection planning ->
-            UnitInspection planning.passengerId

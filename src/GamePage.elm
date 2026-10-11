@@ -51,7 +51,6 @@ import GamePage.Selection
         , MovePlanning
         , Selection(..)
         , UnitInteraction(..)
-        , UnloadPlanning
         )
 import Graphql.Http
 import Graphql.SelectionSet as SS exposing (SelectionSet)
@@ -75,6 +74,7 @@ import PlannedOrder
         ( PlannedOrder
         , UnloadOrder
         )
+import PlanningState exposing (PlanningState, UnloadChoice, UnloadPlanning)
 import Point exposing (Point)
 import Ports.Js.To as ToJs
 import Shared
@@ -109,7 +109,6 @@ type alias Model =
     , opponentSubmitted : Bool
     , turnResolution : Maybe Turn.Resolution
     , phase : Phase
-    , dialog : Maybe Dialog
     , refreshing : Bool
     , turnError : Maybe String
     , shared : Shared.Model
@@ -145,17 +144,6 @@ type alias Player =
     , side : Side
     , isYou : Bool
     }
-
-
-type alias UnloadChoice =
-    { truckId : UnitId
-    , checked : List UnitId
-    }
-
-
-type Dialog
-    = PartialOrdersWarning
-    | UnloadChecklist UnloadChoice
 
 
 type MovementStatus
@@ -223,8 +211,7 @@ init shared flags =
     , phase =
         TurnLifecycle.observeSubmission
             flags.snapshot.turn.submitted
-            (TurnLifecycle.Planning TurnLifecycle.initPlanningState)
-    , dialog = Nothing
+            (TurnLifecycle.Planning PlanningState.init)
     , refreshing = False
     , turnError = Nothing
     , shared = shared
@@ -586,8 +573,8 @@ pathPreview model =
 
 moveOptions : Model -> List Movement.Option
 moveOptions model =
-    case currentSelection model of
-        Just (UnloadSelection planning) ->
+    case unloadPlanning model.phase of
+        Just planning ->
             planning.options
 
         _ ->
@@ -626,8 +613,8 @@ selectUnit id model =
 
 selectTile : Coordinate -> Model -> Model
 selectTile position model =
-    case currentSelection model of
-        Just (UnloadSelection planning) ->
+    case unloadPlanning model.phase of
+        Just planning ->
             chooseUnloadSquare planning position model
 
         _ ->
@@ -662,9 +649,9 @@ selectMovementTile position model =
                             { model
                                 | phase = TurnLifecycle.setOrders (saveMove unit move model) model.phase
                                 , movementStatus = MovePlanned
-                                , dialog = unloadPrompt unit model
                             }
                                 |> inspectSelectedUnit
+                                |> openUnloadPrompt unit move
 
                         Nothing ->
                             { model | movementStatus = DestinationUnavailable }
@@ -788,33 +775,13 @@ update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 update lobbyId msg model =
     case msg of
         UnloadUnitToggled id checked ->
-            case model.dialog of
-                Just (UnloadChecklist choice) ->
-                    let
-                        selectedIds : List UnitId
-                        selectedIds =
-                            if checked then
-                                id :: List.filter ((/=) id) choice.checked
-
-                            else
-                                List.filter ((/=) id) choice.checked
-                    in
-                    ( { model | dialog = Just (UnloadChecklist { choice | checked = selectedIds }) }, E.none )
-
-                _ ->
-                    ( model, E.none )
+            ( { model | phase = TurnLifecycle.mapPlanning (PlanningState.toggleUnloadPassenger id checked) model.phase }, E.none )
 
         UnloadChoicesConfirmed ->
-            case model.dialog of
-                Just (UnloadChecklist choice) ->
-                    beginUnloading choice.truckId (List.reverse choice.checked) { model | dialog = Nothing }
-                        |> E.withOut
-
-                _ ->
-                    ( model, E.none )
+            ( { model | phase = TurnLifecycle.mapPlanning (PlanningState.confirmUnloadPassengers (unloadOptions model)) model.phase }, E.none )
 
         UnloadSkipped ->
-            clearSelection { model | dialog = Nothing } |> E.withOut
+            clearSelection (dismissDialog model) |> E.withOut
 
         CargoUnitClicked id ->
             selectUnit id (clearSelection model) |> E.withOut
@@ -827,8 +794,8 @@ update lobbyId msg model =
 
                 effect : Eff Msg
                 effect =
-                    case ( model.dialog, next.dialog ) of
-                        ( Nothing, Just (UnloadChecklist _) ) ->
+                    case ( unloadChoice model.phase, unloadChoice next.phase ) of
+                        ( Nothing, Just _ ) ->
                             E.toJs (ToJs.OpenDialog { htmlId = unloadDialogId })
 
                         _ ->
@@ -957,34 +924,34 @@ update lobbyId msg model =
                 |> E.withOut
 
         EscapePressed ->
-            case model.dialog of
-                Just _ ->
-                    ( { model | dialog = Nothing }, E.none )
+            if hasDialog model then
+                ( dismissDialog model, E.none )
 
-                Nothing ->
-                    clearSelection model |> E.withOut
+            else
+                clearSelection model |> E.withOut
 
         SubmitTurnClicked ->
-            if planningLocked model || isChoosingUnload model then
+            if planningLocked model || isChoosingUnload model || unloadChoice model.phase /= Nothing then
                 ( model, E.none )
 
             else if List.isEmpty (unitsWithoutOrders model) then
                 submitTurn lobbyId model
 
             else
-                ( { model | dialog = Just PartialOrdersWarning }
+                ( { model | phase = TurnLifecycle.mapPlanning PlanningState.showSubmissionWarning model.phase }
                 , E.toJs (ToJs.OpenDialog { htmlId = partialOrdersDialogId })
                 )
 
         DialogDismissed ->
-            ( { model | dialog = Nothing }, E.none )
+            ( dismissDialog model, E.none )
 
         SubmissionConfirmed ->
-            if model.dialog == Just PartialOrdersWarning && not (planningLocked model) then
-                submitTurn lobbyId model
+            case model.phase of
+                TurnLifecycle.Planning (PlanningState.ConfirmingSubmission _) ->
+                    submitTurn lobbyId model
 
-            else
-                ( model, E.none )
+                _ ->
+                    ( model, E.none )
 
         SubmitResponseReceived turnNumber result ->
             if turnNumber /= model.turnNumber then
@@ -1292,8 +1259,8 @@ focusedCommand model =
 
 commandMenuUnit : Model -> Maybe Unit
 commandMenuUnit model =
-    case ( currentSelection model, model.dialog ) of
-        ( Just (UnitSelection { interaction }), Nothing ) ->
+    case ( currentSelection model, hasDialog model ) of
+        ( Just (UnitSelection { interaction }), False ) ->
             case interaction of
                 CommandMenu _ ->
                     selectedUnit model
@@ -1454,15 +1421,22 @@ selectedUnit model =
         Just (UnitSelection selection) ->
             ListUtil.find (\unit -> unit.id == selection.id) model.board.units
 
-        Just (UnloadSelection planning) ->
-            ListUtil.find (\unit -> unit.id == planning.passengerId) model.board.units
-
         _ ->
             Nothing
 
 
 selectedPosition : Model -> Maybe Coordinate
 selectedPosition model =
+    case unloadPlanning model.phase of
+        Just planning ->
+            Just planning.truck.plan.move.destination
+
+        Nothing ->
+            inspectionPosition model
+
+
+inspectionPosition : Model -> Maybe Coordinate
+inspectionPosition model =
     case currentSelection model of
         Just (Inspecting (TileInspection position)) ->
             Just position
@@ -1472,9 +1446,6 @@ selectedPosition model =
 
         Just (UnitSelection _) ->
             Maybe.andThen Unit.boardPosition (selectedUnit model)
-
-        Just (UnloadSelection planning) ->
-            truckDestination planning.truckId model
 
         Nothing ->
             Nothing
@@ -2025,32 +1996,19 @@ readyToSubmit model =
 
 submitTurn : LobbyId -> Model -> ( Model, Eff Msg )
 submitTurn lobbyId model =
-    case model.phase of
-        TurnLifecycle.Planning _ ->
-            ( { model
-                | phase = TurnLifecycle.startSubmission model.turnNumber model.phase
-                , dialog = Nothing
-                , turnError = Nothing
-              }
+    let
+        phase : Phase
+        phase =
+            TurnLifecycle.startSubmission model.turnNumber model.phase
+    in
+    case ( model.phase, phase ) of
+        ( TurnLifecycle.Planning _, TurnLifecycle.Submitting _ ) ->
+            ( { model | phase = phase, turnError = Nothing }
             , E.request (SubmitResponseReceived model.turnNumber) (submitRequest lobbyId model)
             )
 
         _ ->
             ( model, E.none )
-
-
-unloadPrompt : Unit -> Model -> Maybe Dialog
-unloadPrompt truck model =
-    let
-        hasPassengers : Bool
-        hasPassengers =
-            List.any (\passenger -> Unit.carrierId passenger == Just truck.id) model.board.units
-    in
-    if hasPassengers then
-        Just (UnloadChecklist { truckId = truck.id, checked = [] })
-
-    else
-        Nothing
 
 
 unloadDialogId : String
@@ -2063,7 +2021,7 @@ unloadChecklist model choice =
     let
         passengers : List Unit
         passengers =
-            List.filter (\unit -> Unit.carrierId unit == Just choice.truckId) model.board.units
+            List.filter (\unit -> Unit.carrierId unit == Just choice.truck.truckId) model.board.units
 
         passengerCheckbox : Unit -> Html Msg
         passengerCheckbox unit =
@@ -2100,65 +2058,67 @@ unloadChecklist model choice =
     DialogView.modal unloadDialogId "unload" DialogDismissed content
 
 
+unloadChoice : Phase -> Maybe UnloadChoice
+unloadChoice phase =
+    TurnLifecycle.planning phase |> Maybe.andThen PlanningState.unloadChoice
+
+
+unloadPlanning : Phase -> Maybe UnloadPlanning
+unloadPlanning phase =
+    TurnLifecycle.planning phase |> Maybe.andThen PlanningState.unloadPlanning
+
+
 isChoosingUnload : Model -> Bool
 isChoosingUnload model =
-    case currentSelection model of
-        Just (UnloadSelection _) ->
-            True
-
-        _ ->
-            False
+    unloadPlanning model.phase /= Nothing
 
 
-truckDestination : UnitId -> Model -> Maybe Coordinate
-truckDestination truckId model =
-    plannedOrders model
-        |> ListUtil.find (\plan -> plan.unitId == truckId)
-        |> Maybe.map PlannedOrder.destination
-
-
-beginUnloading : UnitId -> List UnitId -> Model -> Model
-beginUnloading truckId passengers model =
-    case passengers of
-        [] ->
-            setSelection (Just (Inspecting (UnitInspection truckId))) model
-
-        passengerId :: remaining ->
-            let
-                planning : UnloadPlanning
-                planning =
-                    { truckId = truckId
-                    , passengerId = passengerId
-                    , remaining = remaining
-                    , options = unloadOptions { truckId = truckId, passengerId = passengerId } model
-                    }
-            in
-            setSelection (Just (UnloadSelection planning)) model
-
-
-unloadOptions : { truckId : UnitId, passengerId : UnitId } -> Model -> List Movement.Option
-unloadOptions selection model =
+openUnloadPrompt : Unit -> Movement.Option -> Model -> Model
+openUnloadPrompt truck move model =
     let
-        projectTruck : Unit -> Unit
-        projectTruck unit =
-            if unit.id == selection.truckId then
-                truckDestination selection.truckId model
-                    |> Maybe.map
-                        (\position ->
-                            Unit.setOnMap position unit
-                        )
-                    |> Maybe.withDefault unit
-
-            else
-                unit
-
-        projected : GameBoard
-        projected =
-            { map = model.board.map, units = List.map projectTruck model.board.units, depots = model.board.depots }
+        hasPassengers : Bool
+        hasPassengers =
+            List.any (\passenger -> Unit.carrierId passenger == Just truck.id) model.board.units
     in
-    case ListUtil.find (\unit -> unit.id == selection.passengerId) projected.units of
-        Just passenger ->
-            Movement.options (reservedDestinations passenger model) model.movementRules projected passenger
+    if hasPassengers then
+        { model | phase = TurnLifecycle.mapPlanning (PlanningState.startUnload truck.id move) model.phase }
+
+    else
+        model
+
+
+dismissDialog : Model -> Model
+dismissDialog model =
+    { model | phase = TurnLifecycle.mapPlanning PlanningState.dismissDialog model.phase }
+
+
+unloadOptions : Model -> PlanningState -> UnitId -> List Movement.Option
+unloadOptions model state passengerId =
+    case PlanningState.unloadPlanning state of
+        Just planning ->
+            let
+                projectTruck : Unit -> Unit
+                projectTruck unit =
+                    if unit.id == planning.truck.truckId then
+                        Unit.setOnMap planning.truck.plan.move.destination unit
+
+                    else
+                        unit
+
+                projected : GameBoard
+                projected =
+                    { map = model.board.map, units = List.map projectTruck model.board.units, depots = model.board.depots }
+
+                next : Model
+                next =
+                    { model | phase = TurnLifecycle.Planning state }
+            in
+            case ListUtil.find (\unit -> unit.id == passengerId) projected.units of
+                Just passenger ->
+                    Movement.options (reservedDestinations passenger next) model.movementRules projected passenger
+
+                Nothing ->
+                    []
 
         Nothing ->
             []
@@ -2166,32 +2126,8 @@ unloadOptions selection model =
 
 chooseUnloadSquare : UnloadPlanning -> Coordinate -> Model -> Model
 chooseUnloadSquare planning destination model =
-    if planningLocked model then
-        model
-
-    else if List.any (\option -> option.destination == destination) planning.options then
-        let
-            addUnload : PlannedOrder -> PlannedOrder
-            addUnload order =
-                if order.unitId == planning.truckId then
-                    case order.action of
-                        PlannedOrder.Move plan ->
-                            { order | action = PlannedOrder.Move { plan | unloads = plan.unloads ++ [ { unitId = planning.passengerId, destination = destination } ] } }
-
-                        PlannedOrder.Hold _ ->
-                            order
-
-                        PlannedOrder.Rotate _ ->
-                            order
-
-                else
-                    order
-
-            next : Model
-            next =
-                { model | phase = TurnLifecycle.setOrders (List.map addUnload (plannedOrders model)) model.phase }
-        in
-        beginUnloading planning.truckId planning.remaining next
+    if List.any (\option -> option.destination == destination) planning.options then
+        { model | phase = TurnLifecycle.mapPlanning (PlanningState.saveUnloadDestination (unloadOptions model) destination) model.phase }
 
     else
         { model | movementStatus = DestinationUnavailable }
@@ -2202,17 +2138,32 @@ partialOrdersDialogId =
     "submit-turn-warning"
 
 
+hasDialog : Model -> Bool
+hasDialog model =
+    case model.phase of
+        TurnLifecycle.Planning (PlanningState.ConfirmingSubmission _) ->
+            True
+
+        TurnLifecycle.Planning (PlanningState.ChoosingPassengers _) ->
+            True
+
+        _ ->
+            False
+
+
+{-| The active planning alternative determines the dialog; no dialog state is stored.
+-}
 dialogView : Model -> Html Msg
 dialogView model =
-    case model.dialog of
-        Nothing ->
-            H.text ""
-
-        Just PartialOrdersWarning ->
+    case model.phase of
+        TurnLifecycle.Planning (PlanningState.ConfirmingSubmission _) ->
             submissionWarning model
 
-        Just (UnloadChecklist choice) ->
+        TurnLifecycle.Planning (PlanningState.ChoosingPassengers choice) ->
             unloadChecklist model choice
+
+        _ ->
+            H.text ""
 
 
 submissionWarning : Model -> Html Msg
@@ -2291,20 +2242,28 @@ receiveSnapshot snapshot model =
 
     else if snapshot.turn.number == model.turnNumber then
         let
+            phase : Phase
+            phase =
+                if snapshot.turn.submitted then
+                    TurnLifecycle.observeSubmission True model.phase
+
+                else
+                    model.phase
+
             next : Model
             next =
                 { model
                     | opponentSubmitted = model.opponentSubmitted || snapshot.turn.opponentSubmitted
                     , turnResolution = snapshot.turn.resolution
-                    , phase = TurnLifecycle.observeSubmission snapshot.turn.submitted model.phase
+                    , phase = phase
                 }
         in
         if snapshot.turn.submitted then
             if isChoosingUnload model then
-                clearSelection { next | dialog = Nothing }
+                clearSelection next
 
             else
-                { next | dialog = Nothing }
+                next
 
         else
             next
@@ -2316,8 +2275,7 @@ receiveSnapshot snapshot model =
                 TurnPlayback.initial snapshot.playbackFrames { units = snapshot.board.units, visibleTiles = snapshot.visibleTiles }
         in
         { model
-            | dialog = Nothing
-            , turnNumber = snapshot.turn.number
+            | turnNumber = snapshot.turn.number
             , opponentSubmitted = snapshot.turn.opponentSubmitted
             , turnResolution = snapshot.turn.resolution
             , board = GameBoard.setUnits frame.units snapshot.board
@@ -2488,42 +2446,38 @@ keyCommands model =
     let
         navigation : List (KeyCmd Msg)
         navigation =
-            case currentSelection model of
-                Just (UnitSelection { interaction }) ->
-                    case interaction of
-                        ChoosingDirection _ ->
-                            [ leftKeys (DirectionKeyPressed Facing.West)
-                            , rightKeys (DirectionKeyPressed Facing.East)
-                            , upKeys (DirectionKeyPressed Facing.North)
-                            , downKeys (DirectionKeyPressed Facing.South)
-                            ]
+            if hasDialog model then
+                []
 
-                        ChoosingMove _ ->
-                            [ leftKeys (PathDirectionKeyPressed Facing.West)
-                            , rightKeys (PathDirectionKeyPressed Facing.East)
-                            , upKeys (PathDirectionKeyPressed Facing.North)
-                            , downKeys (PathDirectionKeyPressed Facing.South)
-                            , KeyCmd.enter PathEnterPressed
-                            ]
+            else
+                case currentSelection model of
+                    Just (UnitSelection { interaction }) ->
+                        case interaction of
+                            ChoosingDirection _ ->
+                                [ leftKeys (DirectionKeyPressed Facing.West)
+                                , rightKeys (DirectionKeyPressed Facing.East)
+                                , upKeys (DirectionKeyPressed Facing.North)
+                                , downKeys (DirectionKeyPressed Facing.South)
+                                ]
 
-                        CommandMenu _ ->
-                            case model.dialog of
-                                Nothing ->
-                                    [ upKeys PreviousCommandPressed
-                                    , downKeys NextCommandPressed
-                                    ]
+                            ChoosingMove _ ->
+                                [ leftKeys (PathDirectionKeyPressed Facing.West)
+                                , rightKeys (PathDirectionKeyPressed Facing.East)
+                                , upKeys (PathDirectionKeyPressed Facing.North)
+                                , downKeys (PathDirectionKeyPressed Facing.South)
+                                , KeyCmd.enter PathEnterPressed
+                                ]
 
-                                Just _ ->
-                                    panNavigation ()
+                            CommandMenu _ ->
+                                [ upKeys PreviousCommandPressed
+                                , downKeys NextCommandPressed
+                                ]
 
-                Just (Inspecting _) ->
-                    panNavigation ()
+                    Just (Inspecting _) ->
+                        panNavigation ()
 
-                Just (UnloadSelection _) ->
-                    panNavigation ()
-
-                Nothing ->
-                    panNavigation ()
+                    Nothing ->
+                        panNavigation ()
 
         camera : KeyCmd Msg
         camera =

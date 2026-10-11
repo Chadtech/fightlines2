@@ -174,6 +174,7 @@ module Style exposing
     , mx64
     , mx96
     , nightwood2Str
+    , nightwood3Str
     , noScrollbar
     , noWrap
     , none

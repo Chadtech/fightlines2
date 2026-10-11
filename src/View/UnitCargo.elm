@@ -17,7 +17,7 @@ styles =
         [ H.text """
             @keyframes fightlines-unit-cargo-pulse {
                 0%, 20%, 100% { opacity: 1; }
-                50%, 70% { opacity: 0.3; }
+                50%, 70% { opacity: 0.65; }
             }
             .fightlines-unit-cargo {
                 animation: fightlines-unit-cargo-pulse 2s ease-in-out infinite;
@@ -39,6 +39,10 @@ toSvg passengerCount =
 
     else
         let
+            badgeScale : Float
+            badgeScale =
+                1.4
+
             width : Float
             width =
                 if passengerCount > 1 then
@@ -68,8 +72,8 @@ toSvg passengerCount =
                 [ Svg.rect
                     [ SA.width (String.fromFloat width)
                     , SA.height "3.52"
-                    , SA.fill S.gray0Str
-                    , SA.stroke S.gray5Str
+                    , SA.fill S.yellow5Str
+                    , SA.stroke S.nightwood3Str
                     , SA.strokeWidth "0.2"
                     ]
                     []
@@ -90,8 +94,8 @@ toSvg passengerCount =
                 artwork ++ countMarker
         in
         Svg.g
-            [ SA.transform ("translate(" ++ String.fromFloat (15.26 - width) ++ " 11.74)")
-            , SA.fill S.gray5Str
+            [ SA.transform ("translate(" ++ String.fromFloat (15.26 - width * badgeScale) ++ " " ++ String.fromFloat (15.26 - 3.52 * badgeScale) ++ ") scale(" ++ String.fromFloat badgeScale ++ ")")
+            , SA.fill S.nightwood3Str
             , SA.class "fightlines-unit-cargo"
             , SA.pointerEvents "none"
             , A.attribute "aria-hidden" "true"

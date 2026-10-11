@@ -186,21 +186,30 @@ unload choices; `Rotate` carries a stationary position and required direction.
 Its submission adapter converts these actions to the existing GraphQL input,
 using single-coordinate paths for holds and rotations. `PlannedOrderChecks`
 verifies that conversion, including unloading from stationary trucks.
-`TurnLifecycle.Phase` owns the current selection. Its `Planning` variant wraps
-`PlanningState`, with `orders` and `selection` fields. `GamePage.Selection` owns
-`Selection`, which allows `Inspecting Inspection`, `UnitSelection SelectedUnit`
-and `UnloadSelection UnloadPlanning`. `Inspection` identifies only a unit or
-tile; submission, waiting and playback store only this restricted type. Each
-phase stores one selection, with no parallel page-level inspection field.
-Locking orders drops interaction data while retaining the selected object.
-Inspection may change during locked phases and survives submission failure or
-playback completion. A new turn starts without selection. Saving an order returns
-to inspection; revoking it restores commands when eligible.
+`TurnLifecycle.Phase` owns planning, submission, waiting and playback.
+`PlanningState.elm` owns the planning custom type and its transitions:
+`OrdinaryPlanning`, `ConfirmingSubmission`,
+`ChoosingPassengers` or `ChoosingExits`. Ordinary planning and submission
+confirmation carry drafts and selection; unload stages carry the required truck
+move, other units' orders and stage-specific passenger data. The submission
+warning and unload checklist are rendered directly from these alternatives;
+`GamePage.Model` has no separate dialog state. Only one workflow can be active.
+`TurnLifecycle` owns the outer phases and delegates editable planning through
+`mapPlanning`; the planning module operates only on `PlanningState`, without
+knowing about submission, waiting or playback.
+`GamePage.Selection` allows `Inspecting Inspection` or `UnitSelection SelectedUnit`.
+Unload stages derive inspection from the truck or current passenger instead of
+storing another selection. Submission, waiting and playback store only
+`Inspection`, which identifies a unit or tile. Locking orders drops interaction
+data while retaining the selected object. Inspection may change during locked
+phases and survives submission failure or playback completion. A new turn starts
+without selection. Saving an order returns to inspection; revoking it restores
+commands when eligible.
 `UnitInteraction` distinguishes `CommandMenu`, `ChoosingMove MovePlanning` and
-`ChoosingDirection`. `MovePlanning` owns a required path preview and its reachable
-options; neither can exist outside movement selection. `UnloadPlanning` owns
-its passenger's reachable options. Leaving either selection drops its planning
-data without separately clearing page-level fields.
+`ChoosingDirection`. `MovePlanning` owns a required path preview and reachable
+options; neither can exist outside movement selection. `ChoosingExits` owns the
+current passenger's reachable options and remaining queue. Leaving a workflow
+keeps saved drafts and passenger exits while dropping its interaction data.
 `View.UnitCommands` renders the board-anchored command popup and emits command choices
 and arrow-key events. `GamePage.update` chooses the adjacent enabled command,
 wrapping at the ends, and `Effect.focus` uses Elm's DOM API to focus its HTML ID. Selection tracks the focused command. While the popup is open, page-level
@@ -516,8 +525,17 @@ receiving unit's hold alongside a loading or unloading draft. It reserves
 remaining berths across drafts and prevents moving a receiver while its loading
 or unloading drafts exist. The truck's status panel exposes cargo buttons;
 carried units have no independent commands. Saving a truck destination opens
-an unload checklist. `UnloadSelection` owns the current passenger, remaining
-queue and reachable exit options while choosing squares. Unload choices belong to the truck's `Move` order
+an unload checklist through `PlanningState.ChoosingPassengers`. Confirmation
+advances to `ChoosingExits`. Both stages own a `TruckMove` containing its required
+`MovePlan`, with all passenger exits accumulated so far, plus other units' orders.
+There is no independently stored dialog or unload selection. `PlanningState.orders`
+assembles the complete planning orders, exposed through `TurnLifecycle.orders`
+for paths, readiness, reservations and submission. Planning transitions finish
+or cancel the workflow without page-level order transfers.
+Each exit is reserved before calculating options for the next passenger. Leaving
+the checklist or square selection keeps the move and exits already chosen;
+advancing the turn discards the workflow. Unload choices belong to the truck's
+`Move` order
 and disappear when it is revoked. Elm projects the truck at its planned
 destination to reuse `Movement.options` for adjacent passenger exits, retaining
 terrain and resource limits and reserving chosen exits.
