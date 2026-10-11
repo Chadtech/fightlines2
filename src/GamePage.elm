@@ -2,6 +2,7 @@ module GamePage exposing
     ( Flags
     , Model
     , Msg
+    , dialog
     , init
     , keyCommands
     , load
@@ -91,7 +92,7 @@ import View.BoardViewport as Viewport
 import View.Button as Button
 import View.Card as Card
 import View.CardHeader as CardHeader
-import View.Dialog as DialogView
+import View.Dialog as Dialog exposing (Dialog)
 import View.RotationChoices as RotationChoices
 import View.UnitCommands as UnitCommands
 import View.UnitStatus as UnitStatus
@@ -1212,7 +1213,6 @@ view model =
             , panelFooter model
             ]
         ]
-    , dialogView model
     ]
 
 
@@ -2016,7 +2016,7 @@ unloadDialogId =
     "unload-passengers"
 
 
-unloadChecklist : Model -> UnloadChoice -> Html Msg
+unloadChecklist : Model -> UnloadChoice -> Dialog Msg
 unloadChecklist model choice =
     let
         passengers : List Unit
@@ -2055,7 +2055,7 @@ unloadChecklist model choice =
         content =
             choices ++ [ actions ]
     in
-    DialogView.modal unloadDialogId "unload" DialogDismissed content
+    Dialog.make unloadDialogId "unload" DialogDismissed content
 
 
 unloadChoice : Phase -> Maybe UnloadChoice
@@ -2081,7 +2081,12 @@ openUnloadPrompt truck move model =
             List.any (\passenger -> Unit.carrierId passenger == Just truck.id) model.board.units
     in
     if hasPassengers then
-        { model | phase = TurnLifecycle.mapPlanning (PlanningState.startUnload truck.id move) model.phase }
+        { model
+            | phase =
+                TurnLifecycle.mapPlanning
+                    (PlanningState.startUnload truck.id move)
+                    model.phase
+        }
 
     else
         model
@@ -2089,7 +2094,9 @@ openUnloadPrompt truck move model =
 
 dismissDialog : Model -> Model
 dismissDialog model =
-    { model | phase = TurnLifecycle.mapPlanning PlanningState.dismissDialog model.phase }
+    { model
+        | phase = TurnLifecycle.mapPlanning PlanningState.dismissDialog model.phase
+    }
 
 
 unloadOptions : Model -> PlanningState -> UnitId -> List Movement.Option
@@ -2127,7 +2134,12 @@ unloadOptions model state passengerId =
 chooseUnloadSquare : UnloadPlanning -> Coordinate -> Model -> Model
 chooseUnloadSquare planning destination model =
     if List.any (\option -> option.destination == destination) planning.options then
-        { model | phase = TurnLifecycle.mapPlanning (PlanningState.saveUnloadDestination (unloadOptions model) destination) model.phase }
+        { model
+            | phase =
+                TurnLifecycle.mapPlanning
+                    (PlanningState.saveUnloadDestination (unloadOptions model) destination)
+                    model.phase
+        }
 
     else
         { model | movementStatus = DestinationUnavailable }
@@ -2140,33 +2152,25 @@ partialOrdersDialogId =
 
 hasDialog : Model -> Bool
 hasDialog model =
-    case model.phase of
-        TurnLifecycle.Planning (PlanningState.ConfirmingSubmission _) ->
-            True
-
-        TurnLifecycle.Planning (PlanningState.ChoosingPassengers _) ->
-            True
-
-        _ ->
-            False
+    dialog model /= Nothing
 
 
 {-| The active planning alternative determines the dialog; no dialog state is stored.
 -}
-dialogView : Model -> Html Msg
-dialogView model =
+dialog : Model -> Maybe (Dialog Msg)
+dialog model =
     case model.phase of
         TurnLifecycle.Planning (PlanningState.ConfirmingSubmission _) ->
-            submissionWarning model
+            Just (submissionWarning model)
 
         TurnLifecycle.Planning (PlanningState.ChoosingPassengers choice) ->
-            unloadChecklist model choice
+            Just (unloadChecklist model choice)
 
         _ ->
-            H.text ""
+            Nothing
 
 
-submissionWarning : Model -> Html Msg
+submissionWarning : Model -> Dialog Msg
 submissionWarning model =
     let
         missingCount : Int
@@ -2182,7 +2186,7 @@ submissionWarning model =
                 String.fromInt missingCount
                     ++ " units have no orders. they will hold position if you submit this turn."
     in
-    DialogView.modal partialOrdersDialogId
+    Dialog.make partialOrdersDialogId
         "units without orders"
         DialogDismissed
         [ H.p

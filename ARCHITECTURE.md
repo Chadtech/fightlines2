@@ -263,8 +263,12 @@ another unit, depot, or reachable tile activates that focused destination.
 Outside command, movement, and rotation selection, arrow and WASD commands pan.
 Plus/minus commands zoom without battlefield focus, and Escape clears selection, reachable
 squares, and the live path preview while preserving saved move drafts. The page
-stores the active dialog as `Maybe Dialog`; `EscapePressed` dismisses an open
-dialog before clearing board selection.
+derives its active dialog through `GamePage.dialog : Model -> Maybe (Dialog Msg)`;
+`EscapePressed` dismisses an open dialog before clearing board selection.
+`Main.dialog` cases on `Page` and maps page messages, including cancellation,
+into application messages. `Main.view` renders the optional dialog through
+`View.Dialog.toHtml`, which creates the native modal; dialogs are not part of
+the individual page's view content.
 `GameBoard` renders raster sprite-sheet cells in nested SVG viewports;
 terrain, depots, units, and an inset SVG selection square are separate layers. Player 2's
 infantry, tanks and field guns initially face west and player 1's east. Trucks have no direction or facing marker. Movement updates stored direction

@@ -43,6 +43,7 @@ import Url
         )
 import View.Button as Button
 import View.Card as Card
+import View.Dialog as Dialog exposing (Dialog)
 import View.Dropdown as Dropdown
 import View.UnitCargo as UnitCargo
 import View.UnitFacing as UnitFacing
@@ -440,9 +441,38 @@ update msg page =
 
 view : Page -> Browser.Document Msg
 view page =
+    let
+        dialogContent : List (Html Msg)
+        dialogContent =
+            case
+                dialog page
+            of
+                Just activeDialog ->
+                    [ Dialog.toHtml activeDialog ]
+
+                Nothing ->
+                    []
+
+        content : List (Html Msg)
+        content =
+            shell page ++ dialogContent
+    in
     { title = "fightlines"
-    , body = List.map H.toUnstyled (shell page)
+    , body = List.map H.toUnstyled content
     }
+
+
+{-| Map the active page's dialog into the application's message type.
+-}
+dialog : Page -> Maybe (Dialog Msg)
+dialog page =
+    case page of
+        Game id model ->
+            GamePage.dialog model
+                |> Maybe.map (Dialog.map (GameMsg id))
+
+        _ ->
+            Nothing
 
 
 shell : Page -> List (Html Msg)
