@@ -45,11 +45,11 @@ import Effect as E
         ( Eff
         )
 import GameBoard exposing (GameBoard)
-import GamePage.EditingSelection
+import GamePage.Selection
     exposing
-        ( EditingSelection(..)
+        ( Inspection(..)
         , MovePlanning
-        , SelectedUnit
+        , Selection(..)
         , UnitInteraction(..)
         , UnloadPlanning
         )
@@ -120,7 +120,6 @@ type alias Model =
     , visibleTiles : List Coordinate
     , movementRules : List Movement.Rule
     , movementStatus : MovementStatus
-    , inspection : Maybe Inspection
     , offset : Point
     , zoom : Float
     , drag : Maybe Drag
@@ -146,18 +145,6 @@ type alias Player =
     , side : Side
     , isYou : Bool
     }
-
-
-type Selection
-    = InspectingUnit UnitId
-    | UnitSelection SelectedUnit
-    | TileSelection Coordinate
-    | UnloadSelection UnloadPlanning
-
-
-type Inspection
-    = UnitInspection UnitId
-    | TileInspection Coordinate
 
 
 type alias UnloadChoice =
@@ -248,7 +235,6 @@ init shared flags =
     , visibleTiles = flags.snapshot.visibleTiles
     , movementRules = flags.snapshot.movementRules
     , movementStatus = NoMovementStatus
-    , inspection = Nothing
     , offset = { x = 0, y = 0 }
     , zoom = 1
     , drag = Nothing
@@ -284,69 +270,19 @@ setShared shared model =
 
 currentSelection : Model -> Maybe Selection
 currentSelection model =
-    case TurnLifecycle.editing model.phase of
-        Just (EditingUnit unit) ->
-            Just (UnitSelection unit)
-
-        Just (EditingUnload planning) ->
-            Just (UnloadSelection planning)
-
-        Nothing ->
-            case model.inspection of
-                Just (UnitInspection id) ->
-                    Just (InspectingUnit id)
-
-                Just (TileInspection position) ->
-                    Just (TileSelection position)
-
-                Nothing ->
-                    Nothing
+    TurnLifecycle.selection model.phase
 
 
 setSelection : Maybe Selection -> Model -> Model
 setSelection selected model =
-    let
-        inspection : Maybe Inspection
-        inspection =
-            case selected of
-                Just (InspectingUnit id) ->
-                    Just (UnitInspection id)
-
-                Just (UnitSelection unit) ->
-                    Just (UnitInspection unit.id)
-
-                Just (UnloadSelection planning) ->
-                    Just (UnitInspection planning.passengerId)
-
-                Just (TileSelection position) ->
-                    Just (TileInspection position)
-
-                Nothing ->
-                    Nothing
-
-        editing : Maybe EditingSelection
-        editing =
-            case selected of
-                Just (UnitSelection unit) ->
-                    Just (EditingUnit unit)
-
-                Just (UnloadSelection planning) ->
-                    Just (EditingUnload planning)
-
-                _ ->
-                    Nothing
-    in
-    { model
-        | inspection = inspection
-        , phase = TurnLifecycle.setEditing editing model.phase
-    }
+    { model | phase = TurnLifecycle.setSelection selected model.phase }
 
 
 inspectSelectedUnit : Model -> Model
 inspectSelectedUnit model =
     case selectedUnit model of
         Just unit ->
-            setSelection (Just (InspectingUnit unit.id)) model
+            setSelection (Just (Inspecting (UnitInspection unit.id))) model
 
         Nothing ->
             model
@@ -381,7 +317,7 @@ unitSelection unit model =
         UnitSelection { id = unit.id, interaction = CommandMenu Nothing }
 
     else
-        InspectingUnit unit.id
+        Inspecting (UnitInspection unit.id)
 
 
 choosingDirection : Model -> Bool
@@ -701,13 +637,13 @@ selectTile position model =
 selectMovementTile : Coordinate -> Model -> Model
 selectMovementTile position model =
     if planningLocked model then
-        setSelection (Just (TileSelection position)) model
+        setSelection (Just (Inspecting (TileInspection position))) model
 
     else
         let
             notOwnUnit : () -> Model
             notOwnUnit _ =
-                setSelection (Just (TileSelection position)) { model | movementStatus = NoMovementStatus }
+                setSelection (Just (Inspecting (TileInspection position))) { model | movementStatus = NoMovementStatus }
         in
         case selectedUnit model of
             Just unit ->
@@ -1512,7 +1448,7 @@ panelFooter model =
 selectedUnit : Model -> Maybe Unit
 selectedUnit model =
     case currentSelection model of
-        Just (InspectingUnit id) ->
+        Just (Inspecting (UnitInspection id)) ->
             ListUtil.find (\unit -> unit.id == id) model.board.units
 
         Just (UnitSelection selection) ->
@@ -1528,10 +1464,10 @@ selectedUnit model =
 selectedPosition : Model -> Maybe Coordinate
 selectedPosition model =
     case currentSelection model of
-        Just (TileSelection position) ->
+        Just (Inspecting (TileInspection position)) ->
             Just position
 
-        Just (InspectingUnit _) ->
+        Just (Inspecting (UnitInspection _)) ->
             Maybe.andThen Unit.boardPosition (selectedUnit model)
 
         Just (UnitSelection _) ->
@@ -2090,9 +2026,9 @@ readyToSubmit model =
 submitTurn : LobbyId -> Model -> ( Model, Eff Msg )
 submitTurn lobbyId model =
     case model.phase of
-        TurnLifecycle.Planning planning ->
+        TurnLifecycle.Planning _ ->
             ( { model
-                | phase = TurnLifecycle.Submitting { turnNumber = model.turnNumber, orders = planning.orders }
+                | phase = TurnLifecycle.startSubmission model.turnNumber model.phase
                 , dialog = Nothing
                 , turnError = Nothing
               }
@@ -2185,7 +2121,7 @@ beginUnloading : UnitId -> List UnitId -> Model -> Model
 beginUnloading truckId passengers model =
     case passengers of
         [] ->
-            setSelection (Just (InspectingUnit truckId)) model
+            setSelection (Just (Inspecting (UnitInspection truckId))) model
 
         passengerId :: remaining ->
             let
@@ -2387,7 +2323,6 @@ receiveSnapshot snapshot model =
             , board = GameBoard.setUnits frame.units snapshot.board
             , visibleTiles = frame.visibleTiles
             , phase = TurnLifecycle.startTurn snapshot.turn.submitted snapshot.playbackFrames
-            , inspection = Nothing
             , movementStatus = NoMovementStatus
             , turnError = Nothing
         }

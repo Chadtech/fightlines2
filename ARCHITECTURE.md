@@ -186,15 +186,16 @@ unload choices; `Rotate` carries a stationary position and required direction.
 Its submission adapter converts these actions to the existing GraphQL input,
 using single-coordinate paths for holds and rotations. `PlannedOrderChecks`
 verifies that conversion, including unloading from stationary trucks.
-`GamePage.inspection` identifies the inspected unit or tile, including enemies,
-passengers and units with saved or locked orders. Editable selection belongs only
-to `TurnLifecycle.Phase`'s `Planning` variant, which wraps a `PlanningState`
-record with `orders` and `editing` fields. `GamePage.EditingSelection` owns
-the concrete editing types imported by both the page and lifecycle: `EditingUnit` carries a selected
-unit's `UnitInteraction`, and `EditingUnload` carries unload-square selection.
-The inspection remains available when a phase transition drops editing. Saving
-an order returns to inspection; revoking it restores commands when eligible.
-`currentSelection` derives the active selection without copying saved orders.
+`TurnLifecycle.Phase` owns the current selection. Its `Planning` variant wraps
+`PlanningState`, with `orders` and `selection` fields. `GamePage.Selection` owns
+`Selection`, which allows `Inspecting Inspection`, `UnitSelection SelectedUnit`
+and `UnloadSelection UnloadPlanning`. `Inspection` identifies only a unit or
+tile; submission, waiting and playback store only this restricted type. Each
+phase stores one selection, with no parallel page-level inspection field.
+Locking orders drops interaction data while retaining the selected object.
+Inspection may change during locked phases and survives submission failure or
+playback completion. A new turn starts without selection. Saving an order returns
+to inspection; revoking it restores commands when eligible.
 `UnitInteraction` distinguishes `CommandMenu`, `ChoosingMove MovePlanning` and
 `ChoosingDirection`. `MovePlanning` owns a required path preview and its reachable
 options; neither can exist outside movement selection. `UnloadPlanning` owns

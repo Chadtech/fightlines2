@@ -2,22 +2,28 @@ module TurnLifecycle exposing
     ( Phase(..)
     , PlanningState
     , Submission
+    , WaitingState
     , canPoll
-    , editing
     , finishSubmission
     , initPlanningState
     , observeSubmission
     , orders
     , planningLocked
     , playback
-    , setEditing
+    , selection
     , setOrders
+    , setSelection
+    , startSubmission
     , startTurn
     , tick
     , toLabel
     )
 
-import GamePage.EditingSelection exposing (EditingSelection)
+import GamePage.Selection as Selection
+    exposing
+        ( Inspection
+        , Selection(..)
+        )
 import PlannedOrder exposing (PlannedOrder)
 import TurnPlayback
 
@@ -25,18 +31,19 @@ import TurnPlayback
 type Phase
     = Planning PlanningState
     | Submitting Submission
-    | WaitingForOpponent (List PlannedOrder)
+    | WaitingForOpponent WaitingState
     | Playing PlaybackState
 
 
 type alias PlanningState =
     { orders : List PlannedOrder
-    , editing : Maybe EditingSelection
+    , selection : Maybe Selection
     }
 
 
 type alias PlaybackState =
     { animation : TurnPlayback.Playback
+    , inspection : Maybe Inspection
     , afterPlayback : AfterPlayback
     }
 
@@ -49,13 +56,20 @@ type AfterPlayback
 type alias Submission =
     { turnNumber : Int
     , orders : List PlannedOrder
+    , inspection : Maybe Inspection
+    }
+
+
+type alias WaitingState =
+    { orders : List PlannedOrder
+    , inspection : Maybe Inspection
     }
 
 
 initPlanningState : PlanningState
 initPlanningState =
     { orders = []
-    , editing = Nothing
+    , selection = Nothing
     }
 
 
@@ -85,7 +99,7 @@ orders phase =
             submission.orders
 
         WaitingForOpponent submitted ->
-            submitted
+            submitted.orders
 
         Playing _ ->
             []
@@ -117,24 +131,68 @@ setOrders drafts phase =
             phase
 
 
-{-| Editable page interactions exist only while planning. Locking orders or
-starting playback discards them without requiring the page to clear fields.
+{-| Each phase owns exactly one selection. Locked phases store only inspection;
+editable interactions can be stored only in PlanningState.
 -}
-editing : Phase -> Maybe EditingSelection
-editing phase =
+selection : Phase -> Maybe Selection
+selection phase =
     case phase of
         Planning planning ->
-            planning.editing
+            planning.selection
+
+        Submitting submission ->
+            Maybe.map Inspecting submission.inspection
+
+        WaitingForOpponent waiting ->
+            Maybe.map Inspecting waiting.inspection
+
+        Playing playing ->
+            Maybe.map Inspecting playing.inspection
+
+
+setSelection : Maybe Selection -> Phase -> Phase
+setSelection selected phase =
+    case phase of
+        Planning planning ->
+            Planning { planning | selection = selected }
 
         _ ->
-            Nothing
+            case selected of
+                Nothing ->
+                    setInspection Nothing phase
+
+                Just (Inspecting inspection) ->
+                    setInspection (Just inspection) phase
+
+                _ ->
+                    phase
 
 
-setEditing : Maybe EditingSelection -> Phase -> Phase
-setEditing interaction phase =
+setInspection : Maybe Inspection -> Phase -> Phase
+setInspection inspection phase =
     case phase of
         Planning planning ->
-            Planning { planning | editing = interaction }
+            Planning { planning | selection = Maybe.map Inspecting inspection }
+
+        Submitting submission ->
+            Submitting { submission | inspection = inspection }
+
+        WaitingForOpponent waiting ->
+            WaitingForOpponent { waiting | inspection = inspection }
+
+        Playing playing ->
+            Playing { playing | inspection = inspection }
+
+
+startSubmission : Int -> Phase -> Phase
+startSubmission turnNumber phase =
+    case phase of
+        Planning planning ->
+            Submitting
+                { turnNumber = turnNumber
+                , orders = planning.orders
+                , inspection = Maybe.map Selection.toInspection planning.selection
+                }
 
         _ ->
             phase
@@ -148,7 +206,7 @@ finishSubmission turnNumber phase =
     case phase of
         Submitting submission ->
             if submission.turnNumber == turnNumber then
-                Planning { orders = submission.orders, editing = Nothing }
+                Planning { orders = submission.orders, selection = Maybe.map Inspecting submission.inspection }
 
             else
                 phase
@@ -162,10 +220,10 @@ observeSubmission submitted phase =
     if submitted then
         case phase of
             Planning planning ->
-                WaitingForOpponent planning.orders
+                WaitingForOpponent { orders = planning.orders, inspection = Maybe.map Selection.toInspection planning.selection }
 
             Submitting submission ->
-                WaitingForOpponent submission.orders
+                WaitingForOpponent { orders = submission.orders, inspection = submission.inspection }
 
             WaitingForOpponent _ ->
                 phase
@@ -220,7 +278,7 @@ startTurn submitted frames =
     in
     case TurnPlayback.start frames of
         Just animation ->
-            Playing { animation = animation, afterPlayback = afterPlayback }
+            Playing { animation = animation, inspection = Nothing, afterPlayback = afterPlayback }
 
         Nothing ->
             ready
@@ -238,10 +296,10 @@ tick delta phase =
                 ready =
                     case playing.afterPlayback of
                         StartPlanning ->
-                            Planning initPlanningState
+                            Planning { initPlanningState | selection = Maybe.map Inspecting playing.inspection }
 
                         WaitForOpponent ->
-                            WaitingForOpponent []
+                            WaitingForOpponent { orders = [], inspection = playing.inspection }
 
                 next : Phase
                 next =
