@@ -9,6 +9,9 @@ import Style as S
 import Svg.Styled as Svg
 import Svg.Styled.Attributes as SA
 import Unit exposing (Unit)
+import Unit.Fuel exposing (Fuel)
+import Unit.HitPoints exposing (HitPoints)
+import Unit.Supplies exposing (Supplies)
 import View.UnitSprite as UnitSprite
 
 
@@ -23,9 +26,9 @@ type alias Level =
 
 
 type Resource
-    = HitPoints Unit.HitPoints
-    | Supply Unit.Supplies
-    | Fuel Unit.Fuel
+    = HitPoints HitPoints
+    | Supply Supplies
+    | Fuel Fuel
 
 
 toHtml : Unit -> Html msg

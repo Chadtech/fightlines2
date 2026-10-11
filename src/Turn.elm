@@ -23,6 +23,7 @@ import Graphql.SelectionSet as SS exposing (SelectionSet)
 import ListUtil
 import Point exposing (Point)
 import Unit exposing (Unit)
+import Unit.Location
 import UnitId exposing (UnitId)
 
 
@@ -130,10 +131,12 @@ rewind snapshot board =
                             | location =
                                 case event.initialCarrier of
                                     Just carrier ->
-                                        Unit.Aboard carrier
+                                        Unit.Location.Aboard carrier
 
                                     Nothing ->
-                                        List.head event.path |> Maybe.map Unit.OnMap |> Maybe.withDefault unit.location
+                                        List.head event.path
+                                            |> Maybe.map Unit.Location.OnMap
+                                            |> Maybe.withDefault unit.location
                             , direction = event.initialDirection
                         }
                     )
@@ -171,7 +174,9 @@ tick delta playback board =
                             | location =
                                 case event.kind of
                                     EventKind.Load ->
-                                        event.carrierId |> Maybe.map Unit.Aboard |> Maybe.withDefault unit.location
+                                        event.carrierId
+                                            |> Maybe.map Unit.Location.Aboard
+                                            |> Maybe.withDefault unit.location
 
                                     EventKind.Hold ->
                                         unit.location
@@ -180,7 +185,10 @@ tick delta playback board =
                                         unit.location
 
                                     _ ->
-                                        List.reverse event.path |> List.head |> Maybe.map Unit.OnMap |> Maybe.withDefault unit.location
+                                        List.reverse event.path
+                                            |> List.head
+                                            |> Maybe.map Unit.Location.OnMap
+                                            |> Maybe.withDefault unit.location
                             , direction =
                                 case event.rotationDirection of
                                     Just direction ->

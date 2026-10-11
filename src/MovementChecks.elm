@@ -149,16 +149,30 @@ check rules fixture =
 
                         entryCost : Coordinate -> Int
                         entryCost position =
-                            features |> ListUtil.find (\feature -> feature.position == position) |> Maybe.andThen (\feature -> rules |> ListUtil.find (\rule -> rule.kind == fixture.kind) |> Maybe.andThen (\rule -> rule.terrainCosts |> ListUtil.find (\entry -> entry.terrain == feature.terrain) |> Maybe.map .cost)) |> Maybe.withDefault 1000
+                            features
+                                |> ListUtil.find (\feature -> feature.position == position)
+                                |> Maybe.andThen
+                                    (\feature ->
+                                        rules
+                                            |> ListUtil.find (\rule -> rule.kind == fixture.kind)
+                                            |> Maybe.andThen
+                                                (\rule ->
+                                                    rule.terrainCosts
+                                                        |> ListUtil.find (\entry -> entry.terrain == feature.terrain)
+                                                        |> Maybe.map .cost
+                                                )
+                                    )
+                                |> Maybe.withDefault 1000
                     in
-                    List.head option.path
-                        == Just fixture.origin
-                        && (List.reverse option.path |> List.head)
-                        == Just option.destination
-                        && List.all (\( a, b ) -> abs (a.x - b.x) + abs (a.y - b.y) == 1 && not (List.member b fixture.occupied)) steps
+                    (List.head option.path == Just fixture.origin)
+                        && ((List.reverse option.path |> List.head) == Just option.destination)
+                        && List.all
+                            (\( a, b ) ->
+                                abs (a.x - b.x) + abs (a.y - b.y) == 1 && not (List.member b fixture.occupied)
+                            )
+                            steps
                         && not (List.member option.destination fixture.allies)
-                        && List.sum (List.map entryCost (List.drop 1 option.path))
-                        == option.cost
+                        && (List.sum (List.map entryCost (List.drop 1 option.path)) == option.cost)
             in
             if actual == fixture.expected && List.all validPath options then
                 []
@@ -469,7 +483,14 @@ main =
                             [ D.errorToString error ]
 
                         Ok ( rules, cases ) ->
-                            List.concatMap (check rules) cases ++ traceChecks rules ++ reservationChecks rules ++ fuelChecks rules ++ supplyChecks rules ++ transportChecks rules
+                            List.concatMap
+                                (check rules)
+                                cases
+                                ++ traceChecks rules
+                                ++ reservationChecks rules
+                                ++ fuelChecks rules
+                                ++ supplyChecks rules
+                                ++ transportChecks rules
                     )
                 )
         , update = \msg model -> never msg

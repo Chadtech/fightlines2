@@ -1,53 +1,30 @@
 module Unit exposing
-    ( Fuel
-    , HitPoints
-    , Location(..)
-    , Supplies
-    , Unit
+    ( Unit
     , boardPosition
     , carrierId
     , label
     , loadingPartner
     , onBoard
     , physicalPosition
+    , selection
+    , setOnMap
     , supplyMovementLimit
     )
 
 import Api.Enum.Direction exposing (Direction)
 import Api.Enum.Side exposing (Side)
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
+import Api.Object
+import Api.Object.Unit as UnitApi
 import Coordinate exposing (Coordinate)
+import Graphql.SelectionSet as SS exposing (SelectionSet)
 import ListUtil
 import Side
+import Unit.Fuel as Fuel exposing (Fuel)
+import Unit.HitPoints as HitPoints exposing (HitPoints)
+import Unit.Location as Location exposing (Location)
+import Unit.Supplies as Supplies exposing (Supplies)
 import UnitId exposing (UnitId)
-
-
-type alias HitPoints =
-    { current : Int
-    , maximum : Int
-    }
-
-
-type alias Fuel =
-    { current : Int
-    , maximum : Int
-    }
-
-
-type alias Supplies =
-    { current : Int
-    , maximum : Int
-    , upkeepPerTurn : Int
-    , movementPerTile : Int
-    }
-
-
-{-| Board occupancy and transport are mutually exclusive. Aboard units derive
-physical position from their carrier, without storing a duplicate coordinate.
--}
-type Location
-    = OnMap Coordinate
-    | Aboard UnitId
 
 
 type alias Unit =
@@ -61,6 +38,20 @@ type alias Unit =
     , cargoCapacity : Int
     , location : Location
     }
+
+
+selection : SelectionSet Unit Api.Object.Unit
+selection =
+    SS.succeed Unit
+        |> SS.with UnitId.selection
+        |> SS.with UnitApi.side
+        |> SS.with UnitApi.kind
+        |> SS.with UnitApi.direction
+        |> SS.with (UnitApi.hitPoints HitPoints.selection)
+        |> SS.with (UnitApi.supplies Supplies.selection)
+        |> SS.with (UnitApi.fuel Fuel.selection)
+        |> SS.with UnitApi.cargoCapacity
+        |> SS.with (UnitApi.location Location.selection)
 
 
 label : Unit -> String
@@ -81,7 +72,16 @@ label unit =
                 UnitKind.Truck ->
                     "truck"
     in
-    Side.label unit.side ++ " " ++ kind ++ " " ++ UnitId.toString unit.id
+    String.join " "
+        [ Side.label unit.side
+        , kind
+        , UnitId.toString unit.id
+        ]
+
+
+setOnMap : Coordinate -> Unit -> Unit
+setOnMap position unit =
+    { unit | location = Location.OnMap position }
 
 
 {-| Upkeep is reserved before spending supplies on movement.
@@ -134,20 +134,20 @@ loadingPartner units mover destination =
 boardPosition : Unit -> Maybe Coordinate
 boardPosition unit =
     case unit.location of
-        OnMap position ->
+        Location.OnMap position ->
             Just position
 
-        Aboard _ ->
+        Location.Aboard _ ->
             Nothing
 
 
 carrierId : Unit -> Maybe UnitId
 carrierId unit =
     case unit.location of
-        OnMap _ ->
+        Location.OnMap _ ->
             Nothing
 
-        Aboard carrier ->
+        Location.Aboard carrier ->
             Just carrier
 
 
@@ -157,9 +157,9 @@ and carriers that are themselves aboard have no physical position.
 physicalPosition : List Unit -> Unit -> Maybe Coordinate
 physicalPosition units unit =
     case unit.location of
-        OnMap position ->
+        Location.OnMap position ->
             Just position
 
-        Aboard carrier ->
+        Location.Aboard carrier ->
             ListUtil.find (\truck -> truck.id == carrier) units
                 |> Maybe.andThen boardPosition

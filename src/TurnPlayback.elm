@@ -128,9 +128,16 @@ presentationFrame playing next =
             of
                 Just edge ->
                     { unit
-                        | location = Unit.OnMap edge.origin
-                        , direction = unit.direction |> Maybe.andThen (\_ -> Direction.between edge.origin edge.destination)
+                        | direction =
+                            unit.direction
+                                |> Maybe.andThen
+                                    (\_ ->
+                                        Direction.between
+                                            edge.origin
+                                            edge.destination
+                                    )
                     }
+                        |> Unit.setOnMap edge.origin
 
                 Nothing ->
                     unit

@@ -27,27 +27,17 @@ import Api.Enum.UnitKind as UnitKind
 import Api.InputObject
 import Api.Mutation
 import Api.Object
-import Api.Object.Aboard as AboardApi
-import Api.Object.Coordinate as CoordinateApi
 import Api.Object.Depot as DepotApi
-import Api.Object.Fuel as FuelApi
 import Api.Object.GamePlayerView as PlayerView
 import Api.Object.GameSnapshot as SnapshotApi
-import Api.Object.HitPoints as HitPointsApi
-import Api.Object.Map as MapApi
 import Api.Object.MovementRule as MovementRuleApi
-import Api.Object.OnMap as OnMapApi
 import Api.Object.Scenario as Scenario
-import Api.Object.Supplies as SuppliesApi
-import Api.Object.TerrainFeature as FeatureApi
 import Api.Object.TerrainMovementCost as MovementCostApi
-import Api.Object.Unit as UnitApi
 import Api.Query
-import Api.Union
-import Api.Union.UnitLocation as LocationApi
 import ApiRequest
 import Browser.Events
-import Coordinate
+import Coordinate exposing (Coordinate)
+import Css
 import Depot
 import Direction
 import Drag exposing (Drag)
@@ -55,7 +45,7 @@ import Effect as E
     exposing
         ( Eff
         )
-import GameBoard
+import GameBoard exposing (GameBoard)
 import Graphql.Http
 import Graphql.OptionalArgument exposing (OptionalArgument(..))
 import Graphql.SelectionSet as SS exposing (SelectionSet)
@@ -79,7 +69,6 @@ import Ports.Js.To as ToJs
 import Shared
 import Style as S
 import Terrain
-import TerrainFeature
 import Time
 import Turn
 import TurnPlayback
@@ -91,8 +80,6 @@ import View.Button as Button
 import View.Card as Card
 import View.CardHeader as CardHeader
 import View.Dialog as DialogView
-import View.GameBoard as Board
-import View.GamePanel as GamePanel
 import View.RotationChoices as RotationChoices
 import View.UnitCommands as UnitCommands
 import View.UnitStatus as UnitStatus
@@ -105,16 +92,12 @@ import View.UnloadPassenger as UnloadPassenger
 ----------------------------------------------------------------
 
 
-type alias Flags =
-    { snapshot : Snapshot }
-
-
 type alias Snapshot =
     { name : String
     , mapType : MapType
     , players : List Player
-    , board : GameBoard.GameBoard
-    , visibleTiles : List Coordinate.Coordinate
+    , board : GameBoard
+    , visibleTiles : List Coordinate
     , movementRules : List Movement.Rule
     , turn : Turn.Snapshot
     , playbackFrames : List TurnPlayback.Frame
@@ -139,8 +122,8 @@ type alias Model =
     , name : String
     , mapType : MapType
     , players : List Player
-    , board : GameBoard.GameBoard
-    , visibleTiles : List Coordinate.Coordinate
+    , board : GameBoard
+    , visibleTiles : List Coordinate
     , movementRules : List Movement.Rule
     , pathPreview : Maybe Movement.Option
     , moveOptions : List Movement.Option
@@ -157,7 +140,7 @@ type alias Model =
 
 type Selection
     = UnitSelection SelectedUnit
-    | TileSelection Coordinate.Coordinate
+    | TileSelection Coordinate
     | UnloadSelection UnloadPlanning
 
 
@@ -187,7 +170,7 @@ type alias UnloadChoice =
 
 type alias UnloadOrder =
     { unitId : UnitId
-    , destination : Coordinate.Coordinate
+    , destination : Coordinate
     }
 
 
@@ -203,22 +186,6 @@ type MovementStatus
     | DestinationUnavailable
 
 
-movementStatusText : MovementStatus -> String
-movementStatusText status =
-    case status of
-        NoMovementStatus ->
-            ""
-
-        PlannedMoveCleared ->
-            "planned move cleared."
-
-        MovePlanned ->
-            "move planned."
-
-        DestinationUnavailable ->
-            "that square cannot be a destination within this unit’s movement budget."
-
-
 type alias PlannedMove =
     { unitId : UnitId
     , move : Movement.Option
@@ -228,7 +195,7 @@ type alias PlannedMove =
 
 
 type Msg
-    = BoardMsg Board.Msg
+    = BoardMsg GameBoard.Msg
     | ViewportMsg Viewport.Msg
     | UnitCommandsMsg UnitCommands.Msg
     | PreviousCommandPressed
@@ -273,6 +240,10 @@ type Msg
 ----------------------------------------------------------------
 
 
+type alias Flags =
+    { snapshot : Snapshot }
+
+
 init : Shared.Model -> Flags -> Model
 init shared flags =
     { turn = flags.snapshot.turn
@@ -304,12 +275,6 @@ init shared flags =
 load : LobbyId -> Graphql.Http.Request Flags
 load id =
     Api.Query.game { id = LobbyId.toString id } (SS.map Flags snapshotSelection)
-        |> ApiRequest.queryRequest
-
-
-loadSnapshot : LobbyId -> Graphql.Http.Request Snapshot
-loadSnapshot id =
-    Api.Query.game { id = LobbyId.toString id } snapshotSelection
         |> ApiRequest.queryRequest
 
 
@@ -410,43 +375,26 @@ setShared shared model =
 ----------------------------------------------------------------
 
 
-updateViewport : Viewport.Msg -> Model -> Model
-updateViewport viewportMsg model =
-    case viewportMsg of
-        Viewport.MousePressed point ->
-            { model
-                | drag = Just (Drag.startAt { start = point, origin = model.offset })
-                , suppressClick = False
-            }
+movementStatusText : MovementStatus -> String
+movementStatusText status =
+    case status of
+        NoMovementStatus ->
+            ""
 
-        Viewport.MouseMoved point buttons ->
-            if buttons == 0 then
-                { model | drag = Nothing }
+        PlannedMoveCleared ->
+            "planned move cleared."
 
-            else
-                pan point model
+        MovePlanned ->
+            "move planned."
 
-        Viewport.MouseReleased point ->
-            let
-                moved : Model
-                moved =
-                    pan point model
-            in
-            { moved | drag = Nothing }
+        DestinationUnavailable ->
+            "that square cannot be a destination within this unit’s movement budget."
 
-        Viewport.WindowVisibilityChanged _ ->
-            { model | drag = Nothing }
 
-        Viewport.WheelScrolled anchor delta ->
-            zoomAt anchor (e ^ (negate (clamp -100 100 delta) * 0.002)) model
-
-        Viewport.KeyPressed key ->
-            case key of
-                "Home" ->
-                    resetViewport model
-
-                _ ->
-                    model
+loadSnapshot : LobbyId -> Graphql.Http.Request Snapshot
+loadSnapshot id =
+    Api.Query.game { id = LobbyId.toString id } snapshotSelection
+        |> ApiRequest.queryRequest
 
 
 panLeft : Model -> Model
@@ -540,67 +488,12 @@ resetViewport model =
 snapshotSelection : SelectionSet Snapshot Api.Object.GameSnapshot
 snapshotSelection =
     let
-        locationSelection : SelectionSet Unit.Location Api.Union.UnitLocation
-        locationSelection =
-            LocationApi.fragments
-                { onOnMap = SS.map Unit.OnMap (OnMapApi.position coordinateSelection)
-                , onAboard = AboardApi.carrierId |> SS.mapOrFail UnitId.parse |> SS.map Unit.Aboard
-                }
-
-        hitPointsSelection : SelectionSet Unit.HitPoints Api.Object.HitPoints
-        hitPointsSelection =
-            SS.succeed Unit.HitPoints
-                |> SS.with HitPointsApi.current
-                |> SS.with HitPointsApi.maximum
-
-        suppliesSelection : SelectionSet Unit.Supplies Api.Object.Supplies
-        suppliesSelection =
-            SS.succeed Unit.Supplies
-                |> SS.with SuppliesApi.current
-                |> SS.with SuppliesApi.maximum
-                |> SS.with SuppliesApi.upkeepPerTurn
-                |> SS.with SuppliesApi.movementPerTile
-
-        fuelSelection : SelectionSet Unit.Fuel Api.Object.Fuel
-        fuelSelection =
-            SS.succeed Unit.Fuel
-                |> SS.with FuelApi.current
-                |> SS.with FuelApi.maximum
-
-        unitSelection : SelectionSet Unit Api.Object.Unit
-        unitSelection =
-            SS.succeed Unit
-                |> SS.with (UnitApi.id |> SS.mapOrFail UnitId.parse)
-                |> SS.with UnitApi.side
-                |> SS.with UnitApi.kind
-                |> SS.with UnitApi.direction
-                |> SS.with (UnitApi.hitPoints hitPointsSelection)
-                |> SS.with (UnitApi.supplies suppliesSelection)
-                |> SS.with (UnitApi.fuel fuelSelection)
-                |> SS.with UnitApi.cargoCapacity
-                |> SS.with (UnitApi.location locationSelection)
-
-        featureSelection : SelectionSet TerrainFeature.TerrainFeature Api.Object.TerrainFeature
-        featureSelection =
-            SS.succeed TerrainFeature.TerrainFeature
-                |> SS.with (FeatureApi.position coordinateSelection)
-                |> SS.with FeatureApi.terrain
-
-        mapSelection : SelectionSet Map Api.Object.Map
-        mapSelection =
-            SS.succeed Map
-                |> SS.with MapApi.width
-                |> SS.with MapApi.height
-                |> SS.with MapApi.baseTile
-                |> SS.with MapApi.theme
-                |> SS.with (MapApi.features featureSelection)
-
-        boardSelection : SelectionSet GameBoard.GameBoard Api.Object.Scenario
+        boardSelection : SelectionSet GameBoard Api.Object.Scenario
         boardSelection =
             SS.succeed GameBoard.GameBoard
-                |> SS.with (Scenario.map mapSelection)
-                |> SS.with (Scenario.depots (SS.map Depot.Depot (DepotApi.position coordinateSelection)))
-                |> SS.with (Scenario.units unitSelection)
+                |> SS.with (Scenario.map Map.selection)
+                |> SS.with (Scenario.depots (SS.map Depot.Depot (DepotApi.position Coordinate.selection)))
+                |> SS.with (Scenario.units Unit.selection)
 
         playerSelection : SelectionSet Player Api.Object.GamePlayerView
         playerSelection =
@@ -627,17 +520,10 @@ snapshotSelection =
         |> SS.with SnapshotApi.mapType
         |> SS.with (SnapshotApi.players playerSelection)
         |> SS.with (SnapshotApi.scenario boardSelection)
-        |> SS.with (SnapshotApi.visibleTiles coordinateSelection)
+        |> SS.with (SnapshotApi.visibleTiles Coordinate.selection)
         |> SS.with (SnapshotApi.movementRules movementRuleSelection)
         |> SS.with Turn.selection
-        |> SS.with (TurnPlayback.selection unitSelection coordinateSelection)
-
-
-coordinateSelection : SelectionSet Coordinate.Coordinate Api.Object.Coordinate
-coordinateSelection =
-    SS.succeed Coordinate.Coordinate
-        |> SS.with CoordinateApi.x
-        |> SS.with CoordinateApi.y
+        |> SS.with (TurnPlayback.selection Unit.selection Coordinate.selection)
 
 
 clearSelection : Model -> Model
@@ -677,7 +563,7 @@ selectUnit id model =
                 }
 
 
-selectTile : Coordinate.Coordinate -> Model -> Model
+selectTile : Coordinate -> Model -> Model
 selectTile position model =
     case model.selected of
         Just (UnloadSelection planning) ->
@@ -687,7 +573,7 @@ selectTile position model =
             selectMovementTile position model
 
 
-selectMovementTile : Coordinate.Coordinate -> Model -> Model
+selectMovementTile : Coordinate -> Model -> Model
 selectMovementTile position model =
     if planningLocked model then
         { model | selected = Just (TileSelection position) }
@@ -735,7 +621,7 @@ selectMovementTile position model =
                 notOwnUnit ()
 
 
-previewTile : Coordinate.Coordinate -> Model -> Model
+previewTile : Coordinate -> Model -> Model
 previewTile position model =
     if model.drag /= Nothing || model.pathPreview == Nothing then
         model
@@ -804,7 +690,9 @@ focusAdjacentCommand orderCommands current model =
             in
             case adjacent of
                 Just command ->
-                    E.focus { htmlId = UnitCommands.optionHtmlId command } CommandFocusCompleted
+                    E.focus
+                        { htmlId = UnitCommands.optionHtmlId command }
+                        CommandFocusCompleted
 
                 Nothing ->
                     E.none
@@ -872,7 +760,7 @@ update lobbyId msg model =
             ( next, effect )
 
         ViewportMsg viewportMsg ->
-            ( updateViewport viewportMsg model, E.none )
+            ( handleViewportMsg viewportMsg model, E.none )
 
         UnitCommandsMsg commandMsg ->
             case commandMsg of
@@ -1076,10 +964,44 @@ update lobbyId msg model =
             )
 
 
-handleBoardMsg : Board.Msg -> Model -> Model
+handleViewportMsg : Viewport.Msg -> Model -> Model
+handleViewportMsg viewportMsg model =
+    case viewportMsg of
+        Viewport.MousePressed point ->
+            { model
+                | drag = Just (Drag.startAt { start = point, origin = model.offset })
+                , suppressClick = False
+            }
+
+        Viewport.MouseMoved point buttons ->
+            if buttons == 0 then
+                { model | drag = Nothing }
+
+            else
+                pan point model
+
+        Viewport.MouseReleased point ->
+            let
+                moved : Model
+                moved =
+                    pan point model
+            in
+            { moved | drag = Nothing }
+
+        Viewport.WindowVisibilityChanged _ ->
+            { model | drag = Nothing }
+
+        Viewport.WheelScrolled anchor delta ->
+            zoomAt anchor (e ^ (negate (clamp -100 100 delta) * 0.002)) model
+
+        Viewport.HomePressed ->
+            resetViewport model
+
+
+handleBoardMsg : GameBoard.Msg -> Model -> Model
 handleBoardMsg boardMsg model =
     case boardMsg of
-        Board.RotationChoicesMsg rotationMsg ->
+        GameBoard.RotationChoicesMsg rotationMsg ->
             case rotationMsg of
                 RotationChoices.MouseMovedOverDirection direction ->
                     previewRotation direction model
@@ -1091,14 +1013,14 @@ handleBoardMsg boardMsg model =
                     else
                         saveRotation direction model
 
-        Board.ClickedUnit id click ->
+        GameBoard.ClickedUnit id click ->
             if click.detail /= 0 && model.suppressClick then
                 model
 
             else
                 selectUnit id model
 
-        Board.PressedEnterOnUnit id ->
+        GameBoard.PressedEnterOnUnit id ->
             let
                 confirmsSelectedUnitPreview : Bool
                 confirmsSelectedUnitPreview =
@@ -1110,10 +1032,10 @@ handleBoardMsg boardMsg model =
             else
                 selectUnit id model
 
-        Board.PressedSpaceOnUnit id ->
+        GameBoard.PressedSpaceOnUnit id ->
             selectUnit id model
 
-        Board.MouseOverUnit id ->
+        GameBoard.MouseOverUnit id ->
             if planningLocked model then
                 model
 
@@ -1124,40 +1046,40 @@ handleBoardMsg boardMsg model =
                     |> Maybe.map (\position -> previewTile position model)
                     |> Maybe.withDefault model
 
-        Board.ClickedDepot position click ->
+        GameBoard.ClickedDepot position click ->
             if click.detail /= 0 && model.suppressClick then
                 model
 
             else
                 selectTile position model
 
-        Board.PressedEnterOnDepot position ->
+        GameBoard.PressedEnterOnDepot position ->
             selectTile position model
 
-        Board.PressedSpaceOnDepot position ->
+        GameBoard.PressedSpaceOnDepot position ->
             selectTile position model
 
-        Board.MouseOverDepot position ->
+        GameBoard.MouseOverDepot position ->
             if planningLocked model then
                 model
 
             else
                 previewTile position model
 
-        Board.ClickedTile position click ->
+        GameBoard.ClickedTile position click ->
             if click.detail /= 0 && model.suppressClick then
                 model
 
             else
                 selectTile position model
 
-        Board.PressedEnterOnTile position ->
+        GameBoard.PressedEnterOnTile position ->
             selectTile position model
 
-        Board.PressedSpaceOnTile position ->
+        GameBoard.PressedSpaceOnTile position ->
             selectTile position model
 
-        Board.MouseOverTile position ->
+        GameBoard.MouseOverTile position ->
             if planningLocked model then
                 model
 
@@ -1194,7 +1116,7 @@ view model =
             ]
             [ Viewport.toHtml ViewportMsg
                 model
-                (Board.toHtml
+                (GameBoard.toHtml
                     { frame = model.frame
                     , rotation = rotationSelection model
                     , visibleTiles = model.visibleTiles
@@ -1218,7 +1140,22 @@ view model =
                 (commandMenu model)
             , turnPanel model
             ]
-        , GamePanel.toHtml
+        , H.aside
+            [ A.attribute "aria-label" "game panel"
+            , A.css
+                [ S.bgGray1
+                , S.outdentLeft
+                , S.col
+                , S.justifySpaceBetween
+                , S.g3
+                , S.p3
+                , S.shrink0
+                , S.hFull
+                , S.overflowAuto
+                , S.wrapAnywhere
+                , Css.property "width" "min(18rem, 45vw)"
+                ]
+            ]
             [ selectionView model
             , panelFooter model
             ]
@@ -1227,16 +1164,16 @@ view model =
     ]
 
 
-plannedUnloadRoutes : Model -> List Board.UnloadRoute
+plannedUnloadRoutes : Model -> List GameBoard.UnloadRoute
 plannedUnloadRoutes model =
     let
-        truckUnloads : PlannedMove -> List Board.UnloadRoute
+        truckUnloads : PlannedMove -> List GameBoard.UnloadRoute
         truckUnloads plan =
             let
-                route : UnloadOrder -> Maybe Board.UnloadRoute
+                route : UnloadOrder -> Maybe GameBoard.UnloadRoute
                 route unload =
                     let
-                        withDirection : Direction -> Board.UnloadRoute
+                        withDirection : Direction -> GameBoard.UnloadRoute
                         withDirection direction =
                             { origin = plan.move.destination
                             , direction = direction
@@ -1457,7 +1394,7 @@ selectedUnit model =
             Nothing
 
 
-selectedPosition : Model -> Maybe Coordinate.Coordinate
+selectedPosition : Model -> Maybe Coordinate
 selectedPosition model =
     case model.selected of
         Just (TileSelection position) ->
@@ -1764,7 +1701,7 @@ viewportSubscriptions model =
                 ]
 
 
-traceTo : Coordinate.Coordinate -> Model -> Maybe Movement.Option
+traceTo : Coordinate -> Model -> Maybe Movement.Option
 traceTo position model =
     let
         previewForUnit : Unit -> Maybe Movement.Option
@@ -1834,7 +1771,7 @@ plannedAction model unit move =
         "move to"
 
 
-reservedDestinations : Unit -> Model -> List Coordinate.Coordinate
+reservedDestinations : Unit -> Model -> List Coordinate
 reservedDestinations unit model =
     let
         reserves : PlannedMove -> Bool
@@ -1862,13 +1799,13 @@ reservedDestinations unit model =
         unavailableReceiver target =
             target.id /= unit.id && receivingLoad target model && not (boardingSpace unit target model)
 
-        unavailableReceivers : List Coordinate.Coordinate
+        unavailableReceivers : List Coordinate
         unavailableReceivers =
             model.board.units
                 |> List.filter unavailableReceiver
                 |> List.filterMap Unit.boardPosition
 
-        savedDestinations : List Coordinate.Coordinate
+        savedDestinations : List Coordinate
         savedDestinations =
             List.map (.move >> .destination) (List.filter reserves model.plannedMoves)
                 ++ List.concatMap (.unloads >> List.map .destination) model.plannedMoves
@@ -2083,7 +2020,7 @@ isChoosingUnload model =
             False
 
 
-truckDestination : UnitId -> Model -> Maybe Coordinate.Coordinate
+truckDestination : UnitId -> Model -> Maybe Coordinate
 truckDestination truckId model =
     model.plannedMoves
         |> ListUtil.find (\plan -> plan.unitId == truckId)
@@ -2112,13 +2049,16 @@ unloadOptions planning model =
         projectTruck unit =
             if unit.id == planning.truckId then
                 truckDestination planning.truckId model
-                    |> Maybe.map (\position -> { unit | location = Unit.OnMap position })
+                    |> Maybe.map
+                        (\position ->
+                            Unit.setOnMap position unit
+                        )
                     |> Maybe.withDefault unit
 
             else
                 unit
 
-        projected : GameBoard.GameBoard
+        projected : GameBoard
         projected =
             { map = model.board.map, units = List.map projectTruck model.board.units, depots = model.board.depots }
     in
@@ -2130,7 +2070,7 @@ unloadOptions planning model =
             []
 
 
-chooseUnloadSquare : UnloadPlanning -> Coordinate.Coordinate -> Model -> Model
+chooseUnloadSquare : UnloadPlanning -> Coordinate -> Model -> Model
 chooseUnloadSquare planning destination model =
     if planningLocked model then
         model
@@ -2519,7 +2459,7 @@ saveRotation direction model =
             model
 
 
-rotationSelection : Model -> Maybe Board.RotationSelection
+rotationSelection : Model -> Maybe GameBoard.RotationSelection
 rotationSelection model =
     case ( model.selected, selectedUnit model ) of
         ( Just (UnitSelection selection), Just unit ) ->

@@ -20,6 +20,7 @@ import GameBoard exposing (GameBoard)
 import ListUtil
 import Map
 import Unit exposing (Unit)
+import Unit.Supplies exposing (Supplies)
 
 
 {-| The cost to enter a terrain square, as supplied by Rust's movement rules.
@@ -309,10 +310,10 @@ trace rules board unit current destination =
                     remainingUnit : Unit
                     remainingUnit =
                         { unit
-                            | location = Unit.OnMap current.destination
-                            , supplies = remainingSupplies unit current
+                            | supplies = remainingSupplies unit current
                             , fuel = Maybe.map (\fuel -> { fuel | current = fuel.current - (List.length current.path - 1) }) unit.fuel
                         }
+                            |> Unit.setOnMap current.destination
 
                     extendPath : Option -> Option
                     extendPath extension =
@@ -329,10 +330,10 @@ trace rules board unit current destination =
                     |> Maybe.andThen (withinTileLimit unit)
 
 
-remainingSupplies : Unit -> Option -> Unit.Supplies
+remainingSupplies : Unit -> Option -> Supplies
 remainingSupplies unit current =
     let
-        supplies : Unit.Supplies
+        supplies : Supplies
         supplies =
             unit.supplies
     in

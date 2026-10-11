@@ -1,8 +1,13 @@
 module UnitId exposing
     ( UnitId
     , parse
+    , selection
     , toString
     )
+
+import Api.Object exposing (Unit)
+import Api.Object.Unit as UnitApi
+import Graphql.SelectionSet as SS exposing (SelectionSet)
 
 
 type UnitId
@@ -21,3 +26,8 @@ parse value =
 toString : UnitId -> String
 toString (UnitId value) =
     value
+
+
+selection : SelectionSet UnitId Unit
+selection =
+    UnitApi.id |> SS.mapOrFail parse

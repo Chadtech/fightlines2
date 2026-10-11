@@ -17,7 +17,7 @@ type Msg
     | MouseReleased Point
     | WindowVisibilityChanged Browser.Events.Visibility
     | WheelScrolled Point Float
-    | KeyPressed String
+    | HomePressed
 
 
 toHtml : (Msg -> msg) -> { a | offset : Point, zoom : Float, drag : Maybe Drag } -> Html msg -> Html msg -> Html msg
@@ -89,6 +89,15 @@ type alias WheelEvent =
 
 wheelScrolledDecoder : Decode.Decoder Msg
 wheelScrolledDecoder =
+    let
+        wheelScrolled : WheelEvent -> Msg
+        wheelScrolled event =
+            WheelScrolled
+                { x = event.pointer.x - event.viewportSize.x / 2
+                , y = event.pointer.y - event.viewportSize.y / 2
+                }
+                event.delta
+    in
     Decode.map3 WheelEvent
         Point.decoder
         viewportSizeDecoder
@@ -123,15 +132,6 @@ normalizeWheelDelta mode delta =
             delta
 
 
-wheelScrolled : WheelEvent -> Msg
-wheelScrolled event =
-    WheelScrolled
-        { x = event.pointer.x - event.viewportSize.x / 2
-        , y = event.pointer.y - event.viewportSize.y / 2
-        }
-        event.delta
-
-
 navigationKeyDecoder : Decode.Decoder Msg
 navigationKeyDecoder =
     Decode.field "key" Decode.string
@@ -141,7 +141,7 @@ navigationKeyDecoder =
 navigationKeyPressed : String -> Decode.Decoder Msg
 navigationKeyPressed key =
     if key == "Home" then
-        Decode.succeed (KeyPressed key)
+        Decode.succeed HomePressed
 
     else
         Decode.fail "not a navigation key"
