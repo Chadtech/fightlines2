@@ -1337,14 +1337,55 @@ mod tests {
                 Some(Terrain::Hills)
             );
         }
-        for y in [6, 10] {
-            for x in 8..=14 {
-                assert_eq!(
-                    scenario.map.tile_at(Coordinate::new(x, y)),
-                    Some(Terrain::GrassPlain)
-                );
-            }
+    }
+
+    #[test]
+    fn el_alamein_has_straight_northern_and_bent_southern_ridge_passes() {
+        let scenario = Scenario::el_alamein().unwrap();
+        for x in 8..=14 {
+            assert_eq!(
+                scenario.map.tile_at(Coordinate::new(x, 6)),
+                Some(Terrain::GrassPlain)
+            );
         }
+        assert_eq!(
+            open_route_length(&scenario.map, Coordinate::new(8, 6), Coordinate::new(14, 6)),
+            Some(6)
+        );
+
+        // The southern pass bends above the ridge spur at (13, 10).
+        for (x, y) in [
+            (8, 10),
+            (9, 10),
+            (10, 10),
+            (11, 10),
+            (12, 10),
+            (12, 9),
+            (12, 8),
+            (13, 8),
+            (14, 8),
+            (14, 9),
+            (14, 10),
+        ] {
+            assert_eq!(
+                scenario.map.tile_at(Coordinate::new(x, y)),
+                Some(Terrain::GrassPlain)
+            );
+        }
+        for y in 9..=11 {
+            assert_eq!(
+                scenario.map.tile_at(Coordinate::new(13, y)),
+                Some(Terrain::Hills)
+            );
+        }
+        assert_eq!(
+            open_route_length(
+                &scenario.map,
+                Coordinate::new(8, 10),
+                Coordinate::new(14, 10)
+            ),
+            Some(10)
+        );
     }
 
     #[test]
