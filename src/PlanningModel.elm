@@ -12,10 +12,12 @@ module PlanningModel exposing
     , setOrders
     , setSelection
     , showSubmissionWarning
+    , startStationaryUnload
     , startUnload
     , submissionDrafts
     , submissionWarningOpen
     , toggleUnloadPassenger
+    , truckDestination
     , unloadChoice
     , unloadPlanning
     )
@@ -27,7 +29,7 @@ import GamePage.Selection as Selection
         , Selection(..)
         )
 import Movement
-import PlannedOrder exposing (MovePlan, PlannedOrder)
+import PlannedOrder exposing (MovePlan, PlannedOrder, StationaryUnload)
 import UnitId exposing (UnitId)
 
 
@@ -37,7 +39,7 @@ import UnitId exposing (UnitId)
 ----------------------------------------------------------------
 
 
-{-| Planning has one active workflow. Unload stages own their truck move and
+{-| Planning has one active workflow. Unload stages own their truck plan and
 only other units' orders; dialogs and board inspection are derived from the stage.
 -}
 type PlanningModel
@@ -53,21 +55,26 @@ type alias Drafts =
     }
 
 
-type alias TruckMove =
+type alias UnloadingTruck =
     { truckId : UnitId
-    , plan : MovePlan
+    , plan : TruckPlan
     }
 
 
+type TruckPlan
+    = MovingTruck MovePlan
+    | StationaryTruck StationaryUnload
+
+
 type alias UnloadChoice =
-    { truck : TruckMove
+    { truck : UnloadingTruck
     , otherOrders : List PlannedOrder
     , checked : List UnitId
     }
 
 
 type alias UnloadPlanning =
-    { truck : TruckMove
+    { truck : UnloadingTruck
     , otherOrders : List PlannedOrder
     , passengerId : UnitId
     , remaining : List UnitId
@@ -77,7 +84,7 @@ type alias UnloadPlanning =
 
 
 type alias UnloadQueue =
-    { truck : TruckMove
+    { truck : UnloadingTruck
     , otherOrders : List PlannedOrder
     , passengers : List UnitId
     }
@@ -163,18 +170,47 @@ submissionDrafts state =
             Nothing
 
 
-truckOrder : TruckMove -> PlannedOrder
+truckOrder : UnloadingTruck -> PlannedOrder
 truckOrder truck =
-    { unitId = truck.truckId, action = PlannedOrder.Move truck.plan }
+    let
+        action : PlannedOrder.Action
+        action =
+            case truck.plan of
+                MovingTruck plan ->
+                    PlannedOrder.Move plan
+
+                StationaryTruck plan ->
+                    if List.isEmpty plan.unloads then
+                        PlannedOrder.Hold plan.position
+
+                    else
+                        PlannedOrder.Unload plan
+    in
+    { unitId = truck.truckId, action = action }
+
+
+truckDestination : UnloadingTruck -> Coordinate
+truckDestination truck =
+    truckOrder truck |> PlannedOrder.destination
 
 
 startUnload : UnitId -> Movement.Option -> PlanningModel -> PlanningModel
 startUnload truckId move state =
+    startTruckUnload { truckId = truckId, plan = MovingTruck { move = move, unloads = [] } } state
+
+
+startStationaryUnload : UnitId -> Coordinate -> PlanningModel -> PlanningModel
+startStationaryUnload truckId position state =
+    startTruckUnload { truckId = truckId, plan = StationaryTruck { position = position, unloads = [] } } state
+
+
+startTruckUnload : UnloadingTruck -> PlanningModel -> PlanningModel
+startTruckUnload truck state =
     case state of
         OrdinaryPlanning drafts ->
             ChoosingPassengers
-                { truck = { truckId = truckId, plan = { move = move, unloads = [] } }
-                , otherOrders = List.filter (\order -> order.unitId /= truckId) drafts.orders
+                { truck = truck
+                , otherOrders = List.filter (\order -> order.unitId /= truck.truckId) drafts.orders
                 , checked = []
                 }
 
@@ -270,17 +306,26 @@ saveUnloadDestination options destination state =
         ChoosingExits unloading ->
             if List.any (\option -> option.destination == destination) unloading.options then
                 let
-                    truck : TruckMove
+                    truck : UnloadingTruck
                     truck =
                         unloading.truck
 
-                    plan : MovePlan
-                    plan =
-                        truck.plan
+                    appendUnload : List PlannedOrder.UnloadOrder -> List PlannedOrder.UnloadOrder
+                    appendUnload unloads =
+                        unloads ++ [ { unitId = unloading.passengerId, destination = destination } ]
 
-                    updated : TruckMove
+                    plan : TruckPlan
+                    plan =
+                        case truck.plan of
+                            MovingTruck moving ->
+                                MovingTruck { moving | unloads = appendUnload moving.unloads }
+
+                            StationaryTruck stationary ->
+                                StationaryTruck { stationary | unloads = appendUnload stationary.unloads }
+
+                    updated : UnloadingTruck
                     updated =
-                        { truck | plan = { plan | unloads = plan.unloads ++ [ { unitId = unloading.passengerId, destination = destination } ] } }
+                        { truck | plan = plan }
                 in
                 nextUnloadPassenger options
                     { truck = updated, otherOrders = unloading.otherOrders, passengers = unloading.remaining }

@@ -234,7 +234,9 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   from current passenger locations, so loading and unloading update the badge
   during playback. Empty trucks have no badge; concealed enemy cargo stays hidden.
   The badge ignores pointer events; the truck's accessible label includes its cargo count.
-  Passenger selection shows inspection details. Saving a loaded truck's move
+  Passenger selection shows inspection details. Choosing hold position on a loaded
+  truck opens the unload checklist for its current square, including with zero fuel.
+  Saving a loaded truck's move
   destination opens a modal titled `unload`, with one styled native checkbox per
   passenger, a small unit portrait, the kind name alone, and compact health and
   supply meters. Use the usual red/yellow/green resource thresholds and include

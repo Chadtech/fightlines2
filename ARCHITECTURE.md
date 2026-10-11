@@ -538,17 +538,19 @@ remaining berths across drafts and prevents moving a receiver while its loading
 or unloading drafts exist. The truck's status panel exposes cargo buttons;
 carried units have no independent commands. Saving a truck destination opens
 an unload checklist through `PlanningModel.ChoosingPassengers`. Confirmation
-advances to `ChoosingExits`. Both stages own a `TruckMove` containing its required
-`MovePlan`, with all passenger exits accumulated so far, plus other units' orders.
+advances to `ChoosingExits`. Both stages own a typed truck plan distinguishing
+movement from stationary unloading, with all passenger exits accumulated so far,
+plus other units' orders.
 There is no independently stored dialog or unload selection. `PlanningModel.orders`
 assembles the complete planning orders, exposed through `TurnLifecycle.orders`
 for paths, readiness, reservations and submission. Planning transitions finish
 or cancel the workflow without page-level order transfers.
 Each exit is reserved before calculating options for the next passenger. Leaving
-the checklist or square selection keeps the move and exits already chosen;
-advancing the turn discards the workflow. Unload choices belong to the truck's
-`Move` order
-and disappear when it is revoked. Elm projects the truck at its planned
+the checklist or square selection keeps the plan and exits already chosen;
+advancing the turn discards the workflow. Choosing hold position on a loaded truck
+opens the same checklist at its current square without requiring fuel or a legal move. With no exits, it remains an ordinary
+`Hold`; saved stationary exits form an `Unload` order with a single-coordinate path.
+Unload choices belong to the truck's `Move` or `Unload` order and disappear when it is revoked. Elm projects the truck at its planned
 destination to reuse `Movement.options` for adjacent passenger exits, retaining
 terrain and resource limits and reserving chosen exits.
 

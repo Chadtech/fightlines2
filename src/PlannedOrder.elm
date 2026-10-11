@@ -3,6 +3,7 @@ module PlannedOrder exposing
     , MovePlan
     , PlannedOrder
     , Rotation
+    , StationaryUnload
     , UnloadOrder
     , destination
     , isMoving
@@ -29,10 +30,17 @@ type Action
     = Hold Coordinate
     | Move MovePlan
     | Rotate Rotation
+    | Unload StationaryUnload
 
 
 type alias MovePlan =
     { move : Movement.Option
+    , unloads : List UnloadOrder
+    }
+
+
+type alias StationaryUnload =
+    { position : Coordinate
     , unloads : List UnloadOrder
     }
 
@@ -61,6 +69,9 @@ destination order =
         Rotate rotation ->
             rotation.position
 
+        Unload plan ->
+            plan.position
+
 
 path : PlannedOrder -> List Coordinate
 path order =
@@ -74,11 +85,17 @@ path order =
         Rotate rotation ->
             [ rotation.position ]
 
+        Unload plan ->
+            [ plan.position ]
+
 
 unloads : PlannedOrder -> List UnloadOrder
 unloads order =
     case order.action of
         Move plan ->
+            plan.unloads
+
+        Unload plan ->
             plan.unloads
 
         Hold _ ->
@@ -100,9 +117,12 @@ isMoving order =
         Rotate _ ->
             False
 
+        Unload _ ->
+            False
+
 
 {-| Convert a saved order to the existing wire contract at submission time.
-Only movement can carry unloads; rotation always uses a stationary path.
+Moving and stationary trucks can carry unloads; rotation has only a facing.
 -}
 toInput : PlannedOrder -> Api.InputObject.MoveOrderInput
 toInput order =
@@ -124,6 +144,9 @@ toInput order =
                     Absent
 
                 Move _ ->
+                    Absent
+
+                Unload _ ->
                     Absent
     in
     Api.InputObject.buildMoveOrderInput

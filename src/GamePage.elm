@@ -318,17 +318,40 @@ isChoosingUnload model =
 
 openUnloadPrompt : Unit -> Movement.Option -> Model -> Model
 openUnloadPrompt truck move model =
-    let
-        hasPassengers : Bool
-        hasPassengers =
-            List.any (\passenger -> Unit.carrierId passenger == Just truck.id) model.units
-    in
-    if hasPassengers then
+    if hasPassengers truck model then
         model
             |> mapPlanning (PlanningModel.startUnload truck.id move)
 
     else
         model
+
+
+hasPassengers : Unit -> Model -> Bool
+hasPassengers truck model =
+    List.any (\passenger -> Unit.carrierId passenger == Just truck.id) model.units
+
+
+holdPosition : Unit -> Model -> Model
+holdPosition unit model =
+    case holdOrder model.units unit of
+        Just hold ->
+            let
+                next : Model
+                next =
+                    { model
+                        | phase = TurnLifecycle.setOrders (hold :: List.filter (\plan -> plan.unitId /= unit.id) (plannedOrders model)) model.phase
+                    }
+                        |> inspectSelectedUnit
+            in
+            if hasPassengers unit model then
+                next
+                    |> mapPlanning (PlanningModel.startStationaryUnload unit.id (PlannedOrder.destination hold))
+
+            else
+                next
+
+        Nothing ->
+            model
 
 
 dismissDialog : Model -> Model
@@ -345,7 +368,7 @@ unloadOptions model state passengerId =
                 projectTruck : Unit -> Unit
                 projectTruck unit =
                     if unit.id == planning.truck.truckId then
-                        Unit.setOnMap planning.truck.plan.move.destination unit
+                        Unit.setOnMap (PlanningModel.truckDestination planning.truck) unit
 
                     else
                         unit
@@ -454,7 +477,7 @@ selectedPosition : Model -> Maybe Coordinate
 selectedPosition model =
     case unloadPlanning model.phase of
         Just planning ->
-            Just planning.truck.plan.move.destination
+            Just (PlanningModel.truckDestination planning.truck)
 
         Nothing ->
             inspectionPosition model
@@ -506,15 +529,7 @@ applyCommand command model =
                             |> setUnitInteraction unit.id (ChoosingDirection (Maybe.withDefault Facing.North unit.direction))
 
                     UnitCommand.HoldPosition ->
-                        case holdOrder model.units unit of
-                            Just hold ->
-                                { model
-                                    | phase = TurnLifecycle.setOrders (hold :: List.filter (\plan -> plan.unitId /= unit.id) (plannedOrders model)) model.phase
-                                }
-                                    |> inspectSelectedUnit
-
-                            Nothing ->
-                                model
+                        holdPosition unit model
 
                     _ ->
                         model
@@ -1955,7 +1970,7 @@ handleCommandMsg commandMsg model =
         UnitCommands.CommandPicked command ->
             model
                 |> applyCommand command
-                |> E.withOut
+                |> finishBoardInteraction model
 
         UnitCommands.ArrowedUpCommandMenu current ->
             ( model
@@ -2250,6 +2265,9 @@ unitOrderView model unit =
                         chosenOrderText =
                             case plan.action of
                                 PlannedOrder.Hold _ ->
+                                    "hold position"
+
+                                PlannedOrder.Unload _ ->
                                     "hold position"
 
                                 PlannedOrder.Rotate rotation ->

@@ -554,6 +554,14 @@ transportChecks rules =
                 rideUnits =
                     [ aboard, truck ]
 
+                fuelEmptyTruck : Unit.Unit
+                fuelEmptyTruck =
+                    { truck | fuel = Just { current = 0, maximum = 64 } }
+
+                strandedUnits : List Unit.Unit
+                strandedUnits =
+                    [ aboard, fuelEmptyTruck ]
+
                 canReach : List Unit.Unit -> Unit.Unit -> Coordinate -> Bool
                 canReach current unit destination =
                     Movement.options [] rules map current unit |> List.any (\option -> option.destination == destination)
@@ -580,6 +588,11 @@ transportChecks rules =
                 , expect "field guns can board" (canReach units { passenger | kind = UnitKind.FieldGun } { x = 1, y = 0 })
                 , expect "tanks cannot board" (not (canReach units { passenger | kind = UnitKind.Tank } { x = 1, y = 0 }))
                 , expect "full trucks reject boarding" (not (canReach fullUnits passenger { x = 1, y = 0 }))
+                , expect "zero fuel still forbids truck movement" (List.isEmpty (Movement.options [] rules map strandedUnits fuelEmptyTruck))
+                , expect "zero fuel truck passengers can unload beside the stationary truck" (canReach strandedUnits aboard { x = 2, y = 0 })
+                , expect "stationary unloads still reject the occupied truck origin" (not (canReach strandedUnits aboard { x = 1, y = 0 }))
+                , expect "stationary unloads still reject reserved exits" (not (List.any (\option -> option.destination == { x = 2, y = 0 }) (Movement.options [ { x = 2, y = 0 } ] rules map strandedUnits aboard)))
+                , expect "stationary unloads still require passenger movement supplies" (not (canReach strandedUnits { aboard | supplies = { current = 1, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 } } { x = 2, y = 0 }))
                 , expect "unload offers adjacent squares" (canReach rideUnits aboard { x = 2, y = 0 })
                 , expect "unload does not offer distant squares" (not (canReach rideUnits aboard { x = 3, y = 0 }))
                 , expect "traced unload cannot extend beyond one tile" (extendingUnload == Nothing)

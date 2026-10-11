@@ -100,9 +100,10 @@ loading move before changing the receiving unit's order.
 Passengers disappear from the board and travel with the truck. They still pay
 turn upkeep but spend no walking supplies while riding, grant no sight, and need
 no separate hold order. Select a truck to see its cargo count and select a
-passenger from its cargo buttons for inspection. After choosing the truck's move
-destination, an **unload** checklist offers its passengers and **proceed without
-unloading**. Check passengers, then choose an empty adjacent square for each
+passenger from its cargo buttons for inspection. Choose **hold position** on a
+loaded truck to unload beside its current square, even when it has no fuel.
+After choosing the truck's move destination, an **unload** checklist offers its
+passengers and **proceed without unloading**. Check passengers, then choose an empty adjacent square for each
 around the truck's planned destination. The truck moves first; unloading uses
 the passenger's normal terrain and supply costs. Both passengers may unload
 onto different squares in the same turn. Blocked truck moves or occupied exits

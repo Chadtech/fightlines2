@@ -54,8 +54,8 @@ orderChecks unitId passengerId =
         stationaryUnload =
             { unitId = unitId
             , action =
-                Move
-                    { move = { path = [ { x = 1, y = 1 } ], destination = { x = 1, y = 1 }, cost = 0 }
+                Unload
+                    { position = { x = 1, y = 1 }
                     , unloads = [ { unitId = passengerId, destination = { x = 1, y = 2 } } ]
                     }
             }
@@ -71,8 +71,8 @@ orderChecks unitId passengerId =
             (not (PlannedOrder.isMoving hold) && not (PlannedOrder.isMoving rotation) && PlannedOrder.isMoving move && not (PlannedOrder.isMoving stationaryUnload))
         , expect "stationary trucks must retain their unload choices"
             (PlannedOrder.toInput stationaryUnload == { unitId = UnitId.toString unitId, path = [ { x = 1, y = 1 } ], direction = Absent, unloads = Present [ { unitId = UnitId.toString passengerId, destination = { x = 1, y = 2 } } ] })
-        , expect "reservations must use the order destination and only movement's unload exits"
-            (PlannedOrder.destination move == { x = 2, y = 1 } && PlannedOrder.destination rotation == { x = 1, y = 1 } && PlannedOrder.unloads hold == [] && PlannedOrder.unloads rotation == [] && List.length (PlannedOrder.unloads move) == 1)
+        , expect "reservations must use the order destination and transport unload exits"
+            (PlannedOrder.destination move == { x = 2, y = 1 } && PlannedOrder.destination rotation == { x = 1, y = 1 } && PlannedOrder.destination stationaryUnload == { x = 1, y = 1 } && PlannedOrder.unloads hold == [] && PlannedOrder.unloads rotation == [] && List.length (PlannedOrder.unloads move) == 1)
         ]
 
 

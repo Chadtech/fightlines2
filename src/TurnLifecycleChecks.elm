@@ -236,11 +236,66 @@ unloadChecks =
                     , action = PlannedOrder.Move { move = move, unloads = [ { unitId = first, destination = { x = 2, y = 2 } }, { unitId = second, destination = { x = 3, y = 1 } } ] }
                     }
 
+                stationaryPosition : Coordinate.Coordinate
+                stationaryPosition =
+                    { x = 1, y = 1 }
+
+                stationaryChecklist : Phase
+                stationaryChecklist =
+                    TurnLifecycle.mapPlanning (PlanningModel.startStationaryUnload truck stationaryPosition) ordinary
+
+                stationaryHold : PlannedOrder.PlannedOrder
+                stationaryHold =
+                    { unitId = truck, action = PlannedOrder.Hold stationaryPosition }
+
+                stationaryOptions : PlanningModel -> UnitId.UnitId -> List Movement.Option
+                stationaryOptions state _ =
+                    let
+                        reserved : List Coordinate.Coordinate
+                        reserved =
+                            PlanningModel.orders state |> List.concatMap (PlannedOrder.unloads >> List.map .destination)
+
+                        option : Coordinate.Coordinate -> Movement.Option
+                        option position =
+                            { destination = position, path = [ stationaryPosition, position ], cost = 2 }
+                    in
+                    [ { x = 0, y = 1 }, { x = 1, y = 2 } ]
+                        |> List.filter (\position -> not (List.member position reserved))
+                        |> List.map option
+
+                stationaryFirst : Phase
+                stationaryFirst =
+                    stationaryChecklist
+                        |> TurnLifecycle.mapPlanning (PlanningModel.toggleUnloadPassenger first True)
+                        |> TurnLifecycle.mapPlanning (PlanningModel.toggleUnloadPassenger second True)
+                        |> TurnLifecycle.mapPlanning (PlanningModel.confirmUnloadPassengers stationaryOptions)
+
+                stationarySecond : Phase
+                stationarySecond =
+                    TurnLifecycle.mapPlanning (PlanningModel.saveUnloadDestination stationaryOptions { x = 0, y = 1 }) stationaryFirst
+
+                stationaryComplete : Phase
+                stationaryComplete =
+                    TurnLifecycle.mapPlanning (PlanningModel.saveUnloadDestination stationaryOptions { x = 1, y = 2 }) stationarySecond
+
+                stationaryOrder : PlannedOrder.PlannedOrder
+                stationaryOrder =
+                    { unitId = truck
+                    , action =
+                        PlannedOrder.Unload
+                            { position = stationaryPosition
+                            , unloads =
+                                [ { unitId = first, destination = { x = 0, y = 1 } }
+                                , { unitId = second, destination = { x = 1, y = 2 } }
+                                ]
+                            }
+                    }
+
                 hasOneOwner : Bool
                 hasOneOwner =
                     case checklist of
                         Planning (ChoosingPassengers choice) ->
-                            List.isEmpty choice.otherOrders && choice.truck.plan.move == move
+                            List.isEmpty choice.otherOrders && PlanningModel.truckDestination choice.truck == move.destination
 
                         _ ->
                             False
@@ -255,7 +310,31 @@ unloadChecks =
                             False
             in
             List.concat
-                [ expect "the passenger checklist owns one truck move and derives its inspection"
+                [ expect "stationary unloading replaces the truck move with one hold at its origin"
+                    (TurnLifecycle.orders stationaryChecklist == [ stationaryHold ])
+                , expect "canceling or declining stationary unloading leaves a plain hold"
+                    (TurnLifecycle.orders (TurnLifecycle.mapPlanning PlanningModel.dismissDialog stationaryChecklist)
+                        == [ stationaryHold ]
+                        && TurnLifecycle.orders (TurnLifecycle.mapPlanning (PlanningModel.confirmUnloadPassengers stationaryOptions) stationaryChecklist)
+                        == [ stationaryHold ]
+                    )
+                , expect "stationary unloading reserves each exit before choosing the next passenger"
+                    (Maybe.map (\planning -> List.map .destination planning.options) (planningExits stationarySecond) == Just [ { x = 1, y = 2 } ])
+                , expect "stationary unloading completes with one stationary truck order and both exits"
+                    (TurnLifecycle.orders stationaryComplete
+                        == [ stationaryOrder ]
+                        && planningExits stationaryComplete
+                        == Nothing
+                        && PlannedOrder.path stationaryOrder
+                        == [ stationaryPosition ]
+                        && not (PlannedOrder.isMoving stationaryOrder)
+                    )
+                , expect "completed stationary unloads can submit and revoke normally"
+                    (TurnLifecycle.planningLocked (TurnLifecycle.startSubmission 1 stationaryComplete)
+                        && TurnLifecycle.orders (TurnLifecycle.setOrders [] stationaryComplete)
+                        == []
+                    )
+                , expect "the passenger checklist owns one truck move and derives its inspection"
                     (hasOneOwner && TurnLifecycle.orders checklist == [ order ] && TurnLifecycle.selection checklist == Just (Inspecting (UnitInspection truck)))
                 , expect "canceling the checklist retains the move and returns to ordinary planning"
                     (TurnLifecycle.mapPlanning PlanningModel.dismissDialog checked == ordinary)
