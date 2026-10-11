@@ -3,7 +3,8 @@ port module TurnLifecycleChecks exposing (main)
 import Coordinate
 import GamePage.Selection
     exposing
-        ( Inspection(..)
+        ( DestinationFeedback(..)
+        , Inspection(..)
         , Selection(..)
         , UnitInteraction(..)
         )
@@ -44,7 +45,7 @@ checks =
                 selection =
                     UnitSelection
                         { id = unitId
-                        , interaction = ChoosingMove { preview = Movement.start { x = 1, y = 1 }, options = [] }
+                        , interaction = ChoosingMove { preview = Movement.start { x = 1, y = 1 }, options = [], destinationFeedback = DestinationUnavailable }
                         }
 
                 inspectedTile : Selection
@@ -213,13 +214,21 @@ unloadChecks =
                 firstPassenger =
                     TurnLifecycle.mapPlanning (PlanningState.confirmUnloadPassengers exitOptions) checked
 
+                rejectedFirstExit : Phase
+                rejectedFirstExit =
+                    TurnLifecycle.mapPlanning (PlanningState.saveUnloadDestination exitOptions { x = 9, y = 9 }) firstPassenger
+
                 secondPassenger : Phase
                 secondPassenger =
-                    TurnLifecycle.mapPlanning (PlanningState.saveUnloadDestination exitOptions { x = 2, y = 2 }) firstPassenger
+                    TurnLifecycle.mapPlanning (PlanningState.saveUnloadDestination exitOptions { x = 2, y = 2 }) rejectedFirstExit
+
+                rejectedExit : Phase
+                rejectedExit =
+                    TurnLifecycle.mapPlanning (PlanningState.saveUnloadDestination exitOptions { x = 2, y = 2 }) secondPassenger
 
                 complete : Phase
                 complete =
-                    TurnLifecycle.mapPlanning (PlanningState.saveUnloadDestination exitOptions { x = 3, y = 1 }) secondPassenger
+                    TurnLifecycle.mapPlanning (PlanningState.saveUnloadDestination exitOptions { x = 3, y = 1 }) rejectedExit
 
                 completedOrder : PlannedOrder.PlannedOrder
                 completedOrder =
@@ -255,7 +264,21 @@ unloadChecks =
                 , expect "the next passenger cannot reuse an exit already saved"
                     reservesFirstExit
                 , expect "an unavailable exit cannot advance the workflow"
-                    (TurnLifecycle.mapPlanning (PlanningState.saveUnloadDestination exitOptions { x = 2, y = 2 }) secondPassenger == secondPassenger)
+                    (Maybe.map .passengerId (planningExits rejectedExit)
+                        == Just second
+                        && TurnLifecycle.orders rejectedExit
+                        == TurnLifecycle.orders secondPassenger
+                        && Maybe.map .destinationFeedback (planningExits rejectedExit)
+                        == Just DestinationUnavailable
+                    )
+                , expect "a new passenger starts without the previous passenger destination feedback"
+                    (Maybe.map .destinationFeedback (planningExits secondPassenger) == Just NoDestinationFeedback)
+                , expect "leaving an invalid unload choice drops its feedback and preserves saved orders"
+                    (planningExits (TurnLifecycle.setSelection Nothing rejectedExit)
+                        == Nothing
+                        && TurnLifecycle.orders (TurnLifecycle.setSelection Nothing rejectedExit)
+                        == TurnLifecycle.orders rejectedExit
+                    )
                 , expect "both passenger exits and the truck route survive workflow completion"
                     (TurnLifecycle.orders complete == [ completedOrder ] && planningExits complete == Nothing)
                 , expect "leaving exit selection keeps exits already chosen"

@@ -14,13 +14,18 @@ module PlanningState exposing
     , showSubmissionWarning
     , startUnload
     , submissionDrafts
+    , submissionWarningOpen
     , toggleUnloadPassenger
     , unloadChoice
     , unloadPlanning
     )
 
 import Coordinate exposing (Coordinate)
-import GamePage.Selection as Selection exposing (Selection(..))
+import GamePage.Selection as Selection
+    exposing
+        ( DestinationFeedback(..)
+        , Selection(..)
+        )
 import Movement
 import PlannedOrder exposing (MovePlan, PlannedOrder)
 import UnitId exposing (UnitId)
@@ -67,6 +72,7 @@ type alias UnloadPlanning =
     , passengerId : UnitId
     , remaining : List UnitId
     , options : List Movement.Option
+    , destinationFeedback : DestinationFeedback
     }
 
 
@@ -248,6 +254,7 @@ nextUnloadPassenger options queue =
                     , passengerId = passengerId
                     , remaining = remaining
                     , options = []
+                    , destinationFeedback = NoDestinationFeedback
                     }
 
                 state : PlanningState
@@ -279,7 +286,7 @@ saveUnloadDestination options destination state =
                     { truck = updated, otherOrders = unloading.otherOrders, passengers = unloading.remaining }
 
             else
-                state
+                ChoosingExits { unloading | destinationFeedback = DestinationUnavailable }
 
         _ ->
             state
@@ -293,6 +300,16 @@ showSubmissionWarning state =
 
         _ ->
             state
+
+
+submissionWarningOpen : PlanningState -> Bool
+submissionWarningOpen state =
+    case state of
+        ConfirmingSubmission _ ->
+            True
+
+        _ ->
+            False
 
 
 dismissDialog : PlanningState -> PlanningState

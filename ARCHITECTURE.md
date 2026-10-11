@@ -359,7 +359,9 @@ earlier path cells blocked. Revisiting a path square trims the tail and refunds
 its cost. If an extension fails, the preview falls back to a cheapest affordable route
 from the unit; unreachable squares leave it intact. Clicking saves the preview
 route and ends hover editing until the unit is selected again or its path is
-cleared. Panning does not trace paths. Saved drafts reserve their
+cleared. Panning does not trace paths. Destination feedback belongs only to active move
+or unload destination selection; leaving the interaction drops its feedback, and
+each new passenger starts with no destination error. Saved drafts reserve their
 destinations for that unit; other units cannot choose those squares, but can
 travel through them. Replacing or clearing a draft releases
 its old destination. The selected unit’s own draft does not restrict its choices.

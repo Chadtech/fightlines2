@@ -48,7 +48,8 @@ import Effect as E
 import GameBoard exposing (GameBoard)
 import GamePage.Selection
     exposing
-        ( Inspection(..)
+        ( DestinationFeedback(..)
+        , Inspection(..)
         , MovePlanning
         , Selection(..)
         , UnitInteraction(..)
@@ -119,7 +120,6 @@ type alias Model =
     , board : GameBoard
     , visibleTiles : List Coordinate
     , movementRules : List Movement.Rule
-    , movementStatus : MovementStatus
     , offset : Point
     , zoom : Float
     , drag : Maybe Drag
@@ -145,13 +145,6 @@ type alias Player =
     , side : Side
     , isYou : Bool
     }
-
-
-type MovementStatus
-    = NoMovementStatus
-    | PlannedOrderCleared
-    | MovePlanned
-    | DestinationUnavailable
 
 
 type Msg
@@ -222,7 +215,6 @@ init shared flags =
     , board = flags.snapshot.board
     , visibleTiles = flags.snapshot.visibleTiles
     , movementRules = flags.snapshot.movementRules
-    , movementStatus = NoMovementStatus
     , offset = { x = 0, y = 0 }
     , zoom = 1
     , drag = Nothing
@@ -401,22 +393,6 @@ previewRotation direction model =
             model
 
 
-movementStatusText : MovementStatus -> String
-movementStatusText status =
-    case status of
-        NoMovementStatus ->
-            ""
-
-        PlannedOrderCleared ->
-            "planned move cleared."
-
-        MovePlanned ->
-            "move planned."
-
-        DestinationUnavailable ->
-            "that square cannot be a destination within this unit’s movement budget."
-
-
 loadSnapshot : LobbyId -> Graphql.Http.Request Snapshot
 loadSnapshot id =
     Api.Query.game { id = LobbyId.toString id } snapshotSelection
@@ -567,6 +543,35 @@ movementPlanning model =
             Nothing
 
 
+destinationFeedback : Model -> DestinationFeedback
+destinationFeedback model =
+    case unloadPlanning model.phase of
+        Just planning ->
+            planning.destinationFeedback
+
+        Nothing ->
+            movementPlanning model
+                |> Maybe.map .destinationFeedback
+                |> Maybe.withDefault NoDestinationFeedback
+
+
+setMoveDestinationFeedback : DestinationFeedback -> Model -> Model
+setMoveDestinationFeedback feedback model =
+    case currentSelection model of
+        Just (UnitSelection selection) ->
+            case selection.interaction of
+                ChoosingMove planning ->
+                    setSelection
+                        (Just (UnitSelection { selection | interaction = ChoosingMove { planning | destinationFeedback = feedback } }))
+                        model
+
+                _ ->
+                    model
+
+        _ ->
+            model
+
+
 pathPreview : Model -> Maybe Movement.Option
 pathPreview model =
     Maybe.map .preview (movementPlanning model)
@@ -586,8 +591,7 @@ moveOptions model =
 
 clearSelection : Model -> Model
 clearSelection model =
-    { model | movementStatus = NoMovementStatus }
-        |> setSelection Nothing
+    setSelection Nothing model
 
 
 selectUnit : UnitId -> Model -> Model
@@ -609,14 +613,14 @@ selectUnit id model =
                 clearSelection model
 
             else
-                setSelection (Just (unitSelection unit model)) { model | movementStatus = NoMovementStatus }
+                setSelection (Just (unitSelection unit model)) model
 
 
 selectTile : Coordinate -> Model -> Model
 selectTile position model =
     case unloadPlanning model.phase of
-        Just planning ->
-            chooseUnloadSquare planning position model
+        Just _ ->
+            chooseUnloadSquare position model
 
         _ ->
             selectMovementTile position model
@@ -631,7 +635,7 @@ selectMovementTile position model =
         let
             notOwnUnit : () -> Model
             notOwnUnit _ =
-                setSelection (Just (Inspecting (TileInspection position))) { model | movementStatus = NoMovementStatus }
+                setSelection (Just (Inspecting (TileInspection position))) model
         in
         case selectedUnit model of
             Just unit ->
@@ -649,13 +653,12 @@ selectMovementTile position model =
                         Just move ->
                             { model
                                 | phase = TurnLifecycle.setOrders (saveMove unit move model) model.phase
-                                , movementStatus = MovePlanned
                             }
                                 |> inspectSelectedUnit
                                 |> openUnloadPrompt unit move
 
                         Nothing ->
-                            { model | movementStatus = DestinationUnavailable }
+                            setMoveDestinationFeedback DestinationUnavailable model
 
                 else
                     notOwnUnit ()
@@ -684,11 +687,12 @@ previewTile position model =
                                                     ChoosingMove
                                                         { planning
                                                             | preview = preview
+                                                            , destinationFeedback = NoDestinationFeedback
                                                         }
                                             }
                                         )
                                     )
-                                    { model | movementStatus = NoMovementStatus }
+                                    model
 
                             Nothing ->
                                 model
@@ -914,7 +918,6 @@ update lobbyId msg model =
             else
                 ( { model
                     | phase = TurnLifecycle.setOrders (List.filter (\plan -> Just plan.unitId /= Maybe.map .id (selectedUnit model)) (plannedOrders model)) model.phase
-                    , movementStatus = PlannedOrderCleared
                   }
                     |> restoreCommands
                 , E.none
@@ -1316,7 +1319,6 @@ applyCommand lobbyId command model =
                             Just hold ->
                                 { model
                                     | phase = TurnLifecycle.setOrders (hold :: List.filter (\plan -> plan.unitId /= unit.id) (plannedOrders model)) model.phase
-                                    , movementStatus = MovePlanned
                                 }
                                     |> inspectSelectedUnit
 
@@ -1493,10 +1495,10 @@ movementView model =
 
         feedback : List (Html Msg)
         feedback =
-            if model.movementStatus == DestinationUnavailable then
+            if destinationFeedback model == DestinationUnavailable then
                 [ H.p
                     [ A.attribute "role" "status" ]
-                    [ H.text (movementStatusText model.movementStatus) ]
+                    [ H.text "that square cannot be a destination within this unit’s movement budget." ]
                 ]
 
             else
@@ -1766,10 +1768,11 @@ beginMovement unit model =
                 planning =
                     { preview = Movement.start origin
                     , options = Movement.options (reservedDestinations unit model) model.movementRules model.board unit
+                    , destinationFeedback = NoDestinationFeedback
                     }
             in
             setSelection (Just (UnitSelection { id = unit.id, interaction = ChoosingMove planning }))
-                { model | movementStatus = NoMovementStatus }
+                model
 
         Nothing ->
             model
@@ -2131,18 +2134,14 @@ unloadOptions model state passengerId =
             []
 
 
-chooseUnloadSquare : UnloadPlanning -> Coordinate -> Model -> Model
-chooseUnloadSquare planning destination model =
-    if List.any (\option -> option.destination == destination) planning.options then
-        { model
-            | phase =
-                TurnLifecycle.mapPlanning
-                    (PlanningState.saveUnloadDestination (unloadOptions model) destination)
-                    model.phase
-        }
-
-    else
-        { model | movementStatus = DestinationUnavailable }
+chooseUnloadSquare : Coordinate -> Model -> Model
+chooseUnloadSquare destination model =
+    { model
+        | phase =
+            TurnLifecycle.mapPlanning
+                (PlanningState.saveUnloadDestination (unloadOptions model) destination)
+                model.phase
+    }
 
 
 partialOrdersDialogId : String
@@ -2285,7 +2284,6 @@ receiveSnapshot snapshot model =
             , board = GameBoard.setUnits frame.units snapshot.board
             , visibleTiles = frame.visibleTiles
             , phase = TurnLifecycle.startTurn snapshot.turn.submitted snapshot.playbackFrames
-            , movementStatus = NoMovementStatus
             , turnError = Nothing
         }
 

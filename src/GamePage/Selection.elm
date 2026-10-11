@@ -1,5 +1,6 @@
 module GamePage.Selection exposing
-    ( Inspection(..)
+    ( DestinationFeedback(..)
+    , Inspection(..)
     , MovePlanning
     , SelectedUnit
     , Selection(..)
@@ -45,7 +46,13 @@ type UnitInteraction
 type alias MovePlanning =
     { preview : Movement.Option
     , options : List Movement.Option
+    , destinationFeedback : DestinationFeedback
     }
+
+
+type DestinationFeedback
+    = NoDestinationFeedback
+    | DestinationUnavailable
 
 
 
