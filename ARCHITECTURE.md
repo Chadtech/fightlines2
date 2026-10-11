@@ -187,7 +187,7 @@ Its submission adapter converts these actions to the existing GraphQL input,
 using single-coordinate paths for holds and rotations. `PlannedOrderChecks`
 verifies that conversion, including unloading from stationary trucks.
 `TurnLifecycle.Phase` owns planning, submission, waiting and playback.
-`PlanningState.elm` owns the planning custom type and its transitions:
+`PlanningModel.elm` owns the planning custom type and its transitions:
 `OrdinaryPlanning`, `ConfirmingSubmission`,
 `ChoosingPassengers` or `ChoosingExits`. Ordinary planning and submission
 confirmation carry drafts and selection; unload stages carry the required truck
@@ -195,7 +195,7 @@ move, other units' orders and stage-specific passenger data. The submission
 warning and unload checklist are rendered directly from these alternatives;
 `GamePage.Model` has no separate dialog state. Only one workflow can be active.
 `TurnLifecycle` owns the outer phases and delegates editable planning through
-`mapPlanning`; the planning module operates only on `PlanningState`, without
+`mapPlanning`; the planning module operates only on `PlanningModel`, without
 knowing about submission, waiting or playback.
 `GamePage.Selection` allows `Inspecting Inspection` or `UnitSelection SelectedUnit`.
 Unload stages derive inspection from the truck or current passenger instead of
@@ -535,10 +535,10 @@ receiving unit's hold alongside a loading or unloading draft. It reserves
 remaining berths across drafts and prevents moving a receiver while its loading
 or unloading drafts exist. The truck's status panel exposes cargo buttons;
 carried units have no independent commands. Saving a truck destination opens
-an unload checklist through `PlanningState.ChoosingPassengers`. Confirmation
+an unload checklist through `PlanningModel.ChoosingPassengers`. Confirmation
 advances to `ChoosingExits`. Both stages own a `TruckMove` containing its required
 `MovePlan`, with all passenger exits accumulated so far, plus other units' orders.
-There is no independently stored dialog or unload selection. `PlanningState.orders`
+There is no independently stored dialog or unload selection. `PlanningModel.orders`
 assembles the complete planning orders, exposed through `TurnLifecycle.orders`
 for paths, readiness, reservations and submission. Planning transitions finish
 or cancel the workflow without page-level order transfers.

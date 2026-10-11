@@ -21,12 +21,12 @@ module TurnLifecycle exposing
 
 import GamePage.Selection as Selection exposing (Inspection, Selection(..))
 import PlannedOrder exposing (PlannedOrder)
-import PlanningState exposing (PlanningState)
+import PlanningModel exposing (PlanningModel)
 import TurnPlayback
 
 
 type Phase
-    = Planning PlanningState
+    = Planning PlanningModel
     | Submitting Submission
     | WaitingForOpponent WaitingState
     | Playing PlaybackState
@@ -77,7 +77,7 @@ orders : Phase -> List PlannedOrder
 orders phase =
     case phase of
         Planning state ->
-            PlanningState.orders state
+            PlanningModel.orders state
 
         Submitting submission ->
             submission.orders
@@ -107,7 +107,7 @@ planningLocked phase =
 
 {-| Apply a planning transition only while planning remains editable.
 -}
-mapPlanning : (PlanningState -> PlanningState) -> Phase -> Phase
+mapPlanning : (PlanningModel -> PlanningModel) -> Phase -> Phase
 mapPlanning transition phase =
     case phase of
         Planning state ->
@@ -117,7 +117,7 @@ mapPlanning transition phase =
             phase
 
 
-planning : Phase -> Maybe PlanningState
+planning : Phase -> Maybe PlanningModel
 planning phase =
     case phase of
         Planning state ->
@@ -129,17 +129,17 @@ planning phase =
 
 setOrders : List PlannedOrder -> Phase -> Phase
 setOrders drafts =
-    mapPlanning (PlanningState.setOrders drafts)
+    mapPlanning (PlanningModel.setOrders drafts)
 
 
 {-| Each phase owns exactly one selection. Locked phases store only inspection;
-editable interactions can be stored only in PlanningState.
+editable interactions can be stored only in PlanningModel.
 -}
 selection : Phase -> Maybe Selection
 selection phase =
     case phase of
         Planning state ->
-            PlanningState.selection state
+            PlanningModel.selection state
 
         Submitting submission ->
             Maybe.map Inspecting submission.inspection
@@ -155,7 +155,7 @@ setSelection : Maybe Selection -> Phase -> Phase
 setSelection selected phase =
     case phase of
         Planning state ->
-            Planning (PlanningState.setSelection selected state)
+            Planning (PlanningModel.setSelection selected state)
 
         _ ->
             case selected of
@@ -173,7 +173,7 @@ setInspection : Maybe Inspection -> Phase -> Phase
 setInspection inspection phase =
     case phase of
         Planning state ->
-            Planning (PlanningState.setSelection (Maybe.map Inspecting inspection) state)
+            Planning (PlanningModel.setSelection (Maybe.map Inspecting inspection) state)
 
         Submitting submission ->
             Submitting { submission | inspection = inspection }
@@ -189,7 +189,7 @@ startSubmission : Int -> Phase -> Phase
 startSubmission turnNumber phase =
     case phase of
         Planning state ->
-            case PlanningState.submissionDrafts state of
+            case PlanningModel.submissionDrafts state of
                 Just drafts ->
                     submissionFromDrafts turnNumber drafts
 
@@ -200,7 +200,7 @@ startSubmission turnNumber phase =
             phase
 
 
-submissionFromDrafts : Int -> PlanningState.Drafts -> Phase
+submissionFromDrafts : Int -> PlanningModel.Drafts -> Phase
 submissionFromDrafts turnNumber drafts =
     Submitting
         { turnNumber = turnNumber
@@ -277,7 +277,7 @@ startTurn submitted frames =
     let
         ready : Phase
         ready =
-            observeSubmission submitted (Planning PlanningState.init)
+            observeSubmission submitted (Planning PlanningModel.init)
 
         afterPlayback : AfterPlayback
         afterPlayback =
@@ -329,7 +329,7 @@ tick delta phase =
 
 resumePlanning : List PlannedOrder -> Maybe Inspection -> Phase
 resumePlanning drafts inspection =
-    PlanningState.init
-        |> PlanningState.setOrders drafts
-        |> PlanningState.setSelection (Maybe.map Inspecting inspection)
+    PlanningModel.init
+        |> PlanningModel.setOrders drafts
+        |> PlanningModel.setSelection (Maybe.map Inspecting inspection)
         |> Planning

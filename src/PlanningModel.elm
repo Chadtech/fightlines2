@@ -1,6 +1,6 @@
-module PlanningState exposing
+module PlanningModel exposing
     ( Drafts
-    , PlanningState(..)
+    , PlanningModel(..)
     , UnloadChoice
     , UnloadPlanning
     , confirmUnloadPassengers
@@ -40,7 +40,7 @@ import UnitId exposing (UnitId)
 {-| Planning has one active workflow. Unload stages own their truck move and
 only other units' orders; dialogs and board inspection are derived from the stage.
 -}
-type PlanningState
+type PlanningModel
     = OrdinaryPlanning Drafts
     | ConfirmingSubmission Drafts
     | ChoosingPassengers UnloadChoice
@@ -89,7 +89,7 @@ type alias UnloadQueue =
 ----------------------------------------------------------------
 
 
-init : PlanningState
+init : PlanningModel
 init =
     OrdinaryPlanning { orders = [], selection = Nothing }
 
@@ -100,7 +100,7 @@ init =
 ----------------------------------------------------------------
 
 
-orders : PlanningState -> List PlannedOrder
+orders : PlanningModel -> List PlannedOrder
 orders state =
     case state of
         OrdinaryPlanning drafts ->
@@ -116,7 +116,7 @@ orders state =
             truckOrder unloading.truck :: unloading.otherOrders
 
 
-setOrders : List PlannedOrder -> PlanningState -> PlanningState
+setOrders : List PlannedOrder -> PlanningModel -> PlanningModel
 setOrders draftsOrders state =
     case state of
         OrdinaryPlanning drafts ->
@@ -126,7 +126,7 @@ setOrders draftsOrders state =
             state
 
 
-selection : PlanningState -> Maybe Selection
+selection : PlanningModel -> Maybe Selection
 selection state =
     case state of
         OrdinaryPlanning drafts ->
@@ -142,7 +142,7 @@ selection state =
             Just (Inspecting (Selection.UnitInspection unloading.passengerId))
 
 
-setSelection : Maybe Selection -> PlanningState -> PlanningState
+setSelection : Maybe Selection -> PlanningModel -> PlanningModel
 setSelection selected state =
     OrdinaryPlanning { orders = orders state, selection = selected }
 
@@ -150,7 +150,7 @@ setSelection selected state =
 {-| Unfinished unloading cannot become a submission. The lifecycle consumes
 these drafts only after planning is ready or its warning has been confirmed.
 -}
-submissionDrafts : PlanningState -> Maybe Drafts
+submissionDrafts : PlanningModel -> Maybe Drafts
 submissionDrafts state =
     case state of
         OrdinaryPlanning drafts ->
@@ -168,7 +168,7 @@ truckOrder truck =
     { unitId = truck.truckId, action = PlannedOrder.Move truck.plan }
 
 
-startUnload : UnitId -> Movement.Option -> PlanningState -> PlanningState
+startUnload : UnitId -> Movement.Option -> PlanningModel -> PlanningModel
 startUnload truckId move state =
     case state of
         OrdinaryPlanning drafts ->
@@ -182,7 +182,7 @@ startUnload truckId move state =
             state
 
 
-unloadChoice : PlanningState -> Maybe UnloadChoice
+unloadChoice : PlanningModel -> Maybe UnloadChoice
 unloadChoice state =
     case state of
         ChoosingPassengers choice ->
@@ -192,7 +192,7 @@ unloadChoice state =
             Nothing
 
 
-unloadPlanning : PlanningState -> Maybe UnloadPlanning
+unloadPlanning : PlanningModel -> Maybe UnloadPlanning
 unloadPlanning state =
     case state of
         ChoosingExits unloading ->
@@ -202,7 +202,7 @@ unloadPlanning state =
             Nothing
 
 
-toggleUnloadPassenger : UnitId -> Bool -> PlanningState -> PlanningState
+toggleUnloadPassenger : UnitId -> Bool -> PlanningModel -> PlanningModel
 toggleUnloadPassenger id checked state =
     case state of
         ChoosingPassengers choice ->
@@ -225,7 +225,7 @@ toggleUnloadPassenger id checked state =
             state
 
 
-confirmUnloadPassengers : (PlanningState -> UnitId -> List Movement.Option) -> PlanningState -> PlanningState
+confirmUnloadPassengers : (PlanningModel -> UnitId -> List Movement.Option) -> PlanningModel -> PlanningModel
 confirmUnloadPassengers options state =
     case state of
         ChoosingPassengers choice ->
@@ -236,7 +236,7 @@ confirmUnloadPassengers options state =
             state
 
 
-nextUnloadPassenger : (PlanningState -> UnitId -> List Movement.Option) -> UnloadQueue -> PlanningState
+nextUnloadPassenger : (PlanningModel -> UnitId -> List Movement.Option) -> UnloadQueue -> PlanningModel
 nextUnloadPassenger options queue =
     case queue.passengers of
         [] ->
@@ -257,14 +257,14 @@ nextUnloadPassenger options queue =
                     , destinationFeedback = NoDestinationFeedback
                     }
 
-                state : PlanningState
+                state : PlanningModel
                 state =
                     ChoosingExits unloading
             in
             ChoosingExits { unloading | options = options state passengerId }
 
 
-saveUnloadDestination : (PlanningState -> UnitId -> List Movement.Option) -> Coordinate -> PlanningState -> PlanningState
+saveUnloadDestination : (PlanningModel -> UnitId -> List Movement.Option) -> Coordinate -> PlanningModel -> PlanningModel
 saveUnloadDestination options destination state =
     case state of
         ChoosingExits unloading ->
@@ -292,7 +292,7 @@ saveUnloadDestination options destination state =
             state
 
 
-showSubmissionWarning : PlanningState -> PlanningState
+showSubmissionWarning : PlanningModel -> PlanningModel
 showSubmissionWarning state =
     case state of
         OrdinaryPlanning drafts ->
@@ -302,7 +302,7 @@ showSubmissionWarning state =
             state
 
 
-submissionWarningOpen : PlanningState -> Bool
+submissionWarningOpen : PlanningModel -> Bool
 submissionWarningOpen state =
     case state of
         ConfirmingSubmission _ ->
@@ -312,7 +312,7 @@ submissionWarningOpen state =
             False
 
 
-dismissDialog : PlanningState -> PlanningState
+dismissDialog : PlanningModel -> PlanningModel
 dismissDialog state =
     case state of
         ConfirmingSubmission drafts ->

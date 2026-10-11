@@ -78,7 +78,7 @@ import PlannedOrder
         ( PlannedOrder
         , UnloadOrder
         )
-import PlanningState exposing (PlanningState, UnloadChoice, UnloadPlanning)
+import PlanningModel exposing (PlanningModel, UnloadChoice, UnloadPlanning)
 import Point exposing (Point)
 import PointerGesture exposing (PointerGesture)
 import Ports.Js.To as ToJs
@@ -246,7 +246,7 @@ init shared flags =
     , phase =
         TurnLifecycle.observeSubmission
             flags.snapshot.turn.submitted
-            (TurnLifecycle.Planning PlanningState.init)
+            (TurnLifecycle.Planning PlanningModel.init)
     , refreshing = False
     , turnError = Nothing
     , shared = shared
@@ -288,15 +288,20 @@ setShared shared model =
 ----------------------------------------------------------------
 
 
+mapPlanning : (PlanningModel -> PlanningModel) -> Model -> Model
+mapPlanning transition model =
+    { model | phase = TurnLifecycle.mapPlanning transition model.phase }
+
+
 unloadChoice : Phase -> Maybe UnloadChoice
 unloadChoice phase =
     TurnLifecycle.planning phase
-        |> Maybe.andThen PlanningState.unloadChoice
+        |> Maybe.andThen PlanningModel.unloadChoice
 
 
 unloadPlanning : Phase -> Maybe UnloadPlanning
 unloadPlanning phase =
-    TurnLifecycle.planning phase |> Maybe.andThen PlanningState.unloadPlanning
+    TurnLifecycle.planning phase |> Maybe.andThen PlanningModel.unloadPlanning
 
 
 isChoosingUnload : Model -> Bool
@@ -312,12 +317,8 @@ openUnloadPrompt truck move model =
             List.any (\passenger -> Unit.carrierId passenger == Just truck.id) model.board.units
     in
     if hasPassengers then
-        { model
-            | phase =
-                TurnLifecycle.mapPlanning
-                    (PlanningState.startUnload truck.id move)
-                    model.phase
-        }
+        model
+            |> mapPlanning (PlanningModel.startUnload truck.id move)
 
     else
         model
@@ -325,14 +326,13 @@ openUnloadPrompt truck move model =
 
 dismissDialog : Model -> Model
 dismissDialog model =
-    { model
-        | phase = TurnLifecycle.mapPlanning PlanningState.dismissDialog model.phase
-    }
+    model
+        |> mapPlanning PlanningModel.dismissDialog
 
 
-unloadOptions : Model -> PlanningState -> UnitId -> List Movement.Option
+unloadOptions : Model -> PlanningModel -> UnitId -> List Movement.Option
 unloadOptions model state passengerId =
-    case PlanningState.unloadPlanning state of
+    case PlanningModel.unloadPlanning state of
         Just planning ->
             let
                 projectTruck : Unit -> Unit
@@ -364,12 +364,8 @@ unloadOptions model state passengerId =
 
 chooseUnloadSquare : Coordinate -> Model -> Model
 chooseUnloadSquare destination model =
-    { model
-        | phase =
-            TurnLifecycle.mapPlanning
-                (PlanningState.saveUnloadDestination (unloadOptions model) destination)
-                model.phase
-    }
+    model
+        |> mapPlanning (PlanningModel.saveUnloadDestination (unloadOptions model) destination)
 
 
 partialOrdersDialogHtmlId : String
@@ -499,9 +495,8 @@ applyCommand command model =
                         beginMovement unit model
 
                     UnitCommand.Rotate ->
-                        setSelection
-                            (Just (UnitSelection { id = unit.id, interaction = ChoosingDirection (Maybe.withDefault Facing.North unit.direction) }))
-                            model
+                        model
+                            |> setUnitInteraction unit.id (ChoosingDirection (Maybe.withDefault Facing.North unit.direction))
 
                     UnitCommand.HoldPosition ->
                         case holdOrder model.board.units unit of
@@ -690,8 +685,8 @@ beginMovement unit model =
                     , destinationFeedback = NoDestinationFeedback
                     }
             in
-            setSelection (Just (UnitSelection { id = unit.id, interaction = ChoosingMove planning }))
-                model
+            model
+                |> setUnitInteraction unit.id (ChoosingMove planning)
 
         Nothing ->
             model
@@ -833,6 +828,47 @@ setSelection selected model =
     { model | phase = TurnLifecycle.setSelection selected model.phase }
 
 
+setUnitInteraction : UnitId -> UnitInteraction -> Model -> Model
+setUnitInteraction id interaction model =
+    model
+        |> setSelection (Just (UnitSelection { id = id, interaction = interaction }))
+
+
+focusCommand : UnitCommands.MenuOption -> Model -> Model
+focusCommand command model =
+    case ( currentSelection model, commandMenuUnit model ) of
+        ( Just (UnitSelection selection), Just _ ) ->
+            case selection.interaction of
+                CommandMenu _ ->
+                    model
+                        |> setUnitInteraction selection.id (CommandMenu (Just command))
+
+                _ ->
+                    model
+
+        _ ->
+            model
+
+
+revokeSelectedOrder : Model -> Model
+revokeSelectedOrder model =
+    if planningLocked model then
+        model
+
+    else
+        model
+            |> mapPlanning
+                (PlanningModel.setOrders
+                    (plannedOrders model
+                        |> List.filter
+                            (\plan ->
+                                Just plan.unitId /= Maybe.map .id (selectedUnit model)
+                            )
+                    )
+                )
+            |> restoreCommands
+
+
 inspectSelectedUnit : Model -> Model
 inspectSelectedUnit model =
     case selectedUnit model of
@@ -959,7 +995,8 @@ previewRotation direction model =
                     choosingDirection model && not (planningLocked model) && not (PointerGesture.active model.pointerGesture)
             in
             if canPreview then
-                setSelection (Just (UnitSelection { selection | interaction = ChoosingDirection direction })) model
+                model
+                    |> setUnitInteraction selection.id (ChoosingDirection direction)
 
             else
                 model
@@ -1121,9 +1158,8 @@ setMoveDestinationFeedback feedback model =
         Just (UnitSelection selection) ->
             case selection.interaction of
                 ChoosingMove planning ->
-                    setSelection
-                        (Just (UnitSelection { selection | interaction = ChoosingMove { planning | destinationFeedback = feedback } }))
-                        model
+                    model
+                        |> setUnitInteraction selection.id (ChoosingMove { planning | destinationFeedback = feedback })
 
                 _ ->
                     model
@@ -1239,20 +1275,14 @@ previewTile position model =
                     else
                         case traceTo position model of
                             Just preview ->
-                                setSelection
-                                    (Just
-                                        (UnitSelection
-                                            { selection
-                                                | interaction =
-                                                    ChoosingMove
-                                                        { planning
-                                                            | preview = preview
-                                                            , destinationFeedback = NoDestinationFeedback
-                                                        }
+                                model
+                                    |> setUnitInteraction selection.id
+                                        (ChoosingMove
+                                            { planning
+                                                | preview = preview
+                                                , destinationFeedback = NoDestinationFeedback
                                             }
                                         )
-                                    )
-                                    model
 
                             Nothing ->
                                 model
@@ -1473,40 +1503,32 @@ update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 update lobbyId msg model =
     case msg of
         UnloadUnitToggled id checked ->
-            ( { model
-                | phase =
-                    TurnLifecycle.mapPlanning
-                        (PlanningState.toggleUnloadPassenger id checked)
-                        model.phase
-              }
-            , E.none
-            )
+            model
+                |> mapPlanning (PlanningModel.toggleUnloadPassenger id checked)
+                |> E.withOut
 
         UnloadChoicesConfirmed ->
-            ( { model
-                | phase =
-                    TurnLifecycle.mapPlanning
-                        (PlanningState.confirmUnloadPassengers (unloadOptions model))
-                        model.phase
-              }
-            , E.none
-            )
+            model
+                |> mapPlanning (PlanningModel.confirmUnloadPassengers (unloadOptions model))
+                |> E.withOut
 
         UnloadSkipped ->
-            clearSelection (dismissDialog model) |> E.withOut
+            model
+                |> dismissDialog
+                |> clearSelection
+                |> E.withOut
 
         CargoUnitClicked id ->
-            selectUnit id (clearSelection model) |> E.withOut
+            model
+                |> clearSelection
+                |> selectUnit id
+                |> E.withOut
 
         MousePressed point ->
-            let
-                next : Model
-                next =
-                    { model
-                        | pointerGesture = PointerGesture.press { start = point, origin = model.offset }
-                    }
-            in
-            finishBoardInteraction model next
+            { model
+                | pointerGesture = PointerGesture.press { start = point, origin = model.offset }
+            }
+                |> finishBoardInteraction model
 
         MouseMoved point buttons ->
             let
@@ -1518,7 +1540,8 @@ update lobbyId msg model =
                     else
                         pan point model
             in
-            finishBoardInteraction model next
+            next
+                |> finishBoardInteraction model
 
         MouseReleased point ->
             let
@@ -1531,31 +1554,22 @@ update lobbyId msg model =
                     in
                     { moved | pointerGesture = PointerGesture.finish moved.pointerGesture }
             in
-            finishBoardInteraction model next
+            next
+                |> finishBoardInteraction model
 
         WindowVisibilityChanged _ ->
-            let
-                next : Model
-                next =
-                    { model | pointerGesture = PointerGesture.finish model.pointerGesture }
-            in
-            finishBoardInteraction model next
+            { model | pointerGesture = PointerGesture.finish model.pointerGesture }
+                |> finishBoardInteraction model
 
         WheelScrolled anchor delta ->
-            let
-                next : Model
-                next =
-                    zoomAt anchor (e ^ (negate (clamp -100 100 delta) * 0.002)) model
-            in
-            finishBoardInteraction model next
+            model
+                |> zoomAt anchor (e ^ (negate (clamp -100 100 delta) * 0.002))
+                |> finishBoardInteraction model
 
         HomePressed ->
-            let
-                next : Model
-                next =
-                    resetViewport model
-            in
-            finishBoardInteraction model next
+            model
+                |> resetViewport
+                |> finishBoardInteraction model
 
         RotationChoicesMsg rotationMsg ->
             let
@@ -1572,7 +1586,8 @@ update lobbyId msg model =
                             else
                                 saveRotation direction model
             in
-            finishBoardInteraction model next
+            next
+                |> finishBoardInteraction model
 
         ClickedUnit id click ->
             let
@@ -1584,7 +1599,8 @@ update lobbyId msg model =
                     else
                         selectUnit id model
             in
-            finishBoardInteraction model next
+            next
+                |> finishBoardInteraction model
 
         PressedEnterOnUnit id ->
             let
@@ -1601,15 +1617,13 @@ update lobbyId msg model =
                     else
                         selectUnit id model
             in
-            finishBoardInteraction model next
+            next
+                |> finishBoardInteraction model
 
         PressedSpaceOnUnit id ->
-            let
-                next : Model
-                next =
-                    selectUnit id model
-            in
-            finishBoardInteraction model next
+            model
+                |> selectUnit id
+                |> finishBoardInteraction model
 
         MouseOverUnit id ->
             let
@@ -1625,7 +1639,8 @@ update lobbyId msg model =
                             |> Maybe.map (\position -> previewTile position model)
                             |> Maybe.withDefault model
             in
-            finishBoardInteraction model next
+            next
+                |> finishBoardInteraction model
 
         ClickedDepot position click ->
             let
@@ -1637,23 +1652,18 @@ update lobbyId msg model =
                     else
                         selectTile position model
             in
-            finishBoardInteraction model next
+            next
+                |> finishBoardInteraction model
 
         PressedEnterOnDepot position ->
-            let
-                next : Model
-                next =
-                    selectTile position model
-            in
-            finishBoardInteraction model next
+            model
+                |> selectTile position
+                |> finishBoardInteraction model
 
         PressedSpaceOnDepot position ->
-            let
-                next : Model
-                next =
-                    selectTile position model
-            in
-            finishBoardInteraction model next
+            model
+                |> selectTile position
+                |> finishBoardInteraction model
 
         MouseOverDepot position ->
             let
@@ -1665,7 +1675,8 @@ update lobbyId msg model =
                     else
                         previewTile position model
             in
-            finishBoardInteraction model next
+            next
+                |> finishBoardInteraction model
 
         ClickedTile position click ->
             let
@@ -1677,23 +1688,18 @@ update lobbyId msg model =
                     else
                         selectTile position model
             in
-            finishBoardInteraction model next
+            next
+                |> finishBoardInteraction model
 
         PressedEnterOnTile position ->
-            let
-                next : Model
-                next =
-                    selectTile position model
-            in
-            finishBoardInteraction model next
+            model
+                |> selectTile position
+                |> finishBoardInteraction model
 
         PressedSpaceOnTile position ->
-            let
-                next : Model
-                next =
-                    selectTile position model
-            in
-            finishBoardInteraction model next
+            model
+                |> selectTile position
+                |> finishBoardInteraction model
 
         MouseOverTile position ->
             let
@@ -1705,10 +1711,12 @@ update lobbyId msg model =
                     else
                         previewTile position model
             in
-            finishBoardInteraction model next
+            next
+                |> finishBoardInteraction model
 
         UnitCommandsMsg commandMsg ->
-            handleCommandMsg commandMsg model
+            model
+                |> handleCommandMsg commandMsg
 
         PreviousCommandPressed ->
             ( model, focusAdjacentCommand List.reverse (focusedCommand model) model )
@@ -1717,140 +1725,146 @@ update lobbyId msg model =
             ( model, focusAdjacentCommand identity (focusedCommand model) model )
 
         CommandFocusCompleted ->
-            ( model, E.none )
+            model |> E.withOut
 
         PanLeftClicked ->
-            panLeft model
+            model
+                |> panLeft
                 |> E.withOut
 
         PanRightClicked ->
-            panRight model
+            model
+                |> panRight
                 |> E.withOut
 
         PanUpClicked ->
-            panUp model
+            model
+                |> panUp
                 |> E.withOut
 
         PanDownClicked ->
-            panDown model
+            model
+                |> panDown
                 |> E.withOut
 
         PanLeftKeyPressed ->
-            panLeft model
+            model
+                |> panLeft
                 |> E.withOut
 
         PanRightKeyPressed ->
-            panRight model
+            model
+                |> panRight
                 |> E.withOut
 
         PanUpKeyPressed ->
-            panUp model
+            model
+                |> panUp
                 |> E.withOut
 
         PanDownKeyPressed ->
-            panDown model
+            model
+                |> panDown
                 |> E.withOut
 
         ZoomInClicked ->
-            zoomIn model
+            model
+                |> zoomIn
                 |> E.withOut
 
         ZoomOutClicked ->
-            zoomOut model
+            model
+                |> zoomOut
                 |> E.withOut
 
         ZoomInKeyPressed ->
-            zoomIn model
+            model
+                |> zoomIn
                 |> E.withOut
 
         ZoomOutKeyPressed ->
-            zoomOut model
+            model
+                |> zoomOut
                 |> E.withOut
 
         ResetViewClicked ->
-            resetViewport model
+            model
+                |> resetViewport
                 |> E.withOut
 
         DirectionKeyPressed direction ->
-            saveRotation direction model |> E.withOut
+            model
+                |> saveRotation direction
+                |> E.withOut
 
         PathDirectionKeyPressed direction ->
-            extendPath direction model |> E.withOut
+            model
+                |> extendPath direction
+                |> E.withOut
 
         PathEnterPressed ->
-            confirmPath model |> E.withOut
+            model
+                |> confirmPath
+                |> E.withOut
 
         ClearMoveClicked ->
-            if planningLocked model then
-                ( model, E.none )
-
-            else
-                ( { model
-                    | phase =
-                        TurnLifecycle.setOrders
-                            (List.filter
-                                (\plan ->
-                                    Just plan.unitId /= Maybe.map .id (selectedUnit model)
-                                )
-                                (plannedOrders model)
-                            )
-                            model.phase
-                  }
-                    |> restoreCommands
-                , E.none
-                )
+            model
+                |> revokeSelectedOrder
+                |> E.withOut
 
         InspectClicked ->
-            clearSelection model
+            model
+                |> clearSelection
                 |> E.withOut
 
         EscapePressed ->
             if hasDialog model then
-                ( dismissDialog model, E.none )
+                model
+                    |> dismissDialog
+                    |> E.withOut
 
             else
-                clearSelection model |> E.withOut
+                model
+                    |> clearSelection
+                    |> E.withOut
 
         SubmitTurnClicked ->
             if planningLocked model || isChoosingUnload model || unloadChoice model.phase /= Nothing then
-                ( model, E.none )
+                model |> E.withOut
 
             else if List.isEmpty (unitsWithoutOrders model) then
-                submitTurn lobbyId model
+                model
+                    |> submitTurn lobbyId
 
             else
-                ( { model
-                    | phase =
-                        TurnLifecycle.mapPlanning
-                            PlanningState.showSubmissionWarning
-                            model.phase
-                  }
+                ( model
+                    |> mapPlanning PlanningModel.showSubmissionWarning
                 , E.toJs (ToJs.OpenDialog { htmlId = partialOrdersDialogHtmlId })
                 )
 
         DialogDismissed ->
-            ( dismissDialog model, E.none )
+            model
+                |> dismissDialog
+                |> E.withOut
 
         SubmissionConfirmed ->
             case model.phase of
-                TurnLifecycle.Planning (PlanningState.ConfirmingSubmission _) ->
-                    submitTurn lobbyId model
+                TurnLifecycle.Planning (PlanningModel.ConfirmingSubmission _) ->
+                    model
+                        |> submitTurn lobbyId
 
                 _ ->
-                    ( model, E.none )
+                    model |> E.withOut
 
         SubmitResponseReceived turnNumber result ->
             if turnNumber /= model.turnNumber then
-                ( model, E.none )
+                model |> E.withOut
 
             else
                 case result of
                     Ok snapshot ->
                         { model
-                            | phase =
-                                TurnLifecycle.finishSubmission
-                                    turnNumber
-                                    model.phase
+                            | phase = TurnLifecycle.finishSubmission turnNumber model.phase
                             , turnError = Nothing
                         }
                             |> receiveSnapshot snapshot
@@ -1859,19 +1873,18 @@ update lobbyId msg model =
                     Err error ->
                         case model.phase of
                             TurnLifecycle.Submitting _ ->
-                                ( { model
+                                { model
                                     | phase = TurnLifecycle.finishSubmission turnNumber model.phase
                                     , turnError = Just (ApiRequest.errorMessage error)
-                                  }
-                                , E.none
-                                )
+                                }
+                                    |> E.withOut
 
                             _ ->
-                                ( model, E.none )
+                                model |> E.withOut
 
         PollTimerElapsed _ ->
             if model.refreshing || not (TurnLifecycle.canPoll model.phase) then
-                ( model, E.none )
+                model |> E.withOut
 
             else
                 ( { model | refreshing = True }
@@ -1886,12 +1899,11 @@ update lobbyId msg model =
                         |> E.withOut
 
                 Err error ->
-                    ( { model
+                    { model
                         | refreshing = False
                         , turnError = Just (ApiRequest.errorMessage error)
-                      }
-                    , E.none
-                    )
+                    }
+                        |> E.withOut
 
         PlaybackFrameElapsed delta ->
             let
@@ -1901,58 +1913,40 @@ update lobbyId msg model =
             in
             case TurnLifecycle.tick delta model.phase of
                 Just next ->
-                    ( { model
+                    { model
                         | phase = next.phase
                         , board = { board | units = next.frame.units }
                         , visibleTiles = next.frame.visibleTiles
-                      }
-                    , E.none
-                    )
+                    }
+                        |> E.withOut
 
                 Nothing ->
-                    ( model, E.none )
+                    model |> E.withOut
 
         AnimationTimerElapsed _ ->
-            ( { model | frame = AnimationFrame.next model.frame }
-            , E.none
-            )
+            { model | frame = AnimationFrame.next model.frame }
+                |> E.withOut
 
 
 handleCommandMsg : UnitCommands.Msg -> Model -> ( Model, Eff Msg )
 handleCommandMsg commandMsg model =
     case commandMsg of
         UnitCommands.MenuPressed ->
-            ( model, E.none )
+            model |> E.withOut
 
         UnitCommands.CancelClicked ->
-            clearSelection model |> E.withOut
+            model
+                |> clearSelection
+                |> E.withOut
 
         UnitCommands.CommandFocused command ->
-            case ( currentSelection model, commandMenuUnit model ) of
-                ( Just (UnitSelection selection), Just _ ) ->
-                    case selection.interaction of
-                        CommandMenu _ ->
-                            ( setSelection
-                                (Just
-                                    (UnitSelection
-                                        { selection
-                                            | interaction =
-                                                CommandMenu (Just command)
-                                        }
-                                    )
-                                )
-                                model
-                            , E.none
-                            )
-
-                        _ ->
-                            ( model, E.none )
-
-                _ ->
-                    ( model, E.none )
+            model
+                |> focusCommand command
+                |> E.withOut
 
         UnitCommands.CommandPicked command ->
-            applyCommand command model
+            model
+                |> applyCommand command
                 |> E.withOut
 
         UnitCommands.ArrowedUpCommandMenu current ->
@@ -2515,10 +2509,10 @@ unloadChecklist model choice =
 dialog : Model -> Maybe (Dialog Msg)
 dialog model =
     case model.phase of
-        TurnLifecycle.Planning (PlanningState.ConfirmingSubmission _) ->
+        TurnLifecycle.Planning (PlanningModel.ConfirmingSubmission _) ->
             Just (submissionWarning model)
 
-        TurnLifecycle.Planning (PlanningState.ChoosingPassengers choice) ->
+        TurnLifecycle.Planning (PlanningModel.ChoosingPassengers choice) ->
             Just (unloadChecklist model choice)
 
         _ ->
