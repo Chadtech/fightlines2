@@ -22,6 +22,7 @@ check:
 	node tools/check-movement.cjs
 	node tools/check-turns.cjs
 	node tools/check-orders.cjs
+	node tools/check-lifecycle.cjs
 	$(MAKE) frontend
 	elm make src/Style.elm src/View/*.elm --output=/dev/null
 

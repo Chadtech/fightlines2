@@ -1,6 +1,7 @@
 module Turn exposing
     ( Event
     , Playback
+    , Resolution
     , Snapshot
     , movingPosition
     , rewind

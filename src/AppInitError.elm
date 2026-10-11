@@ -20,16 +20,20 @@ view error =
             , S.g3
             ]
         ]
-        [ [ H.p
+        [ Card.toHtml
+            (Card.simple
+                |> Card.withHeader (CardHeader.simple "app failed to initialize")
+            )
+            [ H.p
                 [ A.css [ S.textRed1 ]
                 ]
                 [ H.text "fightlines could not start because its initialization data is invalid."
                 ]
-          , H.p
+            , H.p
                 []
                 [ H.text "reload the page to try again. if this continues, report the error below."
                 ]
-          , H.label
+            , H.label
                 [ A.css
                     [ S.col
                     , S.g2
@@ -45,10 +49,6 @@ view error =
                         |> Textarea.toHtml
                     ]
                 ]
-          ]
-            |> Card.toHtml
-                (Card.simple
-                    |> Card.withHeader (CardHeader.simple "app failed to initialize")
-                )
+            ]
         ]
     ]

@@ -369,8 +369,18 @@ never the opponent's pending paths. Later attacks, path interruptions and battle
 events should extend this resolution stream rather than putting authoritative
 rules in the animation player.
 
-`GamePage` polls snapshots every two seconds and locks order editing while a
-submission is pending, submitted, or playing. `TurnPlayback.elm` starts from the
+`GamePage` polls snapshots every two seconds. `TurnLifecycle.Phase` distinguishes
+`Planning`, `Submitting`, `WaitingForOpponent` and `Playing`; order drafts belong
+to the first three variants, and playback data belongs only to `Playing`.
+Only planning accepts order edits. Matching submission failures restore the
+saved drafts; request messages carry their originating turn number, so late
+responses cannot reopen an advanced turn. A poll confirming submission transitions
+to waiting even before the submission response arrives, and a later error cannot
+unlock it. Poll request state remains separate because a request can already be
+in flight when submission begins. Playback remembers whether its completed
+snapshot's turn is already submitted and finishes in planning or waiting accordingly.
+Initialization enters planning or waiting directly, without replaying history.
+`TurnLifecycleChecks` covers draft recovery, polling races, and playback transitions. `TurnPlayback.elm` starts from the
 server-projected initial frame and advances one unit through its entire route
 before starting the next, at 180ms per path edge. Frames contain the observable
 units and sight mask at each tile boundary. It interpolates units observed at both ends
