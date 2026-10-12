@@ -21,16 +21,25 @@ pub struct MoveOrderInput {
     direction: Option<Direction>,
     /// Stationary combat readiness, with direction selecting the firing line.
     ambush: Option<bool>,
+    /// Move until contact, then fire at the encountered enemy.
+    attack_move: Option<bool>,
     /// Passenger destinations after this truck moves.
     unloads: Option<Vec<UnloadOrderInput>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct MoveOrder {
+    pub travel: TravelMode,
     pub facing: FacingOrder,
     pub unit_id: UnitId,
     pub path: Vec<Coordinate>,
     pub unloads: Vec<UnloadOrder>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TravelMode {
+    Normal,
+    AttackMove,
 }
 
 /// Validated stationary facing action. An ambush always owns its direction.
@@ -228,6 +237,29 @@ pub fn validate(
         if Some(path[0]) != scenario.physical_position(unit) {
             return Err("movement must start at the unit's current position.");
         }
+        let attack_move = input.attack_move == Some(true);
+        if attack_move {
+            let combat_mover = match unit.kind() {
+                crate::scenario::UnitKind::Infantry | crate::scenario::UnitKind::Tank => true,
+                crate::scenario::UnitKind::FieldGun | crate::scenario::UnitKind::Truck => false,
+            };
+            if !combat_mover || unit.carrier_id().is_some() {
+                return Err("only on-map infantry and tanks can attack move.");
+            }
+            if path.len() < 2
+                || input.direction.is_some()
+                || input.ambush == Some(true)
+                || !input.unloads.as_ref().is_none_or(Vec::is_empty)
+            {
+                return Err("attack move requires a route without rotation, ambush, or unloading.");
+            }
+            let required = unit.supplies().upkeep_per_turn()
+                + (path.len() as i32 - 1) * unit.supplies().movement_per_tile()
+                + crate::combat::rules(unit.kind()).shot_cost;
+            if unit.supplies().current() < required {
+                return Err("not enough supplies to attack after moving.");
+            }
+        }
         let ambush = input.ambush == Some(true);
         if ambush {
             if input.direction.is_none() {
@@ -298,7 +330,8 @@ pub fn validate(
                 && other.carrier_id().is_none()
                 && other.board_position() == Some(destination)
         }) && (target.side() != side || !departing.contains(&target.unit_id()))
-            && scenario.loading_pair(unit, target).is_none()
+            && ((!attack_move && scenario.loading_pair(unit, target).is_none())
+                || (attack_move && target.side() == side))
         {
             return Err("occupied squares cannot be destinations.");
         }
@@ -349,6 +382,11 @@ pub fn validate(
             });
         }
         orders.push(MoveOrder {
+            travel: if attack_move {
+                TravelMode::AttackMove
+            } else {
+                TravelMode::Normal
+            },
             facing: match (ambush, input.direction) {
                 (true, Some(direction)) => FacingOrder::Ambush(direction),
                 (false, Some(direction)) => FacingOrder::Rotate(direction),
@@ -372,7 +410,10 @@ pub fn validate(
     }
     let mut loading_passengers = BTreeSet::new();
     let mut loading_counts = BTreeMap::new();
-    for order in orders.iter().filter(|order| order.path.len() > 1) {
+    for order in orders
+        .iter()
+        .filter(|order| order.path.len() > 1 && order.travel == TravelMode::Normal)
+    {
         let unit = scenario
             .units
             .iter()
@@ -602,7 +643,8 @@ impl Turns {
                     .get(&order.unit_id)
                     .ok_or("the unit has no resolved movement path.")?
                     .clone();
-                if !conflict
+                if order.travel == TravelMode::Normal
+                    && !conflict
                     && order.path.len() > 1
                     && unit.carrier_id().is_none()
                     && let Some(target) = scenario.units.iter().find(|target| {
@@ -738,6 +780,14 @@ impl Turns {
             }
 
             combat.finish(scenario, &mut combat_stopped, &mut frames);
+            let fired: BTreeSet<_> = frames
+                .iter()
+                .flat_map(|frame| &frame.shots)
+                .map(|shot| shot.attacker.unit_id())
+                .collect();
+            for unit in &mut scenario.units {
+                unit.finish_firing_reveal(fired.contains(&unit.unit_id()));
+            }
             let events = playback_order(scenario, self.number, events)?;
             let resource_snapshot = scenario.finish_turn_resources();
             let deaths = resource_snapshot.len() != scenario.units.len();
@@ -919,6 +969,7 @@ mod tests {
                     let position = scenario.physical_position(unit).fixture()?;
                     Ok(MoveOrderInput {
                         ambush: None,
+                        attack_move: None,
                         direction: None,
                         unit_id: unit.id(),
                         unloads: None,
@@ -930,6 +981,198 @@ mod tests {
                 })
                 .collect::<TestResult<Vec<_>>>()?
         })
+    }
+
+    #[test]
+    fn attack_move_validation_and_submission_preserve_combat_resources() -> TestResult<()> {
+        let mut scenario = Scenario::supply_point().fixture()?;
+        scenario.map = crate::map::Map::from_ascii("....").fixture()?;
+        scenario
+            .units
+            .retain(|unit| unit.id() == "1" || unit.id() == "6");
+        for unit in &mut scenario.units {
+            unit.move_to(Coordinate::new(
+                if unit.side() == PlayerNumber::Player1 {
+                    0
+                } else {
+                    2
+                },
+                0,
+            ));
+        }
+        let attack = |board: &Scenario| -> TestResult<Vec<MoveOrderInput>> {
+            let mut inputs = holds(board, PlayerNumber::Player1)?;
+            inputs[0].attack_move = Some(true);
+            inputs[0].path.extend([
+                CoordinateInput { x: 1, y: 0 },
+                CoordinateInput { x: 2, y: 0 },
+            ]);
+            Ok(inputs)
+        };
+        assert_eq!(
+            validate(&scenario, PlayerNumber::Player1, attack(&scenario)?)?[0].travel,
+            TravelMode::AttackMove
+        );
+        let mut invalid = attack(&scenario)?;
+        invalid[0].direction = Some(Direction::East);
+        assert!(validate(&scenario, PlayerNumber::Player1, invalid).is_err());
+        let mut invalid = attack(&scenario)?;
+        invalid[0].path.truncate(1);
+        assert!(validate(&scenario, PlayerNumber::Player1, invalid).is_err());
+        let mut low_supplies = scenario.clone();
+        low_supplies.units[0].spend_supplies(54);
+        assert!(validate(&low_supplies, PlayerNumber::Player1, attack(&low_supplies)?).is_err());
+        let enemy_holds = holds(&scenario, PlayerNumber::Player2)?;
+        let attacks = attack(&scenario)?;
+        let mut turns = Turns::default();
+        turns.submit(&mut scenario, PlayerNumber::Player1, 1, attacks)?;
+        turns.submit(&mut scenario, PlayerNumber::Player2, 1, enemy_holds)?;
+        let attacker = scenario
+            .units
+            .iter()
+            .find(|unit| unit.id() == "1")
+            .fixture()?;
+        let target = scenario
+            .units
+            .iter()
+            .find(|unit| unit.id() == "6")
+            .fixture()?;
+        assert_eq!(attacker.board_position(), Some(Coordinate::new(1, 0)));
+        assert_eq!(attacker.supplies().current(), 57);
+        assert_eq!(target.hit_points().current(), 12);
+        assert_eq!(target.supplies().current(), 63);
+        assert_eq!(
+            turns
+                .last_resolution
+                .as_ref()
+                .fixture()?
+                .frames
+                .iter()
+                .flat_map(|frame| &frame.shots)
+                .count(),
+            1
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn firing_field_guns_are_revealed_for_the_following_turn_only() -> TestResult<()> {
+        for gun_side in [PlayerNumber::Player1, PlayerNumber::Player2] {
+            for terrain in ["............", "..#........."] {
+                let enemy_side = if gun_side == PlayerNumber::Player1 {
+                    PlayerNumber::Player2
+                } else {
+                    PlayerNumber::Player1
+                };
+                let mut scenario = Scenario::supply_point().fixture()?;
+                scenario.map = crate::map::Map::from_ascii(terrain).fixture()?;
+                let mut gun = scenario
+                    .units
+                    .iter()
+                    .find(|unit| unit.side() == gun_side && unit.kind() == UnitKind::FieldGun)
+                    .fixture()?
+                    .clone();
+                gun.move_to(Coordinate::new(2, 0));
+                let gun_id = gun.unit_id();
+                let mut target = scenario
+                    .units
+                    .iter()
+                    .find(|unit| unit.side() == enemy_side && unit.kind() == UnitKind::Tank)
+                    .fixture()?
+                    .clone();
+                target.move_to(Coordinate::new(5, 0));
+                scenario.units = vec![gun, target];
+                let projected = |board: &Scenario| {
+                    let visible = crate::visibility::visible_tiles(board, enemy_side);
+                    crate::visibility::observed_scenario(board, enemy_side, &visible)
+                };
+                assert!(
+                    !projected(&scenario)
+                        .units
+                        .iter()
+                        .any(|unit| unit.unit_id() == gun_id)
+                );
+                let mut turns = Turns::default();
+                // A second shot renews the reveal, even when it kills the last observer.
+                for number in [1, 2] {
+                    let mut inputs = holds(&scenario, gun_side)?;
+                    inputs[0].ambush = Some(true);
+                    inputs[0].direction = Some(Direction::East);
+                    let enemy_inputs = holds(&scenario, enemy_side)?;
+                    turns.submit(&mut scenario, gun_side, number, inputs)?;
+                    turns.submit(&mut scenario, enemy_side, number, enemy_inputs)?;
+                    let observed = projected(&scenario);
+                    let revealed = observed
+                        .units
+                        .iter()
+                        .find(|unit| unit.unit_id() == gun_id)
+                        .fixture()?;
+                    assert_eq!(revealed.board_position(), Some(Coordinate::new(2, 0)));
+                    assert!(revealed.resources().is_none());
+                    let visible = crate::visibility::visible_tiles(&scenario, enemy_side);
+                    assert!(visible.contains(&Coordinate::new(2, 0)));
+                    assert!(!visible.contains(&Coordinate::new(1, 0)));
+                    let resolution = crate::visibility::observed_resolution(
+                        &scenario,
+                        enemy_side,
+                        &visible,
+                        turns.last_resolution.as_ref().fixture()?,
+                    );
+                    assert_eq!(
+                        resolution
+                            .frames
+                            .first()
+                            .fixture()?
+                            .units
+                            .iter()
+                            .any(|unit| unit.unit_id() == gun_id),
+                        number == 2
+                    );
+                    assert!(
+                        resolution
+                            .frames
+                            .last()
+                            .fixture()?
+                            .units
+                            .iter()
+                            .any(|unit| unit.unit_id() == gun_id)
+                    );
+                }
+                resolve_holds(&mut scenario, &mut turns)?;
+                assert!(
+                    !projected(&scenario)
+                        .units
+                        .iter()
+                        .any(|unit| unit.unit_id() == gun_id)
+                );
+                let visible = crate::visibility::visible_tiles(&scenario, enemy_side);
+                let resolution = crate::visibility::observed_resolution(
+                    &scenario,
+                    enemy_side,
+                    &visible,
+                    turns.last_resolution.as_ref().fixture()?,
+                );
+                assert!(
+                    resolution
+                        .frames
+                        .first()
+                        .fixture()?
+                        .units
+                        .iter()
+                        .any(|unit| unit.unit_id() == gun_id)
+                );
+                assert!(
+                    !resolution
+                        .frames
+                        .last()
+                        .fixture()?
+                        .units
+                        .iter()
+                        .any(|unit| unit.unit_id() == gun_id)
+                );
+            }
+        }
+        Ok(())
     }
 
     #[test]

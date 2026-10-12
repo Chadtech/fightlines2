@@ -47,7 +47,7 @@ checks =
                 selection =
                     UnitSelection
                         { id = unitId
-                        , interaction = ChoosingMove { preview = Movement.start { x = 1, y = 1 }, options = [], destinationFeedback = DestinationUnavailable }
+                        , interaction = ChoosingMove { purpose = GamePage.Selection.NormalMove, preview = Movement.start { x = 1, y = 1 }, options = [], destinationFeedback = DestinationUnavailable }
                         }
 
                 inspectedTile : Selection

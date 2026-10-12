@@ -104,6 +104,7 @@ import View.Button as Button
 import View.CombatEffects as CombatEffects
 import View.CombatTheater as CombatTheater
 import View.Dialog as Dialog exposing (Dialog)
+import View.MovementRoute as MovementRoute
 import View.RotationChoices as RotationChoices
 import View.TerrainInfo as TerrainInfo
 import View.TerrainTile as TerrainTile
@@ -678,7 +679,7 @@ selectTile position model =
 
 previewTile : Coordinate -> Model -> Model
 previewTile position model =
-    if BattlefieldNavigation.active model.navigation then
+    if BattlefieldNavigation.active model.navigation && pathPreview model == Nothing then
         model
 
     else
@@ -976,9 +977,34 @@ update lobbyId msg model =
                 |> E.withOut
 
         BattlefieldNavigationMsg navigationMsg ->
-            model
-                |> mapNavigation (BattlefieldNavigation.update navigationMsg)
-                |> E.withOut
+            let
+                traced : Model
+                traced =
+                    model
+                        |> mapNavigation (BattlefieldNavigation.tracePath navigationMsg)
+            in
+            if pathPreview model /= Nothing then
+                let
+                    next : Model -> Model
+                    next =
+                        case navigationMsg of
+                            BattlefieldNavigation.MouseReleased _ ->
+                                if BattlefieldNavigation.suppressesClick traced.navigation then
+                                    confirmPath
+
+                                else
+                                    identity
+
+                            _ ->
+                                identity
+                in
+                traced
+                    |> next
+                    |> finishBoardInteraction model
+
+            else
+                traced
+                    |> E.withOut
 
         WheelScrolled anchor delta ->
             model
@@ -1751,9 +1777,20 @@ unitOrderView model unit =
                         ]
                     ]
 
+                attackPlanning : Bool
+                attackPlanning =
+                    TurnLifecycle.planning model.currentTurn.phase
+                        |> Maybe.andThen OrderPlanning.movementPlanning
+                        |> Maybe.map (\planning -> planning.purpose == GamePage.Selection.AttackMove)
+                        |> Maybe.withDefault False
+
                 loadingDetails : List (Html Msg)
                 loadingDetails =
-                    loadingNotice model unit preview.destination
+                    if attackPlanning then
+                        [ H.p [] [ H.text "stops at the first enemy and attacks. allies are passable." ] ]
+
+                    else
+                        loadingNotice model unit preview.destination
 
                 controls : List (Html Msg)
                 controls =
@@ -1808,6 +1845,14 @@ unitOrderView model unit =
 
                                 PlannedOrder.Rotate rotation ->
                                     "rotate: " ++ Direction.label rotation.direction
+
+                                PlannedOrder.AttackMove move ->
+                                    "attack move: ("
+                                        ++ String.fromInt move.destination.x
+                                        ++ ", "
+                                        ++ String.fromInt move.destination.y
+                                        ++ ") · movement: "
+                                        ++ Movement.pointsLabel move.cost
 
                                 PlannedOrder.Move movePlan ->
                                     if List.length movePlan.move.path <= 1 then
@@ -2449,9 +2494,32 @@ boardHtml model =
         reachable =
             List.map .destination (moveOptions model)
 
-        paths : List (List Coordinate)
+        paths : List PlannedOrder
         paths =
-            List.map PlannedOrder.path (plannedOrders model)
+            plannedOrders model
+
+        attacking : Bool
+        attacking =
+            TurnLifecycle.planning model.currentTurn.phase
+                |> Maybe.andThen OrderPlanning.movementPlanning
+                |> Maybe.map (\planning -> planning.purpose == GamePage.Selection.AttackMove)
+                |> Maybe.withDefault False
+
+        destinationAction : String
+        destinationAction =
+            if attacking then
+                "attack move to"
+
+            else
+                "move to"
+
+        previewPurpose : MovementRoute.Purpose
+        previewPurpose =
+            if attacking then
+                MovementRoute.Attack
+
+            else
+                MovementRoute.Travel
 
         orderedUnits : List UnitId
         orderedUnits =
@@ -2493,7 +2561,14 @@ boardHtml model =
                     if List.member position reachable then
                         [ HA.attribute "tabindex" "0"
                         , Aria.svgRole Aria.Button
-                        , Aria.svgLabel ("move to (" ++ String.fromInt position.x ++ ", " ++ String.fromInt position.y ++ ")")
+                        , Aria.svgLabel
+                            (destinationAction
+                                ++ " ("
+                                ++ String.fromInt position.x
+                                ++ ", "
+                                ++ String.fromInt position.y
+                                ++ ")"
+                            )
                         , onBoardActivationKeyDown
                             { pressedEnter = PressedEnterOnTile position
                             , pressedSpace = PressedSpaceOnTile position
@@ -2814,58 +2889,18 @@ boardHtml model =
                 |> List.map pathPoint
                 |> String.join " "
 
-        destinationMarker : Coordinate -> Svg Msg
-        destinationMarker position =
-            at position
-                [ Svg.circle
-                    [ SA.cx "8"
-                    , SA.cy "8"
-                    , SA.r "2"
-                    , SA.fill S.yellow5Str
-                    ]
-                    []
-                ]
-
-        plannedPath : List Coordinate -> List (Svg Msg)
-        plannedPath path =
+        plannedPath : PlannedOrder -> List (Svg Msg)
+        plannedPath order =
             let
-                route : List (Svg Msg)
-                route =
-                    [ Svg.polyline
-                        [ SA.points (pathPoints path)
-                        , SA.fill "none"
-                        , SA.stroke S.yellow5Str
-                        , SA.strokeWidth "1.25"
-                        , SA.strokeDasharray "2 1"
-                        ]
-                        []
-                    ]
+                purpose : MovementRoute.Purpose
+                purpose =
+                    if PlannedOrder.isAttackMove order then
+                        MovementRoute.Attack
 
-                destination : List (Svg Msg)
-                destination =
-                    path
-                        |> List.reverse
-                        |> List.head
-                        |> Maybe.map destinationMarker
-                        |> Maybe.map List.singleton
-                        |> Maybe.withDefault []
+                    else
+                        MovementRoute.Travel
             in
-            route ++ destination
-
-        previewPath : List Coordinate -> List (Svg Msg)
-        previewPath path =
-            if List.length path > 1 then
-                [ Svg.polyline
-                    [ SA.points (pathPoints path)
-                    , SA.fill "none"
-                    , SA.stroke S.yellow5Str
-                    , SA.strokeWidth "1.5"
-                    ]
-                    []
-                ]
-
-            else
-                []
+            MovementRoute.planned purpose (PlannedOrder.path order)
 
         movementOverlay : Svg Msg
         movementOverlay =
@@ -2880,7 +2915,7 @@ boardHtml model =
 
                 preview : List (Svg Msg)
                 preview =
-                    previewPath previewedPath
+                    MovementRoute.preview previewPurpose previewedPath
             in
             Svg.g
                 [ SA.pointerEvents "none"

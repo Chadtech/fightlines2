@@ -44,6 +44,14 @@ pub fn visible_tiles(scenario: &Scenario, side: PlayerNumber) -> BTreeSet<Coordi
             }
         }
     }
+    // Firing reveals only the gun's occupied tile, without granting it sight.
+    visible.extend(
+        scenario
+            .units
+            .iter()
+            .filter(|unit| unit.side() != side && unit.firing_position_revealed())
+            .filter_map(Unit::board_position),
+    );
     visible
 }
 
@@ -106,9 +114,9 @@ pub fn observed_scenario(
     let mut observed = scenario.clone();
     observed.units.retain(|unit| {
         unit.side() == side
-            || unit
-                .board_position()
-                .is_some_and(|position| observable(&scenario.map, visible, position))
+            || unit.board_position().is_some_and(|position| {
+                unit.firing_position_revealed() || observable(&scenario.map, visible, position)
+            })
     });
     for unit in &mut observed.units {
         if unit.side() != side {

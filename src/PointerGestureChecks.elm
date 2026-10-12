@@ -1,5 +1,6 @@
 port module PointerGestureChecks exposing (main)
 
+import GamePage.BattlefieldNavigation as Navigation
 import Platform
 import PointerGesture
 
@@ -39,12 +40,26 @@ checks =
         released =
             PointerGesture.finish panning.gesture
 
+        routePressed : Navigation.Model
+        routePressed =
+            Navigation.init |> Navigation.press { x = 10, y = 20 }
+
+        routeDragged : Navigation.Model
+        routeDragged =
+            routePressed |> Navigation.tracePath (Navigation.MouseMoved { x = 50, y = 20 } 1)
+
+        routeReleased : Navigation.Model
+        routeReleased =
+            routeDragged |> Navigation.tracePath (Navigation.MouseReleased { x = 50, y = 20 })
+
         nextPress : PointerGesture.PointerGesture
         nextPress =
             PointerGesture.press { start = { x = 0, y = 0 }, origin = { x = 106, y = 200 } }
     in
     List.concat
-        [ expect "an ordinary press is active and permits clicks"
+        [ expect "route dragging keeps the camera fixed and suppresses its follow-up click"
+            (Navigation.camera routeDragged == Navigation.camera routePressed && Navigation.camera routeReleased == Navigation.camera routePressed && Navigation.suppressesClick routeReleased && not (Navigation.active routeReleased))
+        , expect "an ordinary press is active and permits clicks"
             (PointerGesture.active pressed && not (PointerGesture.suppressesClick pressed))
         , expect "movement below six pixels must not pan or suppress a click"
             (belowThreshold.gesture == pressed && belowThreshold.offset == Nothing)

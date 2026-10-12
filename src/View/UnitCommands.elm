@@ -174,6 +174,9 @@ commandButton unit command =
             else if command == Command.Ambush then
                 "not enough supplies to maintain ambush readiness"
 
+            else if command == Command.AttackMove then
+                "not enough supplies to move and fire"
+
             else
                 "not available yet"
 

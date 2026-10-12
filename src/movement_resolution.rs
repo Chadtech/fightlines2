@@ -264,7 +264,13 @@ fn resolve_arrivals(
     for (tick, scheduled) in arrivals {
         let intents: BTreeMap<_, _> = scheduled
             .into_iter()
-            .filter(|(id, _)| !result.stopped.contains(id))
+            .filter(|(id, _)| {
+                !result.stopped.contains(id)
+                    && board
+                        .units
+                        .iter()
+                        .any(|unit| unit.unit_id() == *id && unit.is_alive())
+            })
             .collect();
         let mut blocked = BTreeSet::new();
         let mut stop_after_arrival = BTreeSet::new();
@@ -325,6 +331,38 @@ fn resolve_arrivals(
                 break;
             }
         }
+        let mut contacts = Vec::new();
+        for (id, destination) in &intents {
+            if !orders.iter().any(|order| {
+                order.unit_id == *id && order.travel == crate::turns::TravelMode::AttackMove
+            }) {
+                continue;
+            }
+            let mover = board
+                .units
+                .iter()
+                .find(|unit| unit.unit_id() == *id)
+                .ok_or(ResolutionError::MissingUnit)?;
+            let target = board
+                .units
+                .iter()
+                .filter(|unit| unit.is_alive() && unit.side() != mover.side())
+                .filter(|unit| {
+                    (unit.board_position() == Some(*destination)
+                        && (blocked.contains(&unit.unit_id())
+                            || !intents.contains_key(&unit.unit_id())
+                            || intents
+                                .get(&unit.unit_id())
+                                .is_some_and(|target| Some(*target) == mover.board_position())))
+                        || intents.get(&unit.unit_id()) == Some(destination)
+                })
+                .min_by_key(|unit| unit.unit_id());
+            if let Some(target) = target {
+                contacts.push((*id, target.unit_id()));
+                stop_after_arrival.insert(*id);
+                stop_after_arrival.insert(target.unit_id());
+            }
+        }
         for (id, destination) in intents {
             if !blocked.contains(&id) {
                 let unit = board
@@ -343,14 +381,69 @@ fn resolve_arrivals(
         }
         result.stopped.extend(blocked);
         result.stopped.extend(stop_after_arrival);
+        // A contact can interrupt passage through an allied square. Retreat before
+        // combat so occupancy retries do not discard the encounter that caused it.
+        let participants: BTreeSet<_> = contacts
+            .iter()
+            .flat_map(|(attacker, target)| [*attacker, *target])
+            .collect();
+        for id in participants {
+            let unit = board
+                .units
+                .iter()
+                .find(|unit| unit.unit_id() == id)
+                .ok_or(ResolutionError::MissingUnit)?;
+            let shared = board.units.iter().any(|other| {
+                other.is_alive()
+                    && other.unit_id() != id
+                    && other.board_position() == unit.board_position()
+            });
+            if !shared {
+                continue;
+            }
+            let path = result
+                .paths
+                .get_mut(&id)
+                .ok_or(ResolutionError::MissingPath)?;
+            let free = path
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, position)| {
+                    !board.units.iter().any(|other| {
+                        other.is_alive()
+                            && other.unit_id() != id
+                            && other.board_position() == Some(**position)
+                    })
+                })
+                .map(|(index, _)| index);
+            if let Some(index) = free {
+                let removed = path.len() - index - 1;
+                path.truncate(index + 1);
+                let initial = scenario
+                    .units
+                    .iter()
+                    .find(|unit| unit.unit_id() == id)
+                    .ok_or(ResolutionError::MissingUnit)?;
+                board
+                    .units
+                    .iter_mut()
+                    .find(|unit| unit.unit_id() == id)
+                    .ok_or(ResolutionError::MissingUnit)?
+                    .retract_movement(path, removed, initial);
+            }
+        }
         // Retain waiting time even after a route ends; timing is independent of its length.
         result.frames.push(frame(
             &board,
             (tick - previous_tick) * MOVEMENT_DURATION_MS / ticks,
         ));
-        result
-            .combat
-            .engage(&mut board, &mut result.stopped, &mut result.frames);
+        result.combat.engage_contacts(
+            &mut board,
+            &mut result.stopped,
+            &mut result.frames,
+            &contacts,
+        );
         previous_tick = tick;
     }
     Ok(result)
@@ -384,6 +477,7 @@ mod tests {
                 let path: Vec<_> = path.iter().map(|(x, y)| Coordinate::new(*x, *y)).collect();
                 moving.move_to(*path.first().ok_or("empty fixture path")?);
                 Ok(MoveOrder {
+                    travel: crate::turns::TravelMode::Normal,
                     facing: crate::turns::FacingOrder::Unchanged,
                     unit_id: moving.unit_id(),
                     path,
@@ -546,6 +640,194 @@ mod tests {
         assert_eq!(path(&result, "6")?.len(), 1);
         Ok(())
     }
+    #[test]
+    fn attack_move_stops_at_first_enemy_and_charges_only_traveled_edges()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let (scenario, mut orders) = setup(&[("1", &[(0, 0), (1, 0), (2, 0)]), ("6", &[(2, 0)])])?;
+        orders[0].travel = crate::turns::TravelMode::AttackMove;
+        let result = resolve(&scenario, &orders, 1)?;
+        assert_eq!(
+            path(&result, "1")?,
+            vec![Coordinate::new(0, 0), Coordinate::new(1, 0)]
+        );
+        let shots: Vec<_> = result
+            .frames
+            .iter()
+            .flat_map(|frame| &frame.shots)
+            .collect();
+        assert_eq!(shots.len(), 1);
+        assert_eq!(shots[0].kind, crate::combat::CombatKind::AttackMove);
+        assert_eq!(shots[0].destination, Coordinate::new(2, 0));
+        assert_eq!(shots[0].target_health.after.current(), 12);
+        let units = &result.frames.last().ok_or("missing frame")?.units;
+        assert_eq!(
+            units
+                .iter()
+                .find(|unit| unit.id() == "1")
+                .ok_or("missing attacker")?
+                .supplies()
+                .current(),
+            58
+        );
+        assert_eq!(
+            units
+                .iter()
+                .find(|unit| unit.id() == "6")
+                .ok_or("missing target")?
+                .supplies()
+                .current(),
+            64
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn attack_move_interrupted_during_allied_passage_keeps_its_combat()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let (scenario, mut orders) = setup(&[
+            ("11", &[(0, 0), (1, 0), (2, 0), (3, 0)]),
+            ("1", &[(1, 0)]),
+            ("6", &[(2, 0)]),
+        ])?;
+        orders[0].travel = crate::turns::TravelMode::AttackMove;
+        let result = resolve(&scenario, &orders, 1)?;
+        assert_eq!(path(&result, "11")?, vec![Coordinate::new(0, 0)]);
+        let shots: Vec<_> = result
+            .frames
+            .iter()
+            .flat_map(|frame| &frame.shots)
+            .collect();
+        assert_eq!(shots.len(), 1);
+        assert_eq!(shots[0].destination, Coordinate::new(2, 0));
+        assert_eq!(shots[0].target_health.after.current(), 8);
+        let units = &result.frames.last().ok_or("missing frame")?.units;
+        assert_eq!(
+            units
+                .iter()
+                .find(|unit| unit.id() == "11")
+                .ok_or("missing attacker")?
+                .fuel()
+                .ok_or("missing fuel")?
+                .current,
+            32
+        );
+        let occupied: BTreeSet<_> = units
+            .iter()
+            .filter_map(|unit| unit.board_position())
+            .collect();
+        assert_eq!(occupied.len(), units.len());
+        Ok(())
+    }
+
+    #[test]
+    fn attack_move_passes_allies_and_misses_departing_enemies()
+    -> Result<(), Box<dyn std::error::Error>> {
+        for paths in [
+            vec![("11", &[(0, 0), (1, 0), (2, 0)][..]), ("1", &[(1, 0)][..])],
+            vec![
+                ("1", &[(0, 0), (1, 0), (2, 0)][..]),
+                ("6", &[(1, 0), (2, 0), (3, 0)][..]),
+            ],
+        ] {
+            let (scenario, mut orders) = setup(&paths)?;
+            orders[0].travel = crate::turns::TravelMode::AttackMove;
+            let result = resolve(&scenario, &orders, 1)?;
+            assert!(result.frames.iter().all(|frame| frame.shots.is_empty()));
+            assert_eq!(
+                result.paths.get(&orders[0].unit_id).ok_or("missing path")?,
+                &orders[0].path
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn attack_moves_fire_simultaneously_on_swaps_and_contested_arrivals()
+    -> Result<(), Box<dyn std::error::Error>> {
+        for paths in [
+            vec![("1", &[(0, 0), (1, 0)][..]), ("6", &[(1, 0), (0, 0)][..])],
+            vec![
+                ("1", &[(0, 0), (1, 0), (2, 0)][..]),
+                ("6", &[(2, 0), (1, 0), (0, 0)][..]),
+            ],
+        ] {
+            let (scenario, mut orders) = setup(&paths)?;
+            for order in &mut orders {
+                order.travel = crate::turns::TravelMode::AttackMove;
+            }
+            for turn in [1, 2] {
+                let result = resolve(&scenario, &orders, turn)?;
+                let shots: Vec<_> = result
+                    .frames
+                    .iter()
+                    .flat_map(|frame| &frame.shots)
+                    .collect();
+                assert_eq!(shots.len(), 2);
+                assert!(
+                    shots
+                        .iter()
+                        .all(|shot| shot.target_health.after.current() == 12
+                            && shot.attacker_health.after.current() == 12)
+                );
+                assert_eq!(result.stopped.len(), 2);
+                orders.reverse();
+                let reversed = resolve(&scenario, &orders, turn)?;
+                assert_eq!(result.paths, reversed.paths);
+                assert_eq!(
+                    result
+                        .frames
+                        .last()
+                        .ok_or("missing frame")?
+                        .units
+                        .iter()
+                        .map(|unit| unit.hit_points().current())
+                        .collect::<Vec<_>>(),
+                    reversed
+                        .frames
+                        .last()
+                        .ok_or("missing frame")?
+                        .units
+                        .iter()
+                        .map(|unit| unit.hit_points().current())
+                        .collect::<Vec<_>>()
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn attack_move_finds_a_concealed_enemy_without_revealing_its_route()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let (mut scenario, mut orders) =
+            setup(&[("1", &[(0, 0), (1, 0), (2, 0)]), ("6", &[(1, 0)])])?;
+        scenario.map = Map::from_ascii(".#.").map_err(|error| format!("{error:?}"))?;
+        orders[0].travel = crate::turns::TravelMode::AttackMove;
+        let result = resolve(&scenario, &orders, 1)?;
+        assert_eq!(path(&result, "1")?.len(), 1);
+        let resolution = crate::turns::TurnResolution {
+            turn_number: 1,
+            events: Vec::new(),
+            frames: result.frames,
+        };
+        let visible = crate::visibility::visible_tiles(&scenario, PlayerNumber::Player1);
+        let observed = crate::visibility::observed_resolution(
+            &scenario,
+            PlayerNumber::Player1,
+            &visible,
+            &resolution,
+        );
+        let shot = observed
+            .frames
+            .iter()
+            .flat_map(|frame| &frame.shots)
+            .next()
+            .ok_or("missing encounter")?;
+        assert_eq!(shot.target.id(), "6");
+        assert!(shot.target.resources().is_none());
+        Ok(())
+    }
+
     #[test]
     fn invalid_resolution_inputs_return_errors() -> Result<(), Box<dyn std::error::Error>> {
         let (scenario, orders) = setup(&[("1", &[(0, 0), (1, 0)])])?;

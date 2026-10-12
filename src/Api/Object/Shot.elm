@@ -4,6 +4,7 @@
 
 module Api.Object.Shot exposing (..)
 
+import Api.Enum.CombatKind
 import Api.InputObject
 import Api.Interface
 import Api.Object
@@ -17,6 +18,11 @@ import Graphql.Operation exposing (RootMutation, RootQuery, RootSubscription)
 import Graphql.OptionalArgument exposing (OptionalArgument(..))
 import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
+
+
+kind : SelectionSet Api.Enum.CombatKind.CombatKind Api.Object.Shot
+kind =
+    Object.selectionForField "Enum.CombatKind.CombatKind" "kind" [] Api.Enum.CombatKind.decoder
 
 
 origin :

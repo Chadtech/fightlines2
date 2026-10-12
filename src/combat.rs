@@ -42,8 +42,15 @@ pub fn rules(kind: UnitKind) -> CombatRules {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
+pub enum CombatKind {
+    Ambush,
+    AttackMove,
+}
+
 #[derive(Clone, Debug, GraphQLObject)]
 pub struct Shot {
+    pub kind: CombatKind,
     pub origin: Coordinate,
     pub destination: Coordinate,
     pub damage: i32,
@@ -71,6 +78,55 @@ struct Engagement {
     shooter: UnitId,
     target: UnitId,
     shot: Shot,
+}
+
+/// Serialize simultaneous damage into pair displays without changing combat outcomes.
+/// Reciprocal shots share one transition; later pairs start at the preceding pair's health.
+fn theater_shots(board: &Scenario, engagements: &[Engagement]) -> Vec<Shot> {
+    let mut participants = board.units.clone();
+    let mut pending: Vec<_> = engagements.iter().collect();
+    let mut shots = Vec::new();
+    while let Some(first) = pending.first().copied() {
+        let (pair, rest): (Vec<_>, Vec<_>) = pending.into_iter().partition(|engagement| {
+            (engagement.shooter == first.shooter && engagement.target == first.target)
+                || (engagement.shooter == first.target && engagement.target == first.shooter)
+        });
+        pending = rest;
+        let mut pair_shots: Vec<_> = pair
+            .iter()
+            .map(|engagement| engagement.shot.clone())
+            .collect();
+        for shot in &mut pair_shots {
+            for unit in &participants {
+                if unit.unit_id() == shot.attacker.unit_id() {
+                    shot.attacker_health.before = unit.hit_points();
+                }
+                if unit.unit_id() == shot.target.unit_id() {
+                    shot.target_health.before = unit.hit_points();
+                }
+            }
+        }
+        for engagement in pair {
+            if let Some(unit) = participants
+                .iter_mut()
+                .find(|unit| unit.unit_id() == engagement.target)
+            {
+                unit.take_damage(engagement.shot.damage);
+            }
+        }
+        for shot in &mut pair_shots {
+            for unit in &participants {
+                if unit.unit_id() == shot.attacker.unit_id() {
+                    shot.attacker_health.after = unit.hit_points();
+                }
+                if unit.unit_id() == shot.target.unit_id() {
+                    shot.target_health.after = unit.hit_points();
+                }
+            }
+        }
+        shots.extend(pair_shots);
+    }
+    shots
 }
 
 pub struct Combat {
@@ -156,6 +212,7 @@ impl Combat {
             shooter: shooter.unit_id(),
             target: target.unit_id(),
             shot: Shot {
+                kind: CombatKind::Ambush,
                 origin,
                 destination,
                 damage: rules(shooter.kind()).damage,
@@ -182,6 +239,7 @@ impl Combat {
         if engagements.is_empty() {
             return;
         }
+        let shots = theater_shots(board, engagements);
         let mut damage = BTreeMap::<UnitId, i32>::new();
         for engagement in engagements {
             self.fired.insert(engagement.shooter);
@@ -222,21 +280,7 @@ impl Combat {
             units: board.units.clone(),
             visible_tiles: Vec::new(),
             duration_ms: 450,
-            shots: engagements
-                .iter()
-                .map(|engagement| {
-                    let mut shot = engagement.shot.clone();
-                    for unit in &board.units {
-                        if unit.unit_id() == engagement.shooter {
-                            shot.attacker_health.after = unit.hit_points();
-                        }
-                        if unit.unit_id() == engagement.target {
-                            shot.target_health.after = unit.hit_points();
-                        }
-                    }
-                    shot
-                })
-                .collect(),
+            shots,
         });
         // Clear shots while preserving enough time to read the exchange and death marker.
         frames.push(TurnFrame {
@@ -252,6 +296,17 @@ impl Combat {
         board: &mut Scenario,
         stopped: &mut BTreeSet<UnitId>,
         frames: &mut Vec<TurnFrame>,
+    ) {
+        self.engage_contacts(board, stopped, frames, &[]);
+    }
+
+    /// Physical encounters bypass sight and ambush range, including concealed defenders.
+    pub fn engage_contacts(
+        &mut self,
+        board: &mut Scenario,
+        stopped: &mut BTreeSet<UnitId>,
+        frames: &mut Vec<TurnFrame>,
+        contacts: &[(UnitId, UnitId)],
     ) {
         let eligible: Vec<_> = board
             .units
@@ -297,7 +352,46 @@ impl Combat {
                     })
             })
             .collect();
-        let opening: Vec<_> = opening.into_iter().cloned().collect();
+        let mut opening: Vec<_> = opening.into_iter().cloned().collect();
+        for (shooter_id, target_id) in contacts {
+            let shooter = board
+                .units
+                .iter()
+                .find(|unit| unit.unit_id() == *shooter_id);
+            let target = board.units.iter().find(|unit| unit.unit_id() == *target_id);
+            if let (Some(shooter), Some(target)) = (shooter, target)
+                && self.can_fire(shooter)
+                && target.is_alive()
+                && shooter.side() != target.side()
+                && let (Some(origin), Some(destination)) =
+                    (shooter.board_position(), target.board_position())
+                && !opening
+                    .iter()
+                    .any(|engagement| engagement.shooter == *shooter_id)
+            {
+                opening.push(Engagement {
+                    shooter: *shooter_id,
+                    target: *target_id,
+                    shot: Shot {
+                        kind: CombatKind::AttackMove,
+                        origin,
+                        destination,
+                        damage: rules(shooter.kind()).damage,
+                        attacker: theater_participant(shooter),
+                        target: theater_participant(target),
+                        attacker_health: CombatHealth {
+                            before: shooter.hit_points(),
+                            after: shooter.hit_points(),
+                        },
+                        target_health: CombatHealth {
+                            before: target.hit_points(),
+                            after: target.hit_points(),
+                        },
+                    },
+                });
+            }
+        }
+        opening.sort_by_key(|engagement| (engagement.shooter, engagement.target));
         for engagement in &opening {
             stopped.insert(engagement.target);
         }
@@ -360,6 +454,7 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(index, unit)| MoveOrder {
+                travel: crate::turns::TravelMode::Normal,
                 unit_id: unit.unit_id(),
                 facing: if index == 0 {
                     crate::turns::FacingOrder::Ambush(Direction::East)
@@ -554,6 +649,7 @@ mod tests {
             .fixture()?;
         newcomer.move_to(Coordinate::new(5, 1));
         orders.push(MoveOrder {
+            travel: crate::turns::TravelMode::Normal,
             unit_id: newcomer.unit_id(),
             facing: crate::turns::FacingOrder::Unchanged,
             path: vec![
@@ -689,6 +785,75 @@ mod tests {
         let other = resolve_completed_movement(&scenario, &reversed, 1)?;
         assert_eq!(result.paths, other.paths);
         assert_eq!(shots(&other).len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn overlapping_ambushes_carry_health_between_pair_displays() -> TestResult<()> {
+        let (mut scenario, mut orders) =
+            fixture(UnitKind::Tank, UnitKind::Tank, Coordinate::new(4, 3))?;
+        let first_id = scenario.units.first().fixture()?.unit_id();
+        let mut second_shooter = Scenario::el_alamein()
+            .fixture()?
+            .units
+            .iter()
+            .find(|unit| {
+                unit.side() == PlayerNumber::Player1
+                    && unit.kind() == UnitKind::Tank
+                    && unit.unit_id() != first_id
+            })
+            .cloned()
+            .fixture()?;
+        second_shooter.move_to(Coordinate::new(5, 3));
+        orders.push(MoveOrder {
+            travel: crate::turns::TravelMode::Normal,
+            unit_id: second_shooter.unit_id(),
+            facing: crate::turns::FacingOrder::Ambush(Direction::West),
+            path: vec![Coordinate::new(5, 3)],
+            unloads: Vec::new(),
+        });
+        scenario.units.push(second_shooter);
+        let result = resolve_completed_movement(&scenario, &orders, 1)?;
+        let shots = shots(&result);
+        assert_eq!(shots.len(), 2);
+        let first = shots.first().fixture()?;
+        let second = shots.get(1).fixture()?;
+        assert_eq!(first.target_health.before.current(), 16);
+        assert_eq!(first.target_health.after.current(), 8);
+        assert_eq!(second.target_health.before.current(), 8);
+        assert_eq!(second.target_health.after.current(), 0);
+        assert!(
+            !result
+                .frames
+                .last()
+                .fixture()?
+                .units
+                .get(1)
+                .fixture()?
+                .is_alive()
+        );
+        for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
+            let resolution = crate::turns::TurnResolution {
+                turn_number: 1,
+                events: Vec::new(),
+                frames: result.frames.clone(),
+            };
+            let visible = visibility::visible_tiles(&scenario, side);
+            let observed = visibility::observed_resolution(&scenario, side, &visible, &resolution);
+            let projected: Vec<_> = observed
+                .frames
+                .iter()
+                .flat_map(|frame| &frame.shots)
+                .collect();
+            assert_eq!(
+                projected.first().fixture()?.target_health.after.current(),
+                8
+            );
+            assert_eq!(
+                projected.get(1).fixture()?.target_health.before.current(),
+                8
+            );
+        }
         Ok(())
     }
 

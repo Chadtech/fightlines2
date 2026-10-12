@@ -64,6 +64,9 @@ available unit =
 isImplemented : Command -> Bool
 isImplemented command =
     case command of
+        AttackMove ->
+            True
+
         Move ->
             True
 
@@ -147,6 +150,16 @@ canUse unit command =
                     |> Maybe.withDefault False
         in
         unit.direction /= Nothing && Unit.onBoard unit && affordable
+
+    else if command == AttackMove then
+        let
+            affordable : Bool
+            affordable =
+                unit.resources
+                    |> Maybe.map (\resources -> resources.supplies.current >= resources.supplies.upkeepPerTurn + resources.supplies.movementPerTile + unit.combatRules.shotCost)
+                    |> Maybe.withDefault False
+        in
+        Unit.onBoard unit && affordable
 
     else
         isImplemented command

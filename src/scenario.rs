@@ -222,6 +222,7 @@ pub struct Unit {
     fuel: Option<Fuel>,
     supplies: Supplies,
     resources_visible: bool,
+    firing_position_revealed: bool,
 }
 
 #[graphql_object]
@@ -307,6 +308,15 @@ pub struct Scenario {
 }
 
 impl Unit {
+    pub(crate) fn firing_position_revealed(&self) -> bool {
+        self.firing_position_revealed
+    }
+
+    /// A field gun's shot reveals its position for the following turn.
+    pub(crate) fn finish_firing_reveal(&mut self, fired: bool) {
+        self.firing_position_revealed = self.kind == UnitKind::FieldGun && fired;
+    }
+
     #[cfg(test)]
     pub(crate) fn set_supplies_for_test(&mut self, current: i32) {
         self.supplies.current = current;
@@ -386,6 +396,30 @@ impl Unit {
         if path.len() > 1
             && let Some(position) = path.last()
         {
+            self.move_to(*position);
+        }
+    }
+
+    /// End interrupted allied passage on its preceding free square. Keep combat
+    /// losses, refund only discarded travel, and recover the retained route's facing.
+    pub fn retract_movement(
+        &mut self,
+        retained_path: &[Coordinate],
+        removed_tiles: usize,
+        initial: &Unit,
+    ) {
+        self.supplies.current += removed_tiles as i32 * self.supplies.movement_per_tile;
+        if let Some(fuel) = &mut self.fuel {
+            fuel.current += removed_tiles as i32;
+        }
+        self.direction = initial.direction;
+        self.sprite_facing = initial.sprite_facing;
+        for step in retained_path.windows(2) {
+            if let Some(direction) = Direction::between(step[0], step[1]) {
+                self.rotate(direction);
+            }
+        }
+        if let Some(position) = retained_path.last() {
             self.move_to(*position);
         }
     }
@@ -1024,6 +1058,7 @@ impl Scenario {
                     sprite_facing: SpriteFacing::starting(side),
                     kind: starting.kind,
                     resources_visible: true,
+                    firing_position_revealed: false,
                     hit_points: HitPoints::full(),
                     fuel: Fuel::for_kind(starting.kind),
                     supplies: Supplies::for_kind(starting.kind),
@@ -1101,6 +1136,7 @@ impl Scenario {
                     sprite_facing: SpriteFacing::starting(side),
                     kind,
                     resources_visible: true,
+                    firing_position_revealed: false,
                     hit_points: HitPoints::full(),
                     fuel: Fuel::for_kind(kind),
                     supplies: Supplies::for_kind(kind),
@@ -1130,6 +1166,7 @@ impl Scenario {
                     sprite_facing: SpriteFacing::starting(side),
                     kind,
                     resources_visible: true,
+                    firing_position_revealed: false,
                     hit_points: HitPoints::full(),
                     fuel: Fuel::for_kind(kind),
                     supplies: Supplies::for_kind(kind),

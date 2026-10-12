@@ -57,6 +57,33 @@ planningChecks infantryId truckId passengerId =
         context =
             board [ infantry, truck ]
 
+        enemy : Unit
+        enemy =
+            { truck | playerNumber = PlayerNumber.Player2 }
+
+        attackContext : OrderPlanning.Context
+        attackContext =
+            board [ infantry, enemy ]
+
+        attacking : OrderPlanning.Model
+        attacking =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit attackContext infantryId
+                |> OrderPlanning.applyCommand attackContext UnitCommand.AttackMove
+                |> OrderPlanning.extendPath attackContext DirectionEnum.East
+                |> OrderPlanning.extendPath attackContext DirectionEnum.East
+
+        attackSaved : OrderPlanning.Model
+        attackSaved =
+            OrderPlanning.confirmPath attackContext attacking
+
+        attackLoading : OrderPlanning.Model
+        attackLoading =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit context infantryId
+                |> OrderPlanning.applyCommand context UnitCommand.AttackMove
+                |> OrderPlanning.selectTile context { x = 3, y = 1 }
+
         ambushing : OrderPlanning.Model
         ambushing =
             OrderPlanning.init
@@ -238,7 +265,13 @@ planningChecks infantryId truckId passengerId =
             OrderPlanning.selectNextUnorderedUnit context saved
     in
     List.concat
-        [ expect "ambush direction preview saves a stationary ambush instead of rotation"
+        [ expect "attack move traces and saves an occupied enemy destination without creating loading holds"
+            (List.map PlannedOrder.path (OrderPlanning.orders attackSaved) == [ [ { x = 1, y = 1 }, { x = 2, y = 1 }, { x = 3, y = 1 } ] ] && List.all PlannedOrder.isAttackMove (OrderPlanning.orders attackSaved) && OrderPlanning.pathPreview attackSaved == Nothing)
+        , expect "attack move cannot board an allied truck"
+            (List.isEmpty (OrderPlanning.orders attackLoading) && OrderPlanning.destinationFeedback attackLoading == DestinationUnavailable)
+        , expect "attack move revocation restores commands"
+            (OrderPlanning.commandMenuUnit attackContext (OrderPlanning.revokeSelectedOrder attackContext attackSaved) == Just infantry)
+        , expect "ambush direction preview saves a stationary ambush instead of rotation"
             (OrderPlanning.orders ambushing == [ { unitId = infantryId, action = PlannedOrder.Ambush { position = { x = 1, y = 1 }, direction = DirectionEnum.East } } ])
         , expect "ambush can be revoked and trucks cannot ambush"
             (List.isEmpty (OrderPlanning.orders (OrderPlanning.revokeSelectedOrder context ambushing)) && List.isEmpty (OrderPlanning.orders truckAmbush))

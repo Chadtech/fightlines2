@@ -18,6 +18,7 @@ module TurnPlayback exposing
     , visibleShots
     )
 
+import Api.Enum.CombatKind as CombatKind exposing (CombatKind)
 import Api.Object
 import Api.Object.GameSnapshot as GameApi
 import Api.Object.TurnFrame as FrameApi
@@ -80,7 +81,8 @@ type alias Panel =
 
 
 type alias Exchange =
-    { attacker : Unit
+    { kind : CombatKind
+    , attacker : Unit
     , target : Unit
     , attackerHealth : CombatHealth
     , targetHealth : CombatHealth
@@ -163,11 +165,24 @@ exchanges frame =
                                     || (other.origin == shot.destination && other.destination == shot.origin)
                                 )
 
+                        includesAttackMove : Shot -> Bool
+                        includesAttackMove other =
+                            not (differentPair other) && other.kind == CombatKind.AttackMove
+
+                        kind : CombatKind
+                        kind =
+                            if List.any includesAttackMove (shot :: rest) then
+                                CombatKind.AttackMove
+
+                            else
+                                CombatKind.Ambush
+
                         remaining : List Exchange
                         remaining =
                             collect (List.filter differentPair rest)
                     in
-                    { attacker = shot.attacker
+                    { kind = kind
+                    , attacker = shot.attacker
                     , target = shot.target
                     , attackerHealth = shot.attackerHealth
                     , targetHealth = shot.targetHealth

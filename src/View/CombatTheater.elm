@@ -1,5 +1,6 @@
-module View.CombatTheater exposing (Msg(..), backdropPath, styles, toHtml)
+module View.CombatTheater exposing (Msg(..), attackerOnLeft, backdropPath, styles, toHtml)
 
+import Api.Enum.CombatKind as CombatKind
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
 import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.Terrain as Terrain exposing (Terrain)
@@ -52,6 +53,23 @@ styles =
         ]
 
 
+{-| Preserve horizontal map order; for vertical encounters, north appears left.
+-}
+attackerOnLeft : Panel -> Bool
+attackerOnLeft panel =
+    case
+        ( Unit.boardPosition panel.exchange.attacker
+        , Unit.boardPosition panel.exchange.target
+        )
+    of
+        ( Just attacker, Just target ) ->
+            (attacker.x < target.x)
+                || ((attacker.x == target.x) && (attacker.y <= target.y))
+
+        _ ->
+            True
+
+
 toHtml : Map -> Panel -> Html Msg
 toHtml map panel =
     let
@@ -63,9 +81,47 @@ toHtml map panel =
         target =
             panel.exchange.target
 
+        portraits : List (Html Msg)
+        portraits =
+            if attackerOnLeft panel then
+                [ portrait
+                    map
+                    panel
+                    panel.exchange.attackerHealth
+                    { attacker | spriteFacing = SpriteFacing.Right }
+                , portrait
+                    map
+                    panel
+                    panel.exchange.targetHealth
+                    { target | spriteFacing = SpriteFacing.Left }
+                ]
+
+            else
+                [ portrait
+                    map
+                    panel
+                    panel.exchange.targetHealth
+                    { target | spriteFacing = SpriteFacing.Right }
+                , portrait
+                    map
+                    panel
+                    panel.exchange.attackerHealth
+                    { attacker | spriteFacing = SpriteFacing.Left }
+                ]
+
+        title : String
+        title =
+            case panel.exchange.kind of
+                CombatKind.Ambush ->
+                    "ambush"
+
+                CombatKind.AttackMove ->
+                    "attack move"
+
         card : Card.Card
         card =
-            Card.simple |> Card.withHeader (CardHeader.simple "ambush")
+            Card.simple
+                |> Card.withHeader (CardHeader.simple title)
 
         cardOpacity : Float
         cardOpacity =
@@ -88,7 +144,7 @@ toHtml map panel =
     H.div
         [ A.attribute "data-combat-panels" ""
         , Aria.role Aria.Group
-        , Aria.label "ambush"
+        , Aria.label title
         , A.css
             [ S.fixed
             , S.top0
@@ -140,28 +196,25 @@ toHtml map panel =
                             , Css.property "grid-template-columns" "minmax(0, 1fr) minmax(0, 1fr)"
                             ]
                         ]
-                        [ portrait map panel panel.exchange.attackerHealth { attacker | spriteFacing = SpriteFacing.Right }
-                        , portrait map panel panel.exchange.targetHealth { target | spriteFacing = SpriteFacing.Left }
-                        ]
+                        portraits
                     , H.div
                         [ A.css
                             [ S.row
                             , S.g3
-                            , S.justifySpaceBetween
                             ]
                         ]
                         [ H.div
+                            [ Ev.preventDefaultOn "keydown" (HtmlEvent.enter ( SeeMapReleased, True ))
+                            , Ev.stopPropagationOn "keyup" (HtmlEvent.enter ( ContinueClicked, True ))
+                            ]
+                            [ Button.primary "continue" ContinueClicked |> Button.toHtml
+                            ]
+                        , H.div
                             [ Ev.onMouseDown SeeMapPressed
                             , Ev.onMouseUp SeeMapReleased
                             , Ev.onMouseLeave SeeMapReleased
                             ]
                             [ Button.secondary "see map" SeeMapReleased |> Button.toHtml
-                            ]
-                        , H.div
-                            [ Ev.preventDefaultOn "keydown" (HtmlEvent.enter ( SeeMapReleased, True ))
-                            , Ev.stopPropagationOn "keyup" (HtmlEvent.enter ( ContinueClicked, True ))
-                            ]
-                            [ Button.primary "continue" ContinueClicked |> Button.toHtml
                             ]
                         ]
                     ]

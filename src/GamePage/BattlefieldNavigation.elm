@@ -13,6 +13,7 @@ module GamePage.BattlefieldNavigation exposing
     , scroll
     , subscriptions
     , suppressesClick
+    , tracePath
     , update
     , zoomIn
     , zoomOut
@@ -235,3 +236,27 @@ subscriptions model =
 
     else
         Sub.none
+
+
+{-| Route dragging uses the same click-suppression gesture without moving the camera.
+-}
+tracePath : Msg -> Model -> Model
+tracePath msg model =
+    let
+        trace : Point -> Model -> Model
+        trace point current =
+            { current | pointerGesture = (PointerGesture.move point current.pointerGesture).gesture }
+    in
+    case msg of
+        MouseMoved point buttons ->
+            if buttons == 0 then
+                finish model
+
+            else
+                trace point model
+
+        MouseReleased point ->
+            trace point model |> finish
+
+        WindowVisibilityChanged _ ->
+            finish model

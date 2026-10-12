@@ -1,6 +1,7 @@
 port module TurnChecks exposing (main)
 
 import Api.Enum.AmbushShape as AmbushShape
+import Api.Enum.CombatKind as CombatKind
 import Api.Enum.Direction as Direction
 import Api.Enum.MapTheme as MapTheme
 import Api.Enum.PlayerNumber as PlayerNumber
@@ -444,7 +445,8 @@ combatPlaybackChecks first second =
 
         shot : Shot
         shot =
-            { origin = { x = 2, y = 2 }
+            { kind = CombatKind.Ambush
+            , origin = { x = 2, y = 2 }
             , destination = { x = 3, y = 2 }
             , attacker = attacker
             , target = target
@@ -460,6 +462,19 @@ combatPlaybackChecks first second =
         cleanup : TurnPlayback.Frame
         cleanup =
             { before | durationMs = 600, units = [] }
+
+        panelAt : { x : Int, y : Int } -> { x : Int, y : Int } -> TurnPlayback.Panel
+        panelAt origin destination =
+            { exchange =
+                { kind = shot.kind
+                , attacker = { attacker | location = Location.OnMap origin }
+                , target = { target | location = Location.OnMap destination }
+                , attackerHealth = shot.attackerHealth
+                , targetHealth = shot.targetHealth
+                }
+            , elapsed = 0
+            , mapView = TurnPlayback.CardVisible
+            }
 
         expect : String -> Bool -> List String
         expect label passed =
@@ -534,16 +549,51 @@ combatPlaybackChecks first second =
                                         secondPause =
                                             firstPause |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first) |> Maybe.andThen TurnPlayback.continueCombat |> Maybe.map .animation
 
+                                        overlap : TurnPlayback.Frame
+                                        overlap =
+                                            { volley
+                                                | shots =
+                                                    [ shot
+                                                    , { shot
+                                                        | origin = { x = 4, y = 2 }
+                                                        , attacker = anotherTarget
+                                                        , targetHealth = { before = { current = 8, maximum = 16 }, after = { current = 0, maximum = 16 } }
+                                                      }
+                                                    ]
+                                            }
+
+                                        overlapFirst : Maybe TurnPlayback.Playback
+                                        overlapFirst =
+                                            TurnPlayback.start [ before, overlap, cleanup ] |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+
+                                        overlapSecond : Maybe TurnPlayback.Playback
+                                        overlapSecond =
+                                            overlapFirst |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first) |> Maybe.andThen TurnPlayback.continueCombat |> Maybe.map .animation
+
                                         ( afterPairs, revealed ) =
                                             secondPause |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first) |> Maybe.andThen TurnPlayback.continueCombat |> Maybe.map (\next -> ( Just next.animation, next.frame )) |> Maybe.withDefault ( Nothing, before )
                                     in
                                     expect "each distinct combat pair is shown before a shared volley is revealed"
                                         (Maybe.andThen TurnPlayback.combat secondPause |> Maybe.map (.target >> .id) |> (==) (Just third))
+                                        ++ expect "overlapping ambush cards preserve successive health losses"
+                                            ((Maybe.andThen TurnPlayback.combat overlapFirst |> Maybe.map (.targetHealth >> .after >> .current))
+                                                == Just 8
+                                                && (Maybe.andThen TurnPlayback.combat overlapSecond |> Maybe.map (.targetHealth >> .before >> .current))
+                                                == Just 8
+                                                && (Maybe.andThen TurnPlayback.combat overlapSecond |> Maybe.map (.targetHealth >> .after >> .current))
+                                                == Just 0
+                                            )
                                         ++ expect "multiple pair displays return to one battlefield volley"
                                             (Maybe.andThen TurnPlayback.combat afterPairs == Nothing && revealed == multiple)
                     in
                     List.concat
-                        [ expect "combat holds the pre-hit board and hides shots and movement"
+                        [ expect "theater sides preserve horizontal map order and use north first for vertical pairs"
+                            (CombatTheater.attackerOnLeft (panelAt { x = 2, y = 2 } { x = 3, y = 2 })
+                                && not (CombatTheater.attackerOnLeft (panelAt { x = 3, y = 2 } { x = 2, y = 2 }))
+                                && CombatTheater.attackerOnLeft (panelAt { x = 2, y = 2 } { x = 2, y = 3 })
+                                && not (CombatTheater.attackerOnLeft (panelAt { x = 2, y = 3 } { x = 2, y = 2 }))
+                            )
+                        , expect "combat holds the pre-hit board and hides shots and movement"
                             (frozen == before && List.isEmpty (TurnPlayback.visibleShots focus) && List.isEmpty (TurnPlayback.movingPositions paused))
                         , expect "combat spotlights participants before opening the panels"
                             (Maybe.andThen TurnPlayback.spotlight almostSpotlit /= Nothing && Maybe.andThen TurnPlayback.panels almostSpotlit == Nothing && Maybe.andThen TurnPlayback.spotlight showing == Nothing && Maybe.andThen TurnPlayback.panels showing /= Nothing)

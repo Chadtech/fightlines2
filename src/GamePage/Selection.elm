@@ -3,6 +3,7 @@ module GamePage.Selection exposing
     , FacingPurpose(..)
     , Inspection(..)
     , MovePlanning
+    , MovePurpose(..)
     , SelectedUnit
     , Selection(..)
     , UnitInteraction(..)
@@ -49,8 +50,14 @@ type FacingPurpose
     | AmbushFacing
 
 
+type MovePurpose
+    = NormalMove
+    | AttackMove
+
+
 type alias MovePlanning =
-    { preview : Movement.Option
+    { purpose : MovePurpose
+    , preview : Movement.Option
     , options : List Movement.Option
     , destinationFeedback : DestinationFeedback
     }

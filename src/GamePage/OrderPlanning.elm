@@ -59,6 +59,7 @@ import GamePage.Selection as Selection
         , FacingPurpose(..)
         , Inspection(..)
         , MovePlanning
+        , MovePurpose(..)
         , Selection(..)
         , UnitInteraction(..)
         )
@@ -66,8 +67,10 @@ import Map exposing (Map)
 import Movement
 import PlannedOrder exposing (MovePlan, PlannedOrder, StationaryUnload)
 import Unit exposing (Unit)
+import Unit.Supplies
 import UnitCommand
 import UnitId exposing (UnitId)
+import UnitResources
 import Util.List as ListUtil
 
 
@@ -408,7 +411,10 @@ applyCommand context command state =
             if canApply then
                 case command of
                     UnitCommand.Move ->
-                        beginMovement context unit state
+                        beginMovement NormalMove context unit state
+
+                    UnitCommand.AttackMove ->
+                        beginMovement AttackMove context unit state
 
                     UnitCommand.Rotate ->
                         state
@@ -490,7 +496,7 @@ receivingLoad context unit drafts =
     let
         receives : PlannedOrder -> Bool
         receives plan =
-            if not (PlannedOrder.isMoving plan) then
+            if not (PlannedOrder.isMoving plan) || PlannedOrder.isAttackMove plan then
                 False
 
             else
@@ -1124,7 +1130,7 @@ traceTo context position state =
                     context.movementRules
                     context.map
                     context.units
-                    unit
+                    (movementUnit planning.purpose unit)
                     planning.preview
                     position
 
@@ -1135,27 +1141,23 @@ traceTo context position state =
             Nothing
 
 
-beginMovement : Context -> Unit -> Model -> Model
-beginMovement context unit state =
+beginMovement : MovePurpose -> Context -> Unit -> Model -> Model
+beginMovement purpose context unit state =
     case Unit.physicalPosition context.units unit of
         Just origin ->
             let
                 planning : MovePlanning
                 planning =
-                    { preview = Movement.start origin
+                    { purpose = purpose
+                    , preview = Movement.start origin
                     , options =
                         Movement.optionsAvoiding
                             []
                             context.movementRules
                             context.map
                             context.units
-                            unit
-                            |> List.filter
-                                (Movement.canStop
-                                    (reservedDestinations context unit state)
-                                    (destinationUnits context (orders state))
-                                    unit
-                                )
+                            (movementUnit purpose unit)
+                            |> List.filter (canStop purpose context unit state)
                     , destinationFeedback = NoDestinationFeedback
                     }
             in
@@ -1264,14 +1266,19 @@ saveMove context unit move state =
     let
         receiver : Maybe Unit
         receiver =
-            case Unit.carrierId unit of
-                Just carrier ->
-                    context.units
-                        |> ListUtil.find
-                            (\truck -> truck.id == carrier)
+            if movePurpose state == AttackMove then
+                Nothing
 
-                Nothing ->
-                    loadingTarget context unit move.destination (orders state)
+            else
+                moveReceiver context unit move state
+
+        action : PlannedOrder.Action
+        action =
+            if movePurpose state == AttackMove then
+                PlannedOrder.AttackMove move
+
+            else
+                PlannedOrder.Move { move = move, unloads = [] }
 
         retained : List PlannedOrder
         retained =
@@ -1289,7 +1296,26 @@ saveMove context unit move state =
                 |> Maybe.map List.singleton
                 |> Maybe.withDefault []
     in
-    { unitId = unit.id, action = PlannedOrder.Move { move = move, unloads = [] } } :: receiverHold ++ retained
+    { unitId = unit.id
+    , action = action
+    }
+        :: (receiverHold ++ retained)
+
+
+moveReceiver : Context -> Unit -> Movement.Option -> Model -> Maybe Unit
+moveReceiver context unit move state =
+    case Unit.carrierId unit of
+        Just carrier ->
+            context.units
+                |> ListUtil.find
+                    (\truck -> truck.id == carrier)
+
+        Nothing ->
+            loadingTarget
+                context
+                unit
+                move.destination
+                (orders state)
 
 
 inspectSelectedUnit : Context -> Model -> Model
@@ -1346,13 +1372,7 @@ selectMovementTile context position state =
                 let
                     destinationOption : Movement.Option -> Maybe Movement.Option
                     destinationOption preview =
-                        if
-                            Movement.canStop
-                                (reservedDestinations context unit state)
-                                (destinationUnits context (orders state))
-                                unit
-                                preview
-                        then
+                        if canStop (movePurpose state) context unit state preview then
                             Just preview
 
                         else
@@ -1417,3 +1437,74 @@ holdOrder units unit =
                 , action = PlannedOrder.Hold position
                 }
             )
+
+
+movePurpose : Model -> MovePurpose
+movePurpose state =
+    movementPlanning state
+        |> Maybe.map .purpose
+        |> Maybe.withDefault NormalMove
+
+
+movementUnit : MovePurpose -> Unit -> Unit
+movementUnit purpose unit =
+    let
+        reserveShot : UnitResources.UnitResources -> UnitResources.UnitResources
+        reserveShot resources =
+            let
+                supplies : Unit.Supplies.Supplies
+                supplies =
+                    resources.supplies
+            in
+            { resources
+                | supplies =
+                    { supplies
+                        | current = supplies.current - unit.combatRules.shotCost
+                    }
+            }
+    in
+    case purpose of
+        NormalMove ->
+            unit
+
+        AttackMove ->
+            { unit
+                | resources =
+                    Maybe.map reserveShot unit.resources
+            }
+
+
+canStop : MovePurpose -> Context -> Unit -> Model -> Movement.Option -> Bool
+canStop purpose context unit state option =
+    case purpose of
+        NormalMove ->
+            Movement.canStop
+                (reservedDestinations context unit state)
+                (destinationUnits context (orders state))
+                unit
+                option
+
+        AttackMove ->
+            let
+                alliedOccupants : List Unit
+                alliedOccupants =
+                    destinationUnits
+                        context
+                        (orders state)
+                        |> List.filter (\other -> other.playerNumber == unit.playerNumber)
+
+                occupied : Bool
+                occupied =
+                    List.any
+                        (\other ->
+                            Unit.boardPosition other == Just option.destination
+                        )
+                        alliedOccupants
+            in
+            (option.cost > 0)
+                && not occupied
+                && not
+                    (List.member
+                        option.destination
+                        (reservedDestinations context unit state)
+                    )

@@ -1,5 +1,6 @@
 module Shot exposing (Shot, selection)
 
+import Api.Enum.CombatKind exposing (CombatKind)
 import Api.Object
 import Api.Object.Shot as ShotApi
 import CombatHealth exposing (CombatHealth)
@@ -9,7 +10,8 @@ import Unit exposing (Unit)
 
 
 type alias Shot =
-    { origin : Coordinate
+    { kind : CombatKind
+    , origin : Coordinate
     , destination : Coordinate
     , attacker : Unit
     , target : Unit
@@ -22,6 +24,7 @@ type alias Shot =
 selection : SelectionSet Shot Api.Object.Shot
 selection =
     SS.succeed Shot
+        |> SS.with ShotApi.kind
         |> SS.with (ShotApi.origin Coordinate.selection)
         |> SS.with (ShotApi.destination Coordinate.selection)
         |> SS.with (ShotApi.attacker Unit.selection)

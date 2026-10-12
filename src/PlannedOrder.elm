@@ -6,6 +6,7 @@ module PlannedOrder exposing
     , StationaryUnload
     , UnloadOrder
     , destination
+    , isAttackMove
     , isMoving
     , path
     , toInput
@@ -29,6 +30,7 @@ type alias PlannedOrder =
 type Action
     = Hold Coordinate
     | Move MovePlan
+    | AttackMove Movement.Option
     | Rotate Rotation
     | Ambush Rotation
     | Unload StationaryUnload
@@ -64,6 +66,9 @@ destination order =
         Hold position ->
             position
 
+        AttackMove move ->
+            move.destination
+
         Move plan ->
             plan.move.destination
 
@@ -82,6 +87,9 @@ path order =
     case order.action of
         Hold position ->
             [ position ]
+
+        AttackMove move ->
+            move.path
 
         Move plan ->
             plan.move.path
@@ -105,6 +113,9 @@ unloads order =
         Unload plan ->
             plan.unloads
 
+        AttackMove _ ->
+            []
+
         Hold _ ->
             []
 
@@ -120,6 +131,9 @@ isMoving order =
     case order.action of
         Move plan ->
             List.length plan.move.path > 1
+
+        AttackMove move ->
+            List.length move.path > 1
 
         Hold _ ->
             False
@@ -160,6 +174,9 @@ toInput order =
                 Hold _ ->
                     Absent
 
+                AttackMove _ ->
+                    Absent
+
                 Move _ ->
                     Absent
 
@@ -175,6 +192,7 @@ toInput order =
                 | unloads = Present (List.map unloadInput (unloads order))
                 , direction = direction
                 , ambush = Present (isAmbush order)
+                , attackMove = Present (isAttackMove order)
             }
         )
 
@@ -183,6 +201,16 @@ isAmbush : PlannedOrder -> Bool
 isAmbush order =
     case order.action of
         Ambush _ ->
+            True
+
+        _ ->
+            False
+
+
+isAttackMove : PlannedOrder -> Bool
+isAttackMove order =
+    case order.action of
+        AttackMove _ ->
             True
 
         _ ->
