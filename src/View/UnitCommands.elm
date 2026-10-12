@@ -42,18 +42,12 @@ toHtml map camera position unit =
             else
                 position.x + 1
 
-        anchorX : String
-        anchorX =
-            anchor "50cqw" camera.offset.x (toFloat horizontalEdge / toFloat map.width - 0.5)
-
-        anchorY : String
-        anchorY =
-            anchor "50cqh" camera.offset.y ((toFloat position.y + 0.5 - toFloat map.height / 2) / toFloat map.width)
-
-        anchor : String -> Float -> Float -> String
-        anchor center offset fraction =
-            -- Match GamePage's centered board width, then apply its camera.
-            "calc(" ++ center ++ " + min(80cqw, 76vh) * " ++ String.fromFloat (fraction * camera.zoom) ++ " + " ++ String.fromFloat offset ++ "px)"
+        menuAnchor : { x : String, y : String }
+        menuAnchor =
+            Camera.anchor camera
+                { x = toFloat horizontalEdge / toFloat map.width - 0.5
+                , y = (toFloat position.y + 0.5 - toFloat map.height / 2) / toFloat map.width
+                }
 
         horizontalOffset : String
         horizontalOffset =
@@ -66,9 +60,9 @@ toHtml map camera position unit =
         translation : String
         translation =
             "translate("
-                ++ constrainedOffset "100cqw" anchorX horizontalOffset
+                ++ constrainedOffset "100cqw" menuAnchor.x horizontalOffset
                 ++ ", "
-                ++ constrainedOffset "100cqh" anchorY "-3rem"
+                ++ constrainedOffset "100cqh" menuAnchor.y "-3rem"
                 ++ ")"
 
         constrainedOffset : String -> String -> String -> String
@@ -85,8 +79,8 @@ toHtml map camera position unit =
         , Ev.stopPropagationOn "mousedown" (Decode.succeed ( MenuPressed, True ))
         , A.css
             [ S.absolute
-            , Css.property "left" anchorX
-            , Css.property "top" anchorY
+            , Css.property "left" menuAnchor.x
+            , Css.property "top" menuAnchor.y
             , S.z4
             , Css.width (Css.rem 13)
             , Css.property "max-width" "calc(100cqw - 1rem)"

@@ -11,6 +11,7 @@ import Unit exposing (Unit)
 import Unit.Fuel exposing (Fuel)
 import Unit.HitPoints exposing (HitPoints)
 import Unit.Supplies exposing (Supplies)
+import UnitResources exposing (UnitResources)
 import View.Aria as Aria
 import View.InfoMarker as InfoMarker
 import View.UnitSprite as UnitSprite
@@ -35,13 +36,18 @@ type Resource
 toHtml : String -> Unit -> Html msg
 toHtml playerName unit =
     let
-        fuelResources : List Resource
-        fuelResources =
-            unit.fuel |> Maybe.map (\fuel -> [ Fuel fuel ]) |> Maybe.withDefault []
+        visibleResources : UnitResources -> List Resource
+        visibleResources details =
+            let
+                fuelResources : List Resource
+                fuelResources =
+                    details.fuel |> Maybe.map (\fuel -> [ Fuel fuel ]) |> Maybe.withDefault []
+            in
+            [ HitPoints details.hitPoints, Supply details.supplies ] ++ fuelResources
 
         resources : List Resource
         resources =
-            [ HitPoints unit.hitPoints, Supply unit.supplies ] ++ fuelResources
+            unit.resources |> Maybe.map visibleResources |> Maybe.withDefault []
     in
     H.div
         [ A.css
@@ -151,7 +157,7 @@ unitHelp playerName unit =
                      else
                         "watch its supply level when planning a move."
                     )
-                , helpEntry "movement" "enemy units block travel. move onto compatible allies to load a truck; other occupied squares cannot be destinations."
+                , helpEntry "movement" "enemy units block travel. move onto stationary compatible allies to load a truck. an allied square becomes available after its occupant has a move planned; final destinations must stay separate."
                 ]
             ]
         ]
@@ -350,7 +356,7 @@ supplyExplanation kind =
             "tanks consume a small amount of supplies each turn, and additional supplies when attack-moving, standing ground, and engaging enemies. when supplies reach 0, this unit perishes."
 
         Kind.Infantry ->
-            "infantry consume a small amount of supplies each turn, and additional supplies when moving, standing ground, attack-moving, and engaging enemies. when supplies reach 0, this unit perishes."
+            "infantry consume 1 supply each turn and 4 supplies per traversed tile. when supplies reach 0, this unit perishes."
 
         Kind.FieldGun ->
             "field guns consume a small amount of supplies each turn, and additional supplies when moving, standing ground, attack-moving, and engaging enemies. when supplies reach 0, this unit perishes."

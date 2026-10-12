@@ -132,9 +132,17 @@ turn playback helpers accept and return unit lists. `GamePage` owns board
 rendering and coordinated planning/selection state. `GamePage.BattlefieldNavigation`
 owns camera state, pan/zoom/gesture functions and pointer subscriptions. The page
 owns view-related navigation messages, event decoders, the viewport surface and
-controls. Subscription events use the navigation module's `Msg` and `update`.
+controls. `Camera` shares board sizing and coordinate projection with command-menu
+anchors. Navigation starts with zero pixel offset and 100% overview zoom.
+Reset restores the centered whole-map overview. Pan and cursor zoom update the
+offset directly, without DOM measurements or team centering. Polling does not
+move the camera. Subscription events use the navigation module's `Msg` and `update`.
 
 ## GraphQL and generated client
+
+`Unit.resources` is nullable as a whole: concealed enemy resources return `null`.
+A visible `UnitResources` contains required hit points and supplies, plus optional
+fuel for vehicles. Rust keeps authoritative resources present regardless of visibility.
 
 All data operations use `POST /graphql`; the former `/api/*` endpoints are
 removed. Frontend URLs such as `/lobby/<id>` and `/game/<id>` still serve the
@@ -383,7 +391,8 @@ square. Future impassable terrain can omit its cost entry.
 
 `Movement.elm` calculates cheapest four-direction paths from those rules and
 the current board. Allied units allow passage, while enemy units block travel. Occupied unit
-squares cannot be destinations except for compatible truck loading; depots do not block travel. `GamePage` calculates options only after the move command is chosen and retains
+squares can be destinations when an allied occupant has a planned departure,
+or for compatible truck loading with a stationary receiver; depots do not block travel. `GamePage` calculates options only after the move command is chosen and retains
 one editable local draft per unit owned by the viewer, plus a separate live path
 preview. Hovering extends that preview from its tip without replacing its prefix;
 mouse-event gaps use the cheapest connector within the remaining budget, with
@@ -397,7 +406,9 @@ each new passenger starts with no destination error. Saved drafts reserve their
 destinations for that unit; other units cannot choose those squares, but can
 travel through them. Replacing or clearing a draft releases
 its old destination. The selected unit’s own draft does not restrict its choices.
-Drafts do not change occupancy. Reachable tiles and planned paths render in
+Drafts do not change board positions. Destination checks omit departing allies
+while retaining their final destination reservations. Revoking a departure also
+revokes dependent routes, including chains. Reachable tiles and planned paths render in
 `GamePage`, with keyboard activation for reachable destinations.
 Unsubmitted drafts disappear on reload. `turns.rs` owns full-path validation,
 locked submissions and deterministic resolution, independently of HTTP. Each
@@ -419,9 +430,10 @@ departures propagate until no arrival depends on a blocked departure. An occupie
 enemy square stops the arriving unit and its opponent, including future movement.
 Allied passage remains legal. If an interruption would leave allied units sharing
 a square, the passing route is shortened to its preceding free square and arrivals
-are rechecked; every retry removes a path edge. Compatible loading partners retain
+are rechecked; every retry removes a path edge. Compatible loading targets retain
 their intentional shared destination until boarding. Planning permits routes through enemy origins but
-keeps known occupied destinations unavailable; concealed enemies are resolved
+allows allied starting squares with planned departures and rejects shared final
+destinations; concealed enemies are resolved
 without exposing their positions through validation errors.
 
 The resolver returns actual traveled paths, stopped unit IDs, and full-board
@@ -483,7 +495,7 @@ model as part of that experiment rather than copying the old engine.
 
 ## Vehicle fuel
 
-Rust units carry optional `Fuel` state: tanks and trucks start at 64/64;
+Rust units carry optional `Fuel` state: tanks and trucks start at 32/32;
 infantry and field guns have none. One traversed path edge consumes one fuel,
 independent of terrain movement points. Validation rejects paths exceeding
 available fuel before locking orders. Resolution consumes fuel only on
@@ -500,8 +512,9 @@ snapshot fuel values; it does not calculate resource outcomes.
 ## Unit supplies
 
 Every Rust unit carries `Supplies` with current and maximum quantities plus
-`upkeepPerTurn` and `movementPerTile` rates. All kinds start at 64/64 and have
-upkeep 1. Infantry and field guns spend 1 additional supply per traversed tile;
+`upkeepPerTurn` and `movementPerTile` rates. Infantry and field guns start at
+64/64; vehicles start at 32/32. All kinds have upkeep 1. Infantry spend 4 additional
+supplies per traversed tile and field guns spend 1;
 tanks and trucks spend none for movement. These are unit provisions, separate
 from fuel and future truck supply cargo.
 
@@ -539,6 +552,8 @@ enemies in forests remain concealed even on a known occupied square.
 `game_view` projects the authoritative scenario for the requesting side,
 including the development preview. `GameSnapshot.visibleTiles` supplies the
 fog mask; the scenario includes all own units and only observable enemies.
+Response copies conceal enemy resource fields through nullable GraphQL resolvers,
+including every playback frame; authoritative values remain intact.
 Terrain and static depots remain public map knowledge. Turn resolutions include
 a shared timeline captured during authoritative movement resolution, followed by
 loading and unloading.

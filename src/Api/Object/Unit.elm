@@ -38,25 +38,11 @@ kind =
     Object.selectionForField "Enum.UnitKind.UnitKind" "kind" [] Api.Enum.UnitKind.decoder
 
 
-hitPoints :
-    SelectionSet decodesTo Api.Object.HitPoints
-    -> SelectionSet decodesTo Api.Object.Unit
-hitPoints object____ =
-    Object.selectionForCompositeField "hitPoints" [] object____ Basics.identity
-
-
-supplies :
-    SelectionSet decodesTo Api.Object.Supplies
-    -> SelectionSet decodesTo Api.Object.Unit
-supplies object____ =
-    Object.selectionForCompositeField "supplies" [] object____ Basics.identity
-
-
-fuel :
-    SelectionSet decodesTo Api.Object.Fuel
+resources :
+    SelectionSet decodesTo Api.Object.UnitResources
     -> SelectionSet (Maybe decodesTo) Api.Object.Unit
-fuel object____ =
-    Object.selectionForCompositeField "fuel" [] object____ (Basics.identity >> Decode.nullable)
+resources object____ =
+    Object.selectionForCompositeField "resources" [] object____ (Basics.identity >> Decode.nullable)
 
 
 direction : SelectionSet (Maybe Api.Enum.Direction.Direction) Api.Object.Unit

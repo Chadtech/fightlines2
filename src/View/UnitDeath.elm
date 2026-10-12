@@ -35,7 +35,12 @@ The following frame removes them, so no local timer owns their lifetime.
 -}
 toSvg : Unit -> Svg msg
 toSvg unit =
-    if unit.supplies.current > 0 then
+    let
+        isDying : Bool
+        isDying =
+            unit.resources |> Maybe.map (\resources -> resources.supplies.current == 0) |> Maybe.withDefault False
+    in
+    if not isDying then
         Svg.text ""
 
     else

@@ -127,7 +127,7 @@ pub fn resolve(
         }
         let mut retreat = None;
         for units in occupied.values().filter(|units| units.len() > 1) {
-            // Valid loading partners intentionally meet before boarding occurs.
+            // A mover and its loading target intentionally meet before boarding occurs.
             let loading = units.iter().any(|carrier| {
                 units.iter().all(|passenger| {
                     carrier.unit_id() == passenger.unit_id()

@@ -4,7 +4,7 @@ module Unit exposing
     , carrierId
     , faceDirection
     , label
-    , loadingPartner
+    , loadingTarget
     , onBoard
     , physicalPosition
     , selection
@@ -23,11 +23,10 @@ import Graphql.SelectionSet as SS exposing (SelectionSet)
 import ListUtil
 import PlayerNumber
 import SpriteFacing
-import Unit.Fuel as Fuel exposing (Fuel)
-import Unit.HitPoints as HitPoints exposing (HitPoints)
 import Unit.Location as Location exposing (Location)
-import Unit.Supplies as Supplies exposing (Supplies)
+import Unit.Supplies exposing (Supplies)
 import UnitId exposing (UnitId)
+import UnitResources exposing (UnitResources)
 
 
 type alias Unit =
@@ -36,9 +35,7 @@ type alias Unit =
     , kind : UnitKind
     , direction : Maybe Direction
     , spriteFacing : SpriteFacing
-    , hitPoints : HitPoints
-    , supplies : Supplies
-    , fuel : Maybe Fuel
+    , resources : Maybe UnitResources
     , cargoCapacity : Int
     , location : Location
     }
@@ -52,9 +49,7 @@ selection =
         |> SS.with UnitApi.kind
         |> SS.with UnitApi.direction
         |> SS.with UnitApi.spriteFacing
-        |> SS.with (UnitApi.hitPoints HitPoints.selection)
-        |> SS.with (UnitApi.supplies Supplies.selection)
-        |> SS.with (UnitApi.fuel Fuel.selection)
+        |> SS.with (UnitApi.resources UnitResources.selection)
         |> SS.with UnitApi.cargoCapacity
         |> SS.with (UnitApi.location Location.selection)
 
@@ -106,8 +101,8 @@ onBoard unit =
     boardPosition unit /= Nothing
 
 
-loadingPartner : List Unit -> Unit -> Coordinate -> Maybe Unit
-loadingPartner units mover destination =
+loadingTarget : List Unit -> Unit -> Coordinate -> Maybe Unit
+loadingTarget units mover destination =
     let
         compatible : Unit -> Bool
         compatible target =

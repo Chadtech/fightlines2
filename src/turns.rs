@@ -152,6 +152,17 @@ pub fn validate(
     if inputs.len() != own_count {
         return Err("set a move or hold order for every unit before submitting.");
     }
+    // Inspect intended departures independently of submission order. Every path
+    // still goes through full validation before any orders are locked.
+    let departing: BTreeSet<_> = inputs
+        .iter()
+        .filter(|input| input.path.len() > 1)
+        .filter_map(|input| UnitId::parse(&input.unit_id))
+        .collect();
+    let mut destination_scenario = planning_scenario.clone();
+    destination_scenario
+        .units
+        .retain(|unit| unit.side() != side || !departing.contains(&unit.unit_id()));
     let mut unit_ids = BTreeSet::new();
     let mut destinations = BTreeSet::new();
     let mut orders = Vec::new();
@@ -236,7 +247,9 @@ pub fn validate(
             }
             if path.len() > 1
                 && planning_scenario.units.iter().any(|other| {
-                    other.carrier_id().is_none() && other.board_position() == Some(destination)
+                    other.carrier_id().is_none()
+                        && other.board_position() == Some(destination)
+                        && (other.side() != side || !departing.contains(&other.unit_id()))
                 })
             {
                 return Err("unloading requires an empty square.");
@@ -245,16 +258,18 @@ pub fn validate(
             other.unit_id() != unit.unit_id()
                 && other.carrier_id().is_none()
                 && other.board_position() == Some(destination)
-        }) && scenario.loading_pair(unit, target).is_none()
+        }) && (target.side() != side || !departing.contains(&target.unit_id()))
+            && scenario.loading_pair(unit, target).is_none()
         {
             return Err("occupied squares cannot be destinations.");
         }
-        // Stationary units may share a loading destination with their partner.
+        // A stationary loading target may share its destination with the mover.
         // Validate those pairs together after all individual paths are checked.
         if path.len() > 1
             && !destinations.insert(destination)
             && !scenario.units.iter().any(|target| {
                 target.board_position() == Some(destination)
+                    && !departing.contains(&target.unit_id())
                     && scenario.loading_pair(unit, target).is_some()
             })
         {
@@ -283,7 +298,7 @@ pub fn validate(
             if (exit.x() - destination.x()).abs() + (exit.y() - destination.y()).abs() != 1 {
                 return Err("unloading must end beside the truck's destination.");
             }
-            if !legal_unload(&planning_scenario, passenger, exit, Some(unit_id)) {
+            if !legal_unload(&destination_scenario, passenger, exit, Some(unit_id)) {
                 return Err("unloading requires an empty affordable adjacent square.");
             }
             if !destinations.insert(exit) {
@@ -343,7 +358,10 @@ pub fn validate(
                 .iter()
                 .find(|order| order.unit_id == target.unit_id())
                 .ok_or("the receiving unit has no submitted order.")?;
-            if target_order.path.len() != 1 || target_order.direction.is_some() {
+            if target_order.path.len() > 1 {
+                continue;
+            }
+            if target_order.direction.is_some() {
                 return Err("the receiving unit must hold while loading.");
             }
             let (truck, passenger) = scenario
@@ -534,6 +552,9 @@ impl Turns {
                             && target.board_position() == Some(destination)
                             && target.unit_id() != unit.unit_id()
                     })
+                    && orders.iter().any(|receiver| {
+                        receiver.unit_id == target.unit_id() && receiver.path.len() == 1
+                    })
                     && let Some(pair) = scenario.loading_pair(unit, target)
                 {
                     loads.push(pair);
@@ -693,6 +714,7 @@ fn legal_unload(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scenario::UnitKind;
     use crate::test_support::{FixtureValue, TestResult};
 
     fn playback_fixture(scenario: &Scenario, counts: [usize; 2]) -> TestResult<Vec<TurnEvent>> {
@@ -858,7 +880,7 @@ mod tests {
                 assert_eq!(unit.board_position(), original.board_position());
                 assert_eq!(unit.fuel(), original.fuel());
                 assert_eq!(unit.hit_points(), original.hit_points());
-                assert_eq!(unit.supplies().current(), 63);
+                assert_eq!(unit.supplies().current(), original.supplies().current() - 1);
                 let expected =
                     if unit.side() == PlayerNumber::Player1 && original.direction().is_some() {
                         Some(direction)
@@ -984,8 +1006,8 @@ mod tests {
                 Coordinate::new(2, 7)
             );
         }
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 62);
-        assert_eq!(vehicle(&mut scenario, "2")?.supplies().current(), 61);
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 59);
+        assert_eq!(vehicle(&mut scenario, "2")?.supplies().current(), 55);
         assert_eq!(
             turns
                 .last_resolution
@@ -1014,8 +1036,8 @@ mod tests {
                 Coordinate::new(1, 8)
             );
         }
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 61);
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 62);
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 58);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 30);
         let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
         set_path(&mut player1, "1", &[(1, 8), (0, 8)])?;
         set_path(&mut player1, "2", &[(1, 8), (1, 7)])?;
@@ -1046,7 +1068,7 @@ mod tests {
                 .fixture()?,
             Coordinate::new(1, 7)
         );
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 59);
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 53);
 
         Ok(())
     }
@@ -1074,7 +1096,7 @@ mod tests {
             Some(Coordinate::new(0, 8))
         );
         assert_eq!(vehicle(&mut scenario, "2")?.carrier_id(), Some(truck));
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 62);
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 59);
         assert_eq!(vehicle(&mut scenario, "2")?.supplies().current(), 63);
         let events = &turns.last_resolution.as_ref().fixture()?.events;
         let movement_index = events
@@ -1233,12 +1255,15 @@ mod tests {
                             );
                             assert_eq!(
                                 vehicle(&mut scenario, truck_id)?.fuel().fixture()?.current,
-                                if moving_truck { 63 } else { 64 }
+                                if moving_truck { 31 } else { 32 }
                             );
                             let passenger = vehicle(&mut scenario, passenger_id)?;
                             if enemy_leaves {
                                 assert_eq!(passenger.board_position(), Some(Coordinate::new(1, 1)));
-                                assert_eq!(passenger.supplies().current(), 62);
+                                assert_eq!(
+                                    passenger.supplies().current(),
+                                    63 - passenger.supplies().movement_per_tile()
+                                );
                             } else {
                                 assert_eq!(passenger.carrier_id(), UnitId::parse(truck_id));
                                 assert_eq!(passenger.supplies().current(), 63);
@@ -1366,12 +1391,7 @@ mod tests {
         let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
         set_path(&mut player1, "1", &[(3, 7), (2, 7)])?;
         set_path(&mut player1, "4", &[(2, 7), (2, 8)])?;
-        assert_eq!(
-            validate(&scenario, PlayerNumber::Player1, player1)
-                .err()
-                .fixture()?,
-            "the receiving unit must hold while loading."
-        );
+        assert!(validate(&scenario, PlayerNumber::Player1, player1).is_ok());
         vehicle(&mut scenario, "1")?.board(UnitId::parse("4").fixture()?);
 
         let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
@@ -1397,8 +1417,13 @@ mod tests {
     fn supplies_charge_upkeep_once_and_walking_movement_only() -> TestResult<()> {
         let mut scenario = Scenario::supply_point().fixture()?;
         let mut turns = Turns::default();
-        for _ in 0..61 {
-            resolve_holds(&mut scenario, &mut turns)?;
+        for unit in &mut scenario.units {
+            let supplies = if unit.kind() == UnitKind::Infantry {
+                9
+            } else {
+                3
+            };
+            unit.set_supplies_for_test(supplies);
         }
         let number = turns.number;
         let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
@@ -1412,12 +1437,12 @@ mod tests {
         turns
             .submit(&mut scenario, PlayerNumber::Player1, number, vec![])
             .fixture()?;
-        assert!(
-            scenario
-                .units
-                .iter()
-                .all(|unit| unit.supplies().current() == 3)
-        );
+        assert!(scenario.units.iter().all(|unit| unit.supplies().current()
+            == if unit.kind() == UnitKind::Infantry {
+                9
+            } else {
+                3
+            }));
         let player2 = holds(&scenario, PlayerNumber::Player2)?;
         turns
             .submit(&mut scenario, PlayerNumber::Player2, number, player2)
@@ -1457,12 +1482,15 @@ mod tests {
                 .iter()
                 .all(|frame| !frame.units.iter().any(|unit| unit.id() == "6"))
         );
+        for id in ["2", "6"] {
+            assert_eq!(vehicle(&mut scenario, id)?.supplies().current(), 8);
+        }
         assert_eq!(vehicle(&mut scenario, "13")?.supplies().current(), 1);
-        for id in ["2", "4", "11", "6"] {
+        for id in ["4", "11"] {
             assert_eq!(vehicle(&mut scenario, id)?.supplies().current(), 2);
         }
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 63);
-        assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 63);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 31);
+        assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 31);
 
         Ok(())
     }
@@ -1512,15 +1540,15 @@ mod tests {
         let mut turns = Turns::default();
         resolve_holds(&mut scenario, &mut turns)?;
         for id in ["4", "5", "9"] {
-            assert_eq!(vehicle(&mut scenario, id)?.supplies().current(), 63);
+            assert_eq!(vehicle(&mut scenario, id)?.supplies().current(), 31);
         }
         vehicle(&mut scenario, "4")?.move_to(Coordinate::new(2, 8));
         vehicle(&mut scenario, "9")?.move_to(Coordinate::new(14, 8));
         resolve_holds(&mut scenario, &mut turns)?;
         for id in ["4", "9"] {
-            assert_eq!(vehicle(&mut scenario, id)?.supplies().current(), 62);
+            assert_eq!(vehicle(&mut scenario, id)?.supplies().current(), 30);
         }
-        assert_eq!(vehicle(&mut scenario, "5")?.supplies().current(), 62);
+        assert_eq!(vehicle(&mut scenario, "5")?.supplies().current(), 30);
 
         Ok(())
     }
@@ -1540,8 +1568,8 @@ mod tests {
         turns
             .submit(&mut scenario, PlayerNumber::Player2, 1, player2)
             .fixture()?;
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 62);
-        assert_eq!(vehicle(&mut scenario, "6")?.supplies().current(), 62);
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 59);
+        assert_eq!(vehicle(&mut scenario, "6")?.supplies().current(), 59);
         assert_eq!(
             scenario
                 .physical_position(
@@ -1605,7 +1633,7 @@ mod tests {
                 vehicle(&mut scenario, "11")?.board_position(),
                 Some(Coordinate::new(1, 0))
             );
-            assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 63);
+            assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 31);
             assert_eq!(
                 vehicle(&mut scenario, "6")?.board_position(),
                 Some(Coordinate::new(2, 0))
@@ -1709,14 +1737,14 @@ mod tests {
         let mut scenario = Scenario::supply_point().fixture()?;
         assert!(vehicle(&mut scenario, "1")?.fuel().is_none());
         assert!(vehicle(&mut scenario, "12")?.fuel().is_none());
-        assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 64);
+        assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 32);
         let mut turns = Turns::default();
         let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
         set_path(&mut player1, "4", &[(2, 7), (2, 6), (3, 6)])?;
         turns
             .submit(&mut scenario, PlayerNumber::Player1, 1, player1)
             .fixture()?;
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 64);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 32);
         turns
             .submit(&mut scenario, PlayerNumber::Player1, 1, vec![])
             .fixture()?;
@@ -1724,10 +1752,10 @@ mod tests {
         turns
             .submit(&mut scenario, PlayerNumber::Player2, 1, player2)
             .fixture()?;
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 62);
-        assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 64);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 30);
+        assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 32);
         resolve_holds(&mut scenario, &mut turns)?;
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 62);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 30);
 
         Ok(())
     }
@@ -1735,7 +1763,7 @@ mod tests {
     #[test]
     fn fuel_rejection_is_atomic_and_empty_vehicles_can_hold() -> TestResult<()> {
         let mut scenario = Scenario::supply_point().fixture()?;
-        for _ in 0..32 {
+        for _ in 0..16 {
             vehicle(&mut scenario, "4")?.follow_path(&[
                 Coordinate::new(2, 7),
                 Coordinate::new(2, 6),
@@ -1755,7 +1783,7 @@ mod tests {
         assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 0);
         vehicle(&mut scenario, "4")?.move_to(Coordinate::new(2, 8));
         resolve_holds(&mut scenario, &mut turns)?;
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 64);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 32);
 
         Ok(())
     }
@@ -1763,7 +1791,7 @@ mod tests {
     #[test]
     fn tank_paths_must_fit_remaining_fuel_even_with_movement_points_left() -> TestResult<()> {
         let mut scenario = Scenario::supply_point().fixture()?;
-        for _ in 0..31 {
+        for _ in 0..15 {
             vehicle(&mut scenario, "11")?.follow_path(&[
                 Coordinate::new(4, 8),
                 Coordinate::new(5, 8),
@@ -1818,23 +1846,23 @@ mod tests {
         turns
             .submit(&mut scenario, PlayerNumber::Player2, 1, player2)
             .fixture()?;
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 64);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 32);
         vehicle(&mut scenario, "4")?.follow_path(&[Coordinate::new(2, 8), Coordinate::new(2, 8)]);
         vehicle(&mut scenario, "5")?.follow_path(&[Coordinate::new(2, 9), Coordinate::new(8, 8)]);
         vehicle(&mut scenario, "9")?.follow_path(&[Coordinate::new(14, 7), Coordinate::new(2, 8)]);
         // Refuel at the center and both starting depots, regardless of side.
         vehicle(&mut scenario, "4")?.move_to(Coordinate::new(14, 8));
         resolve_holds(&mut scenario, &mut turns)?;
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 64);
-        assert_eq!(vehicle(&mut scenario, "5")?.fuel().fixture()?.current, 64);
-        assert_eq!(vehicle(&mut scenario, "9")?.fuel().fixture()?.current, 64);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 32);
+        assert_eq!(vehicle(&mut scenario, "5")?.fuel().fixture()?.current, 32);
+        assert_eq!(vehicle(&mut scenario, "9")?.fuel().fixture()?.current, 32);
         vehicle(&mut scenario, "9")?.follow_path(&[Coordinate::new(2, 8), Coordinate::new(8, 8)]);
         vehicle(&mut scenario, "4")?.follow_path(&[Coordinate::new(14, 8), Coordinate::new(2, 8)]);
         vehicle(&mut scenario, "5")?.follow_path(&[Coordinate::new(8, 8), Coordinate::new(8, 7)]);
         resolve_holds(&mut scenario, &mut turns)?;
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 64);
-        assert_eq!(vehicle(&mut scenario, "9")?.fuel().fixture()?.current, 64);
-        assert_eq!(vehicle(&mut scenario, "5")?.fuel().fixture()?.current, 63);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 32);
+        assert_eq!(vehicle(&mut scenario, "9")?.fuel().fixture()?.current, 32);
+        assert_eq!(vehicle(&mut scenario, "5")?.fuel().fixture()?.current, 31);
 
         Ok(())
     }
@@ -1857,8 +1885,8 @@ mod tests {
         for (id, position) in [("4", Coordinate::new(2, 6)), ("9", Coordinate::new(3, 6))] {
             let unit = vehicle(&mut scenario, id)?;
             assert_eq!(unit.board_position(), Some(position));
-            assert_eq!(unit.fuel().fixture()?.current, 63);
-            assert_eq!(unit.supplies().current(), 63);
+            assert_eq!(unit.fuel().fixture()?.current, 31);
+            assert_eq!(unit.supplies().current(), 31);
         }
 
         Ok(())
@@ -1945,6 +1973,151 @@ mod tests {
         orders[0].unit_id = "6".into();
         assert!(validate(&scenario, PlayerNumber::Player1, orders).is_err());
 
+        Ok(())
+    }
+
+    fn departure_fixture() -> TestResult<Scenario> {
+        let mut scenario = Scenario::supply_point().fixture()?;
+        scenario.map = crate::map::Map::from_ascii(".....\n.....\n.....").fixture()?;
+        scenario
+            .units
+            .retain(|unit| ["1", "2", "3", "4"].contains(&unit.id().as_str()));
+        for (id, x) in [("1", 1), ("2", 2), ("3", 3), ("4", 4)] {
+            vehicle(&mut scenario, id)?.move_to(Coordinate::new(x, 1));
+        }
+        Ok(scenario)
+    }
+
+    #[test]
+    fn allied_departures_allow_chains_and_swaps_in_either_order() -> TestResult<()> {
+        for reverse in [false, true] {
+            for swap in [false, true] {
+                let mut scenario = departure_fixture()?;
+                let mut turns = Turns::default();
+                let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+                set_path(&mut orders, "1", &[(1, 1), (2, 1)])?;
+                if swap {
+                    set_path(&mut orders, "2", &[(2, 1), (1, 1)])?;
+                } else {
+                    set_path(&mut orders, "2", &[(2, 1), (3, 1)])?;
+                    set_path(&mut orders, "3", &[(3, 1), (3, 0)])?;
+                }
+                if reverse {
+                    orders.reverse();
+                }
+                resolve_orders(&mut scenario, &mut turns, orders)?;
+                assert_eq!(
+                    vehicle(&mut scenario, "1")?.board_position(),
+                    Some(Coordinate::new(2, 1))
+                );
+                let second = if swap {
+                    Coordinate::new(1, 1)
+                } else {
+                    Coordinate::new(3, 1)
+                };
+                assert_eq!(vehicle(&mut scenario, "2")?.board_position(), Some(second));
+                let occupied: BTreeSet<_> = scenario
+                    .units
+                    .iter()
+                    .filter_map(Unit::board_position)
+                    .collect();
+                assert_eq!(occupied.len(), scenario.units.len());
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn entering_a_departing_trucks_square_does_not_load_or_share_destinations() -> TestResult<()> {
+        let mut scenario = departure_fixture()?;
+        let mut turns = Turns::default();
+        let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+        set_path(&mut orders, "3", &[(3, 1), (4, 1)])?;
+        set_path(&mut orders, "4", &[(4, 1), (4, 0)])?;
+        resolve_orders(&mut scenario, &mut turns, orders)?;
+        assert_eq!(
+            vehicle(&mut scenario, "3")?.board_position(),
+            Some(Coordinate::new(4, 1))
+        );
+        assert_eq!(vehicle(&mut scenario, "3")?.carrier_id(), None);
+        assert!(
+            !turns
+                .last_resolution
+                .as_ref()
+                .fixture()?
+                .events
+                .iter()
+                .any(|event| event.kind == TurnEventKind::Load)
+        );
+
+        let mut scenario = departure_fixture()?;
+        let mut turns = Turns::default();
+        let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+        set_path(&mut orders, "3", &[(3, 1), (3, 0)])?;
+        set_path(&mut orders, "4", &[(4, 1), (3, 1)])?;
+        resolve_orders(&mut scenario, &mut turns, orders)?;
+        assert_eq!(
+            vehicle(&mut scenario, "3")?.board_position(),
+            Some(Coordinate::new(3, 0))
+        );
+        assert_eq!(
+            vehicle(&mut scenario, "4")?.board_position(),
+            Some(Coordinate::new(3, 1))
+        );
+        assert!(
+            !turns
+                .last_resolution
+                .as_ref()
+                .fixture()?
+                .events
+                .iter()
+                .any(|event| event.kind == TurnEventKind::Load)
+        );
+
+        let scenario = departure_fixture()?;
+        let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+        set_path(&mut orders, "2", &[(2, 1), (3, 1), (4, 1)])?;
+        set_path(&mut orders, "3", &[(3, 1), (4, 1)])?;
+        set_path(&mut orders, "4", &[(4, 1), (4, 0)])?;
+        assert_eq!(
+            validate(&scenario, PlayerNumber::Player1, orders)
+                .err()
+                .fixture()?,
+            "units must have different destinations."
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn blocked_allied_departure_keeps_the_follower_on_a_free_square() -> TestResult<()> {
+        let mut scenario = departure_fixture()?;
+        let mut enemy = Scenario::supply_point()
+            .fixture()?
+            .units
+            .into_iter()
+            .find(|unit| unit.id() == "6")
+            .fixture()?;
+        enemy.move_to(Coordinate::new(2, 0));
+        scenario.units.push(enemy);
+        let mut turns = Turns::default();
+        let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+        set_path(&mut orders, "1", &[(1, 1), (2, 1)])?;
+        set_path(&mut orders, "2", &[(2, 1), (2, 0), (3, 0)])?;
+        resolve_orders(&mut scenario, &mut turns, orders)?;
+        assert_eq!(
+            vehicle(&mut scenario, "1")?.board_position(),
+            Some(Coordinate::new(1, 1))
+        );
+        assert_eq!(
+            vehicle(&mut scenario, "2")?.board_position(),
+            Some(Coordinate::new(2, 1))
+        );
+        let occupied: BTreeSet<_> = scenario
+            .units
+            .iter()
+            .filter_map(Unit::board_position)
+            .collect();
+        assert_eq!(occupied.len(), scenario.units.len());
         Ok(())
     }
 
@@ -2048,7 +2221,12 @@ mod tests {
                         assert_eq!(event.initial_carrier, original.carrier_id());
                         assert_eq!(unit.fuel(), original.fuel());
                         let traveled = event.path.len() - 1;
-                        assert_eq!(unit.supplies().current(), 63 - traveled as i32);
+                        assert_eq!(
+                            unit.supplies().current(),
+                            original.supplies().current()
+                                - 1
+                                - traveled as i32 * unit.supplies().movement_per_tile()
+                        );
                         if ["1", "6"].contains(&unit.id().as_str()) {
                             assert_eq!(event.kind, TurnEventKind::MovementStopped);
                             if unit.side() == winner {
@@ -2117,9 +2295,12 @@ mod tests {
         );
         for (unit, original) in scenario.units.iter().zip(&initial.units) {
             let (position, supplies) = match unit.id().as_str() {
-                "1" => (Coordinate::new(3, 6), 62),
-                "6" => (Coordinate::new(4, 6), 62),
-                _ => (original.board_position().fixture()?, 63),
+                "1" => (Coordinate::new(3, 6), 59),
+                "6" => (Coordinate::new(4, 6), 59),
+                _ => (
+                    original.board_position().fixture()?,
+                    original.supplies().current() - 1,
+                ),
             };
             assert_eq!(unit.board_position(), Some(position));
             assert_eq!(unit.fuel(), original.fuel());

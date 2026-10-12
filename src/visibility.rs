@@ -110,6 +110,11 @@ pub fn observed_scenario(
                 .board_position()
                 .is_some_and(|position| observable(&scenario.map, visible, position))
     });
+    for unit in &mut observed.units {
+        if unit.side() != side {
+            unit.conceal_resources();
+        }
+    }
     observed
 }
 
@@ -278,6 +283,94 @@ mod tests {
             scenario.units[0].move_to(Coordinate::new(0, 0));
             scenario
         })
+    }
+
+    struct ResourceQuery {
+        board: Scenario,
+        resolution: TurnResolution,
+    }
+
+    #[juniper::graphql_object]
+    impl ResourceQuery {
+        fn scenario(&self) -> &Scenario {
+            &self.board
+        }
+
+        fn resolution(&self) -> &TurnResolution {
+            &self.resolution
+        }
+    }
+
+    #[test]
+    fn graphql_conceals_enemy_resources_in_snapshots_and_frames() -> TestResult<()> {
+        let mut board = Scenario::supply_point().fixture()?;
+        board.map = Map::from_ascii(".....").fixture()?;
+        let unit_count = board.units.len();
+        for unit in &mut board.units {
+            let x = if unit.side() == PlayerNumber::Player1 {
+                1
+            } else {
+                2
+            };
+            unit.move_to(Coordinate::new(x, 0));
+        }
+        let resolution = TurnResolution {
+            turn_number: 1,
+            events: vec![],
+            frames: vec![TurnFrame {
+                duration_ms: 0,
+                units: board.units.clone(),
+                visible_tiles: vec![],
+            }],
+        };
+        for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
+            let visible = visible_tiles(&board, side);
+            let query = ResourceQuery {
+                board: observed_scenario(&board, side, &visible),
+                resolution: observed_resolution(&board, side, &visible, &resolution),
+            };
+            let schema = juniper::RootNode::new(
+                query,
+                juniper::EmptyMutation::<()>::new(),
+                juniper::EmptySubscription::<()>::new(),
+            );
+            let (data, errors) = juniper::execute_sync(
+                "{ scenario { units { side kind resources { hitPoints { current maximum } supplies { current maximum upkeepPerTurn movementPerTile } fuel { current maximum } } } } resolution { frames { units { side kind resources { hitPoints { current } supplies { current } fuel { current } } } } } }",
+                None,
+                &schema,
+                &juniper::Variables::new(),
+                &(),
+            )?;
+            assert!(errors.is_empty());
+            let json = serde_json::to_value(data)?;
+            for units in [
+                json["scenario"]["units"].as_array().fixture()?,
+                json["resolution"]["frames"][0]["units"]
+                    .as_array()
+                    .fixture()?,
+            ] {
+                assert_eq!(units.len(), unit_count);
+                let own_side = match side {
+                    PlayerNumber::Player1 => "PLAYER1",
+                    PlayerNumber::Player2 => "PLAYER2",
+                };
+                for unit in units {
+                    let resources = &unit["resources"];
+                    let own_unit = unit["side"] == own_side;
+                    assert_eq!(resources.is_null(), !own_unit);
+                    if own_unit {
+                        assert!(resources["hitPoints"].is_object());
+                        assert!(resources["supplies"].is_object());
+                        let vehicle = unit["kind"] == "TANK" || unit["kind"] == "TRUCK";
+                        assert_eq!(resources["fuel"].is_object(), vehicle);
+                        assert_eq!(resources["fuel"].is_null(), !vehicle);
+                        assert_eq!(resources["hitPoints"]["current"], 16);
+                    }
+                }
+            }
+        }
+        assert!(board.units.iter().all(|unit| unit.resources().is_some()));
+        Ok(())
     }
 
     #[test]

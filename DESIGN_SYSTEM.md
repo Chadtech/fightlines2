@@ -131,8 +131,8 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   Units show their type and owning player’s name on one line, spaced to opposite
   edges, above their illustration in a nightwood3
   inset screen, without position coordinates. Display
-  authoritative hit points (out of 16), supplies (out of 64), and fuel (out of 64) (for tanks
-  and trucks) as horizontal gauges with `current / maximum` labels. Use red1 below 25%, yellow4 from
+  authoritative hit points (out of 16), supplies (out of 64 for infantry and field guns, 32 for vehicles), and fuel (out
+  of 32) (for tanks and trucks) as horizontal gauges with `current / maximum` labels. Use red1 below 25%, yellow4 from
   25–75%, and green1 (`#4BBF63`) above 75%; retain the numeric labels alongside color.
 - Terrain appears as a muted `terrain: forest [i]` row beneath selection details,
   without a card or heading. Selecting an empty tile shows only this row; depots
@@ -144,7 +144,7 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   explanations on padded yellow2 backgrounds with gray5 text. Hit points have
   no info marker or expandable help. The flat unit help section spans
   the panel width, without a heading or bevel. Resource gauges show the
-  server-provided current and maximum values.
+  server-provided current and maximum values. Enemy resources are withheld and have no gauges.
 - While planning, selecting your own unit shows illustrated command rows in a
   popup beside it on the battlefield. Anchor passenger commands beside their
   truck. Keep the popup at a fixed display size as the board zooms, constrain it
@@ -167,7 +167,8 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   be revoked. Keep resource explanations in the expandable gauge help.
 - Primary-button dragging pans after a 6px threshold. A drag never selects a tile;
   a click still inspects units, depots and terrain. Scroll zooms around the cursor,
-  bounded to 35–300%; the bottom-left panel supplies pan arrows, zoom and reset controls. Keyboard
+  bounded to 35–300% of the overview scale. Open at 100%, centered on the whole map.
+  Reset restores that centered overview at 100%; the bottom-left panel supplies pan arrows, zoom and reset controls. Keyboard
   arrows or WASD pan through game-page window commands while the command popup is closed
   and movement and rotation selection are inactive,
   without requiring battlefield focus.
@@ -249,10 +250,15 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   square cell with neutral material colors and no ownership outlines or team labels.
   Buildings are separate from terrain and units.
 
+- Allied squares become ordinary move destinations once their occupants have
+  saved moves away. Shared final destinations stay unavailable. Revoking a
+  departure also revokes plans depending on its freed square.
 - Compatible loading squares appear with ordinary move destinations. Clicking
   an occupied loading square saves the selected unit's move, including keyboard
   Enter/Space, and preserves that unit's selection. Show load/unload destination
   labels and explain the receiving unit's hold requirement in the right panel.
+  Show a gold notice naming the pickup or boarding target during route preview
+  and beneath the saved order.
 - Truck status shows `cargo: current / capacity` and one button per passenger.
   Loaded trucks also show a gold square badge with a dark green border and
   head-and-shoulders silhouette in the tile's lower-right corner. The badge is

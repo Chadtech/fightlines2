@@ -83,3 +83,7 @@ type TurnResolution
 
 type Unit
     = Unit
+
+
+type UnitResources
+    = UnitResources

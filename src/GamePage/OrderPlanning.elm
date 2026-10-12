@@ -18,6 +18,7 @@ module GamePage.OrderPlanning exposing
     , focusedCommand
     , init
     , isOwnUnit
+    , loadingTarget
     , missingOrders
     , moveOptions
     , movementPlanning
@@ -29,6 +30,7 @@ module GamePage.OrderPlanning exposing
     , revokeSelectedOrder
     , saveRotation
     , saveUnloadDestination
+    , selectNextUnorderedUnit
     , selectTile
     , selectUnit
     , selectedUnitFromSelection
@@ -410,6 +412,24 @@ commandMenuUnit context state =
             Nothing
 
 
+{-| Only stationary units can receive a load. Departing allies free their
+starting squares while their planned destinations remain reserved.
+-}
+loadingTarget : Context -> Unit -> Coordinate -> List PlannedOrder -> Maybe Unit
+loadingTarget context mover destination drafts =
+    Unit.loadingTarget (destinationUnits context drafts) mover destination
+
+
+destinationUnits : Context -> List PlannedOrder -> List Unit
+destinationUnits context drafts =
+    let
+        departing : Unit -> Bool
+        departing unit =
+            List.any (\plan -> plan.unitId == unit.id && PlannedOrder.isMoving plan) drafts
+    in
+    List.filter (departing >> not) context.units
+
+
 receivingLoad : Context -> Unit -> List PlannedOrder -> Bool
 receivingLoad context unit drafts =
     let
@@ -425,7 +445,7 @@ receivingLoad context unit drafts =
                             True
 
                         else
-                            Unit.loadingPartner context.units mover (PlannedOrder.destination plan) |> Maybe.map .id |> (==) (Just unit.id)
+                            loadingTarget context mover (PlannedOrder.destination plan) drafts |> Maybe.map .id |> (==) (Just unit.id)
 
                     Nothing ->
                         False
@@ -451,15 +471,58 @@ focusCommand context command state =
 
 revokeSelectedOrder : Context -> Model -> Model
 revokeSelectedOrder context state =
-    state
-        |> setOrders
-            (orders state
-                |> List.filter
-                    (\plan ->
-                        Just plan.unitId /= Maybe.map .id (selectedUnit context state)
-                    )
-            )
-        |> restoreCommands context
+    case selectedUnit context state of
+        Just unit ->
+            state
+                |> setOrders (revokeDependentOrders context [ unit.id ] (orders state))
+                |> restoreCommands context
+
+        Nothing ->
+            state
+
+
+{-| Revoking a departure also revokes routes relying on the vacated square.
+Each step removes orders, so chains and cycles terminate.
+-}
+revokeDependentOrders : Context -> List UnitId -> List PlannedOrder -> List PlannedOrder
+revokeDependentOrders context revokedIds drafts =
+    let
+        removed : List PlannedOrder
+        removed =
+            List.filter (\plan -> List.member plan.unitId revokedIds) drafts
+
+        origin : PlannedOrder -> Maybe Coordinate
+        origin plan =
+            if PlannedOrder.isMoving plan then
+                context.units
+                    |> ListUtil.find (\unit -> unit.id == plan.unitId)
+                    |> Maybe.andThen Unit.boardPosition
+
+            else
+                Nothing
+
+        occupiedAgain : List Coordinate
+        occupiedAgain =
+            List.filterMap origin removed
+
+        retained : List PlannedOrder
+        retained =
+            List.filter (\plan -> not (List.member plan.unitId revokedIds)) drafts
+
+        dependsOnDeparture : PlannedOrder -> Bool
+        dependsOnDeparture plan =
+            (PlannedOrder.isMoving plan && List.member (PlannedOrder.destination plan) occupiedAgain)
+                || List.any (\unload -> List.member unload.destination occupiedAgain) (PlannedOrder.unloads plan)
+
+        dependentIds : List UnitId
+        dependentIds =
+            retained |> List.filter dependsOnDeparture |> List.map .unitId
+    in
+    if List.isEmpty dependentIds then
+        retained
+
+    else
+        revokeDependentOrders context dependentIds retained
 
 
 saveRotation : Context -> Direction -> Model -> Model
@@ -516,6 +579,52 @@ selectUnit context id state =
 
             else
                 setSelection (Just (unitSelection context unit state)) state
+
+
+selectNextUnorderedUnit : Context -> Model -> Model
+selectNextUnorderedUnit context state =
+    case state of
+        OrdinaryPlanning _ ->
+            let
+                candidates : List Unit
+                candidates =
+                    missingOrders context (orders state)
+
+                currentId : Maybe UnitId
+                currentId =
+                    selectedUnit context state |> Maybe.map .id
+
+                afterCurrent : List Unit -> List Unit
+                afterCurrent remaining =
+                    case remaining of
+                        [] ->
+                            []
+
+                        first :: rest ->
+                            if Just first.id == currentId then
+                                rest
+
+                            else
+                                afterCurrent rest
+
+                next : Maybe Unit
+                next =
+                    case List.head (afterCurrent candidates) of
+                        Just unit ->
+                            Just unit
+
+                        Nothing ->
+                            List.head candidates
+            in
+            case next of
+                Just unit ->
+                    setSelection (Just (unitSelection context unit state)) state
+
+                Nothing ->
+                    state
+
+        _ ->
+            state
 
 
 selectTile : Context -> Coordinate -> Model -> Model
@@ -849,7 +958,8 @@ unloadOptions context state passengerId =
             in
             case ListUtil.find (\unit -> unit.id == passengerId) projectedUnits of
                 Just passenger ->
-                    Movement.options (reservedDestinations context passenger state) context.movementRules context.map projectedUnits passenger
+                    Movement.optionsAvoiding [] context.movementRules context.map projectedUnits passenger
+                        |> List.filter (Movement.canStop (reservedDestinations context passenger state) (List.map projectTruck (destinationUnits context (orders state))) passenger)
 
                 Nothing ->
                     []
@@ -885,7 +995,9 @@ beginMovement context unit state =
                 planning : MovePlanning
                 planning =
                     { preview = Movement.start origin
-                    , options = Movement.options (reservedDestinations context unit state) context.movementRules context.map context.units unit
+                    , options =
+                        Movement.optionsAvoiding [] context.movementRules context.map context.units unit
+                            |> List.filter (Movement.canStop (reservedDestinations context unit state) (destinationUnits context (orders state)) unit)
                     , destinationFeedback = NoDestinationFeedback
                     }
             in
@@ -917,7 +1029,7 @@ boardingSpace context mover truck state =
 
         compatible : Bool
         compatible =
-            Unit.boardPosition truck |> Maybe.andThen (Unit.loadingPartner context.units mover) |> (==) (Just truck)
+            Unit.boardPosition truck |> Maybe.andThen (\destination -> loadingTarget context mover destination (orders state)) |> (==) (Just truck)
     in
     compatible && not truckMoving && fitsCargo
 
@@ -928,23 +1040,23 @@ reservedDestinations context unit state =
         reserves : PlannedOrder -> Bool
         reserves plan =
             let
-                partner : Maybe Unit
-                partner =
-                    Unit.loadingPartner context.units unit (PlannedOrder.destination plan)
+                destinationTarget : Maybe Unit
+                destinationTarget =
+                    loadingTarget context unit (PlannedOrder.destination plan) (orders state)
 
-                isWaitingPartner : Unit -> Bool
-                isWaitingPartner target =
+                isWaitingTarget : Unit -> Bool
+                isWaitingTarget target =
                     target.id == plan.unitId && not (receivingLoad context target (orders state) && target.cargoCapacity == 0)
 
-                waitingPartner : Bool
-                waitingPartner =
-                    not (PlannedOrder.isMoving plan) && (partner |> Maybe.map isWaitingPartner |> Maybe.withDefault False)
+                waitingTarget : Bool
+                waitingTarget =
+                    not (PlannedOrder.isMoving plan) && (destinationTarget |> Maybe.map isWaitingTarget |> Maybe.withDefault False)
 
                 boardingDestination : Bool
                 boardingDestination =
-                    partner |> Maybe.map (\target -> boardingSpace context unit target state) |> Maybe.withDefault False
+                    destinationTarget |> Maybe.map (\target -> boardingSpace context unit target state) |> Maybe.withDefault False
             in
-            plan.unitId /= unit.id && not waitingPartner && not boardingDestination
+            plan.unitId /= unit.id && not waitingTarget && not boardingDestination
 
         unavailableReceiver : Unit -> Bool
         unavailableReceiver target =
@@ -976,10 +1088,7 @@ saveMove context unit move state =
                             (\truck -> truck.id == carrier)
 
                 Nothing ->
-                    Unit.loadingPartner
-                        context.units
-                        unit
-                        move.destination
+                    loadingTarget context unit move.destination (orders state)
 
         retained : List PlannedOrder
         retained =
@@ -1054,7 +1163,7 @@ selectMovementTile context position state =
                 let
                     destinationOption : Movement.Option -> Maybe Movement.Option
                     destinationOption preview =
-                        if Movement.canStop (reservedDestinations context unit state) context.units unit preview then
+                        if Movement.canStop (reservedDestinations context unit state) (destinationUnits context (orders state)) unit preview then
                             Just preview
 
                         else

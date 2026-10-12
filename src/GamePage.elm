@@ -191,6 +191,7 @@ type Msg
     | DirectionKeyPressed Direction
     | PathDirectionKeyPressed Direction
     | PathEnterPressed
+    | NextUnorderedUnitKeyPressed
     | ClearMoveClicked
     | CargoUnitClicked UnitId
     | UnloadUnitToggled UnitId Bool
@@ -492,7 +493,7 @@ plannedAction model unit move =
     if Unit.carrierId unit /= Nothing && List.length move.path > 1 then
         "unload at"
 
-    else if Unit.loadingPartner model.units unit move.destination /= Nothing then
+    else if OrderPlanning.loadingTarget (planningContext model) unit move.destination (plannedOrders model) /= Nothing then
         "load at"
 
     else
@@ -977,6 +978,11 @@ update lobbyId msg model =
                 |> clearSelection
                 |> selectUnit id
                 |> E.withOut
+
+        NextUnorderedUnitKeyPressed ->
+            model
+                |> mapPlanning (OrderPlanning.selectNextUnorderedUnit (planningContext model))
+                |> finishBoardInteraction model
 
         RotationChoicesMsg rotationMsg ->
             let
@@ -1569,18 +1575,30 @@ unitOrderView model unit =
                         |> ListUtil.find ruleAppliesToUnit
                         |> Maybe.map (.budget >> Movement.pointsLabel)
                         |> Maybe.withDefault "?"
+
+                previewDetails : List (Html Msg)
+                previewDetails =
+                    [ H.p
+                        []
+                        [ H.text "choose a destination on the map"
+                        ]
+                    , H.p
+                        []
+                        [ H.text ("movement: " ++ Movement.pointsLabel preview.cost ++ " / " ++ budget)
+                        ]
+                    ]
+
+                loadingDetails : List (Html Msg)
+                loadingDetails =
+                    loadingNotice model unit preview.destination
+
+                controls : List (Html Msg)
+                controls =
+                    [ Button.secondary "back to commands" ClearMoveClicked
+                        |> Button.toHtml
+                    ]
             in
-            [ H.p
-                []
-                [ H.text "choose a destination on the map"
-                ]
-            , H.p
-                []
-                [ H.text ("movement: " ++ Movement.pointsLabel preview.cost ++ " / " ++ budget)
-                ]
-            , Button.secondary "back to commands" ClearMoveClicked
-                |> Button.toHtml
-            ]
+            previewDetails ++ loadingDetails ++ controls
 
         ( Nothing, Just plan ) ->
             let
@@ -1644,10 +1662,47 @@ unitOrderView model unit =
                     , Button.secondary "revoke order" ClearMoveClicked
                         |> Button.toHtml
                     ]
+
+                loadingDetails : List (Html Msg)
+                loadingDetails =
+                    case plan.action of
+                        PlannedOrder.Move movePlan ->
+                            loadingNotice model unit movePlan.move.destination
+
+                        _ ->
+                            []
             in
-            orderDetails ++ unloadDetails
+            orderDetails ++ loadingDetails ++ unloadDetails
 
         ( Nothing, Nothing ) ->
+            []
+
+
+loadingNotice : Model -> Unit -> Coordinate -> List (Html Msg)
+loadingNotice model unit destination =
+    case OrderPlanning.loadingTarget (planningContext model) unit destination (plannedOrders model) of
+        Just target ->
+            let
+                notice : String
+                notice =
+                    if unit.kind == UnitKind.Truck then
+                        "this move will pick up " ++ Unit.label target ++ " into this truck. the passenger will hold position."
+
+                    else
+                        "this move will board " ++ Unit.label target ++ ". the truck will hold position."
+            in
+            [ H.p
+                [ Aria.role Aria.Status
+                , A.css
+                    [ S.bgYellow2
+                    , S.textGray5
+                    , S.p2
+                    ]
+                ]
+                [ H.text notice ]
+            ]
+
+        Nothing ->
             []
 
 
@@ -1781,8 +1836,12 @@ cargoView model unit =
         cargoContents : List (Html Msg)
         cargoContents =
             cargoSummary :: List.map passengerButton cargo
+
+        canInspectCargo : Bool
+        canInspectCargo =
+            isOwnUnit model unit && unit.cargoCapacity > 0
     in
-    if unit.cargoCapacity > 0 then
+    if canInspectCargo then
         H.div
             [ A.css
                 [ S.col
@@ -2086,10 +2145,10 @@ boardView model =
         [ H.div
             [ A.css
                 [ S.relative
-                , Css.property "width" "min(80%, 76vh)"
+                , Css.property "width" Camera.boardWidth
                 , S.shrink0
                 , Css.property "transform"
-                    ("translate(" ++ String.fromFloat camera.offset.x ++ "px, " ++ String.fromFloat camera.offset.y ++ "px) scale(" ++ String.fromFloat camera.zoom ++ ")")
+                    (Camera.transform camera)
                 ]
             ]
             [ boardHtml model
@@ -2654,10 +2713,19 @@ keyCommands model =
             , KeyCmd.minus ZoomOutKeyPressed
             ]
                 |> KeyCmd.batch
+
+        unitSelection : KeyCmd Msg
+        unitSelection =
+            if hasDialog model || planningLocked model then
+                KeyCmd.none
+
+            else
+                KeyCmd.period NextUnorderedUnitKeyPressed
     in
     KeyCmd.batch
         [ KeyCmd.escape EscapePressed
         , camera
+        , unitSelection
         , KeyCmd.batch navigation
         ]
 

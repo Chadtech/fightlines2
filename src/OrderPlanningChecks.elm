@@ -74,6 +74,56 @@ planningChecks infantryId truckId passengerId =
                 |> OrderPlanning.applyCommand context UnitCommand.Move
                 |> OrderPlanning.selectTile context { x = 1, y = 2 }
 
+        enteringVacated : OrderPlanning.Model
+        enteringVacated =
+            saved
+                |> OrderPlanning.selectUnit context truckId
+                |> OrderPlanning.applyCommand context UnitCommand.Move
+                |> OrderPlanning.selectTile context { x = 1, y = 1 }
+
+        revokeDeparture : OrderPlanning.Model
+        revokeDeparture =
+            enteringVacated
+                |> OrderPlanning.selectUnit context infantryId
+                |> OrderPlanning.revokeSelectedOrder context
+
+        truckDeparting : OrderPlanning.Model
+        truckDeparting =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit context truckId
+                |> OrderPlanning.applyCommand context UnitCommand.Move
+                |> OrderPlanning.selectTile context { x = 3, y = 2 }
+
+        enteringTruckOrigin : OrderPlanning.Model
+        enteringTruckOrigin =
+            truckDeparting
+                |> OrderPlanning.selectUnit context infantryId
+                |> OrderPlanning.applyCommand context UnitCommand.Move
+                |> OrderPlanning.selectTile context { x = 3, y = 1 }
+
+        chainContext : OrderPlanning.Context
+        chainContext =
+            board [ infantry, truck, unit passengerId Kind.Infantry (Location.OnMap { x = 2, y = 1 }) ]
+
+        chain : OrderPlanning.Model
+        chain =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit chainContext truckId
+                |> OrderPlanning.applyCommand chainContext UnitCommand.Move
+                |> OrderPlanning.selectTile chainContext { x = 3, y = 2 }
+                |> OrderPlanning.selectUnit chainContext passengerId
+                |> OrderPlanning.applyCommand chainContext UnitCommand.Move
+                |> OrderPlanning.selectTile chainContext { x = 3, y = 1 }
+                |> OrderPlanning.selectUnit chainContext infantryId
+                |> OrderPlanning.applyCommand chainContext UnitCommand.Move
+                |> OrderPlanning.selectTile chainContext { x = 2, y = 1 }
+
+        revokedChain : OrderPlanning.Model
+        revokedChain =
+            chain
+                |> OrderPlanning.selectUnit chainContext truckId
+                |> OrderPlanning.revokeSelectedOrder chainContext
+
         loading : OrderPlanning.Model
         loading =
             OrderPlanning.init
@@ -150,12 +200,50 @@ planningChecks infantryId truckId passengerId =
         ordersForSubmission : List PlannedOrder.PlannedOrder
         ordersForSubmission =
             OrderPlanning.submissionOrders cargoContext (OrderPlanning.orders completed)
+
+        firstUnordered : OrderPlanning.Model
+        firstUnordered =
+            OrderPlanning.selectNextUnorderedUnit context OrderPlanning.init
+
+        secondUnordered : OrderPlanning.Model
+        secondUnordered =
+            OrderPlanning.selectNextUnorderedUnit context firstUnordered
+
+        wrappedUnordered : OrderPlanning.Model
+        wrappedUnordered =
+            OrderPlanning.selectNextUnorderedUnit context secondUnordered
+
+        afterPreview : OrderPlanning.Model
+        afterPreview =
+            OrderPlanning.selectNextUnorderedUnit context moving
+
+        afterOrder : OrderPlanning.Model
+        afterOrder =
+            OrderPlanning.selectNextUnorderedUnit context saved
     in
     List.concat
-        [ expect "path confirmation saves the traced route and closes editing"
+        [ expect "unordered selection cycles through eligible units and wraps"
+            (OrderPlanning.commandMenuUnit context firstUnordered == Just infantry && OrderPlanning.commandMenuUnit context secondUnordered == Just truck && OrderPlanning.commandMenuUnit context wrappedUnordered == Just infantry)
+        , expect "unordered selection leaves a preview without saving a move"
+            (OrderPlanning.commandMenuUnit context afterPreview == Just truck && List.isEmpty (OrderPlanning.orders afterPreview))
+        , expect "unordered selection skips saved orders and keeps the last eligible unit selected"
+            (OrderPlanning.commandMenuUnit context afterOrder == Just truck && OrderPlanning.orders afterOrder == OrderPlanning.orders saved && OrderPlanning.selectNextUnorderedUnit context afterOrder == afterOrder)
+        , expect "unordered selection does nothing when all on-board units have orders"
+            (OrderPlanning.selectNextUnorderedUnit cargoContext completed == completed)
+        , expect "unordered selection cannot leave a submission or unload dialog"
+            (OrderPlanning.selectNextUnorderedUnit context (OrderPlanning.showSubmissionWarning firstUnordered) == OrderPlanning.showSubmissionWarning firstUnordered && OrderPlanning.selectNextUnorderedUnit cargoContext checklist == checklist)
+        , expect "path confirmation saves the traced route and closes editing"
             (List.map PlannedOrder.path (OrderPlanning.orders saved) == [ [ { x = 1, y = 1 }, { x = 1, y = 2 } ] ] && OrderPlanning.pathPreview saved == Nothing)
         , expect "another unit cannot claim a reserved destination and receives feedback"
             (OrderPlanning.orders reserved == OrderPlanning.orders saved && OrderPlanning.destinationFeedback reserved == DestinationUnavailable)
+        , expect "a truck can move onto a departing infantry square without changing its order"
+            (List.length (OrderPlanning.orders enteringVacated) == 2 && List.all PlannedOrder.isMoving (OrderPlanning.orders enteringVacated))
+        , expect "revoking a departure also revokes the move depending on its freed square"
+            (List.isEmpty (OrderPlanning.orders revokeDeparture))
+        , expect "departure revocation clears a whole dependent chain"
+            (List.length (OrderPlanning.orders chain) == 3 && List.isEmpty (OrderPlanning.orders revokedChain))
+        , expect "moving onto a departing truck keeps both moves and creates no loading target"
+            (List.length (OrderPlanning.orders enteringTruckOrigin) == 2 && List.all PlannedOrder.isMoving (OrderPlanning.orders enteringTruckOrigin) && OrderPlanning.loadingTarget context infantry { x = 3, y = 1 } (OrderPlanning.orders enteringTruckOrigin) == Nothing)
         , expect "loading saves the mover and a holding receiver"
             (List.length (OrderPlanning.orders loading) == 2 && OrderPlanning.receivingLoad context truck (OrderPlanning.orders loading))
         , expect "a receiving truck is inspection only"
@@ -224,17 +312,7 @@ unit id kind location =
             else
                 0
     in
-    { id = id
-    , playerNumber = PlayerNumber.Player1
-    , spriteFacing = SpriteFacing.Right
-    , kind = kind
-    , direction = direction
-    , hitPoints = { current = 16, maximum = 16 }
-    , supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }
-    , fuel = fuel
-    , cargoCapacity = capacity
-    , location = location
-    }
+    { id = id, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, kind = kind, direction = direction, cargoCapacity = capacity, location = location, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = fuel } }
 
 
 expect : String -> Bool -> List String

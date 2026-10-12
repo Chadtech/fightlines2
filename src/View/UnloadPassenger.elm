@@ -15,6 +15,18 @@ import View.UnitSprite as UnitSprite
 
 toHtml : { checked : Bool, onCheck : Bool -> msg } -> Unit -> Html msg
 toHtml config unit =
+    let
+        resourceMeters : List (Html msg)
+        resourceMeters =
+            case unit.resources of
+                Just details ->
+                    [ resource "health" details.hitPoints
+                    , resource "supplies" { current = details.supplies.current, maximum = details.supplies.maximum }
+                    ]
+
+                Nothing ->
+                    []
+    in
     Checkbox.toHtml
         { label = kindLabel unit.kind
         , checked = config.checked
@@ -52,9 +64,7 @@ toHtml config unit =
                     , S.g2
                     ]
                 ]
-                [ resource "health" unit.hitPoints
-                , resource "supplies" { current = unit.supplies.current, maximum = unit.supplies.maximum }
-                ]
+                resourceMeters
             ]
         ]
 

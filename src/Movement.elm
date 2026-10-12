@@ -4,6 +4,7 @@ module Movement exposing
     , TerrainCost
     , canStop
     , options
+    , optionsAvoiding
     , pointsLabel
     , preview
     , start
@@ -19,6 +20,7 @@ import ListUtil
 import Map exposing (Map)
 import Unit exposing (Unit)
 import Unit.Supplies exposing (Supplies)
+import UnitResources exposing (UnitResources)
 
 
 {-| The cost to enter a terrain square, as supplied by Rust's movement rules.
@@ -94,11 +96,11 @@ tileLimit unit =
     let
         supplyLimit : Maybe Int
         supplyLimit =
-            Unit.supplyMovementLimit unit.supplies
+            unit.resources |> Maybe.andThen (.supplies >> Unit.supplyMovementLimit)
 
         fuelLimit : Maybe Int
         fuelLimit =
-            Maybe.map .current unit.fuel
+            unit.resources |> Maybe.andThen .fuel |> Maybe.map .current
     in
     if Unit.carrierId unit /= Nothing then
         Just (min 1 (Maybe.withDefault 1 supplyLimit))
@@ -321,8 +323,7 @@ trace rules map units unit current destination =
                     remainingUnit : Unit
                     remainingUnit =
                         { unit
-                            | supplies = remainingSupplies unit current
-                            , fuel = Maybe.map (\fuel -> { fuel | current = fuel.current - (List.length current.path - 1) }) unit.fuel
+                            | resources = Maybe.map (remainingResources current) unit.resources
                         }
                             |> Unit.setOnMap current.destination
 
@@ -341,14 +342,21 @@ trace rules map units unit current destination =
                     |> Maybe.andThen (withinTileLimit unit)
 
 
-remainingSupplies : Unit -> Option -> Supplies
-remainingSupplies unit current =
+remainingResources : Option -> UnitResources -> UnitResources
+remainingResources current resources =
     let
+        tiles : Int
+        tiles =
+            List.length current.path - 1
+
         supplies : Supplies
         supplies =
-            unit.supplies
+            resources.supplies
     in
-    { supplies | current = supplies.current - (List.length current.path - 1) * supplies.movementPerTile }
+    { resources
+        | supplies = { supplies | current = supplies.current - tiles * supplies.movementPerTile }
+        , fuel = Maybe.map (\fuel -> { fuel | current = fuel.current - tiles }) resources.fuel
+    }
 
 
 takeThrough : Coordinate -> List Coordinate -> List Coordinate
@@ -374,7 +382,7 @@ canStop reserved units mover option =
 
         canLoad : Bool
         canLoad =
-            Unit.loadingPartner units mover option.destination /= Nothing
+            Unit.loadingTarget units mover option.destination /= Nothing
 
         reservedDestination : Bool
         reservedDestination =

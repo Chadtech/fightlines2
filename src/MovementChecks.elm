@@ -82,25 +82,32 @@ check rules fixture =
                 unit : Unit.Unit
                 unit =
                     { cargoCapacity = 0
-                    , hitPoints = { current = 16, maximum = 16 }
-                    , supplies =
-                        { current = 64
-                        , maximum = 64
-                        , upkeepPerTurn = 1
-                        , movementPerTile =
-                            if fixture.kind == UnitKind.Infantry || fixture.kind == UnitKind.FieldGun then
-                                1
-
-                            else
-                                0
-                        }
-                    , fuel = fuel
                     , id = id
                     , kind = fixture.kind
                     , location = Location.OnMap fixture.origin
                     , playerNumber = PlayerNumber.Player1
                     , spriteFacing = SpriteFacing.Right
                     , direction = Just Direction.East
+                    , resources =
+                        Just
+                            { hitPoints = { current = 16, maximum = 16 }
+                            , supplies =
+                                { current = 64
+                                , maximum = 64
+                                , upkeepPerTurn = 1
+                                , movementPerTile =
+                                    case fixture.kind of
+                                        UnitKind.Infantry ->
+                                            4
+
+                                        UnitKind.FieldGun ->
+                                            1
+
+                                        _ ->
+                                            0
+                                }
+                            , fuel = fuel
+                            }
                     }
 
                 rows : List String
@@ -201,7 +208,7 @@ traceChecks rules =
 
                 unit : Unit.Unit
                 unit =
-                    { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = id, kind = UnitKind.Infantry, location = Location.OnMap origin, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East }
+                    { cargoCapacity = 0, id = id, kind = UnitKind.Infantry, location = Location.OnMap origin, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
 
                 map : Map
                 map =
@@ -318,7 +325,7 @@ reservationChecks rules =
             let
                 unit : Unit.Unit
                 unit =
-                    { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = id, kind = UnitKind.Infantry, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East }
+                    { cargoCapacity = 0, id = id, kind = UnitKind.Infantry, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
 
                 map : Map
                 map =
@@ -375,7 +382,7 @@ fuelChecks rules =
             let
                 unit : Unit.Unit
                 unit =
-                    { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, id = id, kind = UnitKind.Tank, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, fuel = Just { current = 2, maximum = 64 } }
+                    { cargoCapacity = 0, id = id, kind = UnitKind.Tank, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 2, maximum = 64 } } }
 
                 map : Map
                 map =
@@ -391,7 +398,7 @@ fuelChecks rules =
 
                 emptyUnit : Unit.Unit
                 emptyUnit =
-                    { unit | fuel = Just { current = 0, maximum = 64 } }
+                    { unit | resources = Maybe.map (\resources -> { resources | fuel = Just { current = 0, maximum = 64 } }) unit.resources }
 
                 traced : Maybe Movement.Option
                 traced =
@@ -423,7 +430,7 @@ fuelChecks rules =
                 , test "fuel-limited previews reroute to an affordable path"
                     (traced |> Maybe.andThen (\path -> Movement.preview rules map units unit path { x = 1, y = 0 }) |> Maybe.map (\path -> List.length path.path == 2) |> Maybe.withDefault False)
                 , test "full fuel does not override the movement budget"
-                    (Movement.options [] rules map units { unit | fuel = Just { current = 64, maximum = 64 } } |> List.all (\option -> option.cost <= 12))
+                    (Movement.options [] rules map units { unit | resources = Maybe.map (\resources -> { resources | fuel = Just { current = 64, maximum = 64 } }) unit.resources } |> List.all (\option -> option.cost <= 12))
                 ]
 
 
@@ -437,11 +444,11 @@ supplyChecks rules =
             let
                 supplies : Supplies
                 supplies =
-                    { current = 3, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }
+                    { current = 9, maximum = 64, upkeepPerTurn = 1, movementPerTile = 4 }
 
                 unit : Unit.Unit
                 unit =
-                    { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, id = id, kind = UnitKind.Infantry, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, fuel = Nothing, supplies = supplies }
+                    { cargoCapacity = 0, id = id, kind = UnitKind.Infantry, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, fuel = Nothing, supplies = supplies } }
 
                 map : Map
                 map =
@@ -453,7 +460,7 @@ supplyChecks rules =
 
                 exhausted : Unit.Unit
                 exhausted =
-                    { unit | supplies = { supplies | current = 1 } }
+                    { unit | resources = Maybe.map (\resources -> { resources | supplies = { supplies | current = 1 } }) unit.resources }
 
                 traced : Maybe Movement.Option
                 traced =
@@ -466,7 +473,7 @@ supplyChecks rules =
 
                 vehicle : Unit.Unit
                 vehicle =
-                    { unit | kind = UnitKind.Tank, fuel = Just { current = 2, maximum = 64 }, supplies = { supplies | current = 0, movementPerTile = 0 } }
+                    { unit | kind = UnitKind.Tank, resources = Maybe.map (\resources -> { resources | fuel = Just { current = 2, maximum = 64 }, supplies = { supplies | current = 0, movementPerTile = 0 } }) unit.resources }
 
                 test : String -> Bool -> List String
                 test name passed =
@@ -483,7 +490,7 @@ supplyChecks rules =
                 , test "extending a trace cannot overspend supplies" (traced |> Maybe.andThen (\path -> Movement.trace rules map units unit path { x = 2, y = 1 }) |> (==) Nothing)
                 , test "backtracking refunds movement supplies" (traced |> Maybe.andThen (\path -> Movement.trace rules map units unit path { x = 0, y = 1 }) |> Maybe.andThen (\path -> Movement.trace rules map units unit path { x = 0, y = 2 }) |> Maybe.map (\path -> List.length path.path == 3) |> Maybe.withDefault False)
                 , test "vehicles use fuel rather than supplies for movement" (Movement.tileLimit vehicle == Just 2 && not (List.isEmpty (Movement.options [] rules map units vehicle)))
-                , test "empty supplies do not underflow the walking limit" (Movement.tileLimit { unit | supplies = { supplies | current = 0 } } == Just 0)
+                , test "empty supplies do not underflow the walking limit" (Movement.tileLimit { unit | resources = Maybe.map (\resources -> { resources | supplies = { supplies | current = 0 } }) unit.resources } == Just 0)
                 ]
 
 
@@ -521,21 +528,11 @@ transportChecks rules =
             let
                 passenger : Unit.Unit
                 passenger =
-                    { id = passengerId
-                    , playerNumber = PlayerNumber.Player1
-                    , spriteFacing = SpriteFacing.Right
-                    , kind = UnitKind.Infantry
-                    , direction = Just Direction.East
-                    , hitPoints = { current = 16, maximum = 16 }
-                    , supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }
-                    , fuel = Nothing
-                    , cargoCapacity = 0
-                    , location = Location.OnMap { x = 0, y = 0 }
-                    }
+                    { id = passengerId, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, kind = UnitKind.Infantry, direction = Just Direction.East, cargoCapacity = 0, location = Location.OnMap { x = 0, y = 0 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
 
                 truck : Unit.Unit
                 truck =
-                    { passenger | id = truckId, kind = UnitKind.Truck, cargoCapacity = 2, direction = Nothing, location = Location.OnMap { x = 1, y = 0 }, fuel = Just { current = 64, maximum = 64 } }
+                    { passenger | id = truckId, kind = UnitKind.Truck, cargoCapacity = 2, direction = Nothing, location = Location.OnMap { x = 1, y = 0 }, resources = Maybe.map (\resources -> { resources | fuel = Just { current = 64, maximum = 64 } }) passenger.resources }
 
                 map : Map
                 map =
@@ -559,7 +556,7 @@ transportChecks rules =
 
                 fuelEmptyTruck : Unit.Unit
                 fuelEmptyTruck =
-                    { truck | fuel = Just { current = 0, maximum = 64 } }
+                    { truck | resources = Maybe.map (\resources -> { resources | fuel = Just { current = 0, maximum = 64 } }) truck.resources }
 
                 strandedUnits : List Unit.Unit
                 strandedUnits =
@@ -595,7 +592,7 @@ transportChecks rules =
                 , expect "zero fuel truck passengers can unload beside the stationary truck" (canReach strandedUnits aboard { x = 2, y = 0 })
                 , expect "stationary unloads still reject the occupied truck origin" (not (canReach strandedUnits aboard { x = 1, y = 0 }))
                 , expect "stationary unloads still reject reserved exits" (not (List.any (\option -> option.destination == { x = 2, y = 0 }) (Movement.options [ { x = 2, y = 0 } ] rules map strandedUnits aboard)))
-                , expect "stationary unloads still require passenger movement supplies" (not (canReach strandedUnits { aboard | supplies = { current = 1, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 } } { x = 2, y = 0 }))
+                , expect "stationary unloads still require passenger movement supplies" (not (canReach strandedUnits { aboard | resources = Maybe.map (\resources -> { resources | supplies = { current = 1, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 } }) aboard.resources } { x = 2, y = 0 }))
                 , expect "unload offers adjacent squares" (canReach rideUnits aboard { x = 2, y = 0 })
                 , expect "unload does not offer distant squares" (not (canReach rideUnits aboard { x = 3, y = 0 }))
                 , expect "traced unload cannot extend beyond one tile" (extendingUnload == Nothing)

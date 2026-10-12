@@ -110,8 +110,8 @@ impl Fuel {
     fn for_kind(kind: UnitKind) -> Option<Self> {
         match kind {
             UnitKind::Tank | UnitKind::Truck => Some(Self {
-                current: 64,
-                maximum: 64,
+                current: 32,
+                maximum: 32,
             }),
             UnitKind::Infantry | UnitKind::FieldGun => None,
         }
@@ -146,12 +146,17 @@ impl Supplies {
 impl Supplies {
     fn for_kind(kind: UnitKind) -> Self {
         let movement_per_tile = match kind {
-            UnitKind::Infantry | UnitKind::FieldGun => 1,
+            UnitKind::Infantry => 4,
+            UnitKind::FieldGun => 1,
             UnitKind::Tank | UnitKind::Truck => 0,
         };
+        let maximum = match kind {
+            UnitKind::Tank | UnitKind::Truck => 32,
+            UnitKind::Infantry | UnitKind::FieldGun => 64,
+        };
         Self {
-            current: 64,
-            maximum: 64,
+            current: maximum,
+            maximum,
             upkeep_per_turn: 1,
             movement_per_tile,
         }
@@ -193,6 +198,14 @@ pub enum UnitLocation {
     Aboard(Aboard),
 }
 
+/// Resource details are disclosed together only for the observing player's units.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLObject)]
+pub struct UnitResources {
+    hit_points: HitPoints,
+    supplies: Supplies,
+    fuel: Option<Fuel>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unit {
     id: UnitId,
@@ -204,6 +217,7 @@ pub struct Unit {
     hit_points: HitPoints,
     fuel: Option<Fuel>,
     supplies: Supplies,
+    resources_visible: bool,
 }
 
 #[graphql_object]
@@ -220,16 +234,27 @@ impl Unit {
         self.kind
     }
 
+    #[graphql(ignore)]
     pub fn hit_points(&self) -> HitPoints {
         self.hit_points
     }
 
+    #[graphql(ignore)]
     pub fn supplies(&self) -> Supplies {
         self.supplies
     }
 
+    #[graphql(ignore)]
     pub fn fuel(&self) -> Option<Fuel> {
         self.fuel
+    }
+
+    pub fn resources(&self) -> Option<UnitResources> {
+        self.resources_visible.then_some(UnitResources {
+            hit_points: self.hit_points(),
+            supplies: self.supplies(),
+            fuel: self.fuel(),
+        })
     }
 
     pub fn direction(&self) -> Option<Direction> {
@@ -270,6 +295,16 @@ pub struct Scenario {
 }
 
 impl Unit {
+    #[cfg(test)]
+    pub(crate) fn set_supplies_for_test(&mut self, current: i32) {
+        self.supplies.current = current;
+    }
+
+    /// Conceal private gauges on response copies, preserving authoritative resources.
+    pub(crate) fn conceal_resources(&mut self) {
+        self.resources_visible = false;
+    }
+
     pub fn carrier_id(&self) -> Option<UnitId> {
         match self.location {
             Location::OnMap(_) => None,
@@ -573,10 +608,10 @@ impl Scenario {
                 },
                 // Flank objectives approximate the original teleporter exits.
                 Depot {
-                    position: Coordinate::new(15, 6),
+                    position: Coordinate::new(13, 5),
                 },
                 Depot {
-                    position: Coordinate::new(9, 14),
+                    position: Coordinate::new(11, 15),
                 },
             ],
             &[
@@ -956,6 +991,7 @@ impl Scenario {
                     side,
                     sprite_facing: SpriteFacing::starting(side),
                     kind: starting.kind,
+                    resources_visible: true,
                     hit_points: HitPoints::full(),
                     fuel: Fuel::for_kind(starting.kind),
                     supplies: Supplies::for_kind(starting.kind),
@@ -1032,6 +1068,7 @@ impl Scenario {
                     side,
                     sprite_facing: SpriteFacing::starting(side),
                     kind,
+                    resources_visible: true,
                     hit_points: HitPoints::full(),
                     fuel: Fuel::for_kind(kind),
                     supplies: Supplies::for_kind(kind),
@@ -1060,6 +1097,7 @@ impl Scenario {
                     side,
                     sprite_facing: SpriteFacing::starting(side),
                     kind,
+                    resources_visible: true,
                     hit_points: HitPoints::full(),
                     fuel: Fuel::for_kind(kind),
                     supplies: Supplies::for_kind(kind),
@@ -1653,7 +1691,7 @@ mod tests {
             scenario
                 .units
                 .iter()
-                .all(|unit| unit.supplies.current == 63)
+                .all(|unit| unit.supplies.current == unit.supplies.maximum - 1)
         );
         assert!(
             scenario
@@ -1690,15 +1728,22 @@ mod tests {
                     maximum: 16
                 }
             );
-            assert_eq!(unit.supplies.current, 64);
-            assert_eq!(unit.supplies.maximum, 64);
+            let (maximum, movement_per_tile) = match unit.kind {
+                UnitKind::Infantry => (64, 4),
+                UnitKind::FieldGun => (64, 1),
+                UnitKind::Tank | UnitKind::Truck => (32, 0),
+            };
+            assert_eq!(unit.supplies.current, maximum);
+            assert_eq!(unit.supplies.maximum, maximum);
+            assert_eq!(unit.supplies.movement_per_tile, movement_per_tile);
+            assert_eq!(unit.supplies.upkeep_per_turn, 1);
             match unit.kind {
                 UnitKind::Tank | UnitKind::Truck => {
                     assert_eq!(
                         unit.fuel(),
                         Some(Fuel {
-                            current: 64,
-                            maximum: 64
+                            current: 32,
+                            maximum: 32
                         })
                     );
                 }

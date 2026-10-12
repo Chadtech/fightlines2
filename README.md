@@ -45,7 +45,8 @@ player is player 2 with blue units. Click a unit or depot to inspect it; units
 and depots can also be selected with Tab and Enter/Space. Drag the battlefield
 with the primary mouse button to pan; scroll to zoom around the cursor. The right-side
 panel has selection details and unit actions; the bottom-left control panel has
-pan arrows, zoom and reset controls. Arrow keys or WASD pan the map while the command popup is closed and no move or rotation is being chosen.
+pan arrows, zoom and reset controls. Games open at 100%, centered on the whole-map overview.
+Reset restores this centered overview; zoom ranges from 35% to 300%. Arrow keys or WASD pan the map while the command popup is closed and no move or rotation is being chosen.
 Plus/minus zoom without requiring battlefield focus; Home resets the view while the battlefield is focused. Dragging does not select a tile.
 The panel remains fixed while the board moves. Terrain uses detailed 80s anime
 illustrations, with a grass tile in every square, defined hill ridges and tree
@@ -72,6 +73,9 @@ operator bending naturally at the rear controls and the carriage staying planted
 neutral material colors and no team-colored outlines.
 Click the selected unit again to deselect it while keeping its saved move.
 Press Escape to clear the current selection and path preview while keeping saved moves.
+Press `.` to select the next of your on-board units without orders, cycling through
+them and opening its commands. Saved orders remain intact; the shortcut is inactive
+while a dialog is open or orders are locked.
 Select one of your units, choose **move** to highlight reachable
 squares. Click a highlighted square to save a move. Hover across squares to preview your exact route; retrace
 the line to shorten it. Skipped squares connect from the current path tip within
@@ -83,20 +87,23 @@ Press Escape or click the selected unit to leave movement selection. Paths remai
 switching units. Unsubmitted plans are local drafts and disappear on refresh.
 Routes can pass through allied units or enemy starting positions; enemies encountered
 during resolution stop movement. Occupied
-squares cannot be destinations except when loading a truck. A saved move reserves its destination so other
+squares can be destinations when an allied occupant has a saved move away, or
+when loading a stationary truck. Plan the departure first. Revoking that departure
+also revokes routes depending on its freed square. A saved move reserves its destination so other
 units cannot choose it; changing or clearing the move frees that square. Routes
 can pass through reserved destinations. Depots are passable.
 The selection panel shows the selected unit's illustration, name, and side,
-with expandable unit and gauge explanations. Every unit starts with 16/16 hit points, supplied by the server. Combat damage and healing are not implemented yet. Tanks and trucks start with 64/64 fuel. Each
+with expandable unit and gauge explanations. Every unit starts with 16/16 hit points, supplied by the server. Combat damage and healing are not implemented yet. Tanks and trucks start with 32/32 fuel. Each
 successfully traversed tile costs 1 fuel, independently of terrain movement
 costs. Interrupted routes pay only for successfully traveled tiles; holds consume none. At the end of resolution,
-vehicles on any supply depot refill to 64, regardless of side. Movement previews and submitted paths must fit both remaining
+vehicles on any supply depot refill to 32, regardless of side. Movement previews and submitted paths must fit both remaining
 fuel and the per-turn movement budget.
 
 Trucks carry up to two allied infantry or field guns; tanks cannot board.
 Loading is part of a move: move a truck onto a waiting unit, or move a unit onto
 a waiting truck. Compatible occupied squares appear alongside ordinary movement
-choices. Loading happens only at the destination, after paying the moving unit's
+choices. The route preview and saved order warn when the move will pick up or board a unit.
+Loading happens only at the destination, after paying the moving unit's
 usual movement costs. The receiving unit gets a hold order automatically. Two
 units may board the same holding truck in one turn when it has room. Clear the
 loading move before changing the receiving unit's order.
@@ -114,7 +121,7 @@ leave the affected passengers aboard. An exit occupied by a concealed enemy can
 be submitted; if the enemy remains there at resolution, the passenger stays aboard
 and spends no unloading supplies. Revoking the truck's order also removes
 its unload choices.
-Enemy passengers are concealed. Unit transport is separate from supply delivery.
+Enemy health, supplies, fuel, and passengers are concealed. Unit transport is separate from supply delivery.
 Loaded trucks show a prominent gold blinking passenger badge in the tile's lower-right
 corner, with `2` when both berths are occupied. It stays clearly visible between
 blinks and remains steady with reduced motion enabled. Empty trucks have no badge.
@@ -134,11 +141,13 @@ scheduled arrivals. Sight refreshes at each arrival boundary. Enemies appear whe
 sight and disappear when they leave it, including brief sightings during a turn.
 Hidden positions and route segments are withheld from responses.
 
-Every unit starts with 64/64 supplies and spends 1 supply per resolved turn,
-even when holding or stopped by an encounter. Infantry and field guns
-also spend 1 supply per successfully traversed tile; tanks and trucks use fuel
+Infantry and field guns start with 64/64 supplies; tanks and trucks start with
+32/32. Every unit spends 1 supply per resolved turn, even when holding or stopped
+by an encounter. Infantry spend 4 supplies per successfully traversed tile;
+field guns spend 1; tanks and trucks use fuel
 for movement instead. Movement reserves the turn's upkeep before spending
-supplies. A walking unit with 1 or fewer supplies can hold but cannot move.
+supplies. Infantry need at least 5 supplies to move one tile; field guns need at least 2.
+Units below these thresholds can still hold.
 Units die immediately when supplies reach zero after turn upkeep. A dead truck
 also loses its passengers. During playback, a skull and crossbones flashes three
 times before dead units vanish; reduced-motion mode shows a steady marker. Depots do not
@@ -191,8 +200,8 @@ only for tiles actually traveled. There is no damage or combat yet.
 Loading and truck-planned unloading follow movement to preserve transport dependencies.
 Both clients replay server-projected frames with shared timing and their own fog.
 Planning then opens with empty drafts. Refresh during playback shows the completed
-board. Known occupied squares remain unavailable as ordinary destinations at planning
-time, even if their occupants plan to leave, except for loading. A concealed enemy
+board. Allied starting squares become available once their occupants have moves
+planned. Final destinations remain distinct, except for truck loading. A concealed enemy
 is handled during resolution rather than causing a submission error.
 
 New players cannot join after a game starts. All lobbies and games disappear
