@@ -228,7 +228,9 @@ fn observed_frames(
                         .shots
                         .iter()
                         .filter(|shot| {
-                            known_endpoint(shot.origin) && known_endpoint(shot.destination)
+                            shot.attacker.side() == side
+                                || shot.target.side() == side
+                                || (known_endpoint(shot.origin) && known_endpoint(shot.destination))
                         })
                         .cloned()
                         .collect(),

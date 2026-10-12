@@ -123,8 +123,9 @@ leave the affected passengers aboard. An exit occupied by a concealed enemy can
 be submitted; if the enemy remains there at resolution, the passenger stays aboard
 and spends no unloading supplies. Revoking the truck's order also removes
 its unload choices.
-Enemy resources and passengers are concealed outside combat. Visible combat
-encounters reveal both participants’ before/after health; supplies and fuel stay hidden. Unit transport is separate from supply delivery.
+Enemy resources and passengers are concealed outside combat. Combat
+encounters involving your units appear even when the enemy is concealed and reveal
+both participants’ before/after health; supplies and fuel stay hidden. Unit transport is separate from supply delivery.
 Loaded trucks show a prominent gold blinking passenger badge in the tile's lower-right
 corner, with `2` when both berths are occupied. It stays clearly visible between
 blinks and remains steady with reduced motion enabled. Empty trucks have no badge.
@@ -185,6 +186,11 @@ beneath submit at all times, empty while idle, with a solid gray bar while waiti
 for the other player. It sweeps smoothly left to right, fully exiting the
 track before looping from the left; reduced-motion
 settings keep these effects steady.
+Press Cmd+Enter (Ctrl+Enter on other platforms) to submit while no command menu,
+move/direction selection, unload workflow, dialog, or pointer gesture is active.
+When the units-without-orders warning opens, Enter confirms **submit anyway**;
+Escape or **keep planning** returns to planning.
+
 Give units a move, rotation, ambush, or **hold position** order. **submit turn**
 becomes primary when all units are ready. Submitting with unassigned units opens
 a warning: choose **keep planning** or **submit anyway**, which makes those
@@ -244,10 +250,20 @@ ambush order can fire. Opposing ready ambushers fire simultaneously when both
 have an eligible target, permitting mutual destruction. A tank ambush deals
 8 damage, half a fresh tank's health, without an automatic counterattack.
 
-Before a visible combat exchange, playback freezes the battlefield and surrounding
+Every combat exchange involving your units opens the theater, even when the enemy
+is concealed on the battlefield. Before the exchange, playback freezes the battlefield and surrounding
 animations. The two participants are spotlighted for 300ms while every other tile
 darkens, then one ambush card pops open with enlarged sprites facing each other.
-The hit unit shows an explosion, then both health bars drain to their resolved values.
+Each participant stands on the backdrop matching its occupied terrain and the map's theme.
+Theater health uses staggered formations for every unit kind: four figures at
+13–16 HP, three at 9–12, two at 5–8, one at 1–4, and none at zero.
+Each figure represents a quarter of the unit's 16 HP. The scene holds for
+one second after the card's opening animation before impacts begin.
+There are no theater HP bars. Lost figures receive a horizontal projectile strike and violent illustrated
+shockwave over 100ms, disappearing beneath the impact. Each strike kicks both
+backdrops and formations into a brief violent shake that settles over 160ms.
+Surviving figures remain; hits within one count band show an impact without
+removing a figure.
 Visible encounter health is shared for both players; enemy supplies and fuel remain concealed.
 Each pair stays open until the player selects **continue** or presses Enter. Hold
 **see map** to hide the card and spotlight the two shining combatants on the frozen

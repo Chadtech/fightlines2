@@ -34,3 +34,13 @@
 # Small illustrated command-menu experiment exports.
 !/public/assets/commands-anime-v1/
 !/public/assets/commands-anime-v1/*.png
+
+# Combat theater backdrops.
+!/public/assets/combat-backdrops-anime-v1/
+!/public/assets/combat-backdrops-anime-v1/*.png
+!/public/assets/combat-explosion-anime-v1/
+!/public/assets/combat-explosion-anime-v1/*.png
+!/public/assets/combat-impact-side-anime-v1/
+!/public/assets/combat-impact-side-anime-v1/*.png
+!/public/assets/combat-impact-side-anime-v2/
+!/public/assets/combat-impact-side-anime-v2/*.png

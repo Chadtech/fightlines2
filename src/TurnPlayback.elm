@@ -142,16 +142,12 @@ visibleShots playback =
             playback.current.shots
 
 
-{-| Only projected, on-board participants can appear. Reciprocal shots share
-one display; their damage and casualties still arrive together on the map.
+{-| Encounter participants remain available even when concealed on the board.
+Reciprocal shots share one display; damage and casualties arrive together on the map.
 -}
 exchanges : Frame -> List Exchange
 exchanges frame =
     let
-        participant : Coordinate -> Maybe Unit
-        participant position =
-            ListUtil.find (\unit -> Unit.boardPosition unit == Just position) frame.units
-
         collect : List Shot -> List Exchange
         collect shots =
             case shots of
@@ -171,17 +167,12 @@ exchanges frame =
                         remaining =
                             collect (List.filter differentPair rest)
                     in
-                    case ( participant shot.origin, participant shot.destination ) of
-                        ( Just attacker, Just target ) ->
-                            { attacker = attacker
-                            , target = target
-                            , attackerHealth = shot.attackerHealth
-                            , targetHealth = shot.targetHealth
-                            }
-                                :: remaining
-
-                        _ ->
-                            remaining
+                    { attacker = shot.attacker
+                    , target = shot.target
+                    , attackerHealth = shot.attackerHealth
+                    , targetHealth = shot.targetHealth
+                    }
+                        :: remaining
     in
     collect frame.shots
 
@@ -313,7 +304,7 @@ tickCombat delta focus playback =
                         Spotlighting (elapsed + delta)
 
                 ShowingPanels panel ->
-                    ShowingPanels { panel | elapsed = min 1100 (panel.elapsed + delta) }
+                    ShowingPanels { panel | elapsed = min 2000 (panel.elapsed + delta) }
     in
     ( Just { playback | presentation = Combat { focus | stage = stage } }
     , focus.before

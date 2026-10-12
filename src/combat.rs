@@ -47,8 +47,17 @@ pub struct Shot {
     pub origin: Coordinate,
     pub destination: Coordinate,
     pub damage: i32,
+    pub attacker: Unit,
+    pub target: Unit,
     pub attacker_health: CombatHealth,
     pub target_health: CombatHealth,
+}
+
+/// Encounter portraits are separate from battlefield sightings and never expose resources.
+fn theater_participant(unit: &Unit) -> Unit {
+    let mut participant = unit.clone();
+    participant.conceal_resources();
+    participant
 }
 
 #[derive(Clone, Copy, Debug, GraphQLObject)]
@@ -150,6 +159,8 @@ impl Combat {
                 origin,
                 destination,
                 damage: rules(shooter.kind()).damage,
+                attacker: theater_participant(shooter),
+                target: theater_participant(target),
                 attacker_health: CombatHealth {
                     before: shooter.hit_points(),
                     after: shooter.hit_points(),
@@ -682,8 +693,8 @@ mod tests {
     }
 
     #[test]
-    fn projected_shots_preserve_observed_mutual_deaths_and_conceal_hidden_shooters()
-    -> TestResult<()> {
+    fn projected_shots_show_hidden_combatants_without_revealing_battlefield_units() -> TestResult<()>
+    {
         let (mut scenario, mut orders) =
             fixture(UnitKind::Tank, UnitKind::Tank, Coordinate::new(4, 3))?;
         for unit in &mut scenario.units {
@@ -732,7 +743,19 @@ mod tests {
         let side = PlayerNumber::Player2;
         let visible = visibility::visible_tiles(&scenario, side);
         let observed = visibility::observed_resolution(&scenario, side, &visible, &resolution);
-        assert!(observed.frames.iter().all(|frame| frame.shots.is_empty()));
+        let volley = observed
+            .frames
+            .iter()
+            .find(|frame| !frame.shots.is_empty())
+            .fixture()?;
+        assert_eq!(volley.shots.len(), 1);
+        let shot = volley.shots.first().fixture()?;
+        assert_eq!(shot.attacker.kind(), UnitKind::FieldGun);
+        assert_eq!(shot.target.kind(), UnitKind::Truck);
+        assert_eq!(shot.target_health.before.current(), 16);
+        assert_eq!(shot.target_health.after.current(), 4);
+        assert!(shot.attacker.resources().is_none());
+        assert!(shot.target.resources().is_none());
         assert!(observed.frames.iter().all(|frame| {
             frame
                 .units

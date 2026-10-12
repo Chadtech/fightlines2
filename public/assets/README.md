@@ -57,3 +57,33 @@ and reduced-motion behavior apply. Built-in imagegen produced the approved
 master and prompt in `artwork/effects/illustrated/attack-marker/`.
 `node tools/build-effect-sprites.cjs` trims transparent padding and exports it
 with a maximum dimension of 128px, preserving its aspect ratio.
+
+## Combat theater backdrops
+
+`combat-backdrops-anime-v1/` contains nine opaque 1536 x 1024 painted 1980s
+anime backdrops. Forest, hills, and plains each have green, snow, and desert
+variants. Snow plains use `tundra-plains.png`. Forest clearings are enclosed by
+nearby trees; hill firing ledges sit among local ground contours. All provide
+open footing for staggered unit formations.
+
+`View.CombatTheater` selects scenery using each participant's occupied terrain
+and the map theme. Local masters and generation/edit prompts are under
+`artwork/combat/backdrops/anime-v1/`. Export them with
+`node tools/build-combat-backdrops.cjs`, also included in `make sprites`.
+
+## Combat theater side impact
+
+`combat-impact-side-anime-v2/` contains six transparent 512px frames.
+Projectile approach and contact each last 10ms; the impact flash takes 30ms
+and the pressure blast 30ms. The two clearing frames take just 20ms together.
+The full sequence takes 100ms. Casualty sprites remain intact through the
+approach, fading beneath the impact from 20ms to 50ms. Strikes mirror
+toward each combatant from the opponent's side. Reduced motion uses the
+steady peak-impact frame.
+
+Built-in imagegen produced the added approach frame and exact edit prompt in
+`artwork/combat/explosion/side-anime-v2/`; the five following frames come from
+`artwork/combat/explosion/side-anime-v1/sheet.png`, omitting its last shockwave.
+Run `node tools/build-combat-explosion.cjs`, also included in `make sprites`,
+to export the runtime frames. Earlier variants remain in
+`combat-impact-side-anime-v1/` and `combat-explosion-anime-v1/`.

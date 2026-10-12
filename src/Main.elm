@@ -45,7 +45,7 @@ import View.Aria as Aria
 import View.Button as Button
 import View.Card as Card
 import View.CombatEffects as CombatEffects
-import View.CombatPanels as CombatPanels
+import View.CombatTheater as CombatTheater
 import View.Dialog as Dialog exposing (Dialog)
 import View.Dropdown as Dropdown
 import View.UnitCargo as UnitCargo
@@ -561,7 +561,7 @@ shell page =
             , UnitFacing.styles
             , UnitCargo.styles
             , UnitDeath.styles
-            , CombatPanels.styles
+            , CombatTheater.styles
             , CombatEffects.styles
             ]
                 ++ content

@@ -2,10 +2,13 @@ port module TurnChecks exposing (main)
 
 import Api.Enum.AmbushShape as AmbushShape
 import Api.Enum.Direction as Direction
+import Api.Enum.MapTheme as MapTheme
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing
+import Api.Enum.Terrain as Terrain
 import Api.Enum.TurnEventKind as EventKind
 import Api.Enum.UnitKind as Kind
+import CombatHealth exposing (CombatHealth)
 import Direction
 import Platform
 import Shot exposing (Shot)
@@ -14,6 +17,9 @@ import TurnPlayback
 import Unit exposing (Unit)
 import Unit.Location as Location
 import UnitId exposing (UnitId)
+import View.CombatExplosion as CombatExplosion
+import View.CombatFormation as CombatFormation
+import View.CombatTheater as CombatTheater
 
 
 port results : List String -> Cmd msg
@@ -32,7 +38,7 @@ checks : List String
 checks =
     case ( UnitId.parse "1", UnitId.parse "2" ) of
         ( Ok first, Ok second ) ->
-            playbackChecks first second ++ truckPlaybackChecks first ++ transportPlaybackChecks first second ++ spriteFacingChecks first ++ deathPlaybackChecks first ++ deathFocusChecks first second ++ combatPlaybackChecks first second
+            playbackChecks first second ++ truckPlaybackChecks first ++ transportPlaybackChecks first second ++ spriteFacingChecks first ++ deathPlaybackChecks first ++ deathFocusChecks first second ++ combatPlaybackChecks first second ++ combatTheaterChecks
 
         _ ->
             [ "could not construct fixture IDs" ]
@@ -440,6 +446,8 @@ combatPlaybackChecks first second =
         shot =
             { origin = { x = 2, y = 2 }
             , destination = { x = 3, y = 2 }
+            , attacker = attacker
+            , target = target
             , damage = 8
             , attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }
             , targetHealth = { before = { current = 16, maximum = 16 }, after = { current = 8, maximum = 16 } }
@@ -447,7 +455,7 @@ combatPlaybackChecks first second =
 
         volley : TurnPlayback.Frame
         volley =
-            { before | durationMs = 450, shots = [ shot, { shot | origin = shot.destination, destination = shot.origin } ], units = [ { attacker | destroyed = True }, { target | destroyed = True } ] }
+            { before | durationMs = 450, shots = [ shot, { shot | origin = shot.destination, destination = shot.origin, attacker = target, target = attacker } ], units = [ { attacker | destroyed = True }, { target | destroyed = True } ] }
 
         cleanup : TurnPlayback.Frame
         cleanup =
@@ -493,7 +501,7 @@ combatPlaybackChecks first second =
 
                         hidden : TurnPlayback.Frame
                         hidden =
-                            { volley | shots = [ { shot | origin = { x = 9, y = 9 } } ] }
+                            { volley | units = [ target ], shots = [ shot ] }
 
                         hiddenPlayback : Maybe TurnPlayback.Playback
                         hiddenPlayback =
@@ -516,7 +524,7 @@ combatPlaybackChecks first second =
 
                                         multiple : TurnPlayback.Frame
                                         multiple =
-                                            { volley | units = volley.units ++ [ anotherTarget ], shots = volley.shots ++ [ { shot | destination = { x = 4, y = 2 } } ] }
+                                            { volley | units = volley.units ++ [ anotherTarget ], shots = volley.shots ++ [ { shot | destination = { x = 4, y = 2 }, target = anotherTarget } ] }
 
                                         firstPause : Maybe TurnPlayback.Playback
                                         firstPause =
@@ -557,8 +565,11 @@ combatPlaybackChecks first second =
                             (TurnPlayback.continueCombat animation == Nothing && TurnPlayback.continueCombat focus == Nothing && Maybe.andThen TurnPlayback.continueCombat resumed == Nothing)
                         , expect "combat resumes exactly once and retains battlefield feedback duration"
                             (Maybe.map .elapsed resumed == Just 0 && finished == Nothing && finalFrame == cleanup)
-                        , expect "a missing or concealed participant never creates a combat panel"
-                            (Maybe.andThen TurnPlayback.combat hiddenPlayback == Nothing)
+                        , expect "a concealed attacker still opens the theater without appearing on the battlefield"
+                            ((Maybe.andThen TurnPlayback.combat hiddenPlayback |> Maybe.map (.attacker >> .id))
+                                == Just first
+                                && (Maybe.map (.current >> .units) hiddenPlayback == Just [ target ])
+                            )
                         , expect "a volley in the final frame still receives combat focus"
                             (Maybe.andThen TurnPlayback.combat finalShot /= Nothing)
                         , multipleChecks
@@ -650,3 +661,58 @@ deathFocusChecks first second =
                 ++ expect "death focus holds the survivor still for the full pause" (deathFrame.units == [ dead, survivor ] && List.isEmpty (TurnPlayback.movingPositions before))
                 ++ expect "completed deaths clear before subsequent movement" (List.map .id clearedFrame.units == [ second ] && List.map Unit.boardPosition clearedFrame.units == [ Unit.boardPosition survivor ] && clearedFrame.visibleTiles == paused.visibleTiles)
                 ++ expect "surviving units resume their movement after death focus" (List.map .unitId (TurnPlayback.movingPositions after) == [ second ])
+
+
+combatTheaterChecks : List String
+combatTheaterChecks =
+    let
+        health : Int -> Int -> CombatHealth
+        health before after =
+            { before = { current = before, maximum = 16 }
+            , after = { current = after, maximum = 16 }
+            }
+
+        expect : String -> Bool -> List String
+        expect label passed =
+            if passed then
+                []
+
+            else
+                [ label ]
+
+        counts : List Int
+        counts =
+            List.map CombatFormation.figureCount (List.range 0 16)
+
+        themes : List MapTheme.MapTheme
+        themes =
+            [ MapTheme.GreenForest, MapTheme.Snow, MapTheme.Desert ]
+
+        paths : MapTheme.MapTheme -> List String
+        paths theme =
+            List.map (CombatTheater.backdropPath theme) [ Terrain.Forest, Terrain.Hills, Terrain.GrassPlain ]
+
+        names : List String
+        names =
+            [ "forest", "hills", "plains", "snowy-forest", "snowy-hills", "tundra-plains", "desert-forest", "desert-hills", "desert-plains" ]
+
+        expectedPaths : List String
+        expectedPaths =
+            List.map (\name -> "/assets/combat-backdrops-anime-v1/" ++ name ++ ".png") names
+    in
+    List.concat
+        [ expect "theater figures each represent a quarter of health, including partially intact quarters"
+            (counts == [ 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4 ])
+        , expect "an 8-damage hit on a full unit destroys two figures"
+            (CombatFormation.figureCount 16 - CombatFormation.figureCount 8 == 2)
+        , expect "casualties wait until the card opens and the viewer has a one-second beat"
+            (CombatFormation.lossStartsAt { surviving = 2, index = 2 } == 1200)
+        , expect "the casualty disappears beneath the impact before the shockwave clears"
+            (CombatExplosion.spriteOpacity 20 == 1 && CombatExplosion.spriteOpacity CombatExplosion.spriteDisappearsAt == 0 && CombatExplosion.durationMs > CombatExplosion.spriteDisappearsAt)
+        , expect "rumble follows staggered casualties and nonlethal hits, never undamaged figures"
+            (CombatFormation.impactStarts (health 16 8) == [ 1200, 1320 ] && CombatFormation.impactStarts (health 16 14) == [ 1200 ] && List.isEmpty (CombatFormation.impactStarts (health 16 16)))
+        , expect "all nine theater backdrops follow terrain and visual theme"
+            (List.concatMap paths themes == expectedPaths)
+        , expect "a full formation's four losses finish before the panel clock caps at 2000ms"
+            (CombatFormation.lossStartsAt { surviving = 0, index = 3 } + CombatExplosion.durationMs <= 2000)
+        ]

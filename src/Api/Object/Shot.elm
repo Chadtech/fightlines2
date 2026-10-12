@@ -38,6 +38,20 @@ damage =
     Object.selectionForField "Int" "damage" [] Decode.int
 
 
+attacker :
+    SelectionSet decodesTo Api.Object.Unit
+    -> SelectionSet decodesTo Api.Object.Shot
+attacker object____ =
+    Object.selectionForCompositeField "attacker" [] object____ Basics.identity
+
+
+target :
+    SelectionSet decodesTo Api.Object.Unit
+    -> SelectionSet decodesTo Api.Object.Shot
+target object____ =
+    Object.selectionForCompositeField "target" [] object____ Basics.identity
+
+
 attackerHealth :
     SelectionSet decodesTo Api.Object.CombatHealth
     -> SelectionSet decodesTo Api.Object.Shot

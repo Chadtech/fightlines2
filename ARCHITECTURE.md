@@ -705,7 +705,10 @@ block occupancy, or grant sight. Cargo of destroyed carriers is also destroyed.
 Final resource cleanup removes dead units and returns their death presentation.
 
 `TurnFrame.shots` carries origin, destination, and damage for each volley. Fog
-projection withholds a trace unless both endpoints are observable or owned. The
+projection retains every encounter involving an owned combatant, even when the
+other participant is concealed. Other encounters require both endpoints to be
+observable. Each shot carries encounter-only attacker and target portraits with
+resources concealed; these do not add sightings to the battlefield or reveal paths. The
 observed exchange retains its sight mask briefly when a volley kills the observer,
 so mutual destruction remains visible without revealing later movement. Resources
 stay concealed for enemies; the public `Unit.destroyed` flag permits visible death
@@ -715,10 +718,28 @@ lines, floating damage numbers, or calculating combat outcomes.
 
 `TurnPlayback.Presentation` separates ordinary battlefield playback from combat
 focus. Entering a projected volley captures the pre-hit frame and queues its
-distinct visible unit pairs, combining reciprocal shots. Combat focus holds each
+distinct encounter unit pairs, combining reciprocal shots. Combat focus holds each
 pair in a 300ms spotlight stage followed by a panel stage that waits for Enter without
-advancing movement interpolation or revealing the volley. `GamePage` freezes idle/interface animation and renders `View.CombatPanels`
-as one ambush card with static inward-facing sprites and a brief CSS expansion. `View.CombatEffects`
+advancing movement interpolation or revealing the volley. `GamePage` freezes idle/interface animation and renders `View.CombatTheater`
+as one ambush card with inward-facing formations and a brief CSS expansion.
+`View.CombatTheater` receives the immutable map and chooses each participant's backdrop
+from its on-board position, terrain, and map theme. `View.CombatFormation` maps
+authoritative before/after health to staggered figures for every unit kind and
+represents each four-HP quarter with one figure, then sequences individual
+casualty explosions and disappearance after a one-second anticipation beat.
+`View.CombatExplosion` selects six illustrated horizontal impact frames from that
+same clock, with a 100ms duration and figure removal beneath the blast at 50ms.
+Approach and contact occupy the first 20ms; the final clearing tail takes 20ms.
+Formation sprites render before all impact overlays so other figures cannot
+obscure an incoming projectile.
+The incoming strike mirrors toward the figure from its opponent's side.
+`CombatFormation.impactStarts` supplies both casualty and nonlethal hit times.
+The theater derives a shared, rapidly decaying camera translation and rotation
+from the latest contact on either side, beginning 20ms after the projectile
+appears and settling over 160ms. Each scene moves its backdrop, figures, and
+impact overlays together; backdrop overscan prevents exposed edges. Reduced
+motion disables the shake.
+Reduced motion substitutes a steady peak-impact frame. `View.CombatEffects`
 owns the board spotlight, shine, firing flashes, and target explosions. After the last pair, playback reveals the
 volley and restarts its battlefield feedback clock at zero. Long animation ticks
 stop at combat boundaries so they cannot skip the panels or immediately consume
@@ -726,9 +747,10 @@ the hit/death feedback. These pauses affect local presentation only; Rust frame
 timing, combat outcomes, and fog projection remain authoritative.
 
 Projected `Shot.attackerHealth` and `Shot.targetHealth` carry authoritative before
-and after hit points for visible combatants. This permits enemy health inside the
+and after hit points for encounter combatants, including concealed enemies. This permits enemy health inside the
 encounter card without exposing enemy supplies or fuel through `Unit.resources`.
 Panel state owns its capped presentation clock and `CardVisible | SeeingMap`
-mode. The clock sequences the portrait explosion and health drain; Continue/Enter
+mode. Its 2000ms capped clock allows the 200ms opening expansion, a one-second
+anticipation beat, and up to four staggered casualties to finish. The clock sequences individual figure explosions and removal, without HP bars; Continue/Enter
 advances the pair. SeeingMap hides the card completely and restores the board
 spotlight with repeating shine. Mouse release restores the card even outside the button.

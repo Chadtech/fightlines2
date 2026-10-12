@@ -102,7 +102,7 @@ import View.Ambush as Ambush
 import View.Aria as Aria
 import View.Button as Button
 import View.CombatEffects as CombatEffects
-import View.CombatPanels as CombatPanels
+import View.CombatTheater as CombatTheater
 import View.Dialog as Dialog exposing (Dialog)
 import View.RotationChoices as RotationChoices
 import View.TerrainInfo as TerrainInfo
@@ -195,7 +195,7 @@ type Msg
     | ZoomOutKeyPressed
     | ResetViewClicked
     | AnimationTimerElapsed Time.Posix
-    | CombatPanelsMsg CombatPanels.Msg
+    | CombatTheaterMsg CombatTheater.Msg
     | DirectionKeyPressed Direction
     | PathDirectionKeyPressed Direction
     | PathEnterPressed
@@ -209,6 +209,8 @@ type Msg
     | EscapePressed
     | DialogDismissed
     | SubmissionConfirmed
+    | SubmitKeyPressed
+    | SubmissionEnterPressed
     | TurnControlsMsg TurnControls.Msg
     | SubmitResponseReceived Int (ApiRequest.Response Snapshot)
     | CurrentTurnMsg CurrentTurn.Msg
@@ -767,14 +769,31 @@ finishBoardInteraction previous next =
     ( next, effect )
 
 
-onKeyDown : { pressedEnter : msg, pressedSpace : msg } -> Svg.Attribute msg
-onKeyDown messages =
+{-| Enter and Space activate a focused board object. Reserve Meta/Ctrl chords
+for shortcuts on every platform, including the window's submit command.
+-}
+onBoardActivationKeyDown : { pressedEnter : msg, pressedSpace : msg } -> Svg.Attribute msg
+onBoardActivationKeyDown messages =
+    let
+        shortcutModifier : Decode.Decoder Bool
+        shortcutModifier =
+            Decode.map2 (||)
+                (Decode.field "metaKey" Decode.bool)
+                (Decode.field "ctrlKey" Decode.bool)
+
+        activateWithoutShortcut : Bool -> Decode.Decoder ( msg, Bool )
+        activateWithoutShortcut shortcutModifierPressed =
+            if shortcutModifierPressed then
+                Decode.fail "shortcut chords do not activate board objects"
+
+            else
+                Decode.oneOf
+                    [ HtmlEvent.enter ( messages.pressedEnter, True )
+                    , HtmlEvent.key " " ( messages.pressedSpace, True )
+                    ]
+    in
     Ev.preventDefaultOn "keydown"
-        (Decode.oneOf
-            [ HtmlEvent.enter ( messages.pressedEnter, True )
-            , HtmlEvent.key " " ( messages.pressedSpace, True )
-            ]
-        )
+        (shortcutModifier |> Decode.andThen activateWithoutShortcut)
 
 
 onClickWithDetail : ({ detail : Int } -> msg) -> Svg.Attribute msg
@@ -1193,14 +1212,18 @@ update lobbyId msg model =
                 |> dismissDialog
                 |> E.withOut
 
-        SubmissionConfirmed ->
-            case model.currentTurn.phase of
-                TurnLifecycle.Planning (OrderPlanning.ConfirmingSubmission _) ->
-                    model
-                        |> submitTurn lobbyId
+        SubmitKeyPressed ->
+            if canSubmitWithKeyboard model then
+                requestSubmission lobbyId model
 
-                _ ->
-                    model |> E.withOut
+            else
+                model |> E.withOut
+
+        SubmissionConfirmed ->
+            confirmSubmission lobbyId model
+
+        SubmissionEnterPressed ->
+            confirmSubmission lobbyId model
 
         SubmitResponseReceived turnNumber result ->
             case result of
@@ -1241,16 +1264,16 @@ update lobbyId msg model =
                 { model | frame = AnimationFrame.next model.frame }
                     |> E.withOut
 
-        CombatPanelsMsg panelMsg ->
+        CombatTheaterMsg panelMsg ->
             case panelMsg of
-                CombatPanels.ContinueClicked ->
+                CombatTheater.ContinueClicked ->
                     continueCombat model
                         |> E.withOut
 
-                CombatPanels.SeeMapPressed ->
+                CombatTheater.SeeMapPressed ->
                     setCombatMapView TurnPlayback.SeeingMap model |> E.withOut
 
-                CombatPanels.SeeMapReleased ->
+                CombatTheater.SeeMapReleased ->
                     setCombatMapView TurnPlayback.CardVisible model |> E.withOut
 
 
@@ -1258,18 +1281,53 @@ handleTurnControlsMsg : LobbyId -> TurnControls.Msg -> Model -> ( Model, Eff Msg
 handleTurnControlsMsg lobbyId msg model =
     case msg of
         TurnControls.SubmitClicked ->
-            if planningLocked model || isChoosingUnload model || unloadChoice model.currentTurn.phase /= Nothing then
-                model |> E.withOut
+            requestSubmission lobbyId model
 
-            else if List.isEmpty (unitsWithoutOrders model) then
-                model
-                    |> submitTurn lobbyId
 
-            else
-                ( model
-                    |> mapPlanning OrderPlanning.showSubmissionWarning
-                , E.toJs (ToJs.OpenDialog { htmlId = partialOrdersDialogHtmlId })
-                )
+canSubmitWithKeyboard : Model -> Bool
+canSubmitWithKeyboard model =
+    case model.currentTurn.phase of
+        TurnLifecycle.Planning (OrderPlanning.OrdinaryPlanning { selection }) ->
+            let
+                idleSelection : Bool
+                idleSelection =
+                    case selection of
+                        Just (UnitSelection _) ->
+                            False
+
+                        _ ->
+                            True
+            in
+            idleSelection && not (BattlefieldNavigation.active model.navigation)
+
+        _ ->
+            False
+
+
+confirmSubmission : LobbyId -> Model -> ( Model, Eff Msg )
+confirmSubmission lobbyId model =
+    case model.currentTurn.phase of
+        TurnLifecycle.Planning (OrderPlanning.ConfirmingSubmission _) ->
+            submitTurn lobbyId model
+
+        _ ->
+            model |> E.withOut
+
+
+requestSubmission : LobbyId -> Model -> ( Model, Eff Msg )
+requestSubmission lobbyId model =
+    if planningLocked model || isChoosingUnload model || unloadChoice model.currentTurn.phase /= Nothing then
+        model |> E.withOut
+
+    else if List.isEmpty (unitsWithoutOrders model) then
+        model
+            |> submitTurn lobbyId
+
+    else
+        ( model
+            |> mapPlanning OrderPlanning.showSubmissionWarning
+        , E.toJs (ToJs.OpenDialog { htmlId = partialOrdersDialogHtmlId })
+        )
 
 
 handleCurrentTurnMsg : LobbyId -> CurrentTurn.Msg -> Model -> ( Model, Eff Msg )
@@ -1423,8 +1481,8 @@ view model =
         combatOverlay =
             playback model
                 |> Maybe.andThen TurnPlayback.panels
-                |> Maybe.map CombatPanels.toHtml
-                |> Maybe.map (H.map CombatPanelsMsg)
+                |> Maybe.map (CombatTheater.toHtml model.map)
+                |> Maybe.map (H.map CombatTheaterMsg)
                 |> Maybe.withDefault (H.text "")
     in
     [ H.div
@@ -2163,6 +2221,13 @@ submissionWarning model =
             ]
         , H.form
             [ A.attribute "method" "dialog"
+            , HtmlEvents.custom "keydown"
+                (HtmlEvent.enter
+                    { message = SubmissionEnterPressed
+                    , stopPropagation = True
+                    , preventDefault = True
+                    }
+                )
             , A.css
                 [ S.row
                 , S.flexWrap
@@ -2429,7 +2494,7 @@ boardHtml model =
                         [ HA.attribute "tabindex" "0"
                         , Aria.svgRole Aria.Button
                         , Aria.svgLabel ("move to (" ++ String.fromInt position.x ++ ", " ++ String.fromInt position.y ++ ")")
-                        , onKeyDown
+                        , onBoardActivationKeyDown
                             { pressedEnter = PressedEnterOnTile position
                             , pressedSpace = PressedSpaceOnTile position
                             }
@@ -2502,7 +2567,7 @@ boardHtml model =
                     , Aria.svgLabel "supply depot"
                     , Ev.onMouseOver (MouseOverDepot depot.position)
                     , onClickWithDetail (ClickedDepot depot.position)
-                    , onKeyDown
+                    , onBoardActivationKeyDown
                         { pressedEnter = PressedEnterOnDepot depot.position
                         , pressedSpace = PressedSpaceOnDepot depot.position
                         }
@@ -2668,7 +2733,7 @@ boardHtml model =
                     , Aria.svgLabel accessibleLabel
                     , Ev.onMouseOver (MouseOverUnit unit.id)
                     , onClickWithDetail (ClickedUnit unit.id)
-                    , onKeyDown
+                    , onBoardActivationKeyDown
                         { pressedEnter = PressedEnterOnUnit unit.id
                         , pressedSpace = PressedSpaceOnUnit unit.id
                         }
@@ -3033,6 +3098,14 @@ keyCommands model =
             ]
                 |> KeyCmd.batch
 
+        submission : KeyCmd Msg
+        submission =
+            if canSubmitWithKeyboard model then
+                KeyCmd.enter SubmitKeyPressed |> KeyCmd.cmd
+
+            else
+                KeyCmd.none
+
         unitSelection : KeyCmd Msg
         unitSelection =
             if hasDialog model || planningLocked model then
@@ -3049,6 +3122,7 @@ keyCommands model =
             [ KeyCmd.escape EscapePressed
             , camera
             , unitSelection
+            , submission
             , KeyCmd.batch navigation
             ]
 

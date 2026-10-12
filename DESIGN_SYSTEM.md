@@ -350,17 +350,33 @@ firing flashes on shooters, without connecting lines or floating damage numbers.
 Combat deaths reuse the existing skull marker; public destroyed state
 supports observable enemy deaths without exposing their resource gauges.
 
-Before a visible volley, freeze the pre-hit battlefield, unit idle sprites, and
+Every volley involving your units opens the theater, including concealed enemy
+combatants. Encounter portraits do not add concealed units to the battlefield.
+Before a projected volley, freeze the pre-hit battlefield, unit idle sprites, and
 interface animations. For 300ms, darken every other board tile and outline the two
 participants in gold with a brief moving shine. Direction markers live in a final
 overlay above depots, units, ambush coverage, and direction-selection sectors.
 A dim overlay then covers the workspace while one beveled card headed `ambush`
-shows the existing static sprites on two plain nightwood inset backgrounds. Omit
+shows inward-facing formations on the illustrated backdrop matching each
+combatant's terrain and map theme. Omit
 visible unit/player labels. The attacker faces right and the target faces left.
-The card opens with a 200ms expansion and slight overshoot. Damaged units show
-an explosion from 200–560ms; afterward their health meters drain over 500ms from
-the server's pre-volley health to post-volley health. Both combatants have numeric
-health meters, including observable enemies; supplies and fuel stay concealed.
+The card opens with a 200ms expansion and slight overshoot. Every unit kind
+uses four staggered figures at 13–16 HP, three at 9–12, two at 5–8, one at
+1–4, and none at zero. Each figure represents four HP; partially intact
+quarters remain visible. Hold the scene for one second after the opening
+animation finishes before combat begins. Use the server's pre/post-volley health, including
+observable enemies, without theater HP bars. Lost figures play a six-frame illustrated horizontal projectile impact over 100ms,
+beginning at 1200ms with losses staggered by 120ms. Draw impacts above the entire formation so neighboring figures cannot obscure
+the projectile. The moving projectile approach and contact each get 10ms, followed by a 30ms impact
+flash and 30ms pressure blast. Only 20ms remains for the two clearing frames. The shockwave blows
+apart and vanishes, with no ember or lingering smoke phase. Each casualty fades
+beneath the blast between 20ms and 50ms. Mirror the strike from the opponent's side. Survivors
+remain in place. Every contact shakes both backdrops and formations together,
+with a sharp translation and slight rotation that decays to rest over 160ms.
+Start at impact, after the 20ms projectile approach; later contacts kick again.
+Overscan backdrop artwork to avoid exposed edges, keep the card controls still,
+and suppress the shake for reduced motion. Damage within a count band shows an impact without inventing
+a casualty. Supplies and fuel stay concealed.
 The card remains open with a `continue` button. Enter also continues, without
 an explanatory keyboard prompt. Holding `see map` makes the whole card completely transparent
 and clears the backdrop while darkening all board tiles except the combatants,
@@ -368,5 +384,5 @@ whose shine repeats while held; mouse release or leaving the button restores it.
 Combine reciprocal shots into one display. Reveal the volley's map feedback
 only after all pairs have appeared, then resume the server timeline.
 The combat overlay blocks battlefield interaction and camera shortcuts. Reduced
-motion uses steady impacts and health changes after the hit, without pop or shine
+motion uses steady impacts and figure removal after the hit, without pop, fade, or shine
 motion. Continuation remains user-controlled.

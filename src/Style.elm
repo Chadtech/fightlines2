@@ -1,6 +1,7 @@
 module Style exposing
     ( absolute
     , appearanceNone
+    , aspectRatio
     , basisFull
     , batch
     , belowWidth
@@ -2519,6 +2520,12 @@ z4 =
 transformOriginTopLeft : Css.Style
 transformOriginTopLeft =
     Css.property "transform-origin" "top left"
+
+
+aspectRatio : { width : Int, height : Int } -> Css.Style
+aspectRatio ratio =
+    Css.property "aspect-ratio"
+        (String.fromInt ratio.width ++ " / " ++ String.fromInt ratio.height)
 
 
 shadowMenu : Css.Style
