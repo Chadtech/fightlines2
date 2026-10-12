@@ -30,7 +30,7 @@ checks : List String
 checks =
     case ( UnitId.parse "1", UnitId.parse "2" ) of
         ( Ok first, Ok second ) ->
-            playbackChecks first second ++ truckPlaybackChecks first ++ transportPlaybackChecks first second ++ spriteFacingChecks first ++ deathPlaybackChecks first
+            playbackChecks first second ++ truckPlaybackChecks first ++ transportPlaybackChecks first second ++ spriteFacingChecks first ++ deathPlaybackChecks first ++ deathFocusChecks first second
 
         _ ->
             [ "could not construct fixture IDs" ]
@@ -453,3 +453,52 @@ deathPlaybackChecks id =
     expect "dead units remain for the full death animation" (pending /= Nothing && beforeRemoval.units == [ dead ])
         ++ expect "dead units vanish at the server frame boundary" (finished == Nothing && List.isEmpty afterRemoval.units && List.isEmpty afterRemoval.visibleTiles)
         ++ expect "death does not interpolate a movement" (List.isEmpty (TurnPlayback.movingPositions (Just animation)))
+
+
+deathFocusChecks : UnitId -> UnitId -> List String
+deathFocusChecks first second =
+    let
+        dead : Unit
+        dead =
+            { id = first, playerNumber = PlayerNumber.Player2, spriteFacing = SpriteFacing.Left, direction = Just Direction.West, kind = Kind.Infantry, destroyed = True, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.OnMap { x = 2, y = 2 }, resources = Nothing }
+
+        survivor : Unit
+        survivor =
+            { dead | id = second, destroyed = False, location = Location.OnMap { x = 3, y = 2 } }
+
+        dying : TurnPlayback.Frame
+        dying =
+            { shots = [], durationMs = 450, units = [ dead, survivor ], visibleTiles = [ { x = 2, y = 2 }, { x = 3, y = 2 } ] }
+
+        paused : TurnPlayback.Frame
+        paused =
+            { dying | durationMs = 600 }
+
+        moved : TurnPlayback.Frame
+        moved =
+            { dying | durationMs = 180, units = [ dead, Unit.setOnMap { x = 4, y = 2 } survivor ] }
+
+        expect : String -> Bool -> List String
+        expect label passed =
+            if passed then
+                []
+
+            else
+                [ label ]
+    in
+    case TurnPlayback.start [ dying, paused, moved ] of
+        Nothing ->
+            [ "death focus playback did not start" ]
+
+        Just animation ->
+            let
+                ( before, deathFrame ) =
+                    TurnPlayback.tick 599 animation
+
+                ( after, clearedFrame ) =
+                    TurnPlayback.tick 600 animation
+            in
+            expect "concealed resources still permit a public death marker" (Unit.isDying dead)
+                ++ expect "death focus holds the survivor still for the full pause" (deathFrame.units == [ dead, survivor ] && List.isEmpty (TurnPlayback.movingPositions before))
+                ++ expect "completed deaths clear before subsequent movement" (List.map .id clearedFrame.units == [ second ] && List.map Unit.boardPosition clearedFrame.units == [ Unit.boardPosition survivor ] && clearedFrame.visibleTiles == paused.visibleTiles)
+                ++ expect "surviving units resume their movement after death focus" (List.map .unitId (TurnPlayback.movingPositions after) == [ second ])

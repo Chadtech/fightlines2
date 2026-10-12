@@ -254,9 +254,6 @@ fn resolve_arrivals(
     };
     if orders.iter().any(|order| order.facing.is_ambush()) {
         result.frames.push(frame(&board, 180));
-        result
-            .combat
-            .engage(&mut board, &mut result.stopped, &mut result.frames);
     }
     let priority = if turn % 2 == 1 {
         PlayerNumber::Player1

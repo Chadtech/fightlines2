@@ -6,7 +6,6 @@ module View.UnitFacing exposing
 import Api.Enum.Direction as Direction
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
-import Style as S
 import Svg.Styled as Svg exposing (Svg)
 import Svg.Styled.Attributes as SA
 import Unit exposing (Unit)
@@ -63,27 +62,27 @@ marker selected direction =
                 Direction.West ->
                     "270"
 
-        color : String
-        color =
+        brightness : String
+        brightness =
             if selected then
-                S.yellow5Str
+                "brightness(1.25)"
 
             else
-                S.gray5Str
+                "none"
     in
     Svg.g
         [ SA.transform ("rotate(" ++ angle ++ " 8 8)")
         , SA.pointerEvents "none"
         , Aria.hidden True
         ]
-        [ Svg.path
-            [ SA.d "M6.4 2.24L8 0.48L9.6 2.24Z"
-            , SA.fill color
-            , SA.stroke S.gray0Str
-            , SA.strokeWidth "0.4"
-            , SA.strokeLinejoin "round"
+        [ Svg.image
+            [ SA.x "6.1"
+            , SA.y "-2.6"
+            , SA.width "3.8"
+            , SA.height "5.6"
+            , SA.xlinkHref "/assets/attack-marker-illustrated-v1.png"
             , SA.class "fightlines-unit-facing"
-            , SA.style "paint-order: stroke fill"
+            , SA.style ("filter: " ++ brightness)
             ]
             []
         ]

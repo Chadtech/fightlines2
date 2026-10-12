@@ -53,8 +53,10 @@ illustrations, with a grass tile in every square, defined hill ridges and tree
 silhouettes, and a subtle grid.
 Units use detailed illustrated anime sprites with red and blue team colors,
 packed into 256px square cells and smoothly scaled to the board.
-Infantry, tanks and field guns have an inset edge triangle indicating their stored
-up/right/down/left facing. Trucks have no direction or facing marker.
+Direction markers appear only while choosing or maintaining an ambush, including
+turn playback. Infantry, tanks and field guns use a small illustrated red striking arrow for the
+ambush's up/right/down/left facing. Other units have no facing marker.
+The arrow's ivory impact tip protrudes slightly beyond the tile edge.
 Choose **rotate** for infantry, tanks, or field guns, then select north, east,
 south, or west on the map. Point around the unit to preview its facing, then
 click to save it; an arrow key or WASD also saves the corresponding direction. Rotation is an in-place turn order that can be
@@ -150,8 +152,10 @@ supplies. Infantry need at least 5 supplies to move one tile; field guns need at
 Units below these thresholds can still hold.
 Units die immediately when supplies reach zero after turn upkeep. A dead truck
 also loses its passengers. During playback, a skull and crossbones blinks once, then pauses briefly
-before dead units vanish; reduced-motion mode shows a steady marker. Depots do not
-replenish supplies yet. These provisions belong to the unit; supply cargo
+before dead units vanish; reduced-motion mode shows a steady marker.
+Other sprites and interface animations pause during death feedback, and later
+movement resumes after the death marker clears. Depots do not replenish supplies
+yet. These provisions belong to the unit; supply cargo
 and supply delivery remain future work. Trucks can now carry units.
 
 The full-height right panel stays in place when selection clears. Its main area
@@ -223,9 +227,15 @@ is reserved before firing. Units without enough supplies for readiness cannot
 choose ambush; a unit can maintain readiness without enough supplies to fire.
 Trucks and carried units cannot ambush. Ambush orders last for one resolved turn.
 
-The server checks targets at the beginning of the turn and after each movement
-arrival and transport transition. A unit fires at most once per turn, choosing the nearest observable
-enemy in its firing line. Forest concealment and intervening sight blockers
+The server records observable enemies already in each ambush firing line when
+readiness begins. Those enemies get a chance to leave: they are targeted only
+if they remain in the line after movement and transport finish, whether holding
+still or moving within the line. Leaving the line escapes the ambush; leaving
+and re-entering triggers it immediately. New contacts trigger after each movement
+arrival or transport transition, including enemies emerging from concealment or
+unloading into the line. Other units moving do not trigger fire at an initial
+contact that has stayed in the line. A unit fires at most once per turn, choosing
+the nearest eligible observable enemy in its firing line. Forest concealment and intervening sight blockers
 apply; an ally's sight cannot enable firing through an obstruction. An ambushed
 unit stops its remaining movement. Ready units fire simultaneously, permitting
 mutual destruction. Unready surviving infantry and tanks can turn to return

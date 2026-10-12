@@ -73,7 +73,7 @@ initial frames fallback =
 
 start : List Frame -> Maybe Playback
 start frames =
-    case frames of
+    case clearPresentedDeaths [] frames of
         current :: next :: remaining ->
             Just
                 { current = current
@@ -83,6 +83,30 @@ start frames =
 
         _ ->
             Nothing
+
+
+{-| Combat keeps casualties in authoritative snapshots until end-of-turn cleanup.
+Show each death in its first frame, then omit the finished marker and corpse
+from subsequent presentation frames so later movement can resume with focus.
+The transition after a death frame already supplies the server's death pause.
+-}
+clearPresentedDeaths : List UnitId -> List Frame -> List Frame
+clearPresentedDeaths presented frames =
+    case frames of
+        [] ->
+            []
+
+        frame :: remaining ->
+            let
+                deaths : List UnitId
+                deaths =
+                    List.filter Unit.isDying frame.units |> List.map .id
+
+                units : List Unit
+                units =
+                    List.filter (\unit -> not (List.member unit.id presented)) frame.units
+            in
+            { frame | units = units } :: clearPresentedDeaths (deaths ++ presented) remaining
 
 
 {-| Each frame uses its server-provided duration. Visibility changes at tile boundaries.

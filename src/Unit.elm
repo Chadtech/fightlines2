@@ -3,6 +3,7 @@ module Unit exposing
     , boardPosition
     , carrierId
     , faceDirection
+    , isDying
     , label
     , loadingTarget
     , onBoard
@@ -104,6 +105,18 @@ supplyMovementLimit supplies =
 onBoard : Unit -> Bool
 onBoard unit =
     boardPosition unit /= Nothing
+
+
+isDying : Unit -> Bool
+isDying unit =
+    unit.destroyed
+        || (unit.resources
+                |> Maybe.map
+                    (\resources ->
+                        resources.supplies.current == 0 || resources.hitPoints.current == 0
+                    )
+                |> Maybe.withDefault False
+           )
 
 
 loadingTarget : List Unit -> Unit -> Coordinate -> Maybe Unit

@@ -38,6 +38,7 @@ pub struct Shot {
     pub damage: i32,
 }
 
+#[derive(Clone)]
 struct Engagement {
     shooter: UnitId,
     target: UnitId,
@@ -47,6 +48,7 @@ struct Engagement {
 pub struct Combat {
     ready: BTreeSet<UnitId>,
     fired: BTreeSet<UnitId>,
+    deferred_targets: BTreeMap<UnitId, BTreeSet<UnitId>>,
 }
 
 impl Combat {
@@ -65,10 +67,25 @@ impl Combat {
                 ready.insert(unit.unit_id());
             }
         }
-        Self {
+        let mut combat = Self {
             ready,
             fired: BTreeSet::new(),
+            deferred_targets: BTreeMap::new(),
+        };
+        for shooter in board
+            .units
+            .iter()
+            .filter(|unit| combat.ready.contains(&unit.unit_id()))
+        {
+            let targets = board
+                .units
+                .iter()
+                .filter(|target| combat.engagement(board, shooter, target, true).is_some())
+                .map(Unit::unit_id)
+                .collect();
+            combat.deferred_targets.insert(shooter.unit_id(), targets);
         }
+        combat
     }
 
     fn can_fire(&self, unit: &Unit) -> bool {
@@ -197,15 +214,40 @@ impl Combat {
         stopped: &mut BTreeSet<UnitId>,
         frames: &mut Vec<TurnFrame>,
     ) {
-        let opening: Vec<_> = board
+        let eligible: Vec<_> = board
             .units
             .iter()
             .filter(|unit| self.ready.contains(&unit.unit_id()))
-            .filter_map(|shooter| {
+            .flat_map(|shooter| {
                 board
                     .units
                     .iter()
                     .filter_map(|target| self.engagement(board, shooter, target, true))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        // Initial contacts may escape. Once they leave contact, re-entry triggers
+        // immediate fire just like any newcomer, even if another unit moved.
+        for (shooter, targets) in &mut self.deferred_targets {
+            targets.retain(|target| {
+                eligible.iter().any(|engagement| {
+                    engagement.shooter == *shooter && engagement.target == *target
+                })
+            });
+        }
+        let opening: Vec<_> = self
+            .ready
+            .iter()
+            .filter_map(|shooter| {
+                eligible
+                    .iter()
+                    .filter(|engagement| {
+                        engagement.shooter == *shooter
+                            && !self
+                                .deferred_targets
+                                .get(shooter)
+                                .is_some_and(|targets| targets.contains(&engagement.target))
+                    })
                     .min_by_key(|engagement| {
                         (
                             (engagement.shot.destination.x() - engagement.shot.origin.x()).abs()
@@ -216,6 +258,7 @@ impl Combat {
                     })
             })
             .collect();
+        let opening: Vec<_> = opening.into_iter().cloned().collect();
         for engagement in &opening {
             stopped.insert(engagement.target);
         }
@@ -249,6 +292,17 @@ impl Combat {
                 .filter(|unit| !unit.is_alive())
                 .map(Unit::unit_id),
         );
+    }
+
+    /// After movement and transport, initial contacts still in the line are vulnerable.
+    pub fn finish(
+        &mut self,
+        board: &mut Scenario,
+        stopped: &mut BTreeSet<UnitId>,
+        frames: &mut Vec<TurnFrame>,
+    ) {
+        self.deferred_targets.clear();
+        self.engage(board, stopped, frames);
     }
 }
 
@@ -306,6 +360,20 @@ mod tests {
         Ok((scenario, orders))
     }
 
+    fn resolve_completed_movement(
+        scenario: &Scenario,
+        orders: &[MoveOrder],
+        turn: i32,
+    ) -> TestResult<movement_resolution::MovementResolution> {
+        let mut result = movement_resolution::resolve(scenario, orders, turn)?;
+        let mut board = scenario.clone();
+        board.units = result.frames.last().fixture()?.units.clone();
+        result
+            .combat
+            .finish(&mut board, &mut result.stopped, &mut result.frames);
+        Ok(result)
+    }
+
     fn shots(result: &movement_resolution::MovementResolution) -> Vec<&Shot> {
         result
             .frames
@@ -327,7 +395,7 @@ mod tests {
                 (Coordinate::new(4, 4), false),
             ] {
                 let (scenario, orders) = fixture(kind, UnitKind::Truck, position)?;
-                let result = movement_resolution::resolve(&scenario, &orders, 1)?;
+                let result = resolve_completed_movement(&scenario, &orders, 1)?;
                 assert_eq!(
                     !shots(&result).is_empty(),
                     expected,
@@ -344,6 +412,101 @@ mod tests {
     }
 
     #[test]
+    fn initial_contacts_can_escape_but_remaining_contacts_wait_until_movement_finishes()
+    -> TestResult<()> {
+        for kind in [UnitKind::Infantry, UnitKind::Tank, UnitKind::FieldGun] {
+            let within_line_x = if kind == UnitKind::FieldGun { 5 } else { 4 };
+            let within_line = Coordinate::new(within_line_x, 3);
+            for (route, expected_shots) in [
+                (Vec::new(), 1),
+                (vec![within_line], 1),
+                (vec![Coordinate::new(4, 2)], 0),
+                // Passing through a second firing square while withdrawing is safe.
+                (vec![within_line, Coordinate::new(within_line_x, 2)], 0),
+            ] {
+                let (scenario, mut orders) = fixture(kind, UnitKind::Truck, Coordinate::new(4, 3))?;
+                // Avoid a duplicate position for the one-square firing lines.
+                orders[1].path.extend(
+                    route
+                        .into_iter()
+                        .filter(|position| *position != Coordinate::new(4, 3)),
+                );
+                let mut result = movement_resolution::resolve(&scenario, &orders, 1)?;
+                assert!(shots(&result).is_empty());
+                assert_eq!(
+                    result.paths.get(&orders[1].unit_id).fixture()?,
+                    &orders[1].path
+                );
+                let mut board = scenario.clone();
+                board.units = result.frames.last().fixture()?.units.clone();
+                result
+                    .combat
+                    .finish(&mut board, &mut result.stopped, &mut result.frames);
+                assert_eq!(shots(&result).len(), expected_shots, "{kind:?}");
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn initial_contact_leaving_and_reentering_triggers_before_its_route_finishes() -> TestResult<()>
+    {
+        let (scenario, mut orders) =
+            fixture(UnitKind::FieldGun, UnitKind::Truck, Coordinate::new(4, 3))?;
+        orders[1].path.extend([
+            Coordinate::new(4, 2),
+            Coordinate::new(5, 2),
+            Coordinate::new(5, 3),
+            Coordinate::new(6, 3),
+        ]);
+        let result = movement_resolution::resolve(&scenario, &orders, 1)?;
+        assert_eq!(shots(&result).len(), 1);
+        assert_eq!(shots(&result)[0].destination, Coordinate::new(5, 3));
+        assert_eq!(result.paths.get(&orders[1].unit_id).fixture()?.len(), 4);
+        Ok(())
+    }
+
+    #[test]
+    fn newcomer_triggers_even_with_a_nearer_initial_contact_and_consumes_the_only_shot()
+    -> TestResult<()> {
+        let (mut scenario, mut orders) =
+            fixture(UnitKind::FieldGun, UnitKind::Truck, Coordinate::new(4, 3))?;
+        let mut newcomer = Scenario::el_alamein()
+            .fixture()?
+            .units
+            .into_iter()
+            .find(|unit| {
+                unit.side() == PlayerNumber::Player2
+                    && unit.kind() == UnitKind::Truck
+                    && unit.unit_id() != scenario.units[1].unit_id()
+            })
+            .fixture()?;
+        newcomer.move_to(Coordinate::new(5, 2));
+        orders.push(MoveOrder {
+            unit_id: newcomer.unit_id(),
+            facing: crate::turns::FacingOrder::Unchanged,
+            path: vec![
+                Coordinate::new(5, 2),
+                Coordinate::new(5, 3),
+                Coordinate::new(5, 4),
+            ],
+            unloads: Vec::new(),
+        });
+        scenario.units.push(newcomer);
+        let result = resolve_completed_movement(&scenario, &orders, 1)?;
+        assert_eq!(shots(&result).len(), 1);
+        assert_eq!(shots(&result)[0].destination, Coordinate::new(5, 3));
+        assert_eq!(result.paths.get(&orders[2].unit_id).fixture()?.len(), 2);
+        assert_eq!(
+            result.frames.last().fixture()?.units[1]
+                .hit_points()
+                .current(),
+            16
+        );
+        Ok(())
+    }
+
+    #[test]
     fn ambush_catches_a_crossing_unit_and_charges_only_successful_movement() -> TestResult<()> {
         let (scenario, mut orders) = fixture(
             UnitKind::Infantry,
@@ -353,7 +516,7 @@ mod tests {
         orders[1]
             .path
             .extend([Coordinate::new(4, 3), Coordinate::new(4, 4)]);
-        let result = movement_resolution::resolve(&scenario, &orders, 1)?;
+        let result = resolve_completed_movement(&scenario, &orders, 1)?;
         assert_eq!(result.paths.get(&orders[1].unit_id).fixture()?.len(), 2);
         assert_eq!(shots(&result).len(), 2);
         let units = &result.frames.last().fixture()?.units;
@@ -373,14 +536,14 @@ mod tests {
     }
 
     #[test]
-    fn opening_fire_prevents_a_dead_unready_target_from_responding() -> TestResult<()> {
+    fn deferred_fire_prevents_a_dead_unready_target_from_responding() -> TestResult<()> {
         let (mut scenario, orders) = fixture(
             UnitKind::FieldGun,
             UnitKind::Infantry,
             Coordinate::new(4, 3),
         )?;
         scenario.units[1].take_damage(4);
-        let result = movement_resolution::resolve(&scenario, &orders, 1)?;
+        let result = resolve_completed_movement(&scenario, &orders, 1)?;
         assert_eq!(shots(&result).len(), 1);
         assert!(!result.frames.last().fixture()?.units[1].is_alive());
         assert_eq!(
@@ -400,7 +563,7 @@ mod tests {
             unit.take_damage(8);
         }
         orders[1].facing = crate::turns::FacingOrder::Ambush(Direction::West);
-        let result = movement_resolution::resolve(&scenario, &orders, 1)?;
+        let result = resolve_completed_movement(&scenario, &orders, 1)?;
         assert_eq!(
             result
                 .frames
@@ -422,7 +585,7 @@ mod tests {
         );
         let mut reversed = orders.clone();
         reversed.reverse();
-        let other = movement_resolution::resolve(&scenario, &reversed, 1)?;
+        let other = resolve_completed_movement(&scenario, &reversed, 1)?;
         assert_eq!(result.paths, other.paths);
         assert_eq!(shots(&other).len(), 2);
         Ok(())
@@ -437,7 +600,7 @@ mod tests {
             unit.take_damage(8);
         }
         orders[1].facing = crate::turns::FacingOrder::Ambush(Direction::West);
-        let result = movement_resolution::resolve(&scenario, &orders, 1)?;
+        let result = resolve_completed_movement(&scenario, &orders, 1)?;
         let resolution = crate::turns::TurnResolution {
             turn_number: 1,
             events: Vec::new(),
@@ -464,7 +627,7 @@ mod tests {
             BTreeMap::from([(Coordinate::new(3, 3), Terrain::Forest)]),
         )
         .fixture()?;
-        let result = movement_resolution::resolve(&scenario, &orders, 1)?;
+        let result = resolve_completed_movement(&scenario, &orders, 1)?;
         let resolution = crate::turns::TurnResolution {
             turn_number: 1,
             events: Vec::new(),
@@ -499,7 +662,7 @@ mod tests {
         let (mut scenario, orders) =
             fixture(UnitKind::FieldGun, UnitKind::Truck, Coordinate::new(4, 3))?;
         scenario.units[0].spend_supplies(61);
-        let result = movement_resolution::resolve(&scenario, &orders, 1)?;
+        let result = resolve_completed_movement(&scenario, &orders, 1)?;
         assert!(shots(&result).is_empty());
         assert_eq!(
             result.frames.last().fixture()?.units[0]
@@ -512,7 +675,7 @@ mod tests {
         let mut combat = Combat::prepare(&mut scenario, &orders);
         let mut frames = Vec::new();
         let mut stopped = BTreeSet::new();
-        combat.engage(&mut scenario, &mut stopped, &mut frames);
+        combat.finish(&mut scenario, &mut stopped, &mut frames);
         combat.engage(&mut scenario, &mut stopped, &mut frames);
         assert_eq!(frames.iter().flat_map(|frame| &frame.shots).count(), 1);
         assert_eq!(scenario.units[0].supplies().current(), 60);
@@ -531,7 +694,7 @@ mod tests {
                 BTreeMap::from([(Coordinate::new(5, 3), terrain)]),
             )
             .fixture()?;
-            let result = movement_resolution::resolve(&scenario, &orders, 1)?;
+            let result = resolve_completed_movement(&scenario, &orders, 1)?;
             assert!(shots(&result).is_empty());
         }
         let (mut scenario, orders) =
@@ -543,7 +706,7 @@ mod tests {
             BTreeMap::from([(Coordinate::new(4, 3), Terrain::Forest)]),
         )
         .fixture()?;
-        assert!(shots(&movement_resolution::resolve(&scenario, &orders, 1)?).is_empty());
+        assert!(shots(&resolve_completed_movement(&scenario, &orders, 1)?).is_empty());
         Ok(())
     }
 
@@ -561,7 +724,7 @@ mod tests {
         passenger.board(scenario.units[1].unit_id());
         scenario.units.push(passenger);
         let mut combat = Combat::prepare(&mut scenario, &orders);
-        combat.engage(&mut scenario, &mut BTreeSet::new(), &mut Vec::new());
+        combat.finish(&mut scenario, &mut BTreeSet::new(), &mut Vec::new());
         assert!(!scenario.units[1].is_alive());
         assert!(!scenario.units[2].is_alive());
         assert!(visibility::visible_tiles(&scenario, PlayerNumber::Player2).is_empty());

@@ -152,7 +152,7 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   shorter than the menu. Put move and hold position first. Carried units have no command popup.
   Rotate follows move and hold for infantry, tanks, and field guns. It closes
   the popup and labels north/east/south/west around the unit on the map. Pointer
-  position previews a steady facing marker; clicking saves the facing. Arrow keys or WASD
+  position previews sprite orientation; clicking saves the facing. Arrow keys or WASD
   save their corresponding direction while rotation is active. The side panel
   gives brief instructions without direction buttons. Saving shows the chosen facing and revoke order.
   Rows are flat at rest; hover and keyboard focus add an outset bevel, and
@@ -225,14 +225,17 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   during movement and rotation previews. North/south movement and rotation retain the last horizontal sprite facing,
   including after refresh. Profiles start right for player 1 and left for player 2;
   trucks retain that default. The facing marker
-  shows the full four-way direction. Overlay a small filled edge
-  triangle for each infantry, tank or field gun's current facing, keeping its outline entirely inside
-  the cell. Use gray5 with a gray0 outline, and yellow5 for the selected unit.
+  shows the full four-way direction. Overlay a small illustrated crimson striking
+  arrow only for units choosing or maintaining an ambush, including playback.
+  Use dark ink contours, painted red shading, and a compact ivory impact glint.
+  Keep the arrow 3.8 logical pixels wide, with its tip protruding about 2.6 pixels
+  beyond the cell edge. Selected units brighten the red artwork by 25%.
   Trucks have no stored direction or facing marker.
-  Markers show the unit's stored north/east/south/west direction, turning with
-  each movement segment and retaining the last direction afterward. Their two-second
-  brightness pulse fades to zero, pauses invisibly, then returns in unison
-  across all units. Keep marker size fixed and ignore pointer events.
+  Markers show the ambush's north/east/south/west direction. Ordinary rotation
+  previews, movement, and idle units have no marker. Ambush previews stay steady;
+  saved ambush markers use a two-second
+  brightness pulse that fades to zero, pauses invisibly, then returns in unison
+  across ambushing units. Keep marker size fixed and ignore pointer events.
   Reduced-motion preferences keep markers fully visible and steady.
   Use four-frame rigid-part idle
   loops: infantry crouches through bending knees with small head adjustments,
@@ -321,6 +324,10 @@ playback and final positions reflect only the route actually traveled.
 When a unit exhausts its supplies, turn playback keeps its last sprite visible
 under a detailed 1980s anime-style illustrated skull and crossbones asset. The marker blinks once over 0.4 seconds, then stays visible for a brief pause
 until cleanup at 0.6 seconds, when the server's next frame removes the unit.
+During this pause, freeze all unit idle sprites and surrounding interface
+animations, including facing markers, cargo badges, and the activity bar.
+Combat casualties disappear from presentation after their death pause, before
+later movement resumes; authoritative cleanup remains owned by the server.
 The marker ignores pointer events. Reduced-motion mode displays it steadily
 until removal. Hidden enemy deaths follow the same visibility rules as other
 playback frames.
@@ -329,6 +336,8 @@ playback frames.
 
 Choosing ambush uses the same cardinal direction picker as rotation. Pointing
 previews facing and a firing line; clicking or an arrow/WASD key saves the order.
+Ambush selection omits cardinal text labels on the board; highlighted squares
+show the chosen direction.
 Gold dashed inset squares with a faint fill indicate the one-square infantry/tank
 line or three-square field-gun line. Saved ambush coverage and facing remain
 visible while planning. The right panel explains range, damage, and separate

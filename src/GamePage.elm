@@ -22,6 +22,7 @@ import Api.Enum.PlayerNumber
     exposing
         ( PlayerNumber
         )
+import Api.Enum.TurnEventKind as TurnEventKind
 import Api.Enum.UnitKind as UnitKind
 import Api.Mutation
 import Api.Object
@@ -334,6 +335,11 @@ plannedOrders model =
 playback : Model -> Maybe TurnPlayback.Playback
 playback model =
     TurnLifecycle.playback model.currentTurn.phase
+
+
+deathInFocus : Model -> Bool
+deathInFocus model =
+    List.any (\unit -> Unit.onBoard unit && Unit.isDying unit) model.units
 
 
 planningLocked : Model -> Bool
@@ -1228,8 +1234,12 @@ update lobbyId msg model =
                         |> E.withOut
 
         AnimationTimerElapsed _ ->
-            { model | frame = AnimationFrame.next model.frame }
-                |> E.withOut
+            if deathInFocus model then
+                model |> E.withOut
+
+            else
+                { model | frame = AnimationFrame.next model.frame }
+                    |> E.withOut
 
 
 handleTurnControlsMsg : LobbyId -> TurnControls.Msg -> Model -> ( Model, Eff Msg )
@@ -1321,8 +1331,18 @@ handleCommandMsg commandMsg model =
 
 view : Model -> List (Html Msg)
 view model =
+    let
+        animationClass : String
+        animationClass =
+            if deathInFocus model then
+                "fightlines-death-focus"
+
+            else
+                ""
+    in
     [ H.div
-        [ A.css
+        [ A.class animationClass
+        , A.css
             [ S.fixed
             , S.top0
             , S.bottom0
@@ -1715,6 +1735,36 @@ choosingAmbush model =
 
         _ ->
             False
+
+
+unitIsAmbushing : Model -> Unit -> Bool
+unitIsAmbushing model unit =
+    let
+        previewingAmbush : Bool
+        previewingAmbush =
+            choosingAmbush model && Maybe.map .unitId (rotationSelection model) == Just unit.id
+
+        ambushOrder : PlannedOrder -> Bool
+        ambushOrder order =
+            case order.action of
+                PlannedOrder.Ambush _ ->
+                    order.unitId == unit.id
+
+                _ ->
+                    False
+
+        ambushEvent : Turn.Event -> Bool
+        ambushEvent event =
+            event.unitId == unit.id && event.kind == TurnEventKind.Ambush
+    in
+    case model.currentTurn.phase of
+        TurnLifecycle.Playing _ ->
+            model.currentTurn.resolution
+                |> Maybe.map (\resolution -> List.any ambushEvent resolution.events)
+                |> Maybe.withDefault False
+
+        _ ->
+            previewingAmbush || List.any ambushOrder (plannedOrders model)
 
 
 ambushCosts : Unit -> PlannedOrder -> List (Html Msg)
@@ -2424,7 +2474,7 @@ boardHtml model =
                                 Unit.faceDirection (Just rotation.direction) unit
 
                             else
-                                unit
+                                plannedAmbushFacing model unit
 
                         Nothing ->
                             plannedAmbushFacing model unit
@@ -2436,6 +2486,15 @@ boardHtml model =
 
                     else
                         ""
+
+                facingMarker : Svg Msg
+                facingMarker =
+                    if unitIsAmbushing model unit then
+                        UnitFacing.toSvg (selected == Just position) previewUnit
+                            |> StyledSvg.toUnstyled
+
+                    else
+                        Svg.g [] []
 
                 transform : String
                 transform =
@@ -2456,8 +2515,7 @@ boardHtml model =
                     [ UnitSprite.toSvg (AnimationFrame.unitColumn model.frame unit.id) previewUnit
                         |> StyledSvg.toUnstyled
                     ]
-                , UnitFacing.toSvg (selected == Just position) previewUnit
-                    |> StyledSvg.toUnstyled
+                , facingMarker
                 , UnitCargo.toSvg passengerCount
                     |> StyledSvg.toUnstyled
                 , UnitDeath.toSvg unit
@@ -2706,12 +2764,20 @@ boardHtml model =
         rotationOverlay =
             case rotationPreview of
                 Just rotation ->
-                    [ RotationChoices.toSvg model.map rotation.position rotation.direction
+                    [ directionChoices model.map rotation.position rotation.direction
                         |> Svg.map RotationChoicesMsg
                     ]
 
                 Nothing ->
                     []
+
+        directionChoices : Map -> Coordinate -> Direction -> Svg RotationChoices.Msg
+        directionChoices =
+            if choosingAmbush model then
+                RotationChoices.ambushToSvg
+
+            else
+                RotationChoices.toSvg
 
         selection : List (Svg Msg)
         selection =

@@ -1,4 +1,4 @@
-// Export illustrated effects as transparent 256px board cells.
+// Export illustrated board effects, preserving transparent edges.
 const path = require("node:path");
 const assert = require("node:assert/strict");
 const sharp = require("sharp");
@@ -17,6 +17,17 @@ async function main() {
     .png()
     .toFile(path.join(root, "public/assets/death-skull-illustrated-v1.png"));
   console.log("Exported illustrated death marker in a transparent 256px square cell.");
+
+  const attackSource = path.join(root, "artwork/effects/illustrated/attack-marker/strike-arrow-v1.png");
+  const attackMetadata = await sharp(attackSource).metadata();
+  const attackStats = await sharp(attackSource).stats();
+  assert(attackMetadata.hasAlpha && !attackStats.isOpaque, "attack marker needs transparent edges");
+  await sharp(attackSource)
+    .trim({ background: "#00000000", threshold: 1 })
+    .resize(128, 128, { fit: "inside", kernel: "lanczos3" })
+    .png()
+    .toFile(path.join(root, "public/assets/attack-marker-illustrated-v1.png"));
+  console.log("Exported illustrated attack marker with a compact transparent footprint.");
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -23,6 +23,11 @@ styles =
             .fightlines-unit-death {
                 animation: fightlines-unit-death-flash 400ms steps(1) 1 forwards;
             }
+            .fightlines-death-focus *:not(.fightlines-unit-death),
+            .fightlines-death-focus *::before,
+            .fightlines-death-focus *::after {
+                animation-play-state: paused !important;
+            }
             @media (prefers-reduced-motion: reduce) {
                 .fightlines-unit-death { animation: none; opacity: 1; }
             }
@@ -30,25 +35,12 @@ styles =
         ]
 
 
-{-| Destroyed units remain in authoritative presentation frames until cleanup.
-The server removes them, so no local timer owns their lifetime.
+{-| Destroyed units remain visible for their server-timed presentation frame.
+Playback transitions own their lifetime rather than a separate marker timer.
 -}
 toSvg : Unit -> Svg msg
 toSvg unit =
-    let
-        isDying : Bool
-        isDying =
-            unit.destroyed
-                || (unit.resources
-                        |> Maybe.map
-                            (\resources ->
-                                (resources.supplies.current == 0)
-                                    || (resources.hitPoints.current == 0)
-                            )
-                        |> Maybe.withDefault False
-                   )
-    in
-    if not isDying then
+    if not (Unit.isDying unit) then
         Svg.text ""
 
     else

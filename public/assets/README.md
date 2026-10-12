@@ -46,3 +46,14 @@ and open center are transparent.
 over an exhausted unit before removal. Built-in imagegen produced the local
 master and prompt in `artwork/effects/illustrated/`. Run
 `node tools/build-effect-sprites.cjs` (also included in `make sprites`) to export it.
+
+## Illustrated attack direction marker
+
+`attack-marker-illustrated-v1.png` is a transparent crimson striking arrow with
+dark ink edges, painted bevels, and a compact ivory impact glint. It appears at
+the facing edge of ambushing units, slightly beyond their cell, and rotates to
+each cardinal direction. Selection brightens the artwork; the existing pulse
+and reduced-motion behavior apply. Built-in imagegen produced the approved
+master and prompt in `artwork/effects/illustrated/attack-marker/`.
+`node tools/build-effect-sprites.cjs` trims transparent padding and exports it
+with a maximum dimension of 128px, preserving its aspect ratio.

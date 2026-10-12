@@ -310,11 +310,14 @@ the individual page's view content.
 `GamePage` renders raster sprite-sheet cells in nested SVG viewports;
 terrain, depots, units, and an inset SVG selection square are separate layers. Player 2's
 infantry, tanks and field guns initially face west and player 1's east. Trucks have no direction or facing marker. Movement updates stored direction
-from the last successfully traversed path edge; units that never move preserve it. `View.UnitFacing` overlays inset edge markers
-using each unit's direction, with selected-unit color and a synchronized
+from the last successfully traversed path edge; units that never move preserve it. `View.UnitFacing` overlays illustrated red striking arrows at tile edges
+only for ambush previews, saved orders, and ambush events during playback,
+using each unit's direction, with selected-unit brightness and a synchronized
 two-second opacity pulse. Component-owned styles keep the markers steady for
 reduced-motion preferences. Markers do not receive pointer events or appear in
-status portraits. Side-profile artwork follows east/west `Direction`, including playback and rotation
+status portraits. The impact tip extends beyond the tile; `tools/build-effect-sprites.cjs`
+exports the transparent arrow from `artwork/effects/illustrated/attack-marker/`.
+Side-profile artwork follows east/west `Direction`, including playback and rotation
 previews. A separate authoritative `SpriteFacing` retains the last east/west orientation
 through north/south movement or rotation, including snapshots and playback frames.
 It starts right for player 1 and left for player 2; trucks retain that default. The marker represents the full
@@ -527,6 +530,11 @@ When deaths occur, resolution adds that snapshot followed by the authoritative
 surviving units with a 600ms transition. `View.UnitDeath` flashes a skull and
 crossbones once over 400ms, then holds it steady until removal (also steady
 under reduced motion).
+`GamePage` freezes its sprite clock while an on-board death is visible, and
+`View.UnitDeath` pauses surrounding CSS animations through the game root's
+death-focus class. `TurnPlayback.start` omits previously presented casualties
+from later frames, so combat death markers clear after the server's pause
+before subsequent movement resumes. Server visibility and timing remain intact.
 Frame visibility filtering also applies to deaths, concealing hidden enemies.
 Depots do not replenish supplies yet;
 vehicle fuel refills at any depot. Waiting for another player and retrying submissions never
@@ -654,7 +662,7 @@ event with initial facing and `rotationDirection`. Playback rewinds the initial
 facing and applies the chosen direction at the event's end without moving.
 `GamePage` stores direction selection in the selected unit's interaction state;
 `View.RotationChoices` overlays cardinal pointer sectors and labels on the board.
-Hover changes only the selection preview, rendered as a steady facing marker;
+Hover changes only the selection preview's sprite orientation;
 clicking or pressing an arrow key or WASD saves a revocable draft and counts toward readiness.
 
 ## Player numbering and sprite orientation
@@ -680,10 +688,13 @@ and insufficient readiness supplies. `Unit.combatRules` provides authoritative
 range, damage, readiness cost, and shot cost for planning and status copy.
 
 `combat.rs` owns the readiness set, once-per-turn firing set, target selection,
-simultaneous damage, and delayed unready responses. The movement resolver prepares
-ambush facing/readiness before arrivals and checks combat at the initial boundary
-and after arrivals. Its firing state survives into loading/unloading, allowing
-newly unloaded enemies to trigger an unfired ambush. Engagement stops the target's remaining route. Movement
+simultaneous damage, and delayed unready responses. It records initially eligible
+targets per ambushing unit and defers them while they remain eligible. Losing
+contact removes that deferral, so re-entry triggers immediate fire. The movement
+resolver prepares ambush facing/readiness before arrivals and checks new contacts
+after arrivals. Its firing state survives into loading/unloading, allowing
+newly unloaded enemies to trigger an unfired ambush. After transport finishes,
+`Turns` releases the remaining deferred contacts for a final volley before upkeep. Engagement stops the target's remaining route. Movement
 resources are paid per successful edge in the working board; the final health,
 supplies, and facing are applied alongside the actual traveled paths in `turns.rs`.
 Normal upkeep remains a single end-of-turn charge. Dead units cannot shoot, move,

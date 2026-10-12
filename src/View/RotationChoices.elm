@@ -1,5 +1,6 @@
 module View.RotationChoices exposing
     ( Msg(..)
+    , ambushToSvg
     , toSvg
     )
 
@@ -23,6 +24,16 @@ type Msg
 
 toSvg : Map -> Coordinate -> Direction -> Svg Msg
 toSvg map position preview =
+    view Direction.all map position preview
+
+
+ambushToSvg : Map -> Coordinate -> Direction -> Svg Msg
+ambushToSvg map position preview =
+    view [] map position preview
+
+
+view : List Direction -> Map -> Coordinate -> Direction -> Svg Msg
+view labeledDirections map position preview =
     let
         centerX : Float
         centerX =
@@ -123,7 +134,7 @@ toSvg map position preview =
 
         labels : List (Svg Msg)
         labels =
-            List.map label Direction.all
+            List.map label labeledDirections
 
         content : List (Svg Msg)
         content =

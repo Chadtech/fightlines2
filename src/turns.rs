@@ -737,6 +737,7 @@ impl Turns {
                 }
             }
 
+            combat.finish(scenario, &mut combat_stopped, &mut frames);
             let events = playback_order(scenario, self.number, events)?;
             let resource_snapshot = scenario.finish_turn_resources();
             let deaths = resource_snapshot.len() != scenario.units.len();
@@ -1000,6 +1001,88 @@ mod tests {
                     .count(),
                 2
             );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn ambush_initial_contacts_resolve_after_their_submitted_movement() -> TestResult<()> {
+        for first in [PlayerNumber::Player1, PlayerNumber::Player2] {
+            for (destinations, damage) in
+                [(vec![], 12), (vec![(9, 8)], 12), (vec![(9, 8), (9, 7)], 0)]
+            {
+                let mut scenario = Scenario::supply_point().fixture()?;
+                scenario
+                    .units
+                    .retain(|unit| unit.id() == "12" || unit.id() == "6");
+                scenario.map =
+                    crate::map::Map::new(17, 17, crate::map::Terrain::GrassPlain, BTreeMap::new())
+                        .fixture()?;
+                for unit in &mut scenario.units {
+                    unit.move_to(if unit.side() == PlayerNumber::Player1 {
+                        Coordinate::new(7, 8)
+                    } else {
+                        Coordinate::new(8, 8)
+                    });
+                }
+                let mut turns = Turns::default();
+                let second = if first == PlayerNumber::Player1 {
+                    PlayerNumber::Player2
+                } else {
+                    PlayerNumber::Player1
+                };
+                for side in [first, second] {
+                    let mut inputs = holds(&scenario, side)?;
+                    let order = inputs.first_mut().fixture()?;
+                    if side == PlayerNumber::Player1 {
+                        order.ambush = Some(true);
+                        order.direction = Some(Direction::East);
+                    } else {
+                        order.path.extend(
+                            destinations
+                                .iter()
+                                .map(|(x, y)| CoordinateInput { x: *x, y: *y }),
+                        );
+                    }
+                    turns.submit(&mut scenario, side, 1, inputs)?;
+                }
+                let target = scenario
+                    .units
+                    .iter()
+                    .find(|unit| unit.id() == "6")
+                    .fixture()?;
+                assert_eq!(target.hit_points().current(), 16 - damage);
+                let (x, y) = destinations.last().copied().unwrap_or((8, 8));
+                assert_eq!(
+                    target.board_position(),
+                    Some(Coordinate::new(u16::try_from(x)?, u16::try_from(y)?))
+                );
+                let resolution = turns.last_resolution.as_ref().fixture()?;
+                let movement = resolution
+                    .events
+                    .iter()
+                    .find(|event| event.unit_id == target.unit_id())
+                    .fixture()?;
+                assert_eq!(movement.path.len(), destinations.len() + 1);
+                if !destinations.is_empty() && damage > 0 {
+                    let arrival = resolution
+                        .frames
+                        .iter()
+                        .position(|frame| {
+                            frame.units.iter().any(|unit| {
+                                unit.unit_id() == target.unit_id()
+                                    && unit.board_position() == target.board_position()
+                            })
+                        })
+                        .fixture()?;
+                    let shot = resolution
+                        .frames
+                        .iter()
+                        .position(|frame| !frame.shots.is_empty())
+                        .fixture()?;
+                    assert!(shot > arrival);
+                }
+            }
         }
         Ok(())
     }
