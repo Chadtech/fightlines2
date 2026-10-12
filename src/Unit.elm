@@ -2,6 +2,7 @@ module Unit exposing
     ( Unit
     , boardPosition
     , carrierId
+    , faceDirection
     , label
     , loadingPartner
     , onBoard
@@ -12,14 +13,16 @@ module Unit exposing
     )
 
 import Api.Enum.Direction exposing (Direction)
-import Api.Enum.Side exposing (Side)
+import Api.Enum.PlayerNumber exposing (PlayerNumber)
+import Api.Enum.SpriteFacing exposing (SpriteFacing)
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Api.Object
 import Api.Object.Unit as UnitApi
 import Coordinate exposing (Coordinate)
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import ListUtil
-import Side
+import PlayerNumber
+import SpriteFacing
 import Unit.Fuel as Fuel exposing (Fuel)
 import Unit.HitPoints as HitPoints exposing (HitPoints)
 import Unit.Location as Location exposing (Location)
@@ -29,9 +32,10 @@ import UnitId exposing (UnitId)
 
 type alias Unit =
     { id : UnitId
-    , side : Side
+    , playerNumber : PlayerNumber
     , kind : UnitKind
     , direction : Maybe Direction
+    , spriteFacing : SpriteFacing
     , hitPoints : HitPoints
     , supplies : Supplies
     , fuel : Maybe Fuel
@@ -47,6 +51,7 @@ selection =
         |> SS.with UnitApi.side
         |> SS.with UnitApi.kind
         |> SS.with UnitApi.direction
+        |> SS.with UnitApi.spriteFacing
         |> SS.with (UnitApi.hitPoints HitPoints.selection)
         |> SS.with (UnitApi.supplies Supplies.selection)
         |> SS.with (UnitApi.fuel Fuel.selection)
@@ -73,7 +78,7 @@ label unit =
                     "truck"
     in
     String.join " "
-        [ Side.label unit.side
+        [ PlayerNumber.label unit.playerNumber
         , kind
         , UnitId.toString unit.id
         ]
@@ -120,7 +125,7 @@ loadingPartner units mover destination =
 
                 alliedTarget : Bool
                 alliedTarget =
-                    boardPosition target == Just destination && target.id /= mover.id && target.side == mover.side
+                    boardPosition target == Just destination && target.id /= mover.id && target.playerNumber == mover.playerNumber
 
                 loadingAllowed : Bool
                 loadingAllowed =
@@ -163,3 +168,11 @@ physicalPosition units unit =
         Location.Aboard carrier ->
             ListUtil.find (\truck -> truck.id == carrier) units
                 |> Maybe.andThen boardPosition
+
+
+faceDirection : Maybe Direction -> Unit -> Unit
+faceDirection direction unit =
+    { unit
+        | direction = direction
+        , spriteFacing = SpriteFacing.turn direction unit.spriteFacing
+    }

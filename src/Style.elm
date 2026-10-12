@@ -4,6 +4,7 @@ module Style exposing
     , basisFull
     , batch
     , belowWidth
+    , bgBlue0
     , bgBlue1
     , bgGray0
     , bgGray1
@@ -121,6 +122,7 @@ module Style exposing
     , lg
     , link
     , listNone
+    , listStyleNone
     , m0
     , m2
     , m4
@@ -1602,6 +1604,11 @@ bgYellow4 =
     Css.property "background" yellow4Str
 
 
+bgBlue0 : Css.Style
+bgBlue0 =
+    Css.property "background" blue0Str
+
+
 bgBlue1 : Css.Style
 bgBlue1 =
     Css.property "background" blue1Str
@@ -2421,6 +2428,11 @@ block =
 
 listNone : Css.Style
 listNone =
+    listStyleNone
+
+
+listStyleNone : Css.Style
+listStyleNone =
     Css.property "list-style" "none"
 
 

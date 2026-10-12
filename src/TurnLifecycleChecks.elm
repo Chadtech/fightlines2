@@ -68,8 +68,8 @@ checks =
 
                 frames : List TurnPlayback.Frame
                 frames =
-                    [ { units = [], visibleTiles = [] }
-                    , { units = [], visibleTiles = [ { x = 1, y = 1 } ] }
+                    [ { durationMs = 180, units = [], visibleTiles = [] }
+                    , { durationMs = 180, units = [], visibleTiles = [ { x = 1, y = 1 } ] }
                     ]
 
                 playing : Phase
@@ -158,11 +158,11 @@ checks =
                 , expect "same-turn submission flags must not interrupt playback"
                     (TurnLifecycle.playback (TurnLifecycle.observeSubmission True playing) == TurnLifecycle.playback playing)
                 , expect "playback completion must open a fresh planning turn and use the final frame"
-                    (TurnLifecycle.tick 1000 playing == Just { phase = Planning (OrdinaryPlanning { orders = [], selection = Nothing }), frame = { units = [], visibleTiles = [ { x = 1, y = 1 } ] } })
+                    (TurnLifecycle.tick 1000 playing == Just { phase = Planning (OrdinaryPlanning { orders = [], selection = Nothing }), frame = { durationMs = 180, units = [], visibleTiles = [ { x = 1, y = 1 } ] } })
                 , expect "playback completion must retain submission of a turn submitted elsewhere"
-                    (TurnLifecycle.tick 1000 alreadySubmittedPlayback == Just { phase = WaitingForOpponent { orders = [], inspection = Nothing }, frame = { units = [], visibleTiles = [ { x = 1, y = 1 } ] } })
+                    (TurnLifecycle.tick 1000 alreadySubmittedPlayback == Just { phase = WaitingForOpponent { orders = [], inspection = Nothing }, frame = { durationMs = 180, units = [], visibleTiles = [ { x = 1, y = 1 } ] } })
                 , expect "submission observed during playback must lock the completed turn"
-                    (TurnLifecycle.tick 1000 (TurnLifecycle.observeSubmission True playing) == Just { phase = WaitingForOpponent { orders = [], inspection = Nothing }, frame = { units = [], visibleTiles = [ { x = 1, y = 1 } ] } })
+                    (TurnLifecycle.tick 1000 (TurnLifecycle.observeSubmission True playing) == Just { phase = WaitingForOpponent { orders = [], inspection = Nothing }, frame = { durationMs = 180, units = [], visibleTiles = [ { x = 1, y = 1 } ] } })
                 , expect "turns without playback must enter planning or waiting immediately"
                     (TurnLifecycle.startTurn False [] == Planning (OrdinaryPlanning { orders = [], selection = Nothing }) && TurnLifecycle.startTurn True [] == WaitingForOpponent { orders = [], inspection = Nothing })
                 , expect "stray animation messages must not advance a planning or waiting turn"
@@ -442,8 +442,8 @@ currentTurnChecks =
                 { observation
                     | turn = { turn | number = 2, submitted = False, opponentSubmitted = False }
                     , playbackFrames =
-                        [ { units = [], visibleTiles = [] }
-                        , { units = [], visibleTiles = [ { x = 1, y = 1 } ] }
+                        [ { durationMs = 180, units = [], visibleTiles = [] }
+                        , { durationMs = 180, units = [], visibleTiles = [ { x = 1, y = 1 } ] }
                         ]
                 }
                 waiting

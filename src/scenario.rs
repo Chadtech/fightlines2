@@ -4,7 +4,7 @@ use std::fmt;
 
 /// Player ownership, independent of starting position on a map.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
-pub enum Side {
+pub enum PlayerNumber {
     Player1,
     Player2,
 }
@@ -25,11 +25,35 @@ pub enum Direction {
     West,
 }
 
-impl Direction {
-    fn starting(side: Side) -> Self {
+/// Horizontal artwork orientation, retained across north/south movement.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
+pub enum SpriteFacing {
+    Left,
+    Right,
+}
+
+impl SpriteFacing {
+    fn starting(side: PlayerNumber) -> Self {
         match side {
-            Side::Player1 => Self::East,
-            Side::Player2 => Self::West,
+            PlayerNumber::Player1 => Self::Right,
+            PlayerNumber::Player2 => Self::Left,
+        }
+    }
+
+    fn turned(self, direction: Direction) -> Self {
+        match direction {
+            Direction::West => Self::Left,
+            Direction::East => Self::Right,
+            Direction::North | Direction::South => self,
+        }
+    }
+}
+
+impl Direction {
+    fn starting(side: PlayerNumber) -> Self {
+        match side {
+            PlayerNumber::Player1 => Self::East,
+            PlayerNumber::Player2 => Self::West,
         }
     }
 
@@ -172,10 +196,11 @@ pub enum UnitLocation {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unit {
     id: UnitId,
-    side: Side,
+    side: PlayerNumber,
     kind: UnitKind,
     location: Location,
     direction: Option<Direction>,
+    sprite_facing: SpriteFacing,
     hit_points: HitPoints,
     fuel: Option<Fuel>,
     supplies: Supplies,
@@ -187,7 +212,7 @@ impl Unit {
         self.id.to_string()
     }
 
-    pub fn side(&self) -> Side {
+    pub fn side(&self) -> PlayerNumber {
         self.side
     }
 
@@ -209,6 +234,10 @@ impl Unit {
 
     pub fn direction(&self) -> Option<Direction> {
         self.direction
+    }
+
+    pub fn sprite_facing(&self) -> SpriteFacing {
+        self.sprite_facing
     }
 
     pub fn cargo_capacity(&self) -> i32 {
@@ -263,9 +292,14 @@ impl Unit {
         self.id
     }
 
+    pub fn restore_sprite_facing(&mut self, facing: SpriteFacing) {
+        self.sprite_facing = facing;
+    }
+
     pub fn rotate(&mut self, direction: Direction) {
         if self.direction.is_some() {
             self.direction = Some(direction);
+            self.sprite_facing = self.sprite_facing.turned(direction);
         }
     }
 
@@ -275,6 +309,7 @@ impl Unit {
                 && let Some(direction) = Direction::between(step[0], step[1])
             {
                 self.direction = Some(direction);
+                self.sprite_facing = self.sprite_facing.turned(direction);
             }
         }
         if let Some(fuel) = &mut self.fuel {
@@ -340,7 +375,9 @@ impl Scenario {
         }
     }
 
-    pub fn finish_turn_resources(&mut self) {
+    /// Charge upkeep and remove exhausted units, including cargo of dead carriers.
+    /// Return the last resource snapshot for death presentation only.
+    pub fn finish_turn_resources(&mut self) -> Vec<Unit> {
         for unit in &mut self.units {
             unit.supplies.current = (unit.supplies.current - unit.supplies.upkeep_per_turn).max(0);
             let at_depot = self
@@ -351,6 +388,26 @@ impl Scenario {
                 fuel.current = fuel.maximum;
             }
         }
+        let exhausted: Vec<_> = self
+            .units
+            .iter()
+            .filter(|unit| unit.supplies.current == 0)
+            .map(Unit::unit_id)
+            .collect();
+        for unit in &mut self.units {
+            if unit
+                .carrier_id()
+                .is_some_and(|carrier| exhausted.contains(&carrier))
+            {
+                unit.supplies.current = 0;
+            }
+            if unit.supplies.current == 0 {
+                unit.hit_points.current = 0;
+            }
+        }
+        let resource_snapshot = self.units.clone();
+        self.units.retain(|unit| unit.supplies.current > 0);
+        resource_snapshot
     }
 
     pub fn el_alamein() -> Result<Self, MapError> {
@@ -885,11 +942,11 @@ impl Scenario {
             }
         }
         let mut units = Vec::new();
-        for side in [Side::Player1, Side::Player2] {
+        for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
             for starting in formation {
                 let position = match side {
-                    Side::Player1 => starting.position,
-                    Side::Player2 => Coordinate::new(
+                    PlayerNumber::Player1 => starting.position,
+                    PlayerNumber::Player2 => Coordinate::new(
                         (map.width() - 1 - starting.position.x()) as u16,
                         starting.position.y() as u16 + player2_south_offset,
                     ),
@@ -897,6 +954,7 @@ impl Scenario {
                 units.push(Unit {
                     id: UnitId(units.len() as u16 + 1),
                     side,
+                    sprite_facing: SpriteFacing::starting(side),
                     kind: starting.kind,
                     hit_points: HitPoints::full(),
                     fuel: Fuel::for_kind(starting.kind),
@@ -954,7 +1012,7 @@ impl Scenario {
             },
         ];
         let mut units = Vec::new();
-        for side in [Side::Player1, Side::Player2] {
+        for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
             for (index, (kind, x, y)) in [
                 (UnitKind::Infantry, 3, 7),
                 (UnitKind::Infantry, 3, 8),
@@ -966,12 +1024,13 @@ impl Scenario {
             .enumerate()
             {
                 let (offset, x) = match side {
-                    Side::Player1 => (0, x),
-                    Side::Player2 => (5, 16 - x),
+                    PlayerNumber::Player1 => (0, x),
+                    PlayerNumber::Player2 => (5, 16 - x),
                 };
                 units.push(Unit {
                     id: UnitId(offset + index as u16 + 1),
                     side,
+                    sprite_facing: SpriteFacing::starting(side),
                     kind,
                     hit_points: HitPoints::full(),
                     fuel: Fuel::for_kind(kind),
@@ -984,7 +1043,10 @@ impl Scenario {
                 });
             }
         }
-        for (side, first_id, x) in [(Side::Player1, 11, 4), (Side::Player2, 14, 12)] {
+        for (side, first_id, x) in [
+            (PlayerNumber::Player1, 11, 4),
+            (PlayerNumber::Player2, 14, 12),
+        ] {
             for (index, (kind, y)) in [
                 (UnitKind::Tank, 8),
                 (UnitKind::FieldGun, 7),
@@ -996,6 +1058,7 @@ impl Scenario {
                 units.push(Unit {
                     id: UnitId(first_id + index as u16),
                     side,
+                    sprite_facing: SpriteFacing::starting(side),
                     kind,
                     hit_points: HitPoints::full(),
                     fuel: Fuel::for_kind(kind),
@@ -1025,10 +1088,11 @@ impl Scenario {
 mod tests {
     use super::*;
     use crate::map::Terrain;
+    use crate::test_support::{FixtureValue, TestResult};
     use std::collections::BTreeSet;
 
     #[test]
-    fn map_themes_are_independent_of_base_terrain() {
+    fn map_themes_are_independent_of_base_terrain() -> TestResult<()> {
         for map_type in [
             crate::map_type::MapType::SupplyPoint,
             crate::map_type::MapType::ElAlamein,
@@ -1037,7 +1101,7 @@ mod tests {
             crate::map_type::MapType::Sidewinder,
             crate::map_type::MapType::BlackForest,
         ] {
-            let scenario = map_type.scenario().unwrap();
+            let scenario = map_type.scenario().fixture()?;
             let expected = match map_type {
                 crate::map_type::MapType::ElAlamein | crate::map_type::MapType::Arabia => {
                     MapTheme::Desert
@@ -1049,20 +1113,23 @@ mod tests {
                 crate::map_type::MapType::Sidewinder => MapTheme::Snow,
             };
             assert_eq!(scenario.map.theme(), expected);
-            let original_visibility = crate::visibility::visible_tiles(&scenario, Side::Player1);
+            let original_visibility =
+                crate::visibility::visible_tiles(&scenario, PlayerNumber::Player1);
             for theme in [MapTheme::GreenForest, MapTheme::Desert, MapTheme::Snow] {
                 let mut themed = scenario.clone();
                 themed.map = themed.map.with_theme(theme);
                 assert_eq!(
-                    crate::visibility::visible_tiles(&themed, Side::Player1),
+                    crate::visibility::visible_tiles(&themed, PlayerNumber::Player1),
                     original_visibility
                 );
             }
         }
+
+        Ok(())
     }
 
     #[test]
-    fn new_maps_have_supplied_clearings_and_valid_starting_forces() {
+    fn new_maps_have_supplied_clearings_and_valid_starting_forces() -> TestResult<()> {
         for map_type in [
             crate::map_type::MapType::ElAlamein,
             crate::map_type::MapType::BloodGulch,
@@ -1070,7 +1137,7 @@ mod tests {
             crate::map_type::MapType::Sidewinder,
             crate::map_type::MapType::BlackForest,
         ] {
-            let scenario = map_type.scenario().unwrap();
+            let scenario = map_type.scenario().fixture()?;
             let expected = match map_type {
                 crate::map_type::MapType::ElAlamein => [5, 6, 2, 4],
                 crate::map_type::MapType::BloodGulch => [6, 1, 1, 2],
@@ -1106,7 +1173,7 @@ mod tests {
                 scenario.units.len()
             );
             for unit in &scenario.units {
-                let position = unit.board_position().unwrap();
+                let position = unit.board_position().fixture()?;
                 assert_eq!(scenario.map.tile_at(position), Some(Terrain::GrassPlain));
                 assert!(
                     !scenario
@@ -1123,7 +1190,7 @@ mod tests {
                 };
                 assert_eq!(unit.direction, expected_direction);
             }
-            for side in [Side::Player1, Side::Player2] {
+            for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
                 for (kind, count) in [
                     UnitKind::Infantry,
                     UnitKind::Tank,
@@ -1146,15 +1213,15 @@ mod tests {
             let player1 = scenario
                 .units
                 .iter()
-                .filter(|unit| unit.side == Side::Player1);
+                .filter(|unit| unit.side == PlayerNumber::Player1);
             let player2 = scenario
                 .units
                 .iter()
-                .filter(|unit| unit.side == Side::Player2);
+                .filter(|unit| unit.side == PlayerNumber::Player2);
             for (left, right) in player1.zip(player2) {
                 assert_eq!(left.kind, right.kind);
-                let left_position = left.board_position().unwrap();
-                let right_position = right.board_position().unwrap();
+                let left_position = left.board_position().fixture()?;
+                let right_position = right.board_position().fixture()?;
                 assert_eq!(
                     left_position.x() + right_position.x(),
                     scenario.map.width() - 1
@@ -1165,57 +1232,69 @@ mod tests {
                 };
                 assert_eq!(left_position.y() + south_offset, right_position.y());
             }
-            assert_eq!(scenario, map_type.scenario().unwrap());
+            assert_eq!(scenario, map_type.scenario().fixture()?);
         }
+
+        Ok(())
     }
 
     /// Cardinal open-ground distance ignores units, matching the map's route geometry.
-    fn open_route_length(map: &Map, start: Coordinate, end: Coordinate) -> Option<usize> {
-        let mut visited = BTreeSet::from([start]);
-        let mut frontier = std::collections::VecDeque::from([(start, 0)]);
-        while let Some((position, distance)) = frontier.pop_front() {
-            if position == end {
-                return Some(distance);
-            }
-            for (dx, dy) in [(0, -1), (-1, 0), (1, 0), (0, 1)] {
-                let x = position.x() + dx;
-                let y = position.y() + dy;
-                if x < 0 || y < 0 {
-                    continue;
+    fn open_route_length(
+        map: &Map,
+        start: Coordinate,
+        end: Coordinate,
+    ) -> TestResult<Option<usize>> {
+        Ok({
+            let mut visited = BTreeSet::from([start]);
+            let mut frontier = std::collections::VecDeque::from([(start, 0)]);
+            while let Some((position, distance)) = frontier.pop_front() {
+                if position == end {
+                    return Ok(Some(distance));
                 }
-                let neighbor = Coordinate::new(x as u16, y as u16);
-                if map.tile_at(neighbor) == Some(Terrain::GrassPlain) && visited.insert(neighbor) {
-                    frontier.push_back((neighbor, distance + 1));
+                for (dx, dy) in [(0, -1), (-1, 0), (1, 0), (0, 1)] {
+                    let x = position.x() + dx;
+                    let y = position.y() + dy;
+                    if x < 0 || y < 0 {
+                        continue;
+                    }
+                    let neighbor = Coordinate::new(x as u16, y as u16);
+                    if map.tile_at(neighbor) == Some(Terrain::GrassPlain)
+                        && visited.insert(neighbor)
+                    {
+                        frontier.push_back((neighbor, distance + 1));
+                    }
                 }
             }
-        }
-        None
+            None
+        })
     }
 
-    fn forest_at(map: &Map, blocked: Coordinate) -> Map {
-        let mut sketch = String::new();
-        for y in 0..map.height() {
-            for x in 0..map.width() {
-                let position = Coordinate::new(x as u16, y as u16);
-                let symbol = if position == blocked {
-                    '#'
-                } else {
-                    match map.tile_at(position).unwrap() {
-                        Terrain::GrassPlain => '.',
-                        Terrain::Forest => '#',
-                        Terrain::Hills => '%',
-                    }
-                };
-                sketch.push(symbol);
+    fn forest_at(map: &Map, blocked: Coordinate) -> TestResult<Map> {
+        Ok({
+            let mut sketch = String::new();
+            for y in 0..map.height() {
+                for x in 0..map.width() {
+                    let position = Coordinate::new(x as u16, y as u16);
+                    let symbol = if position == blocked {
+                        '#'
+                    } else {
+                        match map.tile_at(position).fixture()? {
+                            Terrain::GrassPlain => '.',
+                            Terrain::Forest => '#',
+                            Terrain::Hills => '%',
+                        }
+                    };
+                    sketch.push(symbol);
+                }
+                sketch.push('\n');
             }
-            sketch.push('\n');
-        }
-        Map::from_ascii(&sketch).unwrap()
+            Map::from_ascii(&sketch).fixture()?
+        })
     }
 
     #[test]
-    fn sidewinder_has_enclosed_depots_and_a_clear_winding_shortcut() {
-        let scenario = Scenario::sidewinder().unwrap();
+    fn sidewinder_has_enclosed_depots_and_a_clear_winding_shortcut() -> TestResult<()> {
+        let scenario = Scenario::sidewinder().fixture()?;
         let rear = Coordinate::new(8, 3);
         let opposing_rear = Coordinate::new(24, 3);
         assert_eq!(scenario.depots.len(), 2);
@@ -1245,9 +1324,9 @@ mod tests {
                 );
             }
         }
-        let shortcut = open_route_length(&scenario.map, rear, opposing_rear).unwrap();
-        let closed_shortcut = forest_at(&scenario.map, Coordinate::new(16, 8));
-        let outer_loop = open_route_length(&closed_shortcut, rear, opposing_rear).unwrap();
+        let shortcut = open_route_length(&scenario.map, rear, opposing_rear)?.fixture()?;
+        let closed_shortcut = forest_at(&scenario.map, Coordinate::new(16, 8))?;
+        let outer_loop = open_route_length(&closed_shortcut, rear, opposing_rear)?.fixture()?;
         assert_eq!(shortcut, 34);
         assert_eq!(outer_loop, 56);
         assert!(outer_loop >= shortcut * 3 / 2);
@@ -1267,11 +1346,13 @@ mod tests {
                 Some(Terrain::Forest)
             );
         }
+
+        Ok(())
     }
 
     #[test]
-    fn black_forest_has_a_winding_passage_and_separate_supply_glades() {
-        let scenario = Scenario::black_forest().unwrap();
+    fn black_forest_has_a_winding_passage_and_separate_supply_glades() -> TestResult<()> {
+        let scenario = Scenario::black_forest().fixture()?;
         assert_eq!(scenario.depots.len(), 8);
         assert_eq!(
             scenario
@@ -1291,24 +1372,26 @@ mod tests {
         let left = Coordinate::new(4, 10);
         let right = Coordinate::new(28, 10);
         // The connecting passage bends, adding distance over a straight crossing.
-        assert_eq!(open_route_length(&scenario.map, left, right), Some(32));
-        let closed_passage = forest_at(&scenario.map, Coordinate::new(16, 12));
-        assert_eq!(open_route_length(&closed_passage, left, right), None);
+        assert_eq!(open_route_length(&scenario.map, left, right)?, Some(32));
+        let closed_passage = forest_at(&scenario.map, Coordinate::new(16, 12))?;
+        assert_eq!(open_route_length(&closed_passage, left, right)?, None);
         for (pocket, main, neck) in [
             (Coordinate::new(6, 3), left, Coordinate::new(5, 5)),
             (Coordinate::new(26, 3), right, Coordinate::new(27, 5)),
         ] {
             assert!(scenario.depots.iter().any(|depot| depot.position == pocket));
-            assert_eq!(open_route_length(&scenario.map, pocket, main), Some(9));
-            let closed_neck = forest_at(&scenario.map, neck);
-            assert_eq!(open_route_length(&closed_neck, pocket, main), None);
-            assert_eq!(open_route_length(&closed_neck, left, right), Some(32));
+            assert_eq!(open_route_length(&scenario.map, pocket, main)?, Some(9));
+            let closed_neck = forest_at(&scenario.map, neck)?;
+            assert_eq!(open_route_length(&closed_neck, pocket, main)?, None);
+            assert_eq!(open_route_length(&closed_neck, left, right)?, Some(32));
         }
+
+        Ok(())
     }
 
     #[test]
-    fn el_alamein_has_ridge_objectives_and_rear_supply_depots() {
-        let scenario = Scenario::el_alamein().unwrap();
+    fn el_alamein_has_ridge_objectives_and_rear_supply_depots() -> TestResult<()> {
+        let scenario = Scenario::el_alamein().fixture()?;
         assert_eq!(
             scenario
                 .depots
@@ -1337,11 +1420,13 @@ mod tests {
                 Some(Terrain::Hills)
             );
         }
+
+        Ok(())
     }
 
     #[test]
-    fn el_alamein_has_straight_northern_and_bent_southern_ridge_passes() {
-        let scenario = Scenario::el_alamein().unwrap();
+    fn el_alamein_has_straight_northern_and_bent_southern_ridge_passes() -> TestResult<()> {
+        let scenario = Scenario::el_alamein().fixture()?;
         for x in 8..=14 {
             assert_eq!(
                 scenario.map.tile_at(Coordinate::new(x, 6)),
@@ -1349,7 +1434,7 @@ mod tests {
             );
         }
         assert_eq!(
-            open_route_length(&scenario.map, Coordinate::new(8, 6), Coordinate::new(14, 6)),
+            open_route_length(&scenario.map, Coordinate::new(8, 6), Coordinate::new(14, 6))?,
             Some(6)
         );
 
@@ -1383,14 +1468,16 @@ mod tests {
                 &scenario.map,
                 Coordinate::new(8, 10),
                 Coordinate::new(14, 10)
-            ),
+            )?,
             Some(10)
         );
+
+        Ok(())
     }
 
     #[test]
-    fn blood_gulch_has_base_and_flank_supply_depots() {
-        let scenario = Scenario::blood_gulch().unwrap();
+    fn blood_gulch_has_base_and_flank_supply_depots() -> TestResult<()> {
+        let scenario = Scenario::blood_gulch().fixture()?;
         assert_eq!(
             scenario
                 .depots
@@ -1410,41 +1497,46 @@ mod tests {
                 Some(Terrain::GrassPlain)
             );
         }
+
+        Ok(())
     }
 
     #[test]
-    fn blood_gulch_forests_provide_concealed_hiding_spots() {
-        let mut scenario = Scenario::blood_gulch().unwrap();
+    fn blood_gulch_forests_provide_concealed_hiding_spots() -> TestResult<()> {
+        let mut scenario = Scenario::blood_gulch().fixture()?;
         assert_eq!(scenario.map.theme(), MapTheme::GreenForest);
         let forest = (0..scenario.map.height())
             .flat_map(|y| {
                 (0..scenario.map.width()).map(move |x| Coordinate::new(x as u16, y as u16))
             })
             .find(|position| scenario.map.tile_at(*position) == Some(Terrain::Forest))
-            .unwrap();
+            .fixture()?;
         let observer = scenario
             .units
             .iter_mut()
-            .find(|unit| unit.side == Side::Player1)
-            .unwrap();
+            .find(|unit| unit.side == PlayerNumber::Player1)
+            .fixture()?;
         observer.location =
             Location::OnMap(Coordinate::new(forest.x() as u16, (forest.y() + 1) as u16));
         let enemy = scenario
             .units
             .iter_mut()
-            .find(|unit| unit.side == Side::Player2)
-            .unwrap();
+            .find(|unit| unit.side == PlayerNumber::Player2)
+            .fixture()?;
         let enemy_id = enemy.id;
         enemy.location = Location::OnMap(forest);
-        let visible = crate::visibility::visible_tiles(&scenario, Side::Player1);
+        let visible = crate::visibility::visible_tiles(&scenario, PlayerNumber::Player1);
         assert!(!visible.contains(&forest));
-        let observed = crate::visibility::observed_scenario(&scenario, Side::Player1, &visible);
+        let observed =
+            crate::visibility::observed_scenario(&scenario, PlayerNumber::Player1, &visible);
         assert!(!observed.units.iter().any(|unit| unit.id == enemy_id));
+
+        Ok(())
     }
 
     #[test]
-    fn blood_gulch_has_a_canyon_and_arabia_is_mostly_open() {
-        let gulch = Scenario::blood_gulch().unwrap();
+    fn blood_gulch_has_a_canyon_and_arabia_is_mostly_open() -> TestResult<()> {
+        let gulch = Scenario::blood_gulch().fixture()?;
         for x in 0..25 {
             assert_eq!(
                 gulch.map.tile_at(Coordinate::new(x, 0)),
@@ -1459,7 +1551,7 @@ mod tests {
             gulch.map.tile_at(Coordinate::new(12, 10)),
             Some(Terrain::GrassPlain)
         );
-        let arabia = Scenario::arabia().unwrap();
+        let arabia = Scenario::arabia().fixture()?;
         let tiles: Vec<_> = (0..21)
             .flat_map(|y| (0..25).map(move |x| Coordinate::new(x, y)))
             .filter_map(|position| arabia.map.tile_at(position))
@@ -1483,43 +1575,45 @@ mod tests {
                 }
             }
         }
+
+        Ok(())
     }
 
     #[test]
-    fn passengers_derive_physical_position_without_board_occupancy() {
-        let mut scenario = Scenario::supply_point().unwrap();
-        let truck_id = UnitId::parse("4").unwrap();
-        let passenger_id = UnitId::parse("1").unwrap();
+    fn passengers_derive_physical_position_without_board_occupancy() -> TestResult<()> {
+        let mut scenario = Scenario::supply_point().fixture()?;
+        let truck_id = UnitId::parse("4").fixture()?;
+        let passenger_id = UnitId::parse("1").fixture()?;
         scenario
             .units
             .iter_mut()
             .find(|unit| unit.unit_id() == passenger_id)
-            .unwrap()
+            .fixture()?
             .board(truck_id);
         let destination = Coordinate::new(1, 7);
         scenario
             .units
             .iter_mut()
             .find(|unit| unit.unit_id() == truck_id)
-            .unwrap()
+            .fixture()?
             .move_to(destination);
         let passenger = scenario
             .units
             .iter()
             .find(|unit| unit.unit_id() == passenger_id)
-            .unwrap();
+            .fixture()?;
         assert_eq!(passenger.location, Location::Aboard(truck_id));
         assert_eq!(passenger.board_position(), None);
         assert_eq!(scenario.physical_position(passenger), Some(destination));
 
         let mut missing_carrier = passenger.clone();
-        missing_carrier.board(UnitId::parse("999").unwrap());
+        missing_carrier.board(UnitId::parse("999").fixture()?);
         assert_eq!(scenario.physical_position(&missing_carrier), None);
         scenario
             .units
             .iter_mut()
             .find(|unit| unit.unit_id() == truck_id)
-            .unwrap()
+            .fixture()?
             .board(passenger_id);
         assert_eq!(scenario.physical_position(&missing_carrier), None);
         assert_eq!(
@@ -1528,15 +1622,66 @@ mod tests {
                     .units
                     .iter()
                     .find(|unit| unit.unit_id() == passenger_id)
-                    .unwrap()
+                    .fixture()?
             ),
             None
         );
+
+        Ok(())
     }
 
     #[test]
-    fn units_start_with_full_health_and_resources() {
-        let mut scenario = Scenario::supply_point().unwrap();
+    fn exhausted_units_die_and_dead_carriers_leave_no_orphaned_cargo() -> TestResult<()> {
+        let mut scenario = Scenario::supply_point().fixture()?;
+        let truck_id = UnitId::parse("4").fixture()?;
+        for unit in &mut scenario.units {
+            match unit.id().as_str() {
+                "1" => unit.board(truck_id),
+                "2" | "4" | "12" => unit.supplies.current = 1,
+                _ => {}
+            }
+        }
+        let snapshot = scenario.finish_turn_resources();
+        for id in ["1", "2", "4", "12"] {
+            assert!(!scenario.units.iter().any(|unit| unit.id() == id));
+            let dead = snapshot.iter().find(|unit| unit.id() == id).fixture()?;
+            assert_eq!(dead.supplies.current, 0);
+            assert_eq!(dead.hit_points.current, 0);
+        }
+        assert_eq!(scenario.units.len(), 12);
+        assert!(
+            scenario
+                .units
+                .iter()
+                .all(|unit| unit.supplies.current == 63)
+        );
+        assert!(
+            scenario
+                .units
+                .iter()
+                .all(|unit| unit.hit_points == HitPoints::full())
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn exhausted_passengers_die_without_destroying_their_carrier() -> TestResult<()> {
+        let mut scenario = Scenario::supply_point().fixture()?;
+        let passenger = &mut scenario.units[0];
+        passenger.board(UnitId::parse("4").fixture()?);
+        passenger.supplies.current = 1;
+        scenario.finish_turn_resources();
+        assert!(!scenario.units.iter().any(|unit| unit.id() == "1"));
+        assert!(scenario.units.iter().any(|unit| unit.id() == "4"));
+        assert_eq!(scenario.units.len(), 15);
+
+        Ok(())
+    }
+
+    #[test]
+    fn units_start_with_full_health_and_resources() -> TestResult<()> {
+        let mut scenario = Scenario::supply_point().fixture()?;
         for unit in &scenario.units {
             assert_eq!(
                 unit.hit_points(),
@@ -1568,11 +1713,13 @@ mod tests {
                 .iter()
                 .all(|unit| unit.hit_points() == HitPoints::full())
         );
+
+        Ok(())
     }
 
     #[test]
-    fn following_paths_turns_units_and_keeps_facing_on_hold() {
-        let mut unit = Scenario::supply_point().unwrap().units.remove(0);
+    fn following_paths_turns_units_and_keeps_facing_on_hold() -> TestResult<()> {
+        let mut unit = Scenario::supply_point().fixture()?.units.remove(0);
         for (from, to, expected) in [
             ((3, 7), (3, 6), Direction::North),
             ((3, 6), (4, 6), Direction::East),
@@ -1581,9 +1728,12 @@ mod tests {
         ] {
             unit.follow_path(&[Coordinate::new(from.0, from.1), Coordinate::new(to.0, to.1)]);
             assert_eq!(unit.direction(), Some(expected));
-            assert_eq!(unit.board_position().unwrap(), Coordinate::new(to.0, to.1));
+            assert_eq!(
+                unit.board_position().fixture()?,
+                Coordinate::new(to.0, to.1)
+            );
         }
-        unit.follow_path(&[unit.board_position().unwrap()]);
+        unit.follow_path(&[unit.board_position().fixture()?]);
         assert_eq!(unit.direction(), Some(Direction::West));
         unit.follow_path(&[
             Coordinate::new(3, 7),
@@ -1592,31 +1742,68 @@ mod tests {
             Coordinate::new(5, 8),
         ]);
         assert_eq!(unit.direction(), Some(Direction::South));
+
+        Ok(())
     }
 
     #[test]
-    fn trucks_have_no_direction_after_moves_or_holds() {
+    fn sprite_facing_retains_last_horizontal_direction_across_vertical_moves() -> TestResult<()> {
+        for kind in [UnitKind::Infantry, UnitKind::Tank, UnitKind::FieldGun] {
+            for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
+                let mut unit = Scenario::supply_point()
+                    .fixture()?
+                    .units
+                    .into_iter()
+                    .find(|unit| unit.kind == kind && unit.side == side)
+                    .fixture()?;
+                unit.follow_path(&[
+                    Coordinate::new(4, 8),
+                    Coordinate::new(3, 8),
+                    Coordinate::new(3, 7),
+                ]);
+                assert_eq!(unit.direction(), Some(Direction::North));
+                assert_eq!(unit.sprite_facing(), SpriteFacing::Left);
+                unit.follow_path(&[Coordinate::new(3, 7), Coordinate::new(3, 8)]);
+                assert_eq!(unit.sprite_facing(), SpriteFacing::Left);
+                unit.rotate(Direction::South);
+                assert_eq!(unit.sprite_facing(), SpriteFacing::Left);
+                unit.rotate(Direction::East);
+                unit.follow_path(&[Coordinate::new(3, 8), Coordinate::new(3, 7)]);
+                assert_eq!(unit.direction(), Some(Direction::North));
+                assert_eq!(unit.sprite_facing(), SpriteFacing::Right);
+                unit.follow_path(&[Coordinate::new(3, 7)]);
+                assert_eq!(unit.sprite_facing(), SpriteFacing::Right);
+            }
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn trucks_have_no_direction_after_moves_or_holds() -> TestResult<()> {
         let mut unit = Scenario::supply_point()
-            .unwrap()
+            .fixture()?
             .units
             .into_iter()
             .find(|unit| unit.kind == UnitKind::Truck)
-            .unwrap();
+            .fixture()?;
         assert_eq!(unit.direction(), None);
         unit.follow_path(&[
-            unit.board_position().unwrap(),
+            unit.board_position().fixture()?,
             Coordinate::new(3, 7),
             Coordinate::new(3, 8),
         ]);
-        assert_eq!(unit.board_position().unwrap(), Coordinate::new(3, 8));
+        assert_eq!(unit.board_position().fixture()?, Coordinate::new(3, 8));
         assert_eq!(unit.direction(), None);
-        unit.follow_path(&[unit.board_position().unwrap()]);
+        unit.follow_path(&[unit.board_position().fixture()?]);
         assert_eq!(unit.direction(), None);
+
+        Ok(())
     }
 
     #[test]
-    fn starting_forces_are_unique_in_bounds_and_mirrored() {
-        let scenario = Scenario::supply_point().unwrap();
+    fn starting_forces_are_unique_in_bounds_and_mirrored() -> TestResult<()> {
+        let scenario = Scenario::supply_point().fixture()?;
         assert_eq!(scenario.units.len(), 16);
         assert_eq!(
             scenario
@@ -1636,7 +1823,7 @@ mod tests {
                 .len(),
             16
         );
-        for side in [Side::Player1, Side::Player2] {
+        for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
             for (kind, expected) in [
                 (UnitKind::Infantry, 3),
                 (UnitKind::Truck, 2),
@@ -1655,7 +1842,7 @@ mod tests {
         }
         for unit in &scenario.units {
             assert_eq!(
-                scenario.map.tile_at(unit.board_position().unwrap()),
+                scenario.map.tile_at(unit.board_position().fixture()?),
                 Some(Terrain::GrassPlain)
             );
             assert!(
@@ -1668,11 +1855,11 @@ mod tests {
         let player1_units = scenario
             .units
             .iter()
-            .filter(|unit| unit.side == Side::Player1);
+            .filter(|unit| unit.side == PlayerNumber::Player1);
         let player2_units = scenario
             .units
             .iter()
-            .filter(|unit| unit.side == Side::Player2);
+            .filter(|unit| unit.side == PlayerNumber::Player2);
         for (player1, player2) in player1_units.zip(player2_units) {
             let (player1_direction, player2_direction) = match player1.kind {
                 UnitKind::Truck => (None, None),
@@ -1682,11 +1869,11 @@ mod tests {
             assert_eq!(player2.direction(), player2_direction);
             assert_eq!(player1.kind, player2.kind);
             assert_eq!(
-                player1.board_position().unwrap().y(),
-                player2.board_position().unwrap().y()
+                player1.board_position().fixture()?.y(),
+                player2.board_position().fixture()?.y()
             );
             assert_eq!(
-                player1.board_position().unwrap().x() + player2.board_position().unwrap().x(),
+                player1.board_position().fixture()?.x() + player2.board_position().fixture()?.x(),
                 16
             );
         }
@@ -1698,11 +1885,13 @@ mod tests {
                 );
             }
         }
+
+        Ok(())
     }
 
     #[test]
-    fn supply_point_has_a_centered_depot_and_abundant_terrain() {
-        let scenario = Scenario::supply_point().unwrap();
+    fn supply_point_has_a_centered_depot_and_abundant_terrain() -> TestResult<()> {
+        let scenario = Scenario::supply_point().fixture()?;
         assert!(scenario.map.contains(Coordinate::new(16, 16)));
         assert!(!scenario.map.contains(Coordinate::new(17, 16)));
         assert!(!scenario.map.contains(Coordinate::new(16, 17)));
@@ -1727,11 +1916,13 @@ mod tests {
                 Some(Terrain::GrassPlain)
             );
         }
+
+        Ok(())
     }
 
     #[test]
-    fn depots_are_separate_from_terrain_and_include_the_center() {
-        let scenario = Scenario::supply_point().unwrap();
+    fn depots_are_separate_from_terrain_and_include_the_center() -> TestResult<()> {
+        let scenario = Scenario::supply_point().fixture()?;
         assert_eq!(scenario.depots.len(), 3);
         assert_eq!(scenario.depots[1].position, Coordinate::new(8, 8));
         for depot in &scenario.depots {
@@ -1740,6 +1931,8 @@ mod tests {
                 Some(Terrain::GrassPlain)
             );
         }
-        assert_eq!(scenario, Scenario::supply_point().unwrap());
+        assert_eq!(scenario, Scenario::supply_point().fixture()?);
+
+        Ok(())
     }
 }

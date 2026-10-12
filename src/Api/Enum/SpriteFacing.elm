@@ -2,50 +2,50 @@
 -- https://github.com/dillonkearns/elm-graphql
 
 
-module Api.Enum.Side exposing (..)
+module Api.Enum.SpriteFacing exposing (..)
 
 import Json.Decode as Decode exposing (Decoder)
 
 
-{-| Player ownership, independent of starting position on a map.
+{-| Horizontal artwork orientation, retained across north/south movement.
 -}
-type Side
-    = Player1
-    | Player2
+type SpriteFacing
+    = Left
+    | Right
 
 
-list : List Side
+list : List SpriteFacing
 list =
-    [ Player1, Player2 ]
+    [ Left, Right ]
 
 
-decoder : Decoder Side
+decoder : Decoder SpriteFacing
 decoder =
     Decode.string
         |> Decode.andThen
             (\string ->
                 case string of
-                    "PLAYER1" ->
-                        Decode.succeed Player1
+                    "LEFT" ->
+                        Decode.succeed Left
 
-                    "PLAYER2" ->
-                        Decode.succeed Player2
+                    "RIGHT" ->
+                        Decode.succeed Right
 
                     _ ->
-                        Decode.fail ("Invalid Side type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
+                        Decode.fail ("Invalid SpriteFacing type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
             )
 
 
 {-| Convert from the union type representing the Enum to a string that the GraphQL server will recognize.
 -}
-toString : Side -> String
+toString : SpriteFacing -> String
 toString enum____ =
     case enum____ of
-        Player1 ->
-            "PLAYER1"
+        Left ->
+            "LEFT"
 
-        Player2 ->
-            "PLAYER2"
+        Right ->
+            "RIGHT"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -59,14 +59,14 @@ This is the inverse of the Enum `toString` function. So you can call `toString` 
 This can be useful for generating Strings to use for <select> menus to check which item was selected.
 
 -}
-fromString : String -> Maybe Side
+fromString : String -> Maybe SpriteFacing
 fromString enumString____ =
     case enumString____ of
-        "PLAYER1" ->
-            Just Player1
+        "LEFT" ->
+            Just Left
 
-        "PLAYER2" ->
-            Just Player2
+        "RIGHT" ->
+            Just Right
 
         _ ->
             Nothing

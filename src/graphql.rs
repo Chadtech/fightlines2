@@ -162,18 +162,19 @@ pub fn export_schema() -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{FixtureValue, TestResult};
     use actix_web::{App, http::StatusCode, test};
     use serde_json::{Value, json};
 
     const FIELDS: &str = "id name mapType players { name isHost } isHost isMember gameUrl";
 
     #[actix_web::test]
-    async fn development_game_is_opt_in_and_does_not_replace_identity() {
+    async fn development_game_is_opt_in_and_does_not_replace_identity() -> TestResult<()> {
         let query = "{ game(id: \"00000000000000000000000000000000\") { id name isHost players { side isYou } movementRules { kind budget terrainCosts { terrain cost } } visibleTiles { x y } scenario { units { id side } depots { position { x y } } } } }";
         for development in [false, true] {
             let seed = crate::seed::Seed::new([7; 32]);
             let store = if development {
-                Store::development(seed).unwrap()
+                Store::development(seed).fixture()?
             } else {
                 Store::new(seed)
             };
@@ -200,32 +201,34 @@ mod tests {
                 if development {
                     assert!(body["errors"].is_null(), "{body}");
                     let game = &body["data"]["game"];
-                    assert_eq!(game["movementRules"].as_array().unwrap().len(), 4);
+                    assert_eq!(game["movementRules"].as_array().fixture()?.len(), 4);
                     assert_eq!(game["movementRules"][0]["budget"], 4);
                     assert_eq!(game["name"], "Test game");
                     assert_eq!(game["players"][0]["side"], "PLAYER1");
                     assert_eq!(game["players"][0]["isYou"], true);
                     assert_eq!(game["players"][1]["side"], "PLAYER2");
                     assert_eq!(game["players"][1]["isYou"], false);
-                    assert_eq!(game["scenario"]["units"].as_array().unwrap().len(), 8);
+                    assert_eq!(game["scenario"]["units"].as_array().fixture()?.len(), 8);
                     assert!(
                         game["scenario"]["units"]
                             .as_array()
-                            .unwrap()
+                            .fixture()?
                             .iter()
                             .all(|unit| unit["side"] == "PLAYER1")
                     );
-                    assert!(!game["visibleTiles"].as_array().unwrap().is_empty());
-                    assert_eq!(game["scenario"]["depots"].as_array().unwrap().len(), 3);
+                    assert!(!game["visibleTiles"].as_array().fixture()?.is_empty());
+                    assert_eq!(game["scenario"]["depots"].as_array().fixture()?.len(), 3);
                 } else {
                     assert!(body["errors"].is_array());
                 }
             }
         }
+
+        Ok(())
     }
 
     #[actix_web::test]
-    async fn lifecycle_and_authorization_over_graphql() {
+    async fn lifecycle_and_authorization_over_graphql() -> TestResult<()> {
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(Store::new(crate::seed::Seed::new([7; 32]))))
@@ -240,7 +243,7 @@ mod tests {
                 if let Some(cookie) = $cookie { request = request.cookie(cookie); }
                 let response = test::call_service(&app, request.to_request()).await;
                 assert_eq!(response.status(), StatusCode::OK);
-                assert_eq!(response.headers().get("Cache-Control").unwrap(), "no-store");
+                assert_eq!(response.headers().get("Cache-Control").fixture()?, "no-store");
                 let cookie = response.response().cookies().next().map(|cookie| cookie.into_owned());
                 let body: Value = test::read_body_json(response).await;
                 (body, cookie)
@@ -255,7 +258,7 @@ mod tests {
         assert!(
             invalid["errors"][0]["message"]
                 .as_str()
-                .unwrap()
+                .fixture()?
                 .contains("40")
         );
         assert!(cookie.is_none());
@@ -269,7 +272,7 @@ mod tests {
             assert!(
                 invalid["errors"][0]["message"]
                     .as_str()
-                    .unwrap()
+                    .fixture()?
                     .contains("lobby name")
             );
             assert!(cookie.is_none());
@@ -280,13 +283,13 @@ mod tests {
             ),
             None
         );
-        let host = host.unwrap();
+        let host = host.fixture()?;
         assert_eq!(host.http_only(), Some(true));
         assert_eq!(created["data"]["createLobby"]["players"][0]["name"], "Chad");
         assert_eq!(created["data"]["createLobby"]["isHost"], true);
         assert_eq!(created["data"]["createLobby"]["name"], "Friday Night");
         assert!(created["data"]["createLobby"]["gameUrl"].is_null());
-        let id = created["data"]["createLobby"]["id"].as_str().unwrap();
+        let id = created["data"]["createLobby"]["id"].as_str().fixture()?;
         let (visitor, _) = execute!(
             format!("{{ lobby(id: \"{id}\") {{ {FIELDS} }} health }}"),
             None
@@ -301,7 +304,7 @@ mod tests {
         assert!(
             early["errors"][0]["message"]
                 .as_str()
-                .unwrap()
+                .fixture()?
                 .contains("not started")
         );
         let (solo, _) = execute!(
@@ -311,7 +314,7 @@ mod tests {
         assert!(
             solo["errors"][0]["message"]
                 .as_str()
-                .unwrap()
+                .fixture()?
                 .contains("requires two players")
         );
         let (duplicate, _) = execute!(
@@ -322,11 +325,11 @@ mod tests {
         let join =
             format!("mutation {{ joinLobby(id: \"{id}\", name: \"Walter\") {{ {FIELDS} }} }}");
         let (joined, guest) = execute!(&join, None);
-        let guest = guest.unwrap();
+        let guest = guest.fixture()?;
         assert_eq!(
             joined["data"]["joinLobby"]["players"]
                 .as_array()
-                .unwrap()
+                .fixture()?
                 .len(),
             2
         );
@@ -335,7 +338,7 @@ mod tests {
         assert_eq!(
             rejoined["data"]["joinLobby"]["players"]
                 .as_array()
-                .unwrap()
+                .fixture()?
                 .len(),
             2
         );
@@ -346,7 +349,7 @@ mod tests {
         assert!(
             full["errors"][0]["message"]
                 .as_str()
-                .unwrap()
+                .fixture()?
                 .contains("full")
         );
         assert!(cookie.is_none());
@@ -359,7 +362,7 @@ mod tests {
             assert!(
                 denied["errors"][0]["message"]
                     .as_str()
-                    .unwrap()
+                    .fixture()?
                     .contains("Only the host")
             );
         }
@@ -396,7 +399,7 @@ mod tests {
         assert!(
             locked["errors"][0]["message"]
                 .as_str()
-                .unwrap()
+                .fixture()?
                 .contains("already started")
         );
         let (polled, _) = execute!(
@@ -408,7 +411,7 @@ mod tests {
         assert!(
             late["errors"][0]["message"]
                 .as_str()
-                .unwrap()
+                .fixture()?
                 .contains("already started")
         );
         let game = format!(
@@ -423,10 +426,10 @@ mod tests {
         assert_eq!(scenario["map"]["height"], 17);
         assert_eq!(scenario["map"]["baseTile"], "GRASS_PLAIN");
         assert_eq!(scenario["map"]["theme"], "GREEN_FOREST");
-        assert_eq!(scenario["map"]["features"].as_array().unwrap().len(), 102);
-        assert_eq!(scenario["depots"].as_array().unwrap().len(), 3);
-        assert_eq!(scenario["units"].as_array().unwrap().len(), 8);
-        assert!(scenario["units"].as_array().unwrap().iter().all(|unit| {
+        assert_eq!(scenario["map"]["features"].as_array().fixture()?.len(), 102);
+        assert_eq!(scenario["depots"].as_array().fixture()?.len(), 3);
+        assert_eq!(scenario["units"].as_array().fixture()?.len(), 8);
+        assert!(scenario["units"].as_array().fixture()?.iter().all(|unit| {
             unit["location"]["__typename"] == "OnMap"
                 && unit["location"]["position"]["x"].is_number()
                 && unit["location"].get("carrierId").is_none()
@@ -440,14 +443,14 @@ mod tests {
         assert!(
             scenario["units"]
                 .as_array()
-                .unwrap()
+                .fixture()?
                 .iter()
                 .all(|unit| unit["side"] == "PLAYER2")
         );
         assert!(
             host_scenario["units"]
                 .as_array()
-                .unwrap()
+                .fixture()?
                 .iter()
                 .all(|unit| unit["side"] == "PLAYER1")
         );
@@ -475,16 +478,16 @@ mod tests {
             "mutation { a: createLobby(name: \"One\", lobbyName: \" Friday Night \" ) { id isHost } b: createLobby(name: \"Two\", lobbyName: \" Friday Night \" ) { id isHost } }",
             None
         );
-        let cookie = cookie.unwrap();
+        let cookie = cookie.fixture()?;
         for alias in ["a", "b"] {
-            let id = multiple["data"][alias]["id"].as_str().unwrap();
+            let id = multiple["data"][alias]["id"].as_str().fixture()?;
             let (owner, _) = execute!(
                 format!("{{ lobby(id: \"{id}\") {{ isHost }} }}"),
                 Some(cookie.clone())
             );
             assert_eq!(owner["data"]["lobby"]["isHost"], true);
         }
-        let submit = |side: &str| {
+        let submit = |side: &str| -> TestResult<String> {
             let own_scenario = if side == "PLAYER1" {
                 host_scenario
             } else {
@@ -492,30 +495,30 @@ mod tests {
             };
             let orders = own_scenario["units"]
                 .as_array()
-                .unwrap()
+                .fixture()?
                 .iter()
                 .filter(|unit| unit["side"] == side)
                 .map(|unit| {
-                    format!(
+                    Ok(format!(
                         "{{unitId: \"{}\", path: [{{x: {}, y: {}}}]}}",
-                        unit["id"].as_str().unwrap(),
+                        unit["id"].as_str().fixture()?,
                         unit["location"]["position"]["x"],
                         unit["location"]["position"]["y"]
-                    )
+                    ))
                 })
-                .collect::<Vec<_>>()
+                .collect::<TestResult<Vec<_>>>()?
                 .join(",");
-            format!(
+            Ok(format!(
                 "mutation {{ submitTurn(id: \"{id}\", turnNumber: 1, orders: [{orders}]) {{ turnNumber submitted opponentSubmitted lastResolution {{ turnNumber events {{ kind unitId }} frames {{ units {{ id side }} visibleTiles {{ x y }} }} }} }} }}"
-            )
+            ))
         };
         for identity in [None, Some(cookie.clone())] {
-            let (denied, _) = execute!(submit("PLAYER1"), identity);
+            let (denied, _) = execute!(submit("PLAYER1")?, identity);
             assert!(denied["errors"].is_array());
         }
-        let (foreign, _) = execute!(submit("PLAYER2"), Some(host.clone()));
+        let (foreign, _) = execute!(submit("PLAYER2")?, Some(host.clone()));
         assert!(foreign["errors"].is_array());
-        let (submitted, _) = execute!(submit("PLAYER1"), Some(host.clone()));
+        let (submitted, _) = execute!(submit("PLAYER1")?, Some(host.clone()));
         assert_eq!(submitted["data"]["submitTurn"]["turnNumber"], 1);
         assert_eq!(submitted["data"]["submitTurn"]["submitted"], true);
         let turn_query =
@@ -523,20 +526,20 @@ mod tests {
         let (waiting, _) = execute!(&turn_query, Some(guest.clone()));
         assert_eq!(waiting["data"]["game"]["opponentSubmitted"], true);
         assert_eq!(waiting["data"]["game"]["submitted"], false);
-        let (retry, _) = execute!(submit("PLAYER1"), Some(host.clone()));
+        let (retry, _) = execute!(submit("PLAYER1")?, Some(host.clone()));
         assert_eq!(retry["data"]["submitTurn"]["turnNumber"], 1);
-        let (resolved, _) = execute!(submit("PLAYER2"), Some(guest));
+        let (resolved, _) = execute!(submit("PLAYER2")?, Some(guest));
         assert_eq!(resolved["data"]["submitTurn"]["turnNumber"], 2);
         assert_eq!(resolved["data"]["submitTurn"]["submitted"], false);
         let frames = resolved["data"]["submitTurn"]["lastResolution"]["frames"]
             .as_array()
-            .unwrap();
-        assert_eq!(frames.len(), 1);
-        assert!(!frames[0]["visibleTiles"].as_array().unwrap().is_empty());
+            .fixture()?;
+        assert_eq!(frames.len(), 2);
+        assert!(!frames[0]["visibleTiles"].as_array().fixture()?.is_empty());
         assert!(
             frames[0]["units"]
                 .as_array()
-                .unwrap()
+                .fixture()?
                 .iter()
                 .all(|unit| unit["side"] == "PLAYER2")
         );
@@ -544,16 +547,18 @@ mod tests {
         assert_eq!(
             resolved["data"]["submitTurn"]["lastResolution"]["events"]
                 .as_array()
-                .unwrap()
+                .fixture()?
                 .len(),
             8
         );
-        let (stale, _) = execute!(submit("PLAYER1"), Some(host));
+        let (stale, _) = execute!(submit("PLAYER1")?, Some(host));
         assert!(stale["errors"].is_array());
         let old = test::TestRequest::get().uri("/api/health").to_request();
         assert_eq!(
             test::call_service(&app, old).await.status(),
             StatusCode::NOT_FOUND
         );
+
+        Ok(())
     }
 }

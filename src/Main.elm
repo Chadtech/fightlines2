@@ -41,11 +41,13 @@ import Url
     exposing
         ( Url
         )
+import View.Aria as Aria
 import View.Button as Button
 import View.Card as Card
 import View.Dialog as Dialog exposing (Dialog)
 import View.Dropdown as Dropdown
 import View.UnitCargo as UnitCargo
+import View.UnitDeath as UnitDeath
 import View.UnitFacing as UnitFacing
 
 
@@ -499,7 +501,7 @@ shell page =
 
                 LoadingLobby _ _ ->
                     [ [ H.p
-                            [ A.attribute "role" "status"
+                            [ Aria.role Aria.Status
                             ]
                             [ H.text "loading lobby…"
                             ]
@@ -518,7 +520,7 @@ shell page =
 
                 LoadingGame _ _ ->
                     [ [ H.p
-                            [ A.attribute "role" "status"
+                            [ Aria.role Aria.Status
                             ]
                             [ H.text "loading game…"
                             ]
@@ -556,6 +558,7 @@ shell page =
             [ globalStyles
             , UnitFacing.styles
             , UnitCargo.styles
+            , UnitDeath.styles
             ]
                 ++ content
     in

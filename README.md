@@ -60,8 +60,10 @@ click to save it; an arrow key or WASD also saves the corresponding direction. R
 revoked before submission. It changes facing when the turn resolves, costs only
 normal supply upkeep, and counts toward turn readiness. Trucks and carried units
 cannot rotate.
-Movement turns units along each path segment and leaves them facing the final
-segment; holds and destination conflicts preserve their direction.
+Movement turns units along each successfully traveled segment. Interrupted units
+face their last traveled segment; units stopped before moving retain their facing.
+Side-profile sprites flip for east/west facing and keep their last horizontal
+orientation through north/south movement and rotation, including after refresh.
 Markers overlay the artwork, brighten on selection, and pulse in unison over two seconds,
 fading completely out briefly before returning. Reduced-motion preferences keep them steady.
 The infantry, tanks, and trucks use four-frame rigid-part idle loops in light sky blue
@@ -79,14 +81,15 @@ Select the unit and choose **revoke order** to remove the saved plan and
 return to the commands. Choose **move** to trace a new route. Arrow keys or WASD extend or retrace the previewed route; Enter saves it without panning the map. Reachable squares support Tab and Enter/Space.
 Press Escape or click the selected unit to leave movement selection. Paths remain visible when
 switching units. Unsubmitted plans are local drafts and disappear on refresh.
-Units can travel through allied units; enemies block travel, and occupied
+Routes can pass through allied units or enemy starting positions; enemies encountered
+during resolution stop movement. Occupied
 squares cannot be destinations except when loading a truck. A saved move reserves its destination so other
 units cannot choose it; changing or clearing the move frees that square. Routes
 can pass through reserved destinations. Depots are passable.
 The selection panel shows the selected unit's illustration, name, and side,
-with expandable unit and gauge explanations. Every unit starts with 16/16 hit points, supplied by the server. Damage and healing are not implemented yet. Tanks and trucks start with 64/64 fuel. Each
+with expandable unit and gauge explanations. Every unit starts with 16/16 hit points, supplied by the server. Combat damage and healing are not implemented yet. Tanks and trucks start with 64/64 fuel. Each
 successfully traversed tile costs 1 fuel, independently of terrain movement
-costs. Holds and destination conflicts consume none. At the end of resolution,
+costs. Interrupted routes pay only for successfully traveled tiles; holds consume none. At the end of resolution,
 vehicles on any supply depot refill to 64, regardless of side. Movement previews and submitted paths must fit both remaining
 fuel and the per-turn movement budget.
 
@@ -107,33 +110,38 @@ passengers and **proceed without unloading**. Check passengers, then choose an e
 around the truck's planned destination. The truck moves first; unloading uses
 the passenger's normal terrain and supply costs. Both passengers may unload
 onto different squares in the same turn. Blocked truck moves or occupied exits
-leave the affected passengers aboard. Revoking the truck's order also removes
+leave the affected passengers aboard. An exit occupied by a concealed enemy can
+be submitted; if the enemy remains there at resolution, the passenger stays aboard
+and spends no unloading supplies. Revoking the truck's order also removes
 its unload choices.
 Enemy passengers are concealed. Unit transport is separate from supply delivery.
 Loaded trucks show a prominent gold blinking passenger badge in the tile's lower-right
 corner, with `2` when both berths are occupied. It stays clearly visible between
 blinks and remains steady with reduced motion enabled. Empty trucks have no badge.
 
-Sight is shared by all units on your side. Infantry and field guns see 4 tiles,
+Sight is shared by all units on your side. Infantry see 5 tiles, field guns 4,
 trucks 3, and tanks 2, using a circular radius measured between tile
-centers. Standing on a hill grants +1 sight. Intervening hills and forests block
+centers. Standing on a hill grants +1 sight and lets units see over intervening
+hills and forests. For units off hills, intervening hills and forests block
 sight beyond them when the sight line crosses their tile. Merely touching a
 corner does not block sight, so open diagonal tiles remain visible; the blocking
 hill itself remains visible. Forests
 conceal all enemy units inside, even adjacent to an observer or an allied unit
 in the same forest. Your own units and their occupied tiles are always visible. Unseen tiles are darker and desaturated, preserving terrain detail;
 the terrain and fixed depot locations remain known. Hidden enemies and their
-paths are withheld from game responses. Both players share an interleaved playback timeline. One unit completes its route
-before the next starts, at one path tile per 180ms step. Sight refreshes at each tile boundary. Enemies appear when they enter
+paths are withheld from game responses. Both players share a movement timeline, with units advancing together at their
+scheduled arrivals. Sight refreshes at each arrival boundary. Enemies appear when they enter
 sight and disappear when they leave it, including brief sightings during a turn.
 Hidden positions and route segments are withheld from responses.
 
 Every unit starts with 64/64 supplies and spends 1 supply per resolved turn,
-even when holding or losing a destination conflict. Infantry and field guns
+even when holding or stopped by an encounter. Infantry and field guns
 also spend 1 supply per successfully traversed tile; tanks and trucks use fuel
 for movement instead. Movement reserves the turn's upkeep before spending
 supplies. A walking unit with 1 or fewer supplies can hold but cannot move.
-Supplies stop at zero; starvation damage is not implemented. Depots do not
+Units die immediately when supplies reach zero after turn upkeep. A dead truck
+also loses its passengers. During playback, a skull and crossbones flashes three
+times before dead units vanish; reduced-motion mode shows a steady marker. Depots do not
 replenish supplies yet. These provisions belong to the unit; supply cargo
 and supply delivery remain future work. Trucks can now carry units.
 
@@ -153,23 +161,39 @@ list with the chosen order and **revoke order**. Revoking returns to the command
 Escape clears selection without removing saved orders. Orders remain editable
 until the turn is submitted.
 
-The fixed-size bottom-left control panel sits flush with the screen edges, with
-a large **submit turn** button on the left, the turn number and readiness beside
-it, and pan arrows and zoom controls below. It also shows the other player's submission status.
+The compact bottom-left control strip sits flush with the screen edges, with
+the turn number above **submit turn**, every player’s name and status in the
+middle in an inset panel, and pan/zoom/reset controls alongside. Names and statuses
+occupy equal-width columns; statuses say **planning** or **submitted plan**. Pan arrows form a directional pad beside stacked zoom
+and reset controls. Controls wrap on narrower screens. The submit button
+pulses gold when every unit has an order. An inset activity track stays
+beneath submit at all times, empty while idle, with a solid gray bar while waiting
+for the other player. It sweeps smoothly left to right, fully exiting the
+track before looping from the left; reduced-motion
+settings keep these effects steady.
 Give units a move or **hold position** order. **submit turn**
 becomes primary when all units are ready. Submitting with unassigned units opens
 a warning: choose **keep planning** or **submit anyway**, which makes those
 units hold position. Submission locks your orders, and that
 waiting state survives refresh. Once both players submit, the server moves the
-units and advances the turn. Each client plays the saved paths one unit at a time,
-mixing players' moves in the same order for both viewers. Equal action counts
-alternate; unequal counts are spread proportionally. The starting player switches
-each turn. Loading and unloading follow movement to preserve transport dependencies.
+units and advances the turn. Units advance by whole squares on a shared timeline:
+arrival time is accumulated terrain movement cost divided by the unit's full
+movement allowance. Tanks can catch infantry; choosing a shorter route or having
+less fuel does not slow a unit down. Routes crossing at different times can miss.
+When opponents claim the same square simultaneously, player 1 has priority on odd
+turns and player 2 on even turns. The winner enters the square, the loser stays
+in its preceding square, and both stop. Opposing swaps stop both in place.
+An enemy still occupying a square blocks entry and stops both units; an enemy
+successfully departing at the same instant frees its square unless they swap.
+Allies can pass through each other. If an encounter would leave a passing unit
+on an allied square, it stops at its preceding free square. Interrupted routes spend movement resources
+only for tiles actually traveled. There is no damage or combat yet.
+Loading and truck-planned unloading follow movement to preserve transport dependencies.
+Both clients replay server-projected frames with shared timing and their own fog.
 Planning then opens with empty drafts. Refresh during playback shows the completed
-board. Paths may cross without combat; opposing units choosing the same destination
-both hold their starting positions, with a message in the right-side panel. Destination
-occupancy is validated against the starting board, so moving into another unit's
-starting square is not yet allowed, even if that unit plans to leave, except for loading.
+board. Known occupied squares remain unavailable as ordinary destinations at planning
+time, even if their occupants plan to leave, except for loading. A concealed enemy
+is handled during resolution rather than causing a submission error.
 
 New players cannot join after a game starts. All lobbies and games disappear
 when the server restarts.

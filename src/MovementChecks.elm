@@ -2,7 +2,8 @@ port module MovementChecks exposing (main)
 
 import Api.Enum.Direction as Direction
 import Api.Enum.MapTheme as MapTheme
-import Api.Enum.Side as Side
+import Api.Enum.PlayerNumber as PlayerNumber
+import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.Terrain as Terrain
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Coordinate exposing (Coordinate)
@@ -97,7 +98,8 @@ check rules fixture =
                     , id = id
                     , kind = fixture.kind
                     , location = Location.OnMap fixture.origin
-                    , side = Side.Player1
+                    , playerNumber = PlayerNumber.Player1
+                    , spriteFacing = SpriteFacing.Right
                     , direction = Just Direction.East
                     }
 
@@ -134,7 +136,7 @@ check rules fixture =
 
                 units : List Unit.Unit
                 units =
-                    unit :: (List.map (\position -> { unit | location = Location.OnMap position, side = Side.Player2 }) fixture.occupied ++ List.map (\position -> { unit | location = Location.OnMap position }) fixture.allies)
+                    unit :: (List.map (\position -> { unit | location = Location.OnMap position, playerNumber = PlayerNumber.Player2, spriteFacing = SpriteFacing.Left }) fixture.occupied ++ List.map (\position -> { unit | location = Location.OnMap position }) fixture.allies)
 
                 options : List Movement.Option
                 options =
@@ -172,10 +174,10 @@ check rules fixture =
                         && ((List.reverse option.path |> List.head) == Just option.destination)
                         && List.all
                             (\( a, b ) ->
-                                abs (a.x - b.x) + abs (a.y - b.y) == 1 && not (List.member b fixture.occupied)
+                                abs (a.x - b.x) + abs (a.y - b.y) == 1
                             )
                             steps
-                        && not (List.member option.destination fixture.allies)
+                        && not (List.member option.destination (fixture.allies ++ fixture.occupied))
                         && (List.sum (List.map entryCost (List.drop 1 option.path)) == option.cost)
             in
             if actual == fixture.expected && List.all validPath options then
@@ -199,7 +201,7 @@ traceChecks rules =
 
                 unit : Unit.Unit
                 unit =
-                    { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = id, kind = UnitKind.Infantry, location = Location.OnMap origin, side = Side.Player1, direction = Just Direction.East }
+                    { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = id, kind = UnitKind.Infantry, location = Location.OnMap origin, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East }
 
                 map : Map
                 map =
@@ -265,8 +267,8 @@ traceChecks rules =
                         |> Maybe.map (\path -> path.path == [ origin, down, { x = 0, y = 2 } ] && path.cost == 4)
                         |> Maybe.withDefault False
                     )
-                , test "enemy cells reject extension"
-                    (Movement.trace rules map [ unit, { unit | location = Location.OnMap down, side = Side.Player2 } ] unit (Movement.start origin) down == Nothing)
+                , test "enemy cells allow a route preview but resolution may stop it"
+                    (Movement.trace rules map [ unit, { unit | location = Location.OnMap down, playerNumber = PlayerNumber.Player2, spriteFacing = SpriteFacing.Left } ] unit (Movement.start origin) down /= Nothing)
                 , test "allied squares can be traced through but cannot be destinations"
                     (let
                         alliedUnits : List Unit.Unit
@@ -316,7 +318,7 @@ reservationChecks rules =
             let
                 unit : Unit.Unit
                 unit =
-                    { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = id, kind = UnitKind.Infantry, location = Location.OnMap { x = 0, y = 0 }, side = Side.Player1, direction = Just Direction.East }
+                    { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = id, kind = UnitKind.Infantry, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East }
 
                 map : Map
                 map =
@@ -373,7 +375,7 @@ fuelChecks rules =
             let
                 unit : Unit.Unit
                 unit =
-                    { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, id = id, kind = UnitKind.Tank, location = Location.OnMap { x = 0, y = 0 }, side = Side.Player1, direction = Just Direction.East, fuel = Just { current = 2, maximum = 64 } }
+                    { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, id = id, kind = UnitKind.Tank, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, fuel = Just { current = 2, maximum = 64 } }
 
                 map : Map
                 map =
@@ -439,7 +441,7 @@ supplyChecks rules =
 
                 unit : Unit.Unit
                 unit =
-                    { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, id = id, kind = UnitKind.Infantry, location = Location.OnMap { x = 0, y = 0 }, side = Side.Player1, direction = Just Direction.East, fuel = Nothing, supplies = supplies }
+                    { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, id = id, kind = UnitKind.Infantry, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, fuel = Nothing, supplies = supplies }
 
                 map : Map
                 map =
@@ -520,7 +522,8 @@ transportChecks rules =
                 passenger : Unit.Unit
                 passenger =
                     { id = passengerId
-                    , side = Side.Player1
+                    , playerNumber = PlayerNumber.Player1
+                    , spriteFacing = SpriteFacing.Right
                     , kind = UnitKind.Infantry
                     , direction = Just Direction.East
                     , hitPoints = { current = 16, maximum = 16 }

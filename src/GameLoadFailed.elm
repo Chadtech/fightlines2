@@ -26,6 +26,7 @@ import LobbyId
 import Route
 import Shared
 import Style as S
+import View.Aria as Aria
 import View.Button as Button
 import View.Card as Card
 import View.CardHeader as CardHeader
@@ -107,7 +108,7 @@ view model =
             ]
         ]
         [ [ H.p
-                [ A.attribute "role" "status"
+                [ Aria.role Aria.Status
                 ]
                 [ H.text model.error
                 ]

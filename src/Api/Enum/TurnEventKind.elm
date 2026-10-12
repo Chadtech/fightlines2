@@ -13,12 +13,12 @@ type TurnEventKind
     | Load
     | Unload
     | Hold
-    | DestinationConflict
+    | MovementStopped
 
 
 list : List TurnEventKind
 list =
-    [ Move, Rotate, Load, Unload, Hold, DestinationConflict ]
+    [ Move, Rotate, Load, Unload, Hold, MovementStopped ]
 
 
 decoder : Decoder TurnEventKind
@@ -42,8 +42,8 @@ decoder =
                     "HOLD" ->
                         Decode.succeed Hold
 
-                    "DESTINATION_CONFLICT" ->
-                        Decode.succeed DestinationConflict
+                    "MOVEMENT_STOPPED" ->
+                        Decode.succeed MovementStopped
 
                     _ ->
                         Decode.fail ("Invalid TurnEventKind type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
@@ -70,8 +70,8 @@ toString enum____ =
         Hold ->
             "HOLD"
 
-        DestinationConflict ->
-            "DESTINATION_CONFLICT"
+        MovementStopped ->
+            "MOVEMENT_STOPPED"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -103,8 +103,8 @@ fromString enumString____ =
         "HOLD" ->
             Just Hold
 
-        "DESTINATION_CONFLICT" ->
-            Just DestinationConflict
+        "MOVEMENT_STOPPED" ->
+            Just MovementStopped
 
         _ ->
             Nothing

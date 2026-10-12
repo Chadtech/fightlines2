@@ -18,6 +18,7 @@ import Html.Styled as H
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Style as S
+import View.Aria as Aria
 
 
 
@@ -108,7 +109,7 @@ toHtml button =
         conditionalAttrs : List (Attribute msg)
         conditionalAttrs =
             [ Maybe.map Ev.onClick button.onClick
-            , Maybe.map (A.attribute "aria-label") button.accessibleLabel
+            , Maybe.map Aria.label button.accessibleLabel
             , Maybe.map A.title button.accessibleLabel
             ]
                 |> List.filterMap identity

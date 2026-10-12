@@ -199,6 +199,13 @@ prototype; do not update it unless the task explicitly requires that.
   `expect()` or `unreachable!()` when restructuring can represent failure
   correctly. Prefer explicit `match` expressions over `matches!` for enum
   checks so the alternatives are visible.
+- Never use `unwrap()` in Rust code, including tests and fixture helpers.
+  Return a useful `Result` error for missing required values and propagate it
+  with `?`; handle optional values explicitly. Do not substitute `expect()`, panicking collection indexing, or
+  silent defaults for error handling. Failed state transitions must leave the
+  authoritative state intact. Tests and fixture helpers return `Result`
+  and propagate setup failures to the test runner. Clippy enforces the ban on
+  `unwrap()` and `expect()` for every target.
 - Keep authoritative game rules in Rust and independent of HTTP. Elm owns
   interaction and presentation; receive rule values from Rust and calculate
   previews locally in Elm. Validate submitted orders again in Rust.

@@ -1,0 +1,22 @@
+// Export illustrated effects as transparent 256px board cells.
+const path = require("node:path");
+const assert = require("node:assert/strict");
+const sharp = require("sharp");
+const root = path.resolve(__dirname, "..");
+
+async function main() {
+  const source = path.join(root, "artwork/effects/illustrated/death-skull.png");
+  const metadata = await sharp(source).metadata();
+  const stats = await sharp(source).stats();
+  assert.equal(metadata.width, metadata.height, "death source must be square");
+  assert(metadata.hasAlpha && !stats.isOpaque, "death marker needs transparent edges");
+  await sharp(source)
+    .trim({ background: "#00000000", threshold: 1 })
+    .resize(232, 232, { fit: "contain", kernel: "lanczos3", background: "#00000000" })
+    .extend({ top: 12, bottom: 12, left: 12, right: 12, background: "#00000000" })
+    .png()
+    .toFile(path.join(root, "public/assets/death-skull-illustrated-v1.png"));
+  console.log("Exported illustrated death marker in a transparent 256px square cell.");
+}
+
+main().catch(error => { console.error(error); process.exitCode = 1; });

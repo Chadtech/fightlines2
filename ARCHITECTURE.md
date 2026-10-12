@@ -260,8 +260,11 @@ when handling previews and selection. `GamePage.keyCommands` retains keyboard
 priority across dialogs, command menus, movement, rotation and navigation.
 The board appears beside a
 full-height right panel containing selection details and resolution information.
-`GamePage.turnPanel` overlays fixed-size game controls at the battlefield's bottom-left
-edge, with the submit action beside turn status and camera controls below.
+`GamePage.turnPanel` overlays compact horizontal game controls at the battlefield's
+bottom-left edge, with submit, turn status, and camera controls side by side.
+`View.TurnControls` owns the responsive surface and activity animations; the page
+maps its existing lifecycle to the component's presentation variants. Narrow
+layouts wrap the camera controls below without reserving a fixed panel height.
 The gesture transitions from idle to pressed to panning, then retains click
 suppression after release until a fresh press or viewport reset. Zoom and lost
 mouse/visibility events finish the gesture while preserving suppression.
@@ -299,12 +302,14 @@ the individual page's view content.
 `GamePage` renders raster sprite-sheet cells in nested SVG viewports;
 terrain, depots, units, and an inset SVG selection square are separate layers. Player 2's
 infantry, tanks and field guns initially face west and player 1's east. Trucks have no direction or facing marker. Movement updates stored direction
-from the last traversed path edge; holds and conflicts preserve it. `View.UnitFacing` overlays inset edge markers
+from the last successfully traversed path edge; units that never move preserve it. `View.UnitFacing` overlays inset edge markers
 using each unit's direction, with selected-unit color and a synchronized
 two-second opacity pulse. Component-owned styles keep the markers steady for
 reduced-motion preferences. Markers do not receive pointer events or appear in
-status portraits. Side-profile artwork uses `Side`: player 1 units face right and
-player 2 units are mirrored left. The marker represents the unit's independent
+status portraits. Side-profile artwork follows east/west `Direction`, including playback and rotation
+previews. A separate authoritative `SpriteFacing` retains the last east/west orientation
+through north/south movement or rotation, including snapshots and playback frames.
+It starts right for player 1 and left for player 2; trucks retain that default. The marker represents the full
 four-way direction.
 Explicit turning orders remain future work.
 SVG events send typed unit IDs and coordinates
@@ -403,25 +408,32 @@ bounds, adjacency, terrain costs, budgets and starting occupancy. The store lock
 membership checks, submission and resolution together. Repeated submission for
 an already locked side is idempotent; stale turn numbers are rejected.
 
-Both submitted sides resolve together. An explicit conflict-analysis pass reads
-both complete submissions against the unchanged starting board before movement
-events are built or positions/resources change. Opposing destination conflicts
-hold both units; other paths may intersect without combat. Future combat must
-extend this advance analysis to settle path intersections, encounters and route
-interruptions before computing movement outcomes; playback order must never
-choose a winner.
+Both submitted sides resolve together. `movement_resolution.rs` schedules arrivals
+using accumulated terrain entry cost divided by the kind's full movement budget.
+The least common multiple of budgets supplies exact integer ticks; no speed
+parameter or floating-point comparison participates in authoritative outcomes.
+Units occupy their previous tile until arrival. Simultaneous opposing claims
+admit player 1 on odd turns and player 2 on even turns, then stop all claimants.
+Swaps stop both; other departures free squares at the same boundary. Blocked
+departures propagate until no arrival depends on a blocked departure. An occupied
+enemy square stops the arriving unit and its opponent, including future movement.
+Allied passage remains legal. If an interruption would leave allied units sharing
+a square, the passing route is shortened to its preceding free square and arrivals
+are rechecked; every retry removes a path edge. Compatible loading partners retain
+their intentional shared destination until boarding. Planning permits routes through enemy origins but
+keeps known occupied destinations unavailable; concealed enemies are resolved
+without exposing their positions through validation errors.
 
-Resolved movement and rotation events are interleaved between players, retaining
-stable numeric unit order within each side, independently of submission arrival.
-Player 1 opens odd turns and player 2 opens even turns. After the opening event,
-normalized queue midpoints spread unequal action counts proportionally; equal
-counts alternate. Holds/conflicts do not add animation delays. Loading and
-unloading follow movement, with each transport phase interleaved the same way. `TurnEventKind` distinguishes moves, holds
-and destination conflicts. The server stores the latest `TurnResolution`, applies
-its outcomes and increments the turn once. Snapshots reveal submission flags,
-never the opponent's pending paths. Later attacks, path interruptions and battle
-events should extend this resolution stream rather than putting authoritative
-rules in the animation player.
+The resolver returns actual traveled paths, stopped unit IDs, and full-board
+frames before authoritative resources are changed. `turns.rs` spends movement
+resources along those paths and charges upkeep once. `MovementStopped` events
+retain the actual path rather than resetting the unit to its origin. Summary
+events retain stable interleaving independently of submission order; the frame
+timeline determines presentation. Loading and truck-planned unloading follow
+movement. Direct passenger unload paths participate in timed arrivals.
+Rotations and final resources are included in the final frame. The latest
+`TurnResolution` is stored and the turn advances once. Pending enemy orders are
+never exposed. Future combat should extend this authoritative timeline.
 
 `GamePage` polls snapshots every two seconds. `TurnLifecycle.Phase` distinguishes
 `Planning`, `Submitting`, `WaitingForOpponent` and `Playing`; order drafts belong
@@ -445,15 +457,16 @@ in flight when submission begins. Playback remembers whether its completed
 snapshot's turn is already submitted and finishes in planning or waiting accordingly.
 Initialization enters planning or waiting directly, without replaying history.
 `TurnLifecycleChecks` covers draft recovery, polling races, and playback transitions. `TurnPlayback.elm` starts from the
-server-projected initial frame and advances one unit through its entire route
-before starting the next, at 180ms per path edge. Frames contain the observable
-units and sight mask at each tile boundary. It interpolates units observed at both ends
+server-projected initial frame and advances all arriving units together. Each frame
+carries `durationMs`, the elapsed time from the preceding frame, alongside observable
+units and the sight mask at that boundary. Movement spans a nominal 2520ms turn;
+transport and final-state transitions use 180ms. It interpolates units observed at both ends
 of an edge, updates facing during movement, and applies transport transitions
 after movement. Fractional presentation positions go only to `GamePage`.
 Refresh starts directly at
 the completed snapshot; it does not replay old turns. Same-turn polling preserves
 local drafts and monotonic submission flags. Page response messages retain the
-originating game ID through `Main`. `TurnChecks.elm` verifies sequential playback,
+originating game ID through `Main`. `TurnChecks.elm` verifies timed frame playback,
 visibility boundaries, interpolation,
 transport, facing, and reconstruction of the final board.
 
@@ -475,7 +488,7 @@ infantry and field guns have none. One traversed path edge consumes one fuel,
 independent of terrain movement points. Validation rejects paths exceeding
 available fuel before locking orders. Resolution consumes fuel only on
 successful movement, then refills vehicles ending on any depot, regardless of
-side. Holds and destination conflicts spend no fuel.
+side. Interrupted routes pay only for traversed tiles; holds spend no fuel.
 
 Snapshots expose current and maximum fuel through GraphQL. Elm selects it into
 `Unit`, displays the authoritative gauge and bounds both reachable paths and
@@ -494,8 +507,14 @@ from fuel and future truck supply cargo.
 
 Validation reserves upkeep before allowing movement expenditure. Resolution
 spends supplies on successful movement, then charges upkeep once to every unit,
-including holds and destination conflicts. Upkeep stops at zero, so empty units
-can still submit holds; there is no starvation damage. Depots do not replenish supplies yet;
+including holds and interrupted movement. Units at zero supplies are removed
+immediately, along with passengers of exhausted carriers. `finish_turn_resources`
+returns a presentation snapshot with zero supplies and health for dead units.
+When deaths occur, resolution adds that snapshot followed by the authoritative
+surviving units with a 1200ms transition. `View.UnitDeath` flashes a skull and
+crossbones three times during that transition (steady under reduced motion).
+Frame visibility filtering also applies to deaths, concealing hidden enemies.
+Depots do not replenish supplies yet;
 vehicle fuel refills at any depot. Waiting for another player and retrying submissions never
 charge upkeep.
 
@@ -504,13 +523,14 @@ the supply gauge. Movement search uses the available tile count from both fuel
 and supplies after reserving upkeep, separately from terrain movement costs.
 Traced extensions subtract supplies already committed to the prefix without
 charging upkeep twice; backtracking refunds that movement allowance. Playback
-continues to use the completed snapshot's authoritative resource quantities.
+uses each authoritative frame's resource quantities, including the death snapshot.
 
 ## Observability and fog of war
 
 `visibility.rs` owns per-kind sight ranges and the side's union of observable
-tiles. Circular distance uses ranges 4/4/3/2 for infantry/field guns/trucks/tanks;
-an observer on hills gains one tile. A center-to-center ray treats intervening
+tiles. Circular distance uses ranges 5/4/3/2 for infantry/field guns/trucks/tanks;
+an observer on hills gains one tile and sees over intervening hills and forests.
+For observers off hills, a center-to-center ray treats intervening
 hills and forests as blockers only when it crosses their tile interior; terrain
 touched only at a corner does not obstruct open diagonals. Forest tiles also
 conceal their contents. Own occupied squares remain known, while
@@ -520,8 +540,8 @@ enemies in forests remain concealed even on a known occupied square.
 including the development preview. `GameSnapshot.visibleTiles` supplies the
 fog mask; the scenario includes all own units and only observable enemies.
 Terrain and static depots remain public map knowledge. Turn resolutions include
-a shared timeline generated from the full resolved
-events: one unit completes its path at a time, then loading and unloading apply.
+a shared timeline captured during authoritative movement resolution, followed by
+loading and unloading.
 `visibility.rs` projects every frame independently, including only observable
 enemies and the side's current sight mask. Hidden paths remain withheld from
 the summary events; transient sightings are carried by frames rather than by
@@ -557,7 +577,10 @@ The submission still includes every unit, with Elm filling passenger holds
 without counting them as missing orders. Riding consumes only turn upkeep.
 Truck move inputs additionally accept optional `unloads { unitId destination }`.
 Validation checks cargo ownership, passenger holds, adjacent destinations,
-resources, occupancy and reservations. After vehicle movement, resolution
+resources, known occupancy and reservations. Submission occupancy checks use the
+side's `observed_scenario`, including direct passenger unload paths, so concealed
+enemies do not cause validation errors. Resolution uses the full board. After
+vehicle movement, resolution
 unloads passengers at their chosen squares. A conflicted truck or an occupied
 exit leaves the passenger aboard.
 
@@ -600,8 +623,9 @@ by the existing snapshot visibility rules.
 
 Every Rust unit starts with authoritative `HitPoints` at 16/16. GraphQL exposes
 current and maximum health; Elm stores them in `Unit` and renders the status
-gauge. Movement and turn upkeep preserve health. Damage, healing and unit
-destruction remain future work alongside combat.
+gauge. Movement and upkeep preserve health while supplies remain positive.
+Exhausted units have zero health in their death presentation frame and are
+removed from the authoritative board. Combat damage and healing remain future work.
 
 
 ## Rotation orders
@@ -616,3 +640,15 @@ facing and applies the chosen direction at the event's end without moving.
 `View.RotationChoices` overlays cardinal pointer sectors and labels on the board.
 Hover changes only the selection preview, rendered as a steady facing marker;
 clicking or pressing an arrow key or WASD saves a revocable draft and counts toward readiness.
+
+## Player numbering and sprite orientation
+
+`PlayerNumber` identifies the two player slots (`Player1` and `Player2`) in Rust,
+GraphQL, and Elm. Ownership fields such as `Unit.side` carry that type.
+`Direction` is the cardinal orientation used for movement and rotation;
+`SpriteFacing` retains the left/right artwork orientation through vertical turns.
+The view module `View.UnitFacing` renders the cardinal direction marker.
+
+`View.TurnControls.Msg` owns the submit-button event. `GamePage` wraps it in
+`TurnControlsMsg` and dispatches it through `handleTurnControlsMsg`. Shared
+class constants supply both markup and the component's scoped CSS selectors.

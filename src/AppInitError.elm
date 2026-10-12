@@ -4,6 +4,7 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Json.Decode as Decode
 import Style as S
+import View.Aria as Aria
 import View.Card as Card
 import View.CardHeader as CardHeader
 import View.Textarea as Textarea
@@ -12,7 +13,7 @@ import View.Textarea as Textarea
 view : Decode.Error -> List (Html msg)
 view error =
     [ H.div
-        [ A.attribute "role" "alert"
+        [ Aria.role Aria.Alert
         , A.css
             [ S.flex1
             , S.col

@@ -3,7 +3,7 @@ module View.RotationChoices exposing
     , toSvg
     )
 
-import Api.Enum.Direction as Facing exposing (Direction)
+import Api.Enum.Direction as Direction exposing (Direction)
 import Coordinate exposing (Coordinate)
 import Direction
 import Html.Attributes as A
@@ -13,6 +13,7 @@ import Style as S
 import Svg exposing (Svg)
 import Svg.Attributes as SA
 import Svg.Events as Ev
+import View.Aria as Aria
 
 
 type Msg
@@ -45,16 +46,16 @@ toSvg map position preview =
                 corners : String
                 corners =
                     case direction of
-                        Facing.North ->
+                        Direction.North ->
                             point (centerX - extent) (centerY - extent) ++ " " ++ point (centerX + extent) (centerY - extent)
 
-                        Facing.East ->
+                        Direction.East ->
                             point (centerX + extent) (centerY - extent) ++ " " ++ point (centerX + extent) (centerY + extent)
 
-                        Facing.South ->
+                        Direction.South ->
                             point (centerX + extent) (centerY + extent) ++ " " ++ point (centerX - extent) (centerY + extent)
 
-                        Facing.West ->
+                        Direction.West ->
                             point (centerX - extent) (centerY + extent) ++ " " ++ point (centerX - extent) (centerY - extent)
             in
             Svg.polygon
@@ -72,22 +73,22 @@ toSvg map position preview =
                 offset : { x : Float, y : Float }
                 offset =
                     case direction of
-                        Facing.North ->
+                        Direction.North ->
                             { x = 0
                             , y = -24
                             }
 
-                        Facing.East ->
+                        Direction.East ->
                             { x = 28
                             , y = 0
                             }
 
-                        Facing.South ->
+                        Direction.South ->
                             { x = 0
                             , y = 24
                             }
 
-                        Facing.West ->
+                        Direction.West ->
                             { x = -28
                             , y = 0
                             }
@@ -129,7 +130,7 @@ toSvg map position preview =
             sectors ++ labels
     in
     Svg.g
-        [ A.attribute "aria-label" "choose rotation on the map"
+        [ Aria.svgLabel "choose rotation on the map"
         , SA.cursor "crosshair"
         ]
         content

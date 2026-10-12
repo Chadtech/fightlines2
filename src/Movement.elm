@@ -11,7 +11,6 @@ module Movement exposing
     , trace
     )
 
-import Api.Enum.Side exposing (Side)
 import Api.Enum.Terrain exposing (Terrain)
 import Api.Enum.UnitKind exposing (UnitKind)
 import Coordinate exposing (Coordinate)
@@ -75,9 +74,7 @@ optionsAvoiding blocked rules map units unit =
             search (tileLimit unit)
                 rule
                 map
-                units
                 blocked
-                unit.side
                 [ start origin ]
                 (Dict.singleton (searchKey (tileLimit unit) (start origin)) 0)
                 []
@@ -166,15 +163,30 @@ Units without a resource movement limit use zero for that third component.
 Keeping costs for each path length preserves short routes through expensive terrain.
 Costs are stored in half movement points, independently of fuel.
 -}
-search : Maybe Int -> Rule -> Map -> List Unit -> List Coordinate -> Side -> List Option -> Dict ( Int, Int, Int ) Int -> List Option -> List Option
-search limit rule map units blocked side frontier costs reached =
+search :
+    Maybe Int
+    -> Rule
+    -> Map
+    -> List Coordinate
+    -> List Option
+    -> Dict ( Int, Int, Int ) Int
+    -> List Option
+    -> List Option
+search limit rule map blocked frontier costs reached =
     case List.sortBy .cost frontier of
         [] ->
             List.reverse reached
 
         current :: remaining ->
             if Dict.get (searchKey limit current) costs /= Just current.cost then
-                search limit rule map units blocked side remaining costs reached
+                search
+                    limit
+                    rule
+                    map
+                    blocked
+                    remaining
+                    costs
+                    reached
 
             else
                 let
@@ -204,16 +216,8 @@ search limit rule map units blocked side frontier costs reached =
                             alreadyInPath : Bool
                             alreadyInPath =
                                 List.member position blocked
-
-                            enemyAtPosition : Unit -> Bool
-                            enemyAtPosition unit =
-                                Unit.boardPosition unit == Just position && unit.side /= side
-
-                            occupiedByEnemy : Bool
-                            occupiedByEnemy =
-                                List.any enemyAtPosition units
                         in
-                        if outsideMap || alreadyInPath || occupiedByEnemy then
+                        if outsideMap || alreadyInPath then
                             ( pending, best )
 
                         else
@@ -260,7 +264,14 @@ search limit rule map units blocked side frontier costs reached =
                     ( next, nextCosts ) =
                         List.foldl visit ( remaining, costs ) (neighbors current.destination)
                 in
-                search limit rule map units blocked side next nextCosts (current :: reached)
+                search
+                    limit
+                    rule
+                    map
+                    blocked
+                    next
+                    nextCosts
+                    (current :: reached)
 
 
 start : Coordinate -> Option

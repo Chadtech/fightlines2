@@ -1,6 +1,7 @@
 module View.UnitSprite exposing (toSvg)
 
-import Api.Enum.Side as Side
+import Api.Enum.PlayerNumber as PlayerNumber
+import Api.Enum.SpriteFacing as SpriteFacingEnum
 import Api.Enum.UnitKind as Kind
 import Css
 import Svg.Styled as Svg exposing (Svg)
@@ -10,7 +11,7 @@ import View.Sprite as Sprite
 
 
 
--- Board animation and static portraits share the same atlas and side profile.
+-- Board animation and static portraits share the same atlas and facing.
 
 
 toSvg : Int -> Unit -> Svg msg
@@ -31,22 +32,21 @@ toSvg column unit =
                 Kind.FieldGun ->
                     9
             )
-                + (case unit.side of
-                    Side.Player1 ->
+                + (case unit.playerNumber of
+                    PlayerNumber.Player1 ->
                         0
 
-                    Side.Player2 ->
+                    PlayerNumber.Player2 ->
                         1
                   )
 
         sideProfile : String
         sideProfile =
-            case unit.side of
-                Side.Player1 ->
-                    ""
+            if facesLeft unit then
+                "translate(16 0) scale(-1 1)"
 
-                Side.Player2 ->
-                    "translate(16 0) scale(-1 1)"
+            else
+                ""
     in
     Svg.g
         [ SA.transform sideProfile
@@ -62,3 +62,8 @@ toSvg column unit =
             , row = row
             }
         ]
+
+
+facesLeft : Unit -> Bool
+facesLeft unit =
+    unit.spriteFacing == SpriteFacingEnum.Left

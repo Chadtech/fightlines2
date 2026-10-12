@@ -10,6 +10,7 @@ import Style as S
 import Svg.Styled as Svg exposing (Svg)
 import Svg.Styled.Attributes as SA
 import Unit exposing (Unit)
+import View.Aria as Aria
 
 
 styles : Html msg
@@ -73,7 +74,7 @@ marker selected direction =
     Svg.g
         [ SA.transform ("rotate(" ++ angle ++ " 8 8)")
         , SA.pointerEvents "none"
-        , A.attribute "aria-hidden" "true"
+        , Aria.hidden True
         ]
         [ Svg.path
             [ SA.d "M6.4 2.24L8 0.48L9.6 2.24Z"

@@ -4,7 +4,6 @@ import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Css
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
-import Side
 import Style as S
 import Svg.Styled as Svg
 import Svg.Styled.Attributes as SA
@@ -12,6 +11,8 @@ import Unit exposing (Unit)
 import Unit.Fuel exposing (Fuel)
 import Unit.HitPoints exposing (HitPoints)
 import Unit.Supplies exposing (Supplies)
+import View.Aria as Aria
+import View.InfoMarker as InfoMarker
 import View.UnitSprite as UnitSprite
 
 
@@ -31,8 +32,8 @@ type Resource
     | Fuel Fuel
 
 
-toHtml : Unit -> Html msg
-toHtml unit =
+toHtml : String -> Unit -> Html msg
+toHtml playerName unit =
     let
         fuelResources : List Resource
         fuelResources =
@@ -49,23 +50,23 @@ toHtml unit =
             , S.textGray5
             ]
         ]
-        [ unitHelp unit
-        , portrait unit
+        [ unitHelp playerName unit
+        , portrait playerName unit
         , H.div
             [ A.css
                 [ S.col
                 , S.g3
                 ]
             ]
-            (List.map gauge resources)
+            (List.map (gauge unit.kind) resources)
         ]
 
 
-portrait : Unit -> Html msg
-portrait unit =
+portrait : String -> Unit -> Html msg
+portrait playerName unit =
     H.div
-        [ A.attribute "role" "img"
-        , A.attribute "aria-label" (Side.label unit.side ++ " " ++ kindLabel unit.kind)
+        [ Aria.role Aria.Image
+        , Aria.label (playerName ++ " " ++ kindLabel unit.kind)
         , A.css
             [ S.bgNightwood3
             , S.indentStrong
@@ -85,14 +86,20 @@ portrait unit =
         ]
 
 
-unitHelp : Unit -> Html msg
-unitHelp unit =
+unitHelp : String -> Unit -> Html msg
+unitHelp playerName unit =
     H.details
         []
         [ H.summary
-            [ A.attribute "aria-label" ("about " ++ kindLabel unit.kind)
+            [ Aria.label ("about " ++ kindLabel unit.kind)
             , A.title "about this unit"
-            , A.css summaryStyles
+            , A.css
+                [ S.batch summaryStyles
+                , S.row
+                , S.itemsCenter
+                , S.justifySpaceBetween
+                , S.g2
+                ]
             ]
             [ H.div
                 [ A.css
@@ -108,37 +115,28 @@ unitHelp unit =
                     ]
                     [ H.text (kindLabel unit.kind)
                     ]
-                , infoMarker
+                , InfoMarker.toHtml
                 ]
-            , H.p
+            , H.span
                 [ A.css
                     [ S.textGray4
-                    , Css.marginTop (Css.rem 0.25)
+                    , Css.textAlign Css.right_
                     ]
                 ]
-                [ H.text (Side.label unit.side)
+                [ H.text playerName
                 ]
             ]
         , H.section
-            [ A.attribute "aria-label" "about this unit"
+            [ Aria.label "about this unit"
             , A.css
-                [ S.bgNightwood3
+                [ S.bgYellow2
+                , S.textGray5
                 , Css.marginTop (Css.rem 0.75)
                 , Css.marginLeft (Css.rem -0.75)
                 , Css.marginRight (Css.rem -0.75)
                 ]
             ]
-            [ H.h3
-                [ A.css
-                    [ S.bgYellow2
-                    , S.textYellow5
-                    , S.p2
-                    , S.px3
-                    ]
-                ]
-                [ H.text "about this unit"
-                ]
-            , H.dl
+            [ H.dl
                 [ A.css
                     [ S.col
                     , S.g3
@@ -187,28 +185,15 @@ helpEntry label description =
 summaryStyles : List Css.Style
 summaryStyles =
     [ S.pointerCursor
-    , Css.property "list-style" "none"
+    , S.listStyleNone
     , Css.pseudoElement "-webkit-details-marker"
         [ S.displayNone
         ]
     ]
 
 
-infoMarker : Html msg
-infoMarker =
-    H.span
-        [ A.attribute "aria-hidden" "true"
-        , A.css
-            [ S.textGray4
-            , S.shrink0
-            ]
-        ]
-        [ H.text "ⓘ"
-        ]
-
-
-gauge : Resource -> Html msg
-gauge resource =
+gauge : UnitKind -> Resource -> Html msg
+gauge kind resource =
     let
         label : String
         label =
@@ -249,32 +234,32 @@ gauge resource =
             else
                 S.bgYellow4
 
-        explanation : String
+        explanation : Maybe String
         explanation =
             case resource of
                 HitPoints _ ->
-                    "how much health the unit has left. the second number is its maximum. damage and healing are not implemented yet."
+                    Nothing
 
-                Supply supplies ->
-                    "provisions for this unit: " ++ String.fromInt supplies.upkeepPerTurn ++ " per resolved turn plus " ++ String.fromInt supplies.movementPerTile ++ " per traversed tile. holds and canceled moves still pay upkeep. supplies cannot be replenished yet."
+                Supply _ ->
+                    Just (supplyExplanation kind)
 
                 Fuel _ ->
-                    "each traversed tile uses 1 fuel. holds and canceled moves use none. end a turn on any supply depot to fill the tank."
-    in
-    H.div
-        [ A.css
-            [ S.col
-            , S.g1
-            ]
-        ]
-        [ H.details
-            []
-            [ H.summary
-                [ A.attribute "aria-label" ("about " ++ label)
-                , A.title explanation
-                , A.css
-                    [ S.batch summaryStyles
-                    , S.row
+                    Just "each traversed tile uses 1 fuel. holds and canceled moves use none. end a turn on any supply depot to fill the tank."
+
+        labelChildren : List (Html msg)
+        labelChildren =
+            case explanation of
+                Nothing ->
+                    [ H.text label ]
+
+                Just _ ->
+                    [ H.text label, InfoMarker.toHtml ]
+
+        header : Html msg
+        header =
+            H.div
+                [ A.css
+                    [ S.row
                     , S.itemsCenter
                     , S.justifySpaceBetween
                     , S.flexWrap
@@ -288,9 +273,7 @@ gauge resource =
                         , S.g2
                         ]
                     ]
-                    [ H.text label
-                    , infoMarker
-                    ]
+                    labelChildren
                 , H.span
                     [ A.css
                         [ Css.property "white-space" "nowrap"
@@ -300,21 +283,46 @@ gauge resource =
                     [ H.text (String.fromInt level.current ++ " / " ++ String.fromInt level.maximum)
                     ]
                 ]
-            , H.p
-                [ A.css
-                    [ S.textGray4
-                    , Css.paddingTop (Css.rem 0.5)
-                    ]
-                ]
-                [ H.text explanation
-                ]
+
+        resourceHelp : Html msg
+        resourceHelp =
+            case explanation of
+                Nothing ->
+                    header
+
+                Just info ->
+                    H.details
+                        []
+                        [ H.summary
+                            [ Aria.label ("about " ++ label)
+                            , A.title info
+                            , A.css summaryStyles
+                            ]
+                            [ header ]
+                        , H.p
+                            [ A.css
+                                [ S.bgYellow2
+                                , S.textGray5
+                                , S.p2
+                                , Css.marginTop (Css.rem 0.5)
+                                ]
+                            ]
+                            [ H.text info ]
+                        ]
+    in
+    H.div
+        [ A.css
+            [ S.col
+            , S.g1
             ]
+        ]
+        [ resourceHelp
         , H.div
-            [ A.attribute "role" "meter"
-            , A.attribute "aria-label" label
-            , A.attribute "aria-valuemin" "0"
-            , A.attribute "aria-valuemax" (String.fromInt level.maximum)
-            , A.attribute "aria-valuenow" (String.fromInt level.current)
+            [ Aria.role Aria.Meter
+            , Aria.label label
+            , Aria.valueMin 0
+            , Aria.valueMax level.maximum
+            , Aria.valueNow level.current
             , A.css
                 [ S.bgGray0
                 , Css.height (Css.rem 0.75)
@@ -330,6 +338,22 @@ gauge resource =
                 []
             ]
         ]
+
+
+supplyExplanation : UnitKind -> String
+supplyExplanation kind =
+    case kind of
+        Kind.Truck ->
+            "trucks consume a small amount of supplies each turn. when supplies reach 0, this unit perishes."
+
+        Kind.Tank ->
+            "tanks consume a small amount of supplies each turn, and additional supplies when attack-moving, standing ground, and engaging enemies. when supplies reach 0, this unit perishes."
+
+        Kind.Infantry ->
+            "infantry consume a small amount of supplies each turn, and additional supplies when moving, standing ground, attack-moving, and engaging enemies. when supplies reach 0, this unit perishes."
+
+        Kind.FieldGun ->
+            "field guns consume a small amount of supplies each turn, and additional supplies when moving, standing ground, attack-moving, and engaging enemies. when supplies reach 0, this unit perishes."
 
 
 usesOil : UnitKind -> Bool

@@ -4,7 +4,7 @@
 
 module Api.Object.GamePlayerView exposing (..)
 
-import Api.Enum.Side
+import Api.Enum.PlayerNumber
 import Api.InputObject
 import Api.Interface
 import Api.Object
@@ -35,6 +35,6 @@ isYou =
     Object.selectionForField "Bool" "isYou" [] Decode.bool
 
 
-side : SelectionSet Api.Enum.Side.Side Api.Object.GamePlayerView
+side : SelectionSet Api.Enum.PlayerNumber.PlayerNumber Api.Object.GamePlayerView
 side =
-    Object.selectionForField "Enum.Side.Side" "side" [] Api.Enum.Side.decoder
+    Object.selectionForField "Enum.PlayerNumber.PlayerNumber" "side" [] Api.Enum.PlayerNumber.decoder

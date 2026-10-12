@@ -38,3 +38,11 @@ The rotate icon was generated with built-in imagegen on October 10, 2026: a
 simple circular clockwise arrow with textured golden metal, beveled edges,
 painted highlights, and dark ink outlines matching the move arrow. Its background
 and open center are transparent.
+
+## Illustrated death marker
+
+`death-skull-illustrated-v1.png` is a transparent 256px cell containing a detailed
+1980s anime-style skull and crossbones. Turn playback flashes it three times
+over an exhausted unit before removal. Built-in imagegen produced the local
+master and prompt in `artwork/effects/illustrated/`. Run
+`node tools/build-effect-sprites.cjs` (also included in `make sprites`) to export it.

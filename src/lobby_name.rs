@@ -17,15 +17,18 @@ impl std::fmt::Display for LobbyName {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{FixtureValue, TestResult};
 
     #[test]
-    fn validates_and_trims_names_without_changing_case() {
+    fn validates_and_trims_names_without_changing_case() -> TestResult<()> {
         assert_eq!(
-            LobbyName::parse("  Friday Night  ").unwrap().to_string(),
+            LobbyName::parse("  Friday Night  ").fixture()?.to_string(),
             "Friday Night"
         );
         assert!(LobbyName::parse("  ").is_none());
         assert!(LobbyName::parse(&"é".repeat(40)).is_some());
         assert!(LobbyName::parse(&"é".repeat(41)).is_none());
+
+        Ok(())
     }
 }

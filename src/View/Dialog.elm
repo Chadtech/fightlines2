@@ -11,6 +11,7 @@ import Html.Styled.Attributes as Attr
 import Html.Styled.Events as Ev
 import Json.Decode as Decode
 import Style as S
+import View.Aria as Aria
 import View.CardHeader as CardHeader
 
 
@@ -62,7 +63,7 @@ toHtml : Dialog msg -> Html msg
 toHtml (Dialog model) =
     Html.node "dialog"
         [ Attr.id model.htmlId
-        , Attr.attribute "aria-labelledby" (model.htmlId ++ "-title")
+        , Aria.labelledBy (model.htmlId ++ "-title")
         , Ev.preventDefaultOn "cancel" (Decode.succeed ( model.onCancel, True ))
         , Attr.css
             [ Css.margin Css.auto

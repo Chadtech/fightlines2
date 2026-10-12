@@ -92,34 +92,59 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
 - The game is a full-viewport workspace. Render the board directly on the page
   background, without a containing card or border. Center it initially at 80% of the battlefield width
   or 76vh, whichever is smaller, and allow it to pan freely.
-- Use a full-height right panel for selection details, unit-specific actions and
-  turn-resolution information, with a warm gray body and an outset bevel only
+- Use a full-height right panel for selection details and unit-specific actions,
+  with a warm gray body and an outset bevel only
   on its left edge. Place selection at the top. The panel is 18rem wide, capped at
   45vw on narrow screens, and scrolls when needed. Reserve its width beside the
   battlefield. Keep the panel present when selection clears: leave its main area
   blank and place a quiet inspection hint against the lower edge. With a selection,
   the footer says esc to clear selection. Omit the roster and other floating cards.
 - The bottom-left control panel is flush with the screen's bottom and left edges,
-  overlaying the battlefield without reducing its height. It is 30rem wide, capped
-  by the battlefield width, and 10rem tall (20rem on narrow screens). Only its top
-  and right edges have a bevel. Place a large submit button on the left, with the
-  turn number and readiness together beside it and opponent status below. Keep
-  pan arrows, zoom and reset controls in the panel's bottom row. The panel retains its size
-  during pending, waiting, playback and failure states; longer feedback scrolls
-  within the status area. Submit becomes gold when every unit has an explicit move or hold order;
-  keep it enabled while planning and disable it while orders are locked.
+  overlaying the battlefield without reducing its height. It is a short horizontal
+  strip up to 64rem wide, capped by the battlefield width, with a bevel on its top
+  and right edges. Put the turn number above submit on the left, list every
+  player’s name and status in the middle, and place pan/zoom/reset alongside.
+  Inset the player list into a nightwood depression, show names without an own-player
+  suffix, and align names and statuses in two equal-width columns. Status text
+  is `planning` or `submitted plan`.
+  Stretch the player depression to fill the available height of its control row.
+  Omit bullets, put a red or blue team swatch to the left of each name, and omit
+  a separator before the camera controls.
+  Arrange pan arrows as a directional pad, with up and down above
+  and below left/right. Stack zoom and reset beside the pad, using matching
+  three-row grids with equal row heights so both control groups align. Wrap camera controls
+  below when space is limited; use natural
+  height rather than reserving empty space. Longer feedback scrolls within the status area.
+  Submit becomes gold with a gentle brightness pulse and sweeping highlight when every
+  on-board unit has an explicit order. Keep it enabled while planning and disable
+  it while orders are locked. Submitted turns retain gold text. Always show a
+  1.25rem-high inset track beneath submit. Keep it empty while idle; while waiting
+  for the opponent, show a single solid gray bar moving smoothly left to right.
+  It fully exits the right edge before
+  looping from outside the left edge;
+  this is an activity indicator, not a completion percentage. Reduced-motion
+  preferences keep the button and loading bar steady. Keep textual status
+  alongside animation and preserve keyboard focus.
   Submitting with unassigned units opens a modal warning with keep planning and
   submit anyway actions; confirmation fills missing orders with holds.
 - Selected objects supply their own titles; omit a generic selection/status heading.
-  Units show their name and side above their illustration in a nightwood3
+  Units show their type and owning player’s name on one line, spaced to opposite
+  edges, above their illustration in a nightwood3
   inset screen, without position coordinates. Display
   authoritative hit points (out of 16), supplies (out of 64), and fuel (out of 64) (for tanks
   and trucks) as horizontal gauges with `current / maximum` labels. Use red1 below 25%, yellow4 from
   25–75%, and green1 (`#4BBF63`) above 75%; retain the numeric labels alongside color.
-- Unit and gauge info markers expand keyboard-accessible explanations. The
-  flat `about this unit` section spans the panel width, with nightwood3 body,
-  yellow2 title strip, yellow5 heading text, and internal padding. It has no
-  bevel. Resource gauges show the server-provided current and maximum values.
+- Terrain appears as a muted `terrain: forest [i]` row beneath selection details,
+  without a card or heading. Selecting an empty tile shows only this row; depots
+  retain their title. The outlined info marker and row expand inline help with
+  terrain visibility descriptions, with no per-unit movement-cost list. Mouse
+  focus has no enclosing outline; keyboard focus underlines the terrain row. Keep it tied to
+  the selected object (or a passenger's carrier), and clear it with selection.
+- Unit, supply, fuel, and terrain info markers expand keyboard-accessible
+  explanations on padded yellow2 backgrounds with gray5 text. Hit points have
+  no info marker or expandable help. The flat unit help section spans
+  the panel width, without a heading or bevel. Resource gauges show the
+  server-provided current and maximum values.
 - While planning, selecting your own unit shows illustrated command rows in a
   popup beside it on the battlefield. Anchor passenger commands beside their
   truck. Keep the popup at a fixed display size as the board zooms, constrain it
@@ -195,7 +220,11 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   60% brightness until the order is revoked or the turn resolves. Keep facing
   markers and selection outlines bright and readable.
 - Units and depots support keyboard focus and Enter/Space activation. Illustrated
-  unit sprites face right for player 1 and mirror left for player 2. Stored direction follows movement and is shown by the facing marker. Overlay a small filled edge
+  unit sprites face right for east and mirror left for west, following stored direction
+  during movement and rotation previews. North/south movement and rotation retain the last horizontal sprite facing,
+  including after refresh. Profiles start right for player 1 and left for player 2;
+  trucks retain that default. The facing marker
+  shows the full four-way direction. Overlay a small filled edge
   triangle for each infantry, tank or field gun's current facing, keeping its outline entirely inside
   the cell. Use gray5 with a gray0 outline, and yellow5 for the selected unit.
   Trucks have no stored direction or facing marker.
@@ -269,3 +298,23 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
 - 2026-10-09: move zoom controls to a fixed-size, flush bottom-left control panel
   with a larger left-aligned submit button and inline turn number. Keep selection
   and resolution information on the right; omit view-opening shortcuts for now.
+
+## Movement encounters
+
+Turn playback follows the server's shared arrival timeline. Multiple units can
+advance at one boundary; interpolation uses each frame's supplied duration.
+Fog and selection occupancy change at boundaries. The right panel omits turn
+summaries. Saved planning paths describe intent;
+playback and final positions reflect only the route actually traveled.
+
+- 2026-10-11: flatten the game controls into a short horizontal strip, with a pulsing
+  gold ready action and a solid smooth activity bar while submitting, waiting, or playing.
+
+## Unit death feedback
+
+When a unit exhausts its supplies, turn playback keeps its last sprite visible
+under a detailed 1980s anime-style illustrated skull and crossbones asset. The marker flashes
+three times over 1.2 seconds, then the server's next frame removes the unit.
+The marker ignores pointer events. Reduced-motion mode displays it steadily
+until removal. Hidden enemy deaths follow the same visibility rules as other
+playback frames.

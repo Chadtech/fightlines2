@@ -15,6 +15,7 @@ import Map exposing (Map)
 import Style as S
 import Unit exposing (Unit)
 import UnitCommand as Command exposing (Command, MenuOption(..))
+import View.Aria as Aria
 
 
 type Msg
@@ -80,7 +81,7 @@ toHtml map camera position unit =
             Command.available unit
     in
     H.section
-        [ A.attribute "aria-label" "unit commands"
+        [ Aria.label "unit commands"
         , Ev.stopPropagationOn "mousedown" (Decode.succeed ( MenuPressed, True ))
         , A.css
             [ S.absolute
@@ -114,8 +115,8 @@ toHtml map camera position unit =
             [ H.text "commands"
             ]
         , H.div
-            [ A.attribute "role" "group"
-            , A.attribute "aria-label" "choose a command"
+            [ Aria.role Aria.Group
+            , Aria.label "choose a command"
             , A.css
                 [ S.col
                 , S.shrink0
@@ -152,7 +153,7 @@ cancelRow =
         , A.css commandRowStyles
         ]
         [ H.span
-            [ A.attribute "aria-hidden" "true"
+            [ Aria.hidden True
             , A.css
                 [ S.shrink0
                 , Css.width (Css.rem 1.875)

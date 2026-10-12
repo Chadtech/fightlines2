@@ -8,6 +8,7 @@ import Style as S
 import Svg.Styled as Svg
 import Svg.Styled.Attributes as SA
 import Unit exposing (Unit)
+import View.Aria as Aria
 import View.Checkbox as Checkbox
 import View.UnitSprite as UnitSprite
 
@@ -23,7 +24,7 @@ toHtml config unit =
             [ SA.viewBox "0 0 16 16"
             , SA.width "48"
             , SA.height "48"
-            , A.attribute "aria-hidden" "true"
+            , Aria.hidden True
             , SA.css
                 [ S.shrink0
                 , S.bgNightwood3
@@ -112,11 +113,11 @@ resource label level =
             [ H.text status
             ]
         , H.div
-            [ A.attribute "role" "meter"
-            , A.attribute "aria-label" label
-            , A.attribute "aria-valuemin" "0"
-            , A.attribute "aria-valuemax" (String.fromInt level.maximum)
-            , A.attribute "aria-valuenow" (String.fromInt level.current)
+            [ Aria.role Aria.Meter
+            , Aria.label label
+            , Aria.valueMin 0
+            , Aria.valueMax level.maximum
+            , Aria.valueNow level.current
             , A.css
                 [ S.bgGray0
                 , Css.height (Css.rem 0.25)

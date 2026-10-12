@@ -5,6 +5,7 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Style as S
+import View.Aria as Aria
 
 
 toHtml : { label : String, checked : Bool, onCheck : Bool -> msg } -> List (Html msg) -> Html msg
@@ -14,7 +15,7 @@ toHtml config content =
         checkbox =
             H.input
                 [ A.type_ "checkbox"
-                , A.attribute "aria-label" config.label
+                , Aria.label config.label
                 , A.checked config.checked
                 , Ev.onCheck config.onCheck
                 , A.css

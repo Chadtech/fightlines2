@@ -13,16 +13,15 @@ module GamePage exposing
     )
 
 import AnimationFrame
-import Api.Enum.Direction as Facing exposing (Direction)
+import Api.Enum.Direction as DirectionEnum exposing (Direction)
 import Api.Enum.MapType
     exposing
         ( MapType
         )
-import Api.Enum.Side
+import Api.Enum.PlayerNumber
     exposing
-        ( Side
+        ( PlayerNumber
         )
-import Api.Enum.TurnEventKind as EventKind
 import Api.Enum.UnitKind as UnitKind
 import Api.Mutation
 import Api.Object
@@ -88,7 +87,6 @@ import Svg exposing (Svg)
 import Svg.Attributes as SA
 import Svg.Events as Ev
 import Svg.Styled as StyledSvg
-import Terrain
 import Time
 import Turn
 import TurnLifecycle exposing (Phase)
@@ -96,12 +94,16 @@ import TurnPlayback
 import Unit exposing (Unit)
 import UnitCommand
 import UnitId exposing (UnitId)
+import View.Aria as Aria
 import View.Button as Button
 import View.Dialog as Dialog exposing (Dialog)
 import View.RotationChoices as RotationChoices
+import View.TerrainInfo as TerrainInfo
 import View.TerrainTile as TerrainTile
+import View.TurnControls as TurnControls
 import View.UnitCargo as UnitCargo
 import View.UnitCommands as UnitCommands
+import View.UnitDeath as UnitDeath
 import View.UnitFacing as UnitFacing
 import View.UnitSprite as UnitSprite
 import View.UnitStatus as UnitStatus
@@ -146,7 +148,7 @@ type alias Snapshot =
 
 type alias Player =
     { name : String
-    , side : Side
+    , side : PlayerNumber
     , isYou : Bool
     }
 
@@ -198,7 +200,7 @@ type Msg
     | EscapePressed
     | DialogDismissed
     | SubmissionConfirmed
-    | SubmitTurnClicked
+    | TurnControlsMsg TurnControls.Msg
     | SubmitResponseReceived Int (ApiRequest.Response Snapshot)
     | CurrentTurnMsg CurrentTurn.Msg
     | PollResponseReceived (ApiRequest.Response Snapshot)
@@ -472,7 +474,7 @@ applyTurnSnapshot snapshot currentTurn model =
         let
             frame : TurnPlayback.Frame
             frame =
-                TurnPlayback.initial snapshot.playbackFrames { units = snapshot.units, visibleTiles = snapshot.visibleTiles }
+                TurnPlayback.initial snapshot.playbackFrames { durationMs = 180, units = snapshot.units, visibleTiles = snapshot.visibleTiles }
         in
         { next
             | map = snapshot.map
@@ -1168,19 +1170,8 @@ update lobbyId msg model =
                     |> clearSelection
                     |> E.withOut
 
-        SubmitTurnClicked ->
-            if planningLocked model || isChoosingUnload model || unloadChoice model.currentTurn.phase /= Nothing then
-                model |> E.withOut
-
-            else if List.isEmpty (unitsWithoutOrders model) then
-                model
-                    |> submitTurn lobbyId
-
-            else
-                ( model
-                    |> mapPlanning OrderPlanning.showSubmissionWarning
-                , E.toJs (ToJs.OpenDialog { htmlId = partialOrdersDialogHtmlId })
-                )
+        TurnControlsMsg turnControlsMsg ->
+            handleTurnControlsMsg lobbyId turnControlsMsg model
 
         DialogDismissed ->
             model
@@ -1230,6 +1221,24 @@ update lobbyId msg model =
         AnimationTimerElapsed _ ->
             { model | frame = AnimationFrame.next model.frame }
                 |> E.withOut
+
+
+handleTurnControlsMsg : LobbyId -> TurnControls.Msg -> Model -> ( Model, Eff Msg )
+handleTurnControlsMsg lobbyId msg model =
+    case msg of
+        TurnControls.SubmitClicked ->
+            if planningLocked model || isChoosingUnload model || unloadChoice model.currentTurn.phase /= Nothing then
+                model |> E.withOut
+
+            else if List.isEmpty (unitsWithoutOrders model) then
+                model
+                    |> submitTurn lobbyId
+
+            else
+                ( model
+                    |> mapPlanning OrderPlanning.showSubmissionWarning
+                , E.toJs (ToJs.OpenDialog { htmlId = partialOrdersDialogHtmlId })
+                )
 
 
 handleCurrentTurnMsg : LobbyId -> CurrentTurn.Msg -> Model -> ( Model, Eff Msg )
@@ -1326,7 +1335,7 @@ view model =
             , turnPanel model
             ]
         , H.aside
-            [ A.attribute "aria-label" "game panel"
+            [ Aria.label "game panel"
             , A.css
                 [ S.bgGray1
                 , S.outdentLeft
@@ -1375,6 +1384,7 @@ selectionView model =
         content =
             case selectedUnit model of
                 Just unit ->
+                    -- Changing units resets native details disclosures in the inspector.
                     [ Keyed.node "div"
                         []
                         [ ( UnitId.toString unit.id
@@ -1384,28 +1394,45 @@ selectionView model =
                                     , S.g3
                                     ]
                                 ]
-                                [ UnitStatus.toHtml unit
+                                [ UnitStatus.toHtml (unitPlayerName model unit) unit
                                 , cargoView model unit
                                 , movementView model
+                                , terrainView model
                                 ]
                           )
                         ]
                     ]
 
                 Nothing ->
-                    case selectedPosition model of
-                        Just _ ->
-                            [ H.h2
-                                []
-                                [ H.text (selectionText model)
-                                ]
-                            ]
+                    case inspectionPosition model of
+                        Just position ->
+                            let
+                                hasDepot : Bool
+                                hasDepot =
+                                    List.any (\depot -> depot.position == position) model.depots
+
+                                depotTitle : List (Html Msg)
+                                depotTitle =
+                                    if hasDepot then
+                                        [ H.h2
+                                            []
+                                            [ H.text "supply depot" ]
+                                        ]
+
+                                    else
+                                        []
+
+                                tileContent : List (Html Msg)
+                                tileContent =
+                                    depotTitle ++ [ terrainView model ]
+                            in
+                            tileContent
 
                         Nothing ->
                             []
     in
     H.section
-        [ A.attribute "aria-label" "selection"
+        [ Aria.label "selection"
         , A.css
             [ S.col
             , S.g3
@@ -1413,6 +1440,20 @@ selectionView model =
             ]
         ]
         content
+
+
+unitPlayerName : Model -> Unit -> String
+unitPlayerName model unit =
+    let
+        ownsUnit : Player -> Bool
+        ownsUnit player =
+            player.side == unit.playerNumber
+    in
+    model.players
+        |> List.filter ownsUnit
+        |> List.head
+        |> Maybe.map .name
+        |> Maybe.withDefault ""
 
 
 panelFooter : Model -> Html Msg
@@ -1433,8 +1474,7 @@ panelFooter model =
             , S.shrink0
             ]
         ]
-        [ resolutionSummary model
-        , H.p
+        [ H.p
             [ A.css
                 [ S.borderT
                 , S.borderGray2
@@ -1486,7 +1526,7 @@ movementView model =
         feedback =
             if destinationFeedback model == DestinationUnavailable then
                 [ H.p
-                    [ A.attribute "role" "status" ]
+                    [ Aria.role Aria.Status ]
                     [ H.text "that square cannot be a destination within this unit’s movement budget." ]
                 ]
 
@@ -1619,52 +1659,68 @@ viewControls model =
             BattlefieldNavigation.camera model.navigation
     in
     H.section
-        [ A.attribute "aria-label" "view controls"
+        [ Aria.label "view controls"
         , A.css
             [ S.row
             , S.flexWrap
             , S.itemsCenter
-            , S.g2
+            , S.g3
             ]
         ]
         [ H.div
-            [ A.attribute "role" "group"
-            , A.attribute "aria-label" "pan map"
+            [ Aria.role Aria.Group
+            , Aria.label "pan map"
             , A.css
-                [ S.row
+                [ S.col
+                , S.itemsCenter
+                , S.g1
+                ]
+            ]
+            [ panButton "↑" "pan up" PanUpClicked
+            , H.div
+                [ A.css
+                    [ S.row
+                    , S.itemsCenter
+                    , S.g1
+                    ]
+                ]
+                [ panButton "←" "pan left" PanLeftClicked
+                , H.span
+                    []
+                    [ H.text "pan" ]
+                , panButton "→" "pan right" PanRightClicked
+                ]
+            , panButton "↓" "pan down" PanDownClicked
+            ]
+        , H.div
+            [ Aria.role Aria.Group
+            , Aria.label "zoom map"
+            , A.css
+                [ S.col
                 , S.itemsCenter
                 , S.g1
                 ]
             ]
             [ H.span
                 []
-                [ H.text "pan"
+                [ H.text "zoom" ]
+            , H.div
+                [ A.css
+                    [ S.row
+                    , S.itemsCenter
+                    , S.g2
+                    ]
                 ]
-            , panButton "←" "pan left" PanLeftClicked
-            , panButton "↑" "pan up" PanUpClicked
-            , panButton "↓" "pan down" PanDownClicked
-            , panButton "→" "pan right" PanRightClicked
-            ]
-        , H.div
-            [ A.css
-                [ S.row
-                , S.flexWrap
-                , S.itemsCenter
-                , S.g2
+                [ Button.secondary "−" ZoomOutClicked
+                    |> Button.accessibleLabel "zoom out"
+                    |> Button.toHtml
+                , H.span
+                    []
+                    [ H.text (String.fromInt (round (camera.zoom * 100)) ++ "%") ]
+                , Button.secondary "+" ZoomInClicked
+                    |> Button.accessibleLabel "zoom in"
+                    |> Button.toHtml
                 ]
-            ]
-            [ H.span
-                []
-                [ H.text "zoom"
-                ]
-            , Button.secondary "−" ZoomOutClicked
-                |> Button.toHtml
-            , H.span
-                []
-                [ H.text (String.fromInt (round (camera.zoom * 100)) ++ "%")
-                ]
-            , Button.secondary "+" ZoomInClicked
-                |> Button.toHtml
             , Button.secondary "reset view" ResetViewClicked
                 |> Button.toHtml
             ]
@@ -1678,24 +1734,29 @@ panButton arrow label msg =
         |> Button.toHtml
 
 
-selectionText : Model -> String
-selectionText model =
-    case selectedPosition model of
+terrainView : Model -> Html Msg
+terrainView model =
+    let
+        position : Maybe Coordinate
+        position =
+            case selectedUnit model of
+                Just unit ->
+                    Unit.physicalPosition model.units unit
+
+                Nothing ->
+                    inspectionPosition model
+    in
+    case position of
+        Just coordinate ->
+            Keyed.node "div"
+                []
+                [ ( String.fromInt coordinate.x ++ "," ++ String.fromInt coordinate.y
+                  , TerrainInfo.toHtml (Map.terrainAt model.map coordinate)
+                  )
+                ]
+
         Nothing ->
-            ""
-
-        Just position ->
-            if
-                List.any
-                    (\depot ->
-                        depot.position == position
-                    )
-                    model.depots
-            then
-                "supply depot"
-
-            else
-                Terrain.label (Map.terrainAt model.map position)
+            H.text ""
 
 
 cargoView : Model -> Unit -> Html Msg
@@ -1860,27 +1921,17 @@ submissionWarning model =
 turnPanel : Model -> Html Msg
 turnPanel model =
     let
-        ownCount : Int
-        ownCount =
-            List.length (List.filter (\unit -> isOwnUnit model unit && Unit.onBoard unit) model.units)
-
-        status : String
-        status =
+        ownStatus : String
+        ownStatus =
             case model.currentTurn.phase of
                 TurnLifecycle.Playing _ ->
-                    "playing turn " ++ String.fromInt (model.currentTurn.number - 1)
-
-                TurnLifecycle.Submitting _ ->
-                    "submitting orders…"
+                    "submitted plan"
 
                 TurnLifecycle.WaitingForOpponent _ ->
-                    "orders submitted"
+                    "submitted plan"
 
-                TurnLifecycle.Planning _ ->
-                    String.fromInt (ownCount - List.length (unitsWithoutOrders model))
-                        ++ "/"
-                        ++ String.fromInt ownCount
-                        ++ " units ready"
+                _ ->
+                    "planning"
 
         submitLabel : String
         submitLabel =
@@ -1889,36 +1940,74 @@ turnPanel model =
         opponentStatus : String
         opponentStatus =
             case model.currentTurn.phase of
-                TurnLifecycle.WaitingForOpponent _ ->
-                    "waiting for the other player"
+                TurnLifecycle.Playing _ ->
+                    "submitted plan"
 
                 _ ->
                     if model.currentTurn.opponentSubmitted then
-                        "other player: submitted"
+                        "submitted plan"
 
                     else
-                        "other player: planning"
+                        "planning"
+
+        playerRow : Player -> Html Msg
+        playerRow player =
+            let
+                status : String
+                status =
+                    if player.isYou then
+                        ownStatus
+
+                    else
+                        opponentStatus
+            in
+            TurnControls.playerRow
+                { name = player.name
+                , side = player.side
+                , status = status
+                }
 
         submitLocked : Bool
         submitLocked =
             planningLocked model || isChoosingUnload model
 
-        submitAction : Button.Button Msg
-        submitAction =
-            if submitLocked then
-                Button.disabled submitLabel
+        activity : TurnControls.Activity
+        activity =
+            case model.currentTurn.phase of
+                TurnLifecycle.Submitting _ ->
+                    TurnControls.Submitting
 
-            else if readyToSubmit model then
-                Button.primary submitLabel SubmitTurnClicked
+                TurnLifecycle.WaitingForOpponent _ ->
+                    TurnControls.Waiting
 
-            else
-                Button.secondary submitLabel SubmitTurnClicked
+                TurnLifecycle.Playing _ ->
+                    TurnControls.Playing
+
+                TurnLifecycle.Planning _ ->
+                    if submitLocked then
+                        TurnControls.Locked
+
+                    else if readyToSubmit model then
+                        TurnControls.Ready
+
+                    else
+                        TurnControls.Planning
 
         submitButton : Html Msg
         submitButton =
-            submitAction
-                |> Button.large
-                |> Button.toHtml
+            H.div
+                [ A.css
+                    [ S.col
+                    , S.g2
+                    , S.shrink0
+                    ]
+                ]
+                [ H.p
+                    []
+                    [ H.text ("turn " ++ String.fromInt model.currentTurn.number) ]
+                , TurnControls.submit activity submitLabel
+                    |> H.map TurnControlsMsg
+                ]
 
         errorDetails : List (Html Msg)
         errorDetails =
@@ -1927,84 +2016,34 @@ turnPanel model =
                     []
 
                 Just message ->
-                    [ H.p [ A.attribute "role" "alert" ] [ H.text message ] ]
+                    [ H.p [ Aria.role Aria.Alert ] [ H.text message ] ]
 
         content : List (Html Msg)
         content =
-            [ H.p [ A.attribute "role" "status" ]
-                [ H.text ("turn " ++ String.fromInt model.currentTurn.number ++ " · " ++ status) ]
-            , H.p [] [ H.text opponentStatus ]
-            ]
-    in
-    H.section
-        [ A.attribute "aria-label" "game controls"
-        , A.css
-            [ S.bgGray1
-            , S.outdentTopRight
-            , S.absolute
-            , S.bottom0
-            , S.left0
-            , S.z1
-            , S.p3
-            , S.g3
-            , S.col
-            , S.justifySpaceBetween
-            , S.shrink0
-            , S.wrapAnywhere
-            , S.w120
-            , S.maxWFull
-            , S.h40
-            , S.belowWidth 640 [ S.h80 ]
-            ]
-        ]
-        [ H.div
-            [ A.css [ S.row, S.flexWrap, S.itemsStart, S.g3 ] ]
-            [ submitButton
-            , H.div
-                [ A.css
-                    [ S.flex1
-                    , S.minW0
-                    , S.overflowAuto
-                    , S.maxH18
-                    , S.belowWidth 640 [ S.basisFull, S.maxH24 ]
+            [ H.div
+                [ Aria.role Aria.Status ]
+                [ H.ul
+                    [ Aria.label "player statuses"
+                    , Aria.role Aria.List
+                    , A.css
+                        [ S.col
+                        , S.listNone
+                        , S.g2
+                        ]
                     ]
-                ]
-                [ H.div
-                    [ A.css [ S.col, S.g2 ] ]
-                    (content ++ errorDetails)
+                    (List.map playerRow model.players)
                 ]
             ]
-        , H.div
-            [ A.css [ S.borderT, S.borderGray2, S.pt3 ] ]
-            [ viewControls model
-            ]
-        ]
 
-
-resolutionSummary : Model -> Html Msg
-resolutionSummary model =
-    let
-        summary : String
-        summary =
-            case model.currentTurn.resolution of
-                Nothing ->
-                    ""
-
-                Just resolution ->
-                    let
-                        conflicts : Int
-                        conflicts =
-                            List.length (List.filter (\event -> event.kind == EventKind.DestinationConflict) resolution.events)
-                    in
-                    if conflicts > 0 then
-                        "turn " ++ String.fromInt resolution.number ++ ": " ++ String.fromInt conflicts ++ " units held because opposing destinations matched."
-
-                    else
-                        ""
+        feedbackContent : List (Html Msg)
+        feedbackContent =
+            content ++ errorDetails
     in
-    H.p
-        []
-        [ H.text summary ]
+    TurnControls.panel
+        [ submitButton
+        , TurnControls.feedback feedbackContent
+        , TurnControls.navigation (viewControls model)
+        ]
 
 
 boardView : Model -> Html Msg
@@ -2024,7 +2063,7 @@ boardView model =
     in
     H.div
         [ A.attribute "tabindex" "0"
-        , A.attribute "aria-label" "battlefield navigation"
+        , Aria.label "battlefield navigation"
         , A.css
             [ S.relative
             , S.flex1
@@ -2129,8 +2168,8 @@ boardHtml model =
                 movementAttributes =
                     if List.member position reachable then
                         [ HA.attribute "tabindex" "0"
-                        , HA.attribute "role" "button"
-                        , HA.attribute "aria-label" ("move to (" ++ String.fromInt position.x ++ ", " ++ String.fromInt position.y ++ ")")
+                        , Aria.svgRole Aria.Button
+                        , Aria.svgLabel ("move to (" ++ String.fromInt position.x ++ ", " ++ String.fromInt position.y ++ ")")
                         , onKeyDown
                             { pressedEnter = PressedEnterOnTile position
                             , pressedSpace = PressedSpaceOnTile position
@@ -2192,7 +2231,7 @@ boardHtml model =
                     , HA.style "filter" (terrainFilter depot.position)
                     , HA.style "image-rendering" "auto"
                     , SA.pointerEvents "none"
-                    , HA.attribute "aria-hidden" "true"
+                    , Aria.svgHidden True
                     ]
                     []
                 , Svg.rect
@@ -2200,8 +2239,8 @@ boardHtml model =
                     , SA.height "16"
                     , SA.fill "transparent"
                     , HA.attribute "tabindex" "0"
-                    , HA.attribute "role" "button"
-                    , HA.attribute "aria-label" "supply depot"
+                    , Aria.svgRole Aria.Button
+                    , Aria.svgLabel "supply depot"
                     , Ev.onMouseOver (MouseOverDepot depot.position)
                     , onClickWithDetail (ClickedDepot depot.position)
                     , onKeyDown
@@ -2252,7 +2291,7 @@ boardHtml model =
                     case rotationPreview of
                         Just rotation ->
                             if rotation.unitId == unit.id then
-                                { unit | direction = Just rotation.direction }
+                                Unit.faceDirection (Just rotation.direction) unit
 
                             else
                                 unit
@@ -2284,20 +2323,22 @@ boardHtml model =
                 [ Svg.g
                     [ HA.style "filter" spriteFilter
                     ]
-                    [ UnitSprite.toSvg (AnimationFrame.unitColumn model.frame unit.id) unit
+                    [ UnitSprite.toSvg (AnimationFrame.unitColumn model.frame unit.id) previewUnit
                         |> StyledSvg.toUnstyled
                     ]
                 , UnitFacing.toSvg (selected == Just position) previewUnit
                     |> StyledSvg.toUnstyled
                 , UnitCargo.toSvg passengerCount
                     |> StyledSvg.toUnstyled
+                , UnitDeath.toSvg unit
+                    |> StyledSvg.toUnstyled
                 , Svg.rect
                     [ SA.width "16"
                     , SA.height "16"
                     , SA.fill "transparent"
                     , HA.attribute "tabindex" "0"
-                    , HA.attribute "role" "button"
-                    , HA.attribute "aria-label" accessibleLabel
+                    , Aria.svgRole Aria.Button
+                    , Aria.svgLabel accessibleLabel
                     , Ev.onMouseOver (MouseOverUnit unit.id)
                     , onClickWithDetail (ClickedUnit unit.id)
                     , onKeyDown
@@ -2451,7 +2492,7 @@ boardHtml model =
             in
             Svg.g
                 [ SA.pointerEvents "none"
-                , HA.attribute "aria-hidden" "true"
+                , Aria.svgHidden True
                 ]
                 (reachableTiles ++ plannedPaths ++ preview)
 
@@ -2486,7 +2527,7 @@ boardHtml model =
         unloadOverlay =
             Svg.g
                 [ SA.pointerEvents "none"
-                , HA.attribute "aria-hidden" "true"
+                , Aria.svgHidden True
                 , HA.attribute "data-planned-unloads" (String.fromInt (List.length unloads))
                 ]
                 (List.map unloadRoute unloads)
@@ -2527,8 +2568,8 @@ boardHtml model =
         [ Svg.svg
             [ SA.viewBox ("0 0 " ++ String.fromInt (model.map.width * 16) ++ " " ++ String.fromInt (model.map.height * 16))
             , SA.width "100%"
-            , HA.attribute "role" "group"
-            , HA.attribute "aria-label" "battlefield"
+            , Aria.svgRole Aria.Group
+            , Aria.svgLabel "battlefield"
             ]
             (List.concat
                 [ [ terrain, movementOverlay ]
@@ -2557,7 +2598,7 @@ selectionMarker position =
             , SA.strokeOpacity "0.8"
             , SA.strokeWidth "0.5"
             , SA.pointerEvents "none"
-            , HA.attribute "aria-hidden" "true"
+            , Aria.svgHidden True
             ]
             []
         ]
@@ -2582,17 +2623,17 @@ keyCommands model =
                     Just (UnitSelection { interaction }) ->
                         case interaction of
                             ChoosingDirection _ ->
-                                [ leftKeys (DirectionKeyPressed Facing.West)
-                                , rightKeys (DirectionKeyPressed Facing.East)
-                                , upKeys (DirectionKeyPressed Facing.North)
-                                , downKeys (DirectionKeyPressed Facing.South)
+                                [ leftKeys (DirectionKeyPressed DirectionEnum.West)
+                                , rightKeys (DirectionKeyPressed DirectionEnum.East)
+                                , upKeys (DirectionKeyPressed DirectionEnum.North)
+                                , downKeys (DirectionKeyPressed DirectionEnum.South)
                                 ]
 
                             ChoosingMove _ ->
-                                [ leftKeys (PathDirectionKeyPressed Facing.West)
-                                , rightKeys (PathDirectionKeyPressed Facing.East)
-                                , upKeys (PathDirectionKeyPressed Facing.North)
-                                , downKeys (PathDirectionKeyPressed Facing.South)
+                                [ leftKeys (PathDirectionKeyPressed DirectionEnum.West)
+                                , rightKeys (PathDirectionKeyPressed DirectionEnum.East)
+                                , upKeys (PathDirectionKeyPressed DirectionEnum.North)
+                                , downKeys (PathDirectionKeyPressed DirectionEnum.South)
                                 , KeyCmd.enter PathEnterPressed
                                 ]
 

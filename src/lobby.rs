@@ -5,7 +5,7 @@ use crate::{
     map::MapError,
     map_type::MapType,
     player_name::PlayerName,
-    scenario::{Scenario, Side},
+    scenario::{PlayerNumber, Scenario},
     seed::{self, Seed},
     session_token::SessionToken,
     turns::{MoveOrderInput, TurnResolution, Turns},
@@ -17,6 +17,21 @@ use std::{collections::BTreeMap, sync::Mutex};
 //----------------------------------------------------------------
 // TYPES
 //----------------------------------------------------------------
+
+#[derive(Debug)]
+pub enum DevelopmentError {
+    InvalidName,
+    Map(MapError),
+}
+
+impl std::fmt::Display for DevelopmentError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidName => formatter.write_str("invalid development player or lobby name"),
+            Self::Map(error) => write!(formatter, "development map failed: {error:?}"),
+        }
+    }
+}
 
 pub struct Store(Mutex<State>);
 
@@ -31,28 +46,30 @@ impl Store {
         Self(Mutex::new(State::new(seed)))
     }
 
-    pub fn development(seed: Seed) -> Result<Self, MapError> {
+    pub fn development(seed: Seed) -> Result<Self, DevelopmentError> {
         let mut state = State::new(seed);
         let host = SessionToken::from_token("development-player-1".into());
         let map_type = MapType::default();
         let mut game = Game::from_lobby(
             Lobby {
                 id: LobbyId::from_token("00000000000000000000000000000000".into()),
-                name: LobbyName::parse("Test game").expect("valid fixture name"),
+                name: LobbyName::parse("Test game").ok_or(DevelopmentError::InvalidName)?,
                 map_type,
                 host: host.clone(),
                 players: vec![
                     Player {
                         session: host,
-                        name: PlayerName::parse("Test player 1").expect("valid fixture name"),
+                        name: PlayerName::parse("Test player 1")
+                            .ok_or(DevelopmentError::InvalidName)?,
                     },
                     Player {
                         session: SessionToken::from_token("development-player-2".into()),
-                        name: PlayerName::parse("Test player 2").expect("valid fixture name"),
+                        name: PlayerName::parse("Test player 2")
+                            .ok_or(DevelopmentError::InvalidName)?,
                     },
                 ],
             },
-            map_type.scenario()?,
+            map_type.scenario().map_err(DevelopmentError::Map)?,
         );
         game.access = GameAccess::DevelopmentPreview;
         state.games.insert(game.source_lobby.clone(), game);
@@ -166,7 +183,7 @@ struct GamePlayerView {
     name: String,
     is_host: bool,
     is_you: bool,
-    side: Side,
+    side: PlayerNumber,
 }
 
 //----------------------------------------------------------------
@@ -238,9 +255,9 @@ fn game_snapshot(game: &Game, session: Option<&SessionToken>) -> Snapshot {
 fn game_view(game: &Game, session: &SessionToken) -> GameSnapshot {
     let index = usize::from(session != &game.host);
     let side = if index == 0 {
-        Side::Player1
+        PlayerNumber::Player1
     } else {
-        Side::Player2
+        PlayerNumber::Player2
     };
     let visible = crate::visibility::visible_tiles(&game.scenario, side);
     GameSnapshot {
@@ -256,7 +273,7 @@ fn game_view(game: &Game, session: &SessionToken) -> GameSnapshot {
         players: game
             .players
             .iter()
-            .zip([Side::Player1, Side::Player2])
+            .zip([PlayerNumber::Player1, PlayerNumber::Player2])
             .map(|(player, side)| GamePlayerView {
                 name: player.name.to_string(),
                 is_host: player.session == game.host,
@@ -365,7 +382,10 @@ pub fn join(context: &Context, id: LobbyId, input: &str) -> FieldResult<Snapshot
         return error("This map supports two players. The lobby is full.");
     }
     let identity = identity.unwrap_or_else(|| SessionToken::from_token(state.next_token()));
-    let lobby = state.lobbies.get_mut(&id).unwrap();
+    let lobby = state
+        .lobbies
+        .get_mut(&id)
+        .ok_or_else(|| FieldError::from("This lobby no longer exists."))?;
     lobby.players.push(Player {
         session: identity.clone(),
         name,
@@ -421,7 +441,11 @@ pub fn start(context: &Context, id: LobbyId) -> FieldResult<Snapshot> {
         .map_type
         .scenario()
         .or_else(|_| error("The map could not be initialized."))?;
-    let game = Game::from_lobby(state.lobbies.remove(&id).unwrap(), scenario);
+    let lobby = state
+        .lobbies
+        .remove(&id)
+        .ok_or_else(|| FieldError::from("This lobby no longer exists."))?;
+    let game = Game::from_lobby(lobby, scenario);
     let result = game_snapshot(&game, identity.as_ref());
     state.games.insert(id, game);
     Ok(result)
@@ -492,9 +516,9 @@ pub fn submit_turn(
             )
         })?;
     let side = if index == 0 {
-        Side::Player1
+        PlayerNumber::Player1
     } else {
-        Side::Player2
+        PlayerNumber::Player2
     };
     game.turns
         .submit(&mut game.scenario, side, turn_number, orders)

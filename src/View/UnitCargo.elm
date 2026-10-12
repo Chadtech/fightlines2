@@ -8,6 +8,7 @@ import Html.Styled.Attributes as A
 import Style as S
 import Svg.Styled as Svg exposing (Svg)
 import Svg.Styled.Attributes as SA
+import View.Aria as Aria
 
 
 styles : Html msg
@@ -98,6 +99,6 @@ toSvg passengerCount =
             , SA.fill S.nightwood3Str
             , SA.class "fightlines-unit-cargo"
             , SA.pointerEvents "none"
-            , A.attribute "aria-hidden" "true"
+            , Aria.hidden True
             ]
             content

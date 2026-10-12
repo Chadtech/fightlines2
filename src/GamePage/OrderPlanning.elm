@@ -47,8 +47,8 @@ module GamePage.OrderPlanning exposing
     , unloadPlanning
     )
 
-import Api.Enum.Direction as Facing exposing (Direction)
-import Api.Enum.Side exposing (Side)
+import Api.Enum.Direction as DirectionEnum exposing (Direction)
+import Api.Enum.PlayerNumber exposing (PlayerNumber)
 import Coordinate exposing (Coordinate)
 import Direction
 import GamePage.Selection as Selection
@@ -81,7 +81,7 @@ type alias Context =
     { map : Map
     , units : List Unit
     , movementRules : List Movement.Rule
-    , playerSides : List Side
+    , playerSides : List PlayerNumber
     }
 
 
@@ -380,7 +380,7 @@ applyCommand context command state =
 
                     UnitCommand.Rotate ->
                         state
-                            |> setUnitInteraction unit.id (ChoosingDirection (Maybe.withDefault Facing.North unit.direction))
+                            |> setUnitInteraction unit.id (ChoosingDirection (Maybe.withDefault DirectionEnum.North unit.direction))
 
                     UnitCommand.HoldPosition ->
                         holdPosition context unit state
@@ -659,7 +659,7 @@ moveOptions state =
 
 isOwnUnit : Context -> Unit -> Bool
 isOwnUnit context unit =
-    List.member unit.side context.playerSides
+    List.member unit.playerNumber context.playerSides
 
 
 selectedUnitFromSelection : Context -> Maybe Selection -> Maybe Unit

@@ -5,7 +5,8 @@
 module Api.Object.Unit exposing (..)
 
 import Api.Enum.Direction
-import Api.Enum.Side
+import Api.Enum.PlayerNumber
+import Api.Enum.SpriteFacing
 import Api.Enum.UnitKind
 import Api.InputObject
 import Api.Interface
@@ -27,9 +28,9 @@ id =
     Object.selectionForField "String" "id" [] Decode.string
 
 
-side : SelectionSet Api.Enum.Side.Side Api.Object.Unit
+side : SelectionSet Api.Enum.PlayerNumber.PlayerNumber Api.Object.Unit
 side =
-    Object.selectionForField "Enum.Side.Side" "side" [] Api.Enum.Side.decoder
+    Object.selectionForField "Enum.PlayerNumber.PlayerNumber" "side" [] Api.Enum.PlayerNumber.decoder
 
 
 kind : SelectionSet Api.Enum.UnitKind.UnitKind Api.Object.Unit
@@ -61,6 +62,11 @@ fuel object____ =
 direction : SelectionSet (Maybe Api.Enum.Direction.Direction) Api.Object.Unit
 direction =
     Object.selectionForField "(Maybe Enum.Direction.Direction)" "direction" [] (Api.Enum.Direction.decoder |> Decode.nullable)
+
+
+spriteFacing : SelectionSet Api.Enum.SpriteFacing.SpriteFacing Api.Object.Unit
+spriteFacing =
+    Object.selectionForField "Enum.SpriteFacing.SpriteFacing" "spriteFacing" [] Api.Enum.SpriteFacing.decoder
 
 
 cargoCapacity : SelectionSet Int Api.Object.Unit

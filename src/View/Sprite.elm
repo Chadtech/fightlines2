@@ -1,8 +1,8 @@
 module View.Sprite exposing (toSvg)
 
-import Html.Styled.Attributes as HA
 import Svg.Styled as Svg exposing (Svg)
 import Svg.Styled.Attributes as SA
+import View.Aria as Aria
 
 
 
@@ -34,7 +34,7 @@ toSvg config =
             )
         , SA.overflow "hidden"
         , SA.pointerEvents "none"
-        , HA.attribute "aria-hidden" "true"
+        , Aria.hidden True
         ]
         [ Svg.image
             [ SA.xlinkHref config.path

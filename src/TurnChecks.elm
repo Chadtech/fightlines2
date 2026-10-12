@@ -1,7 +1,8 @@
 port module TurnChecks exposing (main)
 
 import Api.Enum.Direction as Direction
-import Api.Enum.Side as Side
+import Api.Enum.PlayerNumber as PlayerNumber
+import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.TurnEventKind as EventKind
 import Api.Enum.UnitKind as Kind
 import Direction
@@ -29,7 +30,7 @@ checks : List String
 checks =
     case ( UnitId.parse "1", UnitId.parse "2" ) of
         ( Ok first, Ok second ) ->
-            playbackChecks first second ++ truckPlaybackChecks first ++ transportPlaybackChecks first second
+            playbackChecks first second ++ truckPlaybackChecks first ++ transportPlaybackChecks first second ++ spriteFacingChecks first ++ deathPlaybackChecks first
 
         _ ->
             [ "could not construct fixture IDs" ]
@@ -40,8 +41,8 @@ playbackChecks first second =
     let
         units : List Unit
         units =
-            [ { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = first, side = Side.Player1, direction = Just Direction.East, kind = Kind.Infantry, location = Location.OnMap { x = 1, y = 0 } }
-            , { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = second, side = Side.Player2, direction = Just Direction.West, kind = Kind.Infantry, location = Location.OnMap { x = 1, y = 1 } }
+            [ { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = first, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, kind = Kind.Infantry, location = Location.OnMap { x = 1, y = 0 } }
+            , { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, id = second, playerNumber = PlayerNumber.Player2, spriteFacing = SpriteFacing.Left, direction = Just Direction.West, kind = Kind.Infantry, location = Location.OnMap { x = 1, y = 1 } }
             ]
 
         snapshot : Turn.Snapshot
@@ -53,8 +54,8 @@ playbackChecks first second =
                 Just
                     { number = 1
                     , events =
-                        [ { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialDirection = Just Direction.South, unitId = first, path = [ { x = 0, y = 0 }, { x = 1, y = 0 } ] }
-                        , { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialDirection = Just Direction.North, unitId = second, path = [ { x = 2, y = 1 }, { x = 1, y = 1 } ] }
+                        [ { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialSpriteFacing = SpriteFacing.Right, initialDirection = Just Direction.South, unitId = first, path = [ { x = 0, y = 0 }, { x = 1, y = 0 } ] }
+                        , { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialSpriteFacing = SpriteFacing.Right, initialDirection = Just Direction.North, unitId = second, path = [ { x = 2, y = 1 }, { x = 1, y = 1 } ] }
                         ]
                     }
             }
@@ -78,7 +79,7 @@ playbackChecks first second =
 
         rotation : Turn.Event
         rotation =
-            { rotationDirection = Just Direction.West, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Rotate, initialDirection = Just Direction.East, unitId = first, path = [ { x = 1, y = 0 } ] }
+            { rotationDirection = Just Direction.West, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Rotate, initialSpriteFacing = SpriteFacing.Right, initialDirection = Just Direction.East, unitId = first, path = [ { x = 1, y = 0 } ] }
 
         rotationSnapshot : Turn.Snapshot
         rotationSnapshot =
@@ -104,7 +105,7 @@ playbackChecks first second =
 
         cornerPlayback : Turn.Playback
         cornerPlayback =
-            { events = [ { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, unitId = first, initialDirection = Just Direction.West, path = cornerPath } ]
+            { events = [ { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, unitId = first, initialSpriteFacing = SpriteFacing.Right, initialDirection = Just Direction.West, path = cornerPath } ]
             , elapsed = 0
             }
 
@@ -116,7 +117,8 @@ playbackChecks first second =
 
         firstFrame : TurnPlayback.Frame
         firstFrame =
-            { units = rewound
+            { durationMs = 180
+            , units = rewound
             , visibleTiles =
                 [ { x = 0
                   , y = 0
@@ -126,7 +128,8 @@ playbackChecks first second =
 
         lastFrame : TurnPlayback.Frame
         lastFrame =
-            { units = units
+            { durationMs = 180
+            , units = units
             , visibleTiles =
                 [ { x = 1
                   , y = 0
@@ -144,7 +147,8 @@ playbackChecks first second =
 
         middleFrame : TurnPlayback.Frame
         middleFrame =
-            { units =
+            { durationMs = 180
+            , units =
                 List.map advanceFirstUnit rewound
             , visibleTiles = lastFrame.visibleTiles
             }
@@ -175,6 +179,9 @@ playbackChecks first second =
         ( surplus, surplusFrame ) =
             TurnPlayback.tick 270 sharedPlayback
 
+        ( timedHalfway, _ ) =
+            TurnPlayback.tick 210 { sharedPlayback | remaining = [ { lastFrame | durationMs = 420 } ] }
+
         expect : String -> Bool -> List String
         expect name passed =
             if passed then
@@ -184,7 +191,9 @@ playbackChecks first second =
                 [ name ]
     in
     List.concat
-        [ expect "only the first unit interpolates during its route"
+        [ expect "all simultaneous arrivals interpolate using server frame duration"
+            (TurnPlayback.movingPositions timedHalfway == [ { unitId = first, position = { x = 0.5, y = 0 } }, { unitId = second, position = { x = 1.5, y = 1 } } ])
+        , expect "only the first unit interpolates during its route"
             (TurnPlayback.movingPositions sharedHalfway == [ { unitId = first, position = { x = 0.5, y = 0 } } ])
         , expect "waiting unit preserves its facing during the first route"
             (List.map .direction sharedFrame.units == [ Just Direction.East, Just Direction.North ])
@@ -219,14 +228,14 @@ truckPlaybackChecks unitId =
     let
         units : List Unit
         units =
-            [ { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 15, maximum = 64 }, id = unitId, side = Side.Player1, direction = Nothing, kind = Kind.Truck, location = Location.OnMap { x = 1, y = 1 } } ]
+            [ { cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 15, maximum = 64 }, id = unitId, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Nothing, kind = Kind.Truck, location = Location.OnMap { x = 1, y = 1 } } ]
 
         snapshot : Turn.Snapshot
         snapshot =
             { number = 2
             , submitted = False
             , opponentSubmitted = False
-            , resolution = Just { number = 1, events = [ { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialDirection = Nothing, unitId = unitId, path = [ { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 1, y = 1 } ] } ] }
+            , resolution = Just { number = 1, events = [ { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialSpriteFacing = SpriteFacing.Right, initialDirection = Nothing, unitId = unitId, path = [ { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 1, y = 1 } ] } ] }
             }
 
         rewound : List Unit
@@ -260,7 +269,8 @@ transportPlaybackChecks passengerId truckId =
         truck : Unit.Unit
         truck =
             { id = truckId
-            , side = Side.Player1
+            , playerNumber = PlayerNumber.Player1
+            , spriteFacing = SpriteFacing.Right
             , kind = Kind.Truck
             , direction = Nothing
             , hitPoints = { current = 16, maximum = 16 }
@@ -280,7 +290,7 @@ transportPlaybackChecks passengerId truckId =
 
         event : Turn.Event
         event =
-            { kind = EventKind.Move, unitId = truckId, path = [ { x = 0, y = 0 }, { x = 1, y = 0 } ], initialDirection = Nothing, rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing }
+            { kind = EventKind.Move, unitId = truckId, path = [ { x = 0, y = 0 }, { x = 1, y = 0 } ], initialSpriteFacing = SpriteFacing.Right, initialDirection = Nothing, rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing }
 
         loading : Turn.Snapshot
         loading =
@@ -291,9 +301,9 @@ transportPlaybackChecks passengerId truckId =
                 Just
                     { number = 1
                     , events =
-                        [ { event | unitId = passengerId, kind = EventKind.Hold, path = [ { x = 1, y = 0 } ], initialDirection = passenger.direction }
+                        [ { event | unitId = passengerId, kind = EventKind.Hold, path = [ { x = 1, y = 0 } ], initialSpriteFacing = SpriteFacing.Right, initialDirection = passenger.direction }
                         , event
-                        , { event | unitId = passengerId, kind = EventKind.Load, path = [ { x = 1, y = 0 } ], carrierId = Just truckId, initialDirection = passenger.direction }
+                        , { event | unitId = passengerId, kind = EventKind.Load, path = [ { x = 1, y = 0 } ], carrierId = Just truckId, initialSpriteFacing = SpriteFacing.Right, initialDirection = passenger.direction }
                         ]
                     }
             }
@@ -315,7 +325,7 @@ transportPlaybackChecks passengerId truckId =
 
         unloading : Turn.Snapshot
         unloading =
-            { loading | resolution = Just { number = 1, events = [ { event | kind = EventKind.Unload, unitId = passengerId, path = [ { x = 1, y = 0 }, { x = 2, y = 0 } ], initialCarrier = Just truckId, initialDirection = passenger.direction } ] } }
+            { loading | resolution = Just { number = 1, events = [ { event | kind = EventKind.Unload, unitId = passengerId, path = [ { x = 1, y = 0 }, { x = 2, y = 0 } ], initialCarrier = Just truckId, initialSpriteFacing = SpriteFacing.Right, initialDirection = passenger.direction } ] } }
 
         unloadUnits : List Unit
         unloadUnits =
@@ -335,8 +345,8 @@ transportPlaybackChecks passengerId truckId =
 
         ( sharedUnloading, sharedUnloadFrame ) =
             TurnPlayback.tick 90
-                { current = { units = units, visibleTiles = [] }
-                , remaining = [ { units = unloadUnits, visibleTiles = [] } ]
+                { current = { durationMs = 180, units = units, visibleTiles = [] }
+                , remaining = [ { durationMs = 180, units = unloadUnits, visibleTiles = [] } ]
                 , elapsed = 0
                 }
     in
@@ -362,3 +372,91 @@ transportExpect name valid =
 
     else
         [ name ]
+
+
+spriteFacingChecks : UnitId -> List String
+spriteFacingChecks id =
+    let
+        tank : Unit
+        tank =
+            { id = id, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, kind = Kind.Tank, cargoCapacity = 0, hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 64, maximum = 64 }, location = Location.OnMap { x = 2, y = 2 } }
+
+        west : Unit
+        west =
+            Unit.faceDirection (Just Direction.West) tank |> Unit.setOnMap { x = 1, y = 2 }
+
+        north : Unit
+        north =
+            Unit.faceDirection (Just Direction.North) west |> Unit.setOnMap { x = 1, y = 1 }
+
+        south : Unit
+        south =
+            Unit.faceDirection (Just Direction.South) north |> Unit.setOnMap { x = 1, y = 2 }
+
+        frame : Unit -> TurnPlayback.Frame
+        frame unit =
+            { durationMs = 180, units = [ unit ], visibleTiles = [] }
+
+        playback : TurnPlayback.Playback
+        playback =
+            { current = frame tank, remaining = [ frame west, frame north, frame south ], elapsed = 0 }
+
+        ( _, westFrame ) =
+            TurnPlayback.tick 90 playback
+
+        ( _, northFrame ) =
+            TurnPlayback.tick 270 playback
+
+        ( _, southFrame ) =
+            TurnPlayback.tick 450 playback
+
+        expect : String -> Bool -> List String
+        expect name passed =
+            if passed then
+                []
+
+            else
+                [ name ]
+    in
+    expect "westward playback flips the sprite before arrival" (List.map .spriteFacing westFrame.units == [ SpriteFacing.Left ])
+        ++ expect "northward playback retains left sprite facing" (List.map .spriteFacing northFrame.units == [ SpriteFacing.Left ] && List.map .direction northFrame.units == [ Just Direction.North ])
+        ++ expect "southward playback retains left sprite facing" (List.map .spriteFacing southFrame.units == [ SpriteFacing.Left ] && List.map .direction southFrame.units == [ Just Direction.South ])
+        ++ expect "east rotation then north keeps the right profile" ((west |> Unit.faceDirection (Just Direction.East) |> Unit.faceDirection (Just Direction.North)).spriteFacing == SpriteFacing.Right)
+
+
+deathPlaybackChecks : UnitId -> List String
+deathPlaybackChecks id =
+    let
+        expect : String -> Bool -> List String
+        expect label passed =
+            if passed then
+                []
+
+            else
+                [ label ]
+
+        dead : Unit
+        dead =
+            { id = id, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, kind = Kind.Infantry, cargoCapacity = 0, hitPoints = { current = 0, maximum = 16 }, supplies = { current = 0, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing, location = Location.OnMap { x = 2, y = 2 } }
+
+        dying : TurnPlayback.Frame
+        dying =
+            { durationMs = 180, units = [ dead ], visibleTiles = [ { x = 2, y = 2 } ] }
+
+        gone : TurnPlayback.Frame
+        gone =
+            { durationMs = 1200, units = [], visibleTiles = [] }
+
+        animation : TurnPlayback.Playback
+        animation =
+            { current = dying, remaining = [ gone ], elapsed = 0 }
+
+        ( pending, beforeRemoval ) =
+            TurnPlayback.tick 1199 animation
+
+        ( finished, afterRemoval ) =
+            TurnPlayback.tick 1200 animation
+    in
+    expect "dead units remain for the full death animation" (pending /= Nothing && beforeRemoval.units == [ dead ])
+        ++ expect "dead units vanish at the server frame boundary" (finished == Nothing && List.isEmpty afterRemoval.units && List.isEmpty afterRemoval.visibleTiles)
+        ++ expect "death does not interpolate a movement" (List.isEmpty (TurnPlayback.movingPositions (Just animation)))

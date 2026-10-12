@@ -185,10 +185,11 @@ impl Map {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{FixtureValue, TestResult};
 
     #[test]
-    fn themes_preserve_terrain_and_bounds() {
-        let original = Map::from_ascii(".#%\n...").unwrap();
+    fn themes_preserve_terrain_and_bounds() -> TestResult<()> {
+        let original = Map::from_ascii(".#%\n...").fixture()?;
         assert_eq!(original.theme(), MapTheme::GreenForest);
         for theme in [MapTheme::GreenForest, MapTheme::Desert, MapTheme::Snow] {
             let themed = original.clone().with_theme(theme);
@@ -202,12 +203,14 @@ mod tests {
                 }
             }
         }
+
+        Ok(())
     }
 
     #[test]
-    fn ascii_preserves_spaces_and_parses_terrain_with_unix_or_windows_lines() {
+    fn ascii_preserves_spaces_and_parses_terrain_with_unix_or_windows_lines() -> TestResult<()> {
         for sketch in [" # %\n.   ", " # %\r\n.   \r\n"] {
-            let map = Map::from_ascii(sketch).unwrap();
+            let map = Map::from_ascii(sketch).fixture()?;
             assert_eq!((map.width, map.height), (4, 2));
             assert_eq!(map.tile_at(Coordinate::new(1, 0)), Some(Terrain::Forest));
             assert_eq!(map.tile_at(Coordinate::new(3, 0)), Some(Terrain::Hills));
@@ -221,10 +224,12 @@ mod tests {
             );
             assert_eq!(map.features.len(), 2);
         }
+
+        Ok(())
     }
 
     #[test]
-    fn ascii_rejects_empty_ragged_unknown_and_oversized_maps() {
+    fn ascii_rejects_empty_ragged_unknown_and_oversized_maps() -> TestResult<()> {
         assert_eq!(Map::from_ascii(""), Err(MapError::EmptyDimensions));
         assert_eq!(Map::from_ascii("\n"), Err(MapError::EmptyDimensions));
         assert_eq!(
@@ -254,10 +259,12 @@ mod tests {
             Map::from_ascii(&".".repeat(65536)),
             Err(MapError::DimensionsTooLarge)
         );
+
+        Ok(())
     }
 
     #[test]
-    fn lookup_uses_overrides_and_fallback_only_inside_bounds() {
+    fn lookup_uses_overrides_and_fallback_only_inside_bounds() -> TestResult<()> {
         let forest = Coordinate::new(1, 1);
         let map = Map::new(
             3,
@@ -265,7 +272,7 @@ mod tests {
             Terrain::GrassPlain,
             BTreeMap::from([(forest, Terrain::Forest)]),
         )
-        .unwrap();
+        .fixture()?;
         assert_eq!(map.tile_at(forest), Some(Terrain::Forest));
         assert_eq!(
             map.tile_at(Coordinate::new(2, 1)),
@@ -274,10 +281,12 @@ mod tests {
         assert_eq!(map.tile_at(Coordinate::new(3, 1)), None);
         assert_eq!(map.tile_at(Coordinate::new(1, 2)), None);
         assert_eq!(map.features.len(), 1);
+
+        Ok(())
     }
 
     #[test]
-    fn rejects_empty_maps_and_out_of_bounds_overrides() {
+    fn rejects_empty_maps_and_out_of_bounds_overrides() -> TestResult<()> {
         assert_eq!(
             Map::new(0, 2, Terrain::GrassPlain, BTreeMap::new()),
             Err(MapError::EmptyDimensions)
@@ -296,5 +305,7 @@ mod tests {
             ),
             Err(MapError::PositionOutOfBounds(position))
         );
+
+        Ok(())
     }
 }

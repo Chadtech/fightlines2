@@ -1,3 +1,5 @@
+#![deny(clippy::unwrap_used, clippy::expect_used)]
+
 mod graphql;
 mod lobby;
 mod lobby_id;
@@ -5,6 +7,7 @@ mod lobby_name;
 mod map;
 mod map_type;
 mod movement;
+mod movement_resolution;
 mod player_name;
 mod scenario;
 mod seed;
@@ -90,3 +93,6 @@ async fn run() -> io::Result<()> {
     .run()
     .await
 }
+
+#[cfg(test)]
+mod test_support;

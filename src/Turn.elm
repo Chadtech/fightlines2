@@ -11,6 +11,7 @@ module Turn exposing
     )
 
 import Api.Enum.Direction exposing (Direction)
+import Api.Enum.SpriteFacing exposing (SpriteFacing)
 import Api.Enum.TurnEventKind as EventKind exposing (TurnEventKind)
 import Api.Object
 import Api.Object.Coordinate as CoordinateApi
@@ -22,6 +23,7 @@ import Direction
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import ListUtil
 import Point exposing (Point)
+import SpriteFacing
 import Unit exposing (Unit)
 import Unit.Location
 import UnitId exposing (UnitId)
@@ -45,6 +47,7 @@ type alias Event =
     { kind : TurnEventKind
     , unitId : UnitId
     , path : List Coordinate
+    , initialSpriteFacing : SpriteFacing
     , initialDirection : Maybe Direction
     , initialCarrier : Maybe UnitId
     , rotationDirection : Maybe Direction
@@ -67,14 +70,15 @@ selection =
 
         event : SelectionSet Event Api.Object.TurnEvent
         event =
-            SS.map7 Event
-                EventApi.kind
-                (EventApi.unitId |> SS.mapOrFail UnitId.parse)
-                (EventApi.path coordinate)
-                EventApi.initialDirection
-                (EventApi.initialCarrier |> SS.mapOrFail parseOptionalId)
-                EventApi.rotationDirection
-                (EventApi.carrierId |> SS.mapOrFail parseOptionalId)
+            SS.succeed Event
+                |> SS.with EventApi.kind
+                |> SS.with (EventApi.unitId |> SS.mapOrFail UnitId.parse)
+                |> SS.with (EventApi.path coordinate)
+                |> SS.with EventApi.initialSpriteFacing
+                |> SS.with EventApi.initialDirection
+                |> SS.with (EventApi.initialCarrier |> SS.mapOrFail parseOptionalId)
+                |> SS.with EventApi.rotationDirection
+                |> SS.with (EventApi.carrierId |> SS.mapOrFail parseOptionalId)
     in
     SS.map4 Snapshot
         GameApi.turnNumber
@@ -138,6 +142,7 @@ rewind snapshot units =
                                             |> Maybe.map Unit.Location.OnMap
                                             |> Maybe.withDefault unit.location
                             , direction = event.initialDirection
+                            , spriteFacing = event.initialSpriteFacing
                         }
                     )
                 |> Maybe.withDefault unit
@@ -181,14 +186,18 @@ tick delta playback units =
                                     EventKind.Hold ->
                                         unit.location
 
-                                    EventKind.DestinationConflict ->
-                                        unit.location
-
                                     _ ->
                                         List.reverse event.path
                                             |> List.head
                                             |> Maybe.map Unit.Location.OnMap
                                             |> Maybe.withDefault unit.location
+                            , spriteFacing =
+                                if unit.direction == Nothing then
+                                    unit.spriteFacing
+
+                                else
+                                    SpriteFacing.alongPath event.path unit.spriteFacing
+                                        |> SpriteFacing.turn event.rotationDirection
                             , direction =
                                 case event.rotationDirection of
                                     Just direction ->
@@ -225,7 +234,7 @@ tick delta playback units =
                                         _ ->
                                             unit.direction
                             in
-                            { unit | direction = direction }
+                            Unit.faceDirection direction unit
 
                         else
                             unit

@@ -5,6 +5,7 @@
 module Api.Object.TurnEvent exposing (..)
 
 import Api.Enum.Direction
+import Api.Enum.SpriteFacing
 import Api.Enum.TurnEventKind
 import Api.InputObject
 import Api.Interface
@@ -34,6 +35,11 @@ initialCarrier =
 carrierId : SelectionSet (Maybe String) Api.Object.TurnEvent
 carrierId =
     Object.selectionForField "(Maybe String)" "carrierId" [] (Decode.string |> Decode.nullable)
+
+
+initialSpriteFacing : SelectionSet Api.Enum.SpriteFacing.SpriteFacing Api.Object.TurnEvent
+initialSpriteFacing =
+    Object.selectionForField "Enum.SpriteFacing.SpriteFacing" "initialSpriteFacing" [] Api.Enum.SpriteFacing.decoder
 
 
 initialDirection : SelectionSet (Maybe Api.Enum.Direction.Direction) Api.Object.TurnEvent

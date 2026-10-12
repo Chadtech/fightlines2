@@ -1,8 +1,9 @@
 port module OrderPlanningChecks exposing (main)
 
-import Api.Enum.Direction as Facing
+import Api.Enum.Direction as DirectionEnum
 import Api.Enum.MapTheme as Theme
-import Api.Enum.Side as Side
+import Api.Enum.PlayerNumber as PlayerNumber
+import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.Terrain as Terrain
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Coordinate exposing (Coordinate)
@@ -60,7 +61,7 @@ planningChecks infantryId truckId passengerId =
             OrderPlanning.init
                 |> OrderPlanning.selectUnit context infantryId
                 |> OrderPlanning.applyCommand context UnitCommand.Move
-                |> OrderPlanning.extendPath context Facing.South
+                |> OrderPlanning.extendPath context DirectionEnum.South
 
         saved : OrderPlanning.Model
         saved =
@@ -96,8 +97,8 @@ planningChecks infantryId truckId passengerId =
             OrderPlanning.init
                 |> OrderPlanning.selectUnit context infantryId
                 |> OrderPlanning.applyCommand context UnitCommand.Rotate
-                |> OrderPlanning.previewRotation Facing.West
-                |> OrderPlanning.saveRotation context Facing.West
+                |> OrderPlanning.previewRotation DirectionEnum.West
+                |> OrderPlanning.saveRotation context DirectionEnum.West
 
         cargoContext : OrderPlanning.Context
         cargoContext =
@@ -162,7 +163,7 @@ planningChecks infantryId truckId passengerId =
         , expect "revoking loading and receiver holds restores truck commands"
             (List.isEmpty (OrderPlanning.orders revoked) && OrderPlanning.commandMenuUnit context revoked == Just truck)
         , expect "rotation becomes a revocable draft without moving"
-            (List.map .action (OrderPlanning.orders rotated) == [ PlannedOrder.Rotate { position = { x = 1, y = 1 }, direction = Facing.West } ])
+            (List.map .action (OrderPlanning.orders rotated) == [ PlannedOrder.Rotate { position = { x = 1, y = 1 }, direction = DirectionEnum.West } ])
         , expect "holding a loaded truck opens its stationary unload checklist"
             (OrderPlanning.unloadChoice checklist /= Nothing)
         , expect "each unload exit reserves its square for the next passenger"
@@ -183,7 +184,7 @@ board units =
     { map = { width = 7, height = 7, baseTile = Terrain.GrassPlain, theme = Theme.GreenForest, features = [] }
     , units = units
     , movementRules = List.map movementRule [ Kind.Infantry, Kind.Truck, Kind.FieldGun ]
-    , playerSides = [ Side.Player1 ]
+    , playerSides = [ PlayerNumber.Player1 ]
     }
 
 
@@ -199,13 +200,13 @@ unit id kind location =
         vehicle =
             kind == Kind.Truck
 
-        direction : Maybe Facing.Direction
+        direction : Maybe DirectionEnum.Direction
         direction =
             if vehicle then
                 Nothing
 
             else
-                Just Facing.North
+                Just DirectionEnum.North
 
         fuel : Maybe { current : Int, maximum : Int }
         fuel =
@@ -224,7 +225,8 @@ unit id kind location =
                 0
     in
     { id = id
-    , side = Side.Player1
+    , playerNumber = PlayerNumber.Player1
+    , spriteFacing = SpriteFacing.Right
     , kind = kind
     , direction = direction
     , hitPoints = { current = 16, maximum = 16 }

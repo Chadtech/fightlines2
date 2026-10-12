@@ -22,7 +22,8 @@ import UnitId exposing (UnitId)
 
 
 type alias Frame =
-    { units : List Unit
+    { durationMs : Int
+    , units : List Unit
     , visibleTiles : List Coordinate
     }
 
@@ -54,6 +55,7 @@ selection unit coordinate =
     GameApi.lastResolution
         (ResolutionApi.frames
             (SS.succeed Frame
+                |> SS.with FrameApi.durationMs
                 |> SS.with (FrameApi.units unit)
                 |> SS.with (FrameApi.visibleTiles coordinate)
             )
@@ -80,7 +82,7 @@ start frames =
             Nothing
 
 
-{-| Each sequential path edge takes 180ms. Visibility changes at tile boundaries.
+{-| Each frame uses its server-provided duration. Visibility changes at tile boundaries.
 Carry surplus time forward so frame rate does not change the timeline.
 -}
 tick : Float -> Playback -> ( Maybe Playback, Frame )
@@ -95,13 +97,13 @@ tick delta playback =
                 elapsed =
                     playback.elapsed + delta
             in
-            if elapsed >= 180 then
+            if elapsed >= toFloat next.durationMs then
                 case remaining of
                     [] ->
                         ( Nothing, next )
 
                     _ ->
-                        tick (elapsed - 180)
+                        tick (elapsed - toFloat next.durationMs)
                             { current = next
                             , remaining = remaining
                             , elapsed = 0
@@ -127,22 +129,19 @@ presentationFrame playing next =
                     unit
             of
                 Just edge ->
-                    { unit
-                        | direction =
-                            unit.direction
-                                |> Maybe.andThen
-                                    (\_ ->
-                                        Direction.between
-                                            edge.origin
-                                            edge.destination
-                                    )
-                    }
+                    Unit.faceDirection
+                        (unit.direction
+                            |> Maybe.andThen
+                                (\_ -> Direction.between edge.origin edge.destination)
+                        )
+                        unit
                         |> Unit.setOnMap edge.origin
 
                 Nothing ->
                     unit
     in
-    { units = List.map faceMovement playing.current.units
+    { durationMs = playing.current.durationMs
+    , units = List.map faceMovement playing.current.units
     , visibleTiles = playing.current.visibleTiles
     }
 
@@ -207,8 +206,8 @@ movingPositions playback =
                                     Just
                                         { unitId = unit.id
                                         , position =
-                                            { x = toFloat edge.origin.x + toFloat (edge.destination.x - edge.origin.x) * playing.elapsed / 180
-                                            , y = toFloat edge.origin.y + toFloat (edge.destination.y - edge.origin.y) * playing.elapsed / 180
+                                            { x = toFloat edge.origin.x + toFloat (edge.destination.x - edge.origin.x) * playing.elapsed / toFloat next.durationMs
+                                            , y = toFloat edge.origin.y + toFloat (edge.destination.y - edge.origin.y) * playing.elapsed / toFloat next.durationMs
                                             }
                                         }
 
