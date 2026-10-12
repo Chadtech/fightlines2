@@ -140,7 +140,11 @@ hill itself remains visible. Forests
 conceal all enemy units inside, even adjacent to an observer or an allied unit
 in the same forest. Your own units and their occupied tiles are always visible. Unseen tiles are darker and desaturated, preserving terrain detail;
 the terrain and fixed depot locations remain known. Hidden enemies and their
-paths are withheld from game responses. Both players share a movement timeline, with units advancing together at their
+paths are withheld from game responses.
+Field guns that fire reveal their occupied tile to the enemy for the following
+turn, even in forests or beyond normal sight. Firing again renews the reveal;
+otherwise it expires at the next turn boundary. Enemy resources stay concealed.
+Both players share a movement timeline, with units advancing together at their
 scheduled arrivals. Sight refreshes at each arrival boundary. Enemies appear when they enter
 sight and disappear when they leave it, including brief sightings during a turn.
 Hidden positions and route segments are withheld from responses.
@@ -268,7 +272,7 @@ Visible encounter health is shared for both players; enemy supplies and fuel rem
 Each pair stays open until the player selects **continue** or presses Enter. Hold
 **see map** to hide the card and spotlight the two shining combatants on the frozen
 battlefield; release to restore the card.
-Reciprocal shots share one display;
+Reciprocal shots share one display; overlapping ambushes show successive health losses, carrying remaining health into the next pair;
 all pairs in a volley appear before its results. The card then closes and playback
 shows quick firing flashes and small target explosions, updated health, and death
 markers before movement resumes. There are no connecting shot lines or floating
@@ -380,3 +384,22 @@ To edit terrain, change the ASCII sketch in `src/scenario.rs`: `#` is forest,
 count as cells. Restart `make dev` and refresh the test game URL, or start a new
 normal game, to see the layout.
 Depots and units are placed separately.
+
+## Attack move
+
+Infantry and tanks can choose **attack move** and trace a route with the same
+pointer and keyboard controls as move. Dragging traces without panning and saves
+on release; hovering and clicking or arrows and Enter also work. Preview paths are solid red; saved paths
+are dashed red. Both end in a pointed arrow aligned with the final segment.
+Allies remain passable, but attack move cannot load or unload passengers.
+Enemy squares may be chosen as destinations.
+
+Rust resolves contact on the shared arrival timeline, including concealed enemies,
+opposing swaps, and simultaneous destination claims. The unit stops at the first
+encounter and fires once using its normal damage and shot cost. A resident enemy
+keeps its square; the attacker stops on the preceding square. Both participants
+stop their remaining routes. Opposing attack movers fire simultaneously; other
+orders do not gain automatic return fire. Only successful edges spend movement
+resources. Planning reserves the shot cost plus upkeep; a route without an
+encounter spends no firing supplies. Combat events use the existing theater,
+with an `attack move` heading and the usual fog-safe encounter portraits.

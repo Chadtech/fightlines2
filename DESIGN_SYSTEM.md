@@ -359,12 +359,12 @@ overlay above depots, units, ambush coverage, and direction-selection sectors.
 A dim overlay then covers the workspace while one beveled card headed `ambush`
 shows inward-facing formations on the illustrated backdrop matching each
 combatant's terrain and map theme. Omit
-visible unit/player labels. The attacker faces right and the target faces left.
+visible unit/player labels. The western participant appears left, facing right; the eastern participant appears right, facing left. For a vertical encounter, the northern participant appears left.
 The card opens with a 200ms expansion and slight overshoot. Every unit kind
 uses four staggered figures at 13–16 HP, three at 9–12, two at 5–8, one at
 1–4, and none at zero. Each figure represents four HP; partially intact
 quarters remain visible. Hold the scene for one second after the opening
-animation finishes before combat begins. Use the server's pre/post-volley health, including
+animation finishes before combat begins. Use the server's per-pair before/after health, including
 observable enemies, without theater HP bars. Lost figures play a six-frame illustrated horizontal projectile impact over 100ms,
 beginning at 1200ms with losses staggered by 120ms. Draw impacts above the entire formation so neighboring figures cannot obscure
 the projectile. The moving projectile approach and contact each get 10ms, followed by a 30ms impact
@@ -386,3 +386,16 @@ only after all pairs have appeared, then resume the server timeline.
 The combat overlay blocks battlefield interaction and camera shortcuts. Reduced
 motion uses steady impacts and figure removal after the hit, without pop, fade, or shine
 motion. Continuation remains user-controlled.
+
+## Attack move
+
+Infantry and tanks reuse movement tracing for attack move. Render a solid red
+preview and a dashed red saved path, ending in a pointed arrow aligned with the
+last segment. Dragging traces without panning and saves on release; hovering
+and clicking or arrows and Enter also work. Keep orders revocable and preserve
+selection after saving. Enemy squares are legal destinations; allies remain
+passable, and attack move offers no loading or unloading choices.
+
+Encounters use the existing combat theater with an `attack move` heading.
+Reciprocal shots appear together. Preserve concealed encounter portraits and
+authoritative health transitions without revealing enemy resources or routes.

@@ -557,6 +557,11 @@ hills and forests as blockers only when it crosses their tile interior; terrain
 touched only at a corner does not obstruct open diagonals. Forest tiles also
 conceal their contents. Own occupied squares remain known, while
 enemies in forests remain concealed even on a known occupied square.
+Field guns retain an internal firing reveal flag for the next turn. After all
+combat resolves, `Turns` renews it only for guns that actually fired. Visibility
+includes each revealed gun and its occupied tile regardless of sight or forest
+cover, without granting surrounding sight or exposing resources or cargo. The
+previous reveal remains in playback frames until the final turn boundary.
 
 `game_view` projects the authoritative scenario for the requesting side,
 including the development preview. `GameSnapshot.visibleTiles` supplies the
@@ -747,10 +752,29 @@ the hit/death feedback. These pauses affect local presentation only; Rust frame
 timing, combat outcomes, and fog projection remain authoritative.
 
 Projected `Shot.attackerHealth` and `Shot.targetHealth` carry authoritative before
-and after hit points for encounter combatants, including concealed enemies. This permits enemy health inside the
+and after hit points for each pair, including concealed enemies. Rust sequences health losses across pairs within a simultaneous volley; reciprocal shots share a single transition. This presentation sequence does not change simultaneous resolution. This permits enemy health inside the
 encounter card without exposing enemy supplies or fuel through `Unit.resources`.
 Panel state owns its capped presentation clock and `CardVisible | SeeingMap`
 mode. Its 2000ms capped clock allows the 200ms opening expansion, a one-second
 anticipation beat, and up to four staggered casualties to finish. The clock sequences individual figure explosions and removal, without HP bars; Continue/Enter
 advances the pair. SeeingMap hides the card completely and restores the board
 spotlight with repeating shine. Mouse release restores the card even outside the button.
+
+## Attack move
+
+Infantry and tanks can choose **attack move** and trace a route with the same
+pointer and keyboard controls as move. Dragging traces without panning and saves
+on release; hovering and clicking or arrows and Enter also work. Preview paths are solid red; saved paths
+are dashed red. Both end in a pointed arrow aligned with the final segment.
+Allies remain passable, but attack move cannot load or unload passengers.
+Enemy squares may be chosen as destinations.
+
+Rust resolves contact on the shared arrival timeline, including concealed enemies,
+opposing swaps, and simultaneous destination claims. The unit stops at the first
+encounter and fires once using its normal damage and shot cost. A resident enemy
+keeps its square; the attacker stops on the preceding square. Both participants
+stop their remaining routes. Opposing attack movers fire simultaneously; other
+orders do not gain automatic return fire. Only successful edges spend movement
+resources. Planning reserves the shot cost plus upkeep; a route without an
+encounter spends no firing supplies. Combat events use the existing theater,
+with an `attack move` heading and the usual fog-safe encounter portraits.
