@@ -4,6 +4,7 @@
 
 module Api.Object.CombatRules exposing (..)
 
+import Api.Enum.AmbushShape
 import Api.InputObject
 import Api.Interface
 import Api.Object
@@ -22,6 +23,11 @@ import Json.Decode as Decode
 range : SelectionSet Int Api.Object.CombatRules
 range =
     Object.selectionForField "Int" "range" [] Decode.int
+
+
+shape : SelectionSet Api.Enum.AmbushShape.AmbushShape Api.Object.CombatRules
+shape =
+    Object.selectionForField "Enum.AmbushShape.AmbushShape" "shape" [] Api.Enum.AmbushShape.decoder
 
 
 damage : SelectionSet Int Api.Object.CombatRules

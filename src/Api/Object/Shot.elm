@@ -36,3 +36,17 @@ destination object____ =
 damage : SelectionSet Int Api.Object.Shot
 damage =
     Object.selectionForField "Int" "damage" [] Decode.int
+
+
+attackerHealth :
+    SelectionSet decodesTo Api.Object.CombatHealth
+    -> SelectionSet decodesTo Api.Object.Shot
+attackerHealth object____ =
+    Object.selectionForCompositeField "attackerHealth" [] object____ Basics.identity
+
+
+targetHealth :
+    SelectionSet decodesTo Api.Object.CombatHealth
+    -> SelectionSet decodesTo Api.Object.Shot
+targetHealth object____ =
+    Object.selectionForCompositeField "targetHealth" [] object____ Basics.identity

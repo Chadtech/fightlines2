@@ -1,16 +1,23 @@
 //! Stationary directional combat. Outcomes are resolved at shared movement and transport boundaries.
 use crate::{
     map::Coordinate,
-    scenario::{Direction, Scenario, Unit, UnitId, UnitKind},
+    scenario::{Direction, HitPoints, Scenario, Unit, UnitId, UnitKind},
     turns::{MoveOrder, TurnFrame},
     visibility,
 };
-use juniper::GraphQLObject;
+use juniper::{GraphQLEnum, GraphQLObject};
 use std::collections::{BTreeMap, BTreeSet};
+
+#[derive(Clone, Copy, Debug, GraphQLEnum)]
+pub enum AmbushShape {
+    Line,
+    Cross,
+}
 
 #[derive(Clone, Copy, Debug, GraphQLObject)]
 pub struct CombatRules {
     pub range: i32,
+    pub shape: AmbushShape,
     pub damage: i32,
     pub readiness_cost: i32,
     pub shot_cost: i32,
@@ -25,6 +32,10 @@ pub fn rules(kind: UnitKind) -> CombatRules {
     };
     CombatRules {
         range,
+        shape: match kind {
+            UnitKind::FieldGun => AmbushShape::Cross,
+            UnitKind::Infantry | UnitKind::Tank | UnitKind::Truck => AmbushShape::Line,
+        },
         damage,
         readiness_cost: 2,
         shot_cost: 2,
@@ -36,6 +47,14 @@ pub struct Shot {
     pub origin: Coordinate,
     pub destination: Coordinate,
     pub damage: i32,
+    pub attacker_health: CombatHealth,
+    pub target_health: CombatHealth,
+}
+
+#[derive(Clone, Copy, Debug, GraphQLObject)]
+pub struct CombatHealth {
+    pub before: HitPoints,
+    pub after: HitPoints,
 }
 
 #[derive(Clone)]
@@ -80,7 +99,7 @@ impl Combat {
             let targets = board
                 .units
                 .iter()
-                .filter(|target| combat.engagement(board, shooter, target, true).is_some())
+                .filter(|target| combat.engagement(board, shooter, target).is_some())
                 .map(Unit::unit_id)
                 .collect();
             combat.deferred_targets.insert(shooter.unit_id(), targets);
@@ -97,38 +116,28 @@ impl Combat {
             && unit.supplies().current() >= unit.supplies().upkeep_per_turn() + rule.shot_cost
     }
 
-    fn engagement(
-        &self,
-        board: &Scenario,
-        shooter: &Unit,
-        target: &Unit,
-        directional: bool,
-    ) -> Option<Engagement> {
+    fn engagement(&self, board: &Scenario, shooter: &Unit, target: &Unit) -> Option<Engagement> {
         let origin = shooter.board_position()?;
         let destination = target.board_position()?;
         let dx = destination.x() - origin.x();
         let dy = destination.y() - origin.y();
-        let distance = dx.abs() + dy.abs();
-        let in_line = dx == 0 || dy == 0;
-        let in_direction = match shooter.direction()? {
-            Direction::North => dx == 0 && dy < 0,
-            Direction::East => dy == 0 && dx > 0,
-            Direction::South => dx == 0 && dy > 0,
-            Direction::West => dy == 0 && dx < 0,
+        let (forward, sideways) = match shooter.direction()? {
+            Direction::North => (-dy, dx),
+            Direction::East => (dx, dy),
+            Direction::South => (dy, dx),
+            Direction::West => (-dx, dy),
         };
-        // Unready infantry/tanks can turn to return adjacent fire. Guns retain their narrow arc.
-        let valid_arc = if directional || shooter.kind() == UnitKind::FieldGun {
-            in_direction
-        } else {
-            in_line
+        let rule = rules(shooter.kind());
+        let in_line = sideways == 0 && forward > 0 && forward <= rule.range;
+        let in_cross_arm = match rule.shape {
+            AmbushShape::Line => false,
+            AmbushShape::Cross => forward == (rule.range + 1) / 2 && sideways.abs() == 1,
         };
         let visible = visibility::visible_tiles(board, shooter.side());
         if !self.can_fire(shooter)
             || !target.is_alive()
             || shooter.side() == target.side()
-            || distance == 0
-            || distance > rules(shooter.kind()).range
-            || !valid_arc
+            || !(in_line || in_cross_arm)
             || !visibility::observable(&board.map, &visible, destination)
             || !visibility::clear_line(&board.map, origin, destination)
         {
@@ -141,6 +150,14 @@ impl Combat {
                 origin,
                 destination,
                 damage: rules(shooter.kind()).damage,
+                attacker_health: CombatHealth {
+                    before: shooter.hit_points(),
+                    after: shooter.hit_points(),
+                },
+                target_health: CombatHealth {
+                    before: target.hit_points(),
+                    after: target.hit_points(),
+                },
             },
         })
     }
@@ -196,7 +213,18 @@ impl Combat {
             duration_ms: 450,
             shots: engagements
                 .iter()
-                .map(|engagement| engagement.shot.clone())
+                .map(|engagement| {
+                    let mut shot = engagement.shot.clone();
+                    for unit in &board.units {
+                        if unit.unit_id() == engagement.shooter {
+                            shot.attacker_health.after = unit.hit_points();
+                        }
+                        if unit.unit_id() == engagement.target {
+                            shot.target_health.after = unit.hit_points();
+                        }
+                    }
+                    shot
+                })
                 .collect(),
         });
         // Clear shots while preserving enough time to read the exchange and death marker.
@@ -222,7 +250,7 @@ impl Combat {
                 board
                     .units
                     .iter()
-                    .filter_map(|target| self.engagement(board, shooter, target, true))
+                    .filter_map(|target| self.engagement(board, shooter, target))
                     .collect::<Vec<_>>()
             })
             .collect();
@@ -263,28 +291,6 @@ impl Combat {
             stopped.insert(engagement.target);
         }
         self.volley(board, &opening, frames);
-        let mut responses = Vec::new();
-        for shooter in board
-            .units
-            .iter()
-            .filter(|unit| !self.ready.contains(&unit.unit_id()))
-        {
-            let response = opening
-                .iter()
-                .filter(|engagement| engagement.target == shooter.unit_id())
-                .filter_map(|engagement| {
-                    board
-                        .units
-                        .iter()
-                        .find(|unit| unit.unit_id() == engagement.shooter)
-                })
-                .filter_map(|target| self.engagement(board, shooter, target, false))
-                .min_by_key(|engagement| engagement.target);
-            if let Some(response) = response {
-                responses.push(response);
-            }
-        }
-        self.volley(board, &responses, frames);
         stopped.extend(
             board
                 .units
@@ -383,13 +389,16 @@ mod tests {
     }
 
     #[test]
-    fn directional_ranges_include_each_forward_square_only() -> TestResult<()> {
+    fn directional_ranges_include_forward_squares_and_field_gun_cross_arms() -> TestResult<()> {
         for kind in [UnitKind::Infantry, UnitKind::Tank, UnitKind::FieldGun] {
             for (position, expected) in [
                 (Coordinate::new(4, 3), true),
                 (Coordinate::new(5, 3), kind == UnitKind::FieldGun),
                 (Coordinate::new(6, 3), kind == UnitKind::FieldGun),
                 (Coordinate::new(7, 3), false),
+                (Coordinate::new(5, 2), kind == UnitKind::FieldGun),
+                (Coordinate::new(5, 4), kind == UnitKind::FieldGun),
+                (Coordinate::new(6, 4), false),
                 (Coordinate::new(3, 4), false),
                 (Coordinate::new(2, 3), false),
                 (Coordinate::new(4, 4), false),
@@ -412,6 +421,50 @@ mod tests {
     }
 
     #[test]
+    fn field_gun_cross_rotates_with_facing() -> TestResult<()> {
+        for direction in [
+            Direction::North,
+            Direction::East,
+            Direction::South,
+            Direction::West,
+        ] {
+            for (forward, sideways, expected) in [
+                (1i32, 0i32, true),
+                (2, 0, true),
+                (3, 0, true),
+                (2, -1, true),
+                (2, 1, true),
+                (1, 1, false),
+                (3, 1, false),
+                (2, 2, false),
+                (0, 1, false),
+                (-1, 0, false),
+                (4, 0, false),
+            ] {
+                let (dx, dy) = match direction {
+                    Direction::North => (sideways, -forward),
+                    Direction::East => (forward, sideways),
+                    Direction::South => (sideways, forward),
+                    Direction::West => (-forward, sideways),
+                };
+                let position = Coordinate::new(u16::try_from(4 + dx)?, u16::try_from(4 + dy)?);
+                let (mut scenario, mut orders) =
+                    fixture(UnitKind::FieldGun, UnitKind::Truck, position)?;
+                scenario.units[0].move_to(Coordinate::new(4, 4));
+                orders[0].path = vec![Coordinate::new(4, 4)];
+                orders[0].facing = crate::turns::FacingOrder::Ambush(direction);
+                let result = resolve_completed_movement(&scenario, &orders, 1)?;
+                assert_eq!(
+                    !shots(&result).is_empty(),
+                    expected,
+                    "{direction:?} at {position:?}"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn initial_contacts_can_escape_but_remaining_contacts_wait_until_movement_finishes()
     -> TestResult<()> {
         for kind in [UnitKind::Infantry, UnitKind::Tank, UnitKind::FieldGun] {
@@ -422,7 +475,14 @@ mod tests {
                 (vec![within_line], 1),
                 (vec![Coordinate::new(4, 2)], 0),
                 // Passing through a second firing square while withdrawing is safe.
-                (vec![within_line, Coordinate::new(within_line_x, 2)], 0),
+                (
+                    vec![
+                        within_line,
+                        Coordinate::new(within_line_x, 2),
+                        Coordinate::new(within_line_x, 1),
+                    ],
+                    0,
+                ),
             ] {
                 let (scenario, mut orders) = fixture(kind, UnitKind::Truck, Coordinate::new(4, 3))?;
                 // Avoid a duplicate position for the one-square firing lines.
@@ -461,8 +521,8 @@ mod tests {
         ]);
         let result = movement_resolution::resolve(&scenario, &orders, 1)?;
         assert_eq!(shots(&result).len(), 1);
-        assert_eq!(shots(&result)[0].destination, Coordinate::new(5, 3));
-        assert_eq!(result.paths.get(&orders[1].unit_id).fixture()?.len(), 4);
+        assert_eq!(shots(&result)[0].destination, Coordinate::new(5, 2));
+        assert_eq!(result.paths.get(&orders[1].unit_id).fixture()?.len(), 3);
         Ok(())
     }
 
@@ -481,21 +541,21 @@ mod tests {
                     && unit.unit_id() != scenario.units[1].unit_id()
             })
             .fixture()?;
-        newcomer.move_to(Coordinate::new(5, 2));
+        newcomer.move_to(Coordinate::new(5, 1));
         orders.push(MoveOrder {
             unit_id: newcomer.unit_id(),
             facing: crate::turns::FacingOrder::Unchanged,
             path: vec![
+                Coordinate::new(5, 1),
                 Coordinate::new(5, 2),
                 Coordinate::new(5, 3),
-                Coordinate::new(5, 4),
             ],
             unloads: Vec::new(),
         });
         scenario.units.push(newcomer);
         let result = resolve_completed_movement(&scenario, &orders, 1)?;
         assert_eq!(shots(&result).len(), 1);
-        assert_eq!(shots(&result)[0].destination, Coordinate::new(5, 3));
+        assert_eq!(shots(&result)[0].destination, Coordinate::new(5, 2));
         assert_eq!(result.paths.get(&orders[2].unit_id).fixture()?.len(), 2);
         assert_eq!(
             result.frames.last().fixture()?.units[1]
@@ -518,12 +578,12 @@ mod tests {
             .extend([Coordinate::new(4, 3), Coordinate::new(4, 4)]);
         let result = resolve_completed_movement(&scenario, &orders, 1)?;
         assert_eq!(result.paths.get(&orders[1].unit_id).fixture()?.len(), 2);
-        assert_eq!(shots(&result).len(), 2);
+        assert_eq!(shots(&result).len(), 1);
         let units = &result.frames.last().fixture()?.units;
-        assert_eq!(units[0].hit_points().current(), 12);
+        assert_eq!(units[0].hit_points().current(), 16);
         assert_eq!(units[1].hit_points().current(), 12);
         assert_eq!(units[0].supplies().current(), 60);
-        assert_eq!(units[1].supplies().current(), 58);
+        assert_eq!(units[1].supplies().current(), 60);
         assert!(
             result
                 .frames
@@ -536,7 +596,37 @@ mod tests {
     }
 
     #[test]
-    fn deferred_fire_prevents_a_dead_unready_target_from_responding() -> TestResult<()> {
+    fn tank_entering_an_ambush_takes_one_hit_without_return_fire() -> TestResult<()> {
+        let (scenario, mut orders) =
+            fixture(UnitKind::Tank, UnitKind::Tank, Coordinate::new(4, 2))?;
+        orders[1]
+            .path
+            .extend([Coordinate::new(4, 3), Coordinate::new(4, 4)]);
+        let result = resolve_completed_movement(&scenario, &orders, 1)?;
+        let units = &result.frames.last().fixture()?.units;
+        assert_eq!(shots(&result).len(), 1);
+        assert_eq!(shots(&result)[0].origin, Coordinate::new(3, 3));
+        assert_eq!(shots(&result)[0].destination, Coordinate::new(4, 3));
+        assert_eq!(shots(&result)[0].damage, 8);
+        assert_eq!(shots(&result)[0].attacker_health.before.current(), 16);
+        assert_eq!(shots(&result)[0].attacker_health.after.current(), 16);
+        assert_eq!(shots(&result)[0].target_health.before.current(), 16);
+        assert_eq!(shots(&result)[0].target_health.after.current(), 8);
+        assert_eq!(units[0].hit_points().current(), 16);
+        assert_eq!(units[1].hit_points().current(), 8);
+        assert_eq!(units[0].supplies().current(), 28);
+        assert_eq!(units[1].supplies(), scenario.units[1].supplies());
+        assert_eq!(units[1].direction(), Some(Direction::South));
+        assert_eq!(units[1].fuel().fixture()?.current, 31);
+        assert_eq!(
+            result.paths.get(&orders[1].unit_id).fixture()?,
+            &vec![Coordinate::new(4, 2), Coordinate::new(4, 3)]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn ambush_kills_an_unready_target_without_return_fire() -> TestResult<()> {
         let (mut scenario, orders) = fixture(
             UnitKind::FieldGun,
             UnitKind::Infantry,
@@ -615,6 +705,12 @@ mod tests {
                 .find(|frame| !frame.shots.is_empty())
                 .fixture()?;
             assert_eq!(volley.shots.len(), 2);
+            for shot in &volley.shots {
+                assert_eq!(shot.attacker_health.before.current(), 8);
+                assert_eq!(shot.attacker_health.after.current(), 0);
+                assert_eq!(shot.target_health.before.current(), 8);
+                assert_eq!(shot.target_health.after.current(), 0);
+            }
             assert_eq!(volley.units.len(), 2);
             assert!(volley.units.iter().all(|unit| unit.destroyed()));
         }

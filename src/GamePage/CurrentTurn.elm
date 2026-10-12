@@ -16,10 +16,12 @@ module GamePage.CurrentTurn exposing
 import Browser.Events
 import GamePage.OrderPlanning as OrderPlanning
 import GamePage.Selection exposing (Selection)
+import Json.Decode as Decode
 import Time
 import Turn
 import TurnLifecycle exposing (Phase)
 import TurnPlayback
+import Util.Html.Event as HtmlEvent
 
 
 
@@ -41,6 +43,8 @@ type alias Model =
 type Msg
     = PollTimerElapsed
     | PlaybackFrameElapsed Float
+    | CombatEnterReleased
+    | CombatSeeMapReleased
 
 
 type alias Observation =
@@ -195,11 +199,42 @@ receive observation model =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
+    let
+        playback : Maybe TurnPlayback.Playback
+        playback =
+            TurnLifecycle.playback model.phase
+
+        panel : Maybe TurnPlayback.Panel
+        panel =
+            playback |> Maybe.andThen TurnPlayback.panels
+
+        animationFrames : Sub Msg
+        animationFrames =
+            if playback /= Nothing then
+                Browser.Events.onAnimationFrameDelta PlaybackFrameElapsed
+
+            else
+                Sub.none
+
+        combatKeys : Sub Msg
+        combatKeys =
+            if panel /= Nothing then
+                Browser.Events.onKeyUp (HtmlEvent.enter CombatEnterReleased)
+
+            else
+                Sub.none
+
+        mapRelease : Sub Msg
+        mapRelease =
+            if Maybe.map .mapView panel == Just TurnPlayback.SeeingMap then
+                Browser.Events.onMouseUp (Decode.succeed CombatSeeMapReleased)
+
+            else
+                Sub.none
+    in
     Sub.batch
         [ Time.every 2000 (\_ -> PollTimerElapsed)
-        , if TurnLifecycle.playback model.phase /= Nothing then
-            Browser.Events.onAnimationFrameDelta PlaybackFrameElapsed
-
-          else
-            Sub.none
+        , animationFrames
+        , combatKeys
+        , mapRelease
         ]

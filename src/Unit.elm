@@ -22,13 +22,13 @@ import Api.Object.Unit as UnitApi
 import CombatRules exposing (CombatRules)
 import Coordinate exposing (Coordinate)
 import Graphql.SelectionSet as SS exposing (SelectionSet)
-import ListUtil
 import PlayerNumber
 import SpriteFacing
 import Unit.Location as Location exposing (Location)
 import Unit.Supplies exposing (Supplies)
 import UnitId exposing (UnitId)
 import UnitResources exposing (UnitResources)
+import Util.List as ListUtil
 
 
 type alias Unit =

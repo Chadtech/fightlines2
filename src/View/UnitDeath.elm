@@ -23,7 +23,7 @@ styles =
             .fightlines-unit-death {
                 animation: fightlines-unit-death-flash 400ms steps(1) 1 forwards;
             }
-            .fightlines-death-focus *:not(.fightlines-unit-death),
+            .fightlines-death-focus *:not(.fightlines-unit-death):not(.fightlines-combat-impact),
             .fightlines-death-focus *::before,
             .fightlines-death-focus *::after {
                 animation-play-state: paused !important;

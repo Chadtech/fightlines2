@@ -1,4 +1,4 @@
-module ListUtil exposing (find)
+module Util.List exposing (find)
 
 {-| Return the first element that satisfies the predicate, stopping at the match.
 Return `Nothing` when no element matches.

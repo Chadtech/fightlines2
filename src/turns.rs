@@ -959,10 +959,10 @@ mod tests {
                 turns.submit(&mut scenario, side, 1, inputs)?;
             }
             assert_eq!(turns.number, 2);
-            assert_eq!(scenario.units[0].hit_points().current(), 12);
+            assert_eq!(scenario.units[0].hit_points().current(), 16);
             assert_eq!(scenario.units[1].hit_points().current(), 12);
             assert_eq!(scenario.units[0].supplies().current(), 59);
-            assert_eq!(scenario.units[1].supplies().current(), 61);
+            assert_eq!(scenario.units[1].supplies().current(), 63);
             assert_eq!(scenario.units[0].direction(), Some(Direction::East));
             let resolution = turns.last_resolution.as_ref().fixture()?;
             assert_eq!(
@@ -971,7 +971,7 @@ mod tests {
                     .iter()
                     .flat_map(|frame| &frame.shots)
                     .count(),
-                2
+                1
             );
             assert_eq!(
                 resolution.frames.last().fixture()?.units[0].supplies(),
@@ -999,7 +999,7 @@ mod tests {
                     .iter()
                     .flat_map(|frame| &frame.shots)
                     .count(),
-                2
+                1
             );
         }
         Ok(())
@@ -1008,9 +1008,12 @@ mod tests {
     #[test]
     fn ambush_initial_contacts_resolve_after_their_submitted_movement() -> TestResult<()> {
         for first in [PlayerNumber::Player1, PlayerNumber::Player2] {
-            for (destinations, damage) in
-                [(vec![], 12), (vec![(9, 8)], 12), (vec![(9, 8), (9, 7)], 0)]
-            {
+            for (destinations, damage) in [
+                (vec![], 12),
+                (vec![(9, 8)], 12),
+                (vec![(9, 8), (9, 7)], 12),
+                (vec![(8, 7)], 0),
+            ] {
                 let mut scenario = Scenario::supply_point().fixture()?;
                 scenario
                     .units
@@ -1132,13 +1135,13 @@ mod tests {
             .fixture()?;
         assert_eq!(passenger.board_position(), Some(Coordinate::new(8, 8)));
         assert_eq!(passenger.hit_points().current(), 4);
-        assert_eq!(passenger.supplies().current(), 57);
+        assert_eq!(passenger.supplies().current(), 59);
         let gun = scenario
             .units
             .iter()
             .find(|unit| unit.id() == "12")
             .fixture()?;
-        assert_eq!(gun.hit_points().current(), 12);
+        assert_eq!(gun.hit_points().current(), 16);
         assert_eq!(gun.supplies().current(), 59);
         let resolution = turns.last_resolution.fixture()?;
         let unload_frame = resolution
@@ -1163,7 +1166,7 @@ mod tests {
                 .iter()
                 .flat_map(|frame| &frame.shots)
                 .count(),
-            2
+            1
         );
         Ok(())
     }

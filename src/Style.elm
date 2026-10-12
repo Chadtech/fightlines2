@@ -228,6 +228,7 @@ module Style exposing
     , py2
     , py3
     , py4
+    , red1Str
     , relative
     , right0
     , right1

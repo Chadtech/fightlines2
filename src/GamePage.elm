@@ -70,7 +70,6 @@ import Html.Styled.Events as HtmlEvents
 import Html.Styled.Keyed as Keyed
 import Json.Decode as Decode
 import KeyCmd exposing (KeyCmd)
-import ListUtil
 import LobbyId
     exposing
         ( LobbyId
@@ -97,9 +96,13 @@ import TurnPlayback
 import Unit exposing (Unit)
 import UnitCommand
 import UnitId exposing (UnitId)
+import Util.Html.Event as HtmlEvent
+import Util.List as ListUtil
 import View.Ambush as Ambush
 import View.Aria as Aria
 import View.Button as Button
+import View.CombatEffects as CombatEffects
+import View.CombatPanels as CombatPanels
 import View.Dialog as Dialog exposing (Dialog)
 import View.RotationChoices as RotationChoices
 import View.TerrainInfo as TerrainInfo
@@ -192,6 +195,7 @@ type Msg
     | ZoomOutKeyPressed
     | ResetViewClicked
     | AnimationTimerElapsed Time.Posix
+    | CombatPanelsMsg CombatPanels.Msg
     | DirectionKeyPressed Direction
     | PathDirectionKeyPressed Direction
     | PathEnterPressed
@@ -335,6 +339,11 @@ plannedOrders model =
 playback : Model -> Maybe TurnPlayback.Playback
 playback model =
     TurnLifecycle.playback model.currentTurn.phase
+
+
+combatExchange : Model -> Maybe TurnPlayback.Exchange
+combatExchange model =
+    playback model |> Maybe.andThen TurnPlayback.combat
 
 
 deathInFocus : Model -> Bool
@@ -761,19 +770,10 @@ finishBoardInteraction previous next =
 onKeyDown : { pressedEnter : msg, pressedSpace : msg } -> Svg.Attribute msg
 onKeyDown messages =
     Ev.preventDefaultOn "keydown"
-        (Decode.field "key" Decode.string
-            |> Decode.andThen
-                (\key ->
-                    case key of
-                        "Enter" ->
-                            Decode.succeed ( messages.pressedEnter, True )
-
-                        " " ->
-                            Decode.succeed ( messages.pressedSpace, True )
-
-                        _ ->
-                            Decode.fail "not Enter or Space"
-                )
+        (Decode.oneOf
+            [ HtmlEvent.enter ( messages.pressedEnter, True )
+            , HtmlEvent.key " " ( messages.pressedSpace, True )
+            ]
         )
 
 
@@ -1234,12 +1234,24 @@ update lobbyId msg model =
                         |> E.withOut
 
         AnimationTimerElapsed _ ->
-            if deathInFocus model then
+            if deathInFocus model || combatExchange model /= Nothing then
                 model |> E.withOut
 
             else
                 { model | frame = AnimationFrame.next model.frame }
                     |> E.withOut
+
+        CombatPanelsMsg panelMsg ->
+            case panelMsg of
+                CombatPanels.ContinueClicked ->
+                    continueCombat model
+                        |> E.withOut
+
+                CombatPanels.SeeMapPressed ->
+                    setCombatMapView TurnPlayback.SeeingMap model |> E.withOut
+
+                CombatPanels.SeeMapReleased ->
+                    setCombatMapView TurnPlayback.CardVisible model |> E.withOut
 
 
 handleTurnControlsMsg : LobbyId -> TurnControls.Msg -> Model -> ( Model, Eff Msg )
@@ -1280,15 +1292,58 @@ handleCurrentTurnMsg lobbyId msg model =
         CurrentTurn.PlaybackFrameElapsed delta ->
             case TurnLifecycle.tick delta currentTurn.phase of
                 Just next ->
-                    { model
-                        | currentTurn = { currentTurn | phase = next.phase }
-                        , units = next.frame.units
-                        , visibleTiles = next.frame.visibleTiles
-                    }
+                    applyPlaybackFrame next model
                         |> E.withOut
 
                 Nothing ->
                     model |> E.withOut
+
+        CurrentTurn.CombatEnterReleased ->
+            continueCombat model
+                |> E.withOut
+
+        CurrentTurn.CombatSeeMapReleased ->
+            setCombatMapView TurnPlayback.CardVisible model
+                |> E.withOut
+
+
+continueCombat : Model -> Model
+continueCombat model =
+    case TurnLifecycle.continueCombat model.currentTurn.phase of
+        Just next ->
+            applyPlaybackFrame next model
+
+        Nothing ->
+            model
+
+
+setCombatMapView : TurnPlayback.MapView -> Model -> Model
+setCombatMapView mapView model =
+    let
+        currentTurn : CurrentTurn.Model
+        currentTurn =
+            model.currentTurn
+    in
+    { model | currentTurn = { currentTurn | phase = TurnLifecycle.setCombatMapView mapView currentTurn.phase } }
+
+
+applyPlaybackFrame :
+    { phase : Phase
+    , frame : TurnPlayback.Frame
+    }
+    -> Model
+    -> Model
+applyPlaybackFrame next model =
+    let
+        currentTurn : CurrentTurn.Model
+        currentTurn =
+            model.currentTurn
+    in
+    { model
+        | currentTurn = { currentTurn | phase = next.phase }
+        , units = next.frame.units
+        , visibleTiles = next.frame.visibleTiles
+    }
 
 
 handleCommandMsg : UnitCommands.Msg -> Model -> ( Model, Eff Msg )
@@ -1334,23 +1389,46 @@ view model =
     let
         animationClass : String
         animationClass =
-            if deathInFocus model then
+            if combatExchange model /= Nothing then
+                "fightlines-combat-focus"
+
+            else if deathInFocus model then
                 "fightlines-death-focus"
 
             else
                 ""
+
+        combatAttributes : List (H.Attribute Msg)
+        combatAttributes =
+            if combatExchange model /= Nothing then
+                [ A.attribute "inert" "" ]
+
+            else
+                []
+
+        workspaceAttributes : List (H.Attribute Msg)
+        workspaceAttributes =
+            [ A.class animationClass
+            , A.css
+                [ S.fixed
+                , S.top0
+                , S.bottom0
+                , S.left0
+                , S.right0
+                , S.row
+                ]
+            ]
+
+        combatOverlay : Html Msg
+        combatOverlay =
+            playback model
+                |> Maybe.andThen TurnPlayback.panels
+                |> Maybe.map CombatPanels.toHtml
+                |> Maybe.map (H.map CombatPanelsMsg)
+                |> Maybe.withDefault (H.text "")
     in
     [ H.div
-        [ A.class animationClass
-        , A.css
-            [ S.fixed
-            , S.top0
-            , S.bottom0
-            , S.left0
-            , S.right0
-            , S.row
-            ]
-        ]
+        (workspaceAttributes ++ combatAttributes)
         [ H.div
             [ A.css
                 [ S.relative
@@ -1383,6 +1461,7 @@ view model =
             , panelFooter model
             ]
         ]
+    , combatOverlay
     ]
 
 
@@ -2435,6 +2514,93 @@ boardHtml model =
                     ]
                 ]
 
+        previewedUnit : Unit -> Unit
+        previewedUnit unit =
+            case rotationPreview of
+                Just rotation ->
+                    if rotation.unitId == unit.id then
+                        Unit.faceDirection (Just rotation.direction) unit
+
+                    else
+                        plannedAmbushFacing model unit
+
+                Nothing ->
+                    plannedAmbushFacing model unit
+
+        unitTransform : Unit -> Coordinate -> String
+        unitTransform unit position =
+            case
+                ListUtil.find
+                    (\moving -> moving.unitId == unit.id)
+                    movingPositions
+            of
+                Just moving ->
+                    "translate("
+                        ++ String.fromFloat (moving.position.x * 16)
+                        ++ " "
+                        ++ String.fromFloat (moving.position.y * 16)
+                        ++ ")"
+
+                Nothing ->
+                    "translate("
+                        ++ String.fromInt (position.x * 16)
+                        ++ " "
+                        ++ String.fromInt (position.y * 16)
+                        ++ ")"
+
+        facingView : Unit -> Maybe (Svg Msg)
+        facingView unit =
+            let
+                facingClass : String
+                facingClass =
+                    if Maybe.map .unitId rotationPreview == Just unit.id then
+                        "fightlines-rotation-preview"
+
+                    else
+                        ""
+
+                markerAt : Coordinate -> Svg Msg
+                markerAt position =
+                    Svg.g
+                        [ SA.transform (unitTransform unit position)
+                        , SA.class facingClass
+                        , SA.pointerEvents "none"
+                        ]
+                        [ UnitFacing.toSvg (selected == Just position) (previewedUnit unit)
+                            |> StyledSvg.toUnstyled
+                        ]
+            in
+            if unitIsAmbushing model unit then
+                Unit.boardPosition unit |> Maybe.map markerAt
+
+            else
+                Nothing
+
+        facingOverlay : List (Svg Msg)
+        facingOverlay =
+            List.filterMap facingView model.units
+
+        spotlightOverlay : List (Svg Msg)
+        spotlightOverlay =
+            playback model
+                |> Maybe.andThen TurnPlayback.spotlight
+                |> Maybe.map (spotlightView >> List.singleton)
+                |> Maybe.withDefault []
+
+        spotlightView : TurnPlayback.Exchange -> Svg Msg
+        spotlightView exchange =
+            if
+                (playback model
+                    |> Maybe.andThen TurnPlayback.panels
+                    |> Maybe.map .mapView
+                )
+                    == Just TurnPlayback.SeeingMap
+            then
+                CombatEffects.mapPeek model.map exchange
+
+            else
+                CombatEffects.spotlight model.map exchange
+
         unitView : Unit -> Coordinate -> Svg Msg
         unitView unit position =
             let
@@ -2453,7 +2619,11 @@ boardHtml model =
                 accessibleLabel : String
                 accessibleLabel =
                     if passengerCount > 0 then
-                        Unit.label unit ++ ", cargo: " ++ String.fromInt passengerCount ++ " / " ++ String.fromInt unit.cargoCapacity
+                        Unit.label unit
+                            ++ ", cargo: "
+                            ++ String.fromInt passengerCount
+                            ++ " / "
+                            ++ String.fromInt unit.cargoCapacity
 
                     else
                         Unit.label unit
@@ -2468,54 +2638,23 @@ boardHtml model =
 
                 previewUnit : Unit
                 previewUnit =
-                    case rotationPreview of
-                        Just rotation ->
-                            if rotation.unitId == unit.id then
-                                Unit.faceDirection (Just rotation.direction) unit
-
-                            else
-                                plannedAmbushFacing model unit
-
-                        Nothing ->
-                            plannedAmbushFacing model unit
-
-                facingClass : String
-                facingClass =
-                    if Maybe.map .unitId rotationPreview == Just unit.id then
-                        "fightlines-rotation-preview"
-
-                    else
-                        ""
-
-                facingMarker : Svg Msg
-                facingMarker =
-                    if unitIsAmbushing model unit then
-                        UnitFacing.toSvg (selected == Just position) previewUnit
-                            |> StyledSvg.toUnstyled
-
-                    else
-                        Svg.g [] []
+                    previewedUnit unit
 
                 transform : String
                 transform =
-                    case ListUtil.find (\moving -> moving.unitId == unit.id) movingPositions of
-                        Just moving ->
-                            "translate(" ++ String.fromFloat (moving.position.x * 16) ++ " " ++ String.fromFloat (moving.position.y * 16) ++ ")"
-
-                        Nothing ->
-                            "translate(" ++ String.fromInt (position.x * 16) ++ " " ++ String.fromInt (position.y * 16) ++ ")"
+                    unitTransform unit position
             in
             Svg.g
                 [ SA.transform transform
-                , SA.class facingClass
                 ]
                 [ Svg.g
                     [ HA.style "filter" spriteFilter
                     ]
-                    [ UnitSprite.toSvg (AnimationFrame.unitColumn model.frame unit.id) previewUnit
+                    [ previewUnit
+                        |> UnitSprite.toSvg
+                            (AnimationFrame.unitColumn model.frame unit.id)
                         |> StyledSvg.toUnstyled
                     ]
-                , facingMarker
                 , UnitCargo.toSvg passengerCount
                     |> StyledSvg.toUnstyled
                 , UnitDeath.toSvg unit
@@ -2728,7 +2867,7 @@ boardHtml model =
                     case order.action of
                         PlannedOrder.Ambush facing ->
                             ListUtil.find (\unit -> unit.id == order.unitId) model.units
-                                |> Maybe.map (\unit -> Ambush.coverage model.map facing.position facing.direction unit.combatRules.range)
+                                |> Maybe.map (\unit -> Ambush.coverage model.map facing.position facing.direction unit.combatRules)
 
                         _ ->
                             Nothing
@@ -2740,7 +2879,7 @@ boardHtml model =
                             case interaction of
                                 ChoosingDirection AmbushFacing direction ->
                                     Unit.boardPosition unit
-                                        |> Maybe.map (\position -> [ Ambush.coverage model.map position direction unit.combatRules.range ])
+                                        |> Maybe.map (\position -> [ Ambush.coverage model.map position direction unit.combatRules ])
                                         |> Maybe.withDefault []
 
                                 _ ->
@@ -2755,7 +2894,7 @@ boardHtml model =
         shotOverlay =
             case model.currentTurn.phase of
                 TurnLifecycle.Playing playing ->
-                    Ambush.shots playing.animation.current.shots
+                    CombatEffects.impacts (TurnPlayback.visibleShots playing.animation)
 
                 _ ->
                     Svg.text ""
@@ -2816,6 +2955,8 @@ boardHtml model =
                 , [ unloadOverlay, shotOverlay ]
                 , selection
                 , rotationOverlay
+                , facingOverlay
+                , spotlightOverlay
                 ]
             )
             |> H.fromUnstyled
@@ -2900,12 +3041,16 @@ keyCommands model =
             else
                 KeyCmd.period NextUnorderedUnitKeyPressed
     in
-    KeyCmd.batch
-        [ KeyCmd.escape EscapePressed
-        , camera
-        , unitSelection
-        , KeyCmd.batch navigation
-        ]
+    if combatExchange model /= Nothing then
+        KeyCmd.none
+
+    else
+        KeyCmd.batch
+            [ KeyCmd.escape EscapePressed
+            , camera
+            , unitSelection
+            , KeyCmd.batch navigation
+            ]
 
 
 leftKeys : msg -> KeyCmd msg

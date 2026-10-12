@@ -1,17 +1,23 @@
-module View.Ambush exposing (coverage, shots)
+module View.Ambush exposing (coverage)
 
-import Api.Enum.Direction exposing (Direction)
+import Api.Enum.AmbushShape as AmbushShape
+import Api.Enum.Direction as DirectionEnum exposing (Direction)
+import CombatRules exposing (CombatRules)
 import Coordinate exposing (Coordinate)
 import Direction
 import Map exposing (Map)
-import Shot exposing (Shot)
 import Style as S
 import Svg exposing (Svg)
 import Svg.Attributes as SA
 
 
-coverage : Map -> Coordinate -> Direction -> Int -> Svg msg
-coverage map origin facing range =
+coverageClass : String
+coverageClass =
+    "fightlines-ambush-coverage"
+
+
+coverage : Map -> Coordinate -> Direction -> CombatRules -> Svg msg
+coverage map origin facing rules =
     let
         stepForward : Direction -> Coordinate -> Coordinate
         stepForward direction position =
@@ -29,10 +35,38 @@ coverage map origin facing range =
                 && (position.x < map.width)
                 && (position.y < map.height)
 
+        line : List Coordinate
+        line =
+            List.range 1 rules.range
+                |> List.map positionAtDistance
+
+        center : Coordinate
+        center =
+            positionAtDistance ((rules.range + 1) // 2)
+
+        arms : List Coordinate
+        arms =
+            case rules.shape of
+                AmbushShape.Line ->
+                    []
+
+                AmbushShape.Cross ->
+                    case facing of
+                        DirectionEnum.North ->
+                            [ Direction.step center DirectionEnum.West, Direction.step center DirectionEnum.East ]
+
+                        DirectionEnum.South ->
+                            [ Direction.step center DirectionEnum.West, Direction.step center DirectionEnum.East ]
+
+                        DirectionEnum.East ->
+                            [ Direction.step center DirectionEnum.North, Direction.step center DirectionEnum.South ]
+
+                        DirectionEnum.West ->
+                            [ Direction.step center DirectionEnum.North, Direction.step center DirectionEnum.South ]
+
         positions : List Coordinate
         positions =
-            List.range 1 range
-                |> List.map positionAtDistance
+            (line ++ arms)
                 |> List.filter isOnMap
 
         tile : Coordinate -> Svg msg
@@ -42,11 +76,12 @@ coverage map origin facing range =
                 , SA.y (String.fromInt (position.y * 16 + 1))
                 , SA.width "14"
                 , SA.height "14"
-                , SA.fill S.yellow5Str
-                , SA.fillOpacity "0.15"
-                , SA.stroke S.yellow5Str
-                , SA.strokeWidth "0.5"
-                , SA.strokeDasharray "2 1"
+                , SA.fill S.red1Str
+                , SA.fillOpacity "0.24"
+                , SA.stroke S.red1Str
+                , SA.strokeWidth "0.85"
+                , SA.strokeDasharray "1 1"
+                , SA.class coverageClass
                 ]
                 []
     in
@@ -54,38 +89,3 @@ coverage map origin facing range =
         [ SA.pointerEvents "none"
         ]
         (List.map tile positions)
-
-
-shots : List Shot -> Svg msg
-shots volley =
-    let
-        shot : Shot -> Svg msg
-        shot fired =
-            Svg.g
-                []
-                [ Svg.line
-                    [ SA.x1 (String.fromInt (fired.origin.x * 16 + 8))
-                    , SA.y1 (String.fromInt (fired.origin.y * 16 + 8))
-                    , SA.x2 (String.fromInt (fired.destination.x * 16 + 8))
-                    , SA.y2 (String.fromInt (fired.destination.y * 16 + 8))
-                    , SA.stroke S.yellow5Str
-                    , SA.strokeWidth "1"
-                    ]
-                    []
-                , Svg.text_
-                    [ SA.x (String.fromInt (fired.destination.x * 16 + 8))
-                    , SA.y (String.fromInt (fired.destination.y * 16 + 5))
-                    , SA.textAnchor "middle"
-                    , SA.fontSize "5"
-                    , SA.fill S.yellow5Str
-                    , SA.stroke S.gray0Str
-                    , SA.strokeWidth "0.2"
-                    ]
-                    [ Svg.text ("−" ++ String.fromInt fired.damage)
-                    ]
-                ]
-    in
-    Svg.g
-        [ SA.pointerEvents "none"
-        ]
-        (List.map shot volley)

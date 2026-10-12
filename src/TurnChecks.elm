@@ -1,5 +1,6 @@
 port module TurnChecks exposing (main)
 
+import Api.Enum.AmbushShape as AmbushShape
 import Api.Enum.Direction as Direction
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing
@@ -7,6 +8,7 @@ import Api.Enum.TurnEventKind as EventKind
 import Api.Enum.UnitKind as Kind
 import Direction
 import Platform
+import Shot exposing (Shot)
 import Turn
 import TurnPlayback
 import Unit exposing (Unit)
@@ -30,7 +32,7 @@ checks : List String
 checks =
     case ( UnitId.parse "1", UnitId.parse "2" ) of
         ( Ok first, Ok second ) ->
-            playbackChecks first second ++ truckPlaybackChecks first ++ transportPlaybackChecks first second ++ spriteFacingChecks first ++ deathPlaybackChecks first ++ deathFocusChecks first second
+            playbackChecks first second ++ truckPlaybackChecks first ++ transportPlaybackChecks first second ++ spriteFacingChecks first ++ deathPlaybackChecks first ++ deathFocusChecks first second ++ combatPlaybackChecks first second
 
         _ ->
             [ "could not construct fixture IDs" ]
@@ -41,8 +43,8 @@ playbackChecks first second =
     let
         units : List Unit
         units =
-            [ { destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = first, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, kind = Kind.Infantry, location = Location.OnMap { x = 1, y = 0 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
-            , { destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = second, playerNumber = PlayerNumber.Player2, spriteFacing = SpriteFacing.Left, direction = Just Direction.West, kind = Kind.Infantry, location = Location.OnMap { x = 1, y = 1 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
+            [ { destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = first, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, kind = Kind.Infantry, location = Location.OnMap { x = 1, y = 0 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
+            , { destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = second, playerNumber = PlayerNumber.Player2, spriteFacing = SpriteFacing.Left, direction = Just Direction.West, kind = Kind.Infantry, location = Location.OnMap { x = 1, y = 1 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
             ]
 
         snapshot : Turn.Snapshot
@@ -160,6 +162,7 @@ playbackChecks first second =
         sharedPlayback =
             { current = firstFrame
             , remaining = [ middleFrame, lastFrame ]
+            , presentation = TurnPlayback.Battlefield
             , elapsed = 0
             }
 
@@ -231,7 +234,7 @@ truckPlaybackChecks unitId =
     let
         units : List Unit
         units =
-            [ { destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = unitId, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Nothing, kind = Kind.Truck, location = Location.OnMap { x = 1, y = 1 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 15, maximum = 64 } } } ]
+            [ { destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = unitId, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Nothing, kind = Kind.Truck, location = Location.OnMap { x = 1, y = 1 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 15, maximum = 64 } } } ]
 
         snapshot : Turn.Snapshot
         snapshot =
@@ -271,11 +274,11 @@ transportPlaybackChecks passengerId truckId =
     let
         truck : Unit.Unit
         truck =
-            { id = truckId, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, kind = Kind.Truck, direction = Nothing, destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 2, location = Location.OnMap { x = 1, y = 0 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 62, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 63, maximum = 64 } } }
+            { id = truckId, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, kind = Kind.Truck, direction = Nothing, destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 2, location = Location.OnMap { x = 1, y = 0 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 62, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 63, maximum = 64 } } }
 
         passenger : Unit.Unit
         passenger =
-            { truck | id = passengerId, kind = Kind.Infantry, direction = Just Direction.East, destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.Aboard truckId, resources = Maybe.map (\resources -> { resources | fuel = Nothing }) truck.resources }
+            { truck | id = passengerId, kind = Kind.Infantry, direction = Just Direction.East, destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.Aboard truckId, resources = Maybe.map (\resources -> { resources | fuel = Nothing }) truck.resources }
 
         units : List Unit
         units =
@@ -340,6 +343,7 @@ transportPlaybackChecks passengerId truckId =
             TurnPlayback.tick 90
                 { current = { shots = [], durationMs = 180, units = units, visibleTiles = [] }
                 , remaining = [ { shots = [], durationMs = 180, units = unloadUnits, visibleTiles = [] } ]
+                , presentation = TurnPlayback.Battlefield
                 , elapsed = 0
                 }
     in
@@ -372,7 +376,7 @@ spriteFacingChecks id =
     let
         tank : Unit
         tank =
-            { id = id, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, kind = Kind.Tank, destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.OnMap { x = 2, y = 2 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 64, maximum = 64 } } }
+            { id = id, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, kind = Kind.Tank, destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.OnMap { x = 2, y = 2 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 64, maximum = 64 } } }
 
         west : Unit
         west =
@@ -392,7 +396,7 @@ spriteFacingChecks id =
 
         playback : TurnPlayback.Playback
         playback =
-            { current = frame tank, remaining = [ frame west, frame north, frame south ], elapsed = 0 }
+            { current = frame tank, remaining = [ frame west, frame north, frame south ], elapsed = 0, presentation = TurnPlayback.Battlefield }
 
         ( _, westFrame ) =
             TurnPlayback.tick 90 playback
@@ -417,6 +421,150 @@ spriteFacingChecks id =
         ++ expect "east rotation then north keeps the right profile" ((west |> Unit.faceDirection (Just Direction.East) |> Unit.faceDirection (Just Direction.North)).spriteFacing == SpriteFacing.Right)
 
 
+combatPlaybackChecks : UnitId -> UnitId -> List String
+combatPlaybackChecks first second =
+    let
+        attacker : Unit
+        attacker =
+            { id = first, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, kind = Kind.Tank, destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 8, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.OnMap { x = 2, y = 2 }, resources = Nothing }
+
+        target : Unit
+        target =
+            { attacker | id = second, playerNumber = PlayerNumber.Player2, location = Location.OnMap { x = 3, y = 2 } }
+
+        before : TurnPlayback.Frame
+        before =
+            { shots = [], durationMs = 180, units = [ attacker, target ], visibleTiles = [ { x = 2, y = 2 }, { x = 3, y = 2 } ] }
+
+        shot : Shot
+        shot =
+            { origin = { x = 2, y = 2 }
+            , destination = { x = 3, y = 2 }
+            , damage = 8
+            , attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }
+            , targetHealth = { before = { current = 16, maximum = 16 }, after = { current = 8, maximum = 16 } }
+            }
+
+        volley : TurnPlayback.Frame
+        volley =
+            { before | durationMs = 450, shots = [ shot, { shot | origin = shot.destination, destination = shot.origin } ], units = [ { attacker | destroyed = True }, { target | destroyed = True } ] }
+
+        cleanup : TurnPlayback.Frame
+        cleanup =
+            { before | durationMs = 600, units = [] }
+
+        expect : String -> Bool -> List String
+        expect label passed =
+            if passed then
+                []
+
+            else
+                [ label ]
+    in
+    case TurnPlayback.start [ before, volley, cleanup ] of
+        Nothing ->
+            [ "combat fixture did not start playback" ]
+
+        Just animation ->
+            let
+                ( paused, frozen ) =
+                    TurnPlayback.tick 5000 animation
+            in
+            case paused of
+                Nothing ->
+                    [ "a long tick skipped combat focus" ]
+
+                Just focus ->
+                    let
+                        ( almostSpotlit, _ ) =
+                            TurnPlayback.tick 299 focus
+
+                        ( showing, _ ) =
+                            TurnPlayback.tick 300 focus
+
+                        ( holding, heldFrame ) =
+                            showing |> Maybe.map (TurnPlayback.tick 60000) |> Maybe.withDefault ( Nothing, before )
+
+                        ( resumed, hitFrame ) =
+                            showing |> Maybe.andThen TurnPlayback.continueCombat |> Maybe.map (\next -> ( Just next.animation, next.frame )) |> Maybe.withDefault ( Nothing, before )
+
+                        ( finished, finalFrame ) =
+                            resumed |> Maybe.map (TurnPlayback.tick 600) |> Maybe.withDefault ( Nothing, before )
+
+                        hidden : TurnPlayback.Frame
+                        hidden =
+                            { volley | shots = [ { shot | origin = { x = 9, y = 9 } } ] }
+
+                        hiddenPlayback : Maybe TurnPlayback.Playback
+                        hiddenPlayback =
+                            TurnPlayback.start [ before, hidden, cleanup ] |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+
+                        ( finalShot, _ ) =
+                            TurnPlayback.start [ before, volley ] |> Maybe.map (TurnPlayback.tick 450) |> Maybe.withDefault ( Nothing, before )
+
+                        multipleChecks : List String
+                        multipleChecks =
+                            case UnitId.parse "3" of
+                                Err _ ->
+                                    [ "could not construct third combat participant" ]
+
+                                Ok third ->
+                                    let
+                                        anotherTarget : Unit
+                                        anotherTarget =
+                                            { target | id = third, location = Location.OnMap { x = 4, y = 2 } }
+
+                                        multiple : TurnPlayback.Frame
+                                        multiple =
+                                            { volley | units = volley.units ++ [ anotherTarget ], shots = volley.shots ++ [ { shot | destination = { x = 4, y = 2 } } ] }
+
+                                        firstPause : Maybe TurnPlayback.Playback
+                                        firstPause =
+                                            TurnPlayback.start [ before, multiple, cleanup ] |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+
+                                        secondPause : Maybe TurnPlayback.Playback
+                                        secondPause =
+                                            firstPause |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first) |> Maybe.andThen TurnPlayback.continueCombat |> Maybe.map .animation
+
+                                        ( afterPairs, revealed ) =
+                                            secondPause |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first) |> Maybe.andThen TurnPlayback.continueCombat |> Maybe.map (\next -> ( Just next.animation, next.frame )) |> Maybe.withDefault ( Nothing, before )
+                                    in
+                                    expect "each distinct combat pair is shown before a shared volley is revealed"
+                                        (Maybe.andThen TurnPlayback.combat secondPause |> Maybe.map (.target >> .id) |> (==) (Just third))
+                                        ++ expect "multiple pair displays return to one battlefield volley"
+                                            (Maybe.andThen TurnPlayback.combat afterPairs == Nothing && revealed == multiple)
+                    in
+                    List.concat
+                        [ expect "combat holds the pre-hit board and hides shots and movement"
+                            (frozen == before && List.isEmpty (TurnPlayback.visibleShots focus) && List.isEmpty (TurnPlayback.movingPositions paused))
+                        , expect "combat spotlights participants before opening the panels"
+                            (Maybe.andThen TurnPlayback.spotlight almostSpotlit /= Nothing && Maybe.andThen TurnPlayback.panels almostSpotlit == Nothing && Maybe.andThen TurnPlayback.spotlight showing == Nothing && Maybe.andThen TurnPlayback.panels showing /= Nothing)
+                        , expect "combat retains visible participants without requiring enemy resources"
+                            (Maybe.map (.attacker >> .id) (TurnPlayback.combat focus) == Just first && Maybe.map (.target >> .id) (TurnPlayback.combat focus) == Just second)
+                        , expect "combat panels remain open indefinitely without revealing casualties"
+                            (heldFrame == before && Maybe.map .exchange (Maybe.andThen TurnPlayback.panels holding) == Maybe.map .exchange (Maybe.andThen TurnPlayback.panels showing))
+                        , expect "map peek only belongs to an open combat card and clears on continuation"
+                            (TurnPlayback.setMapView TurnPlayback.SeeingMap focus
+                                == focus
+                                && (showing |> Maybe.map (TurnPlayback.setMapView TurnPlayback.SeeingMap) |> Maybe.andThen TurnPlayback.panels |> Maybe.map .mapView)
+                                == Just TurnPlayback.SeeingMap
+                                && Maybe.andThen TurnPlayback.panels resumed
+                                == Nothing
+                            )
+                        , expect "reciprocal shots share one pause and reveal both casualties together"
+                            (Maybe.andThen TurnPlayback.combat resumed == Nothing && hitFrame == volley && Maybe.map TurnPlayback.visibleShots resumed == Just volley.shots)
+                        , expect "continue only advances open panels, never spotlight or ordinary playback"
+                            (TurnPlayback.continueCombat animation == Nothing && TurnPlayback.continueCombat focus == Nothing && Maybe.andThen TurnPlayback.continueCombat resumed == Nothing)
+                        , expect "combat resumes exactly once and retains battlefield feedback duration"
+                            (Maybe.map .elapsed resumed == Just 0 && finished == Nothing && finalFrame == cleanup)
+                        , expect "a missing or concealed participant never creates a combat panel"
+                            (Maybe.andThen TurnPlayback.combat hiddenPlayback == Nothing)
+                        , expect "a volley in the final frame still receives combat focus"
+                            (Maybe.andThen TurnPlayback.combat finalShot /= Nothing)
+                        , multipleChecks
+                        ]
+
+
 deathPlaybackChecks : UnitId -> List String
 deathPlaybackChecks id =
     let
@@ -430,7 +578,7 @@ deathPlaybackChecks id =
 
         dead : Unit
         dead =
-            { id = id, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, kind = Kind.Infantry, destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.OnMap { x = 2, y = 2 }, resources = Just { hitPoints = { current = 0, maximum = 16 }, supplies = { current = 0, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
+            { id = id, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, kind = Kind.Infantry, destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.OnMap { x = 2, y = 2 }, resources = Just { hitPoints = { current = 0, maximum = 16 }, supplies = { current = 0, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
 
         dying : TurnPlayback.Frame
         dying =
@@ -442,7 +590,7 @@ deathPlaybackChecks id =
 
         animation : TurnPlayback.Playback
         animation =
-            { current = dying, remaining = [ gone ], elapsed = 0 }
+            { current = dying, remaining = [ gone ], elapsed = 0, presentation = TurnPlayback.Battlefield }
 
         ( pending, beforeRemoval ) =
             TurnPlayback.tick 599 animation
@@ -460,7 +608,7 @@ deathFocusChecks first second =
     let
         dead : Unit
         dead =
-            { id = first, playerNumber = PlayerNumber.Player2, spriteFacing = SpriteFacing.Left, direction = Just Direction.West, kind = Kind.Infantry, destroyed = True, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.OnMap { x = 2, y = 2 }, resources = Nothing }
+            { id = first, playerNumber = PlayerNumber.Player2, spriteFacing = SpriteFacing.Left, direction = Just Direction.West, kind = Kind.Infantry, destroyed = True, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.OnMap { x = 2, y = 2 }, resources = Nothing }
 
         survivor : Unit
         survivor =

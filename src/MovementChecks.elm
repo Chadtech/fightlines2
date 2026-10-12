@@ -1,5 +1,6 @@
 port module MovementChecks exposing (main)
 
+import Api.Enum.AmbushShape as AmbushShape
 import Api.Enum.Direction as Direction
 import Api.Enum.MapTheme as MapTheme
 import Api.Enum.PlayerNumber as PlayerNumber
@@ -8,7 +9,6 @@ import Api.Enum.Terrain as Terrain
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Coordinate exposing (Coordinate)
 import Json.Decode as D
-import ListUtil
 import Map exposing (Map)
 import Movement
 import Platform
@@ -18,6 +18,7 @@ import Unit.Fuel exposing (Fuel)
 import Unit.Location as Location
 import Unit.Supplies exposing (Supplies)
 import UnitId
+import Util.List as ListUtil
 
 
 port results : List String -> Cmd msg
@@ -82,7 +83,7 @@ check rules fixture =
                 unit : Unit.Unit
                 unit =
                     { destroyed = False
-                    , combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }
+                    , combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }
                     , cargoCapacity = 0
                     , id = id
                     , kind = fixture.kind
@@ -210,7 +211,7 @@ traceChecks rules =
 
                 unit : Unit.Unit
                 unit =
-                    { destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = id, kind = UnitKind.Infantry, location = Location.OnMap origin, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
+                    { destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = id, kind = UnitKind.Infantry, location = Location.OnMap origin, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
 
                 map : Map
                 map =
@@ -327,7 +328,7 @@ reservationChecks rules =
             let
                 unit : Unit.Unit
                 unit =
-                    { destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = id, kind = UnitKind.Infantry, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
+                    { destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = id, kind = UnitKind.Infantry, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
 
                 map : Map
                 map =
@@ -384,7 +385,7 @@ fuelChecks rules =
             let
                 unit : Unit.Unit
                 unit =
-                    { destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = id, kind = UnitKind.Tank, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 2, maximum = 64 } } }
+                    { destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = id, kind = UnitKind.Tank, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 2, maximum = 64 } } }
 
                 map : Map
                 map =
@@ -450,7 +451,7 @@ supplyChecks rules =
 
                 unit : Unit.Unit
                 unit =
-                    { destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = id, kind = UnitKind.Infantry, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, fuel = Nothing, supplies = supplies } }
+                    { destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = id, kind = UnitKind.Infantry, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, fuel = Nothing, supplies = supplies } }
 
                 map : Map
                 map =
@@ -530,11 +531,11 @@ transportChecks rules =
             let
                 passenger : Unit.Unit
                 passenger =
-                    { id = passengerId, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, kind = UnitKind.Infantry, direction = Just Direction.East, destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.OnMap { x = 0, y = 0 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
+                    { id = passengerId, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, kind = UnitKind.Infantry, direction = Just Direction.East, destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.OnMap { x = 0, y = 0 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
 
                 truck : Unit.Unit
                 truck =
-                    { passenger | id = truckId, kind = UnitKind.Truck, destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 2, direction = Nothing, location = Location.OnMap { x = 1, y = 0 }, resources = Maybe.map (\resources -> { resources | fuel = Just { current = 64, maximum = 64 } }) passenger.resources }
+                    { passenger | id = truckId, kind = UnitKind.Truck, destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 2, direction = Nothing, location = Location.OnMap { x = 1, y = 0 }, resources = Maybe.map (\resources -> { resources | fuel = Just { current = 64, maximum = 64 } }) passenger.resources }
 
                 map : Map
                 map =

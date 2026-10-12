@@ -16,11 +16,11 @@ import Api.Enum.Terrain exposing (Terrain)
 import Api.Enum.UnitKind exposing (UnitKind)
 import Coordinate exposing (Coordinate)
 import Dict exposing (Dict)
-import ListUtil
 import Map exposing (Map)
 import Unit exposing (Unit)
 import Unit.Supplies exposing (Supplies)
 import UnitResources exposing (UnitResources)
+import Util.List as ListUtil
 
 
 {-| The cost to enter a terrain square, as supplied by Rust's movement rules.

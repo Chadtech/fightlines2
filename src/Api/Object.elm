@@ -9,6 +9,10 @@ type Aboard
     = Aboard
 
 
+type CombatHealth
+    = CombatHealth
+
+
 type CombatRules
     = CombatRules
 

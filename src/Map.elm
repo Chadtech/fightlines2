@@ -11,8 +11,8 @@ import Api.Object
 import Api.Object.Map as MapApi
 import Coordinate exposing (Coordinate)
 import Graphql.SelectionSet as SS exposing (SelectionSet)
-import ListUtil
 import TerrainFeature exposing (TerrainFeature)
+import Util.List as ListUtil
 
 
 type alias Map =

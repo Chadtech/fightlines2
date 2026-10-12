@@ -685,10 +685,13 @@ without a second direction-selection workflow. The input boundary emits
 `MoveOrderInput.ambush` with `direction` and a single-coordinate path. Validation
 rejects absent facing, trucks, passengers, movement, unloading, receiving a load,
 and insufficient readiness supplies. `Unit.combatRules` provides authoritative
-range, damage, readiness cost, and shot cost for planning and status copy.
+range, ambush shape, damage, readiness cost, and shot cost for planning and status copy.
+Field guns use a five-square cross centered two squares ahead; other combat units
+use a one-square forward line. Elm renders coverage from these server-provided rules.
 
 `combat.rs` owns the readiness set, once-per-turn firing set, target selection,
-simultaneous damage, and delayed unready responses. It records initially eligible
+and simultaneous damage. Only ready ambushers fire; targets caught by an ambush
+stop their remaining route and do not automatically return fire. It records initially eligible
 targets per ambushing unit and defers them while they remain eligible. Losing
 contact removes that deferral, so re-entry triggers immediate fire. The movement
 resolver prepares ambush facing/readiness before arrivals and checks new contacts
@@ -706,5 +709,26 @@ projection withholds a trace unless both endpoints are observable or owned. The
 observed exchange retains its sight mask briefly when a volley kills the observer,
 so mutual destruction remains visible without revealing later movement. Resources
 stay concealed for enemies; the public `Unit.destroyed` flag permits visible death
-markers without exposing health quantities. Elm replays projected frames and
-draws shot traces/damage, without calculating combat outcomes.
+markers without exposing resource quantities through unit snapshots. Elm replays projected frames and
+draws firing flashes, target explosions, and death feedback without connecting
+lines, floating damage numbers, or calculating combat outcomes.
+
+`TurnPlayback.Presentation` separates ordinary battlefield playback from combat
+focus. Entering a projected volley captures the pre-hit frame and queues its
+distinct visible unit pairs, combining reciprocal shots. Combat focus holds each
+pair in a 300ms spotlight stage followed by a panel stage that waits for Enter without
+advancing movement interpolation or revealing the volley. `GamePage` freezes idle/interface animation and renders `View.CombatPanels`
+as one ambush card with static inward-facing sprites and a brief CSS expansion. `View.CombatEffects`
+owns the board spotlight, shine, firing flashes, and target explosions. After the last pair, playback reveals the
+volley and restarts its battlefield feedback clock at zero. Long animation ticks
+stop at combat boundaries so they cannot skip the panels or immediately consume
+the hit/death feedback. These pauses affect local presentation only; Rust frame
+timing, combat outcomes, and fog projection remain authoritative.
+
+Projected `Shot.attackerHealth` and `Shot.targetHealth` carry authoritative before
+and after hit points for visible combatants. This permits enemy health inside the
+encounter card without exposing enemy supplies or fuel through `Unit.resources`.
+Panel state owns its capped presentation clock and `CardVisible | SeeingMap`
+mode. The clock sequences the portrait explosion and health drain; Continue/Enter
+advances the pair. SeeingMap hides the card completely and restores the board
+spotlight with repeating shine. Mouse release restores the card even outside the button.

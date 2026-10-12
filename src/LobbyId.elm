@@ -5,7 +5,7 @@ module LobbyId exposing
     , toString
     )
 
-import ListUtil
+import Util.List as ListUtil
 
 
 type LobbyId

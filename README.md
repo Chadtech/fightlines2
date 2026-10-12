@@ -123,7 +123,8 @@ leave the affected passengers aboard. An exit occupied by a concealed enemy can
 be submitted; if the enemy remains there at resolution, the passenger stays aboard
 and spends no unloading supplies. Revoking the truck's order also removes
 its unload choices.
-Enemy health, supplies, fuel, and passengers are concealed. Unit transport is separate from supply delivery.
+Enemy resources and passengers are concealed outside combat. Visible combat
+encounters reveal both participants’ before/after health; supplies and fuel stay hidden. Unit transport is separate from supply delivery.
 Loaded trucks show a prominent gold blinking passenger badge in the tile's lower-right
 corner, with `2` when both berths are occupied. It stays clearly visible between
 blinks and remains steady with reduced motion enabled. Empty trucks have no badge.
@@ -216,9 +217,10 @@ when the server restarts.
 Infantry, tanks, and field guns can choose **ambush**, then point around the
 unit and click a direction, or press an arrow key / WASD. This saves a stationary,
 revocable order with its chosen facing; no separate rotation order is needed.
-Gold dashed squares preview the firing line and remain visible for saved orders.
+Red dotted squares preview the firing area and remain visible for saved orders.
 Infantry and tanks cover the adjacent square directly ahead. Field guns cover
-all three squares straight ahead, including the adjacent square.
+all three squares straight ahead, plus the two squares beside the middle square,
+forming a five-square plus sign that rotates with the chosen direction.
 
 Ambush readiness costs 2 supplies in addition to normal turn upkeep. Firing costs
 another 2 supplies; infantry deal 4 damage, tanks 8, and field guns 12. These are
@@ -227,26 +229,38 @@ is reserved before firing. Units without enough supplies for readiness cannot
 choose ambush; a unit can maintain readiness without enough supplies to fire.
 Trucks and carried units cannot ambush. Ambush orders last for one resolved turn.
 
-The server records observable enemies already in each ambush firing line when
+The server records observable enemies already in each ambush firing area when
 readiness begins. Those enemies get a chance to leave: they are targeted only
-if they remain in the line after movement and transport finish, whether holding
-still or moving within the line. Leaving the line escapes the ambush; leaving
+if they remain in the area after movement and transport finish, whether holding
+still or moving within the area. Leaving the area escapes the ambush; leaving
 and re-entering triggers it immediately. New contacts trigger after each movement
 arrival or transport transition, including enemies emerging from concealment or
-unloading into the line. Other units moving do not trigger fire at an initial
-contact that has stayed in the line. A unit fires at most once per turn, choosing
-the nearest eligible observable enemy in its firing line. Forest concealment and intervening sight blockers
+unloading into the area. Other units moving do not trigger fire at an initial
+contact that has stayed in the area. A unit fires at most once per turn, choosing
+the nearest eligible observable enemy in its firing area. Forest concealment and intervening sight blockers
 apply; an ally's sight cannot enable firing through an obstruction. An ambushed
-unit stops its remaining movement. Ready units fire simultaneously, permitting
-mutual destruction. Unready surviving infantry and tanks can turn to return
-adjacent fire; field guns can respond only within their current forward line.
-Trucks cannot return fire. Return fire also costs supplies and counts as that
-unit's shot for the turn.
+unit stops its remaining movement and cannot return fire. Only units with an
+ambush order can fire. Opposing ready ambushers fire simultaneously when both
+have an eligible target, permitting mutual destruction. A tank ambush deals
+8 damage, half a fresh tank's health, without an automatic counterattack.
 
-Playback shows observable gold shot traces, damage labels, updated health, and
-death markers. Destroyed units are removed before the next planning turn;
+Before a visible combat exchange, playback freezes the battlefield and surrounding
+animations. The two participants are spotlighted for 300ms while every other tile
+darkens, then one ambush card pops open with enlarged sprites facing each other.
+The hit unit shows an explosion, then both health bars drain to their resolved values.
+Visible encounter health is shared for both players; enemy supplies and fuel remain concealed.
+Each pair stays open until the player selects **continue** or presses Enter. Hold
+**see map** to hide the card and spotlight the two shining combatants on the frozen
+battlefield; release to restore the card.
+Reciprocal shots share one display;
+all pairs in a volley appear before its results. The card then closes and playback
+shows quick firing flashes and small target explosions, updated health, and death
+markers before movement resumes. There are no connecting shot lines or floating
+damage numbers. Reduced-motion mode uses steady highlights and impact marks.
+Hidden participants never appear in the panels.
+Destroyed units are removed before the next planning turn;
 destroyed trucks also lose their passengers. Hidden shooters and targets are
-withheld from shot traces, and enemy resource gauges remain concealed.
+withheld from combat effects, and enemy resource gauges outside the combat card remain concealed.
 Stand ground, attack move, indirect fire, digging in, and victory remain future work.
 
 ## Maps

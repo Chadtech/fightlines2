@@ -3,6 +3,7 @@ module TurnLifecycle exposing
     , Submission
     , WaitingState
     , canPoll
+    , continueCombat
     , finishSubmission
     , mapPlanning
     , observeSubmission
@@ -11,6 +12,7 @@ module TurnLifecycle exposing
     , planningLocked
     , playback
     , selection
+    , setCombatMapView
     , setOrders
     , setSelection
     , startSubmission
@@ -254,6 +256,37 @@ playback phase =
 
         _ ->
             Nothing
+
+
+continueCombat : Phase -> Maybe { phase : Phase, frame : TurnPlayback.Frame }
+continueCombat phase =
+    case phase of
+        Playing playing ->
+            let
+                continued :
+                    { animation : TurnPlayback.Playback
+                    , frame : TurnPlayback.Frame
+                    }
+                    -> { phase : Phase, frame : TurnPlayback.Frame }
+                continued next =
+                    { phase = Playing { playing | animation = next.animation }
+                    , frame = next.frame
+                    }
+            in
+            TurnPlayback.continueCombat playing.animation |> Maybe.map continued
+
+        _ ->
+            Nothing
+
+
+setCombatMapView : TurnPlayback.MapView -> Phase -> Phase
+setCombatMapView mapView phase =
+    case phase of
+        Playing playing ->
+            Playing { playing | animation = TurnPlayback.setMapView mapView playing.animation }
+
+        _ ->
+            phase
 
 
 canPoll : Phase -> Bool

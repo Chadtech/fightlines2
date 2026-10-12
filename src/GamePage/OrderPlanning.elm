@@ -62,13 +62,13 @@ import GamePage.Selection as Selection
         , Selection(..)
         , UnitInteraction(..)
         )
-import ListUtil
 import Map exposing (Map)
 import Movement
 import PlannedOrder exposing (MovePlan, PlannedOrder, StationaryUnload)
 import Unit exposing (Unit)
 import UnitCommand
 import UnitId exposing (UnitId)
+import Util.List as ListUtil
 
 
 

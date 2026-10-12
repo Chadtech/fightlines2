@@ -144,7 +144,7 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   explanations on padded yellow2 backgrounds with gray5 text. Hit points have
   no info marker or expandable help. The flat unit help section spans
   the panel width, without a heading or bevel. Resource gauges show the
-  server-provided current and maximum values. Enemy resources are withheld and have no gauges.
+  server-provided current and maximum values. Enemy resources are withheld from the selection panel and have no gauges there.
 - While planning, selecting your own unit shows illustrated command rows in a
   popup beside it on the battlefield. Anchor passenger commands beside their
   truck. Keep the popup at a fixed display size as the board zooms, constrain it
@@ -228,7 +228,7 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   shows the full four-way direction. Overlay a small illustrated crimson striking
   arrow only for units choosing or maintaining an ambush, including playback.
   Use dark ink contours, painted red shading, and a compact ivory impact glint.
-  Keep the arrow 3.8 logical pixels wide, with its tip protruding about 2.6 pixels
+  Keep the arrow 5.4 logical pixels wide and 8 pixels tall, with its tip protruding 5.2 pixels
   beyond the cell edge. Selected units brighten the red artwork by 25%.
   Trucks have no stored direction or facing marker.
   Markers show the ambush's north/east/south/west direction. Ordinary rotation
@@ -335,15 +335,38 @@ playback frames.
 ## Ambush planning and playback
 
 Choosing ambush uses the same cardinal direction picker as rotation. Pointing
-previews facing and a firing line; clicking or an arrow/WASD key saves the order.
+previews facing and a firing area; clicking or an arrow/WASD key saves the order.
 Ambush selection omits cardinal text labels on the board; highlighted squares
 show the chosen direction.
-Gold dashed inset squares with a faint fill indicate the one-square infantry/tank
-line or three-square field-gun line. Saved ambush coverage and facing remain
+Red dotted inset squares with a stronger red fill indicate the one-square infantry/tank
+line or five-square field-gun plus sign: three squares forward and one on each
+side of the middle square. Saved ambush coverage and facing remain
 visible while planning. The right panel explains range, damage, and separate
 readiness/firing supply costs, then shows the saved direction and revoke action.
 Insufficient readiness supplies disable the command with an explanatory tooltip.
 
-Server-projected volleys render steady gold shot traces and damage labels above
-units. Combat deaths reuse the existing skull marker; public destroyed state
+Server-projected volleys render quick expanding bursts on target units and smaller
+firing flashes on shooters, without connecting lines or floating damage numbers.
+Combat deaths reuse the existing skull marker; public destroyed state
 supports observable enemy deaths without exposing their resource gauges.
+
+Before a visible volley, freeze the pre-hit battlefield, unit idle sprites, and
+interface animations. For 300ms, darken every other board tile and outline the two
+participants in gold with a brief moving shine. Direction markers live in a final
+overlay above depots, units, ambush coverage, and direction-selection sectors.
+A dim overlay then covers the workspace while one beveled card headed `ambush`
+shows the existing static sprites on two plain nightwood inset backgrounds. Omit
+visible unit/player labels. The attacker faces right and the target faces left.
+The card opens with a 200ms expansion and slight overshoot. Damaged units show
+an explosion from 200–560ms; afterward their health meters drain over 500ms from
+the server's pre-volley health to post-volley health. Both combatants have numeric
+health meters, including observable enemies; supplies and fuel stay concealed.
+The card remains open with a `continue` button. Enter also continues, without
+an explanatory keyboard prompt. Holding `see map` makes the whole card completely transparent
+and clears the backdrop while darkening all board tiles except the combatants,
+whose shine repeats while held; mouse release or leaving the button restores it.
+Combine reciprocal shots into one display. Reveal the volley's map feedback
+only after all pairs have appeared, then resume the server timeline.
+The combat overlay blocks battlefield interaction and camera shortcuts. Reduced
+motion uses steady impacts and health changes after the hit, without pop or shine
+motion. Continuation remains user-controlled.

@@ -21,12 +21,12 @@ import Api.Object.TurnResolution as ResolutionApi
 import Coordinate exposing (Coordinate)
 import Direction
 import Graphql.SelectionSet as SS exposing (SelectionSet)
-import ListUtil
 import Point exposing (Point)
 import SpriteFacing
 import Unit exposing (Unit)
 import Unit.Location
 import UnitId exposing (UnitId)
+import Util.List as ListUtil
 
 
 type alias Snapshot =

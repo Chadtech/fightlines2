@@ -1,25 +1,36 @@
 module TurnPlayback exposing
-    ( Frame
+    ( Exchange
+    , Frame
+    , MapView(..)
+    , Panel
     , Playback
+    , Presentation(..)
+    , combat
+    , continueCombat
     , initial
     , movingPositions
+    , panels
     , selection
+    , setMapView
+    , spotlight
     , start
     , tick
+    , visibleShots
     )
 
 import Api.Object
 import Api.Object.GameSnapshot as GameApi
 import Api.Object.TurnFrame as FrameApi
 import Api.Object.TurnResolution as ResolutionApi
+import CombatHealth exposing (CombatHealth)
 import Coordinate exposing (Coordinate)
 import Direction
 import Graphql.SelectionSet as SS exposing (SelectionSet)
-import ListUtil
 import Point exposing (Point)
 import Shot exposing (Shot)
 import Unit exposing (Unit)
 import UnitId exposing (UnitId)
+import Util.List as ListUtil
 
 
 type alias Frame =
@@ -34,6 +45,172 @@ type alias Playback =
     { current : Frame
     , remaining : List Frame
     , elapsed : Float
+    , presentation : Presentation
+    }
+
+
+type Presentation
+    = Battlefield
+    | Combat CombatFocus
+
+
+type alias CombatFocus =
+    { exchange : Exchange
+    , remaining : List Exchange
+    , before : Frame
+    , stage : CombatStage
+    }
+
+
+type CombatStage
+    = Spotlighting Float
+    | ShowingPanels { elapsed : Float, mapView : MapView }
+
+
+type MapView
+    = CardVisible
+    | SeeingMap
+
+
+type alias Panel =
+    { exchange : Exchange
+    , elapsed : Float
+    , mapView : MapView
+    }
+
+
+type alias Exchange =
+    { attacker : Unit
+    , target : Unit
+    , attackerHealth : CombatHealth
+    , targetHealth : CombatHealth
+    }
+
+
+combat : Playback -> Maybe Exchange
+combat playback =
+    case playback.presentation of
+        Combat focus ->
+            Just focus.exchange
+
+        Battlefield ->
+            Nothing
+
+
+spotlight : Playback -> Maybe Exchange
+spotlight playback =
+    case playback.presentation of
+        Combat { exchange, stage } ->
+            case stage of
+                Spotlighting _ ->
+                    Just exchange
+
+                ShowingPanels panel ->
+                    case panel.mapView of
+                        SeeingMap ->
+                            Just exchange
+
+                        CardVisible ->
+                            Nothing
+
+        Battlefield ->
+            Nothing
+
+
+panels : Playback -> Maybe Panel
+panels playback =
+    case playback.presentation of
+        Combat { exchange, stage } ->
+            case stage of
+                ShowingPanels panel ->
+                    Just { exchange = exchange, elapsed = panel.elapsed, mapView = panel.mapView }
+
+                Spotlighting _ ->
+                    Nothing
+
+        Battlefield ->
+            Nothing
+
+
+visibleShots : Playback -> List Shot
+visibleShots playback =
+    case playback.presentation of
+        Combat _ ->
+            []
+
+        Battlefield ->
+            playback.current.shots
+
+
+{-| Only projected, on-board participants can appear. Reciprocal shots share
+one display; their damage and casualties still arrive together on the map.
+-}
+exchanges : Frame -> List Exchange
+exchanges frame =
+    let
+        participant : Coordinate -> Maybe Unit
+        participant position =
+            ListUtil.find (\unit -> Unit.boardPosition unit == Just position) frame.units
+
+        collect : List Shot -> List Exchange
+        collect shots =
+            case shots of
+                [] ->
+                    []
+
+                shot :: rest ->
+                    let
+                        differentPair : Shot -> Bool
+                        differentPair other =
+                            not
+                                ((other.origin == shot.origin && other.destination == shot.destination)
+                                    || (other.origin == shot.destination && other.destination == shot.origin)
+                                )
+
+                        remaining : List Exchange
+                        remaining =
+                            collect (List.filter differentPair rest)
+                    in
+                    case ( participant shot.origin, participant shot.destination ) of
+                        ( Just attacker, Just target ) ->
+                            { attacker = attacker
+                            , target = target
+                            , attackerHealth = shot.attackerHealth
+                            , targetHealth = shot.targetHealth
+                            }
+                                :: remaining
+
+                        _ ->
+                            remaining
+    in
+    collect frame.shots
+
+
+beginFrame : FrameTransition -> List Frame -> Playback
+beginFrame frames remaining =
+    let
+        before : Frame
+        before =
+            frames.current
+
+        presentation : Presentation
+        presentation =
+            case exchanges frames.next of
+                exchange :: rest ->
+                    Combat
+                        { exchange = exchange
+                        , remaining = rest
+                        , before = { before | shots = [] }
+                        , stage = Spotlighting 0
+                        }
+
+                [] ->
+                    Battlefield
+    in
+    { current = frames.next
+    , remaining = remaining
+    , elapsed = 0
+    , presentation = presentation
     }
 
 
@@ -75,11 +252,7 @@ start : List Frame -> Maybe Playback
 start frames =
     case clearPresentedDeaths [] frames of
         current :: next :: remaining ->
-            Just
-                { current = current
-                , remaining = next :: remaining
-                , elapsed = 0
-                }
+            Just (beginFrame { current = current, next = current } (next :: remaining))
 
         _ ->
             Nothing
@@ -104,16 +277,101 @@ clearPresentedDeaths presented frames =
 
                 units : List Unit
                 units =
-                    List.filter (\unit -> not (List.member unit.id presented)) frame.units
+                    List.filter
+                        (\unit -> not (List.member unit.id presented))
+                        frame.units
             in
-            { frame | units = units } :: clearPresentedDeaths (deaths ++ presented) remaining
+            { frame | units = units }
+                :: clearPresentedDeaths (deaths ++ presented) remaining
 
 
-{-| Each frame uses its server-provided duration. Visibility changes at tile boundaries.
-Carry surplus time forward so frame rate does not change the timeline.
+{-| Battlefield frames use server durations and retain surplus time between
+boundaries. Combat adds a local pause before a volley and discards surplus there
+so a delayed animation tick cannot skip its presentation.
 -}
 tick : Float -> Playback -> ( Maybe Playback, Frame )
 tick delta playback =
+    case playback.presentation of
+        Combat focus ->
+            tickCombat delta focus playback
+
+        Battlefield ->
+            tickBattlefield delta playback
+
+
+tickCombat : Float -> CombatFocus -> Playback -> ( Maybe Playback, Frame )
+tickCombat delta focus playback =
+    let
+        stage : CombatStage
+        stage =
+            case focus.stage of
+                Spotlighting elapsed ->
+                    if elapsed + delta >= 300 then
+                        ShowingPanels { elapsed = 0, mapView = CardVisible }
+
+                    else
+                        Spotlighting (elapsed + delta)
+
+                ShowingPanels panel ->
+                    ShowingPanels { panel | elapsed = min 1100 (panel.elapsed + delta) }
+    in
+    ( Just { playback | presentation = Combat { focus | stage = stage } }
+    , focus.before
+    )
+
+
+setMapView : MapView -> Playback -> Playback
+setMapView mapView playback =
+    case playback.presentation of
+        Combat focus ->
+            case focus.stage of
+                ShowingPanels panel ->
+                    { playback | presentation = Combat { focus | stage = ShowingPanels { panel | mapView = mapView } } }
+
+                Spotlighting _ ->
+                    playback
+
+        Battlefield ->
+            playback
+
+
+continueCombat : Playback -> Maybe { animation : Playback, frame : Frame }
+continueCombat playback =
+    case playback.presentation of
+        Combat focus ->
+            case focus.stage of
+                Spotlighting _ ->
+                    Nothing
+
+                ShowingPanels _ ->
+                    case focus.remaining of
+                        exchange :: rest ->
+                            Just
+                                { animation =
+                                    { playback
+                                        | presentation =
+                                            Combat
+                                                { focus
+                                                    | exchange = exchange
+                                                    , remaining = rest
+                                                    , stage = Spotlighting 0
+                                                }
+                                    }
+                                , frame = focus.before
+                                }
+
+                        [] ->
+                            Just
+                                { animation = { playback | presentation = Battlefield, elapsed = 0 }
+                                , frame = playback.current
+                                }
+
+        Battlefield ->
+            Nothing
+
+
+tickBattlefield : Float -> Playback -> ( Maybe Playback, Frame )
+tickBattlefield delta playback =
     case playback.remaining of
         [] ->
             ( Nothing, playback.current )
@@ -125,16 +383,17 @@ tick delta playback =
                     playback.elapsed + delta
             in
             if elapsed >= toFloat next.durationMs then
-                case remaining of
-                    [] ->
-                        ( Nothing, next )
+                let
+                    advanced : Playback
+                    advanced =
+                        beginFrame { current = playback.current, next = next } remaining
+                in
+                case advanced.presentation of
+                    Combat focus ->
+                        ( Just advanced, focus.before )
 
-                    _ ->
-                        tick (elapsed - toFloat next.durationMs)
-                            { current = next
-                            , remaining = remaining
-                            , elapsed = 0
-                            }
+                    Battlefield ->
+                        tick (elapsed - toFloat next.durationMs) advanced
 
             else
                 ( Just
@@ -218,8 +477,8 @@ movingPositions playback =
     let
         positions : Playback -> List { unitId : UnitId, position : Point }
         positions playing =
-            case playing.remaining of
-                next :: _ ->
+            case ( playing.presentation, playing.remaining ) of
+                ( Battlefield, next :: _ ) ->
                     let
                         moving : Unit -> Maybe { unitId : UnitId, position : Point }
                         moving unit =
@@ -244,7 +503,7 @@ movingPositions playback =
                     in
                     List.filterMap moving playing.current.units
 
-                [] ->
+                _ ->
                     []
     in
     Maybe.map positions playback |> Maybe.withDefault []

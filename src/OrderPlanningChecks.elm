@@ -1,5 +1,6 @@
 port module OrderPlanningChecks exposing (main)
 
+import Api.Enum.AmbushShape as AmbushShape
 import Api.Enum.Direction as DirectionEnum
 import Api.Enum.MapTheme as Theme
 import Api.Enum.PlayerNumber as PlayerNumber
@@ -331,7 +332,7 @@ unit id kind location =
             else
                 0
     in
-    { id = id, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, kind = kind, direction = direction, destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = capacity, location = location, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = fuel } }
+    { id = id, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, kind = kind, direction = direction, destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = capacity, location = location, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = fuel } }
 
 
 expect : String -> Bool -> List String

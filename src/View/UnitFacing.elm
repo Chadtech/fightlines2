@@ -76,10 +76,10 @@ marker selected direction =
         , Aria.hidden True
         ]
         [ Svg.image
-            [ SA.x "6.1"
-            , SA.y "-2.6"
-            , SA.width "3.8"
-            , SA.height "5.6"
+            [ SA.x "5.3"
+            , SA.y "-5.2"
+            , SA.width "5.4"
+            , SA.height "8"
             , SA.xlinkHref "/assets/attack-marker-illustrated-v1.png"
             , SA.class "fightlines-unit-facing"
             , SA.style ("filter: " ++ brightness)
