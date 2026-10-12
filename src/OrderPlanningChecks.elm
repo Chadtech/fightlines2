@@ -56,6 +56,21 @@ planningChecks infantryId truckId passengerId =
         context =
             board [ infantry, truck ]
 
+        ambushing : OrderPlanning.Model
+        ambushing =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit context infantryId
+                |> OrderPlanning.applyCommand context UnitCommand.Ambush
+                |> OrderPlanning.previewRotation DirectionEnum.East
+                |> OrderPlanning.saveRotation context DirectionEnum.East
+
+        truckAmbush : OrderPlanning.Model
+        truckAmbush =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit context truckId
+                |> OrderPlanning.applyCommand context UnitCommand.Ambush
+                |> OrderPlanning.saveRotation context DirectionEnum.East
+
         moving : OrderPlanning.Model
         moving =
             OrderPlanning.init
@@ -222,7 +237,11 @@ planningChecks infantryId truckId passengerId =
             OrderPlanning.selectNextUnorderedUnit context saved
     in
     List.concat
-        [ expect "unordered selection cycles through eligible units and wraps"
+        [ expect "ambush direction preview saves a stationary ambush instead of rotation"
+            (OrderPlanning.orders ambushing == [ { unitId = infantryId, action = PlannedOrder.Ambush { position = { x = 1, y = 1 }, direction = DirectionEnum.East } } ])
+        , expect "ambush can be revoked and trucks cannot ambush"
+            (List.isEmpty (OrderPlanning.orders (OrderPlanning.revokeSelectedOrder context ambushing)) && List.isEmpty (OrderPlanning.orders truckAmbush))
+        , expect "unordered selection cycles through eligible units and wraps"
             (OrderPlanning.commandMenuUnit context firstUnordered == Just infantry && OrderPlanning.commandMenuUnit context secondUnordered == Just truck && OrderPlanning.commandMenuUnit context wrappedUnordered == Just infantry)
         , expect "unordered selection leaves a preview without saving a move"
             (OrderPlanning.commandMenuUnit context afterPreview == Just truck && List.isEmpty (OrderPlanning.orders afterPreview))
@@ -312,7 +331,7 @@ unit id kind location =
             else
                 0
     in
-    { id = id, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, kind = kind, direction = direction, cargoCapacity = capacity, location = location, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = fuel } }
+    { id = id, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, kind = kind, direction = direction, destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = capacity, location = location, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = fuel } }
 
 
 expect : String -> Bool -> List String

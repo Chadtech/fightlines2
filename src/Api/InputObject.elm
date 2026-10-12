@@ -55,9 +55,9 @@ buildMoveOrderInput required____ fillOptionals____ =
     let
         optionals____ =
             fillOptionals____
-                { direction = Absent, unloads = Absent }
+                { direction = Absent, ambush = Absent, unloads = Absent }
     in
-    { unitId = required____.unitId, path = required____.path, direction = optionals____.direction, unloads = optionals____.unloads }
+    { unitId = required____.unitId, path = required____.path, direction = optionals____.direction, ambush = optionals____.ambush, unloads = optionals____.unloads }
 
 
 type alias MoveOrderInputRequiredFields =
@@ -68,6 +68,7 @@ type alias MoveOrderInputRequiredFields =
 
 type alias MoveOrderInputOptionalFields =
     { direction : OptionalArgument Api.Enum.Direction.Direction
+    , ambush : OptionalArgument Bool
     , unloads : OptionalArgument (List UnloadOrderInput)
     }
 
@@ -78,6 +79,7 @@ type alias MoveOrderInput =
     { unitId : String
     , path : List CoordinateInput
     , direction : OptionalArgument Api.Enum.Direction.Direction
+    , ambush : OptionalArgument Bool
     , unloads : OptionalArgument (List UnloadOrderInput)
     }
 
@@ -87,7 +89,7 @@ type alias MoveOrderInput =
 encodeMoveOrderInput : MoveOrderInput -> Value
 encodeMoveOrderInput input____ =
     Encode.maybeObject
-        [ ( "unitId", Encode.string input____.unitId |> Just ), ( "path", (encodeCoordinateInput |> Encode.list) input____.path |> Just ), ( "direction", Encode.enum Api.Enum.Direction.toString |> Encode.optional input____.direction ), ( "unloads", (encodeUnloadOrderInput |> Encode.list) |> Encode.optional input____.unloads ) ]
+        [ ( "unitId", Encode.string input____.unitId |> Just ), ( "path", (encodeCoordinateInput |> Encode.list) input____.path |> Just ), ( "direction", Encode.enum Api.Enum.Direction.toString |> Encode.optional input____.direction ), ( "ambush", Encode.bool |> Encode.optional input____.ambush ), ( "unloads", (encodeUnloadOrderInput |> Encode.list) |> Encode.optional input____.unloads ) ]
 
 
 buildUnloadOrderInput :

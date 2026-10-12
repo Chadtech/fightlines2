@@ -81,7 +81,9 @@ check rules fixture =
 
                 unit : Unit.Unit
                 unit =
-                    { cargoCapacity = 0
+                    { destroyed = False
+                    , combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }
+                    , cargoCapacity = 0
                     , id = id
                     , kind = fixture.kind
                     , location = Location.OnMap fixture.origin
@@ -208,7 +210,7 @@ traceChecks rules =
 
                 unit : Unit.Unit
                 unit =
-                    { cargoCapacity = 0, id = id, kind = UnitKind.Infantry, location = Location.OnMap origin, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
+                    { destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = id, kind = UnitKind.Infantry, location = Location.OnMap origin, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
 
                 map : Map
                 map =
@@ -325,7 +327,7 @@ reservationChecks rules =
             let
                 unit : Unit.Unit
                 unit =
-                    { cargoCapacity = 0, id = id, kind = UnitKind.Infantry, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
+                    { destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = id, kind = UnitKind.Infantry, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
 
                 map : Map
                 map =
@@ -382,7 +384,7 @@ fuelChecks rules =
             let
                 unit : Unit.Unit
                 unit =
-                    { cargoCapacity = 0, id = id, kind = UnitKind.Tank, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 2, maximum = 64 } } }
+                    { destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = id, kind = UnitKind.Tank, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 2, maximum = 64 } } }
 
                 map : Map
                 map =
@@ -448,7 +450,7 @@ supplyChecks rules =
 
                 unit : Unit.Unit
                 unit =
-                    { cargoCapacity = 0, id = id, kind = UnitKind.Infantry, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, fuel = Nothing, supplies = supplies } }
+                    { destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = id, kind = UnitKind.Infantry, location = Location.OnMap { x = 0, y = 0 }, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, resources = Just { hitPoints = { current = 16, maximum = 16 }, fuel = Nothing, supplies = supplies } }
 
                 map : Map
                 map =
@@ -528,11 +530,11 @@ transportChecks rules =
             let
                 passenger : Unit.Unit
                 passenger =
-                    { id = passengerId, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, kind = UnitKind.Infantry, direction = Just Direction.East, cargoCapacity = 0, location = Location.OnMap { x = 0, y = 0 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
+                    { id = passengerId, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, kind = UnitKind.Infantry, direction = Just Direction.East, destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.OnMap { x = 0, y = 0 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
 
                 truck : Unit.Unit
                 truck =
-                    { passenger | id = truckId, kind = UnitKind.Truck, cargoCapacity = 2, direction = Nothing, location = Location.OnMap { x = 1, y = 0 }, resources = Maybe.map (\resources -> { resources | fuel = Just { current = 64, maximum = 64 } }) passenger.resources }
+                    { passenger | id = truckId, kind = UnitKind.Truck, destroyed = False, combatRules = { range = 1, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 2, direction = Nothing, location = Location.OnMap { x = 1, y = 0 }, resources = Maybe.map (\resources -> { resources | fuel = Just { current = 64, maximum = 64 } }) passenger.resources }
 
                 map : Map
                 map =

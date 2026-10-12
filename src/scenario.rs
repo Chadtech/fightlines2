@@ -91,6 +91,10 @@ pub struct HitPoints {
 }
 
 impl HitPoints {
+    pub fn current(&self) -> i32 {
+        self.current
+    }
+
     fn full() -> Self {
         Self {
             current: 16,
@@ -265,6 +269,14 @@ impl Unit {
         self.sprite_facing
     }
 
+    pub fn destroyed(&self) -> bool {
+        !self.is_alive() || self.supplies.current == 0
+    }
+
+    pub fn combat_rules(&self) -> crate::combat::CombatRules {
+        crate::combat::rules(self.kind)
+    }
+
     pub fn cargo_capacity(&self) -> i32 {
         match self.kind {
             UnitKind::Truck => 2,
@@ -329,6 +341,25 @@ impl Unit {
 
     pub fn restore_sprite_facing(&mut self, facing: SpriteFacing) {
         self.sprite_facing = facing;
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.hit_points.current() > 0
+    }
+
+    pub fn take_damage(&mut self, damage: i32) {
+        self.hit_points.current = (self.hit_points.current - damage).max(0);
+    }
+
+    pub fn spend_supplies(&mut self, cost: i32) {
+        self.supplies.current = (self.supplies.current - cost).max(0);
+    }
+
+    pub fn apply_combat_outcome(&mut self, outcome: &Unit) {
+        self.hit_points = outcome.hit_points;
+        self.supplies = outcome.supplies;
+        self.direction = outcome.direction;
+        self.sprite_facing = outcome.sprite_facing;
     }
 
     pub fn rotate(&mut self, direction: Direction) {
@@ -426,7 +457,7 @@ impl Scenario {
         let exhausted: Vec<_> = self
             .units
             .iter()
-            .filter(|unit| unit.supplies.current == 0)
+            .filter(|unit| unit.supplies.current == 0 || !unit.is_alive())
             .map(Unit::unit_id)
             .collect();
         for unit in &mut self.units {
@@ -441,7 +472,8 @@ impl Scenario {
             }
         }
         let resource_snapshot = self.units.clone();
-        self.units.retain(|unit| unit.supplies.current > 0);
+        self.units
+            .retain(|unit| unit.supplies.current > 0 && unit.is_alive());
         resource_snapshot
     }
 

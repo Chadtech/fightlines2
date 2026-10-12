@@ -55,6 +55,18 @@ spriteFacing =
     Object.selectionForField "Enum.SpriteFacing.SpriteFacing" "spriteFacing" [] Api.Enum.SpriteFacing.decoder
 
 
+destroyed : SelectionSet Bool Api.Object.Unit
+destroyed =
+    Object.selectionForField "Bool" "destroyed" [] Decode.bool
+
+
+combatRules :
+    SelectionSet decodesTo Api.Object.CombatRules
+    -> SelectionSet decodesTo Api.Object.Unit
+combatRules object____ =
+    Object.selectionForCompositeField "combatRules" [] object____ Basics.identity
+
+
 cargoCapacity : SelectionSet Int Api.Object.Unit
 cargoCapacity =
     Object.selectionForField "Int" "cargoCapacity" [] Decode.int

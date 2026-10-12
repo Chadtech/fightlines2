@@ -9,6 +9,10 @@ type Aboard
     = Aboard
 
 
+type CombatRules
+    = CombatRules
+
+
 type Coordinate
     = Coordinate
 
@@ -51,6 +55,10 @@ type PlayerView
 
 type Scenario
     = Scenario
+
+
+type Shot
+    = Shot
 
 
 type Snapshot

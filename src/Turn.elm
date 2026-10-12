@@ -96,6 +96,9 @@ start snapshot =
                 EventKind.Move ->
                     True
 
+                EventKind.Ambush ->
+                    True
+
                 EventKind.Rotate ->
                     True
 
@@ -166,7 +169,7 @@ tick delta playback units =
 
                 duration : Float
                 duration =
-                    if event.kind == EventKind.Rotate then
+                    if event.kind == EventKind.Rotate || event.kind == EventKind.Ambush then
                         180
 
                     else

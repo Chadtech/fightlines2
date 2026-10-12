@@ -35,6 +35,7 @@ import Api.Query
 import ApiRequest
 import Browser.Events
 import Camera exposing (Camera)
+import CombatRules
 import Coordinate exposing (Coordinate)
 import Css
 import Css.Global
@@ -50,6 +51,7 @@ import GamePage.OrderPlanning as OrderPlanning exposing (UnloadChoice, UnloadPla
 import GamePage.Selection
     exposing
         ( DestinationFeedback(..)
+        , FacingPurpose(..)
         , Inspection(..)
         , MovePlanning
         , Selection(..)
@@ -94,6 +96,7 @@ import TurnPlayback
 import Unit exposing (Unit)
 import UnitCommand
 import UnitId exposing (UnitId)
+import View.Ambush as Ambush
 import View.Aria as Aria
 import View.Button as Button
 import View.Dialog as Dialog exposing (Dialog)
@@ -475,7 +478,7 @@ applyTurnSnapshot snapshot currentTurn model =
         let
             frame : TurnPlayback.Frame
             frame =
-                TurnPlayback.initial snapshot.playbackFrames { durationMs = 180, units = snapshot.units, visibleTiles = snapshot.visibleTiles }
+                TurnPlayback.initial snapshot.playbackFrames { shots = [], durationMs = 180, units = snapshot.units, visibleTiles = snapshot.visibleTiles }
         in
         { next
             | map = snapshot.map
@@ -544,7 +547,7 @@ rotationSelection model =
     case ( currentSelection model, selectedUnit model ) of
         ( Just (UnitSelection selection), Just unit ) ->
             case selection.interaction of
-                ChoosingDirection direction ->
+                ChoosingDirection _ direction ->
                     Unit.boardPosition unit
                         |> Maybe.map (\position -> { unitId = unit.id, position = position, direction = direction })
 
@@ -1518,6 +1521,9 @@ movementView model =
                     else if Unit.carrierId unit /= Nothing || receivingLoad unit model then
                         transportDetails model unit
 
+                    else if choosingAmbush model then
+                        ambushDetails unit
+
                     else if choosingDirection model then
                         [ H.p [] [ H.text "point around the unit to preview its facing. click to save, or press an arrow key or wasd." ]
                         ]
@@ -1640,6 +1646,9 @@ unitOrderView model unit =
                                 PlannedOrder.Unload _ ->
                                     "hold position"
 
+                                PlannedOrder.Ambush ambush ->
+                                    "ambush: " ++ Direction.label ambush.direction
+
                                 PlannedOrder.Rotate rotation ->
                                     "rotate: " ++ Direction.label rotation.direction
 
@@ -1672,10 +1681,72 @@ unitOrderView model unit =
                         _ ->
                             []
             in
-            orderDetails ++ loadingDetails ++ unloadDetails
+            orderDetails ++ loadingDetails ++ unloadDetails ++ ambushCosts unit plan
 
         ( Nothing, Nothing ) ->
             []
+
+
+plannedAmbushFacing : Model -> Unit -> Unit
+plannedAmbushFacing model unit =
+    case ListUtil.find (\order -> order.unitId == unit.id) (plannedOrders model) of
+        Just order ->
+            case order.action of
+                PlannedOrder.Ambush facing ->
+                    Unit.faceDirection (Just facing.direction) unit
+
+                _ ->
+                    unit
+
+        Nothing ->
+            unit
+
+
+choosingAmbush : Model -> Bool
+choosingAmbush model =
+    case currentSelection model of
+        Just (UnitSelection { interaction }) ->
+            case interaction of
+                ChoosingDirection AmbushFacing _ ->
+                    True
+
+                _ ->
+                    False
+
+        _ ->
+            False
+
+
+ambushCosts : Unit -> PlannedOrder -> List (Html Msg)
+ambushCosts unit order =
+    case order.action of
+        PlannedOrder.Ambush _ ->
+            List.drop 1 (ambushDetails unit)
+
+        _ ->
+            []
+
+
+ambushDetails : Unit -> List (Html Msg)
+ambushDetails unit =
+    let
+        rules : CombatRules.CombatRules
+        rules =
+            unit.combatRules
+    in
+    [ H.p
+        []
+        [ H.text "choose an ambush direction on the map, or press an arrow key / wasd"
+        ]
+    , H.p
+        []
+        [ H.text ("range: " ++ String.fromInt rules.range ++ " · damage: " ++ String.fromInt rules.damage)
+        ]
+    , H.p
+        []
+        [ H.text ("supplies: normal upkeep + " ++ String.fromInt rules.readinessCost ++ " readiness + " ++ String.fromInt rules.shotCost ++ " per shot")
+        ]
+    ]
 
 
 loadingNotice : Model -> Unit -> Coordinate -> List (Html Msg)
@@ -2356,7 +2427,7 @@ boardHtml model =
                                 unit
 
                         Nothing ->
-                            unit
+                            plannedAmbushFacing model unit
 
                 facingClass : String
                 facingClass =
@@ -2591,6 +2662,46 @@ boardHtml model =
                 ]
                 (List.map unloadRoute unloads)
 
+        ambushCoverage : List (Svg Msg)
+        ambushCoverage =
+            let
+                saved : PlannedOrder -> Maybe (Svg Msg)
+                saved order =
+                    case order.action of
+                        PlannedOrder.Ambush facing ->
+                            ListUtil.find (\unit -> unit.id == order.unitId) model.units
+                                |> Maybe.map (\unit -> Ambush.coverage model.map facing.position facing.direction unit.combatRules.range)
+
+                        _ ->
+                            Nothing
+
+                preview : List (Svg Msg)
+                preview =
+                    case ( currentSelection model, selectedUnit model ) of
+                        ( Just (UnitSelection { interaction }), Just unit ) ->
+                            case interaction of
+                                ChoosingDirection AmbushFacing direction ->
+                                    Unit.boardPosition unit
+                                        |> Maybe.map (\position -> [ Ambush.coverage model.map position direction unit.combatRules.range ])
+                                        |> Maybe.withDefault []
+
+                                _ ->
+                                    []
+
+                        _ ->
+                            []
+            in
+            List.filterMap saved (plannedOrders model) ++ preview
+
+        shotOverlay : Svg Msg
+        shotOverlay =
+            case model.currentTurn.phase of
+                TurnLifecycle.Playing playing ->
+                    Ambush.shots playing.animation.current.shots
+
+                _ ->
+                    Svg.text ""
+
         rotationOverlay : List (Svg Msg)
         rotationOverlay =
             case rotationPreview of
@@ -2635,7 +2746,8 @@ boardHtml model =
                 , List.map tileTarget positions
                 , List.map depotView model.depots
                 , List.filterMap (\unit -> Unit.boardPosition unit |> Maybe.map (unitView unit)) model.units
-                , [ unloadOverlay ]
+                , ambushCoverage
+                , [ unloadOverlay, shotOverlay ]
                 , selection
                 , rotationOverlay
                 ]
@@ -2681,7 +2793,7 @@ keyCommands model =
                 case currentSelection model of
                     Just (UnitSelection { interaction }) ->
                         case interaction of
-                            ChoosingDirection _ ->
+                            ChoosingDirection _ _ ->
                                 [ leftKeys (DirectionKeyPressed DirectionEnum.West)
                                 , rightKeys (DirectionKeyPressed DirectionEnum.East)
                                 , upKeys (DirectionKeyPressed DirectionEnum.North)

@@ -55,7 +55,7 @@ and IDs. Tests validate counts, clear starting ground, depot access, unique
 occupancy, resources, and mirrored positions.
 `scenario.rs` owns the fixed map layouts, separate neutral supply-depot buildings,
 and units with stable typed IDs, kinds, sides, positions, and optional four-way `Direction` values. Trucks have no direction.
-Hit points, supplies and vehicle fuel are authoritative. Combat and victory resolution remain future work.
+Hit points, supplies and vehicle fuel are authoritative. Directional ambush combat is authoritative; victory resolution remains future work.
 Starting requires exactly two players and initializes the scenario once before
 consuming the lobby. The host is `Player1` and the second player is `Player2`. Player ownership is
 independent of map position; the current scenario and lobby still require two players. Repeated
@@ -445,7 +445,7 @@ timeline determines presentation. Loading and truck-planned unloading follow
 movement. Direct passenger unload paths participate in timed arrivals.
 Rotations and final resources are included in the final frame. The latest
 `TurnResolution` is stored and the turn advances once. Pending enemy orders are
-never exposed. Future combat should extend this authoritative timeline.
+never exposed. Ambush combat extends this authoritative timeline at the initial and arrival boundaries.
 
 `GamePage` polls snapshots every two seconds. `TurnLifecycle.Phase` distinguishes
 `Planning`, `Submitting`, `WaitingForOpponent` and `Playing`; order drafts belong
@@ -524,8 +524,9 @@ including holds and interrupted movement. Units at zero supplies are removed
 immediately, along with passengers of exhausted carriers. `finish_turn_resources`
 returns a presentation snapshot with zero supplies and health for dead units.
 When deaths occur, resolution adds that snapshot followed by the authoritative
-surviving units with a 1200ms transition. `View.UnitDeath` flashes a skull and
-crossbones three times during that transition (steady under reduced motion).
+surviving units with a 600ms transition. `View.UnitDeath` flashes a skull and
+crossbones once over 400ms, then holds it steady until removal (also steady
+under reduced motion).
 Frame visibility filtering also applies to deaths, concealing hidden enemies.
 Depots do not replenish supplies yet;
 vehicle fuel refills at any depot. Waiting for another player and retrying submissions never
@@ -640,7 +641,7 @@ Every Rust unit starts with authoritative `HitPoints` at 16/16. GraphQL exposes
 current and maximum health; Elm stores them in `Unit` and renders the status
 gauge. Movement and upkeep preserve health while supplies remain positive.
 Exhausted units have zero health in their death presentation frame and are
-removed from the authoritative board. Combat damage and healing remain future work.
+removed from the authoritative board. Ambush combat applies damage; healing remains future work.
 
 
 ## Rotation orders
@@ -667,3 +668,32 @@ The view module `View.UnitFacing` renders the cardinal direction marker.
 `View.TurnControls.Msg` owns the submit-button event. `GamePage` wraps it in
 `TurnControlsMsg` and dispatches it through `handleTurnControlsMsg`. Shared
 class constants supply both markup and the component's scoped CSS selectors.
+
+## Ambush orders and combat
+
+`PlannedOrder.Ambush` owns stationary position and facing. The shared direction
+interaction carries `FacingPurpose`, distinguishing ambush from ordinary rotation
+without a second direction-selection workflow. The input boundary emits
+`MoveOrderInput.ambush` with `direction` and a single-coordinate path. Validation
+rejects absent facing, trucks, passengers, movement, unloading, receiving a load,
+and insufficient readiness supplies. `Unit.combatRules` provides authoritative
+range, damage, readiness cost, and shot cost for planning and status copy.
+
+`combat.rs` owns the readiness set, once-per-turn firing set, target selection,
+simultaneous damage, and delayed unready responses. The movement resolver prepares
+ambush facing/readiness before arrivals and checks combat at the initial boundary
+and after arrivals. Its firing state survives into loading/unloading, allowing
+newly unloaded enemies to trigger an unfired ambush. Engagement stops the target's remaining route. Movement
+resources are paid per successful edge in the working board; the final health,
+supplies, and facing are applied alongside the actual traveled paths in `turns.rs`.
+Normal upkeep remains a single end-of-turn charge. Dead units cannot shoot, move,
+block occupancy, or grant sight. Cargo of destroyed carriers is also destroyed.
+Final resource cleanup removes dead units and returns their death presentation.
+
+`TurnFrame.shots` carries origin, destination, and damage for each volley. Fog
+projection withholds a trace unless both endpoints are observable or owned. The
+observed exchange retains its sight mask briefly when a volley kills the observer,
+so mutual destruction remains visible without revealing later movement. Resources
+stay concealed for enemies; the public `Unit.destroyed` flag permits visible death
+markers without exposing health quantities. Elm replays projected frames and
+draws shot traces/damage, without calculating combat outcomes.

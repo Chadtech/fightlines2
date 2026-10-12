@@ -17,11 +17,11 @@ styles =
         []
         [ H.text """
             @keyframes fightlines-unit-death-flash {
-                0%, 49% { opacity: 1; }
-                50%, 100% { opacity: 0; }
+                0%, 24%, 50%, 100% { opacity: 1; }
+                25%, 49% { opacity: 0; }
             }
             .fightlines-unit-death {
-                animation: fightlines-unit-death-flash 400ms steps(1) 3;
+                animation: fightlines-unit-death-flash 400ms steps(1) 1 forwards;
             }
             @media (prefers-reduced-motion: reduce) {
                 .fightlines-unit-death { animation: none; opacity: 1; }
@@ -30,15 +30,23 @@ styles =
         ]
 
 
-{-| Zero-supply units exist only in the server's final death presentation frame.
-The following frame removes them, so no local timer owns their lifetime.
+{-| Destroyed units remain in authoritative presentation frames until cleanup.
+The server removes them, so no local timer owns their lifetime.
 -}
 toSvg : Unit -> Svg msg
 toSvg unit =
     let
         isDying : Bool
         isDying =
-            unit.resources |> Maybe.map (\resources -> resources.supplies.current == 0) |> Maybe.withDefault False
+            unit.destroyed
+                || (unit.resources
+                        |> Maybe.map
+                            (\resources ->
+                                (resources.supplies.current == 0)
+                                    || (resources.hitPoints.current == 0)
+                            )
+                        |> Maybe.withDefault False
+                   )
     in
     if not isDying then
         Svg.text ""
@@ -47,7 +55,7 @@ toSvg unit =
         Svg.g
             [ SA.class "fightlines-unit-death"
             , SA.pointerEvents "none"
-            , Aria.label "died from exhausted supplies"
+            , Aria.label "unit destroyed"
             ]
             [ Svg.image
                 [ SA.x "0"

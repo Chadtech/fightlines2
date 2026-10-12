@@ -46,6 +46,7 @@ impl ResolutionError {
 }
 
 pub struct MovementResolution {
+    pub combat: crate::combat::Combat,
     pub paths: BTreeMap<UnitId, Vec<Coordinate>>,
     pub stopped: BTreeSet<UnitId>,
     pub frames: Vec<TurnFrame>,
@@ -53,6 +54,7 @@ pub struct MovementResolution {
 
 fn frame(board: &Scenario, duration_ms: i32) -> TurnFrame {
     TurnFrame {
+        shots: Vec::new(),
         units: board.units.clone(),
         visible_tiles: Vec::new(),
         duration_ms,
@@ -121,7 +123,9 @@ pub fn resolve(
             .ok_or(ResolutionError::MissingFrame)?
             .units
         {
-            if let Some(position) = unit.board_position() {
+            if unit.is_alive()
+                && let Some(position) = unit.board_position()
+            {
                 occupied.entry(position).or_default().push(unit);
             }
         }
@@ -240,11 +244,20 @@ fn resolve_arrivals(
             .tile_at(origin)
             .ok_or(ResolutionError::MissingTerrain)?;
     }
+    let initial_frame = frame(&board, 0);
+    let combat = crate::combat::Combat::prepare(&mut board, orders);
     let mut result = MovementResolution {
+        combat,
         paths,
         stopped: BTreeSet::new(),
-        frames: vec![frame(&board, 0)],
+        frames: vec![initial_frame],
     };
+    if orders.iter().any(|order| order.facing.is_ambush()) {
+        result.frames.push(frame(&board, 180));
+        result
+            .combat
+            .engage(&mut board, &mut result.stopped, &mut result.frames);
+    }
     let priority = if turn % 2 == 1 {
         PlayerNumber::Player1
     } else {
@@ -289,7 +302,9 @@ fn resolve_arrivals(
                     .find(|unit| unit.unit_id() == *id)
                     .ok_or(ResolutionError::MissingUnit)?;
                 for enemy in board.units.iter().filter(|enemy| {
-                    enemy.side() != unit.side() && enemy.board_position() == Some(*destination)
+                    enemy.is_alive()
+                        && enemy.side() != unit.side()
+                        && enemy.board_position() == Some(*destination)
                 }) {
                     let departure = intents.get(&enemy.unit_id());
                     let swaps =
@@ -325,10 +340,7 @@ fn resolve_arrivals(
                     .get_mut(&id)
                     .ok_or(ResolutionError::MissingPath)?;
                 let origin = *path.last().ok_or(ResolutionError::EmptyPath)?;
-                if let Some(direction) = crate::scenario::Direction::between(origin, destination) {
-                    unit.rotate(direction);
-                }
-                unit.move_to(destination);
+                unit.follow_path(&[origin, destination]);
                 path.push(destination);
             }
         }
@@ -339,6 +351,9 @@ fn resolve_arrivals(
             &board,
             (tick - previous_tick) * MOVEMENT_DURATION_MS / ticks,
         ));
+        result
+            .combat
+            .engage(&mut board, &mut result.stopped, &mut result.frames);
         previous_tick = tick;
     }
     Ok(result)
@@ -372,9 +387,9 @@ mod tests {
                 let path: Vec<_> = path.iter().map(|(x, y)| Coordinate::new(*x, *y)).collect();
                 moving.move_to(*path.first().ok_or("empty fixture path")?);
                 Ok(MoveOrder {
+                    facing: crate::turns::FacingOrder::Unchanged,
                     unit_id: moving.unit_id(),
                     path,
-                    direction: None,
                     unloads: Vec::new(),
                 })
             })

@@ -30,6 +30,7 @@ type Action
     = Hold Coordinate
     | Move MovePlan
     | Rotate Rotation
+    | Ambush Rotation
     | Unload StationaryUnload
 
 
@@ -66,6 +67,9 @@ destination order =
         Move plan ->
             plan.move.destination
 
+        Ambush ambush ->
+            ambush.position
+
         Rotate rotation ->
             rotation.position
 
@@ -81,6 +85,9 @@ path order =
 
         Move plan ->
             plan.move.path
+
+        Ambush ambush ->
+            [ ambush.position ]
 
         Rotate rotation ->
             [ rotation.position ]
@@ -101,6 +108,9 @@ unloads order =
         Hold _ ->
             []
 
+        Ambush _ ->
+            []
+
         Rotate _ ->
             []
 
@@ -112,6 +122,9 @@ isMoving order =
             List.length plan.move.path > 1
 
         Hold _ ->
+            False
+
+        Ambush _ ->
             False
 
         Rotate _ ->
@@ -131,12 +144,16 @@ toInput order =
         unloadInput unload =
             Api.InputObject.buildUnloadOrderInput
                 { unitId = UnitId.toString unload.unitId
-                , destination = Api.InputObject.buildCoordinateInput unload.destination
+                , destination =
+                    Api.InputObject.buildCoordinateInput unload.destination
                 }
 
         direction : OptionalArgument Direction
         direction =
             case order.action of
+                Ambush ambush ->
+                    Present ambush.direction
+
                 Rotate rotation ->
                     Present rotation.direction
 
@@ -157,5 +174,16 @@ toInput order =
             { optionals
                 | unloads = Present (List.map unloadInput (unloads order))
                 , direction = direction
+                , ambush = Present (isAmbush order)
             }
         )
+
+
+isAmbush : PlannedOrder -> Bool
+isAmbush order =
+    case order.action of
+        Ambush _ ->
+            True
+
+        _ ->
+            False

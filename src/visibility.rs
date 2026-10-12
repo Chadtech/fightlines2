@@ -20,7 +20,7 @@ pub fn visible_tiles(scenario: &Scenario, side: PlayerNumber) -> BTreeSet<Coordi
     for (unit, origin) in scenario
         .units
         .iter()
-        .filter(|unit| unit.side() == side)
+        .filter(|unit| unit.side() == side && unit.is_alive())
         .filter_map(|unit| unit.board_position().map(|origin| (unit, origin)))
     {
         // The occupied square is known even when the unit is in a forest.
@@ -52,7 +52,7 @@ pub fn visible_tiles(scenario: &Scenario, side: PlayerNumber) -> BTreeSet<Coordi
 /// Target hills remain visible; forests conceal their contents. Intervening
 /// hills and forests block ground-level observers. Hill observers see over
 /// intervening terrain; forests still conceal their contents.
-fn clear_line(map: &Map, origin: Coordinate, target: Coordinate) -> bool {
+pub(crate) fn clear_line(map: &Map, origin: Coordinate, target: Coordinate) -> bool {
     if map.tile_at(origin) == Some(Terrain::Hills) {
         return true;
     }
@@ -94,7 +94,7 @@ fn clear_line(map: &Map, origin: Coordinate, target: Coordinate) -> bool {
     true
 }
 
-fn observable(map: &Map, visible: &BTreeSet<Coordinate>, position: Coordinate) -> bool {
+pub(crate) fn observable(map: &Map, visible: &BTreeSet<Coordinate>, position: Coordinate) -> bool {
     visible.contains(&position) && map.tile_at(position) != Some(Terrain::Forest)
 }
 
@@ -202,14 +202,36 @@ fn observed_frames(
     resolution: &TurnResolution,
 ) -> Vec<TurnFrame> {
     if !resolution.frames.is_empty() {
+        let mut previous_visible = BTreeSet::new();
+        let mut previous_shots = false;
         return resolution
             .frames
             .iter()
             .map(|frame| {
                 let mut board = scenario.clone();
                 board.units = frame.units.clone();
-                let visible = visible_tiles(&board, side);
+                let mut visible = visible_tiles(&board, side);
+                // Keep the observed exchange visible when the volley kills an observer.
+                if !frame.shots.is_empty() || previous_shots {
+                    visible.extend(&previous_visible);
+                }
+                previous_visible = visible.clone();
+                previous_shots = !frame.shots.is_empty();
+                let known_endpoint = |position| {
+                    observable(&board.map, &visible, position)
+                        || board.units.iter().any(|unit| {
+                            unit.side() == side && unit.board_position() == Some(position)
+                        })
+                };
                 TurnFrame {
+                    shots: frame
+                        .shots
+                        .iter()
+                        .filter(|shot| {
+                            known_endpoint(shot.origin) && known_endpoint(shot.destination)
+                        })
+                        .cloned()
+                        .collect(),
                     duration_ms: frame.duration_ms,
                     units: observed_scenario(&board, side, &visible).units,
                     visible_tiles: visible.into_iter().collect(),
@@ -221,6 +243,7 @@ fn observed_frames(
     let project = |board: &Scenario| {
         let visible = visible_tiles(board, side);
         TurnFrame {
+            shots: Vec::new(),
             duration_ms: 180,
             units: observed_scenario(board, side, &visible).units,
             visible_tiles: visible.into_iter().collect(),
@@ -318,6 +341,7 @@ mod tests {
             turn_number: 1,
             events: vec![],
             frames: vec![TurnFrame {
+                shots: Vec::new(),
                 duration_ms: 0,
                 units: board.units.clone(),
                 visible_tiles: vec![],

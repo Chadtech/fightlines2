@@ -19,16 +19,42 @@ pub struct MoveOrderInput {
     path: Vec<CoordinateInput>,
     /// Facing for an in-place rotation order.
     direction: Option<Direction>,
+    /// Stationary combat readiness, with direction selecting the firing line.
+    ambush: Option<bool>,
     /// Passenger destinations after this truck moves.
     unloads: Option<Vec<UnloadOrderInput>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct MoveOrder {
-    pub direction: Option<Direction>,
+    pub facing: FacingOrder,
     pub unit_id: UnitId,
     pub path: Vec<Coordinate>,
     pub unloads: Vec<UnloadOrder>,
+}
+
+/// Validated stationary facing action. An ambush always owns its direction.
+#[derive(Clone, Copy, Debug)]
+pub enum FacingOrder {
+    Unchanged,
+    Rotate(Direction),
+    Ambush(Direction),
+}
+
+impl FacingOrder {
+    pub fn direction(self) -> Option<Direction> {
+        match self {
+            Self::Unchanged => None,
+            Self::Rotate(direction) | Self::Ambush(direction) => Some(direction),
+        }
+    }
+
+    pub fn is_ambush(self) -> bool {
+        match self {
+            Self::Ambush(_) => true,
+            Self::Unchanged | Self::Rotate(_) => false,
+        }
+    }
 }
 
 #[derive(GraphQLInputObject)]
@@ -46,6 +72,7 @@ pub struct UnloadOrder {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
 pub enum TurnEventKind {
     Move,
+    Ambush,
     Rotate,
     Load,
     Unload,
@@ -97,6 +124,7 @@ impl TurnEvent {
 
 #[derive(Clone, Debug, GraphQLObject)]
 pub struct TurnFrame {
+    pub shots: Vec<crate::combat::Shot>,
     /// Time from the preceding frame in milliseconds.
     pub duration_ms: i32,
     pub units: Vec<Unit>,
@@ -200,12 +228,23 @@ pub fn validate(
         if Some(path[0]) != scenario.physical_position(unit) {
             return Err("movement must start at the unit's current position.");
         }
+        let ambush = input.ambush == Some(true);
+        if ambush {
+            if input.direction.is_none() {
+                return Err("ambush requires a facing direction.");
+            }
+            let required = unit.supplies().upkeep_per_turn()
+                + crate::combat::rules(unit.kind()).readiness_cost;
+            if unit.supplies().current() < required {
+                return Err("not enough supplies to maintain ambush readiness.");
+            }
+        }
         if input.direction.is_some() {
             if unit.direction().is_none() || unit.carrier_id().is_some() {
-                return Err("only units on the map with a facing can rotate.");
+                return Err("only units on the map with a facing can rotate or ambush.");
             }
             if path.len() != 1 || !input.unloads.as_ref().is_none_or(Vec::is_empty) {
-                return Err("rotation must be an in-place order without unloading.");
+                return Err("rotation and ambush must be in-place orders without unloading.");
             }
         }
         let mut visited = BTreeSet::from([path[0]]);
@@ -310,7 +349,12 @@ pub fn validate(
             });
         }
         orders.push(MoveOrder {
-            direction: input.direction,
+            facing: match (ambush, input.direction) {
+                (true, Some(direction)) => FacingOrder::Ambush(direction),
+                (false, Some(direction)) => FacingOrder::Rotate(direction),
+                (false, None) => FacingOrder::Unchanged,
+                (true, None) => return Err("ambush requires a facing direction."),
+            },
             unit_id,
             path,
             unloads,
@@ -361,7 +405,7 @@ pub fn validate(
             if target_order.path.len() > 1 {
                 continue;
             }
-            if target_order.direction.is_some() {
+            if target_order.facing.direction().is_some() {
                 return Err("the receiving unit must hold while loading.");
             }
             let (truck, passenger) = scenario
@@ -417,7 +461,11 @@ fn playback_order(
     // Keep transport dependencies: complete movement before boarding/unloading.
     // Holds remain before loads so the first event still restores a unit's origin.
     for kinds in [
-        &[TurnEventKind::Move, TurnEventKind::Rotate][..],
+        &[
+            TurnEventKind::Move,
+            TurnEventKind::Rotate,
+            TurnEventKind::Ambush,
+        ][..],
         &[TurnEventKind::Hold, TurnEventKind::MovementStopped][..],
         &[TurnEventKind::Load][..],
         &[TurnEventKind::Unload][..],
@@ -513,8 +561,16 @@ impl Turns {
             orders.sort_by_key(|order| order.unit_id);
             let movement = crate::movement_resolution::resolve(scenario, &orders, self.number)
                 .map_err(|error| error.message())?;
+            let combat_units = movement
+                .frames
+                .last()
+                .ok_or("missing movement frame")?
+                .units
+                .clone();
             let conflicts = &movement.stopped;
             let mut frames = movement.frames;
+            let mut combat = movement.combat;
+            let mut combat_stopped = BTreeSet::new();
             let mut events = Vec::new();
             let mut loads = Vec::new();
             for order in &orders {
@@ -530,7 +586,9 @@ impl Turns {
                 let conflict = conflicts.contains(&order.unit_id);
                 let kind = if conflict {
                     TurnEventKind::MovementStopped
-                } else if order.direction.is_some() {
+                } else if order.facing.is_ambush() {
+                    TurnEventKind::Ambush
+                } else if order.facing.direction().is_some() {
                     TurnEventKind::Rotate
                 } else if order.path.len() == 1 {
                     TurnEventKind::Hold
@@ -560,7 +618,7 @@ impl Turns {
                     loads.push(pair);
                 }
                 events.push(TurnEvent {
-                    rotation_direction: order.direction,
+                    rotation_direction: order.facing.direction(),
                     initial_direction: unit.direction(),
                     initial_sprite_facing: unit.sprite_facing(),
                     initial_carrier: unit.carrier_id(),
@@ -577,6 +635,11 @@ impl Turns {
                     .find(|unit| unit.unit_id() == event.unit_id)
                     .ok_or("the order references a missing unit.")?;
                 unit.follow_path(&event.path);
+                let combat_unit = combat_units
+                    .iter()
+                    .find(|other| other.unit_id() == unit.unit_id())
+                    .ok_or("the unit has no resolved combat outcome.")?;
+                unit.apply_combat_outcome(combat_unit);
                 if let Some(direction) = event.rotation_direction {
                     unit.rotate(direction);
                 }
@@ -584,11 +647,18 @@ impl Turns {
             // Attach after movement, so stable event order cannot move cargo back
             // to its old hold position. The explicit event makes playback reversible.
             for (truck, passenger) in loads {
+                let carrier_alive = scenario
+                    .units
+                    .iter()
+                    .any(|unit| unit.unit_id() == truck && unit.is_alive());
                 let unit = scenario
                     .units
                     .iter_mut()
                     .find(|unit| unit.unit_id() == passenger)
                     .ok_or("the order references a missing unit.")?;
+                if !unit.is_alive() || !carrier_alive {
+                    continue;
+                }
                 events.push(TurnEvent {
                     rotation_direction: None,
                     initial_direction: unit.direction(),
@@ -604,10 +674,12 @@ impl Turns {
                 });
                 unit.board(truck);
                 frames.push(TurnFrame {
+                    shots: Vec::new(),
                     units: scenario.units.clone(),
                     visible_tiles: Vec::new(),
                     duration_ms: 180,
                 });
+                combat.engage(scenario, &mut combat_stopped, &mut frames);
             }
 
             // Resolve unloading after all vehicle movement and loading. A blocked
@@ -629,7 +701,13 @@ impl Turns {
                         .physical_position(passenger)
                         .ok_or("the passenger has no physical position.")?;
                     let destination = unload.destination;
-                    if !legal_unload(scenario, passenger, destination, None) {
+                    if !passenger.is_alive()
+                        || !scenario
+                            .units
+                            .iter()
+                            .any(|unit| unit.unit_id() == order.unit_id && unit.is_alive())
+                        || !legal_unload(scenario, passenger, destination, None)
+                    {
                         continue;
                     }
                     let event = TurnEvent {
@@ -650,10 +728,12 @@ impl Turns {
                         .follow_path(&event.path);
                     events.push(event);
                     frames.push(TurnFrame {
+                        shots: Vec::new(),
                         units: scenario.units.clone(),
                         visible_tiles: Vec::new(),
                         duration_ms: 180,
                     });
+                    combat.engage(scenario, &mut combat_stopped, &mut frames);
                 }
             }
 
@@ -662,15 +742,17 @@ impl Turns {
             let deaths = resource_snapshot.len() != scenario.units.len();
             if deaths {
                 frames.push(TurnFrame {
+                    shots: Vec::new(),
                     units: resource_snapshot,
                     visible_tiles: Vec::new(),
                     duration_ms: 180,
                 });
             }
             frames.push(TurnFrame {
+                shots: Vec::new(),
                 units: scenario.units.clone(),
                 visible_tiles: Vec::new(),
-                duration_ms: if deaths { 1200 } else { 180 },
+                duration_ms: if deaths { 600 } else { 180 },
             });
             self.last_resolution = Some(TurnResolution {
                 turn_number: self.number,
@@ -706,7 +788,9 @@ fn legal_unload(
         .iter()
         .any(|entry| entry.terrain == terrain && entry.cost <= rule.budget);
     let occupied = scenario.units.iter().any(|unit| {
-        Some(unit.unit_id()) != moving_truck && unit.board_position() == Some(destination)
+        unit.is_alive()
+            && Some(unit.unit_id()) != moving_truck
+            && unit.board_position() == Some(destination)
     });
     affordable && !occupied
 }
@@ -833,6 +917,7 @@ mod tests {
                 .map(|unit| {
                     let position = scenario.physical_position(unit).fixture()?;
                     Ok(MoveOrderInput {
+                        ambush: None,
                         direction: None,
                         unit_id: unit.id(),
                         unloads: None,
@@ -844,6 +929,191 @@ mod tests {
                 })
                 .collect::<TestResult<Vec<_>>>()?
         })
+    }
+
+    #[test]
+    fn ambush_submission_resolves_damage_costs_and_facing_in_both_submission_orders()
+    -> TestResult<()> {
+        for first in [PlayerNumber::Player1, PlayerNumber::Player2] {
+            let mut scenario = Scenario::supply_point().fixture()?;
+            scenario
+                .units
+                .retain(|unit| unit.id() == "1" || unit.id() == "6");
+            scenario.units[0].move_to(Coordinate::new(7, 8));
+            scenario.units[1].move_to(Coordinate::new(8, 8));
+            let mut turns = Turns::default();
+            for side in [
+                first,
+                if first == PlayerNumber::Player1 {
+                    PlayerNumber::Player2
+                } else {
+                    PlayerNumber::Player1
+                },
+            ] {
+                let mut inputs = holds(&scenario, side)?;
+                if side == PlayerNumber::Player1 {
+                    inputs[0].ambush = Some(true);
+                    inputs[0].direction = Some(Direction::East);
+                }
+                turns.submit(&mut scenario, side, 1, inputs)?;
+            }
+            assert_eq!(turns.number, 2);
+            assert_eq!(scenario.units[0].hit_points().current(), 12);
+            assert_eq!(scenario.units[1].hit_points().current(), 12);
+            assert_eq!(scenario.units[0].supplies().current(), 59);
+            assert_eq!(scenario.units[1].supplies().current(), 61);
+            assert_eq!(scenario.units[0].direction(), Some(Direction::East));
+            let resolution = turns.last_resolution.as_ref().fixture()?;
+            assert_eq!(
+                resolution
+                    .frames
+                    .iter()
+                    .flat_map(|frame| &frame.shots)
+                    .count(),
+                2
+            );
+            assert_eq!(
+                resolution.frames.last().fixture()?.units[0].supplies(),
+                scenario.units[0].supplies()
+            );
+            assert_eq!(
+                resolution
+                    .events
+                    .iter()
+                    .find(|event| event.unit_id == scenario.units[0].unit_id())
+                    .fixture()?
+                    .kind,
+                TurnEventKind::Ambush
+            );
+            let visible = crate::visibility::visible_tiles(&scenario, PlayerNumber::Player1);
+            let projected = crate::visibility::observed_resolution(
+                &scenario,
+                PlayerNumber::Player1,
+                &visible,
+                resolution,
+            );
+            assert_eq!(
+                projected
+                    .frames
+                    .iter()
+                    .flat_map(|frame| &frame.shots)
+                    .count(),
+                2
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn ambush_engages_a_passenger_unloading_from_a_concealed_truck() -> TestResult<()> {
+        let mut scenario = Scenario::supply_point().fixture()?;
+        scenario
+            .units
+            .retain(|unit| ["6", "9", "12"].contains(&unit.id().as_str()));
+        scenario.map = crate::map::Map::new(
+            17,
+            17,
+            crate::map::Terrain::GrassPlain,
+            BTreeMap::from([(Coordinate::new(9, 8), crate::map::Terrain::Forest)]),
+        )
+        .fixture()?;
+        let truck_id = UnitId::parse("9").fixture()?;
+        for unit in &mut scenario.units {
+            if unit.id() == "6" {
+                unit.board(truck_id);
+            } else if unit.id() == "9" {
+                unit.move_to(Coordinate::new(9, 8));
+            } else {
+                unit.move_to(Coordinate::new(7, 8));
+            }
+        }
+        let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
+        player1[0].ambush = Some(true);
+        player1[0].direction = Some(Direction::East);
+        let mut player2 = holds(&scenario, PlayerNumber::Player2)?;
+        player2
+            .iter_mut()
+            .find(|order| order.unit_id == "9")
+            .fixture()?
+            .unloads = Some(vec![UnloadOrderInput {
+            unit_id: "6".into(),
+            destination: CoordinateInput { x: 8, y: 8 },
+        }]);
+        let mut turns = Turns::default();
+        turns.submit(&mut scenario, PlayerNumber::Player1, 1, player1)?;
+        turns.submit(&mut scenario, PlayerNumber::Player2, 1, player2)?;
+        let passenger = scenario
+            .units
+            .iter()
+            .find(|unit| unit.id() == "6")
+            .fixture()?;
+        assert_eq!(passenger.board_position(), Some(Coordinate::new(8, 8)));
+        assert_eq!(passenger.hit_points().current(), 4);
+        assert_eq!(passenger.supplies().current(), 57);
+        let gun = scenario
+            .units
+            .iter()
+            .find(|unit| unit.id() == "12")
+            .fixture()?;
+        assert_eq!(gun.hit_points().current(), 12);
+        assert_eq!(gun.supplies().current(), 59);
+        let resolution = turns.last_resolution.fixture()?;
+        let unload_frame = resolution
+            .frames
+            .iter()
+            .position(|frame| {
+                frame
+                    .units
+                    .iter()
+                    .any(|unit| unit.id() == "6" && unit.board_position().is_some())
+            })
+            .fixture()?;
+        let shot_frame = resolution
+            .frames
+            .iter()
+            .position(|frame| !frame.shots.is_empty())
+            .fixture()?;
+        assert!(shot_frame > unload_frame);
+        assert_eq!(
+            resolution
+                .frames
+                .iter()
+                .flat_map(|frame| &frame.shots)
+                .count(),
+            2
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn ambush_validation_rejects_missing_direction_trucks_movement_and_insufficient_readiness()
+    -> TestResult<()> {
+        let mut scenario = Scenario::supply_point().fixture()?;
+        let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+        orders[0].ambush = Some(true);
+        assert!(validate(&scenario, PlayerNumber::Player1, orders).is_err());
+        let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+        orders[0].ambush = Some(true);
+        orders[0].direction = Some(Direction::East);
+        orders[0].path.push(CoordinateInput { x: 4, y: 7 });
+        assert!(validate(&scenario, PlayerNumber::Player1, orders).is_err());
+        let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+        orders[3].ambush = Some(true);
+        orders[3].direction = Some(Direction::East);
+        assert!(validate(&scenario, PlayerNumber::Player1, orders).is_err());
+        scenario.units[0].spend_supplies(62);
+        let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+        orders[0].ambush = Some(true);
+        orders[0].direction = Some(Direction::East);
+        let mut turns = Turns::default();
+        assert!(
+            turns
+                .submit(&mut scenario, PlayerNumber::Player1, 1, orders)
+                .is_err()
+        );
+        assert!(turns.orders[0].is_none());
+        assert_eq!(scenario.units[0].supplies().current(), 2);
+        Ok(())
     }
 
     #[test]
@@ -1456,7 +1726,7 @@ mod tests {
             .find(|unit| unit.id() == "1")
             .fixture()?;
         assert_eq!(dead.supplies().current(), 0);
-        assert_eq!(resolution.frames.last().fixture()?.duration_ms, 1200);
+        assert_eq!(resolution.frames.last().fixture()?.duration_ms, 600);
         let visible = crate::visibility::visible_tiles(&scenario, PlayerNumber::Player1);
         let observed = crate::visibility::observed_resolution(
             &scenario,

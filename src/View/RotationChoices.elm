@@ -130,7 +130,7 @@ toSvg map position preview =
             sectors ++ labels
     in
     Svg.g
-        [ Aria.svgLabel "choose rotation on the map"
+        [ Aria.svgLabel "choose direction on the map"
         , SA.cursor "crosshair"
         ]
         content

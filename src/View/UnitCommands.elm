@@ -116,7 +116,7 @@ toHtml map camera position unit =
                 , S.shrink0
                 ]
             ]
-            (List.map commandButton commands)
+            (List.map (commandButton unit) commands)
         , cancelRow
         ]
 
@@ -159,17 +159,20 @@ cancelRow =
         ]
 
 
-commandButton : Command -> Html Msg
-commandButton command =
+commandButton : Unit -> Command -> Html Msg
+commandButton unit command =
     let
         implemented : Bool
         implemented =
-            Command.isImplemented command
+            Command.canUse unit command
 
         title : String
         title =
             if implemented then
                 Command.label command
+
+            else if command == Command.Ambush then
+                "not enough supplies to maintain ambush readiness"
 
             else
                 "not available yet"

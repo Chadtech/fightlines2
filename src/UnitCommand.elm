@@ -3,6 +3,7 @@ module UnitCommand exposing
     , MenuOption(..)
     , assetName
     , available
+    , canUse
     , enabledOptions
     , isImplemented
     , label
@@ -34,7 +35,7 @@ enabledOptions unit =
         commands : List MenuOption
         commands =
             available unit
-                |> List.filter isImplemented
+                |> List.filter (canUse unit)
                 |> List.map CommandOption
     in
     commands ++ [ CancelOption ]
@@ -48,22 +49,25 @@ available unit =
     else
         case unit.kind of
             Kind.Infantry ->
-                [ Move, HoldPosition, Rotate, StandGround, AttackMove, DigIn ]
+                [ Move, HoldPosition, Rotate, Ambush, StandGround, AttackMove, DigIn ]
 
             Kind.Tank ->
-                [ Move, HoldPosition, Rotate, StandGround, AttackMove ]
+                [ Move, HoldPosition, Rotate, Ambush, StandGround, AttackMove ]
 
             Kind.Truck ->
                 [ Move, HoldPosition ]
 
             Kind.FieldGun ->
-                [ Move, HoldPosition, Rotate, IndirectFire, DigIn, Ambush ]
+                [ Move, HoldPosition, Rotate, Ambush, IndirectFire, DigIn ]
 
 
 isImplemented : Command -> Bool
 isImplemented command =
     case command of
         Move ->
+            True
+
+        Ambush ->
             True
 
         Rotate ->
@@ -130,3 +134,19 @@ assetName command =
 
         Ambush ->
             "ambush"
+
+
+canUse : Unit -> Command -> Bool
+canUse unit command =
+    if command == Ambush then
+        let
+            affordable : Bool
+            affordable =
+                unit.resources
+                    |> Maybe.map (\resources -> resources.supplies.current >= resources.supplies.upkeepPerTurn + unit.combatRules.readinessCost)
+                    |> Maybe.withDefault False
+        in
+        unit.direction /= Nothing && Unit.onBoard unit && affordable
+
+    else
+        isImplemented command

@@ -17,6 +17,7 @@ import Direction
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import ListUtil
 import Point exposing (Point)
+import Shot exposing (Shot)
 import Unit exposing (Unit)
 import UnitId exposing (UnitId)
 
@@ -24,6 +25,7 @@ import UnitId exposing (UnitId)
 type alias Frame =
     { durationMs : Int
     , units : List Unit
+    , shots : List Shot
     , visibleTiles : List Coordinate
     }
 
@@ -57,6 +59,7 @@ selection unit coordinate =
             (SS.succeed Frame
                 |> SS.with FrameApi.durationMs
                 |> SS.with (FrameApi.units unit)
+                |> SS.with (FrameApi.shots Shot.selection)
                 |> SS.with (FrameApi.visibleTiles coordinate)
             )
         )
@@ -140,7 +143,8 @@ presentationFrame playing next =
                 Nothing ->
                     unit
     in
-    { durationMs = playing.current.durationMs
+    { shots = playing.current.shots
+    , durationMs = playing.current.durationMs
     , units = List.map faceMovement playing.current.units
     , visibleTiles = playing.current.visibleTiles
     }

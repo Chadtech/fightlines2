@@ -5,8 +5,8 @@ A strategy game about supplies and logistics, built with Rust and Elm.
 The current prototype supports creating a lobby, joining through an invite link,
 and starting a game. The game page shows a free-floating animated SVG board with selectable units and depots.
 Both players can plan and submit turns, with shared movement playback.
-Fuel and supplies are authoritative; combat and persistent storage
-are not implemented yet.
+Fuel, supplies, and directional ambush combat are authoritative. Persistent
+storage is not implemented yet.
 
 ## Run locally
 
@@ -93,7 +93,7 @@ also revokes routes depending on its freed square. A saved move reserves its des
 units cannot choose it; changing or clearing the move frees that square. Routes
 can pass through reserved destinations. Depots are passable.
 The selection panel shows the selected unit's illustration, name, and side,
-with expandable unit and gauge explanations. Every unit starts with 16/16 hit points, supplied by the server. Combat damage and healing are not implemented yet. Tanks and trucks start with 32/32 fuel. Each
+with expandable unit and gauge explanations. Every unit starts with 16/16 hit points, supplied by the server. Ambush combat damages health; healing is not implemented yet. Tanks and trucks start with 32/32 fuel. Each
 successfully traversed tile costs 1 fuel, independently of terrain movement
 costs. Interrupted routes pay only for successfully traveled tiles; holds consume none. At the end of resolution,
 vehicles on any supply depot refill to 32, regardless of side. Movement previews and submitted paths must fit both remaining
@@ -149,8 +149,8 @@ for movement instead. Movement reserves the turn's upkeep before spending
 supplies. Infantry need at least 5 supplies to move one tile; field guns need at least 2.
 Units below these thresholds can still hold.
 Units die immediately when supplies reach zero after turn upkeep. A dead truck
-also loses its passengers. During playback, a skull and crossbones flashes three
-times before dead units vanish; reduced-motion mode shows a steady marker. Depots do not
+also loses its passengers. During playback, a skull and crossbones blinks once, then pauses briefly
+before dead units vanish; reduced-motion mode shows a steady marker. Depots do not
 replenish supplies yet. These provisions belong to the unit; supply cargo
 and supply delivery remain future work. Trucks can now carry units.
 
@@ -180,7 +180,7 @@ beneath submit at all times, empty while idle, with a solid gray bar while waiti
 for the other player. It sweeps smoothly left to right, fully exiting the
 track before looping from the left; reduced-motion
 settings keep these effects steady.
-Give units a move or **hold position** order. **submit turn**
+Give units a move, rotation, ambush, or **hold position** order. **submit turn**
 becomes primary when all units are ready. Submitting with unassigned units opens
 a warning: choose **keep planning** or **submit anyway**, which makes those
 units hold position. Submission locks your orders, and that
@@ -196,7 +196,7 @@ An enemy still occupying a square blocks entry and stops both units; an enemy
 successfully departing at the same instant frees its square unless they swap.
 Allies can pass through each other. If an encounter would leave a passing unit
 on an allied square, it stops at its preceding free square. Interrupted routes spend movement resources
-only for tiles actually traveled. There is no damage or combat yet.
+only for tiles actually traveled. Ambushes can interrupt movement at arrival boundaries.
 Loading and truck-planned unloading follow movement to preserve transport dependencies.
 Both clients replay server-projected frames with shared timing and their own fog.
 Planning then opens with empty drafts. Refresh during playback shows the completed
@@ -206,6 +206,38 @@ is handled during resolution rather than causing a submission error.
 
 New players cannot join after a game starts. All lobbies and games disappear
 when the server restarts.
+
+## Ambush combat
+
+Infantry, tanks, and field guns can choose **ambush**, then point around the
+unit and click a direction, or press an arrow key / WASD. This saves a stationary,
+revocable order with its chosen facing; no separate rotation order is needed.
+Gold dashed squares preview the firing line and remain visible for saved orders.
+Infantry and tanks cover the adjacent square directly ahead. Field guns cover
+all three squares straight ahead, including the adjacent square.
+
+Ambush readiness costs 2 supplies in addition to normal turn upkeep. Firing costs
+another 2 supplies; infantry deal 4 damage, tanks 8, and field guns 12. These are
+initial balance values. Readiness is charged even without a target, and upkeep
+is reserved before firing. Units without enough supplies for readiness cannot
+choose ambush; a unit can maintain readiness without enough supplies to fire.
+Trucks and carried units cannot ambush. Ambush orders last for one resolved turn.
+
+The server checks targets at the beginning of the turn and after each movement
+arrival and transport transition. A unit fires at most once per turn, choosing the nearest observable
+enemy in its firing line. Forest concealment and intervening sight blockers
+apply; an ally's sight cannot enable firing through an obstruction. An ambushed
+unit stops its remaining movement. Ready units fire simultaneously, permitting
+mutual destruction. Unready surviving infantry and tanks can turn to return
+adjacent fire; field guns can respond only within their current forward line.
+Trucks cannot return fire. Return fire also costs supplies and counts as that
+unit's shot for the turn.
+
+Playback shows observable gold shot traces, damage labels, updated health, and
+death markers. Destroyed units are removed before the next planning turn;
+destroyed trucks also lose their passengers. Hidden shooters and targets are
+withheld from shot traces, and enemy resource gauges remain concealed.
+Stand ground, attack move, indirect fire, digging in, and victory remain future work.
 
 ## Maps
 

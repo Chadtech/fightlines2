@@ -19,6 +19,13 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+shots :
+    SelectionSet decodesTo Api.Object.Shot
+    -> SelectionSet (List decodesTo) Api.Object.TurnFrame
+shots object____ =
+    Object.selectionForCompositeField "shots" [] object____ (Basics.identity >> Decode.list)
+
+
 {-| Time from the preceding frame in milliseconds.
 -}
 durationMs : SelectionSet Int Api.Object.TurnFrame

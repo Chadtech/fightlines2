@@ -319,8 +319,22 @@ playback and final positions reflect only the route actually traveled.
 ## Unit death feedback
 
 When a unit exhausts its supplies, turn playback keeps its last sprite visible
-under a detailed 1980s anime-style illustrated skull and crossbones asset. The marker flashes
-three times over 1.2 seconds, then the server's next frame removes the unit.
+under a detailed 1980s anime-style illustrated skull and crossbones asset. The marker blinks once over 0.4 seconds, then stays visible for a brief pause
+until cleanup at 0.6 seconds, when the server's next frame removes the unit.
 The marker ignores pointer events. Reduced-motion mode displays it steadily
 until removal. Hidden enemy deaths follow the same visibility rules as other
 playback frames.
+
+## Ambush planning and playback
+
+Choosing ambush uses the same cardinal direction picker as rotation. Pointing
+previews facing and a firing line; clicking or an arrow/WASD key saves the order.
+Gold dashed inset squares with a faint fill indicate the one-square infantry/tank
+line or three-square field-gun line. Saved ambush coverage and facing remain
+visible while planning. The right panel explains range, damage, and separate
+readiness/firing supply costs, then shows the saved direction and revoke action.
+Insufficient readiness supplies disable the command with an explanatory tooltip.
+
+Server-projected volleys render steady gold shot traces and damage labels above
+units. Combat deaths reuse the existing skull marker; public destroyed state
+supports observable enemy deaths without exposing their resource gauges.

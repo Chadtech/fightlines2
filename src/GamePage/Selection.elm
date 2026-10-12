@@ -1,5 +1,6 @@
 module GamePage.Selection exposing
     ( DestinationFeedback(..)
+    , FacingPurpose(..)
     , Inspection(..)
     , MovePlanning
     , SelectedUnit
@@ -40,7 +41,12 @@ type alias SelectedUnit =
 type UnitInteraction
     = CommandMenu (Maybe UnitCommand.MenuOption)
     | ChoosingMove MovePlanning
-    | ChoosingDirection Direction
+    | ChoosingDirection FacingPurpose Direction
+
+
+type FacingPurpose
+    = RotationFacing
+    | AmbushFacing
 
 
 type alias MovePlanning =

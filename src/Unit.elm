@@ -18,6 +18,7 @@ import Api.Enum.SpriteFacing exposing (SpriteFacing)
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Api.Object
 import Api.Object.Unit as UnitApi
+import CombatRules exposing (CombatRules)
 import Coordinate exposing (Coordinate)
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import ListUtil
@@ -37,6 +38,8 @@ type alias Unit =
     , spriteFacing : SpriteFacing
     , resources : Maybe UnitResources
     , cargoCapacity : Int
+    , destroyed : Bool
+    , combatRules : CombatRules
     , location : Location
     }
 
@@ -51,6 +54,8 @@ selection =
         |> SS.with UnitApi.spriteFacing
         |> SS.with (UnitApi.resources UnitResources.selection)
         |> SS.with UnitApi.cargoCapacity
+        |> SS.with UnitApi.destroyed
+        |> SS.with (UnitApi.combatRules CombatRules.selection)
         |> SS.with (UnitApi.location Location.selection)
 
 
