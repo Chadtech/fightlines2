@@ -981,7 +981,7 @@ update lobbyId msg model =
                 traced : Model
                 traced =
                     model
-                        |> mapNavigation (BattlefieldNavigation.tracePath navigationMsg)
+                        |> mapNavigation (BattlefieldNavigation.update navigationMsg)
             in
             if pathPreview model /= Nothing then
                 let

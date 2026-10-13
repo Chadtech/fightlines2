@@ -46,11 +46,11 @@ checks =
 
         routeDragged : Navigation.Model
         routeDragged =
-            routePressed |> Navigation.tracePath (Navigation.MouseMoved { x = 50, y = 20 } 1)
+            routePressed |> Navigation.update (Navigation.MouseMoved { x = 50, y = 20 } 1)
 
         routeReleased : Navigation.Model
         routeReleased =
-            routeDragged |> Navigation.tracePath (Navigation.MouseReleased { x = 50, y = 20 })
+            routeDragged |> Navigation.update (Navigation.MouseReleased { x = 50, y = 20 })
 
         nextPress : PointerGesture.PointerGesture
         nextPress =

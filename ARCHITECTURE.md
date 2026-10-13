@@ -772,9 +772,13 @@ Enemy squares may be chosen as destinations.
 Rust resolves contact on the shared arrival timeline, including concealed enemies,
 opposing swaps, and simultaneous destination claims. The unit stops at the first
 encounter and fires once using its normal damage and shot cost. A resident enemy
-keeps its square; the attacker stops on the preceding square. Both participants
-stop their remaining routes. Opposing attack movers fire simultaneously; other
-orders do not gain automatic return fire. Only successful edges spend movement
+keeps its square; the attacker stops on the preceding square. Completing an
+attack-move route also triggers an attack against an enemy on the adjacent square
+directly ahead, using the facing of the final traveled segment. This contact is
+checked after simultaneous arrivals, includes concealed enemies, and interrupts
+the target's remaining movement. Both participants stop their remaining routes.
+Opposing attack movers fire simultaneously; other orders do not gain automatic
+return fire. Only successful edges spend movement
 resources. Planning reserves the shot cost plus upkeep; a route without an
 encounter spends no firing supplies. Combat events use the existing theater,
 with an `attack move` heading and the usual fog-safe encounter portraits.

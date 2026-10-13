@@ -1022,36 +1022,40 @@ mod tests {
         let mut low_supplies = scenario.clone();
         low_supplies.units[0].spend_supplies(54);
         assert!(validate(&low_supplies, PlayerNumber::Player1, attack(&low_supplies)?).is_err());
-        let enemy_holds = holds(&scenario, PlayerNumber::Player2)?;
-        let attacks = attack(&scenario)?;
-        let mut turns = Turns::default();
-        turns.submit(&mut scenario, PlayerNumber::Player1, 1, attacks)?;
-        turns.submit(&mut scenario, PlayerNumber::Player2, 1, enemy_holds)?;
-        let attacker = scenario
-            .units
-            .iter()
-            .find(|unit| unit.id() == "1")
-            .fixture()?;
-        let target = scenario
-            .units
-            .iter()
-            .find(|unit| unit.id() == "6")
-            .fixture()?;
-        assert_eq!(attacker.board_position(), Some(Coordinate::new(1, 0)));
-        assert_eq!(attacker.supplies().current(), 57);
-        assert_eq!(target.hit_points().current(), 12);
-        assert_eq!(target.supplies().current(), 63);
-        assert_eq!(
-            turns
-                .last_resolution
-                .as_ref()
-                .fixture()?
-                .frames
+        for destination in [1, 2] {
+            let mut scenario = scenario.clone();
+            let enemy_holds = holds(&scenario, PlayerNumber::Player2)?;
+            let mut attacks = attack(&scenario)?;
+            attacks[0].path.truncate(destination + 1);
+            let mut turns = Turns::default();
+            turns.submit(&mut scenario, PlayerNumber::Player1, 1, attacks)?;
+            turns.submit(&mut scenario, PlayerNumber::Player2, 1, enemy_holds)?;
+            let attacker = scenario
+                .units
                 .iter()
-                .flat_map(|frame| &frame.shots)
-                .count(),
-            1
-        );
+                .find(|unit| unit.id() == "1")
+                .fixture()?;
+            let target = scenario
+                .units
+                .iter()
+                .find(|unit| unit.id() == "6")
+                .fixture()?;
+            assert_eq!(attacker.board_position(), Some(Coordinate::new(1, 0)));
+            assert_eq!(attacker.supplies().current(), 57);
+            assert_eq!(target.hit_points().current(), 12);
+            assert_eq!(target.supplies().current(), 63);
+            assert_eq!(
+                turns
+                    .last_resolution
+                    .as_ref()
+                    .fixture()?
+                    .frames
+                    .iter()
+                    .flat_map(|frame| &frame.shots)
+                    .count(),
+                1
+            );
+        }
         Ok(())
     }
 
