@@ -1,0 +1,4 @@
+- Trucks should be extremely vulnerable and always take severe damage
+- field guns should obliterate most things, except infantry dug into trenches, which they should do very little damage to
+- infantry should take little damage when dug in, except from tanks, who will obliterate them
+- Units that are not battle ready should pretty much always lose at a great cost. Unready tanks should take big losses to ready infantry

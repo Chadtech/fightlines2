@@ -251,7 +251,7 @@ gauge kind resource =
                     Just (supplyExplanation kind)
 
                 Fuel _ ->
-                    Just "each traversed tile uses 1 fuel. holds and canceled moves use none. end a turn on any supply depot to fill the tank."
+                    Just "each traversed tile uses 1 fuel. holds and canceled moves use none. fuel cannot be replenished."
 
         labelChildren : List (Html msg)
         labelChildren =

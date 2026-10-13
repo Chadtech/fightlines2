@@ -98,8 +98,10 @@ import TurnPlayback
 import Unit exposing (Unit)
 import UnitCommand
 import UnitId exposing (UnitId)
+import UnitLoss
 import Util.Html.Event as HtmlEvent
 import Util.List as ListUtil
+import Util.Maybe as MaybeUtil
 import View.Ambush as Ambush
 import View.Aria as Aria
 import View.Button as Button
@@ -107,6 +109,7 @@ import View.CargoPassenger as CargoPassenger
 import View.Checkbox as Checkbox
 import View.CombatEffects as CombatEffects
 import View.CombatTheater as CombatTheater
+import View.DepotStatus as DepotStatus
 import View.Dialog as Dialog exposing (Dialog)
 import View.MovementRoute as MovementRoute
 import View.RotationChoices as RotationChoices
@@ -120,6 +123,7 @@ import View.UnitDeath as UnitDeath
 import View.UnitFacing as UnitFacing
 import View.UnitSprite as UnitSprite
 import View.UnitStatus as UnitStatus
+import View.UnitWarnings as UnitWarnings
 import View.UnloadPassenger as UnloadPassenger
 
 
@@ -132,6 +136,7 @@ import View.UnloadPassenger as UnloadPassenger
 type alias Model =
     { currentTurn : CurrentTurn.Model
     , shared : Shared.Model
+    , skipUnitLossDialogs : Bool
     , automaticallyCloseCombatTheater : Bool
     , name : String
     , mapType : MapType
@@ -206,6 +211,7 @@ type Msg
     | ZoomOutKeyPressed
     | ResetViewClicked
     | AnimationTimerElapsed Time.Posix
+    | UnitDeathMsg UnitDeath.Msg
     | CombatTheaterMsg CombatTheater.Msg
     | DirectionKeyPressed Direction
     | PathDirectionKeyPressed Direction
@@ -259,25 +265,36 @@ type alias Flags =
 init : Shared.Model -> Flags -> Model
 init shared flags =
     let
-        ( automaticallyCloseComabatTheater, maybeError ) =
-            case LocalStorage.get shared.localStorage combatTheaterPreferenceKey Decode.bool of
-                Ok automaticallyClose ->
-                    ( Maybe.withDefault False automaticallyClose, Nothing )
+        loadPreference : String -> ( Bool, Maybe Error )
+        loadPreference key =
+            case LocalStorage.get shared.localStorage key Decode.bool of
+                Ok saved ->
+                    ( Maybe.withDefault False saved, Nothing )
 
                 Err decodeError ->
                     let
                         error : Error
                         error =
                             Error.LocalStorageDecodeFailed
-                                { key = combatTheaterPreferenceKey, error = decodeError }
+                                { key = key
+                                , error = decodeError
+                                }
                     in
                     ( False, Just error )
+
+        ( automaticallyCloseCombatTheater, maybeError ) =
+            loadPreference combatTheaterPreferenceKey
+
+        ( skipLossDialogs, lossPreferenceError ) =
+            loadPreference unitLossPreferenceKey
     in
     { currentTurn = CurrentTurn.init flags.snapshot.turn
     , shared =
         shared
             |> Shared.addError maybeError
-    , automaticallyCloseCombatTheater = automaticallyCloseComabatTheater
+            |> Shared.addError lossPreferenceError
+    , skipUnitLossDialogs = skipLossDialogs
+    , automaticallyCloseCombatTheater = automaticallyCloseCombatTheater
     , name = flags.snapshot.name
     , mapType = flags.snapshot.mapType
     , players = flags.snapshot.players
@@ -493,6 +510,62 @@ playback model =
     TurnLifecycle.playback model.currentTurn.phase
 
 
+unitLossPreferenceKey : String
+unitLossPreferenceKey =
+    "skipUnitLossDialogs"
+
+
+unitLoss : Model -> Maybe TurnPlayback.Loss
+unitLoss model =
+    if model.skipUnitLossDialogs then
+        Nothing
+
+    else
+        playback model
+            |> Maybe.map TurnPlayback.losses
+            |> Maybe.andThen List.head
+
+
+ownerName : Model -> Unit -> Maybe String
+ownerName model unit =
+    let
+        ownsUnit : Player -> Bool
+        ownsUnit player =
+            player.side == unit.playerNumber
+    in
+    model.players
+        |> ListUtil.find ownsUnit
+        |> Maybe.map .name
+
+
+{-| Called only after detecting a newly active dialog. Repeated playback ticks
+and view rendering must not append the same loss error again.
+-}
+logNewLossError : Model -> Model
+logNewLossError model =
+    case unitLoss model of
+        Just loss ->
+            case UnitLoss.resolve (ownerName model) loss of
+                Ok _ ->
+                    model
+
+                Err (UnitLoss.OwnerNotFound missing) ->
+                    { model | shared = Shared.addError (Just (Error.UnitOwnerNotFound missing)) model.shared }
+
+        Nothing ->
+            model
+
+
+activeDialogHtmlId : Model -> Maybe String
+activeDialogHtmlId model =
+    case unitLoss model of
+        Just loss ->
+            Just (UnitDeath.dialogHtmlId loss)
+
+        Nothing ->
+            cargoDialogHtmlId model.currentTurn.phase
+
+
 combatExchange : Model -> Maybe TurnPlayback.Exchange
 combatExchange model =
     playback model |> Maybe.andThen TurnPlayback.combat
@@ -500,7 +573,9 @@ combatExchange model =
 
 deathInFocus : Model -> Bool
 deathInFocus model =
-    List.any (\unit -> Unit.onBoard unit && Unit.isDying unit) model.units
+    List.any
+        (\unit -> Unit.onBoard unit && Unit.isDying unit)
+        model.units
 
 
 planningLocked : Model -> Bool
@@ -523,7 +598,9 @@ submitTurn lobbyId model =
     case CurrentTurn.startSubmission model.currentTurn of
         Just currentTurn ->
             ( { model | currentTurn = currentTurn }
-            , E.request (SubmitResponseReceived model.currentTurn.number) (submitRequest lobbyId model)
+            , E.request
+                (SubmitResponseReceived model.currentTurn.number)
+                (submitRequest lobbyId model)
             )
 
         Nothing ->
@@ -537,7 +614,9 @@ unloadDialogHtmlId =
 
 selectedUnit : Model -> Maybe Unit
 selectedUnit model =
-    OrderPlanning.selectedUnitFromSelection (planningContext model) (currentSelection model)
+    OrderPlanning.selectedUnitFromSelection
+        (planningContext model)
+        (currentSelection model)
 
 
 selectedPosition : Model -> Maybe Coordinate
@@ -603,12 +682,14 @@ plannedUnloadRoutes model =
 
 focusedCommand : Model -> Maybe UnitCommand.MenuOption
 focusedCommand model =
-    TurnLifecycle.planning model.currentTurn.phase |> Maybe.andThen OrderPlanning.focusedCommand
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.andThen OrderPlanning.focusedCommand
 
 
 commandMenuUnit : Model -> Maybe Unit
 commandMenuUnit model =
-    TurnLifecycle.planning model.currentTurn.phase |> Maybe.andThen (OrderPlanning.commandMenuUnit (planningContext model))
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.andThen (OrderPlanning.commandMenuUnit (planningContext model))
 
 
 submitRequest : LobbyId -> Model -> Graphql.Http.Request Snapshot
@@ -672,7 +753,14 @@ plannedAction model unit move =
     if Unit.carrierId unit /= Nothing && List.length move.path > 1 then
         "unload at"
 
-    else if OrderPlanning.loadingTarget (planningContext model) unit move.destination (plannedOrders model) /= Nothing then
+    else if
+        OrderPlanning.loadingTarget
+            (planningContext model)
+            unit
+            move.destination
+            (plannedOrders model)
+            /= Nothing
+    then
         "load at"
 
     else
@@ -696,12 +784,16 @@ setSelection selected model =
 
 focusCommand : UnitCommand.MenuOption -> Model -> Model
 focusCommand command model =
-    model |> mapPlanning (OrderPlanning.focusCommand (planningContext model) command)
+    model
+        |> mapPlanning
+            (OrderPlanning.focusCommand (planningContext model) command)
 
 
 revokeSelectedOrder : Model -> Model
 revokeSelectedOrder model =
-    model |> mapPlanning (OrderPlanning.revokeSelectedOrder (planningContext model))
+    model
+        |> mapPlanning
+            (OrderPlanning.revokeSelectedOrder (planningContext model))
 
 
 choosingDirection : Model -> Bool
@@ -725,7 +817,13 @@ rotationSelection model =
             case selection.interaction of
                 ChoosingDirection _ direction ->
                     Unit.boardPosition unit
-                        |> Maybe.map (\position -> { unitId = unit.id, position = position, direction = direction })
+                        |> Maybe.map
+                            (\position ->
+                                { unitId = unit.id
+                                , position = position
+                                , direction = direction
+                                }
+                            )
 
                 CommandMenu _ ->
                     Nothing
@@ -1031,31 +1129,29 @@ superUpdate lobbyId msg model =
     case update lobbyId msg model of
         ( next, effect ) ->
             let
-                previousDialog : Maybe String
-                previousDialog =
-                    cargoDialogHtmlId model.currentTurn.phase
+                previousDialogHtmlId : Maybe String
+                previousDialogHtmlId =
+                    activeDialogHtmlId model
 
-                nextDialog : Maybe String
-                nextDialog =
-                    cargoDialogHtmlId next.currentTurn.phase
-
-                nextEff : Eff Msg
-                nextEff =
-                    case nextDialog of
-                        Just htmlId ->
-                            if nextDialog /= previousDialog then
-                                E.batch
-                                    [ effect
-                                    , E.toJs (ToJs.OpenDialog { htmlId = htmlId })
-                                    ]
-
-                            else
-                                effect
-
-                        Nothing ->
-                            effect
+                nextDialogHtmlId : Maybe String
+                nextDialogHtmlId =
+                    activeDialogHtmlId next
             in
-            ( next, nextEff )
+            case nextDialogHtmlId of
+                Just htmlId ->
+                    if nextDialogHtmlId /= previousDialogHtmlId then
+                        ( logNewLossError next
+                        , E.batch
+                            [ effect
+                            , E.toJs (ToJs.OpenDialog { htmlId = htmlId })
+                            ]
+                        )
+
+                    else
+                        ( next, effect )
+
+                Nothing ->
+                    ( next, effect )
 
 
 update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
@@ -1481,6 +1577,22 @@ update lobbyId msg model =
                 { model | frame = AnimationFrame.next model.frame }
                     |> E.withOut
 
+        UnitDeathMsg lossMsg ->
+            case lossMsg of
+                UnitDeath.ContinueClicked unitId ->
+                    let
+                        currentTurn : CurrentTurn.Model
+                        currentTurn =
+                            model.currentTurn
+                    in
+                    { model | currentTurn = { currentTurn | phase = TurnLifecycle.acknowledgeLoss unitId currentTurn.phase } }
+                        |> E.withOut
+
+                UnitDeath.SkipDialogsChanged skip ->
+                    ( { model | skipUnitLossDialogs = skip }
+                    , E.toJs (ToJs.SetLocalStorage { key = unitLossPreferenceKey, value = Encode.bool skip })
+                    )
+
         CombatTheaterMsg panelMsg ->
             case panelMsg of
                 CombatTheater.AutomaticallyCloseChanged automaticallyClose ->
@@ -1570,7 +1682,16 @@ handleCurrentTurnMsg lobbyId msg model =
                 )
 
         CurrentTurn.PlaybackFrameElapsed delta ->
-            case TurnLifecycle.tick delta currentTurn.phase of
+            let
+                advance : Float -> Phase -> Maybe { phase : Phase, frame : TurnPlayback.Frame }
+                advance =
+                    if model.skipUnitLossDialogs then
+                        TurnLifecycle.tick
+
+                    else
+                        TurnLifecycle.tickUntilLoss
+            in
+            case advance delta currentTurn.phase of
                 Just next ->
                     applyPlaybackFrame next model
                         |> automaticallyContinueCombat
@@ -1693,9 +1814,24 @@ handleCommandMsg commandMsg model =
 view : Model -> List (Html Msg)
 view model =
     let
+        hasUnitLoss : Bool
+        hasUnitLoss =
+            unitLoss model /= Nothing
+
+        hasCombatExchange : Bool
+        hasCombatExchange =
+            combatExchange model /= Nothing
+
+        interactionBlocked : Bool
+        interactionBlocked =
+            hasCombatExchange || hasUnitLoss
+
         animationClass : String
         animationClass =
-            if combatExchange model /= Nothing then
+            if hasUnitLoss then
+                "fightlines-death-focus fightlines-loss-focus"
+
+            else if hasCombatExchange then
                 "fightlines-combat-focus"
 
             else if deathInFocus model then
@@ -1706,7 +1842,7 @@ view model =
 
         combatAttributes : List (H.Attribute Msg)
         combatAttributes =
-            if combatExchange model /= Nothing then
+            if interactionBlocked then
                 [ A.attribute "inert" "" ]
 
             else
@@ -1745,10 +1881,15 @@ view model =
                 ]
             ]
             [ battlefieldView model
-            , turnPanel model
+            , H.div
+                [ A.attribute "data-loss-dim" ""
+                ]
+                [ turnPanel model
+                ]
             ]
         , H.aside
-            [ Aria.label "game panel"
+            [ A.attribute "data-loss-dim" ""
+            , Aria.label "game panel"
             , A.css
                 [ S.bgGray1
                 , S.outdentLeft
@@ -1836,35 +1977,41 @@ selectionView model =
                     case inspectionPosition model of
                         Just position ->
                             let
-                                hasDepot : Bool
-                                hasDepot =
-                                    List.any (\depot -> depot.position == position) model.depots
-
-                                depotTitle : List (Html Msg)
-                                depotTitle =
-                                    if hasDepot then
-                                        [ H.h2
-                                            []
-                                            [ H.text "supply depot" ]
-                                        ]
-
-                                    else
-                                        []
-
-                                tileContent : List (Html Msg)
-                                tileContent =
-                                    depotTitle ++ supplyDetails ++ terrainDetails
-
                                 supplyDetails : List (Html Msg)
                                 supplyDetails =
-                                    supplySourceDetails model position
+                                    case ListUtil.find (\depot -> depot.position == position) model.depots of
+                                        Just depot ->
+                                            [ DepotStatus.toHtml depot ]
+
+                                        Nothing ->
+                                            supplyCrateDetails model position
 
                                 terrainDetails : List (Html Msg)
                                 terrainDetails =
                                     [ terrainView model
                                     ]
+
+                                tileContent : List (Html Msg)
+                                tileContent =
+                                    supplyDetails ++ terrainDetails
+
+                                inspectionKey : String
+                                inspectionKey =
+                                    "tile:" ++ String.fromInt position.x ++ "," ++ String.fromInt position.y
                             in
-                            tileContent
+                            [ Keyed.node "div"
+                                []
+                                [ ( inspectionKey
+                                  , H.div
+                                        [ A.css
+                                            [ S.col
+                                            , S.g3
+                                            ]
+                                        ]
+                                        tileContent
+                                  )
+                                ]
+                            ]
 
                         Nothing ->
                             []
@@ -2463,39 +2610,18 @@ supplyControls model unit =
         H.text ""
 
 
-supplySourceDetails : Model -> Coordinate -> List (Html Msg)
-supplySourceDetails model position =
+supplyCrateDetails : Model -> Coordinate -> List (Html Msg)
+supplyCrateDetails model position =
     let
         stockText : Supply.Stock -> String
         stockText stock =
             "supplies: " ++ String.fromInt stock.current ++ "/" ++ String.fromInt stock.maximum
-
-        depotStock : List (Html Msg)
-        depotStock =
-            ListUtil.find (\depot -> depot.position == position) model.depots
-                |> Maybe.map depotDetails
-                |> Maybe.map List.singleton
-                |> Maybe.withDefault []
 
         crates : List (Html Msg)
         crates =
             model.supplyCrates
                 |> List.filter (\crate -> crate.position == position)
                 |> List.map crateDetails
-
-        depotDetails : Depot -> Html Msg
-        depotDetails depot =
-            let
-                description : String
-                description =
-                    depot.stock
-                        |> Maybe.map stockText
-                        |> Maybe.withDefault "stock outside sight"
-            in
-            H.p
-                []
-                [ H.text description
-                ]
 
         crateDetails : Supply.GroundCrate -> Html Msg
         crateDetails crate =
@@ -2506,7 +2632,7 @@ supplySourceDetails model position =
 
         hasSupplySource : Bool
         hasSupplySource =
-            not (List.isEmpty depotStock && List.isEmpty crates)
+            not (List.isEmpty crates)
 
         rules : List (Html Msg)
         rules =
@@ -2520,7 +2646,7 @@ supplySourceDetails model position =
             else
                 []
     in
-    depotStock ++ crates ++ rules
+    crates ++ rules
 
 
 cargoView : Model -> Unit -> Html Msg
@@ -2746,6 +2872,31 @@ depotLoadingDialog model id =
 -}
 dialog : Model -> Maybe (Dialog Msg)
 dialog model =
+    MaybeUtil.lazyFirst
+        [ lossDialog model
+        , planningDialog model
+        ]
+
+
+lossDialog : Model -> () -> Maybe (Dialog Msg)
+lossDialog model _ =
+    let
+        notice : TurnPlayback.Loss -> Dialog Msg
+        notice loss =
+            UnitDeath.dialog
+                { skipDialogs = model.skipUnitLossDialogs
+                , isOwn = isOwnUnit model loss.unit
+                , details = UnitLoss.resolve (ownerName model) loss
+                }
+                loss
+                |> Dialog.map UnitDeathMsg
+    in
+    unitLoss model
+        |> Maybe.map notice
+
+
+planningDialog : Model -> () -> Maybe (Dialog Msg)
+planningDialog model _ =
     case model.currentTurn.phase of
         TurnLifecycle.Planning (OrderPlanning.ConfirmingSubmission _) ->
             Just (submissionWarning model)
@@ -3312,6 +3463,18 @@ boardSvg model =
             else
                 CombatEffects.spotlight model.map exchange
 
+        lossSpotlight : TurnPlayback.Loss -> List (Svg Msg)
+        lossSpotlight loss =
+            [ UnitDeath.spotlight model.map model.units loss
+                |> StyledSvg.toUnstyled
+            ]
+
+        lossOverlay : List (Svg Msg)
+        lossOverlay =
+            unitLoss model
+                |> Maybe.map lossSpotlight
+                |> Maybe.withDefault []
+
         unitView : Unit -> Coordinate -> Svg Msg
         unitView unit position =
             let
@@ -3339,8 +3502,8 @@ boardSvg model =
                 cargoCount =
                     passengerCount + crateCount
 
-                accessibleLabel : String
-                accessibleLabel =
+                cargoLabel : String
+                cargoLabel =
                     if cargoCount > 0 then
                         Unit.label unit
                             ++ ", cargo: "
@@ -3354,6 +3517,18 @@ boardSvg model =
 
                     else
                         Unit.label unit
+
+                warningLabel : String
+                warningLabel =
+                    UnitWarnings.label unit
+
+                accessibleLabel : String
+                accessibleLabel =
+                    if String.isEmpty warningLabel then
+                        cargoLabel
+
+                    else
+                        cargoLabel ++ ", " ++ warningLabel
 
                 spriteFilter : String
                 spriteFilter =
@@ -3385,6 +3560,8 @@ boardSvg model =
                 , UnitCargo.toSvg passengerCount
                     |> StyledSvg.toUnstyled
                 , UnitCargo.supplyToSvg crateCount
+                    |> StyledSvg.toUnstyled
+                , UnitWarnings.toSvg unit
                     |> StyledSvg.toUnstyled
                 , UnitDeath.toSvg unit
                     |> StyledSvg.toUnstyled
@@ -3643,6 +3820,7 @@ boardSvg model =
             , rotationOverlay
             , facingOverlay
             , spotlightOverlay
+            , lossOverlay
             ]
         )
 

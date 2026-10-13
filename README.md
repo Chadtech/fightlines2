@@ -102,8 +102,8 @@ can pass through reserved destinations. Depots are passable.
 The selection panel shows the selected unit's illustration, name, and side,
 with expandable unit and gauge explanations. Every unit starts with 16/16 hit points, supplied by the server. Ambush combat damages health; healing is not implemented yet. Tanks and trucks start with 32/32 fuel. Each
 successfully traversed tile costs 1 fuel, independently of terrain movement
-costs. Interrupted routes pay only for successfully traveled tiles; holds consume none. At the end of resolution,
-vehicles on any supply depot refill to 32, regardless of side. Movement previews and submitted paths must fit both remaining
+costs. Interrupted routes pay only for successfully traveled tiles; holds consume none.
+Fuel cannot be replenished. Movement previews and submitted paths must fit both remaining
 fuel and the per-turn movement budget.
 
 Trucks have two cargo berths shared by allied infantry, field guns, and supply crates; tanks cannot board.
@@ -131,6 +131,13 @@ its unload choices.
 Enemy resources and passengers are concealed outside combat. Combat
 encounters involving your units appear even when the enemy is concealed and reveal
 both participants’ before/after health; supplies and fuel stay hidden. Crate cargo is separate from the truck's own provisions.
+Living units with visible resources show square warnings at 25% or below: a red
+heart on light gray for health, a dark `ø` on amber with a black border for
+supplies, and a red `E` on black for fuel. Active warnings pack horizontally from
+the tile's upper-left corner,
+blink together every two seconds, remain bright after orders are saved, and leave
+the lower corners for cargo. Reduced-motion preferences keep them steady.
+Concealed resources never produce warning badges.
 Trucks carrying passengers show a gold blinking silhouette badge in the tile's
 lower-right corner. Supply crates use a turquoise box badge in the lower-left
 corner. Each badge adds `2` when two of its cargo type are aboard; mixed cargo
@@ -180,8 +187,7 @@ recipients in stable ID order, rotating the first recipient each turn.
 Replenishment happens before upkeep, so supplies arriving this turn can avert
 exhaustion. They cannot fund movement or firing earlier in that turn.
 Combat deaths cannot be rescued. Supply sources never refill one another;
-empty crates disappear and free their cargo berths. Vehicle fuel still refills
-only when ending on a depot, independently of its provision stock.
+empty crates disappear and free their cargo berths. Replenishment does not restore vehicle fuel.
 
 Move a truck onto a depot. Saving its destination opens a **load supply crates**
 dialog with **0**, **1**, and **2** choices; unavailable counts are disabled.
@@ -199,7 +205,9 @@ whole plan. A blocked truck or occupied crate exit leaves cargo aboard; competin
 loaders alternate player priority by turn and may receive less than planned
 when depot stock runs out. Passing a depot never automatically loads cargo.
 
-Click a depot or ground crate to inspect its stock. Depot positions remain known,
+Click a depot to see its illustration, supply stock gauge, and terrain in the
+right panel, with depot and stock explanations behind info markers. Ground crates
+show their stock and delivery timing. Depot positions remain known,
 but stock is concealed outside sight. Ground crates appear only within sight;
 enemy truck cargo stays concealed. Supplies do not restore hit points.
 
@@ -288,8 +296,9 @@ unloading into the area. Other units moving do not trigger fire at an initial
 contact that has stayed in the area. A unit fires at most once per turn, choosing
 the nearest eligible observable enemy in its firing area. Forest concealment and intervening sight blockers
 apply; an ally's sight cannot enable firing through an obstruction. An ambushed
-unit stops its remaining movement and cannot return fire. Only units with an
-ambush order can fire. Opposing ready ambushers fire simultaneously when both
+unit with a normal move stops its remaining movement. A surviving attack-moving
+unit continues its remaining route and can fire on a later attack-move contact;
+being ambushed alone does not trigger return fire. Opposing ready ambushers fire simultaneously when both
 have an eligible target, permitting mutual destruction. A tank ambush deals
 8 damage, half a fresh tank's health, without an automatic counterattack.
 
@@ -367,7 +376,7 @@ three infantry across its front, and two guns behind them. Depot squares stay cl
   end of each two-tile-wide northern base corridor. The depot corridors sit beside a
   short, clear-ground shortcut that bends through the central woods, with trees
   along its sides. The open southern loop is 56 tiles between depots; the shortcut
-  is 34. There are no forward depots. Long return trips emphasize scarce refueling
+  is 34. There are no forward depots. Long return trips emphasize scarce fuel
   and opportunities to cut off the opposing force from its depot once combat is
   available.
 - **Black Forest**: two irregular clearings separated by thick forest, inspired
@@ -384,7 +393,7 @@ hills, and forests without changing terrain types, movement costs, or sight.
 Arabia and El Alamein use the desert theme; Supply Point and Blood Gulch use
 green forest, as does Black Forest. Sidewinder uses snow, including the brightened,
 desaturated forest and hill artwork. Ridges use the
-existing traversable hill rules. All depots refill vehicle fuel and provide finite provision stocks for automatic
+existing traversable hill rules. All depots provide finite provision stocks for automatic
 replenishment and explicit crate loading.
 
 ## Development
@@ -447,3 +456,10 @@ return fire. Only successful edges spend movement
 resources. Planning reserves the shot cost plus upkeep; a route without an
 encounter spends no firing supplies. Combat events use the existing theater,
 with an `attack move` heading and the usual fog-safe encounter portraits.
+
+Unit losses pause playback with a `unit lost` dialog below the battlefield. The lost
+unit stays highlighted while the rest of the map and controls darken. The dialog
+identifies the attack type and responsible player's unit, supply exhaustion, or a
+lost carrier. Choose **continue** to acknowledge each casualty. The adjacent
+**skip this dialog** checkbox remembers your preference and preserves the brief
+timed skull feedback while skipping future dialogs.

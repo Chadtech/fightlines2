@@ -52,6 +52,7 @@ import View.Dropdown as Dropdown
 import View.UnitCargo as UnitCargo
 import View.UnitDeath as UnitDeath
 import View.UnitFacing as UnitFacing
+import View.UnitWarnings as UnitWarnings
 
 
 
@@ -572,6 +573,7 @@ shell page =
             [ globalStyles
             , UnitFacing.styles
             , UnitCargo.styles
+            , UnitWarnings.styles
             , UnitDeath.styles
             , CombatTheater.styles
             , CombatEffects.styles

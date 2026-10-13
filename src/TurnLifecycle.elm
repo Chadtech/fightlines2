@@ -2,6 +2,7 @@ module TurnLifecycle exposing
     ( Phase(..)
     , Submission
     , WaitingState
+    , acknowledgeLoss
     , canPoll
     , continueCombat
     , finishSubmission
@@ -18,6 +19,7 @@ module TurnLifecycle exposing
     , startSubmission
     , startTurn
     , tick
+    , tickUntilLoss
     , toLabel
     )
 
@@ -25,6 +27,7 @@ import GamePage.OrderPlanning as OrderPlanning
 import GamePage.Selection as Selection exposing (Inspection, Selection(..))
 import PlannedOrder exposing (PlannedOrder)
 import TurnPlayback
+import UnitId exposing (UnitId)
 
 
 type Phase
@@ -279,6 +282,16 @@ continueCombat phase =
             Nothing
 
 
+acknowledgeLoss : UnitId -> Phase -> Phase
+acknowledgeLoss unitId phase =
+    case phase of
+        Playing playing ->
+            Playing { playing | animation = TurnPlayback.acknowledgeLoss unitId playing.animation }
+
+        _ ->
+            phase
+
+
 setCombatMapView : TurnPlayback.MapView -> Phase -> Phase
 setCombatMapView mapView phase =
     case phase of
@@ -329,12 +342,22 @@ startTurn submitted frames =
 
 
 tick : Float -> Phase -> Maybe { phase : Phase, frame : TurnPlayback.Frame }
-tick delta phase =
+tick =
+    tickWith TurnPlayback.tick
+
+
+tickUntilLoss : Float -> Phase -> Maybe { phase : Phase, frame : TurnPlayback.Frame }
+tickUntilLoss =
+    tickWith TurnPlayback.tickUntilLoss
+
+
+tickWith : (Float -> TurnPlayback.Playback -> ( Maybe TurnPlayback.Playback, TurnPlayback.Frame )) -> Float -> Phase -> Maybe { phase : Phase, frame : TurnPlayback.Frame }
+tickWith advance delta phase =
     case phase of
         Playing playing ->
             let
                 ( remaining, frame ) =
-                    TurnPlayback.tick delta playing.animation
+                    advance delta playing.animation
 
                 ready : Phase
                 ready =

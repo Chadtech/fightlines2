@@ -497,13 +497,6 @@ impl Scenario {
         supplies::replenish(self, turn_number);
         for unit in &mut self.units {
             unit.supplies.current = (unit.supplies.current - unit.supplies.upkeep_per_turn).max(0);
-            let at_depot = self
-                .depots
-                .iter()
-                .any(|depot| Some(depot.position) == unit.board_position());
-            if at_depot && let Some(fuel) = &mut unit.fuel {
-                fuel.current = fuel.maximum;
-            }
         }
         let exhausted: Vec<_> = self
             .units
@@ -1519,8 +1512,8 @@ mod tests {
         assert_eq!(shortcut, 34);
         assert_eq!(outer_loop, 56);
         assert!(outer_loop >= shortcut * 3 / 2);
-        // Even the shortcut needs a depot stop to complete a round trip on 64 fuel.
-        assert!(shortcut * 2 > 64);
+        // Even the shortcut exceeds a vehicle's starting fuel for a one-way trip.
+        assert!(shortcut > 32);
         for position in [
             Coordinate::new(13, 10),
             Coordinate::new(13, 8),

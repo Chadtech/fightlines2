@@ -2,7 +2,7 @@
 use crate::{
     map::Coordinate,
     scenario::{Direction, HitPoints, Scenario, Unit, UnitId, UnitKind},
-    turns::{MoveOrder, TurnFrame},
+    turns::{MoveOrder, TravelMode, TurnFrame},
     visibility,
 };
 use juniper::{GraphQLEnum, GraphQLObject};
@@ -132,6 +132,7 @@ fn theater_shots(board: &Scenario, engagements: &[Engagement]) -> Vec<Shot> {
 pub struct Combat {
     ready: BTreeSet<UnitId>,
     fired: BTreeSet<UnitId>,
+    attack_movers: BTreeSet<UnitId>,
     deferred_targets: BTreeMap<UnitId, BTreeSet<UnitId>>,
 }
 
@@ -154,6 +155,11 @@ impl Combat {
         let mut combat = Self {
             ready,
             fired: BTreeSet::new(),
+            attack_movers: orders
+                .iter()
+                .filter(|order| order.travel == TravelMode::AttackMove)
+                .map(|order| order.unit_id)
+                .collect(),
             deferred_targets: BTreeMap::new(),
         };
         for shooter in board
@@ -397,7 +403,11 @@ impl Combat {
         }
         opening.sort_by_key(|engagement| (engagement.shooter, engagement.target));
         for engagement in &opening {
-            stopped.insert(engagement.target);
+            let continues_attack_move = engagement.shot.kind == CombatKind::Ambush
+                && self.attack_movers.contains(&engagement.target);
+            if !continues_attack_move {
+                stopped.insert(engagement.target);
+            }
         }
         self.volley(board, &opening, frames);
         stopped.extend(
@@ -705,6 +715,84 @@ mod tests {
                 .fixture()?
                 > 1
         );
+        Ok(())
+    }
+
+    #[test]
+    fn ambushed_attack_move_continues_only_if_it_survives() -> TestResult<()> {
+        for initial_damage in [0, 8] {
+            let (mut scenario, mut orders) =
+                fixture(UnitKind::Tank, UnitKind::Tank, Coordinate::new(4, 2))?;
+            scenario.units[1].take_damage(initial_damage);
+            orders[1].travel = TravelMode::AttackMove;
+            orders[1]
+                .path
+                .extend([Coordinate::new(4, 3), Coordinate::new(4, 4)]);
+            let result = resolve_completed_movement(&scenario, &orders, 1)?;
+            let target = result.frames.last().fixture()?.units.get(1).fixture()?;
+            let survived = initial_damage == 0;
+            let expected_path = if survived {
+                orders[1].path.clone()
+            } else {
+                orders[1].path[..2].to_vec()
+            };
+            assert_eq!(
+                result.paths.get(&orders[1].unit_id).fixture()?,
+                &expected_path
+            );
+            assert_eq!(result.stopped.contains(&orders[1].unit_id), !survived);
+            assert_eq!(target.is_alive(), survived);
+            assert_eq!(target.hit_points().current(), if survived { 8 } else { 0 });
+            assert_eq!(
+                target.fuel().fixture()?.current,
+                if survived { 30 } else { 31 }
+            );
+            assert_eq!(target.supplies(), scenario.units[1].supplies());
+            assert_eq!(shots(&result).len(), 1);
+            assert_eq!(shots(&result)[0].kind, CombatKind::Ambush);
+            assert_eq!(shots(&result)[0].destination, Coordinate::new(4, 3));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn ambushed_attack_move_can_reach_and_attack_an_enemy_later() -> TestResult<()> {
+        let (mut scenario, mut orders) =
+            fixture(UnitKind::Tank, UnitKind::Tank, Coordinate::new(4, 2))?;
+        let mut defender = Scenario::el_alamein()
+            .fixture()?
+            .units
+            .into_iter()
+            .find(|unit| {
+                unit.side() == PlayerNumber::Player1
+                    && unit.kind() == UnitKind::Tank
+                    && unit.unit_id() != orders[0].unit_id
+            })
+            .fixture()?;
+        defender.move_to(Coordinate::new(4, 5));
+        let defender_id = defender.unit_id();
+        scenario.units.push(defender);
+        orders[1].travel = TravelMode::AttackMove;
+        orders[1]
+            .path
+            .extend([Coordinate::new(4, 3), Coordinate::new(4, 4)]);
+        let result = resolve_completed_movement(&scenario, &orders, 1)?;
+        assert_eq!(
+            result.paths.get(&orders[1].unit_id).fixture()?,
+            &orders[1].path
+        );
+        let shots = shots(&result);
+        assert_eq!(shots.len(), 2);
+        assert_eq!(shots[0].kind, CombatKind::Ambush);
+        assert_eq!(shots[1].kind, CombatKind::AttackMove);
+        assert_eq!(shots[1].attacker.unit_id(), orders[1].unit_id);
+        assert_eq!(shots[1].target.unit_id(), defender_id);
+        assert_eq!(shots[1].attacker_health.before.current(), 8);
+        assert_eq!(shots[1].target_health.after.current(), 8);
+        assert!(result.stopped.contains(&orders[1].unit_id));
+        let mover = result.frames.last().fixture()?.units.get(1).fixture()?;
+        assert_eq!(mover.supplies().current(), 30);
+        assert_eq!(mover.fuel().fixture()?.current, 30);
         Ok(())
     }
 

@@ -35,7 +35,8 @@ the design direction changes. User feedback takes precedence.
 ## Color and surfaces
 
 The direction is a compact Windows 98-inspired window with square corners,
-warm gray surfaces, and crisp inset/outset borders.
+warm gray surfaces, and crisp inset/outset borders. Use the Chadtech palette
+tokens in `Style.elm` for interface colors.
 
 | Role | Helper | Value |
 | --- | --- | --- |
@@ -340,18 +341,49 @@ playback and final positions reflect only the route actually traveled.
 - 2026-10-11: flatten the game controls into a short horizontal strip, with a pulsing
   gold ready action and a solid smooth activity bar while submitting, waiting, or playing.
 
+## Low resource indicators
+
+On-board living units with visible resources show square warning badges when a
+resource reaches 25% of its maximum or below. Pack only active badges horizontally
+from the tile's upper-left corner, in health, supplies, fuel order. Each square
+is 3.2 logical pixels wide (20% of a tile), inset 0.64 pixels with 0.24-pixel gaps.
+Use a red (`red1`) heart on light gray (`gray5`), a dark brown (`yellow1`)
+`ø` on gold (`yellow5`) with an opaque near-black (`gray0`) border, and a red
+(`red1`) `E` on near-black (`gray0`). Draw symbols as vector
+shapes so they remain clear and the fuel symbol stays uppercase.
+Blink the badges together on a two-second cycle: one second visible, one second
+hidden. Reduced-motion preferences keep them steady. Combat and unit-loss focus
+pause the animation with the surrounding interface. Ignore pointer events and
+render above ordered-sprite dimming. Leave the lower corners for cargo and preserve ambush arrows around
+the tile. Unit accessible labels include active warnings. Concealed resources,
+absent fuel, healthy resources, and dying units show no warning badges.
+
 ## Unit death feedback
 
-When a unit exhausts its supplies, turn playback keeps its last sprite visible
-under a detailed 1980s anime-style illustrated skull and crossbones asset. The marker appears for 0.6 seconds, blinks away for 0.2 seconds, then returns
-for 0.6 seconds until cleanup at 1.4 seconds, when the server's next frame removes the unit.
-During this pause, freeze all unit idle sprites and surrounding interface
-animations, including facing markers, cargo badges, and the activity bar.
-Combat casualties disappear from presentation after their death pause, before
-later movement resumes; authoritative cleanup remains owned by the server.
-The marker ignores pointer events. Reduced-motion mode displays it steadily
-until removal. Hidden enemy deaths follow the same visibility rules as other
-playback frames.
+Each observable unit loss pauses playback and opens a beveled `unit lost` dialog
+below the battlefield. Darken the other map tiles and surrounding controls while
+leaving the casualty's physical tile illuminated with a gold outline and its
+steady illustrated skull marker. Passengers focus their carrier's tile. Freeze
+unit and interface animations and block battlefield interaction during the dialog.
+
+Name the lost unit and show whether the lethal shot was an `ambush` or `attack move`,
+alongside the attacker portrait, type, and owning player's name. Supply exhaustion
+reads `ran out of supplies`; passengers lost with a carrier identify that carrier
+and its loss cause. Use projected playback data so concealed casualties never
+appear on the map or in the loss queue.
+
+If an owner name is missing from the roster, replace all loss information with
+an `unable to display unit loss` error identifying the missing player side.
+Keep `continue` and the skip checkbox available so playback can proceed.
+
+Place `continue` and the `skip this dialog` checkbox together below all information.
+The checkbox defaults to unchecked and remembers its Boolean in local storage.
+Checking it dismisses the current dialog and skips future loss dialogs, preserving
+the existing timed skull feedback. Continue acknowledges one casualty; simultaneous
+losses appear in sequence. Enter activates the focused action, and Escape continues.
+After acknowledgment, keep the existing server-timed casualty pause before removing
+the unit and resuming movement. Long animation ticks stop at unacknowledged losses.
+Reduced-motion mode retains a steady marker and highlight.
 
 ## Ambush planning and playback
 
@@ -431,8 +463,15 @@ authoritative health transitions without revealing enemy resources or routes.
 
 ## Supply logistics
 
-Keep automatic replenishment passive. A selected depot or ground crate shows its
-remaining stock and delivery timing; unseen depot stock reads `stock outside sight`.
+Keep automatic replenishment passive. A selected depot uses a unit-style inspector:
+its name and info marker, the illustrated building on an inset nightwood screen,
+a `supplies` gauge with server-provided `current / maximum` values, and the terrain
+row. Use the unit gauge's red/yellow/green thresholds, with `low` below 25% and
+`empty` at zero. Keep depot and stock explanations behind their info markers;
+omit separate replenishment, vehicle fuel, and supply crate sections. Unseen depot
+stock reads `stock outside sight`, with no numeric value or gauge. Switching
+inspected objects closes expanded explanations. Ground crates retain their stock
+and delivery timing.
 Truck cargo counts include passengers and crates. The selected truck inspector
 shows each carried crate's stock and saved unloading destination.
 Saving a truck destination on a depot opens a modal titled `load supply crates`

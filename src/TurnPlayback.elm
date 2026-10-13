@@ -1,13 +1,17 @@
 module TurnPlayback exposing
     ( Exchange
     , Frame
+    , Loss
+    , LossCause(..)
     , MapView(..)
     , Panel
     , Playback
     , Presentation(..)
+    , acknowledgeLoss
     , combat
     , continueCombat
     , initial
+    , losses
     , movingPositions
     , panels
     , selection
@@ -15,6 +19,7 @@ module TurnPlayback exposing
     , spotlight
     , start
     , tick
+    , tickUntilLoss
     , visibleShots
     )
 
@@ -51,6 +56,7 @@ type alias Playback =
     , remaining : List Frame
     , elapsed : Float
     , presentation : Presentation
+    , acknowledgedLosses : List UnitId
     }
 
 
@@ -92,6 +98,96 @@ type alias Exchange =
     , attackerHealth : CombatHealth
     , targetHealth : CombatHealth
     }
+
+
+type LossPolicy
+    = AwaitAcknowledgment
+    | ContinueAutomatically
+
+
+type alias Loss =
+    { unit : Unit
+    , cause : LossCause
+    }
+
+
+type LossCause
+    = Destroyed CombatKind Unit
+    | SuppliesExhausted
+    | CarrierLost Unit LossCause
+
+
+{-| Only projected casualties are reported. Encounter portraits can explain a
+loss but must never introduce a concealed unit onto the battlefield.
+-}
+losses : Playback -> List Loss
+losses playback =
+    let
+        frame : Frame
+        frame =
+            lossFrame playback
+
+        cause : Unit -> LossCause
+        cause unit =
+            let
+                lethalShot : Shot -> Bool
+                lethalShot shot =
+                    shot.target.id == unit.id && shot.targetHealth.after.current == 0
+
+                deadCarrier : Unit -> Bool
+                deadCarrier carrier =
+                    Unit.carrierId unit == Just carrier.id && Unit.isDying carrier
+            in
+            case ListUtil.find lethalShot playback.current.shots of
+                Just shot ->
+                    Destroyed shot.kind shot.attacker
+
+                Nothing ->
+                    case ListUtil.find deadCarrier frame.units of
+                        Just carrier ->
+                            CarrierLost carrier (cause carrier)
+
+                        Nothing ->
+                            SuppliesExhausted
+
+        unacknowledged : Unit -> Bool
+        unacknowledged unit =
+            Unit.isDying unit && not (List.member unit.id playback.acknowledgedLosses)
+
+        notice : Unit -> Loss
+        notice unit =
+            { unit = unit
+            , cause = cause unit
+            }
+    in
+    List.filter unacknowledged frame.units
+        |> List.map notice
+
+
+lossFrame : Playback -> Frame
+lossFrame playback =
+    case playback.presentation of
+        Deaths deaths ->
+            deaths.frame
+
+        Battlefield ->
+            playback.current
+
+        Combat focus ->
+            focus.before
+
+
+acknowledgeLoss : UnitId -> Playback -> Playback
+acknowledgeLoss unitId playback =
+    { playback | acknowledgedLosses = unitId :: playback.acknowledgedLosses }
+
+
+{-| Stop at loss boundaries even when a delayed animation tick spans the whole
+turn. Acknowledging one casualty leaves other casualties available in order.
+-}
+tickUntilLoss : Float -> Playback -> ( Maybe Playback, Frame )
+tickUntilLoss =
+    tickWithLossPause AwaitAcknowledgment
 
 
 combat : Playback -> Maybe Exchange
@@ -234,6 +330,7 @@ beginFrame frames remaining =
     , remaining = remaining
     , elapsed = 0
     , presentation = presentation
+    , acknowledgedLosses = []
     }
 
 
@@ -315,7 +412,31 @@ boundaries. Combat adds a local pause before a volley and discards surplus there
 so a delayed animation tick cannot skip its presentation.
 -}
 tick : Float -> Playback -> ( Maybe Playback, Frame )
-tick delta playback =
+tick =
+    tickWithLossPause ContinueAutomatically
+
+
+hasPendingLoss : LossPolicy -> Playback -> Bool
+hasPendingLoss policy playback =
+    case policy of
+        AwaitAcknowledgment ->
+            not (List.isEmpty (losses playback))
+
+        ContinueAutomatically ->
+            False
+
+
+tickWithLossPause : LossPolicy -> Float -> Playback -> ( Maybe Playback, Frame )
+tickWithLossPause lossPolicy delta playback =
+    if hasPendingLoss lossPolicy playback then
+        ( Just playback, lossFrame playback )
+
+    else
+        tickPresentation lossPolicy delta playback
+
+
+tickPresentation : LossPolicy -> Float -> Playback -> ( Maybe Playback, Frame )
+tickPresentation lossPolicy delta playback =
     case playback.presentation of
         Combat focus ->
             tickCombat delta focus playback
@@ -323,9 +444,13 @@ tick delta playback =
         Deaths deaths ->
             if deaths.elapsed + delta >= deathDuration playback then
                 let
+                    isCasualty : Unit -> Unit -> Bool
+                    isCasualty unit dead =
+                        Unit.isDying dead && dead.id == unit.id
+
                     keepSurvivor : Unit -> Bool
                     keepSurvivor unit =
-                        not (List.any (\dead -> Unit.isDying dead && dead.id == unit.id) deaths.frame.units)
+                        not (List.any (isCasualty unit) deaths.frame.units)
 
                     focus : CombatFocus
                     focus =
@@ -364,7 +489,7 @@ tick delta playback =
                 )
 
         Battlefield ->
-            tickBattlefield delta playback
+            tickBattlefield lossPolicy delta playback
 
 
 tickCombat : Float -> CombatFocus -> Playback -> ( Maybe Playback, Frame )
@@ -498,8 +623,8 @@ advanceCombat focus playback =
             }
 
 
-tickBattlefield : Float -> Playback -> ( Maybe Playback, Frame )
-tickBattlefield delta playback =
+tickBattlefield : LossPolicy -> Float -> Playback -> ( Maybe Playback, Frame )
+tickBattlefield lossPolicy delta playback =
     case playback.remaining of
         [] ->
             ( Nothing, playback.current )
@@ -524,7 +649,11 @@ tickBattlefield delta playback =
                         ( Just advanced, deaths.frame )
 
                     Battlefield ->
-                        tick (elapsed - toFloat next.durationMs) advanced
+                        if hasPendingLoss lossPolicy advanced then
+                            ( Just advanced, advanced.current )
+
+                        else
+                            tickWithLossPause lossPolicy (elapsed - toFloat next.durationMs) advanced
 
             else
                 ( Just

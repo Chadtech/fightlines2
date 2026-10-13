@@ -64,6 +64,9 @@ checks =
                 LocalStorageDecodeFailed details ->
                     details.key ++ ": " ++ JD.errorToString details.error
 
+                UnitOwnerNotFound _ ->
+                    "unexpected unit owner error while reading the user name"
+
         invalidNamePreservesError : Bool
         invalidNamePreservesError =
             case JD.decodeString JD.string "42" of

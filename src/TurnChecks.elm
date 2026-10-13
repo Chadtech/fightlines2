@@ -18,6 +18,7 @@ import TurnPlayback
 import Unit exposing (Unit)
 import Unit.Location as Location
 import UnitId exposing (UnitId)
+import UnitLoss
 import View.CombatExplosion as CombatExplosion
 import View.CombatFormation as CombatFormation
 import View.CombatTheater as CombatTheater
@@ -39,7 +40,7 @@ checks : List String
 checks =
     case ( UnitId.parse "1", UnitId.parse "2" ) of
         ( Ok first, Ok second ) ->
-            playbackChecks first second ++ truckPlaybackChecks first ++ transportPlaybackChecks first second ++ spriteFacingChecks first ++ deathPlaybackChecks first ++ deathFocusChecks first second ++ combatPlaybackChecks first second ++ combatDeathChecks first second ++ combatTheaterChecks
+            playbackChecks first second ++ truckPlaybackChecks first ++ transportPlaybackChecks first second ++ spriteFacingChecks first ++ deathPlaybackChecks first ++ deathFocusChecks first second ++ combatPlaybackChecks first second ++ combatDeathChecks first second ++ combatTheaterChecks ++ lossDetailsChecks first second
 
         _ ->
             [ "could not construct fixture IDs" ]
@@ -243,6 +244,7 @@ playbackChecks first second =
         sharedPlayback =
             { current = firstFrame
             , remaining = [ middleFrame, lastFrame ]
+            , acknowledgedLosses = []
             , presentation = TurnPlayback.Battlefield
             , elapsed = 0
             }
@@ -516,6 +518,7 @@ transportPlaybackChecks passengerId truckId =
                       , visibleTiles = []
                       }
                     ]
+                , acknowledgedLosses = []
                 , presentation = TurnPlayback.Battlefield
                 , elapsed = 0
                 }
@@ -613,7 +616,7 @@ spriteFacingChecks id =
 
         playback : TurnPlayback.Playback
         playback =
-            { current = frame tank, remaining = [ frame west, frame north, frame south ], elapsed = 0, presentation = TurnPlayback.Battlefield }
+            { current = frame tank, remaining = [ frame west, frame north, frame south ], elapsed = 0, acknowledgedLosses = [], presentation = TurnPlayback.Battlefield }
 
         ( _, westFrame ) =
             TurnPlayback.tick 90 playback
@@ -927,6 +930,20 @@ combatDeathChecks first second =
                 firstDeath =
                     openFirst |> Maybe.andThen TurnPlayback.continueCombat
 
+                attackMoveCauses : TurnPlayback.Playback -> List TurnPlayback.LossCause
+                attackMoveCauses animation =
+                    let
+                        current : TurnPlayback.Frame
+                        current =
+                            animation.current
+
+                        attackMoveShot : Shot -> Shot
+                        attackMoveShot shot =
+                            { shot | kind = CombatKind.AttackMove }
+                    in
+                    TurnPlayback.losses { animation | current = { current | shots = List.map attackMoveShot current.shots } }
+                        |> List.map .cause
+
                 firstHeld : Maybe TurnPlayback.Frame
                 firstHeld =
                     firstDeath |> Maybe.map (.animation >> TurnPlayback.tick 1399 >> Tuple.second)
@@ -967,7 +984,17 @@ combatDeathChecks first second =
                         [ label ]
             in
             List.concat
-                [ expect "first theater reveals only its own casualty and closes the card"
+                [ expect "loss dialog identifies the lethal shot and its attacker"
+                    (firstDeath |> Maybe.map (.animation >> TurnPlayback.losses) |> Maybe.map (List.map .cause) |> (==) (Just [ TurnPlayback.Destroyed CombatKind.Ambush attacker ]))
+                , expect "loss dialogs distinguish attack move from ambush"
+                    (firstDeath |> Maybe.map (.animation >> attackMoveCauses) |> (==) (Just [ TurnPlayback.Destroyed CombatKind.AttackMove attacker ]))
+                , expect "loss dialog holds combat casualties through arbitrarily long ticks"
+                    (firstDeath |> Maybe.map (.animation >> TurnPlayback.tickUntilLoss 60000 >> Tuple.second >> dyingIds) |> (==) (Just [ second ]))
+                , expect "continuing a loss resumes the existing casualty pause"
+                    (firstDeath |> Maybe.map (.animation >> TurnPlayback.acknowledgeLoss second >> TurnPlayback.tickUntilLoss 1400 >> Tuple.second >> dyingIds) |> (==) (Just []))
+                , expect "reciprocal losses require separate acknowledgments"
+                    (mutual |> Maybe.map (.animation >> TurnPlayback.acknowledgeLoss first >> TurnPlayback.losses >> List.map (.unit >> .id)) |> (==) (Just [ second ]))
+                , expect "first theater reveals only its own casualty and closes the card"
                     (Maybe.map (.frame >> dyingIds) firstDeath == Just [ second ] && Maybe.andThen (.animation >> TurnPlayback.panels) firstDeath == Nothing)
                 , expect "per-pair skull holds for the server pause without movement or early continuation"
                     (Maybe.map dyingIds firstHeld == Just [ second ] && Maybe.map (.animation >> Just >> TurnPlayback.movingPositions) firstDeath == Just [] && Maybe.andThen (.animation >> TurnPlayback.continueCombat) firstDeath == Nothing)
@@ -1057,17 +1084,40 @@ deathPlaybackChecks id =
 
         animation : TurnPlayback.Playback
         animation =
-            { current = dying, remaining = [ gone ], elapsed = 0, presentation = TurnPlayback.Battlefield }
+            { current = dying, remaining = [ gone ], elapsed = 0, acknowledgedLosses = [], presentation = TurnPlayback.Battlefield }
 
         ( pending, beforeRemoval ) =
             TurnPlayback.tick 1399 animation
 
         ( finished, afterRemoval ) =
             TurnPlayback.tick 1400 animation
+
+        alive : Unit
+        alive =
+            { dead | resources = Nothing }
+
+        initial : TurnPlayback.Frame
+        initial =
+            { dying | units = [ alive ], durationMs = 0 }
+
+        delayed : Maybe ( Maybe TurnPlayback.Playback, TurnPlayback.Frame )
+        delayed =
+            TurnPlayback.start [ initial, dying, gone ]
+                |> Maybe.map (TurnPlayback.tickUntilLoss 60000)
+
+        ( held, heldFrame ) =
+            TurnPlayback.tickUntilLoss 60000 animation
+
+        ( acknowledged, acknowledgedFrame ) =
+            TurnPlayback.acknowledgeLoss id animation |> TurnPlayback.tickUntilLoss 1400
     in
     expect "dead units remain for the full death animation" (pending /= Nothing && beforeRemoval.units == [ dead ])
         ++ expect "dead units vanish at the server frame boundary" (finished == Nothing && List.isEmpty afterRemoval.units && List.isEmpty afterRemoval.visibleTiles)
         ++ expect "death does not interpolate a movement" (List.isEmpty (TurnPlayback.movingPositions (Just animation)))
+        ++ expect "supply death dialogs remain until acknowledged" (held == Just animation && heldFrame.units == [ dead ])
+        ++ expect "supply death cause uses the exhaustion frame" (List.map .cause (TurnPlayback.losses animation) == [ TurnPlayback.SuppliesExhausted ])
+        ++ expect "delayed ticks cannot skip a supply loss" (Maybe.map (Tuple.second >> .units) delayed == Just [ dead ])
+        ++ expect "acknowledged supply death completes normally" (acknowledged == Nothing && List.isEmpty acknowledgedFrame.units)
 
 
 deathFocusChecks : UnitId -> UnitId -> List String
@@ -1130,6 +1180,13 @@ deathFocusChecks first second =
                 ++ expect "death focus holds the survivor still for the full pause" (deathFrame.units == [ dead, survivor ] && List.isEmpty (TurnPlayback.movingPositions before))
                 ++ expect "completed deaths clear before subsequent movement" (List.map .id clearedFrame.units == [ second ] && List.map Unit.boardPosition clearedFrame.units == [ Unit.boardPosition survivor ] && clearedFrame.visibleTiles == paused.visibleTiles)
                 ++ expect "surviving units resume their movement after death focus" (List.map .unitId (TurnPlayback.movingPositions after) == [ second ])
+                ++ expect "carrier passengers inherit the carrier's loss cause"
+                    (TurnPlayback.losses { animation | current = { dying | units = [ dead, { survivor | destroyed = True, location = Location.Aboard first } ] } }
+                        |> List.map .cause
+                        |> (==) [ TurnPlayback.SuppliesExhausted, TurnPlayback.CarrierLost dead TurnPlayback.SuppliesExhausted ]
+                    )
+                ++ expect "loss dialogs never invent hidden casualties"
+                    (List.isEmpty (TurnPlayback.losses { animation | current = { dying | units = [ survivor ] } }))
 
 
 combatTheaterChecks : List String
@@ -1184,4 +1241,104 @@ combatTheaterChecks =
             (List.concatMap paths themes == expectedPaths)
         , expect "a full formation's four losses finish before the panel clock caps at 2000ms"
             (CombatFormation.lossStartsAt { surviving = 0, index = 3 } + CombatExplosion.durationMs <= 2000)
+        ]
+
+
+lossDetailsChecks : UnitId -> UnitId -> List String
+lossDetailsChecks first second =
+    let
+        casualty : Unit
+        casualty =
+            { id = first
+            , playerNumber = PlayerNumber.Player1
+            , kind = Kind.Infantry
+            , direction = Nothing
+            , spriteFacing = SpriteFacing.Right
+            , resources = Nothing
+            , cargoCapacity = 0
+            , destroyed = True
+            , combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }
+            , location = Location.OnMap { x = 0, y = 0 }
+            }
+
+        attacker : Unit
+        attacker =
+            { casualty | id = second, playerNumber = PlayerNumber.Player2, destroyed = False }
+
+        carrier : Unit
+        carrier =
+            { casualty | id = second, kind = Kind.Truck }
+
+        ownerName : Unit -> Maybe String
+        ownerName unit =
+            case unit.playerNumber of
+                PlayerNumber.Player1 ->
+                    Just "Alice"
+
+                PlayerNumber.Player2 ->
+                    Just "Bob"
+
+        missingOwner : Unit -> Maybe String
+        missingOwner unit =
+            if unit.id == second then
+                Nothing
+
+            else
+                ownerName unit
+
+        missingAttackerOwner : Unit -> Maybe String
+        missingAttackerOwner unit =
+            if unit.playerNumber == PlayerNumber.Player2 then
+                Nothing
+
+            else
+                ownerName unit
+
+        resolve : (Unit -> Maybe String) -> TurnPlayback.LossCause -> Result UnitLoss.DetailsError UnitLoss.Details
+        resolve lookup cause =
+            UnitLoss.resolve lookup { unit = casualty, cause = cause }
+
+        missing : UnitLoss.DetailsError
+        missing =
+            UnitLoss.OwnerNotFound { unitId = second, side = PlayerNumber.Player2 }
+
+        expect : String -> Bool -> List String
+        expect label passed =
+            if passed then
+                []
+
+            else
+                [ label ]
+    in
+    List.concat
+        [ expect "loss details preserve the casualty's owner and exhaustion cause"
+            (resolve ownerName TurnPlayback.SuppliesExhausted == Ok { ownerName = "Alice", cause = UnitLoss.SuppliesExhausted })
+        , expect "loss details preserve attacker ownership and attack kind"
+            (resolve ownerName (TurnPlayback.Destroyed CombatKind.AttackMove attacker)
+                == Ok { ownerName = "Alice", cause = UnitLoss.Destroyed CombatKind.AttackMove { unit = attacker, ownerName = "Bob" } }
+            )
+        , expect "missing casualty owner retains unit ID and side"
+            (resolve (always Nothing) TurnPlayback.SuppliesExhausted
+                == Err (UnitLoss.OwnerNotFound { unitId = first, side = PlayerNumber.Player1 })
+            )
+        , expect "missing attacker owner retains unit ID and side"
+            (resolve missingOwner (TurnPlayback.Destroyed CombatKind.Ambush attacker) == Err missing)
+        , expect "missing carrier owner fails the entire loss notice"
+            (resolve missingOwner (TurnPlayback.CarrierLost carrier TurnPlayback.SuppliesExhausted)
+                == Err (UnitLoss.OwnerNotFound { unitId = second, side = PlayerNumber.Player1 })
+            )
+        , expect "nested carrier cause propagates a missing attacker owner"
+            (resolve missingAttackerOwner
+                (TurnPlayback.CarrierLost carrier (TurnPlayback.Destroyed CombatKind.Ambush attacker))
+                == Err missing
+            )
+        , expect "nested carrier loss preserves both owner names"
+            (resolve ownerName (TurnPlayback.CarrierLost carrier (TurnPlayback.Destroyed CombatKind.Ambush attacker))
+                == Ok
+                    { ownerName = "Alice"
+                    , cause =
+                        UnitLoss.CarrierLost { unit = carrier, ownerName = "Alice" }
+                            (UnitLoss.Destroyed CombatKind.Ambush { unit = attacker, ownerName = "Bob" })
+                    }
+            )
         ]

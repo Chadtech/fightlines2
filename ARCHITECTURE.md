@@ -537,8 +537,8 @@ Rust units carry optional `Fuel` state: tanks and trucks start at 32/32;
 infantry and field guns have none. One traversed path edge consumes one fuel,
 independent of terrain movement points. Validation rejects paths exceeding
 available fuel before locking orders. Resolution consumes fuel only on
-successful movement, then refills vehicles ending on any depot, regardless of
-side. Interrupted routes pay only for traversed tiles; holds spend no fuel.
+successful movement. Fuel cannot be replenished. Interrupted routes pay only for
+traversed tiles; holds spend no fuel.
 
 Snapshots expose current and maximum fuel through GraphQL. Elm selects it into
 `Unit`, displays the authoritative gauge and bounds both reachable paths and
@@ -572,8 +572,8 @@ death-focus class. `TurnPlayback.start` omits previously presented casualties
 from later frames, so combat death markers clear after the server's pause
 before subsequent movement resumes. Server visibility and timing remain intact.
 Frame visibility filtering also applies to deaths, concealing hidden enemies.
-Nearby depots and crates replenish provisions before upkeep;
-vehicle fuel refills when ending on any depot. Waiting for another player and retrying submissions never
+Nearby depots and crates replenish provisions before upkeep.
+Waiting for another player and retrying submissions never
 charge upkeep.
 
 GraphQL supplies state and consumption rates initialize Elm `Unit` values and
@@ -731,14 +731,18 @@ Field guns use a five-square cross centered two squares ahead; other combat unit
 use a one-square forward line. Elm renders coverage from these server-provided rules.
 
 `combat.rs` owns the readiness set, once-per-turn firing set, target selection,
-and simultaneous damage. Only ready ambushers fire; targets caught by an ambush
-stop their remaining route and do not automatically return fire. It records initially eligible
-targets per ambushing unit and defers them while they remain eligible. Losing
+and simultaneous damage. Ready ambushers and attack-move contacts can fire;
+targets caught by an ambush stop their remaining route unless they survive with
+an attack-move order. Being ambushed does not automatically trigger return fire.
+It records initially eligible targets per ambushing unit and defers them while
+they remain eligible. Losing
 contact removes that deferral, so re-entry triggers immediate fire. The movement
 resolver prepares ambush facing/readiness before arrivals and checks new contacts
 after arrivals. Its firing state survives into loading/unloading, allowing
 newly unloaded enemies to trigger an unfired ambush. After transport finishes,
-`Turns` releases the remaining deferred contacts for a final volley before upkeep. Engagement stops the target's remaining route. Movement
+`Turns` releases the remaining deferred contacts for a final volley before upkeep.
+`Combat` retains attack-mover IDs from the submitted orders so ambush damage does
+not stop their routes; death and physical encounters still stop them. Movement
 resources are paid per successful edge in the working board; the final health,
 supplies, and facing are applied alongside the actual traveled paths in `turns.rs`.
 Normal upkeep remains a single end-of-turn charge. Dead units cannot shoot, move,
@@ -837,6 +841,10 @@ of provisions. `SupplyRules` supplies authoritative capacities
 to Elm. `Unit.resources.supplyCargo` follows the existing whole-resource fog gate.
 Depot stock is nullable outside sight; known depot positions remain available.
 Ground crates are projected by visible tile, independently of unit concealment.
+`View.DepotStatus` renders the depot portrait and optional stock gauge without
+inventing resource values outside sight. `GamePage` supplies the selected depot
+and terrain row; coordinate-keyed inspection content resets native disclosures
+when the inspected tile changes.
 
 `MoveOrderInput.loadCrates` requests a count and `crateUnloads` identifies original
 cargo slots and destinations. Validation checks truck ownership, shared passenger
@@ -854,7 +862,7 @@ no per-turn transfer limit. Overlapping sources can fill remaining deficits. Sou
 living units, using cardinal adjacency and physical carrier positions for passengers.
 All crates are neutral and serve both sides, including a carrier and its passengers. Round-robin distribution rotates its first recipient each turn. Combat
 casualties and passengers of destroyed carriers cannot receive supplies. Empty crates
-are removed. Provision replenishment leaves health and depot fuel rules unchanged.
+are removed. Provision replenishment leaves health and vehicle fuel unchanged.
 
 `PlannedOrder.SupplyTransfer` owns the truck route, load count, crate exits, and
 existing passenger unloads. `OrderPlanning.ChoosingCrates` owns the depot-loading
@@ -875,3 +883,23 @@ passenger reservations, and revoke with their truck plan. `Supply` and `Depot` o
 client selections. `TurnFrame` includes source stocks and ground crates so playback
 shows pre-transfer stocks until end-of-turn replenishment. Projection conceals each
 frame independently; `GamePage` applies those sources alongside frame units and sight.
+
+## Unit loss acknowledgment
+
+`TurnPlayback.losses` derives typed combat, exhaustion, and carrier-loss notices
+from projected frames and lethal shots. Playback owns acknowledged unit IDs and
+`tickUntilLoss` stops at each unacknowledged casualty, including supply frames
+crossed by delayed animation ticks. `TurnLifecycle` carries acknowledgment through
+its existing playing state. The skip preference selects ordinary timed playback.
+
+`GamePage` loads and saves `skipUnitLossDialogs` through the existing local-storage
+boundary. It derives the active dialog from playback and opens it through the native
+modal port when the casualty changes. `View.UnitDeath` owns its information, actions,
+steady marker, and board spotlight; `View.Dialog.atBottom` supplies native
+focus trapping with lower-screen placement and a transparent backdrop.
+
+`UnitLoss.resolve` combines projected losses with the page's roster lookup for
+both dialog rendering and update-time error reporting. `GamePage.superUpdate`
+logs `Error.UnitOwnerNotFound` in `Shared.Model.errors` only when it detects a
+newly active loss dialog. Unchanged or absent dialogs perform no additional
+owner resolution, and rendering does not log errors.

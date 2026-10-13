@@ -1,4 +1,3 @@
-- Checkbox to auto close combat theater
 - When a unit dies there should be a dialog that mentions this so it is not lost
 - Supply Depots configured with different amounts of supplies
 - Field guns should consume a lot more supplies firing
@@ -9,3 +8,4 @@
 - On map low supply indicator so exhausted units can be seen
 - Attacking and destroying supply depos and supply crates
 - If you click on a supply depot, the view panel should fill with info about it
+- If there are not enough spaces to deploy all cargo, dont let users deploy that much

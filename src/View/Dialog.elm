@@ -1,13 +1,14 @@
 module View.Dialog exposing
     ( Dialog
+    , atBottom
     , make
     , map
     , toHtml
     )
 
 import Css
-import Html.Styled as Html exposing (Html)
-import Html.Styled.Attributes as Attr
+import Html.Styled as H exposing (Html)
+import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Json.Decode as Decode
 import Style as S
@@ -27,7 +28,13 @@ type Dialog msg
         , title : String
         , onCancel : msg
         , body : List (Html msg)
+        , placement : Placement
         }
+
+
+type Placement
+    = Centered
+    | Bottom
 
 
 
@@ -43,7 +50,13 @@ make htmlId title onCancel body =
         , title = title
         , onCancel = onCancel
         , body = body
+        , placement = Centered
         }
+
+
+atBottom : Dialog msg -> Dialog msg
+atBottom (Dialog model) =
+    Dialog { model | placement = Bottom }
 
 
 map : (a -> msg) -> Dialog a -> Dialog msg
@@ -52,7 +65,8 @@ map toMsg (Dialog model) =
         { htmlId = model.htmlId
         , title = model.title
         , onCancel = toMsg model.onCancel
-        , body = List.map (Html.map toMsg) model.body
+        , body = List.map (H.map toMsg) model.body
+        , placement = model.placement
         }
 
 
@@ -61,11 +75,27 @@ Open after Elm renders through the OpenDialog port effect.
 -}
 toHtml : Dialog msg -> Html msg
 toHtml (Dialog model) =
-    Html.node "dialog"
-        [ Attr.id model.htmlId
-        , Aria.labelledBy (model.htmlId ++ "-title")
-        , Ev.preventDefaultOn "cancel" (Decode.succeed ( model.onCancel, True ))
-        , Attr.css
+    let
+        placementStyles : List Css.Style
+        placementStyles =
+            case model.placement of
+                Centered ->
+                    []
+
+                Bottom ->
+                    [ Css.position Css.fixed
+                    , Css.top Css.auto
+                    , Css.bottom (Css.rem 4.5)
+                    , Css.maxHeight (Css.calc (Css.vh 100) (Css.minus (Css.rem 6)))
+                    , S.overflowAuto
+                    , Css.width (Css.rem 26)
+                    , Css.pseudoElement "backdrop"
+                        [ Css.backgroundColor Css.transparent
+                        ]
+                    ]
+
+        baseStyles : List Css.Style
+        baseStyles =
             [ Css.margin Css.auto
             , Css.maxWidth (Css.calc (Css.vw 100) (Css.minus (Css.rem 2)))
             , Css.width (Css.rem 24)
@@ -74,16 +104,28 @@ toHtml (Dialog model) =
             , S.textGray4
             , S.outdent
             ]
+
+        dialogStyles : List Css.Style
+        dialogStyles =
+            baseStyles ++ placementStyles
+    in
+    H.node "dialog"
+        [ A.id model.htmlId
+        , Aria.labelledBy (model.htmlId ++ "-title")
+        , Ev.preventDefaultOn "cancel" (Decode.succeed ( model.onCancel, True ))
+        , A.css dialogStyles
         ]
-        [ Html.div
-            [ Attr.id (model.htmlId ++ "-title")
-            , Attr.css [ S.p2px ]
+        [ H.div
+            [ A.id (model.htmlId ++ "-title")
+            , A.css
+                [ S.p2px
+                ]
             ]
             [ CardHeader.simple model.title
                 |> CardHeader.toHtml
             ]
-        , Html.div
-            [ Attr.css
+        , H.div
+            [ A.css
                 [ S.col
                 , S.g3
                 , S.p3

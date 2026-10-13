@@ -80,8 +80,8 @@ init shared flags =
     let
         ( name, maybeError ) =
             case UserName.fromLocalStorage shared.localStorage of
-                Ok name ->
-                    ( Maybe.withDefault "" name, Nothing )
+                Ok savedName ->
+                    ( Maybe.withDefault "" savedName, Nothing )
 
                 Err error ->
                     ( "", Just error )

@@ -321,6 +321,7 @@ module Style exposing
     , when
     , whitespacePreWrap
     , wrapAnywhere
+    , yellow1Str
     , yellow5Str
     , z1
     , z2

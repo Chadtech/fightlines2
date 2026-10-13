@@ -2504,7 +2504,7 @@ mod tests {
         assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 0);
         vehicle(&mut scenario, "4")?.move_to(Coordinate::new(2, 8));
         resolve_holds(&mut scenario, &mut turns)?;
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 32);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 0);
 
         Ok(())
     }
@@ -2555,7 +2555,7 @@ mod tests {
     }
 
     #[test]
-    fn any_depot_refills_either_side_after_arrival_and_holding() -> TestResult<()> {
+    fn depots_do_not_replenish_fuel_after_arrival_or_holding() -> TestResult<()> {
         let mut scenario = Scenario::supply_point().fixture()?;
         let mut turns = Turns::default();
         let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
@@ -2567,23 +2567,23 @@ mod tests {
         turns
             .submit(&mut scenario, PlayerNumber::Player2, 1, player2)
             .fixture()?;
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 32);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 31);
         vehicle(&mut scenario, "4")?.follow_path(&[Coordinate::new(2, 8), Coordinate::new(2, 8)]);
         vehicle(&mut scenario, "5")?.follow_path(&[Coordinate::new(2, 9), Coordinate::new(8, 8)]);
         vehicle(&mut scenario, "9")?.follow_path(&[Coordinate::new(14, 7), Coordinate::new(2, 8)]);
-        // Refuel at the center and both starting depots, regardless of side.
+        // Holding on the center or either starting depot preserves spent fuel.
         vehicle(&mut scenario, "4")?.move_to(Coordinate::new(14, 8));
         resolve_holds(&mut scenario, &mut turns)?;
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 32);
-        assert_eq!(vehicle(&mut scenario, "5")?.fuel().fixture()?.current, 32);
-        assert_eq!(vehicle(&mut scenario, "9")?.fuel().fixture()?.current, 32);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 30);
+        assert_eq!(vehicle(&mut scenario, "5")?.fuel().fixture()?.current, 31);
+        assert_eq!(vehicle(&mut scenario, "9")?.fuel().fixture()?.current, 31);
         vehicle(&mut scenario, "9")?.follow_path(&[Coordinate::new(2, 8), Coordinate::new(8, 8)]);
         vehicle(&mut scenario, "4")?.follow_path(&[Coordinate::new(14, 8), Coordinate::new(2, 8)]);
         vehicle(&mut scenario, "5")?.follow_path(&[Coordinate::new(8, 8), Coordinate::new(8, 7)]);
         resolve_holds(&mut scenario, &mut turns)?;
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 32);
-        assert_eq!(vehicle(&mut scenario, "9")?.fuel().fixture()?.current, 32);
-        assert_eq!(vehicle(&mut scenario, "5")?.fuel().fixture()?.current, 31);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 29);
+        assert_eq!(vehicle(&mut scenario, "9")?.fuel().fixture()?.current, 30);
+        assert_eq!(vehicle(&mut scenario, "5")?.fuel().fixture()?.current, 30);
 
         Ok(())
     }
