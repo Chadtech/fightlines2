@@ -387,7 +387,7 @@ fn resolve_arrivals(
                     .get_mut(&id)
                     .ok_or(ResolutionError::MissingPath)?;
                 let origin = *path.last().ok_or(ResolutionError::EmptyPath)?;
-                unit.follow_path(&[origin, destination]);
+                unit.follow_terrain_path(&board.map, &[origin, destination]);
                 path.push(destination);
             }
         }
@@ -457,19 +457,19 @@ fn resolve_arrivals(
                 })
                 .map(|(index, _)| index);
             if let Some(index) = free {
-                let removed = path.len() - index - 1;
+                let discarded_path = path[index..].to_vec();
                 path.truncate(index + 1);
                 let initial = scenario
                     .units
                     .iter()
                     .find(|unit| unit.unit_id() == id)
                     .ok_or(ResolutionError::MissingUnit)?;
-                board
+                let unit = board
                     .units
                     .iter_mut()
                     .find(|unit| unit.unit_id() == id)
-                    .ok_or(ResolutionError::MissingUnit)?
-                    .retract_movement(path, removed, initial);
+                    .ok_or(ResolutionError::MissingUnit)?;
+                unit.retract_movement(path, &board.map, &discarded_path, initial);
             }
         }
         // Retain waiting time even after a route ends; timing is independent of its length.
@@ -698,7 +698,7 @@ mod tests {
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, crate::combat::CombatKind::AttackMove);
         assert_eq!(shots[0].destination, Coordinate::new(2, 0));
-        assert_eq!(shots[0].target_health.after.current(), 12);
+        assert_eq!(shots[0].target_health.after.current(), 10);
         let units = &result.frames.last().ok_or("missing frame")?.units;
         assert_eq!(
             units
@@ -707,7 +707,7 @@ mod tests {
                 .ok_or("missing attacker")?
                 .supplies()
                 .current(),
-            58
+            56
         );
         assert_eq!(
             units
@@ -739,7 +739,7 @@ mod tests {
             .collect();
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].destination, Coordinate::new(2, 0));
-        assert_eq!(shots[0].target_health.after.current(), 8);
+        assert_eq!(shots[0].target_health.after.current(), 0);
         let units = &result.frames.last().ok_or("missing frame")?.units;
         assert_eq!(
             units
@@ -785,7 +785,7 @@ mod tests {
                 assert_eq!(shot.kind, crate::combat::CombatKind::AttackMove);
                 assert_eq!(shot.origin, Coordinate::new(destination.0, destination.1));
                 assert_eq!(shot.destination, Coordinate::new(enemy.0, enemy.1));
-                let damage = if attacker == "11" { 8 } else { 4 };
+                let damage = if attacker == "11" { 16 } else { 6 };
                 assert_eq!(shot.target_health.after.current(), 16 - damage);
                 let unit = result
                     .frames
@@ -795,7 +795,7 @@ mod tests {
                     .iter()
                     .find(|unit| unit.id() == attacker)
                     .ok_or("missing attacker")?;
-                let supplies = if attacker == "11" { 30 } else { 58 };
+                let supplies = if attacker == "11" { 28 } else { 56 };
                 assert_eq!(unit.supplies().current(), supplies);
                 assert_eq!(result.stopped.len(), 2);
             }

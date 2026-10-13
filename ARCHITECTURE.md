@@ -28,10 +28,10 @@ remain strings.
 `MapType` is a Rust enum exposed as a GraphQL enum. A lobby defaults to
 `SupplyPoint`; only its host can update it through `setLobbyMap`. Starting
 carries the selected type into the game, where it cannot be changed. Elm keeps
-the generated enum typed and uses `MapType.label` for display. The host saves a
-draft selection; lobby polling updates the authoritative map without replacing
-that draft. Starting saves the current draft through `setLobbyMap` before
-requesting `startGame`; a failed save leaves the lobby open and shows the error.
+the generated enum typed and uses `MapType.label` for display. Changing the host’s dropdown selection immediately saves it through `setLobbyMap`;
+lobby polling updates the authoritative map without replacing the local selection.
+Starting also saves the current selection before requesting `startGame`; a failed
+save leaves the lobby open and shows the error.
 
 `map.rs` stores width/height, a base terrain tile, and a `BTreeMap` of coordinate
 terrain overrides. Lookup returns no tile outside the map; missing in-bounds
@@ -422,7 +422,7 @@ requirements.
 
 `movement.rs` owns the movement table exposed as `GameSnapshot.movementRules`.
 Budgets and terrain entry costs use integer half-points (2 means one displayed
-point). Infantry has budget 2 with grass/hills/forest costs 1/1.5/2; tanks have
+point). Infantry has budget 2 with grass/hills/forest costs 1/1/1; tanks have
 budget 6 with costs 1/2/3; trucks have budget 7 with costs 1/3/4. Field guns have
 budget 1 and cost 1 on every current terrain, allowing exactly one adjacent
 square. Future impassable terrain can omit its cost entry.
@@ -550,9 +550,8 @@ snapshot fuel values; it does not calculate resource outcomes.
 ## Unit supplies
 
 Every Rust unit carries `Supplies` with current and maximum quantities plus
-`upkeepPerTurn` and `movementPerTile` rates. Infantry and field guns start at
-64/64; vehicles start at 32/32. All kinds have upkeep 1. Infantry spend 4 additional
-supplies per traversed tile and field guns spend 1;
+`upkeepPerTurn`, `movementPerTile`, and `roughTerrainSurcharge` rates. Infantry and field guns start at
+64/64; vehicles start at 32/32. All kinds have upkeep 1. Infantry spend 3 supplies per grass tile and 4 per hill or forest tile and field guns spend 1;
 tanks and trucks spend none for movement. These are unit provisions, separate
 from fuel and carried supply crates.
 
@@ -578,7 +577,7 @@ charge upkeep.
 
 GraphQL supplies state and consumption rates initialize Elm `Unit` values and
 the supply gauge. Movement search uses the available tile count from both fuel
-and supplies after reserving upkeep, separately from terrain movement costs.
+and the minimum supply entry cost after reserving upkeep, then checks each route's terrain supply costs separately from mobility. Search preserves routes with distinct supply expenditures.
 Traced extensions subtract supplies already committed to the prefix without
 charging upkeep twice; backtracking refunds that movement allowance. Playback
 uses each authoritative frame's resource quantities, including the death snapshot.
@@ -586,7 +585,7 @@ uses each authoritative frame's resource quantities, including the death snapsho
 ## Observability and fog of war
 
 `visibility.rs` owns per-kind sight ranges and the side's union of observable
-tiles. Circular distance uses ranges 5/4/3/2 for infantry/field guns/trucks/tanks;
+tiles. Circular distance uses ranges 4/4/3/2 for infantry/field guns/trucks/tanks;
 an observer on hills gains one tile and sees over intervening hills and forests.
 For observers off hills, a center-to-center ray treats intervening
 hills and forests as blockers only when it crosses their tile interior; terrain
@@ -749,6 +748,21 @@ Normal upkeep remains a single end-of-turn charge. Dead units cannot shoot, move
 block occupancy, or grant sight. Cargo of destroyed carriers is also destroyed.
 Final resource cleanup removes dead units and returns their death presentation.
 
+Damage is calculated in `Combat::damage` from weapon matchup, squared attacker
+health fraction, defender readiness, both participants' facing, terrain cover,
+and an ambush advantage against attack movers. Defensive facing only applies
+to ready units; unready defenders have no combat flanks. Infantry have very low
+weapon effectiveness against ready tanks, while remaining dangerous to unready
+tanks. `CombatRules.damage` is base
+weapon power; `Shot.damage` is the calculated hit. All shots in a volley use the
+pre-volley board. Exact initial tuning and the deferred trench protection are
+recorded in `combat_factors.md`. Ready field guns intercept contacting
+attack-moving tanks or opposing tank ambushes inside their eligible firing area
+in a separate first volley.
+Surviving tanks then fire with reduced health. Outside that area, against an
+unready gun, or after its shot is spent, tank contact uses the normal volley.
+
+
 `TurnFrame.shots` carries origin, destination, and damage for each volley. Fog
 projection retains every encounter involving an owned combatant, even when the
 other participant is concealed. Other encounters require both endpoints to be
@@ -827,8 +841,9 @@ checked after simultaneous arrivals, includes concealed enemies, and interrupts
 the target's remaining movement. Both participants stop their remaining routes.
 Opposing attack movers fire simultaneously; other orders do not gain automatic
 return fire. Only successful edges spend movement
-resources. Planning reserves the shot cost plus upkeep; a route without an
-encounter spends no firing supplies. Combat events use the existing theater,
+resources. Attack move and ambush both spend 2 readiness supplies per turn,
+even without an encounter. Planning reserves readiness, the shot cost, and
+upkeep; a route without an encounter spends no firing supplies. Combat events use the existing theater,
 with an `attack move` heading and the usual fog-safe encounter portraits.
 
 
@@ -876,11 +891,13 @@ Saving a truck destination on a depot opens the
 loading. Depot loading requires the destination square itself. Trucks with room
 collect neutral ground crates at their actual final position, preserving stock.
 The shared unload checklist accepts typed passenger IDs and crate slots. Crates use
-the same sequential board picker with adjacent empty squares, and mixed exits
-assemble a `SupplyTransfer` preserving passenger exits. The inspector shows stock
-and saved destinations; locked phases cannot edit freight. Crate exits participate in movement and
-passenger reservations, and revoke with their truck plan. `Supply` and `Depot` own
-client selections. `TurnFrame` includes source stocks and ground crates so playback
+the same sequential board picker with adjacent squares free of enemies and other
+crates, and mixed exits assemble a `SupplyTransfer` preserving passenger exits.
+The inspector shows stock and saved destinations; locked phases cannot edit freight.
+Crate exits reserve against other crates independently of unit and passenger
+destinations, and revoke with their truck plan. Checklist additions require a
+complete legal placement; the sequential picker only offers exits that preserve a
+placement for the remaining cargo. `Supply` and `Depot` own client selections. `TurnFrame` includes source stocks and ground crates so playback
 shows pre-transfer stocks until end-of-turn replenishment. Projection conceals each
 frame independently; `GamePage` applies those sources alongside frame units and sight.
 

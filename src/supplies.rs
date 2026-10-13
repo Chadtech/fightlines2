@@ -83,14 +83,18 @@ pub fn occupied_berths(scenario: &Scenario, truck: &Unit) -> usize {
             .count()
 }
 
-pub fn legal_crate_exit(scenario: &Scenario, origin: Coordinate, exit: Coordinate) -> bool {
+pub fn legal_crate_exit(
+    scenario: &Scenario,
+    side: PlayerNumber,
+    origin: Coordinate,
+    exit: Coordinate,
+) -> bool {
     origin != exit
         && adjacent(origin, exit)
         && scenario.map.contains(exit)
-        && !scenario
-            .units
-            .iter()
-            .any(|unit| unit.is_alive() && unit.board_position() == Some(exit))
+        && !scenario.units.iter().any(|unit| {
+            unit.is_alive() && unit.side() != side && unit.board_position() == Some(exit)
+        })
         && !scenario
             .supply_crates
             .iter()
@@ -160,7 +164,12 @@ pub fn resolve_orders(scenario: &mut Scenario, orders: &[(UnitId, SupplyOrder)],
         unloads.sort_by_key(|unload| std::cmp::Reverse(unload.cargo_index));
         for unload in unloads {
             if unload.cargo_index < scenario.units[index].supply_cargo.len()
-                && legal_crate_exit(scenario, origin, unload.destination)
+                && legal_crate_exit(
+                    scenario,
+                    scenario.units[index].side(),
+                    origin,
+                    unload.destination,
+                )
             {
                 let stock = scenario.units[index]
                     .supply_cargo
@@ -604,6 +613,18 @@ mod tests {
             .fixture()?
             .supply_cargo
             .push(SupplyStock::crate_stock(64));
+        board
+            .units
+            .iter_mut()
+            .find(|unit| unit.id() == "2")
+            .fixture()?
+            .move_to(Coordinate::new(6, 2));
+        board
+            .units
+            .iter_mut()
+            .find(|unit| unit.id() == "9")
+            .fixture()?
+            .move_to(Coordinate::new(1, 1));
         resolve_orders(
             &mut board,
             &[(

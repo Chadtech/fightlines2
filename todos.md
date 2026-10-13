@@ -1,11 +1,5 @@
 - When a unit dies there should be a dialog that mentions this so it is not lost
 - Supply Depots configured with different amounts of supplies
 - Field guns should consume a lot more supplies firing
-- Rushing should be possible. If a unit is ambushed and was attack moving, the remaining forces should continue with the attack move
 - 16 little infantry guys in combat theater for infantry
-- Field guns in combat theater should be more spaced out and in various sizes, as if they are more spread out
-- On map health indicator so weak units can be seen
-- On map low supply indicator so exhausted units can be seen
-- Attacking and destroying supply depos and supply crates
-- If you click on a supply depot, the view panel should fill with info about it
-- If there are not enough spaces to deploy all cargo, dont let users deploy that much
+- Attacking and destroying supply depots and supply crates

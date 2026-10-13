@@ -8,11 +8,12 @@ module Movement exposing
     , pointsLabel
     , preview
     , start
+    , supplyCost
     , tileLimit
     , trace
     )
 
-import Api.Enum.Terrain exposing (Terrain)
+import Api.Enum.Terrain as Terrain exposing (Terrain)
 import Api.Enum.UnitKind exposing (UnitKind)
 import Coordinate exposing (Coordinate)
 import Dict exposing (Dict)
@@ -26,7 +27,7 @@ import Util.List as ListUtil
 {-| The cost to enter a terrain square, as supplied by Rust's movement rules.
 A movement point is a unit of the unit's travel budget: entering a square spends
 that terrain's cost. For example, infantry has a budget of 2 movement points;
-grass costs 1, hills 1.5, and forest 2.
+grass, hills, and forest each cost 1.
 
 The integers store twice the displayed value so half-point costs stay exact:
 a grass cost of 1 is stored as 2, and a hill cost of 1.5 is stored as 3.
@@ -74,11 +75,12 @@ optionsAvoiding blocked rules map units unit =
     case ( ListUtil.find (\rule -> rule.kind == unit.kind) rules, Unit.physicalPosition units unit ) of
         ( Just rule, Just origin ) ->
             search (tileLimit unit)
+                unit
                 rule
                 map
                 blocked
                 [ start origin ]
-                (Dict.singleton (searchKey (tileLimit unit) (start origin)) 0)
+                (Dict.singleton (searchKey (tileLimit unit) map unit (start origin)) 0)
                 []
                 |> List.filter (\option -> option.destination /= origin)
                 |> List.foldl cheapestDestination Dict.empty
@@ -138,11 +140,12 @@ cheapestDestination option best =
             Dict.insert (key option.destination) option best
 
 
-searchKey : Maybe Int -> Option -> ( Int, Int, Int )
-searchKey limit option =
-    ( option.destination.x
-    , option.destination.y
-    , limit |> Maybe.map (\_ -> List.length option.path - 1) |> Maybe.withDefault 0
+searchKey : Maybe Int -> Map -> Unit -> Option -> ( ( Int, Int ), ( Int, Int ) )
+searchKey limit map unit option =
+    ( key option.destination
+    , ( limit |> Maybe.map (\_ -> List.length option.path - 1) |> Maybe.withDefault 0
+      , unit.resources |> Maybe.map (\resources -> supplyCost map resources.supplies option.path) |> Maybe.withDefault 0
+      )
     )
 
 
@@ -160,29 +163,31 @@ neighbors position =
     ]
 
 
-{-| Search affordable routes. Keys include column, row and tiles traveled.
-Units without a resource movement limit use zero for that third component.
-Keeping costs for each path length preserves short routes through expensive terrain.
+{-| Search affordable routes. Keys include position, tiles traveled, and supply expenditure.
+Units without a resource movement limit use zero for the tile-count component.
+Keeping costs for each path length and supply expenditure preserves affordable routes.
 Costs are stored in half movement points, independently of fuel.
 -}
 search :
     Maybe Int
+    -> Unit
     -> Rule
     -> Map
     -> List Coordinate
     -> List Option
-    -> Dict ( Int, Int, Int ) Int
+    -> Dict ( ( Int, Int ), ( Int, Int ) ) Int
     -> List Option
     -> List Option
-search limit rule map blocked frontier costs reached =
+search limit unit rule map blocked frontier costs reached =
     case List.sortBy .cost frontier of
         [] ->
             List.reverse reached
 
         current :: remaining ->
-            if Dict.get (searchKey limit current) costs /= Just current.cost then
+            if Dict.get (searchKey limit map unit current) costs /= Just current.cost then
                 search
                     limit
+                    unit
                     rule
                     map
                     blocked
@@ -192,7 +197,13 @@ search limit rule map blocked frontier costs reached =
 
             else
                 let
-                    visit : Coordinate -> ( List Option, Dict ( Int, Int, Int ) Int ) -> ( List Option, Dict ( Int, Int, Int ) Int )
+                    -- The accumulator pairs pending routes with their best movement costs.
+                    -- Dict keys are ((x, y), (tiles traveled, supplies spent)); keeping
+                    -- resource usage separate preserves routes that remain affordable.
+                    visit :
+                        Coordinate
+                        -> ( List Option, Dict ( ( Int, Int ), ( Int, Int ) ) Int )
+                        -> ( List Option, Dict ( ( Int, Int ), ( Int, Int ) ) Int )
                     visit position ( pending, best ) =
                         let
                             leftOfMap : Bool
@@ -223,7 +234,10 @@ search limit rule map blocked frontier costs reached =
                             ( pending, best )
 
                         else
-                            case rule.terrainCosts |> ListUtil.find (\entry -> entry.terrain == Map.terrainAt map position) of
+                            case
+                                rule.terrainCosts
+                                    |> ListUtil.find (\entry -> entry.terrain == Map.terrainAt map position)
+                            of
                                 Nothing ->
                                     ( pending, best )
 
@@ -245,22 +259,46 @@ search limit rule map blocked frontier costs reached =
                                         candidate =
                                             { destination = position, cost = cost, path = current.path ++ [ position ] }
 
+                                        exceedsSupplies : Bool
+                                        exceedsSupplies =
+                                            unit.resources
+                                                |> Maybe.map
+                                                    (\resources ->
+                                                        supplyCost
+                                                            map
+                                                            resources.supplies
+                                                            candidate.path
+                                                            > max
+                                                                0
+                                                                (resources.supplies.current - resources.supplies.upkeepPerTurn)
+                                                    )
+                                                |> Maybe.withDefault False
+
                                         exceedsResources : Bool
                                         exceedsResources =
-                                            limit |> Maybe.map (\available -> List.length candidate.path - 1 > available) |> Maybe.withDefault False
+                                            (limit
+                                                |> Maybe.map (\available -> List.length candidate.path - 1 > available)
+                                                |> Maybe.withDefault False
+                                            )
+                                                || exceedsSupplies
 
                                         alreadyReachedAtLowerOrEqualCost : Bool
                                         alreadyReachedAtLowerOrEqualCost =
-                                            Dict.get (searchKey limit candidate) best
+                                            Dict.get (searchKey limit map unit candidate) best
                                                 |> Maybe.map (\previous -> previous <= cost)
                                                 |> Maybe.withDefault False
                                     in
-                                    if impassableTerrain || exceedsBudget || exceedsResources || alreadyReachedAtLowerOrEqualCost then
+                                    if
+                                        impassableTerrain
+                                            || exceedsBudget
+                                            || exceedsResources
+                                            || alreadyReachedAtLowerOrEqualCost
+                                    then
                                         ( pending, best )
 
                                     else
                                         ( candidate :: pending
-                                        , Dict.insert (searchKey limit candidate) cost best
+                                        , Dict.insert (searchKey limit map unit candidate) cost best
                                         )
 
                     ( next, nextCosts ) =
@@ -268,6 +306,7 @@ search limit rule map blocked frontier costs reached =
                 in
                 search
                     limit
+                    unit
                     rule
                     map
                     blocked
@@ -323,7 +362,7 @@ trace rules map units unit current destination =
                     remainingUnit : Unit
                     remainingUnit =
                         { unit
-                            | resources = Maybe.map (remainingResources current) unit.resources
+                            | resources = Maybe.map (remainingResources map current) unit.resources
                         }
                             |> Unit.setOnMap current.destination
 
@@ -342,8 +381,26 @@ trace rules map units unit current destination =
                     |> Maybe.andThen (withinTileLimit unit)
 
 
-remainingResources : Option -> UnitResources -> UnitResources
-remainingResources current resources =
+supplyCost : Map -> Supplies -> List Coordinate -> Int
+supplyCost map supplies path =
+    let
+        entryCost : Coordinate -> Int
+        entryCost position =
+            case Map.terrainAt map position of
+                Terrain.GrassPlain ->
+                    supplies.movementPerTile
+
+                _ ->
+                    supplies.movementPerTile + supplies.roughTerrainSurcharge
+    in
+    path
+        |> List.drop 1
+        |> List.map entryCost
+        |> List.sum
+
+
+remainingResources : Map -> Option -> UnitResources -> UnitResources
+remainingResources map current resources =
     let
         tiles : Int
         tiles =
@@ -354,7 +411,7 @@ remainingResources current resources =
             resources.supplies
     in
     { resources
-        | supplies = { supplies | current = supplies.current - tiles * supplies.movementPerTile }
+        | supplies = { supplies | current = supplies.current - supplyCost map supplies current.path }
         , fuel = Maybe.map (\fuel -> { fuel | current = fuel.current - tiles }) resources.fuel
     }
 

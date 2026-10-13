@@ -17,7 +17,7 @@ pub struct MovementRule {
 
 pub fn rules() -> Vec<MovementRule> {
     [
-        (UnitKind::Infantry, 4, [2, 3, 4]),
+        (UnitKind::Infantry, 4, [2, 2, 2]),
         (UnitKind::Tank, 12, [2, 4, 6]),
         // One adjacent passable square, regardless of terrain.
         (UnitKind::FieldGun, 2, [2, 2, 2]),

@@ -10,11 +10,11 @@
         },
         {
           "terrain": "HILLS",
-          "cost": 3
+          "cost": 2
         },
         {
           "terrain": "FOREST",
-          "cost": 4
+          "cost": 2
         }
       ]
     },
@@ -75,7 +75,7 @@
   ],
   "cases": [
     {
-      "name": "infantry fractional costs",
+      "name": "infantry uniform mobility",
       "kind": "INFANTRY",
       "sketch": ".%#..",
       "origin": [
@@ -87,7 +87,12 @@
         [
           1,
           0,
-          3
+          2
+        ],
+        [
+          2,
+          0,
+          4
         ]
       ],
       "allies": []
@@ -392,6 +397,11 @@
       "expected": [
         [
           1,
+          0,
+          2
+        ],
+        [
+          2,
           0,
           4
         ]

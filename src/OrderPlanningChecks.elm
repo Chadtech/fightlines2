@@ -16,8 +16,10 @@ import Platform
 import TurnLifecycle
 import Unit exposing (Unit)
 import Unit.Location as Location exposing (Location)
+import Unit.Supplies
 import UnitCommand
 import UnitId exposing (UnitId)
+import UnitResources
 
 
 port results : List String -> Cmd msg
@@ -76,6 +78,22 @@ planningChecks infantryId truckId passengerId =
         attackSaved : OrderPlanning.Model
         attackSaved =
             OrderPlanning.confirmPath attackContext attacking
+
+        lowSupplyInfantry : Unit
+        lowSupplyInfantry =
+            { infantry | resources = Maybe.map (\resources -> { resources | supplies = { current = 6, maximum = 64, upkeepPerTurn = 1, roughTerrainSurcharge = 0, movementPerTile = 1 } }) infantry.resources }
+
+        lowSupplyContext : OrderPlanning.Context
+        lowSupplyContext =
+            board [ lowSupplyInfantry, enemy ]
+
+        lowSupplyAttack : OrderPlanning.Model
+        lowSupplyAttack =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit lowSupplyContext infantryId
+                |> OrderPlanning.applyCommand lowSupplyContext UnitCommand.AttackMove
+                |> OrderPlanning.extendPath lowSupplyContext DirectionEnum.East
+                |> OrderPlanning.extendPath lowSupplyContext DirectionEnum.East
 
         attackLoading : OrderPlanning.Model
         attackLoading =
@@ -562,6 +580,77 @@ planningChecks infantryId truckId passengerId =
                 _ ->
                     False
 
+        putTruckAtCorner : Unit -> Unit
+        putTruckAtCorner current =
+            if current.id == truckId then
+                Unit.setOnMap { x = 3, y = 0 } current
+
+            else
+                current
+
+        narrowContext : OrderPlanning.Context
+        narrowContext =
+            { cargoContext
+                | map = { width = 4, height = 1, baseTile = cargoContext.map.baseTile, features = [], theme = cargoContext.map.theme }
+                , units =
+                    List.map putTruckAtCorner
+                        cargoContext.units
+            }
+
+        narrowChecklist : OrderPlanning.Model
+        narrowChecklist =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit narrowContext truckId
+                |> OrderPlanning.applyCommand narrowContext UnitCommand.HoldPosition
+                |> OrderPlanning.toggleAvailableUnloadCargo narrowContext (OrderPlanning.Passenger infantryId) True
+
+        narrowCrateContext : OrderPlanning.Context
+        narrowCrateContext =
+            { twoCrateContext | map = narrowContext.map, units = List.map (Unit.setOnMap { x = 3, y = 0 }) twoCrateContext.units }
+
+        narrowCrateChecklist : OrderPlanning.Model
+        narrowCrateChecklist =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit narrowCrateContext truckId
+                |> OrderPlanning.applyCommand narrowCrateContext UnitCommand.HoldPosition
+                |> OrderPlanning.toggleAvailableUnloadCargo narrowCrateContext (OrderPlanning.Crate 0) True
+
+        scarceCrateContext : OrderPlanning.Context
+        scarceCrateContext =
+            { mixedContext
+                | map = { width = 4, height = 2, baseTile = mixedContext.map.baseTile, theme = mixedContext.map.theme, features = [] }
+                , supplyCrates = [ { position = { x = 3, y = 0 }, stock = { current = 64, maximum = 64 } } ]
+            }
+
+        scarceCrateExits : OrderPlanning.Model
+        scarceCrateExits =
+            mixedChecklist
+                |> OrderPlanning.toggleUnloadPassenger infantryId True
+                |> OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate 0) True
+                |> OrderPlanning.confirmPassengers scarceCrateContext
+
+        exhaustedContext : OrderPlanning.Context
+        exhaustedContext =
+            let
+                exhaustPassenger : Unit -> Unit
+                exhaustPassenger passenger =
+                    if passenger.id == infantryId then
+                        { passenger | resources = Maybe.map exhaustResources passenger.resources }
+
+                    else
+                        passenger
+
+                exhaustResources : UnitResources.UnitResources -> UnitResources.UnitResources
+                exhaustResources resources =
+                    let
+                        supplies : Unit.Supplies.Supplies
+                        supplies =
+                            resources.supplies
+                    in
+                    { resources | supplies = { supplies | current = 1 } }
+            in
+            { cargoContext | units = List.map exhaustPassenger cargoContext.units }
+
         submitted : TurnLifecycle.Phase
         submitted =
             TurnLifecycle.startSubmission 1 (TurnLifecycle.Planning saved)
@@ -591,7 +680,65 @@ planningChecks infantryId truckId passengerId =
             OrderPlanning.selectNextUnorderedUnit context saved
     in
     List.concat
-        [ expect "saving an empty truck move on a depot opens loading through mouse and keyboard"
+        [ expect "passenger and crate share the only crate-compatible exit"
+            (let
+                complete : OrderPlanning.Model
+                complete =
+                    scarceCrateExits
+                        |> OrderPlanning.chooseUnloadSquare scarceCrateContext { x = 2, y = 1 }
+                        |> OrderPlanning.chooseUnloadSquare scarceCrateContext { x = 2, y = 1 }
+             in
+             OrderPlanning.unloadPlanning complete
+                == Nothing
+                && List.length (List.concatMap PlannedOrder.crateUnloads (OrderPlanning.orders complete))
+                == 1
+            )
+        , expect "passengers without walking supplies cannot be selected"
+            (not (OrderPlanning.canSelectUnloadCargo exhaustedContext (OrderPlanning.Passenger infantryId) checklist))
+        , expect "invalid full selections stay in the checklist on confirmation"
+            (let
+                invalidSelection : OrderPlanning.Model
+                invalidSelection =
+                    narrowChecklist |> OrderPlanning.toggleUnloadPassenger passengerId True
+             in
+             OrderPlanning.confirmPassengers narrowContext invalidSelection == invalidSelection
+            )
+        , expect "one passenger exit disables the second passenger and rejects its toggle"
+            (not (OrderPlanning.canSelectUnloadCargo narrowContext (OrderPlanning.Passenger passengerId) narrowChecklist)
+                && OrderPlanning.toggleAvailableUnloadCargo narrowContext (OrderPlanning.Passenger passengerId) True narrowChecklist
+                == narrowChecklist
+                && OrderPlanning.canSelectUnloadCargo narrowContext (OrderPlanning.Passenger infantryId) narrowChecklist
+            )
+        , expect "one crate exit disables the second crate"
+            (not (OrderPlanning.canSelectUnloadCargo narrowCrateContext (OrderPlanning.Crate 1) narrowCrateChecklist))
+        , expect "unchecking cargo frees the only exit for the other passenger"
+            (OrderPlanning.canSelectUnloadCargo narrowContext
+                (OrderPlanning.Passenger passengerId)
+                (OrderPlanning.toggleAvailableUnloadCargo narrowContext (OrderPlanning.Passenger infantryId) False narrowChecklist)
+            )
+        , expect "mixed cargo shares the only adjacent square"
+            (let
+                contextWithFreight : OrderPlanning.Context
+                contextWithFreight =
+                    { narrowContext | units = Unit.setOnMap { x = 3, y = 0 } freightTruck :: List.filter (\u -> u.id == infantryId) narrowContext.units }
+
+                selectionWithFreight : OrderPlanning.Model
+                selectionWithFreight =
+                    OrderPlanning.init
+                        |> OrderPlanning.selectUnit contextWithFreight truckId
+                        |> OrderPlanning.applyCommand contextWithFreight UnitCommand.HoldPosition
+                        |> OrderPlanning.toggleAvailableUnloadCargo contextWithFreight (OrderPlanning.Passenger infantryId) True
+                        |> OrderPlanning.toggleAvailableUnloadCargo contextWithFreight (OrderPlanning.Crate 0) True
+                        |> OrderPlanning.confirmPassengers contextWithFreight
+                        |> OrderPlanning.chooseUnloadSquare contextWithFreight { x = 2, y = 0 }
+                        |> OrderPlanning.chooseUnloadSquare contextWithFreight { x = 2, y = 0 }
+             in
+             List.length (List.concatMap PlannedOrder.unloads (OrderPlanning.orders selectionWithFreight))
+                == 1
+                && List.length (List.concatMap PlannedOrder.crateUnloads (OrderPlanning.orders selectionWithFreight))
+                == 1
+            )
+        , expect "saving an empty truck move on a depot opens loading through mouse and keyboard"
             (choosingCrates depotMove && depotKeyboardMove == depotMove)
         , expect "boarding a truck on a depot offers loading for its automatically saved hold"
             (choosingCrates depotBoarding)
@@ -638,6 +785,10 @@ planningChecks infantryId truckId passengerId =
             )
         , expect "attack move traces and saves an occupied enemy destination without creating loading holds"
             (List.map PlannedOrder.path (OrderPlanning.orders attackSaved) == [ [ { x = 1, y = 1 }, { x = 2, y = 1 }, { x = 3, y = 1 } ] ] && List.all PlannedOrder.isAttackMove (OrderPlanning.orders attackSaved) && OrderPlanning.pathPreview attackSaved == Nothing)
+        , expect "attack move previews reserve readiness and firing supplies"
+            (OrderPlanning.pathPreview lowSupplyAttack |> Maybe.map (\option -> option.path == [ { x = 1, y = 1 }, { x = 2, y = 1 } ]) |> Maybe.withDefault False)
+        , expect "attack move command requires readiness supplies before walking"
+            (not (UnitCommand.canUse { lowSupplyInfantry | resources = Maybe.map (\resources -> { resources | supplies = { current = 5, maximum = 64, upkeepPerTurn = 1, roughTerrainSurcharge = 0, movementPerTile = 1 } }) lowSupplyInfantry.resources } UnitCommand.AttackMove))
         , expect "attack move cannot board an allied truck"
             (List.isEmpty (OrderPlanning.orders attackLoading) && OrderPlanning.destinationFeedback attackLoading == DestinationUnavailable)
         , expect "attack move revocation restores commands"
@@ -690,8 +841,8 @@ planningChecks infantryId truckId passengerId =
             (List.map .unitId (OrderPlanning.orders tryingFullTruck) == [ truckId ])
         , expect "boarding into a spare berth preserves an explicit crate-loading order"
             (List.member mixedFreight (OrderPlanning.orders boardingWithFreight) && List.length (OrderPlanning.orders boardingWithFreight) == 2)
-        , expect "planned ground crate exits reserve their destination against later unit moves"
-            (List.map .unitId (OrderPlanning.orders tryingCrateExit) == [ truckId ])
+        , expect "units can move onto planned crate exits"
+            (List.length (OrderPlanning.orders tryingCrateExit) == 2)
         , expect "mixed cargo can unload a crate then a passenger in one stationary order"
             (List.concatMap PlannedOrder.crateUnloads (OrderPlanning.orders mixedComplete)
                 == [ { cargoIndex = 0
@@ -712,21 +863,17 @@ planningChecks infantryId truckId passengerId =
                 && OrderPlanning.unloadPlanning mixedComplete
                 == Nothing
             )
-        , expect "crate and passenger exits reserve squares in either selection order"
-            (not
-                (List.member
+        , expect "crate and passenger exits can share squares in either selection order"
+            (List.member
+                { x = 3
+                , y = 2
+                }
+                (List.map .destination (OrderPlanning.moveOptions crateExit))
+                && List.member
                     { x = 3
                     , y = 2
                     }
-                    (List.map .destination (OrderPlanning.moveOptions crateExit))
-                )
-                && not
-                    (List.member
-                        { x = 3
-                        , y = 2
-                        }
-                        (List.map .destination (OrderPlanning.moveOptions passengerFirst))
-                    )
+                    (List.map .destination (OrderPlanning.moveOptions passengerFirst))
             )
         , expect "trucks carrying only crates open the unload checklist after moving"
             (OrderPlanning.unloadChoice crateOnlyMove /= Nothing)
@@ -845,6 +992,7 @@ unit id kind location =
                 { current = 64
                 , maximum = 64
                 , upkeepPerTurn = 1
+                , roughTerrainSurcharge = 0
                 , movementPerTile = 1
                 }
             , fuel = fuel

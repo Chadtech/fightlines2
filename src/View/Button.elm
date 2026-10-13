@@ -141,15 +141,15 @@ toHtml button =
                             ]
 
                         Variant__Secondary ->
-                            [ S.bgGray1
+                            [ S.bgGray0
                             , S.textGray4
-                            , S.outdent
+                            , S.outdentDark
                             , Css.hover
                                 [ S.textGray5
                                 ]
                             , Css.active
                                 [ S.textGray5
-                                , S.indent
+                                , S.indentDark
                                 ]
                             ]
 

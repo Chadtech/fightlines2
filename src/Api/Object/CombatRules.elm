@@ -30,6 +30,8 @@ shape =
     Object.selectionForField "Enum.AmbushShape.AmbushShape" "shape" [] Api.Enum.AmbushShape.decoder
 
 
+{-| Full-health weapon power before matchup and situational factors.
+-}
 damage : SelectionSet Int Api.Object.CombatRules
 damage =
     Object.selectionForField "Int" "damage" [] Decode.int

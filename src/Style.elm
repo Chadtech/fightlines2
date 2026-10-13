@@ -75,6 +75,7 @@ module Style exposing
     , global
     , gray0Str
     , gray3Str
+    , gray4Str
     , gray5Str
     , grid
     , grow
@@ -107,6 +108,7 @@ module Style exposing
     , importantIndent
     , importantOutdent
     , indent
+    , indentDark
     , indentStrong
     , inlineBlock
     , inlineCol
@@ -184,6 +186,7 @@ module Style exposing
     , none
     , opaque
     , outdent
+    , outdentDark
     , outdentLeft
     , outdentTopRight
     , outlineNone
@@ -252,7 +255,6 @@ module Style exposing
     , s24
     , s6
     , sNeg128
-    , selectControl
     , selectableListRow
     , selfCenter
     , setBgColorVar
@@ -491,6 +493,11 @@ yellow6Str =
     "#F1E9A5"
 
 
+blackStr : String
+blackStr =
+    "#000000"
+
+
 gray0Str : String
 gray0Str =
     "#131610"
@@ -519,6 +526,15 @@ gray4Str =
 gray5Str : String
 gray5Str =
     "#E0D6CA"
+
+
+blackColor :
+    Value
+        { provides
+            | hex : Supported
+        }
+blackColor =
+    Css.hex blackStr
 
 
 gray0Color :
@@ -639,6 +655,16 @@ indent =
         |> Css.batch
 
 
+indentDark : Css.Style
+indentDark =
+    [ Css.borderLeft3 borderWidth Css.solid blackColor
+    , Css.borderTop3 borderWidth Css.solid blackColor
+    , Css.borderRight3 borderWidth Css.solid gray1Color
+    , Css.borderBottom3 borderWidth Css.solid gray1Color
+    ]
+        |> Css.batch
+
+
 indentStrong : Css.Style
 indentStrong =
     [ Css.borderLeft3 borderWidth Css.solid gray0Color
@@ -655,6 +681,16 @@ outdent =
     , Css.borderTop3 borderWidth Css.solid content2Color
     , Css.borderRight3 borderWidth Css.solid gray0Color
     , Css.borderBottom3 borderWidth Css.solid gray0Color
+    ]
+        |> Css.batch
+
+
+outdentDark : Css.Style
+outdentDark =
+    [ Css.borderLeft3 borderWidth Css.solid gray1Color
+    , Css.borderTop3 borderWidth Css.solid gray1Color
+    , Css.borderRight3 borderWidth Css.solid blackColor
+    , Css.borderBottom3 borderWidth Css.solid blackColor
     ]
         |> Css.batch
 
@@ -2468,23 +2504,6 @@ capitalize =
 flexWrap : Css.Style
 flexWrap =
     Css.flexWrap Css.wrap
-
-
-selectControl : Css.Style
-selectControl =
-    batch
-        [ indent
-        , bgNightwood1
-        , textGray4
-        , p2
-        , wFull
-        , minW0
-        , Css.property "appearance" "none"
-        , Css.property "padding-right" "2.5rem"
-        , Css.property "background-image" "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23B0A69A' stroke-width='1.5'/%3E%3C/svg%3E\")"
-        , Css.property "background-repeat" "no-repeat"
-        , Css.property "background-position" "right 0.75rem center"
-        ]
 
 
 selectableListRow : Int -> Css.Style

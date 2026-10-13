@@ -25,9 +25,8 @@ make run
 Open http://127.0.0.1:8080, enter your user name and a lobby name, and choose
 **Create lobby**.
 Share the invite link with another player, who enters a name and chooses
-**Join lobby**. The host selects a map, then chooses **Start game**, which saves
-the current selection before starting. **Save map** shares the selection with
-the other player before starting.
+**Join lobby**. The host selects a map, which immediately saves and shares the selection with
+the other player, then chooses **Start game**.
 Joined browsers navigate to the game page within about two seconds. The initial
 scenario requires exactly two players; a third player cannot join.
 
@@ -100,7 +99,7 @@ also revokes routes depending on its freed square. A saved move reserves its des
 units cannot choose it; changing or clearing the move frees that square. Routes
 can pass through reserved destinations. Depots are passable.
 The selection panel shows the selected unit's illustration, name, and side,
-with expandable unit and gauge explanations. Every unit starts with 16/16 hit points, supplied by the server. Ambush combat damages health; healing is not implemented yet. Tanks and trucks start with 32/32 fuel. Each
+with expandable unit and gauge explanations. Every unit starts with 16/16 hit points, supplied by the server. Combat damage uses weapon matchup, health, readiness, facing, cover, and ambush advantage; see [combat_factors.md](combat_factors.md). Healing and trench protection are not implemented yet. Tanks and trucks start with 32/32 fuel. Each
 successfully traversed tile costs 1 fuel, independently of terrain movement
 costs. Interrupted routes pay only for successfully traveled tiles; holds consume none.
 Fuel cannot be replenished. Movement previews and submitted paths must fit both remaining
@@ -120,8 +119,9 @@ no separate hold order. Select a truck to see its cargo count and select a
 passenger from its inset cargo list for inspection. Choose **hold position** on a
 loaded truck to unload beside its current square, even when it has no fuel.
 After choosing the truck's move destination, an **unload** checklist offers its
-passengers, carried supply crates, and **proceed without unloading**. Check any combination of cargo, then choose an empty adjacent square for each
-around the truck's planned destination. The truck moves first; unloading uses
+passengers, carried supply crates, and **proceed without unloading**. Select cargo
+that can all be placed, then choose adjacent squares around the truck's planned
+destination. Passengers require free squares; crates may share with allied units. The truck moves first; unloading uses
 the passenger's normal terrain and supply costs. Both passengers may unload
 onto different squares in the same turn. Blocked truck moves or occupied exits
 leave the affected passengers aboard. An exit occupied by a concealed enemy can
@@ -144,7 +144,7 @@ corner. Each badge adds `2` when two of its cargo type are aboard; mixed cargo
 shows both badges. It stays clearly visible between
 blinks and remains steady with reduced motion enabled. Empty trucks have no badge.
 
-Sight is shared by all units on your side. Infantry see 5 tiles, field guns 4,
+Sight is shared by all units on your side. Infantry see 4 tiles, field guns 4,
 trucks 3, and tanks 2, using a circular radius measured between tile
 centers. Standing on a hill grants +1 sight and lets units see over intervening
 hills and forests. For units off hills, intervening hills and forests block
@@ -165,10 +165,10 @@ Hidden positions and route segments are withheld from responses.
 
 Infantry and field guns start with 64/64 supplies; tanks and trucks start with
 32/32. Every unit spends 1 supply per resolved turn, even when holding or stopped
-by an encounter. Infantry spend 4 supplies per successfully traversed tile;
+by an encounter. Infantry spend 3 supplies per grass tile and 4 per hill or forest tile;
 field guns spend 1; tanks and trucks use fuel
 for movement instead. Movement reserves the turn's upkeep before spending
-supplies. Infantry need at least 5 supplies to move one tile; field guns need at least 2.
+supplies. Infantry need at least 4 supplies for a grass tile or 5 for hills or forest; field guns need at least 2.
 Units below these thresholds can still hold.
 Units die immediately when supplies reach zero after turn upkeep. A dead truck
 also loses its passengers. During playback, a skull and crossbones appears for 0.6 seconds, blinks away
@@ -199,10 +199,13 @@ Loading is always explicit and shares cargo capacity with passengers. Each
 crate takes up to 64 supplies from the depot; the last crate may be partially
 filled. Moving or holding a loaded truck opens the shared **unload** checklist.
 Select passengers, crates, or both, then choose their adjacent squares on the map.
+Cargo choices are disabled when the selected cargo cannot all be placed. Passengers
+need distinct free squares and sufficient supplies; crates may share squares with
+allied units and passenger exits, but not other crates or enemies.
 The inspector shows crate stock and saved destinations. Gold dotted squares mark planned crate exits. Loading and crate
 unloading cannot be combined in one turn. Revoke the truck order to clear the
-whole plan. A blocked truck or occupied crate exit leaves cargo aboard; competing
-loaders alternate player priority by turn and may receive less than planned
+whole plan. A blocked truck or a crate exit occupied by an enemy or another crate
+leaves cargo aboard; competing loaders alternate player priority by turn and may receive less than planned
 when depot stock runs out. Passing a depot never automatically loads cargo.
 
 Click a depot to see its illustration, supply stock gauge, and terrain in the
@@ -280,7 +283,7 @@ all three squares straight ahead, plus the two squares beside the middle square,
 forming a five-square plus sign that rotates with the chosen direction.
 
 Ambush readiness costs 2 supplies in addition to normal turn upkeep. Firing costs
-another 2 supplies; infantry deal 4 damage, tanks 8, and field guns 12. These are
+3 supplies for infantry and 2 for other units; infantry deal 4 damage, tanks 8, and field guns 12. These are
 initial balance values. Readiness is charged even without a target, and upkeep
 is reserved before firing. Units without enough supplies for readiness cannot
 choose ambush; a unit can maintain readiness without enough supplies to fire.
@@ -453,8 +456,9 @@ checked after simultaneous arrivals, includes concealed enemies, and interrupts
 the target's remaining movement. Both participants stop their remaining routes.
 Opposing attack movers fire simultaneously; other orders do not gain automatic
 return fire. Only successful edges spend movement
-resources. Planning reserves the shot cost plus upkeep; a route without an
-encounter spends no firing supplies. Combat events use the existing theater,
+resources. Attack move and ambush both spend 2 readiness supplies per turn,
+even without an encounter. Planning reserves readiness, the shot cost, and
+upkeep; a route without an encounter spends no firing supplies. Combat events use the existing theater,
 with an `attack move` heading and the usual fog-safe encounter portraits.
 
 Unit losses pause playback with a `unit lost` dialog below the battlefield. The lost

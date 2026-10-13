@@ -156,7 +156,7 @@ canUse unit command =
             affordable : Bool
             affordable =
                 unit.resources
-                    |> Maybe.map (\resources -> resources.supplies.current >= resources.supplies.upkeepPerTurn + resources.supplies.movementPerTile + unit.combatRules.shotCost)
+                    |> Maybe.map (\resources -> resources.supplies.current >= resources.supplies.upkeepPerTurn + resources.supplies.movementPerTile + unit.combatRules.readinessCost + unit.combatRules.shotCost)
                     |> Maybe.withDefault False
         in
         Unit.onBoard unit && affordable

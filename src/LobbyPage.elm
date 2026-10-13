@@ -35,7 +35,6 @@ import Html.Styled as H
         ( Html
         )
 import Html.Styled.Attributes as A
-import Html.Styled.Events as Ev
 import Json.Decode as Decode
 import LobbyId
     exposing
@@ -52,6 +51,7 @@ import View.Aria as Aria
 import View.Button as Button
 import View.Card as Card
 import View.CardHeader as CardHeader
+import View.Select as Select
 
 
 
@@ -117,7 +117,6 @@ type alias CopyResult =
 
 type Msg
     = MapInputChanged MapType
-    | SaveMapButtonClicked
     | MapResponseReceived (Response Flags)
     | StartButtonClicked
     | StartMapResponseReceived (Response Flags)
@@ -225,24 +224,22 @@ update : Msg -> Model -> ( Model, Eff Msg )
 update msg model =
     case msg of
         MapInputChanged mapType ->
-            ( { model
-                | selectedMapType = mapType
-                , mapStatus = MapIdle
-              }
-            , E.none
-            )
-
-        SaveMapButtonClicked ->
-            if model.busy || model.refreshing || not model.isHost || model.gameUrl /= Nothing then
+            if model.busy || not model.isHost || model.gameUrl /= Nothing then
                 ( model, E.none )
 
             else
-                ( { model
-                    | busy = True
-                    , actionError = Nothing
-                    , mapStatus = MapSaving
-                  }
-                , E.request MapResponseReceived (saveMap model)
+                let
+                    updatedModel : Model
+                    updatedModel =
+                        { model
+                            | selectedMapType = mapType
+                            , busy = True
+                            , actionError = Nothing
+                            , mapStatus = MapSaving
+                        }
+                in
+                ( updatedModel
+                , E.request MapResponseReceived (saveMap updatedModel)
                 )
 
         MapResponseReceived result ->
@@ -447,7 +444,10 @@ view model =
     in
     [ H.div
         [ A.css
-            [ S.wFull
+            [ S.flex1
+            , S.col
+            , S.justifyCenter
+            , S.wFull
             , S.maxW160
             , S.selfCenter
             ]
@@ -531,6 +531,13 @@ inviteView model =
 
 mapView : Model -> Html Msg
 mapView model =
+    let
+        mapOption : MapType -> { value : MapType, label : String }
+        mapOption mapType =
+            { value = mapType
+            , label = MapType.label mapType
+            }
+    in
     if model.isHost && model.gameUrl == Nothing then
         H.div
             [ A.css
@@ -543,40 +550,21 @@ mapView model =
                 ]
                 [ H.text "map"
                 ]
-            , H.select
-                [ A.id "map-type"
-                , A.disabled model.busy
-                , A.css
-                    [ S.indentStrong
-                    , S.bgNightwood3
-                    , S.textGray5
-                    , S.p2
+            , H.div
+                [ A.css
+                    [ S.wFull
                     , S.maxW96
                     ]
-                , Ev.on "change"
-                    (Decode.at [ "target", "value" ] Api.Enum.MapType.decoder
-                        |> Decode.map MapInputChanged
-                    )
                 ]
-                (List.map
-                    (\mapType ->
-                        H.option
-                            [ A.value (Api.Enum.MapType.toString mapType)
-                            , A.selected (mapType == model.selectedMapType)
-                            ]
-                            [ H.text (MapType.label mapType)
-                            ]
-                    )
-                    Api.Enum.MapType.list
-                )
-            , H.fieldset
-                [ A.disabled (model.busy || model.refreshing)
-                , A.css
-                    [ S.border0
-                    ]
-                ]
-                [ Button.secondary "save map" SaveMapButtonClicked
-                    |> Button.toHtml
+                [ Select.toHtml
+                    { htmlId = "map-type"
+                    , disabled = model.busy
+                    , selected = model.selectedMapType
+                    , options = List.map mapOption Api.Enum.MapType.list
+                    , toValue = Api.Enum.MapType.toString
+                    , decoder = Api.Enum.MapType.decoder
+                    , onChange = MapInputChanged
+                    }
                 ]
             , H.p
                 [ Aria.role Aria.Status

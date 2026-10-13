@@ -34,6 +34,11 @@ upkeepPerTurn =
     Object.selectionForField "Int" "upkeepPerTurn" [] Decode.int
 
 
+roughTerrainSurcharge : SelectionSet Int Api.Object.Supplies
+roughTerrainSurcharge =
+    Object.selectionForField "Int" "roughTerrainSurcharge" [] Decode.int
+
+
 movementPerTile : SelectionSet Int Api.Object.Supplies
 movementPerTile =
     Object.selectionForField "Int" "movementPerTile" [] Decode.int

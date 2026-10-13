@@ -82,21 +82,23 @@ placements : UnitKind -> List Placement
 placements kind =
     case kind of
         Kind.FieldGun ->
-            [ { x = 2
-              , y = 25
-              , size = 56
+            -- Irregular depth and spacing stay fixed through hits and rerenders.
+            -- Paint distant guns first so the larger foreground guns sit ahead.
+            [ { x = 8
+              , y = 23
+              , size = 25
               }
-            , { x = 34
-              , y = 28
-              , size = 56
+            , { x = 55
+              , y = 30
+              , size = 32
               }
-            , { x = 6
-              , y = 35
-              , size = 56
+            , { x = 3
+              , y = 43
+              , size = 38
               }
-            , { x = 38
-              , y = 39
-              , size = 56
+            , { x = 48
+              , y = 45
+              , size = 46
               }
             ]
 

@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 /// Sight is a circular radius measured between tile centers.
 pub fn sight_range(kind: UnitKind) -> i32 {
     match kind {
-        UnitKind::Infantry => 5,
+        UnitKind::Infantry => 4,
         UnitKind::FieldGun => 4,
         UnitKind::Truck => 3,
         UnitKind::Tank => 2,
@@ -463,7 +463,7 @@ mod tests {
     #[test]
     fn ranges_and_hill_bonus_follow_each_kind() -> TestResult<()> {
         for (kind, range) in [
-            (UnitKind::Infantry, 5),
+            (UnitKind::Infantry, 4),
             (UnitKind::FieldGun, 4),
             (UnitKind::Truck, 3),
             (UnitKind::Tank, 2),
@@ -796,13 +796,7 @@ mod tests {
             .collect();
         assert_eq!(
             sightings,
-            vec![
-                None,
-                Some(Coordinate::new(5, 0)),
-                Some(Coordinate::new(4, 0)),
-                Some(Coordinate::new(5, 0)),
-                None
-            ]
+            vec![None, None, Some(Coordinate::new(4, 0)), None, None]
         );
 
         Ok(())
@@ -844,7 +838,7 @@ mod tests {
         let frames = observed_frames(&board, PlayerNumber::Player1, &resolution);
         assert_eq!(frames.len(), 5);
         assert!(!frames[0].visible_tiles.contains(&Coordinate::new(6, 0)));
-        assert!(frames[1].visible_tiles.contains(&Coordinate::new(6, 0)));
+        assert!(frames[1].visible_tiles.contains(&Coordinate::new(5, 0)));
         assert!(
             !frames[1]
                 .units
@@ -891,7 +885,7 @@ mod tests {
     #[test]
     fn summary_does_not_reveal_enemies_hidden_only_mid_turn() -> TestResult<()> {
         let mut board = scenario(UnitKind::Infantry, ".......")?;
-        board.units[0].move_to(Coordinate::new(5, 0));
+        board.units[0].move_to(Coordinate::new(4, 0));
         let own_id = board.units[0].unit_id();
         let mut enemy = Scenario::supply_point()
             .fixture()?
@@ -919,7 +913,7 @@ mod tests {
                 event(
                     own_id,
                     TurnEventKind::Move,
-                    [5, 6, 5].map(|x| Coordinate::new(x, 0)).to_vec(),
+                    [4, 5, 4].map(|x| Coordinate::new(x, 0)).to_vec(),
                 ),
                 event(enemy_id, TurnEventKind::Hold, vec![Coordinate::new(0, 0)]),
             ],
@@ -967,7 +961,7 @@ mod tests {
             .into_iter()
             .find(|unit| unit.side() == PlayerNumber::Player2)
             .fixture()?;
-        enemy.move_to(Coordinate::new(4, 0));
+        enemy.move_to(Coordinate::new(3, 0));
         let enemy_id = enemy.unit_id();
         board.units.push(enemy);
         let resolution = TurnResolution {
@@ -982,9 +976,9 @@ mod tests {
                 kind: TurnEventKind::Move,
                 unit_id: enemy_id,
                 path: vec![
-                    Coordinate::new(6, 0),
                     Coordinate::new(5, 0),
                     Coordinate::new(4, 0),
+                    Coordinate::new(3, 0),
                 ],
             }],
         };

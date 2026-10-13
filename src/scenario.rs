@@ -1,6 +1,6 @@
 use crate::{
     combat,
-    map::{Coordinate, Map, MapError, MapTheme},
+    map::{Coordinate, Map, MapError, MapTheme, Terrain},
     supplies::{self, GroundSupplyCrate, SupplyRules, SupplyStock},
 };
 use juniper::{GraphQLEnum, GraphQLObject, GraphQLUnion, graphql_object};
@@ -87,7 +87,7 @@ impl fmt::Display for UnitId {
     }
 }
 
-/// Authoritative health; damage and healing rules remain future work.
+/// Authoritative health; combat applies damage and healing remains future work.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLObject)]
 pub struct HitPoints {
     current: i32,
@@ -97,6 +97,10 @@ pub struct HitPoints {
 impl HitPoints {
     pub fn current(&self) -> i32 {
         self.current
+    }
+
+    pub fn maximum(&self) -> i32 {
+        self.maximum
     }
 
     fn full() -> Self {
@@ -133,6 +137,7 @@ pub struct Supplies {
     maximum: i32,
     upkeep_per_turn: i32,
     movement_per_tile: i32,
+    rough_terrain_surcharge: i32,
 }
 
 #[graphql_object]
@@ -146,6 +151,9 @@ impl Supplies {
     pub fn upkeep_per_turn(&self) -> i32 {
         self.upkeep_per_turn
     }
+    pub fn rough_terrain_surcharge(&self) -> i32 {
+        self.rough_terrain_surcharge
+    }
     pub fn movement_per_tile(&self) -> i32 {
         self.movement_per_tile
     }
@@ -154,7 +162,7 @@ impl Supplies {
 impl Supplies {
     fn for_kind(kind: UnitKind) -> Self {
         let movement_per_tile = match kind {
-            UnitKind::Infantry => 4,
+            UnitKind::Infantry => 3,
             UnitKind::FieldGun => 1,
             UnitKind::Tank | UnitKind::Truck => 0,
         };
@@ -167,12 +175,25 @@ impl Supplies {
             maximum,
             upkeep_per_turn: 1,
             movement_per_tile,
+            rough_terrain_surcharge: if kind == UnitKind::Infantry { 1 } else { 0 },
         }
     }
 
-    pub fn can_move(&self, tiles: usize) -> bool {
-        let available = (self.current - self.upkeep_per_turn).max(0);
-        tiles as i32 * self.movement_per_tile <= available
+    pub fn movement_cost(&self, map: &Map, path: &[Coordinate]) -> i32 {
+        path.iter()
+            .skip(1)
+            .map(|position| {
+                let surcharge = match map.tile_at(*position) {
+                    Some(Terrain::Hills | Terrain::Forest) => self.rough_terrain_surcharge,
+                    _ => 0,
+                };
+                self.movement_per_tile + surcharge
+            })
+            .sum()
+    }
+
+    pub fn can_afford_movement(&self, map: &Map, path: &[Coordinate]) -> bool {
+        self.movement_cost(map, path) <= (self.current - self.upkeep_per_turn).max(0)
     }
 }
 
@@ -394,6 +415,13 @@ impl Unit {
         }
     }
 
+    pub fn follow_terrain_path(&mut self, map: &Map, path: &[Coordinate]) {
+        let surcharge = self.supplies.movement_cost(map, path)
+            - path.len().saturating_sub(1) as i32 * self.supplies.movement_per_tile;
+        self.follow_path(path);
+        self.supplies.current -= surcharge;
+    }
+
     pub fn follow_path(&mut self, path: &[Coordinate]) {
         for step in path.windows(2) {
             if self.direction.is_some()
@@ -420,10 +448,12 @@ impl Unit {
     pub fn retract_movement(
         &mut self,
         retained_path: &[Coordinate],
-        removed_tiles: usize,
+        map: &Map,
+        discarded_path: &[Coordinate],
         initial: &Unit,
     ) {
-        self.supplies.current += removed_tiles as i32 * self.supplies.movement_per_tile;
+        let removed_tiles = discarded_path.len().saturating_sub(1);
+        self.supplies.current += self.supplies.movement_cost(map, discarded_path);
         if let Some(fuel) = &mut self.fuel {
             fuel.current += removed_tiles as i32;
         }
@@ -1274,6 +1304,35 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
+    fn infantry_terrain_supply_costs_reserve_upkeep_and_charge_entered_tiles() -> TestResult<()> {
+        for (sketch, expected) in [("...", 6), (".%%", 8), (".##", 8), (".%#", 8)] {
+            let map = Map::from_ascii(sketch).fixture()?;
+            let path = [
+                Coordinate::new(0, 0),
+                Coordinate::new(1, 0),
+                Coordinate::new(2, 0),
+            ];
+            let mut scenario = Scenario::supply_point().fixture()?;
+            let unit = scenario.units.first_mut().fixture()?;
+            unit.move_to(path[0]);
+            unit.set_supplies_for_test(expected);
+            assert!(!unit.supplies().can_afford_movement(&map, &path));
+            unit.set_supplies_for_test(expected + 1);
+            assert!(unit.supplies().can_afford_movement(&map, &path));
+            unit.set_supplies_for_test(32);
+            let initial = unit.clone();
+            unit.follow_terrain_path(&map, &path);
+            assert_eq!(unit.supplies().current(), 32 - expected);
+            assert_eq!(unit.board_position(), Some(path[2]));
+            unit.spend_supplies(3);
+            unit.retract_movement(&path[..2], &map, &path[1..], &initial);
+            assert_eq!(unit.supplies().current(), 29 - expected / 2);
+            assert_eq!(unit.board_position(), Some(path[1]));
+        }
+        Ok(())
+    }
+
+    #[test]
     fn map_themes_are_independent_of_base_terrain() -> TestResult<()> {
         for map_type in [
             crate::map_type::MapType::SupplyPoint,
@@ -1875,7 +1934,7 @@ mod tests {
                 }
             );
             let (maximum, movement_per_tile) = match unit.kind {
-                UnitKind::Infantry => (64, 4),
+                UnitKind::Infantry => (64, 3),
                 UnitKind::FieldGun => (64, 1),
                 UnitKind::Tank | UnitKind::Truck => (32, 0),
             };

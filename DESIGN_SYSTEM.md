@@ -55,6 +55,10 @@ tokens in `Style.elm` for interface colors.
 | Primary bevel dark edge | internal `yellow1Color` | `#302507` |
 
 Use gold sparingly for primary actions. Bevels reverse when buttons are pressed.
+Secondary buttons use a gray0 face with gray1 light edges and black shadow
+edges (`outdentDark`, reversed with `indentDark` when pressed). Their labels
+retain gray4 text, brightening to gray5 on hover and press. Disabled buttons
+retain their gray1 face and gray3 text.
 Use `Button.large` for prominent actions such as submitting a turn: wider padding
 and a 3rem minimum height, retaining the normal text size and color variant.
 The primary button uses the original yellow palette shifted up one step in all
@@ -77,7 +81,8 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
 - Buttons size to their labels and align to the start of the form.
 - The spacing unit is 0.25rem: `p1`/`g1` are 0.25rem, `p2`/`g2` are 0.5rem,
   and `p3`/`g3` are 0.75rem. `p2px` is a literal 2px inset.
-- Lobby cards fill available width up to 40rem, centered horizontally. Name
+- Lobby cards fill available width up to 40rem, centered horizontally and vertically. Create and join forms share this
+  vertical centering. Allow taller content to expand the page and scroll. Name
   fields stay within 24rem. Place the selectable invite URL beside `copy link`
   and let that row wrap on narrow screens. Lobby updates are automatic; show
   `retry` only after an update fails.
@@ -304,8 +309,12 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   keyboard focus. A single action
   says `proceed without unloading` when nothing is checked and becomes the gold
   `choose unload squares` action when cargo is checked. Checked passengers and
-  crates choose empty adjacent
-  squares around the truck's planned destination one at a time. Show the current
+  crates choose adjacent squares around the truck's planned destination one at a
+  time. Passengers require distinct free squares; crates may share with allies
+  and passenger exits, but not enemies or other crates. Disable unchecked cargo
+  when adding it would prevent a complete placement, and explain unavailable
+  space or insufficient supplies beneath the checklist. Checked cargo stays enabled
+  so it can be deselected. Show the current
   cargo item and a skip-remaining action in the side panel, and list saved unload
   choices under the truck's order. Extend a solid gold branch from the truck's
   destination dot to an outlined diamond on each saved unloading square. Keep
@@ -416,8 +425,12 @@ visible unit/player labels. The western participant appears left, facing right; 
 The card opens with a 200ms expansion and slight overshoot. Every unit kind
 uses four staggered figures at 13–16 HP, three at 9–12, two at 5–8, one at
 1–4, and none at zero. Each figure represents four HP; partially intact
-quarters remain visible. Hold the scene for one second after the opening
-animation finishes before combat begins. Use the server's per-pair before/after health, including
+quarters remain visible.
+Field-gun formations use uneven spacing and varied scale, with smaller guns
+farther back and larger guns in the foreground. Keep their placements stable
+through impacts and paint from back to front.
+Hold the scene for one second after the opening animation finishes before combat
+begins. Use the server's per-pair before/after health, including
 observable enemies, without theater HP bars. Lost figures play a six-frame illustrated horizontal projectile impact over 100ms,
 beginning at 1200ms with losses staggered by 120ms. Draw impacts above the entire formation so neighboring figures cannot obscure
 the projectile. The moving projectile approach and contact each get 10ms, followed by a 30ms impact

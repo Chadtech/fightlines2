@@ -6,6 +6,7 @@ module GamePage.OrderPlanning exposing
     , UnloadChoice
     , UnloadPlanning
     , applyCommand
+    , canSelectUnloadCargo
     , chooseUnloadSquare
     , choosingDirection
     , commandMenuUnit
@@ -45,6 +46,7 @@ module GamePage.OrderPlanning exposing
     , submissionDrafts
     , submissionOrders
     , submissionWarningOpen
+    , toggleAvailableUnloadCargo
     , toggleUnloadCargo
     , toggleUnloadPassenger
     , truckDestination
@@ -296,6 +298,74 @@ unloadPlanning state =
             Nothing
 
 
+{-| Check the whole selection, including scarce exits and passenger supplies.
+Checked cargo always remains removable.
+-}
+canSelectUnloadCargo : Context -> Cargo -> Model -> Bool
+canSelectUnloadCargo context cargo state =
+    case state of
+        ChoosingPassengers choice ->
+            List.member cargo choice.checked
+                || canCompleteUnload context
+                    (confirmUnloadPassengers []
+                        (unloadOptions context)
+                        (toggleUnloadCargo cargo True state)
+                    )
+
+        _ ->
+            False
+
+
+toggleAvailableUnloadCargo : Context -> Cargo -> Bool -> Model -> Model
+toggleAvailableUnloadCargo context cargo checked state =
+    if not checked || canSelectUnloadCargo context cargo state then
+        toggleUnloadCargo cargo checked state
+
+    else
+        state
+
+
+{-| Search at most two cargo exits. Use raw options during simulation to avoid
+recursing through the filtered board picker.
+-}
+canCompleteUnload : Context -> Model -> Bool
+canCompleteUnload context state =
+    case state of
+        ChoosingExits unloading ->
+            let
+                completes : Movement.Option -> Bool
+                completes option =
+                    saveUnloadDestination []
+                        (unloadOptions context)
+                        option.destination
+                        (ChoosingExits { unloading | options = unloadOptions context state unloading.cargo })
+                        |> canCompleteUnload context
+            in
+            List.any completes (unloadOptions context state unloading.cargo)
+
+        _ ->
+            True
+
+
+availableUnloadOptions : Context -> Model -> Cargo -> List Movement.Option
+availableUnloadOptions context state cargo =
+    let
+        completes : Movement.Option -> Bool
+        completes option =
+            case state of
+                ChoosingExits unloading ->
+                    saveUnloadDestination []
+                        (unloadOptions context)
+                        option.destination
+                        (ChoosingExits { unloading | options = unloadOptions context state cargo })
+                        |> canCompleteUnload context
+
+                _ ->
+                    False
+    in
+    unloadOptions context state cargo |> List.filter completes
+
+
 toggleUnloadPassenger : UnitId -> Bool -> Model -> Model
 toggleUnloadPassenger id =
     toggleUnloadCargo (Passenger id)
@@ -464,7 +534,7 @@ dismissDialog depots state =
 chooseUnloadSquare : Context -> Coordinate -> Model -> Model
 chooseUnloadSquare context destination state =
     state
-        |> saveUnloadDestination context.depots (unloadOptions context) destination
+        |> saveUnloadDestination context.depots (availableUnloadOptions context) destination
 
 
 applyCommand : Context -> UnitCommand.Command -> Model -> Model
@@ -1023,7 +1093,11 @@ submissionOrders context drafts =
 
 confirmPassengers : Context -> Model -> Model
 confirmPassengers context state =
-    confirmUnloadPassengers context.depots (unloadOptions context) state
+    if canCompleteUnload context (confirmUnloadPassengers [] (unloadOptions context) state) then
+        confirmUnloadPassengers context.depots (availableUnloadOptions context) state
+
+    else
+        state
 
 
 focusedCommand : Model -> Maybe UnitCommand.MenuOption
@@ -1301,28 +1375,7 @@ crateExitOptions context planning plans =
 
         reserved : List Coordinate
         reserved =
-            destinations ++ passengerExits ++ crateExits
-
-        destinations : List Coordinate
-        destinations =
-            List.map PlannedOrder.destination plans
-
-        passengerExits : List Coordinate
-        passengerExits =
-            List.concatMap (PlannedOrder.unloads >> List.map .destination) plans
-
-        crateExits : List Coordinate
-        crateExits =
             List.concatMap (PlannedOrder.crateUnloads >> List.map .destination) plans
-
-        occupied : Unit -> Bool
-        occupied unit =
-            let
-                leavesSquare : PlannedOrder -> Bool
-                leavesSquare plan =
-                    plan.unitId == unit.id && PlannedOrder.isMoving plan
-            in
-            not (List.any leavesSquare plans)
 
         available : Coordinate -> Bool
         available exit =
@@ -1336,7 +1389,7 @@ crateExitOptions context planning plans =
 
                 blocksExit : Unit -> Bool
                 blocksExit unit =
-                    occupied unit && Unit.boardPosition unit == Just exit
+                    not (isOwnUnit context unit) && Unit.boardPosition unit == Just exit
 
                 hasUnit : Bool
                 hasUnit =
@@ -1528,7 +1581,7 @@ reservedDestinations context unit state =
 
         savedDestinations : List Coordinate
         savedDestinations =
-            destinations ++ passengerExits ++ crateExits
+            destinations ++ passengerExits
 
         destinations : List Coordinate
         destinations =
@@ -1537,10 +1590,6 @@ reservedDestinations context unit state =
         passengerExits : List Coordinate
         passengerExits =
             List.concatMap (PlannedOrder.unloads >> List.map .destination) (orders state)
-
-        crateExits : List Coordinate
-        crateExits =
-            List.concatMap (PlannedOrder.crateUnloads >> List.map .destination) (orders state)
     in
     savedDestinations ++ unavailableReceivers
 
@@ -1768,8 +1817,8 @@ movePurpose state =
 movementUnit : MovePurpose -> Unit -> Unit
 movementUnit purpose unit =
     let
-        reserveShot : UnitResources.UnitResources -> UnitResources.UnitResources
-        reserveShot resources =
+        reserveCombatSupplies : UnitResources.UnitResources -> UnitResources.UnitResources
+        reserveCombatSupplies resources =
             let
                 supplies : Unit.Supplies.Supplies
                 supplies =
@@ -1778,7 +1827,7 @@ movementUnit purpose unit =
             { resources
                 | supplies =
                     { supplies
-                        | current = supplies.current - unit.combatRules.shotCost
+                        | current = supplies.current - unit.combatRules.readinessCost - unit.combatRules.shotCost
                     }
             }
     in
@@ -1789,7 +1838,7 @@ movementUnit purpose unit =
         AttackMove ->
             { unit
                 | resources =
-                    Maybe.map reserveShot unit.resources
+                    Maybe.map reserveCombatSupplies unit.resources
             }
 
 

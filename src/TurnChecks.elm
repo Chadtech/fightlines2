@@ -81,6 +81,7 @@ playbackChecks first second =
                             { current = 64
                             , maximum = 64
                             , upkeepPerTurn = 1
+                            , roughTerrainSurcharge = 0
                             , movementPerTile = 1
                             }
                         , fuel = Nothing
@@ -116,6 +117,7 @@ playbackChecks first second =
                             { current = 64
                             , maximum = 64
                             , upkeepPerTurn = 1
+                            , roughTerrainSurcharge = 0
                             , movementPerTile = 1
                             }
                         , fuel = Nothing
@@ -347,6 +349,7 @@ truckPlaybackChecks unitId =
                             { current = 64
                             , maximum = 64
                             , upkeepPerTurn = 1
+                            , roughTerrainSurcharge = 0
                             , movementPerTile = 0
                             }
                         , fuel =
@@ -426,6 +429,7 @@ transportPlaybackChecks passengerId truckId =
                         { current = 62
                         , maximum = 64
                         , upkeepPerTurn = 1
+                        , roughTerrainSurcharge = 0
                         , movementPerTile = 0
                         }
                     , fuel =
@@ -582,6 +586,7 @@ spriteFacingChecks id =
                         { current = 64
                         , maximum = 64
                         , upkeepPerTurn = 1
+                        , roughTerrainSurcharge = 0
                         , movementPerTile = 0
                         }
                     , fuel =
@@ -1052,6 +1057,7 @@ deathPlaybackChecks id =
                         { current = 0
                         , maximum = 64
                         , upkeepPerTurn = 1
+                        , roughTerrainSurcharge = 0
                         , movementPerTile = 1
                         }
                     , fuel = Nothing

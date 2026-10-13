@@ -550,7 +550,12 @@ logNewLossError model =
                     model
 
                 Err (UnitLoss.OwnerNotFound missing) ->
-                    { model | shared = Shared.addError (Just (Error.UnitOwnerNotFound missing)) model.shared }
+                    { model
+                        | shared =
+                            Shared.addError
+                                (Just (Error.UnitOwnerNotFound missing))
+                                model.shared
+                    }
 
         Nothing ->
             model
@@ -1277,7 +1282,7 @@ update lobbyId msg model =
 
         UnloadUnitToggled id checked ->
             model
-                |> mapPlanning (OrderPlanning.toggleUnloadPassenger id checked)
+                |> mapPlanning (OrderPlanning.toggleAvailableUnloadCargo (planningContext model) (OrderPlanning.Passenger id) checked)
                 |> E.withOut
 
         UnloadChoicesConfirmed ->
@@ -1311,7 +1316,7 @@ update lobbyId msg model =
         UnloadCrateToggled index checked ->
             model
                 |> mapPlanning
-                    (OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate index) checked)
+                    (OrderPlanning.toggleAvailableUnloadCargo (planningContext model) (OrderPlanning.Crate index) checked)
                 |> E.withOut
 
         CargoUnitClicked id ->
@@ -2378,7 +2383,7 @@ ambushDetails unit =
         ]
     , H.p
         []
-        [ H.text ("range: " ++ String.fromInt rules.range ++ " · damage: " ++ String.fromInt rules.damage)
+        [ H.text ("range: " ++ String.fromInt rules.range ++ " · base damage: " ++ String.fromInt rules.damage)
         ]
     , H.p
         []
@@ -2742,10 +2747,15 @@ unloadChecklist model choice =
         passengers =
             List.filter (\unit -> Unit.carrierId unit == Just choice.truck.truckId) model.units
 
+        unavailable : OrderPlanning.Cargo -> Bool
+        unavailable cargo =
+            not (OrderPlanning.canSelectUnloadCargo (planningContext model) cargo (OrderPlanning.ChoosingPassengers choice))
+
         passengerCheckbox : Unit -> Html Msg
         passengerCheckbox unit =
             UnloadPassenger.toHtml
-                { checked = List.member (OrderPlanning.Passenger unit.id) choice.checked
+                { disabled = unavailable (OrderPlanning.Passenger unit.id)
+                , checked = List.member (OrderPlanning.Passenger unit.id) choice.checked
                 , onCheck = UnloadUnitToggled unit.id
                 }
                 unit
@@ -2773,7 +2783,7 @@ unloadChecklist model choice =
                 label =
                     "supply crate " ++ String.fromInt (index + 1)
             in
-            Checkbox.toHtml
+            Checkbox.toHtmlDisabled (unavailable (OrderPlanning.Crate index))
                 { label = label
                 , checked = List.member (OrderPlanning.Crate index) choice.checked
                 , onCheck = UnloadCrateToggled index
@@ -2811,7 +2821,33 @@ unloadChecklist model choice =
 
         content : List (Html Msg)
         content =
-            choices ++ actionContent
+            choices ++ unavailableContent ++ actionContent
+
+        unavailableContent : List (Html Msg)
+        unavailableContent =
+            let
+                hasUnavailable : Bool
+                hasUnavailable =
+                    List.any (\unit -> unavailable (OrderPlanning.Passenger unit.id)) passengers
+                        || (model.units
+                                |> ListUtil.find
+                                    (\unit -> unit.id == choice.truck.truckId)
+                                |> Maybe.map
+                                    (\truck ->
+                                        List.range 0 (Unit.crateCount truck - 1)
+                                            |> List.any (OrderPlanning.Crate >> unavailable)
+                                    )
+                                |> Maybe.withDefault False
+                           )
+            in
+            if hasUnavailable then
+                [ H.p
+                    [ A.css [ S.textGray4 ] ]
+                    [ H.text "remaining cargo has no available unload space or insufficient supplies" ]
+                ]
+
+            else
+                []
 
         actionContent : List (Html Msg)
         actionContent =

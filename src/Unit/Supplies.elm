@@ -12,6 +12,7 @@ type alias Supplies =
     { current : Int
     , maximum : Int
     , upkeepPerTurn : Int
+    , roughTerrainSurcharge : Int
     , movementPerTile : Int
     }
 
@@ -22,4 +23,5 @@ selection =
         |> SS.with SuppliesApi.current
         |> SS.with SuppliesApi.maximum
         |> SS.with SuppliesApi.upkeepPerTurn
+        |> SS.with SuppliesApi.roughTerrainSurcharge
         |> SS.with SuppliesApi.movementPerTile

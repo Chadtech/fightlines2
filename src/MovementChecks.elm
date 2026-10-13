@@ -102,10 +102,16 @@ check rules fixture =
                                 { current = 64
                                 , maximum = 64
                                 , upkeepPerTurn = 1
+                                , roughTerrainSurcharge =
+                                    if fixture.kind == UnitKind.Infantry then
+                                        1
+
+                                    else
+                                        0
                                 , movementPerTile =
                                     case fixture.kind of
                                         UnitKind.Infantry ->
-                                            4
+                                            3
 
                                         UnitKind.FieldGun ->
                                             1
@@ -241,6 +247,7 @@ traceChecks rules =
                                 { current = 64
                                 , maximum = 64
                                 , upkeepPerTurn = 1
+                                , roughTerrainSurcharge = 0
                                 , movementPerTile = 1
                                 }
                             , fuel = Nothing
@@ -331,7 +338,7 @@ traceChecks rules =
                         |> Maybe.map (\path -> path.path == [ origin, down, { x = 0, y = 2 } ] && path.cost == 4 && Movement.canStop [] alliedUnits unit path)
                         |> Maybe.withDefault False
                     )
-                , test "fractional terrain cost is refunded on backtracking"
+                , test "terrain mobility is refunded on backtracking"
                     (let
                         roughMap : Map
                         roughMap =
@@ -340,7 +347,7 @@ traceChecks rules =
                      Movement.trace rules roughMap units unit (Movement.start origin) down
                         |> Maybe.andThen
                             (\path ->
-                                if path.cost == 3 then
+                                if path.cost == 2 then
                                     Movement.trace rules roughMap units unit path origin
 
                                 else
@@ -392,6 +399,7 @@ reservationChecks rules =
                                 { current = 64
                                 , maximum = 64
                                 , upkeepPerTurn = 1
+                                , roughTerrainSurcharge = 0
                                 , movementPerTile = 1
                                 }
                             , fuel = Nothing
@@ -483,6 +491,7 @@ fuelChecks rules =
                                 { current = 64
                                 , maximum = 64
                                 , upkeepPerTurn = 1
+                                , roughTerrainSurcharge = 0
                                 , movementPerTile = 0
                                 }
                             , fuel =
@@ -553,7 +562,7 @@ supplyChecks rules =
             let
                 supplies : Supplies
                 supplies =
-                    { current = 9, maximum = 64, upkeepPerTurn = 1, movementPerTile = 4 }
+                    { current = 9, maximum = 64, upkeepPerTurn = 1, roughTerrainSurcharge = 0, movementPerTile = 4 }
 
                 unit : Unit.Unit
                 unit =
@@ -611,7 +620,19 @@ supplyChecks rules =
 
                 vehicle : Unit.Unit
                 vehicle =
-                    { unit | kind = UnitKind.Tank, resources = Maybe.map (\resources -> { resources | fuel = Just { current = 2, maximum = 64 }, supplies = { supplies | current = 0, movementPerTile = 0 } }) unit.resources }
+                    { unit | kind = UnitKind.Tank, resources = Maybe.map (\resources -> { resources | fuel = Just { current = 2, maximum = 64 }, supplies = { supplies | current = 0, roughTerrainSurcharge = 0, movementPerTile = 0 } }) unit.resources }
+
+                roughMap : Map
+                roughMap =
+                    { map | baseTile = Terrain.Forest }
+
+                infantry : Unit.Unit
+                infantry =
+                    { unit | resources = Maybe.map (\resources -> { resources | supplies = { supplies | current = 8, movementPerTile = 3, roughTerrainSurcharge = 1 } }) unit.resources }
+
+                roughTrace : Maybe Movement.Option
+                roughTrace =
+                    Movement.trace rules roughMap [ infantry ] infantry (Movement.start { x = 0, y = 0 }) { x = 1, y = 0 }
 
                 test : String -> Bool -> List String
                 test name passed =
@@ -629,6 +650,10 @@ supplyChecks rules =
                 , test "backtracking refunds movement supplies" (traced |> Maybe.andThen (\path -> Movement.trace rules map units unit path { x = 0, y = 1 }) |> Maybe.andThen (\path -> Movement.trace rules map units unit path { x = 0, y = 2 }) |> Maybe.map (\path -> List.length path.path == 3) |> Maybe.withDefault False)
                 , test "vehicles use fuel rather than supplies for movement" (Movement.tileLimit vehicle == Just 2 && not (List.isEmpty (Movement.options [] rules map units vehicle)))
                 , test "empty supplies do not underflow the walking limit" (Movement.tileLimit { unit | resources = Maybe.map (\resources -> { resources | supplies = { supplies | current = 0 } }) unit.resources } == Just 0)
+                , test "two forest squares retain infantry mobility" (Movement.options [] rules roughMap [ unit ] { infantry | resources = Maybe.map (\resources -> { resources | supplies = { supplies | current = 9, movementPerTile = 3, roughTerrainSurcharge = 1 } }) infantry.resources } |> List.any (\option -> option.destination == { x = 2, y = 0 } && option.cost == 4))
+                , test "terrain supplies restrict otherwise reachable routes" (Movement.options [] rules roughMap [ infantry ] infantry |> List.all (\option -> List.length option.path <= 2))
+                , test "terrain supply cost is paid on entered squares" (Movement.supplyCost roughMap { supplies | movementPerTile = 3, roughTerrainSurcharge = 1 } [ { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 2, y = 0 } ] == 8)
+                , test "rough terrain trace extensions reserve upkeep" (roughTrace |> Maybe.andThen (\path -> Movement.trace rules roughMap [ infantry ] infantry path { x = 2, y = 0 }) |> (==) Nothing)
                 ]
 
 
@@ -696,6 +721,7 @@ transportChecks rules =
                                 { current = 64
                                 , maximum = 64
                                 , upkeepPerTurn = 1
+                                , roughTerrainSurcharge = 0
                                 , movementPerTile = 1
                                 }
                             , fuel = Nothing
@@ -764,7 +790,7 @@ transportChecks rules =
                 , expect "zero fuel truck passengers can unload beside the stationary truck" (canReach strandedUnits aboard { x = 2, y = 0 })
                 , expect "stationary unloads still reject the occupied truck origin" (not (canReach strandedUnits aboard { x = 1, y = 0 }))
                 , expect "stationary unloads still reject reserved exits" (not (List.any (\option -> option.destination == { x = 2, y = 0 }) (Movement.options [ { x = 2, y = 0 } ] rules map strandedUnits aboard)))
-                , expect "stationary unloads still require passenger movement supplies" (not (canReach strandedUnits { aboard | resources = Maybe.map (\resources -> { resources | supplies = { current = 1, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 } }) aboard.resources } { x = 2, y = 0 }))
+                , expect "stationary unloads still require passenger movement supplies" (not (canReach strandedUnits { aboard | resources = Maybe.map (\resources -> { resources | supplies = { current = 1, maximum = 64, upkeepPerTurn = 1, roughTerrainSurcharge = 0, movementPerTile = 1 } }) aboard.resources } { x = 2, y = 0 }))
                 , expect "unload offers adjacent squares" (canReach rideUnits aboard { x = 2, y = 0 })
                 , expect "unload does not offer distant squares" (not (canReach rideUnits aboard { x = 3, y = 0 }))
                 , expect "traced unload cannot extend beyond one tile" (extendingUnload == Nothing)

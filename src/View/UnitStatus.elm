@@ -367,7 +367,7 @@ supplyConsumption kind =
             "tanks consume a small amount of supplies each turn, and additional supplies when attack-moving, standing ground, and engaging enemies. when supplies reach 0, this unit perishes."
 
         Kind.Infantry ->
-            "infantry consume 1 supply each turn and 4 supplies per traversed tile. when supplies reach 0, this unit perishes."
+            "infantry consume 1 supply each turn, 3 per grass tile, 4 per hill or forest tile, 2 for attack move or ambush readiness, and 3 when firing. when supplies reach 0, this unit perishes."
 
         Kind.FieldGun ->
             "field guns consume a small amount of supplies each turn, and additional supplies when moving, standing ground, attack-moving, and engaging enemies. when supplies reach 0, this unit perishes."

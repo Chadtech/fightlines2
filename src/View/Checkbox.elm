@@ -1,4 +1,4 @@
-module View.Checkbox exposing (toHtml)
+module View.Checkbox exposing (toHtml, toHtmlDisabled)
 
 import Css
 import Html.Styled as H exposing (Html)
@@ -8,8 +8,19 @@ import Style as S
 import View.Aria as Aria
 
 
-toHtml : { label : String, checked : Bool, onCheck : Bool -> msg } -> List (Html msg) -> Html msg
-toHtml config content =
+toHtml :
+    { label : String
+    , checked : Bool
+    , onCheck : Bool -> msg
+    }
+    -> List (Html msg)
+    -> Html msg
+toHtml config =
+    toHtmlDisabled False config
+
+
+toHtmlDisabled : Bool -> { label : String, checked : Bool, onCheck : Bool -> msg } -> List (Html msg) -> Html msg
+toHtmlDisabled disabled config content =
     let
         checkbox : Html msg
         checkbox =
@@ -17,6 +28,7 @@ toHtml config content =
                 [ A.type_ "checkbox"
                 , Aria.label config.label
                 , A.checked config.checked
+                , A.disabled disabled
                 , Ev.onCheck config.onCheck
                 , A.css
                     [ S.appearanceNone
@@ -30,6 +42,10 @@ toHtml config content =
                     , S.pointerCursor
                     , S.grid
                     , S.placeContentCenter
+                    , Css.pseudoClass "disabled"
+                        [ Css.opacity (Css.num 0.5)
+                        , Css.cursor Css.notAllowed
+                        ]
                     , Css.pseudoClass "checked"
                         [ S.bgGray4
 
