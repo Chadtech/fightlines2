@@ -39,7 +39,7 @@ checks : List String
 checks =
     case ( UnitId.parse "1", UnitId.parse "2" ) of
         ( Ok first, Ok second ) ->
-            playbackChecks first second ++ truckPlaybackChecks first ++ transportPlaybackChecks first second ++ spriteFacingChecks first ++ deathPlaybackChecks first ++ deathFocusChecks first second ++ combatPlaybackChecks first second ++ combatTheaterChecks
+            playbackChecks first second ++ truckPlaybackChecks first ++ transportPlaybackChecks first second ++ spriteFacingChecks first ++ deathPlaybackChecks first ++ deathFocusChecks first second ++ combatPlaybackChecks first second ++ combatDeathChecks first second ++ combatTheaterChecks
 
         _ ->
             [ "could not construct fixture IDs" ]
@@ -684,7 +684,7 @@ combatPlaybackChecks first second =
 
         cleanup : TurnPlayback.Frame
         cleanup =
-            { before | durationMs = 600, units = [] }
+            { before | durationMs = 1400, units = [] }
 
         panelAt : { x : Int, y : Int } -> { x : Int, y : Int } -> TurnPlayback.Panel
         panelAt origin destination =
@@ -698,6 +698,30 @@ combatPlaybackChecks first second =
             , elapsed = 0
             , mapView = TurnPlayback.CardVisible
             }
+
+        readyAt : Float -> TurnPlayback.MapView -> Int -> Bool
+        readyAt elapsed mapView remainingHealth =
+            let
+                panel : TurnPlayback.Panel
+                panel =
+                    panelAt shot.origin shot.destination
+
+                exchange : TurnPlayback.Exchange
+                exchange =
+                    panel.exchange
+            in
+            CombatTheater.readyToAutomaticallyClose
+                { panel
+                    | elapsed = elapsed
+                    , mapView = mapView
+                    , exchange =
+                        { exchange
+                            | targetHealth =
+                                { before = { current = 16, maximum = 16 }
+                                , after = { current = remainingHealth, maximum = 16 }
+                                }
+                        }
+                }
 
         expect : String -> Bool -> List String
         expect label passed =
@@ -735,7 +759,7 @@ combatPlaybackChecks first second =
                             showing |> Maybe.andThen TurnPlayback.continueCombat |> Maybe.map (\next -> ( Just next.animation, next.frame )) |> Maybe.withDefault ( Nothing, before )
 
                         ( finished, finalFrame ) =
-                            resumed |> Maybe.map (TurnPlayback.tick 600) |> Maybe.withDefault ( Nothing, before )
+                            resumed |> Maybe.map (TurnPlayback.tick 1400) |> Maybe.withDefault ( Nothing, before )
 
                         hidden : TurnPlayback.Frame
                         hidden =
@@ -822,6 +846,14 @@ combatPlaybackChecks first second =
                             (Maybe.andThen TurnPlayback.spotlight almostSpotlit /= Nothing && Maybe.andThen TurnPlayback.panels almostSpotlit == Nothing && Maybe.andThen TurnPlayback.spotlight showing == Nothing && Maybe.andThen TurnPlayback.panels showing /= Nothing)
                         , expect "combat retains visible participants without requiring enemy resources"
                             (Maybe.map (.attacker >> .id) (TurnPlayback.combat focus) == Just first && Maybe.map (.target >> .id) (TurnPlayback.combat focus) == Just second)
+                        , expect "automatic closing waits for two impacts, camera settling, and a half-second pause"
+                            (not (readyAt 1999 TurnPlayback.CardVisible 8) && readyAt 2000 TurnPlayback.CardVisible 8)
+                        , expect "automatic closing lets all four casualty animations finish"
+                            (not (readyAt 2239 TurnPlayback.CardVisible 0) && readyAt 2240 TurnPlayback.CardVisible 0)
+                        , expect "automatic closing waits while seeing the map"
+                            (not (readyAt 2500 TurnPlayback.SeeingMap 0))
+                        , expect "the panel clock can reach the automatic-close threshold"
+                            (Maybe.andThen TurnPlayback.panels holding |> Maybe.map CombatTheater.readyToAutomaticallyClose |> (==) (Just True))
                         , expect "combat panels remain open indefinitely without revealing casualties"
                             (heldFrame == before && Maybe.map .exchange (Maybe.andThen TurnPlayback.panels holding) == Maybe.map .exchange (Maybe.andThen TurnPlayback.panels showing))
                         , expect "map peek only belongs to an open combat card and clears on continuation"
@@ -847,6 +879,107 @@ combatPlaybackChecks first second =
                             (Maybe.andThen TurnPlayback.combat finalShot /= Nothing)
                         , multipleChecks
                         ]
+
+
+combatDeathChecks : UnitId -> UnitId -> List String
+combatDeathChecks first second =
+    case UnitId.parse "3" of
+        Err _ ->
+            [ "could not construct combat death fixture" ]
+
+        Ok third ->
+            let
+                attacker : Unit
+                attacker =
+                    { id = first, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, kind = Kind.Tank, destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 8, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.OnMap { x = 2, y = 2 }, resources = Nothing }
+
+                target : Unit
+                target =
+                    { attacker | id = second, playerNumber = PlayerNumber.Player2, location = Location.OnMap { x = 3, y = 2 } }
+
+                other : Unit
+                other =
+                    { target | id = third, location = Location.OnMap { x = 2, y = 3 } }
+
+                before : TurnPlayback.Frame
+                before =
+                    { units = [ attacker, target, other ], shots = [], durationMs = 0, visibleTiles = [ { x = 2, y = 2 }, { x = 3, y = 2 }, { x = 2, y = 3 } ], depots = [], supplyCrates = [] }
+
+                lethalShot : Unit -> Shot
+                lethalShot victim =
+                    { kind = CombatKind.Ambush, origin = { x = 2, y = 2 }, destination = Unit.boardPosition victim |> Maybe.withDefault { x = 3, y = 2 }, attacker = attacker, target = victim, damage = 8, attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }, targetHealth = { before = { current = 8, maximum = 16 }, after = { current = 0, maximum = 16 } } }
+
+                volley : TurnPlayback.Frame
+                volley =
+                    { before | durationMs = 450, units = [ attacker, { target | destroyed = True }, { other | destroyed = True } ], shots = [ lethalShot target, lethalShot other ] }
+
+                cleanup : TurnPlayback.Frame
+                cleanup =
+                    { before | durationMs = 1400, units = [ attacker ] }
+
+                openFirst : Maybe TurnPlayback.Playback
+                openFirst =
+                    TurnPlayback.start [ before, volley, cleanup ]
+                        |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+                        |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+
+                firstDeath : Maybe { animation : TurnPlayback.Playback, frame : TurnPlayback.Frame }
+                firstDeath =
+                    openFirst |> Maybe.andThen TurnPlayback.continueCombat
+
+                firstHeld : Maybe TurnPlayback.Frame
+                firstHeld =
+                    firstDeath |> Maybe.map (.animation >> TurnPlayback.tick 1399 >> Tuple.second)
+
+                nextPair : Maybe ( Maybe TurnPlayback.Playback, TurnPlayback.Frame )
+                nextPair =
+                    firstDeath |> Maybe.map (.animation >> TurnPlayback.tick 60000)
+
+                secondDeath : Maybe { animation : TurnPlayback.Playback, frame : TurnPlayback.Frame }
+                secondDeath =
+                    nextPair |> Maybe.andThen Tuple.first |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first) |> Maybe.andThen TurnPlayback.continueCombat
+
+                cleared : Maybe ( Maybe TurnPlayback.Playback, TurnPlayback.Frame )
+                cleared =
+                    secondDeath |> Maybe.map (.animation >> TurnPlayback.tick 1400)
+
+                dyingIds : TurnPlayback.Frame -> List UnitId
+                dyingIds frame =
+                    List.filter Unit.isDying frame.units |> List.map .id
+
+                reciprocal : Shot
+                reciprocal =
+                    { kind = CombatKind.Ambush, origin = { x = 3, y = 2 }, destination = { x = 2, y = 2 }, attacker = target, target = attacker, damage = 16, attackerHealth = { before = { current = 8, maximum = 16 }, after = { current = 0, maximum = 16 } }, targetHealth = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } } }
+
+                mutual : Maybe { animation : TurnPlayback.Playback, frame : TurnPlayback.Frame }
+                mutual =
+                    TurnPlayback.start [ before, { volley | shots = [ { reciprocal | origin = reciprocal.destination, destination = reciprocal.origin, attacker = attacker, target = target, attackerHealth = reciprocal.targetHealth, targetHealth = reciprocal.attackerHealth }, reciprocal ] }, cleanup ]
+                        |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+                        |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+                        |> Maybe.andThen TurnPlayback.continueCombat
+
+                expect : String -> Bool -> List String
+                expect label passed =
+                    if passed then
+                        []
+
+                    else
+                        [ label ]
+            in
+            List.concat
+                [ expect "first theater reveals only its own casualty and closes the card"
+                    (Maybe.map (.frame >> dyingIds) firstDeath == Just [ second ] && Maybe.andThen (.animation >> TurnPlayback.panels) firstDeath == Nothing)
+                , expect "per-pair skull holds for the server pause without movement or early continuation"
+                    (Maybe.map dyingIds firstHeld == Just [ second ] && Maybe.map (.animation >> Just >> TurnPlayback.movingPositions) firstDeath == Just [] && Maybe.andThen (.animation >> TurnPlayback.continueCombat) firstDeath == Nothing)
+                , expect "long ticks remove the first casualty and stop at the next theater"
+                    (Maybe.map (Tuple.second >> .units >> List.map .id) nextPair == Just [ first, third ] && (nextPair |> Maybe.andThen Tuple.first |> Maybe.andThen TurnPlayback.spotlight |> Maybe.map (.target >> .id)) == Just third)
+                , expect "second theater reveals its own skull without resurrecting the first casualty"
+                    (Maybe.map (.frame >> dyingIds) secondDeath == Just [ third ] && Maybe.map (.frame >> .units >> List.map .id) secondDeath == Just [ first, third ])
+                , expect "finished pair deaths never reappear in the shared volley"
+                    (Maybe.map (Tuple.second >> .units >> List.map .id) cleared == Just [ first ] && Maybe.map (Tuple.second >> dyingIds) cleared == Just [])
+                , expect "reciprocal lethal shots share their skull pause"
+                    (Maybe.map (.frame >> dyingIds) mutual == Just [ first, second ])
+                ]
 
 
 deathPlaybackChecks : UnitId -> List String
@@ -917,7 +1050,7 @@ deathPlaybackChecks id =
             { depots = []
             , supplyCrates = []
             , shots = []
-            , durationMs = 600
+            , durationMs = 1400
             , units = []
             , visibleTiles = []
             }
@@ -927,10 +1060,10 @@ deathPlaybackChecks id =
             { current = dying, remaining = [ gone ], elapsed = 0, presentation = TurnPlayback.Battlefield }
 
         ( pending, beforeRemoval ) =
-            TurnPlayback.tick 599 animation
+            TurnPlayback.tick 1399 animation
 
         ( finished, afterRemoval ) =
-            TurnPlayback.tick 600 animation
+            TurnPlayback.tick 1400 animation
     in
     expect "dead units remain for the full death animation" (pending /= Nothing && beforeRemoval.units == [ dead ])
         ++ expect "dead units vanish at the server frame boundary" (finished == Nothing && List.isEmpty afterRemoval.units && List.isEmpty afterRemoval.visibleTiles)
@@ -967,7 +1100,7 @@ deathFocusChecks first second =
 
         paused : TurnPlayback.Frame
         paused =
-            { dying | durationMs = 600 }
+            { dying | durationMs = 1400 }
 
         moved : TurnPlayback.Frame
         moved =
@@ -988,10 +1121,10 @@ deathFocusChecks first second =
         Just animation ->
             let
                 ( before, deathFrame ) =
-                    TurnPlayback.tick 599 animation
+                    TurnPlayback.tick 1399 animation
 
                 ( after, clearedFrame ) =
-                    TurnPlayback.tick 600 animation
+                    TurnPlayback.tick 1400 animation
             in
             expect "concealed resources still permit a public death marker" (Unit.isDying dead)
                 ++ expect "death focus holds the survivor still for the full pause" (deathFrame.units == [ dead, survivor ] && List.isEmpty (TurnPlayback.movingPositions before))

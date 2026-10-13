@@ -1,9 +1,12 @@
 module Shared exposing
     ( Model
+    , addError
     , init
     )
 
 import Browser.Navigation as Navigation
+import Error exposing (Error)
+import LocalStorage exposing (LocalStorage)
 import OperatingSystem exposing (OperatingSystem)
 import Url
     exposing
@@ -18,13 +21,17 @@ type alias Model =
     { key : Navigation.Key
     , origin : String
     , operatingSystem : OperatingSystem
+    , localStorage : LocalStorage
+    , errors : List Error
     }
 
 
-init : OperatingSystem -> Url -> Navigation.Key -> Model
-init operatingSystem url key =
+init : OperatingSystem -> LocalStorage -> Url -> Navigation.Key -> Model
+init operatingSystem localStorage url key =
     { key = key
     , operatingSystem = operatingSystem
+    , localStorage = localStorage
+    , errors = []
     , origin =
         Url.toString
             { url
@@ -33,3 +40,13 @@ init operatingSystem url key =
                 , fragment = Nothing
             }
     }
+
+
+addError : Maybe Error -> Model -> Model
+addError maybeError model =
+    case maybeError of
+        Just error ->
+            { model | errors = error :: model.errors }
+
+        Nothing ->
+            model

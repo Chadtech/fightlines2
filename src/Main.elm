@@ -28,6 +28,7 @@ import LobbyId
         )
 import LobbyLoadFailed
 import LobbyPage
+import LocalStorage exposing (LocalStorage)
 import NewLobby
 import OperatingSystem exposing (OperatingSystem)
 import Ports.Js.From as FromJs
@@ -75,6 +76,7 @@ type Page
 
 type alias Flags =
     { operatingSystem : OperatingSystem
+    , localStorage : LocalStorage
     }
 
 
@@ -91,6 +93,7 @@ type Msg
     | GameLoadFailedMsg LobbyId GameLoadFailed.Msg
     | ReturnHomeButtonClicked
     | JsErrorReceived FromJs.Error
+    | LocalStorageChanged LocalStorage
 
 
 
@@ -138,7 +141,7 @@ init value url key =
             let
                 shared : Shared.Model
                 shared =
-                    Shared.init flags.operatingSystem url key
+                    Shared.init flags.operatingSystem flags.localStorage url key
             in
             handleRoute
                 shared
@@ -151,8 +154,9 @@ init value url key =
 
 flagsDecoder : Decode.Decoder Flags
 flagsDecoder =
-    Decode.map Flags
+    Decode.map2 Flags
         (Decode.field "operatingSystem" OperatingSystem.decoder)
+        (Decode.field "localStorage" LocalStorage.decoder)
 
 
 
@@ -290,6 +294,14 @@ handleRoute shared route page =
 update : Msg -> Page -> ( Page, Eff Msg )
 update msg page =
     case msg of
+        LocalStorageChanged storage ->
+            let
+                updateStorage : Shared.Model -> Shared.Model
+                updateStorage shared =
+                    { shared | localStorage = storage }
+            in
+            ( mapShared updateStorage page, E.none )
+
         JsErrorReceived _ ->
             ( page, E.none )
 
@@ -611,7 +623,10 @@ pageSubscriptions shared page =
             _ ->
                 Sub.none
         , FromJs.subscription
-            { listeners = [ listeners page ]
+            { listeners =
+                [ FromJs.data "local storage changed" LocalStorage.decoder LocalStorageChanged
+                , listeners page
+                ]
             , onError = JsErrorReceived
             }
         , KeyCmd.subscriptions shared.operatingSystem [ keyCommands page ]

@@ -123,6 +123,39 @@ subscriptions. Clipboard results retain their URL so stale responses can be
 ignored. Add future JavaScript operations as outgoing message variants and
 page listeners rather than adding ports.
 
+`LocalStorage` wraps a dictionary of JSON values and decodes each requested key
+with the caller's decoder. `Shared.Model.localStorage` receives the startup
+`localStorage` flag. JavaScript stores the object under `fightlines.localStorage`;
+missing, malformed, or inaccessible storage starts empty. Pages write individual
+keys through `Effect.toJs (ToJs.SetLocalStorage { key = key, value = value })`,
+where `value` is a `Json.Encode.Value`. Writes preserve other keys. Successful
+writes notify the current Elm app; browser storage events notify other tabs,
+including removal or clearing of the stored object. `Main` listens for
+`local storage changed` on every initialized page and replaces shared storage
+through `setShared`. Failed writes log a warning without reporting a saved value.
+`UserName` reads and writes the `userName` key. Creation and join forms prefill
+it during initialization and remember the trimmed submitted name after a
+successful response, preserving its casing. The response message carries the
+submitted name so edits made while joining do not change which name is saved.
+Missing stored names leave the field empty. Incorrectly typed names also leave
+the field empty, but each form records `Error.LocalStorageDecodeFailed` in
+`Shared.Model.errors`, retaining the storage key and original decoder error.
+`Shared.addError` prepends errors to this session's list without clearing earlier
+errors; new shared state starts with an empty list. Failed requests
+keep the previous remembered name, and storage notifications preserve active
+form edits. Game state is not persisted in local storage.
+
+`GamePage.Model` owns the `automaticallyCloseCombatTheater` Boolean. Its local
+helpers decode the stored preference during `init`, defaulting to false when
+absent. `GamePage.setShared` reloads it when shared storage changes, retaining
+decoder failures in `Shared.Model.errors`.
+The theater checkbox updates the preference immediately and writes through the
+existing JavaScript effect. `GamePage` checks each panel's animation clock after
+playback ticks and uses the ordinary continuation transition when the final
+impact and camera shake have finished plus a 500ms pause. Holding `see map`
+postpones automatic continuation. Each encounter still receives its own theater
+and server-timed casualty presentation.
+
 The backend serves the frontend on the same origin, so no development proxy or
 CORS configuration is required.
 
@@ -530,9 +563,9 @@ including holds and interrupted movement. Units at zero supplies are removed
 immediately, along with passengers of exhausted carriers. `finish_turn_resources`
 returns a presentation snapshot with zero supplies and health for dead units.
 When deaths occur, resolution adds that snapshot followed by the authoritative
-surviving units with a 600ms transition. `View.UnitDeath` flashes a skull and
-crossbones once over 400ms, then holds it steady until removal (also steady
-under reduced motion).
+surviving units with a 1400ms transition. `View.UnitDeath` shows a skull and
+crossbones for 600ms, hides it for 200ms, then shows it for another 600ms until
+removal (steady throughout under reduced motion).
 `GamePage` freezes its sprite clock while an on-board death is visible, and
 `View.UnitDeath` pauses surrounding CSS animations through the game root's
 death-focus class. `TurnPlayback.start` omits previously presented casualties
@@ -748,8 +781,15 @@ appears and settling over 160ms. Each scene moves its backdrop, figures, and
 impact overlays together; backdrop overscan prevents exposed edges. Reduced
 motion disables the shake.
 Reduced motion substitutes a steady peak-impact frame. `View.CombatEffects`
-owns the board spotlight, shine, firing flashes, and target explosions. After the last pair, playback reveals the
-volley and restarts its battlefield feedback clock at zero. Long animation ticks
+owns the board spotlight, shine, firing flashes, and target explosions.
+Continuing a lethal pair enters a `Deaths` presentation stage using that pair’s
+authoritative after-health. Only its visible casualties and carrier passengers
+receive skull feedback; concealed portraits stay off the board. The server’s
+post-volley duration supplies the pause. Playback removes these casualties from
+the held board and volley before opening the next pair, so later theaters and
+map feedback cannot resurrect them. Reciprocal casualties share one pause.
+After the last pair, playback reveals the remaining volley feedback and restarts
+its battlefield clock at zero. Long animation ticks
 stop at combat boundaries so they cannot skip the panels or immediately consume
 the hit/death feedback. These pauses affect local presentation only; Rust frame
 timing, combat outcomes, and fog projection remain authoritative.
@@ -758,9 +798,10 @@ Projected `Shot.attackerHealth` and `Shot.targetHealth` carry authoritative befo
 and after hit points for each pair, including concealed enemies. Rust sequences health losses across pairs within a simultaneous volley; reciprocal shots share a single transition. This presentation sequence does not change simultaneous resolution. This permits enemy health inside the
 encounter card without exposing enemy supplies or fuel through `Unit.resources`.
 Panel state owns its capped presentation clock and `CardVisible | SeeingMap`
-mode. Its 2000ms capped clock allows the 200ms opening expansion, a one-second
-anticipation beat, and up to four staggered casualties to finish. The clock sequences individual figure explosions and removal, without HP bars; Continue/Enter
-advances the pair. SeeingMap hides the card completely and restores the board
+mode. Its 2500ms capped clock allows the 200ms opening expansion, a one-second
+anticipation beat, up to four staggered casualties, and the automatic-close pause
+to finish. The clock sequences individual figure explosions and removal, without HP bars; Continue/Enter
+or the saved automatic-close preference advances the pair. SeeingMap hides the card completely and restores the board
 spotlight with repeating shine. Mouse release restores the card even outside the button.
 
 ## Attack move

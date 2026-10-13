@@ -1,6 +1,4 @@
 - Checkbox to auto close combat theater
-- Bug: several units will get eliminated and then disappear together instead of one at a time
-- Bug: skull and cross bones should blink and hang around longer
 - When a unit dies there should be a dialog that mentions this so it is not lost
 - Supply Depots configured with different amounts of supplies
 - Field guns should consume a lot more supplies firing

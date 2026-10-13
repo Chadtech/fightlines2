@@ -6,7 +6,10 @@ The current prototype supports creating a lobby, joining through an invite link,
 and starting a game. The game page shows a free-floating animated SVG board with selectable units and depots.
 Both players can plan and submit turns, with shared movement playback.
 Fuel, finite supply stocks, replenishment, and directional ambush combat are authoritative. Persistent
-storage is not implemented yet.
+server storage is not implemented yet. Browsers remember the last user name
+used to successfully create or join a lobby and prefill it next time.
+The combat theater also remembers its **automatically close** checkbox. When
+enabled, each encounter continues half a second after its animation finishes.
 
 ## Run locally
 
@@ -161,8 +164,8 @@ for movement instead. Movement reserves the turn's upkeep before spending
 supplies. Infantry need at least 5 supplies to move one tile; field guns need at least 2.
 Units below these thresholds can still hold.
 Units die immediately when supplies reach zero after turn upkeep. A dead truck
-also loses its passengers. During playback, a skull and crossbones blinks once, then pauses briefly
-before dead units vanish; reduced-motion mode shows a steady marker.
+also loses its passengers. During playback, a skull and crossbones appears for 0.6 seconds, blinks away
+for 0.2 seconds, then returns for 0.6 seconds before dead units vanish; reduced-motion mode shows a steady marker.
 Other sprites and interface animations pause during death feedback, and later
 movement resumes after the death marker clears.
 
@@ -309,10 +312,11 @@ Each pair stays open until the player selects **continue** or presses Enter. Hol
 **see map** to hide the card and spotlight the two shining combatants on the frozen
 battlefield; release to restore the card.
 Reciprocal shots share one display; overlapping ambushes show successive health losses, carrying remaining health into the next pair;
-all pairs in a volley appear before its results. The card then closes and playback
-shows quick firing flashes and small target explosions, updated health, and death
-markers before movement resumes. There are no connecting shot lines or floating
-damage numbers. Reduced-motion mode uses steady highlights and impact marks.
+after each lethal pair, the card closes for its casualties’ skull pause, then
+those units disappear before the next theater opens. Reciprocal casualties share
+that pause. After all pairs, playback shows quick firing flashes and small target
+explosions and updated health before movement resumes. There are no connecting
+shot lines or floating damage numbers. Reduced-motion mode uses steady highlights and impact marks.
 Hidden participants never appear in the panels.
 Destroyed units are removed before the next planning turn;
 destroyed trucks also lose their passengers. Hidden shooters and targets are

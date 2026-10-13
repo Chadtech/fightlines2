@@ -44,6 +44,7 @@ import Effect as E
     exposing
         ( Eff
         )
+import Error exposing (Error)
 import GamePage.BattlefieldNavigation as BattlefieldNavigation
 import GamePage.CurrentTurn as CurrentTurn
 import GamePage.OrderPlanning as OrderPlanning exposing (UnloadChoice, UnloadPlanning)
@@ -67,11 +68,13 @@ import Html.Styled.Attributes as A
 import Html.Styled.Events as HtmlEvents
 import Html.Styled.Keyed as Keyed
 import Json.Decode as Decode
+import Json.Encode as Encode
 import KeyCmd exposing (KeyCmd)
 import LobbyId
     exposing
         ( LobbyId
         )
+import LocalStorage
 import Map exposing (Map)
 import Movement
 import PlannedOrder
@@ -129,6 +132,7 @@ import View.UnloadPassenger as UnloadPassenger
 type alias Model =
     { currentTurn : CurrentTurn.Model
     , shared : Shared.Model
+    , automaticallyCloseCombatTheater : Bool
     , name : String
     , mapType : MapType
     , players : List Player
@@ -254,8 +258,26 @@ type alias Flags =
 
 init : Shared.Model -> Flags -> Model
 init shared flags =
+    let
+        ( automaticallyCloseComabatTheater, maybeError ) =
+            case LocalStorage.get shared.localStorage combatTheaterPreferenceKey Decode.bool of
+                Ok automaticallyClose ->
+                    ( Maybe.withDefault False automaticallyClose, Nothing )
+
+                Err decodeError ->
+                    let
+                        error : Error
+                        error =
+                            Error.LocalStorageDecodeFailed
+                                { key = combatTheaterPreferenceKey, error = decodeError }
+                    in
+                    ( False, Just error )
+    in
     { currentTurn = CurrentTurn.init flags.snapshot.turn
-    , shared = shared
+    , shared =
+        shared
+            |> Shared.addError maybeError
+    , automaticallyCloseCombatTheater = automaticallyCloseComabatTheater
     , name = flags.snapshot.name
     , mapType = flags.snapshot.mapType
     , players = flags.snapshot.players
@@ -287,15 +309,28 @@ load id =
 
 setShared : Shared.Model -> Model -> Model
 setShared shared model =
-    { model
-        | shared = shared
-    }
+    { model | shared = shared }
 
 
 
 ----------------------------------------------------------------
 -- HELPERS --
 ----------------------------------------------------------------
+
+
+rememberCombatTheaterPreference : Bool -> Eff msg
+rememberCombatTheaterPreference automaticallyClose =
+    E.toJs
+        (ToJs.SetLocalStorage
+            { key = combatTheaterPreferenceKey
+            , value = Encode.bool automaticallyClose
+            }
+        )
+
+
+combatTheaterPreferenceKey : String
+combatTheaterPreferenceKey =
+    "automaticallyCloseCombatTheater"
 
 
 {-| Save the chosen load count on an existing truck order, retaining its route and passenger exits.
@@ -1448,6 +1483,11 @@ update lobbyId msg model =
 
         CombatTheaterMsg panelMsg ->
             case panelMsg of
+                CombatTheater.AutomaticallyCloseChanged automaticallyClose ->
+                    ( { model | automaticallyCloseCombatTheater = automaticallyClose }
+                    , rememberCombatTheaterPreference automaticallyClose
+                    )
+
                 CombatTheater.ContinueClicked ->
                     continueCombat model
                         |> E.withOut
@@ -1533,6 +1573,7 @@ handleCurrentTurnMsg lobbyId msg model =
             case TurnLifecycle.tick delta currentTurn.phase of
                 Just next ->
                     applyPlaybackFrame next model
+                        |> automaticallyContinueCombat
                         |> E.withOut
 
                 Nothing ->
@@ -1545,6 +1586,23 @@ handleCurrentTurnMsg lobbyId msg model =
         CurrentTurn.CombatSeeMapReleased ->
             setCombatMapView TurnPlayback.CardVisible model
                 |> E.withOut
+
+
+automaticallyContinueCombat : Model -> Model
+automaticallyContinueCombat model =
+    let
+        ready : Bool
+        ready =
+            playback model
+                |> Maybe.andThen TurnPlayback.panels
+                |> Maybe.map CombatTheater.readyToAutomaticallyClose
+                |> Maybe.withDefault False
+    in
+    if model.automaticallyCloseCombatTheater && ready then
+        continueCombat model
+
+    else
+        model
 
 
 continueCombat : Model -> Model
@@ -1671,7 +1729,7 @@ view model =
         combatOverlay =
             playback model
                 |> Maybe.andThen TurnPlayback.panels
-                |> Maybe.map (CombatTheater.toHtml model.map)
+                |> Maybe.map (CombatTheater.toHtml { automaticallyClose = model.automaticallyCloseCombatTheater } model.map)
                 |> Maybe.map (H.map CombatTheaterMsg)
                 |> Maybe.withDefault (H.text "")
     in

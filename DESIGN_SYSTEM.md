@@ -343,8 +343,8 @@ playback and final positions reflect only the route actually traveled.
 ## Unit death feedback
 
 When a unit exhausts its supplies, turn playback keeps its last sprite visible
-under a detailed 1980s anime-style illustrated skull and crossbones asset. The marker blinks once over 0.4 seconds, then stays visible for a brief pause
-until cleanup at 0.6 seconds, when the server's next frame removes the unit.
+under a detailed 1980s anime-style illustrated skull and crossbones asset. The marker appears for 0.6 seconds, blinks away for 0.2 seconds, then returns
+for 0.6 seconds until cleanup at 1.4 seconds, when the server's next frame removes the unit.
 During this pause, freeze all unit idle sprites and surrounding interface
 animations, including facing markers, cargo badges, and the activity bar.
 Combat casualties disappear from presentation after their death pause, before
@@ -398,15 +398,22 @@ Start at impact, after the 20ms projectile approach; later contacts kick again.
 Overscan backdrop artwork to avoid exposed edges, keep the card controls still,
 and suppress the shake for reduced motion. Damage within a count band shows an impact without inventing
 a casualty. Supplies and fuel stay concealed.
-The card remains open with a `continue` button. Enter also continues, without
+The card offers an `automatically close` checkbox beside its actions. It defaults
+to unchecked and remembers its Boolean in local storage. When checked, the card
+continues 500ms after its last impact and camera shake finish. Each encounter
+keeps its animation and casualty pause; holding `see map` postpones closing.
+The card remains open when unchecked, with a `continue` button. Enter also continues, without
 an explanatory keyboard prompt. Holding `see map` makes the whole card completely transparent
 and clears the backdrop while darkening all board tiles except the combatants,
 whose shine repeats while held; mouse release or leaving the button restores it.
-Combine reciprocal shots into one display. Reveal the volley's map feedback
-only after all pairs have appeared, then resume the server timeline.
+Combine reciprocal shots into one display. After continuing each theater, show
+its casualties’ skull markers for the server-provided death pause, then remove
+those units before the next theater.
+Reciprocal casualties share a pause. Reveal the remaining volley map feedback
+after all pairs have appeared, then resume the server timeline.
 The combat overlay blocks battlefield interaction and camera shortcuts. Reduced
 motion uses steady impacts and figure removal after the hit, without pop, fade, or shine
-motion. Continuation remains user-controlled.
+motion. The automatic-close option uses the same animation timing with reduced motion.
 
 ## Attack move
 

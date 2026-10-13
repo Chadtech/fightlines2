@@ -25,6 +25,7 @@ check:
 	node tools/check-lifecycle.cjs
 	node tools/check-planning.cjs
 	node tools/check-pointer.cjs
+	node tools/check-local-storage.cjs
 	$(MAKE) frontend
 	elm make src/Style.elm src/View/*.elm --output=/dev/null
 

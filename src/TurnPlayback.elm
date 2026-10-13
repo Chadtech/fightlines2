@@ -57,6 +57,7 @@ type alias Playback =
 type Presentation
     = Battlefield
     | Combat CombatFocus
+    | Deaths { focus : CombatFocus, frame : Frame, elapsed : Float }
 
 
 type alias CombatFocus =
@@ -99,6 +100,9 @@ combat playback =
         Combat focus ->
             Just focus.exchange
 
+        Deaths _ ->
+            Nothing
+
         Battlefield ->
             Nothing
 
@@ -119,6 +123,9 @@ spotlight playback =
                         CardVisible ->
                             Nothing
 
+        Deaths _ ->
+            Nothing
+
         Battlefield ->
             Nothing
 
@@ -134,6 +141,9 @@ panels playback =
                 Spotlighting _ ->
                     Nothing
 
+        Deaths _ ->
+            Nothing
+
         Battlefield ->
             Nothing
 
@@ -144,12 +154,15 @@ visibleShots playback =
         Combat _ ->
             []
 
+        Deaths _ ->
+            []
+
         Battlefield ->
             playback.current.shots
 
 
 {-| Encounter participants remain available even when concealed on the board.
-Reciprocal shots share one display; damage and casualties arrive together on the map.
+Reciprocal shots share one display; casualties clear after their own encounter.
 -}
 exchanges : Frame -> List Exchange
 exchanges frame =
@@ -307,6 +320,49 @@ tick delta playback =
         Combat focus ->
             tickCombat delta focus playback
 
+        Deaths deaths ->
+            if deaths.elapsed + delta >= deathDuration playback then
+                let
+                    keepSurvivor : Unit -> Bool
+                    keepSurvivor unit =
+                        not (List.any (\dead -> Unit.isDying dead && dead.id == unit.id) deaths.frame.units)
+
+                    focus : CombatFocus
+                    focus =
+                        deaths.focus
+
+                    before : Frame
+                    before =
+                        deaths.frame
+
+                    current : Frame
+                    current =
+                        playback.current
+
+                    advanced : { animation : Playback, frame : Frame }
+                    advanced =
+                        advanceCombat
+                            { focus
+                                | before =
+                                    { before | units = List.filter keepSurvivor before.units }
+                            }
+                            { playback
+                                | current =
+                                    { current
+                                        | units = List.filter keepSurvivor current.units
+                                    }
+                            }
+                in
+                ( Just advanced.animation, advanced.frame )
+
+            else
+                ( Just
+                    { playback
+                        | presentation = Deaths { deaths | elapsed = deaths.elapsed + delta }
+                    }
+                , deaths.frame
+                )
+
         Battlefield ->
             tickBattlefield delta playback
 
@@ -325,7 +381,8 @@ tickCombat delta focus playback =
                         Spotlighting (elapsed + delta)
 
                 ShowingPanels panel ->
-                    ShowingPanels { panel | elapsed = min 2000 (panel.elapsed + delta) }
+                    -- Four staggered impacts, camera settling, and the automatic-close delay fit within this clock.
+                    ShowingPanels { panel | elapsed = min 2500 (panel.elapsed + delta) }
     in
     ( Just { playback | presentation = Combat { focus | stage = stage } }
     , focus.before
@@ -338,10 +395,19 @@ setMapView mapView playback =
         Combat focus ->
             case focus.stage of
                 ShowingPanels panel ->
-                    { playback | presentation = Combat { focus | stage = ShowingPanels { panel | mapView = mapView } } }
+                    { playback
+                        | presentation =
+                            Combat
+                                { focus
+                                    | stage = ShowingPanels { panel | mapView = mapView }
+                                }
+                    }
 
                 Spotlighting _ ->
                     playback
+
+        Deaths _ ->
+            playback
 
         Battlefield ->
             playback
@@ -356,30 +422,80 @@ continueCombat playback =
                     Nothing
 
                 ShowingPanels _ ->
-                    case focus.remaining of
-                        exchange :: rest ->
-                            Just
-                                { animation =
-                                    { playback
-                                        | presentation =
-                                            Combat
-                                                { focus
-                                                    | exchange = exchange
-                                                    , remaining = rest
-                                                    , stage = Spotlighting 0
-                                                }
-                                    }
-                                , frame = focus.before
-                                }
+                    let
+                        frame : Frame
+                        frame =
+                            exchangeDeathFrame focus
+                    in
+                    if List.any Unit.isDying frame.units then
+                        Just
+                            { animation = { playback | presentation = Deaths { focus = focus, frame = frame, elapsed = 0 } }
+                            , frame = frame
+                            }
 
-                        [] ->
-                            Just
-                                { animation = { playback | presentation = Battlefield, elapsed = 0 }
-                                , frame = playback.current
-                                }
+                    else
+                        Just (advanceCombat focus playback)
+
+        Deaths _ ->
+            Nothing
 
         Battlefield ->
             Nothing
+
+
+{-| Use the server's post-volley feedback duration for each encounter's deaths.
+No concealed portrait is added to the battlefield, and cargo follows its carrier.
+-}
+deathDuration : Playback -> Float
+deathDuration playback =
+    List.head playback.remaining
+        |> Maybe.map (.durationMs >> toFloat)
+        |> Maybe.withDefault 1400
+
+
+exchangeDeathFrame : CombatFocus -> Frame
+exchangeDeathFrame focus =
+    let
+        casualties : List UnitId
+        casualties =
+            [ ( focus.exchange.attacker.id, focus.exchange.attackerHealth.after.current )
+            , ( focus.exchange.target.id, focus.exchange.targetHealth.after.current )
+            ]
+                |> List.filter (\( _, health ) -> health == 0)
+                |> List.map Tuple.first
+
+        before : Frame
+        before =
+            focus.before
+
+        present : Unit -> Unit
+        present unit =
+            let
+                destroyed : Bool
+                destroyed =
+                    List.member unit.id casualties
+                        || (Unit.carrierId unit |> Maybe.map (\id -> List.member id casualties) |> Maybe.withDefault False)
+            in
+            { unit | destroyed = destroyed }
+    in
+    { before | units = List.map present before.units }
+
+
+advanceCombat : CombatFocus -> Playback -> { animation : Playback, frame : Frame }
+advanceCombat focus playback =
+    case focus.remaining of
+        exchange :: rest ->
+            { animation =
+                { playback
+                    | presentation = Combat { focus | exchange = exchange, remaining = rest, stage = Spotlighting 0 }
+                }
+            , frame = focus.before
+            }
+
+        [] ->
+            { animation = { playback | presentation = Battlefield, elapsed = 0 }
+            , frame = playback.current
+            }
 
 
 tickBattlefield : Float -> Playback -> ( Maybe Playback, Frame )
@@ -403,6 +519,9 @@ tickBattlefield delta playback =
                 case advanced.presentation of
                     Combat focus ->
                         ( Just advanced, focus.before )
+
+                    Deaths deaths ->
+                        ( Just advanced, deaths.frame )
 
                     Battlefield ->
                         tick (elapsed - toFloat next.durationMs) advanced

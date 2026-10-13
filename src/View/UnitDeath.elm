@@ -17,11 +17,12 @@ styles =
         []
         [ H.text """
             @keyframes fightlines-unit-death-flash {
-                0%, 24%, 50%, 100% { opacity: 1; }
-                25%, 49% { opacity: 0; }
+                0% { opacity: 0; }
+                25%, 100% { opacity: 1; }
             }
             .fightlines-unit-death {
-                animation: fightlines-unit-death-flash 400ms steps(1) 1 forwards;
+                opacity: 1;
+                animation: fightlines-unit-death-flash 800ms steps(1) 600ms 1 forwards;
             }
             .fightlines-death-focus *:not(.fightlines-unit-death):not(.fightlines-combat-impact),
             .fightlines-death-focus *::before,

@@ -31,6 +31,7 @@ import LobbyId exposing (LobbyId)
 import Route
 import Shared
 import Style as S
+import UserName
 import View.Aria as Aria
 import View.Button as Button
 import View.Card as Card
@@ -65,7 +66,7 @@ type alias Model =
 type Msg
     = NameInputChanged String
     | JoinButtonClicked
-    | JoinResponseReceived (Response LobbyId)
+    | JoinResponseReceived String (Response LobbyId)
 
 
 
@@ -76,11 +77,22 @@ type Msg
 
 init : Shared.Model -> Flags -> Model
 init shared flags =
-    { shared = shared
+    let
+        ( name, maybeError ) =
+            case UserName.fromLocalStorage shared.localStorage of
+                Ok name ->
+                    ( Maybe.withDefault "" name, Nothing )
+
+                Err error ->
+                    ( "", Just error )
+    in
+    { shared =
+        shared
+            |> Shared.addError maybeError
     , id = flags.id
     , lobbyName = flags.lobbyName
     , joiningClosed = flags.gameUrl /= Nothing
-    , name = ""
+    , name = name
     , busy = False
     , error = Nothing
     }
@@ -141,16 +153,19 @@ update msg model =
                     | busy = True
                     , error = Nothing
                   }
-                , E.request JoinResponseReceived (join model.id model.name)
+                , E.request (JoinResponseReceived model.name) (join model.id model.name)
                 )
 
-        JoinResponseReceived result ->
+        JoinResponseReceived submittedName result ->
             case result of
                 Ok lobbyId ->
                     ( { model
                         | busy = False
                       }
-                    , E.navigate (Route.Lobby lobbyId)
+                    , E.batch
+                        [ UserName.remember submittedName
+                        , E.navigate (Route.Lobby lobbyId)
+                        ]
                     )
 
                 Err error ->

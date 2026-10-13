@@ -30,6 +30,7 @@ import LobbyId exposing (LobbyId)
 import Route
 import Shared
 import Style as S
+import UserName
 import View.Aria as Aria
 import View.Button as Button
 import View.Card as Card
@@ -56,7 +57,7 @@ type Msg
     = NameInputChanged String
     | LobbyNameInputChanged String
     | CreateButtonClicked
-    | CreateResponseReceived (Response LobbyId)
+    | CreateResponseReceived String (Response LobbyId)
 
 
 
@@ -67,8 +68,19 @@ type Msg
 
 init : Shared.Model -> Model
 init shared =
-    { shared = shared
-    , name = ""
+    let
+        ( name, maybeError ) =
+            case UserName.fromLocalStorage shared.localStorage of
+                Ok name ->
+                    ( Maybe.withDefault "" name, Nothing )
+
+                Err error ->
+                    ( "", Just error )
+    in
+    { shared =
+        shared
+            |> Shared.addError maybeError
+    , name = name
     , lobbyName = ""
     , busy = False
     , error = Nothing
@@ -133,16 +145,19 @@ update msg model =
                     | busy = True
                     , error = Nothing
                   }
-                , E.request CreateResponseReceived (create model.name model.lobbyName)
+                , E.request (CreateResponseReceived model.name) (create model.name model.lobbyName)
                 )
 
-        CreateResponseReceived result ->
+        CreateResponseReceived submittedName result ->
             case result of
                 Ok lobbyId ->
                     ( { model
                         | busy = False
                       }
-                    , E.navigate (Route.Lobby lobbyId)
+                    , E.batch
+                        [ UserName.remember submittedName
+                        , E.navigate (Route.Lobby lobbyId)
+                        ]
                     )
 
                 Err error ->

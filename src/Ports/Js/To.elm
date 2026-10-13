@@ -9,6 +9,7 @@ import Json.Encode as Je
 type Msg
     = CopyLink { url : String }
     | OpenDialog { htmlId : String }
+    | SetLocalStorage { key : String, value : Je.Value }
 
 
 toCmd : Msg -> Cmd msg
@@ -19,6 +20,9 @@ toCmd message =
 tagName : Msg -> String
 tagName msg =
     case msg of
+        SetLocalStorage _ ->
+            "setLocalStorage"
+
         OpenDialog _ ->
             "openDialog"
 
@@ -32,6 +36,11 @@ encode message =
         payload : List ( String, Je.Value )
         payload =
             case message of
+                SetLocalStorage { key, value } ->
+                    [ ( "key", Je.string key )
+                    , ( "value", value )
+                    ]
+
                 OpenDialog { htmlId } ->
                     [ ( "htmlId", Je.string htmlId )
                     ]

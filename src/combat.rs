@@ -290,7 +290,7 @@ impl Combat {
             supply_crates: board.supply_crates.clone(),
             units: board.units.clone(),
             visible_tiles: Vec::new(),
-            duration_ms: 600,
+            duration_ms: if dead_carriers.is_empty() { 600 } else { 1400 },
             shots: Vec::new(),
         });
     }
@@ -716,6 +716,13 @@ mod tests {
             .path
             .extend([Coordinate::new(4, 3), Coordinate::new(4, 4)]);
         let result = resolve_completed_movement(&scenario, &orders, 1)?;
+        let feedback = result
+            .frames
+            .iter()
+            .skip_while(|frame| frame.shots.is_empty())
+            .nth(1)
+            .fixture()?;
+        assert_eq!(feedback.duration_ms, 600);
         let units = &result.frames.last().fixture()?.units;
         assert_eq!(shots(&result).len(), 1);
         assert_eq!(shots(&result)[0].origin, Coordinate::new(3, 3));
@@ -786,6 +793,7 @@ mod tests {
                 .iter()
                 .all(|unit| !unit.is_alive())
         );
+        assert_eq!(result.frames.last().fixture()?.duration_ms, 1400);
         let mut reversed = orders.clone();
         reversed.reverse();
         let other = resolve_completed_movement(&scenario, &reversed, 1)?;

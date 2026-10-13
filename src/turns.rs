@@ -912,7 +912,7 @@ impl Turns {
                 shots: Vec::new(),
                 units: scenario.units.clone(),
                 visible_tiles: Vec::new(),
-                duration_ms: if deaths { 600 } else { 180 },
+                duration_ms: if deaths { 1400 } else { 180 },
             });
             self.last_resolution = Some(TurnResolution {
                 turn_number: self.number,
@@ -2173,7 +2173,7 @@ mod tests {
             .find(|unit| unit.id() == "1")
             .fixture()?;
         assert_eq!(dead.supplies().current(), 0);
-        assert_eq!(resolution.frames.last().fixture()?.duration_ms, 600);
+        assert_eq!(resolution.frames.last().fixture()?.duration_ms, 1400);
         let visible = crate::visibility::visible_tiles(&scenario, PlayerNumber::Player1);
         let observed = crate::visibility::observed_resolution(
             &scenario,

@@ -1,4 +1,4 @@
-module View.CombatTheater exposing (Msg(..), attackerOnLeft, backdropPath, styles, toHtml)
+module View.CombatTheater exposing (Msg(..), attackerOnLeft, backdropPath, readyToAutomaticallyClose, styles, toHtml)
 
 import Api.Enum.CombatKind as CombatKind
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
@@ -20,6 +20,7 @@ import View.Aria as Aria
 import View.Button as Button
 import View.Card as Card
 import View.CardHeader as CardHeader
+import View.Checkbox as Checkbox
 import View.CombatExplosion as CombatExplosion
 import View.CombatFormation as CombatFormation
 
@@ -28,6 +29,7 @@ type Msg
     = ContinueClicked
     | SeeMapPressed
     | SeeMapReleased
+    | AutomaticallyCloseChanged Bool
 
 
 styles : Html msg
@@ -70,8 +72,43 @@ attackerOnLeft panel =
             True
 
 
-toHtml : Map -> Panel -> Html Msg
-toHtml map panel =
+{-| Let the final impact and its camera shake settle, then pause for half a second.
+Keeping the map button held always keeps the encounter open.
+-}
+readyToAutomaticallyClose : Panel -> Bool
+readyToAutomaticallyClose panel =
+    let
+        lastImpact : Float
+        lastImpact =
+            [ panel.exchange.attackerHealth, panel.exchange.targetHealth ]
+                |> List.concatMap CombatFormation.impactStarts
+                |> List.maximum
+                |> Maybe.withDefault 1200
+
+        animationEndsAt : Float
+        animationEndsAt =
+            lastImpact + impactContactDelayMs + rumbleDurationMs
+    in
+    panel.mapView == CardVisible && panel.elapsed >= animationEndsAt + automaticCloseDelayMs
+
+
+impactContactDelayMs : Float
+impactContactDelayMs =
+    20
+
+
+rumbleDurationMs : Float
+rumbleDurationMs =
+    160
+
+
+automaticCloseDelayMs : Float
+automaticCloseDelayMs =
+    500
+
+
+toHtml : { automaticallyClose : Bool } -> Map -> Panel -> Html Msg
+toHtml config map panel =
     let
         attacker : Unit
         attacker =
@@ -201,6 +238,8 @@ toHtml map panel =
                         [ A.css
                             [ S.row
                             , S.g3
+                            , S.flexWrap
+                            , S.itemsCenter
                             ]
                         ]
                         [ H.div
@@ -216,6 +255,12 @@ toHtml map panel =
                             ]
                             [ Button.secondary "see map" SeeMapReleased |> Button.toHtml
                             ]
+                        , Checkbox.toHtml
+                            { label = "automatically close"
+                            , checked = config.automaticallyClose
+                            , onCheck = AutomaticallyCloseChanged
+                            }
+                            [ H.text "automatically close" ]
                         ]
                     ]
                 ]
@@ -269,7 +314,7 @@ rumbleTransform panel =
         contactStarts =
             [ panel.exchange.attackerHealth, panel.exchange.targetHealth ]
                 |> List.concatMap CombatFormation.impactStarts
-                |> List.map ((+) 20)
+                |> List.map ((+) impactContactDelayMs)
                 |> List.filter (\startsAt -> startsAt <= panel.elapsed)
 
         transform : Float -> String
@@ -281,7 +326,7 @@ rumbleTransform panel =
 
                 strength : Float
                 strength =
-                    (1 - clamp 0 1 (age / 160)) ^ 2
+                    (1 - clamp 0 1 (age / rumbleDurationMs)) ^ 2
 
                 x : Float
                 x =
