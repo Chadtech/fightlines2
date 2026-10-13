@@ -47,7 +47,7 @@ checks =
         routeDragged : Navigation.Model
         routeDragged =
             routePressed
-                |> Navigation.updateRoute
+                |> Navigation.update Navigation.TraceRoute
                     (Navigation.MouseMoved
                         { x = 50
                         , y = 20
@@ -58,7 +58,7 @@ checks =
         routeReleased : Navigation.Model
         routeReleased =
             routeDragged
-                |> Navigation.updateRoute
+                |> Navigation.update Navigation.TraceRoute
                     (Navigation.MouseReleased
                         { x = 50
                         , y = 20
@@ -68,7 +68,7 @@ checks =
         cameraDragged : Navigation.Model
         cameraDragged =
             routePressed
-                |> Navigation.update
+                |> Navigation.update Navigation.PanCamera
                     (Navigation.MouseMoved
                         { x = 50
                         , y = 30
@@ -79,7 +79,7 @@ checks =
         cameraReleased : Navigation.Model
         cameraReleased =
             cameraDragged
-                |> Navigation.update
+                |> Navigation.update Navigation.PanCamera
                     (Navigation.MouseReleased
                         { x = 60
                         , y = 40
@@ -89,7 +89,7 @@ checks =
         stopped : Navigation.Model
         stopped =
             cameraDragged
-                |> Navigation.update
+                |> Navigation.update Navigation.PanCamera
                     (Navigation.MouseMoved
                         { x = 100
                         , y = 100

@@ -898,41 +898,6 @@ loadCratesDialogHtmlId =
     "load-supply-crates-dialog"
 
 
-{-| Enter and Space activate a focused board object. Reserve Meta/Ctrl chords
-for shortcuts on every platform, including the window's submit command.
--}
-onBoardActivationKeyDown : { pressedEnter : msg, pressedSpace : msg } -> Svg.Attribute msg
-onBoardActivationKeyDown messages =
-    let
-        shortcutModifier : Decode.Decoder Bool
-        shortcutModifier =
-            Decode.map2 (||)
-                (Decode.field "metaKey" Decode.bool)
-                (Decode.field "ctrlKey" Decode.bool)
-
-        activateWithoutShortcut : Bool -> Decode.Decoder ( msg, Bool )
-        activateWithoutShortcut shortcutModifierPressed =
-            if shortcutModifierPressed then
-                Decode.fail "shortcut chords do not activate board objects"
-
-            else
-                Decode.oneOf
-                    [ HtmlEvent.enter ( messages.pressedEnter, True )
-                    , HtmlEvent.key " " ( messages.pressedSpace, True )
-                    ]
-    in
-    Ev.preventDefaultOn "keydown"
-        (shortcutModifier |> Decode.andThen activateWithoutShortcut)
-
-
-onClickWithDetail : ({ detail : Int } -> msg) -> Svg.Attribute msg
-onClickWithDetail toMsg =
-    Ev.on "click"
-        (Decode.field "detail" Decode.int
-            |> Decode.map (\detail -> toMsg { detail = detail })
-        )
-
-
 mousePressedDecoder : Decode.Decoder Msg
 mousePressedDecoder =
     Decode.field "button" Decode.int
@@ -1138,18 +1103,18 @@ update lobbyId msg model =
 
         BattlefieldNavigationMsg navigationMsg ->
             let
-                updateNavigation : BattlefieldNavigation.Model -> BattlefieldNavigation.Model
-                updateNavigation =
+                dragMode : BattlefieldNavigation.DragMode
+                dragMode =
                     if pathPreview model /= Nothing then
-                        BattlefieldNavigation.updateRoute navigationMsg
+                        BattlefieldNavigation.TraceRoute
 
                     else
-                        BattlefieldNavigation.update navigationMsg
+                        BattlefieldNavigation.PanCamera
 
                 traced : Model
                 traced =
                     model
-                        |> mapNavigation updateNavigation
+                        |> mapNavigation (BattlefieldNavigation.update dragMode navigationMsg)
             in
             if pathPreview model /= Nothing then
                 let
@@ -1721,7 +1686,7 @@ view model =
                 , S.col
                 ]
             ]
-            [ boardView model
+            [ battlefieldView model
             , turnPanel model
             ]
         , H.aside
@@ -2911,8 +2876,8 @@ turnPanel model =
         ]
 
 
-boardView : Model -> Html Msg
-boardView model =
+battlefieldView : Model -> Html Msg
+battlefieldView model =
     let
         camera : Camera
         camera =
@@ -2955,9 +2920,20 @@ boardView model =
                 , S.shrink0
                 , Css.property "transform"
                     (Camera.transform camera)
+                , Css.Global.descendants
+                    [ Css.Global.selector "rect[role=button]"
+                        [ Css.outline Css.none
+                        , Css.pseudoClass "focus-visible"
+                            [ Css.property "outline" ("0.5px solid " ++ S.yellow5Str)
+                            , Css.property "outline-offset" "-1px"
+                            , Css.property "border-radius" "0"
+                            ]
+                        ]
+                    ]
                 ]
             ]
-            [ boardHtml model
+            [ boardSvg model
+                |> H.fromUnstyled
             ]
         , commandMenu model
         ]
@@ -2971,8 +2947,8 @@ at position children =
         children
 
 
-boardHtml : Model -> Html Msg
-boardHtml model =
+boardSvg : Model -> Svg Msg
+boardSvg model =
     let
         rotationPreview : Maybe RotationSelection
         rotationPreview =
@@ -3580,49 +3556,72 @@ boardHtml model =
                 |> Maybe.map List.singleton
                 |> Maybe.withDefault []
     in
-    H.div
-        [ A.css
-            [ S.wFull
-            , Css.Global.descendants
-                [ Css.Global.selector "rect[role=button]"
-                    [ Css.outline Css.none
-                    , Css.pseudoClass "focus-visible"
-                        [ Css.property "outline" ("0.5px solid " ++ S.yellow5Str)
-                        , Css.property "outline-offset" "-1px"
-                        , Css.property "border-radius" "0"
-                        ]
-                    ]
-                ]
-            ]
-        ]
-        [ Svg.svg
-            [ SA.viewBox ("0 0 " ++ String.fromInt (model.map.width * 16) ++ " " ++ String.fromInt (model.map.height * 16))
-            , SA.width "100%"
-            , Aria.svgRole Aria.Group
-            , Aria.svgLabel "battlefield"
-            ]
-            (List.concat
-                [ [ terrain, movementOverlay ]
-                , List.map tileTarget positions
-                , List.map depotView model.depots
-                , List.map crateView model.supplyCrates
-                , List.concatMap (PlannedOrder.crateUnloads >> List.map crateReservation) (plannedOrders model)
-                , List.filterMap
-                    (\unit ->
-                        Unit.boardPosition unit
-                            |> Maybe.map (unitView unit)
-                    )
-                    model.units
-                , ambushCoverage
-                , [ unloadOverlay, shotOverlay ]
-                , selection
-                , rotationOverlay
-                , facingOverlay
-                , spotlightOverlay
-                ]
+    Svg.svg
+        [ SA.viewBox
+            ("0 0 "
+                ++ String.fromInt (model.map.width * 16)
+                ++ " "
+                ++ String.fromInt (model.map.height * 16)
             )
-            |> H.fromUnstyled
+        , SA.width "100%"
+        , Aria.svgRole Aria.Group
+        , Aria.svgLabel "battlefield"
         ]
+        (List.concat
+            [ [ terrain, movementOverlay ]
+            , List.map tileTarget positions
+            , List.map depotView model.depots
+            , List.map crateView model.supplyCrates
+            , List.concatMap (PlannedOrder.crateUnloads >> List.map crateReservation) (plannedOrders model)
+            , List.filterMap
+                (\unit ->
+                    Unit.boardPosition unit
+                        |> Maybe.map (unitView unit)
+                )
+                model.units
+            , ambushCoverage
+            , [ unloadOverlay, shotOverlay ]
+            , selection
+            , rotationOverlay
+            , facingOverlay
+            , spotlightOverlay
+            ]
+        )
+
+
+{-| Enter and Space activate a focused board object. Reserve Meta/Ctrl chords
+for shortcuts on every platform, including the window's submit command.
+-}
+onBoardActivationKeyDown : { pressedEnter : msg, pressedSpace : msg } -> Svg.Attribute msg
+onBoardActivationKeyDown messages =
+    let
+        shortcutModifier : Decode.Decoder Bool
+        shortcutModifier =
+            Decode.map2 (||)
+                (Decode.field "metaKey" Decode.bool)
+                (Decode.field "ctrlKey" Decode.bool)
+
+        activateWithoutShortcut : Bool -> Decode.Decoder ( msg, Bool )
+        activateWithoutShortcut shortcutModifierPressed =
+            if shortcutModifierPressed then
+                Decode.fail "shortcut chords do not activate board objects"
+
+            else
+                Decode.oneOf
+                    [ HtmlEvent.enter ( messages.pressedEnter, True )
+                    , HtmlEvent.key " " ( messages.pressedSpace, True )
+                    ]
+    in
+    Ev.preventDefaultOn "keydown"
+        (shortcutModifier |> Decode.andThen activateWithoutShortcut)
+
+
+onClickWithDetail : ({ detail : Int } -> msg) -> Svg.Attribute msg
+onClickWithDetail toMsg =
+    Ev.on "click"
+        (Decode.field "detail" Decode.int
+            |> Decode.map (\detail -> toMsg { detail = detail })
+        )
 
 
 selectionMarker : Coordinate -> Svg Msg

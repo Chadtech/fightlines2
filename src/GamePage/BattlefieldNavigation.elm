@@ -1,5 +1,6 @@
 module GamePage.BattlefieldNavigation exposing
-    ( Model
+    ( DragMode(..)
+    , Model
     , Msg(..)
     , active
     , camera
@@ -14,7 +15,6 @@ module GamePage.BattlefieldNavigation exposing
     , subscriptions
     , suppressesClick
     , update
-    , updateRoute
     , zoomIn
     , zoomOut
     )
@@ -37,6 +37,11 @@ type alias Model =
     , zoom : Float
     , pointerGesture : PointerGesture
     }
+
+
+type DragMode
+    = PanCamera
+    | TraceRoute
 
 
 type Msg
@@ -135,8 +140,8 @@ scroll anchor delta model =
 ----------------------------------------------------------------
 
 
-pan : Point -> Model -> Model
-pan point model =
+drag : DragMode -> Point -> Model -> Model
+drag dragMode point model =
     let
         moved : { gesture : PointerGesture, offset : Maybe Point }
         moved =
@@ -144,7 +149,13 @@ pan point model =
     in
     { model
         | pointerGesture = moved.gesture
-        , offset = Maybe.withDefault model.offset moved.offset
+        , offset =
+            case dragMode of
+                PanCamera ->
+                    Maybe.withDefault model.offset moved.offset
+
+                TraceRoute ->
+                    model.offset
     }
 
 
@@ -169,22 +180,6 @@ zoomAt anchor factor model =
     }
 
 
-move : Point -> Int -> Model -> Model
-move point buttons model =
-    if buttons == 0 then
-        finish model
-
-    else
-        pan point model
-
-
-release : Point -> Model -> Model
-release point model =
-    model
-        |> pan point
-        |> finish
-
-
 finish : Model -> Model
 finish model =
     { model | pointerGesture = PointerGesture.finish model.pointerGesture }
@@ -196,38 +191,22 @@ finish model =
 ----------------------------------------------------------------
 
 
-update : Msg -> Model -> Model
-update msg model =
-    case msg of
-        MouseMoved point buttons ->
-            move point buttons model
-
-        MouseReleased point ->
-            release point model
-
-        WindowVisibilityChanged _ ->
-            finish model
-
-
-{-| Route dragging uses the same click-suppression gesture without moving the camera.
+{-| Route tracing keeps the camera fixed while retaining click suppression.
 -}
-updateRoute : Msg -> Model -> Model
-updateRoute msg model =
-    let
-        trace : Point -> Model -> Model
-        trace point current =
-            { current | pointerGesture = (PointerGesture.move point current.pointerGesture).gesture }
-    in
+update : DragMode -> Msg -> Model -> Model
+update dragMode msg model =
     case msg of
         MouseMoved point buttons ->
             if buttons == 0 then
                 finish model
 
             else
-                trace point model
+                drag dragMode point model
 
         MouseReleased point ->
-            trace point model |> finish
+            model
+                |> drag dragMode point
+                |> finish
 
         WindowVisibilityChanged _ ->
             finish model
