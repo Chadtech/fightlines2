@@ -347,13 +347,13 @@ mod tests {
             },
         ];
         replenish(&mut board, 1);
-        assert_eq!(board.units.get_mut(0).fixture()?.supplies().current(), 64);
-        assert_eq!(board.supply_crates.get_mut(0).fixture()?.stock.current, 10);
+        assert_eq!(board.units.get_mut(0).fixture()?.supplies().current(), 48);
+        assert_eq!(board.supply_crates.get_mut(0).fixture()?.stock.current, 26);
         assert_eq!(board.supply_crates.get_mut(1).fixture()?.stock.current, 2);
-        board.units.get_mut(0).fixture()?.set_supplies_for_test(63);
+        board.units.get_mut(0).fixture()?.set_supplies_for_test(47);
         replenish(&mut board, 2);
-        assert_eq!(board.units.get_mut(0).fixture()?.supplies().current(), 64);
-        assert_eq!(board.supply_crates.get_mut(0).fixture()?.stock.current, 9);
+        assert_eq!(board.units.get_mut(0).fixture()?.supplies().current(), 48);
+        assert_eq!(board.supply_crates.get_mut(0).fixture()?.stock.current, 25);
         Ok(())
     }
 
@@ -372,9 +372,9 @@ mod tests {
             },
         ];
         replenish(&mut board, 1);
-        assert_eq!(board.units.first().fixture()?.supplies().current(), 64);
+        assert_eq!(board.units.first().fixture()?.supplies().current(), 48);
         assert_eq!(board.supply_crates.len(), 1);
-        assert_eq!(board.supply_crates.first().fixture()?.stock.current, 6);
+        assert_eq!(board.supply_crates.first().fixture()?.stock.current, 22);
         Ok(())
     }
 
@@ -465,7 +465,7 @@ mod tests {
             board
                 .units
                 .iter()
-                .any(|unit| unit.id() == "1" && unit.supplies().current() == 63)
+                .any(|unit| unit.id() == "1" && unit.supplies().current() == 47)
         );
         assert!(!board.units.iter().any(|unit| unit.id() == "2"));
         assert!(
@@ -477,7 +477,7 @@ mod tests {
                 .supply_cargo
                 .is_empty()
         );
-        assert_eq!(board.depots.get_mut(0).fixture()?.stock.current, 171);
+        assert_eq!(board.depots.get_mut(0).fixture()?.stock.current, 187);
         Ok(())
     }
 

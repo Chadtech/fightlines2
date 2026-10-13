@@ -1,4 +1,3 @@
-- When a unit dies there should be a dialog that mentions this so it is not lost
 - Supply Depots configured with different amounts of supplies
 - Field guns should consume a lot more supplies firing
 - 16 little infantry guys in combat theater for infantry

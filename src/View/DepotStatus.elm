@@ -1,13 +1,48 @@
-module View.DepotStatus exposing (toHtml)
+module View.DepotStatus exposing
+    ( linkToHtml
+    , toHtml
+    )
 
 import Css
 import Depot exposing (Depot)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
+import Html.Styled.Events as Ev
 import Style as S
 import Supply
 import View.Aria as Aria
+import View.DepotStock as DepotStock
 import View.InfoMarker as InfoMarker
+
+
+linkToHtml : { clicked : msg } -> Depot -> Html msg
+linkToHtml events depot =
+    let
+        label : String
+        label =
+            case depot.stock of
+                Just stock ->
+                    DepotStock.label stock
+
+                Nothing ->
+                    "supply depot · stock outside sight"
+    in
+    H.button
+        [ A.type_ "button"
+        , Ev.onClick events.clicked
+        , A.css
+            [ S.textGray5
+            , S.bgNightwood3
+            , S.p2
+            , S.pointerCursor
+            , S.textLeft
+            , S.border0
+            , S.hover [ S.bgYellow2 ]
+            , Css.pseudoClass "focus-visible"
+                [ Css.property "outline" ("2px solid " ++ S.yellow5Str) ]
+            ]
+        ]
+        [ H.text label ]
 
 
 toHtml : Depot -> Html msg
@@ -108,7 +143,7 @@ stockGauge stock =
 
         fill : Css.Style
         fill =
-            if fraction < 0.25 then
+            if fraction <= 0.25 then
                 S.bgRed1
 
             else if fraction > 0.75 then
@@ -119,7 +154,7 @@ stockGauge stock =
 
         notice : List (Html msg)
         notice =
-            if fraction < 0.25 then
+            if fraction <= 0.25 then
                 let
                     label : String
                     label =

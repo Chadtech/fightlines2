@@ -8,6 +8,12 @@ Both players can plan and submit turns, with shared movement playback.
 Fuel, finite supply stocks, replenishment, and directional ambush combat are authoritative. Persistent
 server storage is not implemented yet. Browsers remember the last user name
 used to successfully create or join a lobby and prefill it next time.
+Each planning turn opens with a gold turn-introduction card, a pop-in animation,
+and drifting shine. From turn two, it also reports your previous turn’s unit losses,
+confirmed enemy losses, known HP damage inflicted, and total supplies consumed.
+Spending includes movement, combat readiness, firing, and upkeep; replenishment
+and stock discarded with destroyed units are not spending. Choose **begin turn** or press Escape to continue. Checking
+**skip this dialog** dismisses it and remembers the preference in this browser.
 The combat theater also remembers its **automatically close** checkbox. When
 enabled, each encounter continues half a second after its animation finishes.
 
@@ -163,8 +169,8 @@ scheduled arrivals. Sight refreshes at each arrival boundary. Enemies appear whe
 sight and disappear when they leave it, including brief sightings during a turn.
 Hidden positions and route segments are withheld from responses.
 
-Infantry and field guns start with 64/64 supplies; tanks and trucks start with
-32/32. Every unit spends 1 supply per resolved turn, even when holding or stopped
+Infantry start with 48/48 supplies; field guns start with 64/64; tanks and trucks
+start with 32/32. Every unit spends 1 supply per resolved turn, even when holding or stopped
 by an encounter. Infantry spend 3 supplies per grass tile and 4 per hill or forest tile;
 field guns spend 1; tanks and trucks use fuel
 for movement instead. Movement reserves the turn's upkeep before spending
@@ -283,7 +289,7 @@ all three squares straight ahead, plus the two squares beside the middle square,
 forming a five-square plus sign that rotates with the chosen direction.
 
 Ambush readiness costs 2 supplies in addition to normal turn upkeep. Firing costs
-3 supplies for infantry and 2 for other units; infantry deal 4 damage, tanks 8, and field guns 12. These are
+3 supplies for infantry and field guns and 2 for tanks; infantry deal 4 damage, tanks 8, and field guns 12. These are
 initial balance values. Readiness is charged even without a target, and upkeep
 is reserved before firing. Units without enough supplies for readiness cannot
 choose ambush; a unit can maintain readiness without enough supplies to fire.
@@ -464,6 +470,7 @@ with an `attack move` heading and the usual fog-safe encounter portraits.
 Unit losses pause playback with a `unit lost` dialog below the battlefield. The lost
 unit stays highlighted while the rest of the map and controls darken. The dialog
 identifies the attack type and responsible player's unit, supply exhaustion, or a
-lost carrier. Choose **continue** to acknowledge each casualty. The adjacent
+lost carrier. A destroyed truck and its lost passengers share one dialog and
+one **continue** action; unrelated losses have separate dialogs. The adjacent
 **skip this dialog** checkbox remembers your preference and preserves the brief
 timed skull feedback while skipping future dialogs.

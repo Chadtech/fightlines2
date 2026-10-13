@@ -2,7 +2,10 @@ use crate::{
     combat::{self, Shot},
     map::Coordinate,
     movement,
-    scenario::{Depot, Direction, PlayerNumber, Scenario, SpriteFacing, Unit, UnitId, UnitKind},
+    scenario::{
+        Depot, Direction, PlayerNumber, ResourceSettlement, Scenario, SpriteFacing, Unit, UnitId,
+        UnitKind,
+    },
     supplies::{self, CrateUnload, GroundSupplyCrate, SupplyOrder},
 };
 use juniper::{GraphQLEnum, GraphQLInputObject, GraphQLObject, graphql_object};
@@ -153,8 +156,68 @@ pub struct TurnFrame {
     pub visible_tiles: Vec<Coordinate>,
 }
 
+/// The visibility projection exposes only the viewer's report.
+#[derive(Clone, Debug, GraphQLObject)]
+pub struct TurnReport {
+    pub side: PlayerNumber,
+    pub units_lost: i32,
+    pub enemy_units_destroyed: i32,
+    /// Actual HP removed by the viewer's projected shots, capped at remaining health.
+    pub damage_inflicted: i32,
+    pub supplies_consumed: i32,
+}
+
+impl TurnReport {
+    /// Capture movement/readiness/firing costs before sources refill units.
+    /// Corpses retain supplies here; discarded stock is not consumption.
+    fn before_replenishment(side: PlayerNumber, initial_units: &[Unit], units: &[Unit]) -> Self {
+        let supplies_consumed = initial_units
+            .iter()
+            .filter(|unit| unit.side() == side)
+            .filter_map(|initial| {
+                units
+                    .iter()
+                    .find(|unit| unit.unit_id() == initial.unit_id())
+                    .map(|unit| initial.supplies().current() - unit.supplies().current())
+            })
+            .sum();
+        Self {
+            side,
+            units_lost: 0,
+            enemy_units_destroyed: 0,
+            damage_inflicted: 0,
+            supplies_consumed,
+        }
+    }
+
+    fn finish(
+        &mut self,
+        initial_units: &[Unit],
+        scenario: &Scenario,
+        settlement: &ResourceSettlement,
+    ) {
+        self.units_lost = initial_units
+            .iter()
+            .filter(|unit| {
+                unit.side() == self.side
+                    && !scenario
+                        .units
+                        .iter()
+                        .any(|survivor| survivor.unit_id() == unit.unit_id())
+            })
+            .count() as i32;
+        self.supplies_consumed += settlement
+            .upkeep
+            .iter()
+            .filter(|consumption| consumption.side == self.side)
+            .map(|consumption| consumption.amount)
+            .sum::<i32>();
+    }
+}
+
 #[derive(Clone, Debug, GraphQLObject)]
 pub struct TurnResolution {
+    pub reports: Vec<TurnReport>,
     pub turn_number: i32,
     pub events: Vec<TurnEvent>,
     /// Viewer-specific frames are populated when visibility projects the resolution.
@@ -694,6 +757,7 @@ impl Turns {
                 .collect();
             // Stable unit order, independent of which player's request arrives first.
             orders.sort_by_key(|order| order.unit_id);
+            let initial_units = scenario.units.clone();
             let movement = crate::movement_resolution::resolve(scenario, &orders, self.number)
                 .map_err(|error| error.message())?;
             let combat_units = movement
@@ -898,7 +962,15 @@ impl Turns {
                 .map(|order| (order.unit_id, order.supply.clone()))
                 .collect();
             supplies::resolve_orders(scenario, &supply_orders, self.number);
-            let resource_snapshot = scenario.finish_turn_resources(self.number);
+            let mut reports: Vec<_> = [PlayerNumber::Player1, PlayerNumber::Player2]
+                .into_iter()
+                .map(|side| TurnReport::before_replenishment(side, &initial_units, &scenario.units))
+                .collect();
+            let settlement = scenario.finish_turn_resources(self.number);
+            for report in &mut reports {
+                report.finish(&initial_units, scenario, &settlement);
+            }
+            let resource_snapshot = settlement.units;
             let deaths = resource_snapshot.len() != scenario.units.len();
             if deaths {
                 frames.push(TurnFrame {
@@ -919,6 +991,7 @@ impl Turns {
                 duration_ms: if deaths { 1400 } else { 180 },
             });
             self.last_resolution = Some(TurnResolution {
+                reports,
                 turn_number: self.number,
                 events,
                 frames,
@@ -1105,6 +1178,103 @@ mod tests {
     }
 
     #[test]
+    fn turn_report_counts_spending_without_refills_or_discarded_cargo_stock() -> TestResult<()> {
+        for replenished in [false, true] {
+            let mut scenario = Scenario::supply_point().fixture()?;
+            scenario
+                .units
+                .retain(|unit| ["1", "4", "6"].contains(&unit.id().as_str()));
+            let carrier = UnitId::parse("4").fixture()?;
+            let depot = scenario.depots.first().fixture()?.position;
+            for unit in &mut scenario.units {
+                if unit.side() == PlayerNumber::Player1 {
+                    unit.move_to(depot);
+                    if unit.id() == "1" {
+                        unit.board(carrier);
+                    }
+                    if unit.id() == "4" {
+                        unit.set_supplies_for_test(1);
+                    }
+                }
+            }
+            if !replenished {
+                scenario.depots.clear();
+            }
+            let mut turns = Turns::default();
+            resolve_holds(&mut scenario, &mut turns)?;
+            let resolution = turns.last_resolution.as_ref().fixture()?;
+            let visible = crate::visibility::visible_tiles(&scenario, PlayerNumber::Player1);
+            let observed = crate::visibility::observed_resolution(
+                &scenario,
+                PlayerNumber::Player1,
+                &visible,
+                resolution,
+            );
+            assert_eq!(observed.reports.len(), 1);
+            let report = observed.reports.first().fixture()?;
+            assert_eq!(report.side, PlayerNumber::Player1);
+            assert_eq!(report.units_lost, if replenished { 0 } else { 2 });
+            assert_eq!(report.supplies_consumed, 2);
+            assert_eq!(report.damage_inflicted, 0);
+            assert_eq!(report.enemy_units_destroyed, 0);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn turn_report_caps_known_damage_and_withholds_unobserved_enemy_losses() -> TestResult<()> {
+        let mut scenario = Scenario::supply_point().fixture()?;
+        scenario.map = Map::from_ascii(".##").fixture()?;
+        scenario.depots.clear();
+        scenario
+            .units
+            .retain(|unit| ["11", "9", "6"].contains(&unit.id().as_str()));
+        for unit in &mut scenario.units {
+            match unit.id().as_str() {
+                "11" => {
+                    unit.move_to(Coordinate::new(0, 0));
+                    unit.rotate(Direction::East);
+                }
+                "9" => {
+                    unit.move_to(Coordinate::new(1, 0));
+                    unit.take_damage(15);
+                }
+                _ => {
+                    unit.move_to(Coordinate::new(2, 0));
+                    unit.set_supplies_for_test(1);
+                }
+            }
+        }
+        let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
+        let attack = player1.first_mut().fixture()?;
+        attack.attack_move = Some(true);
+        attack.path.push(CoordinateInput { x: 1, y: 0 });
+        let mut turns = Turns::default();
+        resolve_orders(&mut scenario, &mut turns, player1)?;
+        let resolution = turns.last_resolution.as_ref().fixture()?;
+        for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
+            let visible = crate::visibility::visible_tiles(&scenario, side);
+            let observed =
+                crate::visibility::observed_resolution(&scenario, side, &visible, resolution);
+            assert_eq!(observed.reports.len(), 1);
+            let report = observed.reports.first().fixture()?;
+            assert_eq!(report.side, side);
+            if side == PlayerNumber::Player1 {
+                assert_eq!(report.units_lost, 0);
+                assert_eq!(report.enemy_units_destroyed, 1);
+                assert_eq!(report.damage_inflicted, 1);
+                assert_eq!(report.supplies_consumed, 5);
+            } else {
+                assert_eq!(report.units_lost, 2);
+                assert_eq!(report.enemy_units_destroyed, 0);
+                assert_eq!(report.damage_inflicted, 0);
+                assert_eq!(report.supplies_consumed, 2);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn attack_move_charges_readiness_each_turn_without_an_encounter() -> TestResult<()> {
         for (attacker_id, movement_cost) in [("1", 3), ("11", 0)] {
             let mut scenario = Scenario::supply_point().fixture()?;
@@ -1154,6 +1324,15 @@ mod tests {
                         .iter()
                         .all(|frame| frame.shots.is_empty())
                 );
+                let report = turns
+                    .last_resolution
+                    .as_ref()
+                    .fixture()?
+                    .reports
+                    .iter()
+                    .find(|report| report.side == PlayerNumber::Player1)
+                    .fixture()?;
+                assert_eq!(report.supplies_consumed, 1 + 2 + movement_cost);
                 let defender = scenario
                     .units
                     .iter()
@@ -1202,7 +1381,7 @@ mod tests {
         invalid[0].path.truncate(1);
         assert!(validate(&scenario, PlayerNumber::Player1, invalid).is_err());
         let mut low_supplies = scenario.clone();
-        low_supplies.units[0].spend_supplies(55);
+        low_supplies.units[0].spend_supplies(39);
         assert!(validate(&low_supplies, PlayerNumber::Player1, attack(&low_supplies)?).is_err());
         for (sketch, required) in [("....", 12), (".%%.", 14), (".##.", 14)] {
             let mut terrain_scenario = scenario.clone();
@@ -1245,9 +1424,9 @@ mod tests {
                 .find(|unit| unit.id() == "6")
                 .fixture()?;
             assert_eq!(attacker.board_position(), Some(Coordinate::new(1, 0)));
-            assert_eq!(attacker.supplies().current(), 55);
+            assert_eq!(attacker.supplies().current(), 39);
             assert_eq!(target.hit_points().current(), 10);
-            assert_eq!(target.supplies().current(), 63);
+            assert_eq!(target.supplies().current(), 47);
             assert_eq!(
                 turns
                     .last_resolution
@@ -1414,8 +1593,8 @@ mod tests {
             assert_eq!(turns.number, 2);
             assert_eq!(scenario.units[0].hit_points().current(), 16);
             assert_eq!(scenario.units[1].hit_points().current(), 10);
-            assert_eq!(scenario.units[0].supplies().current(), 58);
-            assert_eq!(scenario.units[1].supplies().current(), 63);
+            assert_eq!(scenario.units[0].supplies().current(), 42);
+            assert_eq!(scenario.units[1].supplies().current(), 47);
             assert_eq!(scenario.units[0].direction(), Some(Direction::East));
             let resolution = turns.last_resolution.as_ref().fixture()?;
             assert_eq!(
@@ -1601,14 +1780,14 @@ mod tests {
             .fixture()?;
         assert_eq!(passenger.board_position(), Some(Coordinate::new(8, 8)));
         assert_eq!(passenger.hit_points().current(), 1);
-        assert_eq!(passenger.supplies().current(), 60);
+        assert_eq!(passenger.supplies().current(), 44);
         let gun = scenario
             .units
             .iter()
             .find(|unit| unit.id() == "12")
             .fixture()?;
         assert_eq!(gun.hit_points().current(), 12);
-        assert_eq!(gun.supplies().current(), 59);
+        assert_eq!(gun.supplies().current(), 58);
         let resolution = turns.last_resolution.fixture()?;
         let unload_frame = resolution
             .frames
@@ -1653,7 +1832,7 @@ mod tests {
         orders[3].ambush = Some(true);
         orders[3].direction = Some(Direction::East);
         assert!(validate(&scenario, PlayerNumber::Player1, orders).is_err());
-        scenario.units[0].spend_supplies(62);
+        scenario.units[0].spend_supplies(46);
         let mut orders = holds(&scenario, PlayerNumber::Player1)?;
         orders[0].ambush = Some(true);
         orders[0].direction = Some(Direction::East);
@@ -1826,8 +2005,8 @@ mod tests {
                 Coordinate::new(2, 7)
             );
         }
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 60);
-        assert_eq!(vehicle(&mut scenario, "2")?.supplies().current(), 57);
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 44);
+        assert_eq!(vehicle(&mut scenario, "2")?.supplies().current(), 41);
         assert_eq!(
             turns
                 .last_resolution
@@ -1856,7 +2035,7 @@ mod tests {
                 Coordinate::new(1, 8)
             );
         }
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 59);
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 43);
         assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 30);
         let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
         set_path(&mut player1, "1", &[(1, 8), (0, 8)])?;
@@ -1888,7 +2067,7 @@ mod tests {
                 .fixture()?,
             Coordinate::new(1, 7)
         );
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 55);
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 39);
 
         Ok(())
     }
@@ -1916,8 +2095,8 @@ mod tests {
             Some(Coordinate::new(0, 8))
         );
         assert_eq!(vehicle(&mut scenario, "2")?.carrier_id(), Some(truck));
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 60);
-        assert_eq!(vehicle(&mut scenario, "2")?.supplies().current(), 63);
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 44);
+        assert_eq!(vehicle(&mut scenario, "2")?.supplies().current(), 47);
         let events = &turns.last_resolution.as_ref().fixture()?.events;
         let movement_index = events
             .iter()
@@ -1998,7 +2177,7 @@ mod tests {
         );
         assert!(turns.orders[0].is_none());
         assert_eq!(turns.number, 1);
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 64);
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 48);
 
         Ok(())
     }
@@ -2081,12 +2260,12 @@ mod tests {
                                 assert_eq!(passenger.board_position(), Some(Coordinate::new(1, 1)));
                                 assert_eq!(
                                     passenger.supplies().current(),
-                                    63 - passenger.supplies().movement_per_tile()
+                                    47 - passenger.supplies().movement_per_tile()
                                         - passenger.supplies().rough_terrain_surcharge()
                                 );
                             } else {
                                 assert_eq!(passenger.carrier_id(), UnitId::parse(truck_id));
-                                assert_eq!(passenger.supplies().current(), 63);
+                                assert_eq!(passenger.supplies().current(), 47);
                                 let visible = crate::visibility::visible_tiles(&scenario, side);
                                 let projected = crate::visibility::observed_resolution(
                                     &scenario,
@@ -2321,9 +2500,10 @@ mod tests {
         let mut scenario = Scenario::supply_point().fixture()?;
         scenario.depots.clear();
         let mut turns = Turns::default();
-        for _ in 0..63 {
-            resolve_holds(&mut scenario, &mut turns)?;
+        for unit in &mut scenario.units {
+            unit.set_supplies_for_test(2);
         }
+        resolve_holds(&mut scenario, &mut turns)?;
         let number = turns.number;
         for (id, path) in [("1", vec![(3, 7), (3, 6)]), ("12", vec![(4, 7), (4, 6)])] {
             let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
@@ -2393,8 +2573,8 @@ mod tests {
         turns
             .submit(&mut scenario, PlayerNumber::Player2, 1, player2)
             .fixture()?;
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 60);
-        assert_eq!(vehicle(&mut scenario, "6")?.supplies().current(), 60);
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 44);
+        assert_eq!(vehicle(&mut scenario, "6")?.supplies().current(), 44);
         assert_eq!(
             scenario
                 .physical_position(
@@ -2463,7 +2643,7 @@ mod tests {
                 vehicle(&mut scenario, "6")?.board_position(),
                 Some(Coordinate::new(2, 0))
             );
-            assert_eq!(vehicle(&mut scenario, "6")?.supplies().current(), 63);
+            assert_eq!(vehicle(&mut scenario, "6")?.supplies().current(), 47);
             assert_eq!(
                 vehicle(&mut scenario, "6")?.direction(),
                 vehicle(&mut initial, "6")?.direction()
@@ -2537,7 +2717,7 @@ mod tests {
             vehicle(&mut scenario, "1")?.board_position(),
             Some(Coordinate::new(0, 0))
         );
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 63);
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 47);
         let visible = crate::visibility::visible_tiles(&scenario, PlayerNumber::Player1);
         let observed = crate::visibility::observed_resolution(
             &scenario,
@@ -3120,8 +3300,8 @@ mod tests {
         );
         for (unit, original) in scenario.units.iter().zip(&initial.units) {
             let (position, supplies) = match unit.id().as_str() {
-                "1" => (Coordinate::new(3, 6), 60),
-                "6" => (Coordinate::new(4, 6), 60),
+                "1" => (Coordinate::new(3, 6), 44),
+                "6" => (Coordinate::new(4, 6), 44),
                 _ => (
                     original.board_position().fixture()?,
                     original.supplies().current() - 1,

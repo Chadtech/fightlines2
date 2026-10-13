@@ -2,7 +2,9 @@ module GamePage.CurrentTurn exposing
     ( Model
     , Msg(..)
     , Observation
+    , acknowledgeIntroduction
     , init
+    , introductionPending
     , mapPlanning
     , pollFailed
     , pollSucceeded
@@ -37,7 +39,13 @@ type alias Model =
     , phase : Phase
     , refreshing : Bool
     , error : Maybe String
+    , introduction : Introduction
     }
+
+
+type Introduction
+    = AwaitingIntroduction
+    | IntroductionAcknowledged
 
 
 type Msg
@@ -67,6 +75,7 @@ init turn =
     , phase = TurnLifecycle.observeSubmission turn.submitted (TurnLifecycle.Planning OrderPlanning.init)
     , refreshing = False
     , error = Nothing
+    , introduction = AwaitingIntroduction
     }
 
 
@@ -74,6 +83,16 @@ init turn =
 ----------------------------------------------------------------
 -- API --
 ----------------------------------------------------------------
+
+
+introductionPending : Model -> Bool
+introductionPending model =
+    model.introduction == AwaitingIntroduction && not (TurnLifecycle.planningLocked model.phase)
+
+
+acknowledgeIntroduction : Model -> Model
+acknowledgeIntroduction model =
+    { model | introduction = IntroductionAcknowledged }
 
 
 mapPlanning : (OrderPlanning.Model -> OrderPlanning.Model) -> Model -> Model
@@ -188,6 +207,7 @@ receive observation model =
             , resolution = observation.turn.resolution
             , phase = TurnLifecycle.startTurn observation.turn.submitted observation.playbackFrames
             , error = Nothing
+            , introduction = AwaitingIntroduction
         }
 
 

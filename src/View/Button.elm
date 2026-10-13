@@ -141,15 +141,17 @@ toHtml button =
                             ]
 
                         Variant__Secondary ->
-                            [ S.bgGray0
+                            [ S.bgGray1
                             , S.textGray4
-                            , S.outdentDark
+                            , S.outdentStrong
                             , Css.hover
-                                [ S.textGray5
+                                [ S.bgGray2
+                                , S.textGray5
                                 ]
                             , Css.active
-                                [ S.textGray5
-                                , S.indentDark
+                                [ S.bgGray2
+                                , S.textGray5
+                                , S.indentStrong
                                 ]
                             ]
 
@@ -157,12 +159,14 @@ toHtml button =
                 sizeStyles =
                     case button.size of
                         Regular ->
-                            [ S.p2 ]
-
-                        Large ->
                             [ S.px4
                             , S.py3
-                            , Css.minHeight (Css.rem 3)
+                            ]
+
+                        Large ->
+                            [ S.px6
+                            , S.py4
+                            , S.minH14
                             ]
             in
             [ A.disabled (button.variant == Disabled)

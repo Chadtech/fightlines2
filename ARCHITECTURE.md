@@ -355,7 +355,8 @@ exports the transparent arrow from `artwork/effects/illustrated/attack-marker/`.
 Side-profile artwork follows east/west `Direction`, including playback and rotation
 previews. A separate authoritative `SpriteFacing` retains the last east/west orientation
 through north/south movement or rotation, including snapshots and playback frames.
-It starts right for player 1 and left for player 2; trucks retain that default. The marker represents the full
+It starts right for player 1 and left for player 2. Trucks also update `SpriteFacing`
+on horizontal movement while keeping `Direction` absent. The marker represents the full
 four-way direction.
 Explicit turning orders remain future work.
 SVG events send typed unit IDs and coordinates
@@ -395,6 +396,10 @@ resolution. Earlier terrain atlases remain available locally and are ignored by 
 `dzuk-mutant/elm-css` 3.0.1, matching People. The pages use `Html.Styled`, the
 shared global reset, style helpers, and `View.Button`; no standalone CSS file is
 required.
+
+`Main` mounts the global reset and component-owned global styles together in
+the application shell, including animation and reduced-motion rules. Components
+keep ownership of those rules; page views do not mount additional style nodes.
 
 The copied modules are Button, Dialog, Dropdown, PersonProfile, Textarea, and
 TextField. PersonProfile's only adaptation is accepting a record with `name` and
@@ -550,8 +555,8 @@ snapshot fuel values; it does not calculate resource outcomes.
 ## Unit supplies
 
 Every Rust unit carries `Supplies` with current and maximum quantities plus
-`upkeepPerTurn`, `movementPerTile`, and `roughTerrainSurcharge` rates. Infantry and field guns start at
-64/64; vehicles start at 32/32. All kinds have upkeep 1. Infantry spend 3 supplies per grass tile and 4 per hill or forest tile and field guns spend 1;
+`upkeepPerTurn`, `movementPerTile`, and `roughTerrainSurcharge` rates. Infantry start at
+48/48; field guns start at 64/64; vehicles start at 32/32. All kinds have upkeep 1. Infantry spend 3 supplies per grass tile and 4 per hill or forest tile and field guns spend 1;
 tanks and trucks spend none for movement. These are unit provisions, separate
 from fuel and carried supply crates.
 
@@ -571,6 +576,10 @@ death-focus class. `TurnPlayback.start` omits previously presented casualties
 from later frames, so combat death markers clear after the server's pause
 before subsequent movement resumes. Server visibility and timing remain intact.
 Frame visibility filtering also applies to deaths, concealing hidden enemies.
+Enemy casualties hidden in their first death frame stay omitted through cleanup,
+even if later movement or a firing reveal exposes their tile. Combat skulls and
+loss notices require a casualty in the projected death frame; encounter portraits
+never supply an otherwise concealed death.
 Nearby depots and crates replenish provisions before upkeep.
 Waiting for another player and retrying submissions never
 charge upkeep.
@@ -777,7 +786,11 @@ lines, floating damage numbers, or calculating combat outcomes.
 
 `TurnPlayback.Presentation` separates ordinary battlefield playback from combat
 focus. Entering a projected volley captures the pre-hit frame and queues its
-distinct encounter unit pairs, combining reciprocal shots. Combat focus holds each
+distinct encounter unit pairs, combining reciprocal shots. Stationary return fire
+in a later volley shares the same theater and impact clock, using the first
+volley's starting health and the return volley's final health. Combining stops
+at movement, sight or logistics changes, another encounter, or an intervening
+casualty; authoritative damage calculations remain unchanged. Combat focus holds each
 pair in a 300ms spotlight stage followed by a panel stage that waits for Enter without
 advancing movement interpolation or revealing the volley. `GamePage` freezes idle/interface animation and renders `View.CombatTheater`
 as one ambush card with inward-facing formations and a brief CSS expansion.
@@ -904,7 +917,9 @@ frame independently; `GamePage` applies those sources alongside frame units and 
 ## Unit loss acknowledgment
 
 `TurnPlayback.losses` derives typed combat, exhaustion, and carrier-loss notices
-from projected frames and lethal shots. Playback owns acknowledged unit IDs and
+from projected frames and lethal shots. `lossEvent` groups a carrier with its
+projected passengers, independent of unit ordering. One acknowledgment covers
+the carrier and those passengers; unrelated casualties remain queued. Playback owns acknowledged unit IDs and
 `tickUntilLoss` stops at each unacknowledged casualty, including supply frames
 crossed by delayed animation ticks. `TurnLifecycle` carries acknowledgment through
 its existing playing state. The skip preference selects ordinary timed playback.
@@ -920,3 +935,29 @@ both dialog rendering and update-time error reporting. `GamePage.superUpdate`
 logs `Error.UnitOwnerNotFound` in `Shared.Model.errors` only when it detects a
 newly active loss dialog. Unchanged or absent dialogs perform no additional
 owner resolution, and rendering does not log errors.
+
+## Turn introduction
+
+`GamePage.CurrentTurn` owns the per-turn introduction acknowledgment. Initialization
+and a newer server turn mark it awaiting introduction; same-turn polling preserves
+acknowledgment. The page presents it only when planning is unlocked, after all
+playback and loss dialogs have finished. `GamePage.initialEffect` opens the initial
+native modal after rendering; `superUpdate` opens subsequent introductions when
+the active dialog changes. `View.TurnIntroduction` supplies the card artwork and
+actions through `Dialog.announcement`, which owns wide modal placement. The
+introduction owns its animation styles, mounted once in the application shell;
+its shine animation has a separate name from the turn controls' shine. The page remembers `skipTurnIntroduction`
+through the existing local-storage effect, defaults it to false, records malformed
+values as shared errors, and refreshes it on shared-storage notifications.
+
+`TurnResolution.reports` retains per-side own casualties and supply consumption.
+Resolution measures movement/readiness/firing spending before replenishment;
+`Scenario.finish_turn_resources` returns `ResourceSettlement` with the death
+snapshot and actual upkeep charged before cleanup. Refilled supplies do not
+reduce consumption, and destroyed cargo stock does not increase it. Visibility
+filters reports to the viewer's side and calculates known damage/confirmed enemy
+losses exclusively from that viewer's outgoing projected shots. Damage uses
+capped before/after target HP and confirmed losses deduplicate target IDs. No
+report exposes the opponent's supply spending or unseen supply deaths. Elm
+decodes at most one report into `Turn.Resolution`, retains it with the existing
+turn state, and shows it on the introduction after playback, including on reload.

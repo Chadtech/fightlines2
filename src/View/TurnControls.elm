@@ -5,6 +5,7 @@ module View.TurnControls exposing
     , navigation
     , panel
     , playerRow
+    , styles
     , submit
     )
 
@@ -55,7 +56,7 @@ panel children =
             , Css.property "container-type" "inline-size"
             ]
         ]
-        (styles :: children)
+        children
 
 
 submit : Activity -> String -> Html Msg
@@ -258,13 +259,25 @@ styles =
                 ++ navigationClass
                 ++ """ [role="group"] {
                 display: grid;
-                grid-template-rows: repeat(3, 2.5rem);
+                grid-template-rows: repeat(3, 2.75rem);
                 align-items: center;
                 justify-items: center;
             }
             ."""
                 ++ navigationClass
-                ++ """ button { height: 2.5rem; align-self: center; }
+                ++ """ button { height: 2.75rem; min-width: 2.75rem; align-self: center; }
+            ."""
+                ++ navigationClass
+                ++ """ [role="group"] > div {
+                display: grid;
+                grid-template-columns: repeat(3, 2.75rem);
+                gap: .25rem;
+                align-items: center;
+                justify-items: center;
+            }
+            ."""
+                ++ navigationClass
+                ++ """ [aria-label="zoom map"] > button { width: 100%; }
 
             ."""
                 ++ readyClass

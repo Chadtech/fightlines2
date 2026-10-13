@@ -101,6 +101,10 @@ type TurnFrame
     = TurnFrame
 
 
+type TurnReport
+    = TurnReport
+
+
 type TurnResolution
     = TurnResolution
 

@@ -55,12 +55,14 @@ tokens in `Style.elm` for interface colors.
 | Primary bevel dark edge | internal `yellow1Color` | `#302507` |
 
 Use gold sparingly for primary actions. Bevels reverse when buttons are pressed.
-Secondary buttons use a gray0 face with gray1 light edges and black shadow
-edges (`outdentDark`, reversed with `indentDark` when pressed). Their labels
-retain gray4 text, brightening to gray5 on hover and press. Disabled buttons
-retain their gray1 face and gray3 text.
-Use `Button.large` for prominent actions such as submitting a turn: wider padding
-and a 3rem minimum height, retaining the normal text size and color variant.
+Secondary buttons use a gray1 face with gray3 light edges and gray0 shadow
+edges (`outdentStrong`, reversed with `indentStrong` when pressed). Their faces
+brighten to gray2 on hover and press, with gray4 labels brightening to gray5.
+Disabled buttons retain their gray1 face and gray3 text.
+Regular buttons use 1rem horizontal and 0.75rem vertical padding.
+Use `Button.large` for prominent actions such as submitting a turn: 1.5rem horizontal
+and 1rem vertical padding with a 3.5rem minimum height, retaining the normal text
+size and color variant.
 The primary button uses the original yellow palette shifted up one step in all
 states. Yellow3 interpolates yellow2 and yellow4; yellow6 interpolates yellow5
 and white. Retain the other palette tokens for reuse.
@@ -118,8 +120,11 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   a separator before the camera controls.
   Arrange pan arrows as a directional pad, with up and down above
   and below left/right. Stack zoom and reset beside the pad, using matching
-  three-row grids with equal row heights so both control groups align. Wrap camera controls
-  below when space is limited; use natural
+  three-row grids with equal row heights so both control groups align.
+  Use 2.75rem square pan and zoom buttons with matching rows and 0.25rem gaps.
+  Center the pan label and zoom percentage in equal-width middle cells; let reset
+  span the zoom group's full width. Wrap camera controls below when space is
+  limited; use natural
   height rather than reserving empty space. Longer feedback scrolls within the status area.
   Submit becomes gold with a gentle brightness pulse and sweeping highlight when every
   on-board unit has an explicit order. Keep it enabled while planning and disable
@@ -235,7 +240,7 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   unit sprites face right for east and mirror left for west, following stored direction
   during movement and rotation previews. North/south movement and rotation retain the last horizontal sprite facing,
   including after refresh. Profiles start right for player 1 and left for player 2;
-  trucks retain that default. The facing marker
+  trucks also follow horizontal travel and retain their last profile vertically. The facing marker
   shows the full four-way direction. Overlay a small illustrated crimson striking
   arrow only for units choosing or maintaining an ambush, including playback.
   Use dark ink contours, painted red shading, and a compact ivory impact glint.
@@ -388,8 +393,9 @@ Keep `continue` and the skip checkbox available so playback can proceed.
 Place `continue` and the `skip this dialog` checkbox together below all information.
 The checkbox defaults to unchecked and remembers its Boolean in local storage.
 Checking it dismisses the current dialog and skips future loss dialogs, preserving
-the existing timed skull feedback. Continue acknowledges one casualty; simultaneous
-losses appear in sequence. Enter activates the focused action, and Escape continues.
+the existing timed skull feedback. Continue acknowledges one loss event. A carrier and its lost passengers share
+one dialog naming every casualty and showing the carrier’s cause once; independent
+simultaneous losses appear in sequence. Enter activates the focused action, and Escape continues.
 After acknowledgment, keep the existing server-timed casualty pause before removing
 the unit and resuming movement. Long animation ticks stop at unacknowledged losses.
 Reduced-motion mode retains a steady marker and highlight.
@@ -496,3 +502,31 @@ are absent in locked phases. A saved supply run shows its destination and load/u
 counts alongside revoke. Planned crate exits use quiet gold dotted outlines.
 Ground crates use the illustrated neutral supply-box asset and support pointer and
 keyboard inspection through their tile. Empty crates disappear on replenishment.
+
+Depot tiles show a thin stock bar along their bottom edge, above units and route
+artwork. Known stock uses green while healthy, yellow with a two-second blink at
+25% or below, and a steady red outline with a vector `ø` when empty. Keep its
+click target present throughout blinking; reduced motion shows a steady bar.
+Clicking the bar or activating it with Enter/Space opens the depot inspector,
+even on occupied tiles. A selected on-board unit standing on a depot also shows
+a clickable `supply depot · current / maximum` row. Unknown stock has no map bar
+or numeric value; the inspector row says `stock outside sight`.
+
+## Turn introduction
+
+Introduce each planning turn with a centered, wide beveled modal over a dimmed
+battlefield. A plain `bgNightwood3` panel with `indentStrong`, matching text fields and unit
+portraits, carries a large gold two-digit turn numeral. Keep its background free
+of scanlines, gradients, and decorative nested borders; retain the drifting shine. This decorative numeral is an exception
+to the usual 1rem typography; its accessible equivalent is the ordinary title.
+The card pops in over 320ms with a small overshoot, and a diagonal shine drifts
+across the panel every 4.8 seconds. Place `begin turn` first, beside the remembered
+`skip this dialog` checkbox. Checking skips and dismisses; Escape also begins.
+The native modal traps focus and blocks battlefield input. Use viewport gutters
+and a compact layout at short heights; reduced motion removes pop and shine.
+
+For turns after the first, replace the waiting caption with an inset previous-turn
+report: `your units lost`, `confirmed enemy losses`, `known damage inflicted` in HP,
+and `your supplies consumed`. Use four quiet metric cells in two columns, wrapping
+to single rows on narrow screens. Reduce the decorative numeral to leave space
+for the report. Keep these figures viewer-specific and retain zero totals.

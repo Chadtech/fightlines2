@@ -707,7 +707,7 @@ mod tests {
                 .ok_or("missing attacker")?
                 .supplies()
                 .current(),
-            56
+            40
         );
         assert_eq!(
             units
@@ -716,7 +716,7 @@ mod tests {
                 .ok_or("missing target")?
                 .supplies()
                 .current(),
-            64
+            48
         );
         Ok(())
     }
@@ -795,7 +795,7 @@ mod tests {
                     .iter()
                     .find(|unit| unit.id() == attacker)
                     .ok_or("missing attacker")?;
-                let supplies = if attacker == "11" { 28 } else { 56 };
+                let supplies = if attacker == "11" { 28 } else { 40 };
                 assert_eq!(unit.supplies().current(), supplies);
                 assert_eq!(result.stopped.len(), 2);
             }
@@ -971,6 +971,7 @@ mod tests {
         let result = resolve(&scenario, &orders, 1)?;
         assert_eq!(path(&result, "1")?.len(), 1);
         let resolution = crate::turns::TurnResolution {
+            reports: Vec::new(),
             turn_number: 1,
             events: Vec::new(),
             frames: result.frames,

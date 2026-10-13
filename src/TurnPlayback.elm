@@ -3,6 +3,7 @@ module TurnPlayback exposing
     , Frame
     , Loss
     , LossCause(..)
+    , LossEvent
     , MapView(..)
     , Panel
     , Playback
@@ -11,6 +12,7 @@ module TurnPlayback exposing
     , combat
     , continueCombat
     , initial
+    , lossEvent
     , losses
     , movingPositions
     , panels
@@ -24,6 +26,7 @@ module TurnPlayback exposing
     )
 
 import Api.Enum.CombatKind as CombatKind exposing (CombatKind)
+import Api.Enum.Direction exposing (Direction)
 import Api.Object
 import Api.Object.GameSnapshot as GameApi
 import Api.Object.TurnFrame as FrameApi
@@ -35,8 +38,10 @@ import Direction
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import Point exposing (Point)
 import Shot exposing (Shot)
+import SpriteFacing
 import Supply
 import Unit exposing (Unit)
+import Unit.Location exposing (Location)
 import UnitId exposing (UnitId)
 import Util.List as ListUtil
 
@@ -164,6 +169,55 @@ losses playback =
         |> List.map notice
 
 
+type alias LossEvent =
+    { loss : Loss
+    , passengers : List Unit
+    }
+
+
+{-| A carrier and its projected passengers form one loss event, regardless of
+unit ordering. Independent casualties in the same frame remain separate events.
+-}
+lossEvent : Playback -> Maybe LossEvent
+lossEvent playback =
+    let
+        pending : List Loss
+        pending =
+            losses playback
+
+        event : Loss -> LossEvent
+        event first =
+            let
+                carrierId : UnitId
+                carrierId =
+                    case first.cause of
+                        CarrierLost carrier _ ->
+                            carrier.id
+
+                        _ ->
+                            first.unit.id
+
+                primary : Loss
+                primary =
+                    ListUtil.find (\loss -> loss.unit.id == carrierId) pending
+                        |> Maybe.withDefault first
+
+                aboard : Loss -> Bool
+                aboard loss =
+                    case loss.cause of
+                        CarrierLost carrier _ ->
+                            carrier.id == primary.unit.id
+
+                        _ ->
+                            False
+            in
+            { loss = primary
+            , passengers = List.filter aboard pending |> List.map .unit
+            }
+    in
+    List.head pending |> Maybe.map event
+
+
 lossFrame : Playback -> Frame
 lossFrame playback =
     case playback.presentation of
@@ -179,11 +233,25 @@ lossFrame playback =
 
 acknowledgeLoss : UnitId -> Playback -> Playback
 acknowledgeLoss unitId playback =
-    { playback | acknowledgedLosses = unitId :: playback.acknowledgedLosses }
+    let
+        acknowledged : List UnitId
+        acknowledged =
+            case lossEvent playback of
+                Just event ->
+                    if event.loss.unit.id == unitId then
+                        unitId :: List.map .id event.passengers
+
+                    else
+                        [ unitId ]
+
+                Nothing ->
+                    [ unitId ]
+    in
+    { playback | acknowledgedLosses = acknowledged ++ playback.acknowledgedLosses }
 
 
 {-| Stop at loss boundaries even when a delayed animation tick spans the whole
-turn. Acknowledging one casualty leaves other casualties available in order.
+turn. Acknowledging a carrier also acknowledges its passengers; independent losses remain queued.
 -}
 tickUntilLoss : Float -> Playback -> ( Maybe Playback, Frame )
 tickUntilLoss =
@@ -306,8 +374,15 @@ exchanges frame =
 
 
 beginFrame : FrameTransition -> List Frame -> Playback
-beginFrame frames remaining =
+beginFrame transition pending =
     let
+        ( next, remaining ) =
+            combineReturnFire transition.next pending
+
+        frames : FrameTransition
+        frames =
+            { transition | next = next }
+
         before : Frame
         before =
             frames.current
@@ -332,6 +407,100 @@ beginFrame frames remaining =
     , presentation = presentation
     , acknowledgedLosses = []
     }
+
+
+{-| A stationary head-on exchange can span two authoritative volleys. Present
+both hits together while retaining the server's damage and final board state.
+Never cross movement, visibility changes, another encounter, or a casualty.
+-}
+combineReturnFire : Frame -> List Frame -> ( Frame, List Frame )
+combineReturnFire opening pending =
+    let
+        unitLocation : Unit -> { id : UnitId, location : Location }
+        unitLocation unit =
+            { id = unit.id
+            , location = unit.location
+            }
+
+        stationary : Frame -> Bool
+        stationary frame =
+            (List.map unitLocation frame.units == List.map unitLocation opening.units)
+                && (frame.visibleTiles == opening.visibleTiles)
+                && (frame.depots == opening.depots)
+                && (frame.supplyCrates == opening.supplyCrates)
+
+        findReturn : Shot -> List Frame -> ( Frame, List Frame )
+        findReturn shot remaining =
+            case remaining of
+                frame :: rest ->
+                    if not (stationary frame) then
+                        ( opening, pending )
+
+                    else
+                        case frame.shots of
+                            [] ->
+                                if List.any Unit.isDying frame.units then
+                                    ( opening, pending )
+
+                                else
+                                    findReturn shot rest
+
+                            [ returnShot ] ->
+                                let
+                                    reciprocal : Bool
+                                    reciprocal =
+                                        (returnShot.attacker.id == shot.target.id)
+                                            && (returnShot.target.id == shot.attacker.id)
+                                            && (returnShot.origin == shot.destination)
+                                            && (returnShot.destination == shot.origin)
+                                in
+                                if reciprocal then
+                                    let
+                                        attackerHealth : CombatHealth
+                                        attackerHealth =
+                                            { before = shot.attackerHealth.before
+                                            , after = returnShot.targetHealth.after
+                                            }
+
+                                        targetHealth : CombatHealth
+                                        targetHealth =
+                                            { before = shot.targetHealth.before
+                                            , after = returnShot.attackerHealth.after
+                                            }
+
+                                        shots : List Shot
+                                        shots =
+                                            [ { shot
+                                                | attackerHealth = attackerHealth
+                                                , targetHealth = targetHealth
+                                              }
+                                            , { returnShot
+                                                | attackerHealth = targetHealth
+                                                , targetHealth = attackerHealth
+                                              }
+                                            ]
+                                    in
+                                    ( { frame | shots = shots }, rest )
+
+                                else
+                                    ( opening, pending )
+
+                            _ ->
+                                ( opening, pending )
+
+                [] ->
+                    ( opening, pending )
+    in
+    case opening.shots of
+        [ shot ] ->
+            if List.any Unit.isDying opening.units then
+                ( opening, pending )
+
+            else
+                findReturn shot pending
+
+        _ ->
+            ( opening, pending )
 
 
 type alias FrameTransition =
@@ -550,7 +719,7 @@ continueCombat playback =
                     let
                         frame : Frame
                         frame =
-                            exchangeDeathFrame focus
+                            exchangeDeathFrame playback.current focus
                     in
                     if List.any Unit.isDying frame.units then
                         Just
@@ -578,8 +747,8 @@ deathDuration playback =
         |> Maybe.withDefault 1400
 
 
-exchangeDeathFrame : CombatFocus -> Frame
-exchangeDeathFrame focus =
+exchangeDeathFrame : Frame -> CombatFocus -> Frame
+exchangeDeathFrame projected focus =
     let
         casualties : List UnitId
         casualties =
@@ -593,13 +762,24 @@ exchangeDeathFrame focus =
         before =
             focus.before
 
+        projectedCasualty : Unit -> Bool
+        projectedCasualty unit =
+            let
+                dyingUnit : Unit -> Bool
+                dyingUnit seen =
+                    seen.id == unit.id && Unit.isDying seen
+            in
+            List.any dyingUnit projected.units
+
         present : Unit -> Unit
         present unit =
             let
                 destroyed : Bool
                 destroyed =
-                    List.member unit.id casualties
-                        || (Unit.carrierId unit |> Maybe.map (\id -> List.member id casualties) |> Maybe.withDefault False)
+                    projectedCasualty unit
+                        && (List.member unit.id casualties
+                                || (Unit.carrierId unit |> Maybe.map (\id -> List.member id casualties) |> Maybe.withDefault False)
+                           )
             in
             { unit | destroyed = destroyed }
     in
@@ -675,12 +855,17 @@ presentationFrame playing next =
                     unit
             of
                 Just edge ->
+                    let
+                        movementDirection : Maybe Direction
+                        movementDirection =
+                            Direction.between edge.origin edge.destination
+                    in
                     Unit.faceDirection
                         (unit.direction
                             |> Maybe.andThen
-                                (\_ -> Direction.between edge.origin edge.destination)
+                                (\_ -> movementDirection)
                         )
-                        unit
+                        { unit | spriteFacing = SpriteFacing.turn movementDirection unit.spriteFacing }
                         |> Unit.setOnMap edge.origin
 
                 Nothing ->

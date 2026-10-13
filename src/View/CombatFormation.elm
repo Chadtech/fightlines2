@@ -85,11 +85,11 @@ placements kind =
             -- Irregular depth and spacing stay fixed through hits and rerenders.
             -- Paint distant guns first so the larger foreground guns sit ahead.
             [ { x = 8
-              , y = 23
-              , size = 25
+              , y = 32
+              , size = 24
               }
             , { x = 55
-              , y = 30
+              , y = 36
               , size = 32
               }
             , { x = 3
@@ -98,7 +98,7 @@ placements kind =
               }
             , { x = 48
               , y = 45
-              , size = 46
+              , size = 47
               }
             ]
 

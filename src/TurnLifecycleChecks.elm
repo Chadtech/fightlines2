@@ -557,7 +557,17 @@ currentTurnChecks =
             CurrentTurn.pollSucceeded { observation | turn = { turn | submitted = False, opponentSubmitted = False } } waiting
     in
     List.concat
-        [ expect "submission retains a poll already in flight"
+        [ expect "planning starts with a turn introduction"
+            (CurrentTurn.introductionPending initial)
+        , expect "acknowledgment survives same-turn polling"
+            (not (CurrentTurn.introductionPending (CurrentTurn.pollSucceeded { observation | turn = { turn | submitted = False, opponentSubmitted = False } } (CurrentTurn.acknowledgeIntroduction initial))))
+        , expect "submitted turns do not show an introduction"
+            (not (CurrentTurn.introductionPending (CurrentTurn.init observation.turn)))
+        , expect "new introduction waits until playback finishes"
+            (not (CurrentTurn.introductionPending advanced)
+                && CurrentTurn.introductionPending { advanced | phase = Planning OrderPlanning.init }
+            )
+        , expect "submission retains a poll already in flight"
             submitting.refreshing
         , expect "poll confirmation locks submission and clears in-flight status"
             (TurnLifecycle.planningLocked waiting.phase && not waiting.refreshing)

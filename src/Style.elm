@@ -2,9 +2,11 @@ module Style exposing
     ( absolute
     , appearanceNone
     , aspectRatio
+    , backdrop
     , basisFull
     , batch
     , belowWidth
+    , bgBlack70
     , bgBlue0
     , bgBlue1
     , bgGray0
@@ -77,6 +79,7 @@ module Style exposing
     , gray3Str
     , gray4Str
     , gray5Str
+    , green1Str
     , grid
     , grow
     , h0
@@ -135,6 +138,7 @@ module Style exposing
     , maxH24
     , maxH32
     , maxH64
+    , maxHViewportInset8
     , maxW12
     , maxW128
     , maxW16
@@ -151,6 +155,7 @@ module Style exposing
     , mb4
     , md
     , minH0
+    , minH14
     , minH32
     , minH96
     , minHFullViewport
@@ -188,6 +193,7 @@ module Style exposing
     , outdent
     , outdentDark
     , outdentLeft
+    , outdentStrong
     , outdentTopRight
     , outlineNone
     , overflowAuto
@@ -228,6 +234,7 @@ module Style exposing
     , px3
     , px36
     , px4
+    , px6
     , py1
     , py16
     , py2
@@ -274,6 +281,7 @@ module Style exposing
     , textGray3
     , textGray4
     , textGray5
+    , textLeft
     , textNightwood1
     , textPrimary
     , textRed1
@@ -301,6 +309,7 @@ module Style exposing
     , w12
     , w120
     , w128
+    , w152
     , w16
     , w16px
     , w196
@@ -695,6 +704,16 @@ outdentDark =
         |> Css.batch
 
 
+outdentStrong : Css.Style
+outdentStrong =
+    [ Css.borderLeft3 borderWidth Css.solid gray3Color
+    , Css.borderTop3 borderWidth Css.solid gray3Color
+    , Css.borderRight3 borderWidth Css.solid gray0Color
+    , Css.borderBottom3 borderWidth Css.solid gray0Color
+    ]
+        |> Css.batch
+
+
 outdentLeft : Css.Style
 outdentLeft =
     Css.borderLeft3 borderWidth Css.solid content2Color
@@ -997,6 +1016,11 @@ w128 =
     Css.width s128
 
 
+w152 : Css.Style
+w152 =
+    Css.width (Css.rem 38)
+
+
 w196 : Css.Style
 w196 =
     Css.width s192
@@ -1080,6 +1104,13 @@ maxW240 =
 maxW320 : Css.Style
 maxW320 =
     Css.maxWidth s320
+
+
+{-| Leave a two-rem total gutter above and below viewport-height content.
+-}
+maxHViewportInset8 : Css.Style
+maxHViewportInset8 =
+    Css.maxHeight (Css.calc (Css.vh 100) (Css.minus (Css.rem 2)))
 
 
 maxH64 : Css.Style
@@ -1215,6 +1246,11 @@ wAuto =
 minH0 : Css.Style
 minH0 =
     Css.minHeight Css.zero
+
+
+minH14 : Css.Style
+minH14 =
+    Css.minHeight (Css.rem 3.5)
 
 
 minH32 : Css.Style
@@ -1549,6 +1585,14 @@ px4 =
         ]
 
 
+px6 : Css.Style
+px6 =
+    Css.batch
+        [ Css.paddingLeft s6
+        , Css.paddingRight s6
+        ]
+
+
 px36 : Css.Style
 px36 =
     Css.batch
@@ -1696,6 +1740,16 @@ bgNightwood3 =
 bgRed0 : Css.Style
 bgRed0 =
     Css.property "background" red0Str
+
+
+bgBlack70 : Css.Style
+bgBlack70 =
+    Css.backgroundColor (Css.rgba 0 0 0 0.7)
+
+
+backdrop : List Css.Style -> Css.Style
+backdrop =
+    Css.pseudoElement "backdrop"
 
 
 bgGray0 : Css.Style
@@ -2454,6 +2508,11 @@ overflowHidden =
 outlineNone : Css.Style
 outlineNone =
     Css.outline Css.none
+
+
+textLeft : Css.Style
+textLeft =
+    Css.textAlign Css.left_
 
 
 displayNone : Css.Style

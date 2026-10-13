@@ -24,9 +24,14 @@ async function exportSprite({ sourcePath, outputPath, name }) {
 
 async function main() {
   await exportSprite({
-    sourcePath: "artwork/buildings/illustrated/supply-depot-front.png",
+    sourcePath: "artwork/buildings/illustrated/supply-depot-front-v3.png",
     outputPath: "public/assets/supply-depot-illustrated-v1.png",
     name: "supply depot",
+  });
+  await exportSprite({
+    sourcePath: "artwork/buildings/illustrated/fuel-depot-side-v4.png",
+    outputPath: "public/assets/fuel-depot-illustrated-v4.png",
+    name: "fuel depot",
   });
   await exportSprite({
     sourcePath: "artwork/supplies/illustrated/supply-crate-stack-side-v4.png",

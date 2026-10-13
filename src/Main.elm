@@ -47,8 +47,11 @@ import View.Button as Button
 import View.Card as Card
 import View.CombatEffects as CombatEffects
 import View.CombatTheater as CombatTheater
+import View.DepotStock as DepotStock
 import View.Dialog as Dialog exposing (Dialog)
 import View.Dropdown as Dropdown
+import View.TurnControls as TurnControls
+import View.TurnIntroduction as TurnIntroduction
 import View.UnitCargo as UnitCargo
 import View.UnitDeath as UnitDeath
 import View.UnitFacing as UnitFacing
@@ -430,7 +433,13 @@ update msg page =
                     if id == currentId then
                         case result of
                             Ok flags ->
-                                ( Game id (GamePage.init shared flags), E.none )
+                                let
+                                    ( model, eff ) =
+                                        GamePage.init shared flags
+                                in
+                                ( Game id model
+                                , E.map (GameMsg id) eff
+                                )
 
                             Err error ->
                                 ( GameLoadFailed id (GameLoadFailed.init shared id error), E.none )
@@ -577,6 +586,9 @@ shell page =
             , UnitDeath.styles
             , CombatTheater.styles
             , CombatEffects.styles
+            , DepotStock.styles
+            , TurnControls.styles
+            , TurnIntroduction.styles
             ]
                 ++ content
     in

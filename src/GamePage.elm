@@ -110,6 +110,7 @@ import View.Checkbox as Checkbox
 import View.CombatEffects as CombatEffects
 import View.CombatTheater as CombatTheater
 import View.DepotStatus as DepotStatus
+import View.DepotStock as DepotStock
 import View.Dialog as Dialog exposing (Dialog)
 import View.MovementRoute as MovementRoute
 import View.RotationChoices as RotationChoices
@@ -117,6 +118,7 @@ import View.SupplyCrate as SupplyCrate
 import View.TerrainInfo as TerrainInfo
 import View.TerrainTile as TerrainTile
 import View.TurnControls as TurnControls
+import View.TurnIntroduction as TurnIntroduction
 import View.UnitCargo as UnitCargo
 import View.UnitCommands as UnitCommands
 import View.UnitDeath as UnitDeath
@@ -136,6 +138,7 @@ import View.UnloadPassenger as UnloadPassenger
 type alias Model =
     { currentTurn : CurrentTurn.Model
     , shared : Shared.Model
+    , skipTurnIntroduction : Bool
     , skipUnitLossDialogs : Bool
     , automaticallyCloseCombatTheater : Bool
     , name : String
@@ -211,6 +214,7 @@ type Msg
     | ZoomOutKeyPressed
     | ResetViewClicked
     | AnimationTimerElapsed Time.Posix
+    | TurnIntroductionMsg TurnIntroduction.Msg
     | UnitDeathMsg UnitDeath.Msg
     | CombatTheaterMsg CombatTheater.Msg
     | DirectionKeyPressed Direction
@@ -243,6 +247,10 @@ type Msg
     | PressedEnterOnDepot Coordinate
     | PressedSpaceOnDepot Coordinate
     | MouseOverDepot Coordinate
+    | ClickedDepotStock Coordinate { detail : Int }
+    | PressedEnterOnDepotStock Coordinate
+    | PressedSpaceOnDepotStock Coordinate
+    | ClickedDepotLink Coordinate
     | ClickedTile Coordinate { detail : Int }
     | PressedEnterOnTile Coordinate
     | PressedSpaceOnTile Coordinate
@@ -262,7 +270,7 @@ type alias Flags =
     { snapshot : Snapshot }
 
 
-init : Shared.Model -> Flags -> Model
+init : Shared.Model -> Flags -> ( Model, Eff msg )
 init shared flags =
     let
         loadPreference : String -> ( Bool, Maybe Error )
@@ -285,29 +293,49 @@ init shared flags =
         ( automaticallyCloseCombatTheater, maybeError ) =
             loadPreference combatTheaterPreferenceKey
 
+        ( skipTurnIntroduction, introductionPreferenceError ) =
+            loadPreference turnIntroductionPreferenceKey
+
         ( skipLossDialogs, lossPreferenceError ) =
             loadPreference unitLossPreferenceKey
+
+        model : Model
+        model =
+            { currentTurn = CurrentTurn.init flags.snapshot.turn
+            , shared =
+                shared
+                    |> Shared.addError maybeError
+                    |> Shared.addError lossPreferenceError
+                    |> Shared.addError introductionPreferenceError
+            , skipTurnIntroduction = skipTurnIntroduction
+            , skipUnitLossDialogs = skipLossDialogs
+            , automaticallyCloseCombatTheater = automaticallyCloseCombatTheater
+            , name = flags.snapshot.name
+            , mapType = flags.snapshot.mapType
+            , players = flags.snapshot.players
+            , map = flags.snapshot.map
+            , units = flags.snapshot.units
+            , depots = flags.snapshot.depots
+            , supplyCrates = flags.snapshot.supplyCrates
+            , supplyRules = flags.snapshot.supplyRules
+            , visibleTiles = flags.snapshot.visibleTiles
+            , movementRules = flags.snapshot.movementRules
+            , navigation = BattlefieldNavigation.init
+            , frame = AnimationFrame.first
+            }
+
+        eff : Eff msg
+        eff =
+            if showTurnIntroduction model then
+                E.toJs
+                    (ToJs.OpenDialog
+                        { htmlId = TurnIntroduction.dialogHtmlId }
+                    )
+
+            else
+                E.none
     in
-    { currentTurn = CurrentTurn.init flags.snapshot.turn
-    , shared =
-        shared
-            |> Shared.addError maybeError
-            |> Shared.addError lossPreferenceError
-    , skipUnitLossDialogs = skipLossDialogs
-    , automaticallyCloseCombatTheater = automaticallyCloseCombatTheater
-    , name = flags.snapshot.name
-    , mapType = flags.snapshot.mapType
-    , players = flags.snapshot.players
-    , map = flags.snapshot.map
-    , units = flags.snapshot.units
-    , depots = flags.snapshot.depots
-    , supplyCrates = flags.snapshot.supplyCrates
-    , supplyRules = flags.snapshot.supplyRules
-    , visibleTiles = flags.snapshot.visibleTiles
-    , movementRules = flags.snapshot.movementRules
-    , navigation = BattlefieldNavigation.init
-    , frame = AnimationFrame.first
-    }
+    ( model, eff )
 
 
 load : LobbyId -> Graphql.Http.Request Flags
@@ -326,13 +354,45 @@ load id =
 
 setShared : Shared.Model -> Model -> Model
 setShared shared model =
-    { model | shared = shared }
+    case
+        LocalStorage.get
+            shared.localStorage
+            turnIntroductionPreferenceKey
+            Decode.bool
+    of
+        Ok saved ->
+            { model | shared = shared, skipTurnIntroduction = Maybe.withDefault False saved }
+
+        Err error ->
+            { model
+                | shared =
+                    Shared.addError
+                        (Just
+                            (Error.LocalStorageDecodeFailed
+                                { key = turnIntroductionPreferenceKey
+                                , error = error
+                                }
+                            )
+                        )
+                        shared
+            }
 
 
 
 ----------------------------------------------------------------
 -- HELPERS --
 ----------------------------------------------------------------
+
+
+turnIntroductionPreferenceKey : String
+turnIntroductionPreferenceKey =
+    "skipTurnIntroduction"
+
+
+showTurnIntroduction : Model -> Bool
+showTurnIntroduction model =
+    not model.skipTurnIntroduction
+        && CurrentTurn.introductionPending model.currentTurn
 
 
 rememberCombatTheaterPreference : Bool -> Eff msg
@@ -392,7 +452,9 @@ depotLoadingRoom model unit =
     let
         passengers : Int
         passengers =
-            List.filter (\passenger -> Unit.carrierId passenger == Just unit.id) model.units
+            List.filter
+                (\passenger -> Unit.carrierId passenger == Just unit.id)
+                model.units
                 |> List.length
 
         crates : Int
@@ -423,7 +485,11 @@ depotLoadingRoom model unit =
             destination
                 |> Maybe.andThen
                     (\position ->
-                        OrderPlanning.loadingTarget (planningContext model) unit position (plannedOrders model)
+                        OrderPlanning.loadingTarget
+                            (planningContext model)
+                            unit
+                            position
+                            (plannedOrders model)
                     )
                 |> Maybe.map (\_ -> 1)
                 |> Maybe.withDefault 0
@@ -444,12 +510,15 @@ depotLoadingRoom model unit =
                     |> Maybe.andThen .stock
             of
                 Just stock ->
-                    (stock.current + model.supplyRules.crateCapacity - 1) // model.supplyRules.crateCapacity
+                    (stock.current + model.supplyRules.crateCapacity - 1)
+                        // model.supplyRules.crateCapacity
 
                 Nothing ->
                     2
     in
-    min stockLimit (max 0 (unit.cargoCapacity - passengers - crates - incoming - pickup))
+    min
+        stockLimit
+        (max 0 (unit.cargoCapacity - passengers - crates - incoming - pickup))
 
 
 planningContext : Model -> OrderPlanning.Context
@@ -465,7 +534,10 @@ planningContext model =
 
 mapPlanning : (OrderPlanning.Model -> OrderPlanning.Model) -> Model -> Model
 mapPlanning transition model =
-    { model | currentTurn = CurrentTurn.mapPlanning transition model.currentTurn }
+    { model
+        | currentTurn =
+            CurrentTurn.mapPlanning transition model.currentTurn
+    }
 
 
 unloadChoice : Phase -> Maybe UnloadChoice
@@ -486,8 +558,11 @@ isChoosingUnload model =
 
 dismissDialog : Model -> Model
 dismissDialog model =
-    model
-        |> mapPlanning (OrderPlanning.dismissDialog model.depots)
+    if showTurnIntroduction model then
+        { model | currentTurn = CurrentTurn.acknowledgeIntroduction model.currentTurn }
+
+    else
+        model |> mapPlanning (OrderPlanning.dismissDialog model.depots)
 
 
 partialOrdersDialogHtmlId : String
@@ -522,8 +597,8 @@ unitLoss model =
 
     else
         playback model
-            |> Maybe.map TurnPlayback.losses
-            |> Maybe.andThen List.head
+            |> Maybe.andThen TurnPlayback.lossEvent
+            |> Maybe.map .loss
 
 
 ownerName : Model -> Unit -> Maybe String
@@ -563,6 +638,15 @@ logNewLossError model =
 
 activeDialogHtmlId : Model -> Maybe String
 activeDialogHtmlId model =
+    if showTurnIntroduction model then
+        Just TurnIntroduction.dialogHtmlId
+
+    else
+        playbackDialogHtmlId model
+
+
+playbackDialogHtmlId : Model -> Maybe String
+playbackDialogHtmlId model =
     case unitLoss model of
         Just loss ->
             Just (UnitDeath.dialogHtmlId loss)
@@ -677,7 +761,9 @@ plannedUnloadRoutes model =
                             , direction = direction
                             }
                     in
-                    Direction.between (PlannedOrder.destination plan) unload.destination
+                    Direction.between
+                        (PlannedOrder.destination plan)
+                        unload.destination
                         |> Maybe.map withDirection
             in
             List.filterMap route (PlannedOrder.unloads plan)
@@ -694,7 +780,8 @@ focusedCommand model =
 commandMenuUnit : Model -> Maybe Unit
 commandMenuUnit model =
     TurnLifecycle.planning model.currentTurn.phase
-        |> Maybe.andThen (OrderPlanning.commandMenuUnit (planningContext model))
+        |> Maybe.andThen
+            (OrderPlanning.commandMenuUnit (planningContext model))
 
 
 submitRequest : LobbyId -> Model -> Graphql.Http.Request Snapshot
@@ -702,7 +789,9 @@ submitRequest lobbyId model =
     let
         orders : List PlannedOrder
         orders =
-            OrderPlanning.submissionOrders (planningContext model) (plannedOrders model)
+            OrderPlanning.submissionOrders
+                (planningContext model)
+                (plannedOrders model)
     in
     Api.Mutation.submitTurn
         { id = LobbyId.toString lobbyId
@@ -774,7 +863,10 @@ plannedAction model unit move =
 
 receivingLoad : Unit -> Model -> Bool
 receivingLoad unit model =
-    OrderPlanning.receivingLoad (planningContext model) unit (plannedOrders model)
+    OrderPlanning.receivingLoad
+        (planningContext model)
+        unit
+        (plannedOrders model)
 
 
 currentSelection : Model -> Maybe Selection
@@ -846,7 +938,8 @@ previewRotation direction model =
         model
 
     else
-        model |> mapPlanning (OrderPlanning.previewRotation direction)
+        model
+            |> mapPlanning (OrderPlanning.previewRotation direction)
 
 
 loadSnapshot : LobbyId -> Graphql.Http.Request Snapshot
@@ -895,17 +988,22 @@ snapshotSelection =
 
 destinationFeedback : Model -> DestinationFeedback
 destinationFeedback model =
-    TurnLifecycle.planning model.currentTurn.phase |> Maybe.map OrderPlanning.destinationFeedback |> Maybe.withDefault NoDestinationFeedback
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.map OrderPlanning.destinationFeedback
+        |> Maybe.withDefault NoDestinationFeedback
 
 
 pathPreview : Model -> Maybe Movement.Option
 pathPreview model =
-    TurnLifecycle.planning model.currentTurn.phase |> Maybe.andThen OrderPlanning.pathPreview
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.andThen OrderPlanning.pathPreview
 
 
 moveOptions : Model -> List Movement.Option
 moveOptions model =
-    TurnLifecycle.planning model.currentTurn.phase |> Maybe.map OrderPlanning.moveOptions |> Maybe.withDefault []
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.map OrderPlanning.moveOptions
+        |> Maybe.withDefault []
 
 
 clearSelection : Model -> Model
@@ -937,7 +1035,13 @@ selectTile position model =
         setSelection (Just (Inspecting (TileInspection position))) model
 
     else
-        model |> mapPlanning (OrderPlanning.selectTile (planningContext model) position)
+        model
+            |> mapPlanning (OrderPlanning.selectTile (planningContext model) position)
+
+
+inspectDepot : Coordinate -> Model -> Model
+inspectDepot position model =
+    setSelection (Just (Inspecting (TileInspection position))) model
 
 
 previewTile : Coordinate -> Model -> Model
@@ -946,7 +1050,8 @@ previewTile position model =
         model
 
     else
-        model |> mapPlanning (OrderPlanning.previewTile (planningContext model) position)
+        model
+            |> mapPlanning (OrderPlanning.previewTile (planningContext model) position)
 
 
 extendPath : Direction -> Model -> Model
@@ -955,12 +1060,14 @@ extendPath direction model =
         model
 
     else
-        model |> mapPlanning (OrderPlanning.extendPath (planningContext model) direction)
+        model
+            |> mapPlanning (OrderPlanning.extendPath (planningContext model) direction)
 
 
 confirmPath : Model -> Model
 confirmPath model =
-    model |> mapPlanning (OrderPlanning.confirmPath (planningContext model))
+    model
+        |> mapPlanning (OrderPlanning.confirmPath (planningContext model))
 
 
 focusAdjacentCommand :
@@ -1116,6 +1223,12 @@ navigationKeyPressed key =
 
     else
         Decode.fail "not a navigation key"
+
+
+suppressesBattlefieldClick : { detail : Int } -> Model -> Bool
+suppressesBattlefieldClick click model =
+    (click.detail /= 0)
+        && BattlefieldNavigation.suppressesClick model.navigation
 
 
 preventDefault : Msg -> ( Msg, Bool )
@@ -1282,7 +1395,12 @@ update lobbyId msg model =
 
         UnloadUnitToggled id checked ->
             model
-                |> mapPlanning (OrderPlanning.toggleAvailableUnloadCargo (planningContext model) (OrderPlanning.Passenger id) checked)
+                |> mapPlanning
+                    (OrderPlanning.toggleAvailableUnloadCargo
+                        (planningContext model)
+                        (OrderPlanning.Passenger id)
+                        checked
+                    )
                 |> E.withOut
 
         UnloadChoicesConfirmed ->
@@ -1316,7 +1434,11 @@ update lobbyId msg model =
         UnloadCrateToggled index checked ->
             model
                 |> mapPlanning
-                    (OrderPlanning.toggleAvailableUnloadCargo (planningContext model) (OrderPlanning.Crate index) checked)
+                    (OrderPlanning.toggleAvailableUnloadCargo
+                        (planningContext model)
+                        (OrderPlanning.Crate index)
+                        checked
+                    )
                 |> E.withOut
 
         CargoUnitClicked id ->
@@ -1327,7 +1449,8 @@ update lobbyId msg model =
 
         NextUnorderedUnitKeyPressed ->
             model
-                |> mapPlanning (OrderPlanning.selectNextUnorderedUnit (planningContext model))
+                |> mapPlanning
+                    (OrderPlanning.selectNextUnorderedUnit (planningContext model))
                 |> E.withOut
 
         RotationChoicesMsg rotationMsg ->
@@ -1352,7 +1475,7 @@ update lobbyId msg model =
             let
                 next : Model
                 next =
-                    if click.detail /= 0 && BattlefieldNavigation.suppressesClick model.navigation then
+                    if suppressesBattlefieldClick click model then
                         model
 
                     else
@@ -1368,7 +1491,8 @@ update lobbyId msg model =
                     let
                         confirmsSelectedUnitPreview : Bool
                         confirmsSelectedUnitPreview =
-                            pathPreview model /= Nothing && Maybe.map .id (selectedUnit model) == Just id
+                            (pathPreview model /= Nothing)
+                                && (Maybe.map .id (selectedUnit model) == Just id)
                     in
                     if confirmsSelectedUnitPreview then
                         confirmPath model
@@ -1405,7 +1529,7 @@ update lobbyId msg model =
             let
                 next : Model
                 next =
-                    if click.detail /= 0 && BattlefieldNavigation.suppressesClick model.navigation then
+                    if suppressesBattlefieldClick click model then
                         model
 
                     else
@@ -1424,6 +1548,27 @@ update lobbyId msg model =
                 |> selectTile position
                 |> E.withOut
 
+        ClickedDepotStock position click ->
+            let
+                next : Model
+                next =
+                    if suppressesBattlefieldClick click model then
+                        model
+
+                    else
+                        inspectDepot position model
+            in
+            next |> E.withOut
+
+        PressedEnterOnDepotStock position ->
+            inspectDepot position model |> E.withOut
+
+        PressedSpaceOnDepotStock position ->
+            inspectDepot position model |> E.withOut
+
+        ClickedDepotLink position ->
+            inspectDepot position model |> E.withOut
+
         MouseOverDepot position ->
             let
                 next : Model
@@ -1441,7 +1586,7 @@ update lobbyId msg model =
             let
                 next : Model
                 next =
-                    if click.detail /= 0 && BattlefieldNavigation.suppressesClick model.navigation then
+                    if suppressesBattlefieldClick click model then
                         model
 
                     else
@@ -1567,7 +1712,12 @@ update lobbyId msg model =
             case result of
                 Ok snapshot ->
                     model
-                        |> applyTurnSnapshot snapshot (CurrentTurn.pollSucceeded (turnObservation snapshot) model.currentTurn)
+                        |> applyTurnSnapshot
+                            snapshot
+                            (CurrentTurn.pollSucceeded
+                                (turnObservation snapshot)
+                                model.currentTurn
+                            )
                         |> E.withOut
 
                 Err error ->
@@ -1582,6 +1732,19 @@ update lobbyId msg model =
                 { model | frame = AnimationFrame.next model.frame }
                     |> E.withOut
 
+        TurnIntroductionMsg introMsg ->
+            case introMsg of
+                TurnIntroduction.BeginClicked ->
+                    { model | currentTurn = CurrentTurn.acknowledgeIntroduction model.currentTurn } |> E.withOut
+
+                TurnIntroduction.SkipDialogsChanged skip ->
+                    ( { model
+                        | skipTurnIntroduction = skip
+                        , currentTurn = CurrentTurn.acknowledgeIntroduction model.currentTurn
+                      }
+                    , E.toJs (ToJs.SetLocalStorage { key = turnIntroductionPreferenceKey, value = Encode.bool skip })
+                    )
+
         UnitDeathMsg lossMsg ->
             case lossMsg of
                 UnitDeath.ContinueClicked unitId ->
@@ -1590,12 +1753,25 @@ update lobbyId msg model =
                         currentTurn =
                             model.currentTurn
                     in
-                    { model | currentTurn = { currentTurn | phase = TurnLifecycle.acknowledgeLoss unitId currentTurn.phase } }
+                    { model
+                        | currentTurn =
+                            { currentTurn
+                                | phase =
+                                    TurnLifecycle.acknowledgeLoss
+                                        unitId
+                                        currentTurn.phase
+                            }
+                    }
                         |> E.withOut
 
                 UnitDeath.SkipDialogsChanged skip ->
                     ( { model | skipUnitLossDialogs = skip }
-                    , E.toJs (ToJs.SetLocalStorage { key = unitLossPreferenceKey, value = Encode.bool skip })
+                    , E.toJs
+                        (ToJs.SetLocalStorage
+                            { key = unitLossPreferenceKey
+                            , value = Encode.bool skip
+                            }
+                        )
                     )
 
         CombatTheaterMsg panelMsg ->
@@ -1625,8 +1801,8 @@ handleTurnControlsMsg lobbyId msg model =
 
 canSubmitWithKeyboard : Model -> Bool
 canSubmitWithKeyboard model =
-    case model.currentTurn.phase of
-        TurnLifecycle.Planning (OrderPlanning.OrdinaryPlanning { selection }) ->
+    case ( hasDialog model, model.currentTurn.phase ) of
+        ( False, TurnLifecycle.Planning (OrderPlanning.OrdinaryPlanning { selection }) ) ->
             let
                 idleSelection : Bool
                 idleSelection =
@@ -1969,6 +2145,7 @@ selectionView model =
                                     ]
                                 ]
                                 [ UnitStatus.toHtml unitPlayerName unit
+                                , depotLinkView model unit
                                 , cargoView model unit
                                 , supplyControls model unit
                                 , movementView model
@@ -2030,6 +2207,23 @@ selectionView model =
             ]
         ]
         content
+
+
+depotLinkView : Model -> Unit -> Html Msg
+depotLinkView model unit =
+    let
+        depotAtUnit : Coordinate -> Maybe Depot
+        depotAtUnit position =
+            ListUtil.find (\depot -> depot.position == position) model.depots
+
+        depotLink : Depot -> Html Msg
+        depotLink depot =
+            DepotStatus.linkToHtml { clicked = ClickedDepotLink depot.position } depot
+    in
+    Unit.boardPosition unit
+        |> Maybe.andThen depotAtUnit
+        |> Maybe.map depotLink
+        |> Maybe.withDefault (H.text "")
 
 
 panelFooter : Model -> Html Msg
@@ -2904,14 +3098,26 @@ depotLoadingDialog model id =
         ]
 
 
-{-| The active planning alternative determines the dialog; no dialog state is stored.
+{-| Dialogs derive from turn introduction, playback loss, or the active planning workflow.
 -}
 dialog : Model -> Maybe (Dialog Msg)
 dialog model =
     MaybeUtil.lazyFirst
-        [ lossDialog model
+        [ introductionDialog model
+        , lossDialog model
         , planningDialog model
         ]
+
+
+introductionDialog : Model -> () -> Maybe (Dialog Msg)
+introductionDialog model _ =
+    if showTurnIntroduction model then
+        TurnIntroduction.dialog { turnNumber = model.currentTurn.number, skipDialogs = model.skipTurnIntroduction, previousTurn = model.currentTurn.resolution }
+            |> Dialog.map TurnIntroductionMsg
+            |> Just
+
+    else
+        Nothing
 
 
 lossDialog : Model -> () -> Maybe (Dialog Msg)
@@ -2923,6 +3129,11 @@ lossDialog model _ =
                 { skipDialogs = model.skipUnitLossDialogs
                 , isOwn = isOwnUnit model loss.unit
                 , details = UnitLoss.resolve (ownerName model) loss
+                , passengers =
+                    playback model
+                        |> Maybe.andThen TurnPlayback.lossEvent
+                        |> Maybe.map .passengers
+                        |> Maybe.withDefault []
                 }
                 loss
                 |> Dialog.map UnitDeathMsg
@@ -3412,6 +3623,36 @@ boardSvg model =
                     ]
                 ]
 
+        depotStockView : Depot -> Maybe (Svg Msg)
+        depotStockView depot =
+            let
+                stockView : Supply.Stock -> Svg Msg
+                stockView stock =
+                    at depot.position
+                        [ DepotStock.toSvg stock |> StyledSvg.toUnstyled
+                        , Svg.rect
+                            [ SA.x "0.4"
+                            , SA.y "12.4"
+                            , SA.width "15.2"
+                            , SA.height "3.4"
+                            , SA.fill "transparent"
+                            , SA.class "fightlines-depot-stock-target"
+                            , HA.style "--depot-focus-color" S.yellow5Str
+                            , HA.attribute "tabindex" "0"
+                            , Aria.svgRole Aria.Button
+                            , Aria.svgLabel (DepotStock.label stock)
+                            , onClickWithDetail (ClickedDepotStock depot.position)
+                            , onBoardActivationKeyDown
+                                { pressedEnter = PressedEnterOnDepotStock depot.position
+                                , pressedSpace = PressedSpaceOnDepotStock depot.position
+                                }
+                            ]
+                            [ Svg.title [] [ Svg.text (DepotStock.label stock) ]
+                            ]
+                        ]
+            in
+            Maybe.map stockView depot.stock
+
         previewedUnit : Unit -> Unit
         previewedUnit unit =
             case rotationPreview of
@@ -3855,6 +4096,7 @@ boardSvg model =
             , selection
             , rotationOverlay
             , facingOverlay
+            , List.filterMap depotStockView model.depots
             , spotlightOverlay
             , lossOverlay
             ]
@@ -3982,7 +4224,7 @@ keyCommands model =
             else
                 KeyCmd.period NextUnorderedUnitKeyPressed
     in
-    if combatExchange model /= Nothing then
+    if hasDialog model || combatExchange model /= Nothing then
         KeyCmd.none
 
     else

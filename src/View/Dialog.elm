@@ -1,5 +1,6 @@
 module View.Dialog exposing
     ( Dialog
+    , announcement
     , atBottom
     , make
     , map
@@ -35,6 +36,7 @@ type Dialog msg
 type Placement
     = Centered
     | Bottom
+    | Announcement
 
 
 
@@ -52,6 +54,11 @@ make htmlId title onCancel body =
         , body = body
         , placement = Centered
         }
+
+
+announcement : Dialog msg -> Dialog msg
+announcement (Dialog model) =
+    Dialog { model | placement = Announcement }
 
 
 atBottom : Dialog msg -> Dialog msg
@@ -81,6 +88,15 @@ toHtml (Dialog model) =
             case model.placement of
                 Centered ->
                     []
+
+                Announcement ->
+                    [ S.w152
+                    , S.maxHViewportInset8
+                    , S.overflowAuto
+                    , S.backdrop
+                        [ S.bgBlack70
+                        ]
+                    ]
 
                 Bottom ->
                     [ Css.position Css.fixed

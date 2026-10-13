@@ -40,7 +40,7 @@ checks : List String
 checks =
     case ( UnitId.parse "1", UnitId.parse "2" ) of
         ( Ok first, Ok second ) ->
-            playbackChecks first second ++ truckPlaybackChecks first ++ transportPlaybackChecks first second ++ spriteFacingChecks first ++ deathPlaybackChecks first ++ deathFocusChecks first second ++ combatPlaybackChecks first second ++ combatDeathChecks first second ++ combatTheaterChecks ++ lossDetailsChecks first second
+            playbackChecks first second ++ truckPlaybackChecks first ++ transportPlaybackChecks first second ++ spriteFacingChecks first ++ deathPlaybackChecks first ++ deathFocusChecks first second ++ combatPlaybackChecks first second ++ combatDeathChecks first second ++ combatTheaterChecks ++ lossDetailsChecks first second ++ carrierLossEventChecks first second
 
         _ ->
             [ "could not construct fixture IDs" ]
@@ -133,6 +133,7 @@ playbackChecks first second =
             , resolution =
                 Just
                     { number = 1
+                    , report = Nothing
                     , events =
                         [ { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialSpriteFacing = SpriteFacing.Right, initialDirection = Just Direction.South, unitId = first, path = [ { x = 0, y = 0 }, { x = 1, y = 0 } ] }
                         , { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialSpriteFacing = SpriteFacing.Right, initialDirection = Just Direction.North, unitId = second, path = [ { x = 2, y = 1 }, { x = 1, y = 1 } ] }
@@ -163,7 +164,7 @@ playbackChecks first second =
 
         rotationSnapshot : Turn.Snapshot
         rotationSnapshot =
-            { snapshot | resolution = Just { number = 1, events = [ rotation ] } }
+            { snapshot | resolution = Just { number = 1, report = Nothing, events = [ rotation ] } }
 
         rotationUnits : List Unit
         rotationUnits =
@@ -366,7 +367,7 @@ truckPlaybackChecks unitId =
             { number = 2
             , submitted = False
             , opponentSubmitted = False
-            , resolution = Just { number = 1, events = [ { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialSpriteFacing = SpriteFacing.Right, initialDirection = Nothing, unitId = unitId, path = [ { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 1, y = 1 } ] } ] }
+            , resolution = Just { number = 1, report = Nothing, events = [ { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialSpriteFacing = SpriteFacing.Right, initialDirection = Nothing, unitId = unitId, path = [ { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 1, y = 1 } ] } ] }
             }
 
         rewound : List Unit
@@ -460,6 +461,7 @@ transportPlaybackChecks passengerId truckId =
             , resolution =
                 Just
                     { number = 1
+                    , report = Nothing
                     , events =
                         [ { event | unitId = passengerId, kind = EventKind.Hold, path = [ { x = 1, y = 0 } ], initialSpriteFacing = SpriteFacing.Right, initialDirection = passenger.direction }
                         , event
@@ -485,7 +487,7 @@ transportPlaybackChecks passengerId truckId =
 
         unloading : Turn.Snapshot
         unloading =
-            { loading | resolution = Just { number = 1, events = [ { event | kind = EventKind.Unload, unitId = passengerId, path = [ { x = 1, y = 0 }, { x = 2, y = 0 } ], initialCarrier = Just truckId, initialSpriteFacing = SpriteFacing.Right, initialDirection = passenger.direction } ] } }
+            { loading | resolution = Just { number = 1, report = Nothing, events = [ { event | kind = EventKind.Unload, unitId = passengerId, path = [ { x = 1, y = 0 }, { x = 2, y = 0 } ], initialCarrier = Just truckId, initialSpriteFacing = SpriteFacing.Right, initialDirection = passenger.direction } ] } }
 
         unloadUnits : List Unit
         unloadUnits =
@@ -632,6 +634,59 @@ spriteFacingChecks id =
         ( _, southFrame ) =
             TurnPlayback.tick 450 playback
 
+        truck : Unit
+        truck =
+            { tank | kind = Kind.Truck, direction = Nothing }
+
+        westTruck : Unit
+        westTruck =
+            { truck | spriteFacing = SpriteFacing.Left, location = Location.OnMap { x = 1, y = 2 } }
+
+        northTruck : Unit
+        northTruck =
+            Unit.setOnMap { x = 1, y = 1 } westTruck
+
+        southTruck : Unit
+        southTruck =
+            Unit.setOnMap { x = 1, y = 2 } northTruck
+
+        eastTruck : Unit
+        eastTruck =
+            { truck | location = Location.OnMap { x = 2, y = 2 } }
+
+        truckPlayback : TurnPlayback.Playback
+        truckPlayback =
+            { playback | current = frame truck, remaining = List.map frame [ westTruck, northTruck, southTruck, eastTruck ] }
+
+        truckFrames : List TurnPlayback.Frame
+        truckFrames =
+            List.map (\elapsed -> TurnPlayback.tick elapsed truckPlayback |> Tuple.second) [ 90, 270, 450, 630 ]
+
+        truckSnapshot : Turn.Snapshot
+        truckSnapshot =
+            { number = 2
+            , submitted = False
+            , opponentSubmitted = False
+            , resolution =
+                Just
+                    { number = 1
+                    , report = Nothing
+                    , events =
+                        [ { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialSpriteFacing = SpriteFacing.Right, initialDirection = Nothing, unitId = id, path = [ { x = 2, y = 2 }, { x = 1, y = 2 }, { x = 1, y = 1 } ] } ]
+                    }
+            }
+
+        truckEventPlayback : Turn.Playback
+        truckEventPlayback =
+            Turn.start truckSnapshot |> Maybe.withDefault { events = [], elapsed = 0 }
+
+        rewoundTruck : List Unit
+        rewoundTruck =
+            Turn.rewind truckSnapshot [ northTruck ]
+
+        ( _, finishedTrucks ) =
+            Turn.tick 360 truckEventPlayback rewoundTruck
+
         expect : String -> Bool -> List String
         expect name passed =
             if passed then
@@ -644,6 +699,10 @@ spriteFacingChecks id =
         ++ expect "northward playback retains left sprite facing" (List.map .spriteFacing northFrame.units == [ SpriteFacing.Left ] && List.map .direction northFrame.units == [ Just Direction.North ])
         ++ expect "southward playback retains left sprite facing" (List.map .spriteFacing southFrame.units == [ SpriteFacing.Left ] && List.map .direction southFrame.units == [ Just Direction.South ])
         ++ expect "east rotation then north keeps the right profile" ((west |> Unit.faceDirection (Just Direction.East) |> Unit.faceDirection (Just Direction.North)).spriteFacing == SpriteFacing.Right)
+        ++ expect "truck playback follows west and east while retaining facing vertically" (List.concatMap (.units >> List.map .spriteFacing) truckFrames == [ SpriteFacing.Left, SpriteFacing.Left, SpriteFacing.Left, SpriteFacing.Right ])
+        ++ expect "truck playback keeps combat direction absent" (List.concatMap (.units >> List.map .direction) truckFrames == [ Nothing, Nothing, Nothing, Nothing ])
+        ++ expect "truck rewind restores its starting profile" (rewoundTruck == [ truck ])
+        ++ expect "truck event playback retains west facing after northward travel" (finishedTrucks == [ northTruck ])
 
 
 combatPlaybackChecks : UnitId -> UnitId -> List String
@@ -738,6 +797,87 @@ combatPlaybackChecks first second =
 
             else
                 [ label ]
+
+        returnFireChecks : List String
+        returnFireChecks =
+            let
+                opening : TurnPlayback.Frame
+                opening =
+                    { before | durationMs = 450, shots = [ shot ] }
+
+                waiting : TurnPlayback.Frame
+                waiting =
+                    { before | durationMs = 600 }
+
+                returnShot : Shot
+                returnShot =
+                    { shot
+                        | kind = CombatKind.AttackMove
+                        , origin = shot.destination
+                        , destination = shot.origin
+                        , attacker = target
+                        , target = attacker
+                        , damage = 1
+                        , attackerHealth = { before = { current = 8, maximum = 16 }, after = { current = 8, maximum = 16 } }
+                        , targetHealth = { before = { current = 16, maximum = 16 }, after = { current = 15, maximum = 16 } }
+                    }
+
+                returning : TurnPlayback.Frame
+                returning =
+                    { before | durationMs = 450, shots = [ returnShot ] }
+
+                focused : List TurnPlayback.Frame -> Maybe TurnPlayback.Playback
+                focused frames =
+                    TurnPlayback.start frames |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+
+                combined : Maybe TurnPlayback.Playback
+                combined =
+                    focused [ before, opening, waiting, { waiting | durationMs = 180 }, returning, waiting ]
+
+                exchange : Maybe TurnPlayback.Exchange
+                exchange =
+                    Maybe.andThen TurnPlayback.combat combined
+
+                resumed : Maybe TurnPlayback.Playback
+                resumed =
+                    combined
+                        |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+                        |> Maybe.andThen TurnPlayback.continueCombat
+                        |> Maybe.map .animation
+
+                separate : TurnPlayback.Frame -> Bool
+                separate boundary =
+                    focused [ before, opening, boundary, returning, waiting ]
+                        |> Maybe.andThen TurnPlayback.combat
+                        |> Maybe.map (.attackerHealth >> .after >> .current)
+                        |> (==) (Just 16)
+            in
+            expect "stationary return fire shares one card with both health transitions"
+                (Maybe.map (.attackerHealth >> .after >> .current) exchange
+                    == Just 15
+                    && Maybe.map (.targetHealth >> .before >> .current) exchange
+                    == Just 16
+                    && Maybe.map (.targetHealth >> .after >> .current) exchange
+                    == Just 8
+                    && Maybe.map .kind exchange
+                    == Just CombatKind.AttackMove
+                )
+                ++ expect "continuing a combined exchange does not open another theater"
+                    (Maybe.andThen TurnPlayback.combat resumed
+                        == Nothing
+                        && (resumed |> Maybe.andThen (TurnPlayback.tick 2000 >> Tuple.first))
+                        == Nothing
+                    )
+                ++ expect "both sides of a combined exchange begin their impacts together"
+                    (Maybe.map (\pair -> List.head (CombatFormation.impactStarts pair.attackerHealth) == Just 1200 && List.head (CombatFormation.impactStarts pair.targetHealth) == Just 1200) exchange == Just True)
+                ++ expect "movement between shots keeps separate encounters"
+                    (separate { waiting | units = [ attacker, Unit.setOnMap { x = 4, y = 2 } target ] })
+                ++ expect "sight changes between shots keep separate encounters"
+                    (separate { waiting | visibleTiles = [] })
+                ++ expect "intervening casualties keep separate encounters"
+                    (separate { waiting | units = [ { attacker | destroyed = True }, target ] })
+                ++ expect "another volley between shots keeps separate encounters"
+                    (separate opening)
     in
     case TurnPlayback.start [ before, volley, cleanup ] of
         Nothing ->
@@ -848,6 +988,7 @@ combatPlaybackChecks first second =
                                 && CombatTheater.attackerOnLeft (panelAt { x = 2, y = 2 } { x = 2, y = 3 })
                                 && not (CombatTheater.attackerOnLeft (panelAt { x = 2, y = 3 } { x = 2, y = 2 }))
                             )
+                        , returnFireChecks
                         , expect "combat holds the pre-hit board and hides shots and movement"
                             (frozen == before && List.isEmpty (TurnPlayback.visibleShots focus) && List.isEmpty (TurnPlayback.movingPositions paused))
                         , expect "combat spotlights participants before opening the panels"
@@ -975,7 +1116,14 @@ combatDeathChecks first second =
 
                 mutual : Maybe { animation : TurnPlayback.Playback, frame : TurnPlayback.Frame }
                 mutual =
-                    TurnPlayback.start [ before, { volley | shots = [ { reciprocal | origin = reciprocal.destination, destination = reciprocal.origin, attacker = attacker, target = target, attackerHealth = reciprocal.targetHealth, targetHealth = reciprocal.attackerHealth }, reciprocal ] }, cleanup ]
+                    TurnPlayback.start [ before, { volley | units = [ { attacker | destroyed = True }, { target | destroyed = True }, other ], shots = [ { reciprocal | origin = reciprocal.destination, destination = reciprocal.origin, attacker = attacker, target = target, attackerHealth = reciprocal.targetHealth, targetHealth = reciprocal.attackerHealth }, reciprocal ] }, cleanup ]
+                        |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+                        |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+                        |> Maybe.andThen TurnPlayback.continueCombat
+
+                concealedDeath : Maybe { animation : TurnPlayback.Playback, frame : TurnPlayback.Frame }
+                concealedDeath =
+                    TurnPlayback.start [ before, { volley | units = [ attacker, other ], shots = [ lethalShot target ] }, cleanup ]
                         |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
                         |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
                         |> Maybe.andThen TurnPlayback.continueCombat
@@ -989,7 +1137,11 @@ combatDeathChecks first second =
                         [ label ]
             in
             List.concat
-                [ expect "loss dialog identifies the lethal shot and its attacker"
+                [ expect "a previously visible enemy concealed at death never enters the loss queue"
+                    (concealedDeath |> Maybe.map (.animation >> TurnPlayback.losses >> List.isEmpty) |> (==) (Just True))
+                , expect "concealed combat casualties never gain a battlefield skull from their portrait"
+                    (concealedDeath |> Maybe.map (.frame >> dyingIds >> List.isEmpty) |> (==) (Just True))
+                , expect "loss dialog identifies the lethal shot and its attacker"
                     (firstDeath |> Maybe.map (.animation >> TurnPlayback.losses) |> Maybe.map (List.map .cause) |> (==) (Just [ TurnPlayback.Destroyed CombatKind.Ambush attacker ]))
                 , expect "loss dialogs distinguish attack move from ambush"
                     (firstDeath |> Maybe.map (.animation >> attackMoveCauses) |> (==) (Just [ TurnPlayback.Destroyed CombatKind.AttackMove attacker ]))
@@ -1348,3 +1500,73 @@ lossDetailsChecks first second =
                     }
             )
         ]
+
+
+carrierLossEventChecks : UnitId -> UnitId -> List String
+carrierLossEventChecks first second =
+    case ( UnitId.parse "3", UnitId.parse "4" ) of
+        ( Ok third, Ok fourth ) ->
+            let
+                truck : Unit
+                truck =
+                    { id = first, playerNumber = PlayerNumber.Player2, spriteFacing = SpriteFacing.Left, direction = Nothing, kind = Kind.Truck, destroyed = True, combatRules = { range = 0, shape = AmbushShape.Line, damage = 0, readinessCost = 0, shotCost = 0 }, cargoCapacity = 2, location = Location.OnMap { x = 2, y = 2 }, resources = Nothing }
+
+                passenger : Unit
+                passenger =
+                    { truck | id = second, kind = Kind.Infantry, cargoCapacity = 0, location = Location.Aboard first }
+
+                otherPassenger : Unit
+                otherPassenger =
+                    { passenger | id = third }
+
+                independent : Unit
+                independent =
+                    { passenger | id = fourth, location = Location.OnMap { x = 3, y = 2 } }
+
+                frame : TurnPlayback.Frame
+                frame =
+                    { units = [ passenger, independent, truck, otherPassenger ], durationMs = 1400, shots = [], visibleTiles = [ { x = 2, y = 2 }, { x = 3, y = 2 } ], depots = [], supplyCrates = [] }
+
+                animation : TurnPlayback.Playback
+                animation =
+                    { current = frame, remaining = [ { frame | units = [] } ], elapsed = 0, presentation = TurnPlayback.Battlefield, acknowledgedLosses = [] }
+
+                shot : Shot
+                shot =
+                    { kind = CombatKind.AttackMove, origin = { x = 1, y = 2 }, destination = { x = 2, y = 2 }, attacker = { independent | destroyed = False, playerNumber = PlayerNumber.Player1 }, target = truck, damage = 16, attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }, targetHealth = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } } }
+
+                combatAnimation : TurnPlayback.Playback
+                combatAnimation =
+                    { animation | current = { frame | shots = [ shot ] } }
+
+                acknowledged : TurnPlayback.Playback
+                acknowledged =
+                    TurnPlayback.acknowledgeLoss first animation
+
+                expect : String -> Bool -> List String
+                expect label passed =
+                    if passed then
+                        []
+
+                    else
+                        [ label ]
+            in
+            List.concat
+                [ expect "a truck and two passengers form one event even when passengers precede the truck"
+                    (TurnPlayback.lossEvent animation == Just { loss = { unit = truck, cause = TurnPlayback.SuppliesExhausted }, passengers = [ passenger, otherPassenger ] })
+                , expect "the grouped event preserves the lethal attack and attacker"
+                    (TurnPlayback.lossEvent combatAnimation |> Maybe.map (.loss >> .cause) |> (==) (Just (TurnPlayback.Destroyed CombatKind.AttackMove shot.attacker)))
+                , expect "combat carrier acknowledgment covers both passengers"
+                    (List.map (.unit >> .id) (TurnPlayback.losses (TurnPlayback.acknowledgeLoss first combatAnimation)) == [ fourth ])
+                , expect "continuing acknowledges the truck and both passengers together"
+                    (List.map (.unit >> .id) (TurnPlayback.losses acknowledged) == [ fourth ])
+                , expect "an unrelated simultaneous casualty still has its own dialog"
+                    (TurnPlayback.lossEvent acknowledged == Just { loss = { unit = independent, cause = TurnPlayback.SuppliesExhausted }, passengers = [] })
+                , expect "one continuation releases playback when only the carrier event remains"
+                    (Tuple.first (TurnPlayback.tickUntilLoss 60000 (TurnPlayback.acknowledgeLoss fourth acknowledged)) == Nothing)
+                , expect "concealed passengers are never added to the event"
+                    (TurnPlayback.lossEvent { animation | current = { frame | units = [ truck ] } } == Just { loss = { unit = truck, cause = TurnPlayback.SuppliesExhausted }, passengers = [] })
+                ]
+
+        _ ->
+            [ "could not construct carrier loss fixture IDs" ]

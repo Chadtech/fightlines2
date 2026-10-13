@@ -168,7 +168,8 @@ impl Supplies {
         };
         let maximum = match kind {
             UnitKind::Tank | UnitKind::Truck => 32,
-            UnitKind::Infantry | UnitKind::FieldGun => 64,
+            UnitKind::Infantry => 48,
+            UnitKind::FieldGun => 64,
         };
         Self {
             current: maximum,
@@ -330,6 +331,18 @@ pub struct Depot {
     pub(crate) stock_visible: bool,
 }
 
+/// Supplies actually charged during resource settlement, before casualty cleanup.
+#[derive(Clone, Debug)]
+pub struct SupplyConsumption {
+    pub side: PlayerNumber,
+    pub amount: i32,
+}
+
+pub struct ResourceSettlement {
+    pub units: Vec<Unit>,
+    pub upkeep: Vec<SupplyConsumption>,
+}
+
 /// Current board state, including hit points, fuel and supplies. Combat remains future work.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Scenario {
@@ -424,10 +437,10 @@ impl Unit {
 
     pub fn follow_path(&mut self, path: &[Coordinate]) {
         for step in path.windows(2) {
-            if self.direction.is_some()
-                && let Some(direction) = Direction::between(step[0], step[1])
-            {
-                self.direction = Some(direction);
+            if let Some(direction) = Direction::between(step[0], step[1]) {
+                if self.direction.is_some() {
+                    self.direction = Some(direction);
+                }
                 self.sprite_facing = self.sprite_facing.turned(direction);
             }
         }
@@ -522,9 +535,21 @@ impl Scenario {
     }
 
     /// Replenish, charge upkeep, and remove exhausted units and their cargo.
-    /// Return the last resource snapshot for death presentation only.
-    pub fn finish_turn_resources(&mut self, turn_number: i32) -> Vec<Unit> {
+    /// Return the last resource snapshot for death presentation and actual upkeep spending.
+    pub fn finish_turn_resources(&mut self, turn_number: i32) -> ResourceSettlement {
         supplies::replenish(self, turn_number);
+        let upkeep = [PlayerNumber::Player1, PlayerNumber::Player2]
+            .into_iter()
+            .map(|side| SupplyConsumption {
+                side,
+                amount: self
+                    .units
+                    .iter()
+                    .filter(|unit| unit.side() == side)
+                    .map(|unit| unit.supplies.current.min(unit.supplies.upkeep_per_turn))
+                    .sum(),
+            })
+            .collect();
         for unit in &mut self.units {
             unit.supplies.current = (unit.supplies.current - unit.supplies.upkeep_per_turn).max(0);
         }
@@ -548,7 +573,10 @@ impl Scenario {
         let resource_snapshot = self.units.clone();
         self.units
             .retain(|unit| unit.supplies.current > 0 && unit.is_alive());
-        resource_snapshot
+        ResourceSettlement {
+            units: resource_snapshot,
+            upkeep,
+        }
     }
 
     pub fn el_alamein() -> Result<Self, MapError> {
@@ -1886,7 +1914,11 @@ mod tests {
         let snapshot = scenario.finish_turn_resources(1);
         for id in ["1", "2", "4", "12"] {
             assert!(!scenario.units.iter().any(|unit| unit.id() == id));
-            let dead = snapshot.iter().find(|unit| unit.id() == id).fixture()?;
+            let dead = snapshot
+                .units
+                .iter()
+                .find(|unit| unit.id() == id)
+                .fixture()?;
             assert_eq!(dead.supplies.current, 0);
             assert_eq!(dead.hit_points.current, 0);
         }
@@ -1934,7 +1966,7 @@ mod tests {
                 }
             );
             let (maximum, movement_per_tile) = match unit.kind {
-                UnitKind::Infantry => (64, 3),
+                UnitKind::Infantry => (48, 3),
                 UnitKind::FieldGun => (64, 1),
                 UnitKind::Tank | UnitKind::Truck => (32, 0),
             };
@@ -2047,6 +2079,35 @@ mod tests {
         assert_eq!(unit.direction(), None);
         unit.follow_path(&[unit.board_position().fixture()?]);
         assert_eq!(unit.direction(), None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn trucks_face_horizontal_travel_without_combat_direction() -> TestResult<()> {
+        for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
+            let mut unit = Scenario::supply_point()
+                .fixture()?
+                .units
+                .into_iter()
+                .find(|unit| unit.kind == UnitKind::Truck && unit.side == side)
+                .fixture()?;
+            for (from, to, facing) in [
+                ((4, 8), (3, 8), SpriteFacing::Left),
+                ((3, 8), (3, 7), SpriteFacing::Left),
+                ((3, 7), (3, 8), SpriteFacing::Left),
+                ((3, 8), (4, 8), SpriteFacing::Right),
+                ((4, 8), (4, 7), SpriteFacing::Right),
+            ] {
+                unit.follow_path(&[Coordinate::new(from.0, from.1), Coordinate::new(to.0, to.1)]);
+                assert_eq!(unit.direction(), None);
+                assert_eq!(unit.sprite_facing(), facing);
+            }
+            unit.follow_path(&[Coordinate::new(4, 7)]);
+            unit.rotate(Direction::West);
+            assert_eq!(unit.direction(), None);
+            assert_eq!(unit.sprite_facing(), SpriteFacing::Right);
+        }
 
         Ok(())
     }

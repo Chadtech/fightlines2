@@ -39,6 +39,7 @@ type alias DialogConfig =
     { skipDialogs : Bool
     , isOwn : Bool
     , details : Result DetailsError Details
+    , passengers : List Unit
     }
 
 
@@ -102,7 +103,11 @@ dialog config loss =
         title =
             case config.details of
                 Ok _ ->
-                    "unit lost"
+                    if List.isEmpty config.passengers then
+                        "unit lost"
+
+                    else
+                        "units lost"
 
                 Err _ ->
                     "unable to display unit loss"
@@ -111,7 +116,7 @@ dialog config loss =
         information =
             case config.details of
                 Ok details ->
-                    lossDetails config.isOwn loss details
+                    lossDetails config.isOwn config.passengers loss details
 
                 Err (OwnerNotFound missing) ->
                     [ H.p
@@ -156,8 +161,8 @@ dialog config loss =
         |> Dialog.atBottom
 
 
-lossDetails : Bool -> Loss -> Details -> List (Html Msg)
-lossDetails isOwn loss details =
+lossDetails : Bool -> List Unit -> Loss -> Details -> List (Html Msg)
+lossDetails isOwn passengers loss details =
     let
         kind : String
         kind =
@@ -178,10 +183,28 @@ lossDetails isOwn loss details =
 
             else
                 details.ownerName
+
+        passengerSummary : String
+        passengerSummary =
+            case passengers of
+                [] ->
+                    ""
+
+                first :: remaining ->
+                    let
+                        sameKind : Unit -> Bool
+                        sameKind passenger =
+                            passenger.kind == first.kind
+                    in
+                    if List.all sameKind remaining then
+                        " and its " ++ String.fromInt (List.length passengers) ++ " " ++ UnitKind.label first.kind ++ " aboard"
+
+                    else
+                        " and its passengers (" ++ String.join ", " (List.map (.kind >> UnitKind.label) passengers) ++ ")"
     in
     [ H.p
         []
-        [ H.text (subject ++ " lost " ++ article ++ kind ++ " unit.")
+        [ H.text (subject ++ " lost " ++ article ++ kind ++ " unit" ++ passengerSummary ++ ".")
         ]
     , H.div
         [ A.css

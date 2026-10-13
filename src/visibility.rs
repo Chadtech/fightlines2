@@ -144,6 +144,29 @@ pub fn observed_resolution(
     let initial_visible = visible_tiles(&before, side);
     let mut observed = resolution.clone();
     observed.frames = observed_frames(scenario, side, resolution);
+    observed.reports.retain(|report| report.side == side);
+    for report in &mut observed.reports {
+        let shots: Vec<_> = observed
+            .frames
+            .iter()
+            .flat_map(|frame| &frame.shots)
+            .filter(|shot| shot.attacker.side() == side && shot.target.side() != side)
+            .collect();
+        report.damage_inflicted = shots
+            .iter()
+            .map(|shot| {
+                (shot.target_health.before.current() - shot.target_health.after.current()).max(0)
+            })
+            .sum();
+        report.enemy_units_destroyed = shots
+            .iter()
+            .filter(|shot| {
+                shot.target_health.before.current() > 0 && shot.target_health.after.current() == 0
+            })
+            .map(|shot| shot.target.unit_id())
+            .collect::<BTreeSet<_>>()
+            .len() as i32;
+    }
     observed.events.retain(|event| {
         let unit: Option<&Unit> = scenario
             .units
@@ -218,6 +241,8 @@ fn observed_frames(
     if !resolution.frames.is_empty() {
         let mut previous_visible = BTreeSet::new();
         let mut previous_shots = false;
+        let mut casualties = BTreeSet::new();
+        let mut concealed_casualties = BTreeSet::new();
         return resolution
             .frames
             .iter()
@@ -239,7 +264,24 @@ fn observed_frames(
                             unit.side() == side && unit.board_position() == Some(position)
                         })
                 };
-                let observed = observed_scenario(&board, side, &visible);
+                let mut observed = observed_scenario(&board, side, &visible);
+                // Corpses persist until cleanup. Later sight or a firing reveal
+                // must not disclose a casualty that was hidden when it happened.
+                for unit in &board.units {
+                    if unit.side() != side
+                        && unit.destroyed()
+                        && casualties.insert(unit.unit_id())
+                        && !observed
+                            .units
+                            .iter()
+                            .any(|seen| seen.unit_id() == unit.unit_id())
+                    {
+                        concealed_casualties.insert(unit.unit_id());
+                    }
+                }
+                observed
+                    .units
+                    .retain(|unit| !concealed_casualties.contains(&unit.unit_id()));
                 TurnFrame {
                     depots: observed.depots,
                     supply_crates: observed.supply_crates,
@@ -332,6 +374,82 @@ mod tests {
         })
     }
 
+    #[test]
+    fn hidden_casualties_stay_hidden_after_sight_or_firing_reveal() -> TestResult<()> {
+        for firing_reveal in [false, true] {
+            let mut board = scenario(UnitKind::Infantry, "........")?;
+            let mut enemy = Scenario::supply_point()
+                .fixture()?
+                .units
+                .into_iter()
+                .find(|unit| {
+                    unit.side() == PlayerNumber::Player2 && unit.kind() == UnitKind::FieldGun
+                })
+                .fixture()?;
+            enemy.move_to(Coordinate::new(6, 0));
+            let enemy_id = enemy.unit_id();
+            board.units.push(enemy);
+            let frame = |board: &Scenario| TurnFrame {
+                units: board.units.clone(),
+                depots: board.depots.clone(),
+                supply_crates: board.supply_crates.clone(),
+                shots: vec![],
+                visible_tiles: vec![],
+                duration_ms: 180,
+            };
+            let mut frames = vec![frame(&board)];
+            board.units.get_mut(1).fixture()?.take_damage(16);
+            frames.push(frame(&board));
+            if firing_reveal {
+                board.units.get_mut(1).fixture()?.finish_firing_reveal(true);
+            } else {
+                board
+                    .units
+                    .first_mut()
+                    .fixture()?
+                    .move_to(Coordinate::new(3, 0));
+            }
+            frames.push(frame(&board));
+            let resolution = TurnResolution {
+                reports: Vec::new(),
+                turn_number: 1,
+                events: vec![],
+                frames,
+            };
+            let projected = observed_resolution(
+                &board,
+                PlayerNumber::Player1,
+                &visible_tiles(&board, PlayerNumber::Player1),
+                &resolution,
+            );
+            assert!(
+                projected
+                    .frames
+                    .iter()
+                    .all(|frame| { !frame.units.iter().any(|unit| unit.unit_id() == enemy_id) })
+            );
+            assert!(
+                projected
+                    .frames
+                    .get(2)
+                    .fixture()?
+                    .visible_tiles
+                    .contains(&Coordinate::new(6, 0))
+            );
+            // The owner still receives the casualty, including its death frame.
+            let own_frames = observed_frames(&board, PlayerNumber::Player2, &resolution);
+            assert!(
+                own_frames
+                    .get(1)
+                    .fixture()?
+                    .units
+                    .iter()
+                    .any(|unit| { unit.unit_id() == enemy_id && unit.destroyed() })
+            );
+        }
+        Ok(())
+    }
+
     struct ResourceQuery {
         board: Scenario,
         resolution: TurnResolution,
@@ -370,6 +488,7 @@ mod tests {
             unit.move_to(Coordinate::new(x, 0));
         }
         let resolution = TurnResolution {
+            reports: Vec::new(),
             turn_number: 1,
             events: vec![],
             frames: vec![TurnFrame {
@@ -763,6 +882,7 @@ mod tests {
         let enemy_id = enemy.unit_id();
         board.units.push(enemy);
         let resolution = TurnResolution {
+            reports: Vec::new(),
             turn_number: 1,
             frames: Vec::new(),
             events: vec![TurnEvent {
@@ -828,6 +948,7 @@ mod tests {
             path,
         };
         let resolution = TurnResolution {
+            reports: Vec::new(),
             turn_number: 1,
             frames: Vec::new(),
             events: vec![
@@ -907,6 +1028,7 @@ mod tests {
             carrier_id: None,
         };
         let resolution = TurnResolution {
+            reports: Vec::new(),
             turn_number: 1,
             frames: Vec::new(),
             events: vec![
@@ -965,6 +1087,7 @@ mod tests {
         let enemy_id = enemy.unit_id();
         board.units.push(enemy);
         let resolution = TurnResolution {
+            reports: Vec::new(),
             turn_number: 1,
             frames: Vec::new(),
             events: vec![TurnEvent {

@@ -19,6 +19,13 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+reports :
+    SelectionSet decodesTo Api.Object.TurnReport
+    -> SelectionSet (List decodesTo) Api.Object.TurnResolution
+reports object____ =
+    Object.selectionForCompositeField "reports" [] object____ (Basics.identity >> Decode.list)
+
+
 turnNumber : SelectionSet Int Api.Object.TurnResolution
 turnNumber =
     Object.selectionForField "Int" "turnNumber" [] Decode.int

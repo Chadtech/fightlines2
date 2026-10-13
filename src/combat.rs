@@ -39,7 +39,10 @@ pub fn rules(kind: UnitKind) -> CombatRules {
         },
         damage,
         readiness_cost: 2,
-        shot_cost: if kind == UnitKind::Infantry { 3 } else { 2 },
+        shot_cost: match kind {
+            UnitKind::Infantry | UnitKind::FieldGun => 3,
+            UnitKind::Tank | UnitKind::Truck => 2,
+        },
     }
 }
 
@@ -1301,8 +1304,8 @@ mod tests {
         let units = &result.frames.last().fixture()?.units;
         assert_eq!(units[0].hit_points().current(), 16);
         assert_eq!(units[1].hit_points().current(), 10);
-        assert_eq!(units[0].supplies().current(), 59);
-        assert_eq!(units[1].supplies().current(), 61);
+        assert_eq!(units[0].supplies().current(), 43);
+        assert_eq!(units[1].supplies().current(), 45);
         assert!(
             result
                 .frames
@@ -1536,6 +1539,7 @@ mod tests {
         );
         for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
             let resolution = crate::turns::TurnResolution {
+                reports: Vec::new(),
                 turn_number: 1,
                 events: Vec::new(),
                 frames: result.frames.clone(),
@@ -1570,6 +1574,7 @@ mod tests {
         orders[1].facing = crate::turns::FacingOrder::Ambush(Direction::West);
         let result = resolve_completed_movement(&scenario, &orders, 1)?;
         let resolution = crate::turns::TurnResolution {
+            reports: Vec::new(),
             turn_number: 1,
             events: Vec::new(),
             frames: result.frames,
@@ -1603,6 +1608,7 @@ mod tests {
         .fixture()?;
         let result = resolve_completed_movement(&scenario, &orders, 1)?;
         let resolution = crate::turns::TurnResolution {
+            reports: Vec::new(),
             turn_number: 1,
             events: Vec::new(),
             frames: result.frames,
@@ -1647,14 +1653,14 @@ mod tests {
     fn readiness_and_firing_costs_reserve_upkeep_and_do_not_repeat() -> TestResult<()> {
         let (mut scenario, orders) =
             fixture(UnitKind::FieldGun, UnitKind::Truck, Coordinate::new(4, 3))?;
-        scenario.units[0].spend_supplies(61);
+        scenario.units[0].spend_supplies(59);
         let result = resolve_completed_movement(&scenario, &orders, 1)?;
         assert!(shots(&result).is_empty());
         assert_eq!(
             result.frames.last().fixture()?.units[0]
                 .supplies()
                 .current(),
-            1
+            3
         );
         let (mut scenario, orders) =
             fixture(UnitKind::FieldGun, UnitKind::Truck, Coordinate::new(4, 3))?;
@@ -1664,7 +1670,7 @@ mod tests {
         combat.finish(&mut scenario, &mut stopped, &mut frames);
         combat.engage(&mut scenario, &mut stopped, &mut frames);
         assert_eq!(frames.iter().flat_map(|frame| &frame.shots).count(), 1);
-        assert_eq!(scenario.units[0].supplies().current(), 60);
+        assert_eq!(scenario.units[0].supplies().current(), 59);
         Ok(())
     }
 

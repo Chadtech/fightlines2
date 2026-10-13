@@ -509,7 +509,7 @@ mod tests {
                 .collect::<TestResult<Vec<_>>>()?
                 .join(",");
             Ok(format!(
-                "mutation {{ submitTurn(id: \"{id}\", turnNumber: 1, orders: [{orders}]) {{ turnNumber submitted opponentSubmitted lastResolution {{ turnNumber events {{ kind unitId }} frames {{ units {{ id side }} visibleTiles {{ x y }} }} }} }} }}"
+                "mutation {{ submitTurn(id: \"{id}\", turnNumber: 1, orders: [{orders}]) {{ turnNumber submitted opponentSubmitted lastResolution {{ turnNumber reports {{ side unitsLost enemyUnitsDestroyed damageInflicted suppliesConsumed }} events {{ kind unitId }} frames {{ units {{ id side }} visibleTiles {{ x y }} }} }} }} }}"
             ))
         };
         for identity in [None, Some(cookie.clone())] {
@@ -531,6 +531,16 @@ mod tests {
         let (resolved, _) = execute!(submit("PLAYER2")?, Some(guest));
         assert_eq!(resolved["data"]["submitTurn"]["turnNumber"], 2);
         assert_eq!(resolved["data"]["submitTurn"]["submitted"], false);
+        let reports = resolved["data"]["submitTurn"]["lastResolution"]["reports"]
+            .as_array()
+            .fixture()?;
+        assert_eq!(reports.len(), 1);
+        let report = reports.first().fixture()?;
+        assert_eq!(report["side"], "PLAYER2");
+        assert_eq!(report["unitsLost"], 0);
+        assert_eq!(report["enemyUnitsDestroyed"], 0);
+        assert_eq!(report["damageInflicted"], 0);
+        assert_eq!(report["suppliesConsumed"], 8);
         let frames = resolved["data"]["submitTurn"]["lastResolution"]["frames"]
             .as_array()
             .fixture()?;

@@ -1,6 +1,7 @@
 module Turn exposing
     ( Event
     , Playback
+    , Report
     , Resolution
     , Snapshot
     , movingPosition
@@ -17,6 +18,7 @@ import Api.Object
 import Api.Object.Coordinate as CoordinateApi
 import Api.Object.GameSnapshot as GameApi
 import Api.Object.TurnEvent as EventApi
+import Api.Object.TurnReport as ReportApi
 import Api.Object.TurnResolution as ResolutionApi
 import Coordinate exposing (Coordinate)
 import Direction
@@ -40,6 +42,15 @@ type alias Snapshot =
 type alias Resolution =
     { number : Int
     , events : List Event
+    , report : Maybe Report
+    }
+
+
+type alias Report =
+    { unitsLost : Int
+    , enemyUnitsDestroyed : Int
+    , damageInflicted : Int
+    , suppliesConsumed : Int
     }
 
 
@@ -80,11 +91,40 @@ selection =
                 |> SS.with EventApi.rotationDirection
                 |> SS.with (EventApi.carrierId |> SS.mapOrFail parseOptionalId)
     in
-    SS.map4 Snapshot
-        GameApi.turnNumber
-        GameApi.submitted
-        GameApi.opponentSubmitted
-        (GameApi.lastResolution (SS.map2 Resolution ResolutionApi.turnNumber (ResolutionApi.events event)))
+    SS.succeed Snapshot
+        |> SS.with GameApi.turnNumber
+        |> SS.with GameApi.submitted
+        |> SS.with GameApi.opponentSubmitted
+        |> SS.with
+            (GameApi.lastResolution
+                (SS.succeed Resolution
+                    |> SS.with ResolutionApi.turnNumber
+                    |> SS.with (ResolutionApi.events event)
+                    |> SS.with (ResolutionApi.reports reportSelection |> SS.mapOrFail viewerReport)
+                )
+            )
+
+
+reportSelection : SelectionSet Report Api.Object.TurnReport
+reportSelection =
+    SS.succeed Report
+        |> SS.with ReportApi.unitsLost
+        |> SS.with ReportApi.enemyUnitsDestroyed
+        |> SS.with ReportApi.damageInflicted
+        |> SS.with ReportApi.suppliesConsumed
+
+
+viewerReport : List Report -> Result String (Maybe Report)
+viewerReport reports =
+    case reports of
+        [] ->
+            Ok Nothing
+
+        [ report ] ->
+            Ok (Just report)
+
+        _ ->
+            Err "expected only the current player's turn report"
 
 
 start : Snapshot -> Maybe Playback
@@ -195,12 +235,8 @@ tick delta playback units =
                                             |> Maybe.map Unit.Location.OnMap
                                             |> Maybe.withDefault unit.location
                             , spriteFacing =
-                                if unit.direction == Nothing then
-                                    unit.spriteFacing
-
-                                else
-                                    SpriteFacing.alongPath event.path unit.spriteFacing
-                                        |> SpriteFacing.turn event.rotationDirection
+                                SpriteFacing.alongPath event.path unit.spriteFacing
+                                    |> SpriteFacing.turn event.rotationDirection
                             , direction =
                                 case event.rotationDirection of
                                     Just direction ->
