@@ -50,8 +50,76 @@ playbackChecks first second =
     let
         units : List Unit
         units =
-            [ { destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = first, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, kind = Kind.Infantry, location = Location.OnMap { x = 1, y = 0 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
-            , { destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = second, playerNumber = PlayerNumber.Player2, spriteFacing = SpriteFacing.Left, direction = Just Direction.West, kind = Kind.Infantry, location = Location.OnMap { x = 1, y = 1 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
+            [ { destroyed = False
+              , combatRules =
+                    { range = 1
+                    , shape = AmbushShape.Line
+                    , damage = 4
+                    , readinessCost = 2
+                    , shotCost = 2
+                    }
+              , cargoCapacity = 0
+              , id = first
+              , playerNumber = PlayerNumber.Player1
+              , spriteFacing = SpriteFacing.Right
+              , direction = Just Direction.East
+              , kind = Kind.Infantry
+              , location =
+                    Location.OnMap
+                        { x = 1
+                        , y = 0
+                        }
+              , resources =
+                    Just
+                        { supplyCargo = []
+                        , hitPoints =
+                            { current = 16
+                            , maximum = 16
+                            }
+                        , supplies =
+                            { current = 64
+                            , maximum = 64
+                            , upkeepPerTurn = 1
+                            , movementPerTile = 1
+                            }
+                        , fuel = Nothing
+                        }
+              }
+            , { destroyed = False
+              , combatRules =
+                    { range = 1
+                    , shape = AmbushShape.Line
+                    , damage = 4
+                    , readinessCost = 2
+                    , shotCost = 2
+                    }
+              , cargoCapacity = 0
+              , id = second
+              , playerNumber = PlayerNumber.Player2
+              , spriteFacing = SpriteFacing.Left
+              , direction = Just Direction.West
+              , kind = Kind.Infantry
+              , location =
+                    Location.OnMap
+                        { x = 1
+                        , y = 1
+                        }
+              , resources =
+                    Just
+                        { supplyCargo = []
+                        , hitPoints =
+                            { current = 16
+                            , maximum = 16
+                            }
+                        , supplies =
+                            { current = 64
+                            , maximum = 64
+                            , upkeepPerTurn = 1
+                            , movementPerTile = 1
+                            }
+                        , fuel = Nothing
+                        }
+              }
             ]
 
         snapshot : Turn.Snapshot
@@ -126,7 +194,9 @@ playbackChecks first second =
 
         firstFrame : TurnPlayback.Frame
         firstFrame =
-            { shots = []
+            { depots = []
+            , supplyCrates = []
+            , shots = []
             , durationMs = 180
             , units = rewound
             , visibleTiles =
@@ -138,7 +208,9 @@ playbackChecks first second =
 
         lastFrame : TurnPlayback.Frame
         lastFrame =
-            { shots = []
+            { depots = []
+            , supplyCrates = []
+            , shots = []
             , durationMs = 180
             , units = units
             , visibleTiles =
@@ -158,7 +230,9 @@ playbackChecks first second =
 
         middleFrame : TurnPlayback.Frame
         middleFrame =
-            { shots = []
+            { depots = []
+            , supplyCrates = []
+            , shots = []
             , durationMs = 180
             , units =
                 List.map advanceFirstUnit rewound
@@ -241,7 +315,46 @@ truckPlaybackChecks unitId =
     let
         units : List Unit
         units =
-            [ { destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, id = unitId, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Nothing, kind = Kind.Truck, location = Location.OnMap { x = 1, y = 1 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 15, maximum = 64 } } } ]
+            [ { destroyed = False
+              , combatRules =
+                    { range = 1
+                    , shape = AmbushShape.Line
+                    , damage = 4
+                    , readinessCost = 2
+                    , shotCost = 2
+                    }
+              , cargoCapacity = 0
+              , id = unitId
+              , playerNumber = PlayerNumber.Player1
+              , spriteFacing = SpriteFacing.Right
+              , direction = Nothing
+              , kind = Kind.Truck
+              , location =
+                    Location.OnMap
+                        { x = 1
+                        , y = 1
+                        }
+              , resources =
+                    Just
+                        { supplyCargo = []
+                        , hitPoints =
+                            { current = 16
+                            , maximum = 16
+                            }
+                        , supplies =
+                            { current = 64
+                            , maximum = 64
+                            , upkeepPerTurn = 1
+                            , movementPerTile = 0
+                            }
+                        , fuel =
+                            Just
+                                { current = 15
+                                , maximum = 64
+                                }
+                        }
+              }
+            ]
 
         snapshot : Turn.Snapshot
         snapshot =
@@ -281,7 +394,45 @@ transportPlaybackChecks passengerId truckId =
     let
         truck : Unit.Unit
         truck =
-            { id = truckId, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, kind = Kind.Truck, direction = Nothing, destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 2, location = Location.OnMap { x = 1, y = 0 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 62, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 63, maximum = 64 } } }
+            { id = truckId
+            , playerNumber = PlayerNumber.Player1
+            , spriteFacing = SpriteFacing.Right
+            , kind = Kind.Truck
+            , direction = Nothing
+            , destroyed = False
+            , combatRules =
+                { range = 1
+                , shape = AmbushShape.Line
+                , damage = 4
+                , readinessCost = 2
+                , shotCost = 2
+                }
+            , cargoCapacity = 2
+            , location =
+                Location.OnMap
+                    { x = 1
+                    , y = 0
+                    }
+            , resources =
+                Just
+                    { supplyCargo = []
+                    , hitPoints =
+                        { current = 16
+                        , maximum = 16
+                        }
+                    , supplies =
+                        { current = 62
+                        , maximum = 64
+                        , upkeepPerTurn = 1
+                        , movementPerTile = 0
+                        }
+                    , fuel =
+                        Just
+                            { current = 63
+                            , maximum = 64
+                            }
+                    }
+            }
 
         passenger : Unit.Unit
         passenger =
@@ -348,8 +499,23 @@ transportPlaybackChecks passengerId truckId =
 
         ( sharedUnloading, sharedUnloadFrame ) =
             TurnPlayback.tick 90
-                { current = { shots = [], durationMs = 180, units = units, visibleTiles = [] }
-                , remaining = [ { shots = [], durationMs = 180, units = unloadUnits, visibleTiles = [] } ]
+                { current =
+                    { depots = []
+                    , supplyCrates = []
+                    , shots = []
+                    , durationMs = 180
+                    , units = units
+                    , visibleTiles = []
+                    }
+                , remaining =
+                    [ { depots = []
+                      , supplyCrates = []
+                      , shots = []
+                      , durationMs = 180
+                      , units = unloadUnits
+                      , visibleTiles = []
+                      }
+                    ]
                 , presentation = TurnPlayback.Battlefield
                 , elapsed = 0
                 }
@@ -383,7 +549,45 @@ spriteFacingChecks id =
     let
         tank : Unit
         tank =
-            { id = id, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, kind = Kind.Tank, destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.OnMap { x = 2, y = 2 }, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 0 }, fuel = Just { current = 64, maximum = 64 } } }
+            { id = id
+            , playerNumber = PlayerNumber.Player1
+            , spriteFacing = SpriteFacing.Right
+            , direction = Just Direction.East
+            , kind = Kind.Tank
+            , destroyed = False
+            , combatRules =
+                { range = 1
+                , shape = AmbushShape.Line
+                , damage = 4
+                , readinessCost = 2
+                , shotCost = 2
+                }
+            , cargoCapacity = 0
+            , location =
+                Location.OnMap
+                    { x = 2
+                    , y = 2
+                    }
+            , resources =
+                Just
+                    { supplyCargo = []
+                    , hitPoints =
+                        { current = 16
+                        , maximum = 16
+                        }
+                    , supplies =
+                        { current = 64
+                        , maximum = 64
+                        , upkeepPerTurn = 1
+                        , movementPerTile = 0
+                        }
+                    , fuel =
+                        Just
+                            { current = 64
+                            , maximum = 64
+                            }
+                    }
+            }
 
         west : Unit
         west =
@@ -399,7 +603,13 @@ spriteFacingChecks id =
 
         frame : Unit -> TurnPlayback.Frame
         frame unit =
-            { shots = [], durationMs = 180, units = [ unit ], visibleTiles = [] }
+            { depots = []
+            , supplyCrates = []
+            , shots = []
+            , durationMs = 180
+            , units = [ unit ]
+            , visibleTiles = []
+            }
 
         playback : TurnPlayback.Playback
         playback =
@@ -441,7 +651,20 @@ combatPlaybackChecks first second =
 
         before : TurnPlayback.Frame
         before =
-            { shots = [], durationMs = 180, units = [ attacker, target ], visibleTiles = [ { x = 2, y = 2 }, { x = 3, y = 2 } ] }
+            { depots = []
+            , supplyCrates = []
+            , shots = []
+            , durationMs = 180
+            , units = [ attacker, target ]
+            , visibleTiles =
+                [ { x = 2
+                  , y = 2
+                  }
+                , { x = 3
+                  , y = 2
+                  }
+                ]
+            }
 
         shot : Shot
         shot =
@@ -639,15 +862,65 @@ deathPlaybackChecks id =
 
         dead : Unit
         dead =
-            { id = id, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, kind = Kind.Infantry, destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.OnMap { x = 2, y = 2 }, resources = Just { hitPoints = { current = 0, maximum = 16 }, supplies = { current = 0, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = Nothing } }
+            { id = id
+            , playerNumber = PlayerNumber.Player1
+            , spriteFacing = SpriteFacing.Right
+            , direction = Just Direction.East
+            , kind = Kind.Infantry
+            , destroyed = False
+            , combatRules =
+                { range = 1
+                , shape = AmbushShape.Line
+                , damage = 4
+                , readinessCost = 2
+                , shotCost = 2
+                }
+            , cargoCapacity = 0
+            , location =
+                Location.OnMap
+                    { x = 2
+                    , y = 2
+                    }
+            , resources =
+                Just
+                    { supplyCargo = []
+                    , hitPoints =
+                        { current = 0
+                        , maximum = 16
+                        }
+                    , supplies =
+                        { current = 0
+                        , maximum = 64
+                        , upkeepPerTurn = 1
+                        , movementPerTile = 1
+                        }
+                    , fuel = Nothing
+                    }
+            }
 
         dying : TurnPlayback.Frame
         dying =
-            { shots = [], durationMs = 180, units = [ dead ], visibleTiles = [ { x = 2, y = 2 } ] }
+            { depots = []
+            , supplyCrates = []
+            , shots = []
+            , durationMs = 180
+            , units = [ dead ]
+            , visibleTiles =
+                [ { x = 2
+                  , y = 2
+                  }
+                ]
+            }
 
         gone : TurnPlayback.Frame
         gone =
-            { shots = [], durationMs = 600, units = [], visibleTiles = [] }
+            { depots = []
+            , supplyCrates = []
+            , shots = []
+            , durationMs = 600
+            , units = []
+            , visibleTiles = []
+            }
 
         animation : TurnPlayback.Playback
         animation =
@@ -677,7 +950,20 @@ deathFocusChecks first second =
 
         dying : TurnPlayback.Frame
         dying =
-            { shots = [], durationMs = 450, units = [ dead, survivor ], visibleTiles = [ { x = 2, y = 2 }, { x = 3, y = 2 } ] }
+            { depots = []
+            , supplyCrates = []
+            , shots = []
+            , durationMs = 450
+            , units = [ dead, survivor ]
+            , visibleTiles =
+                [ { x = 2
+                  , y = 2
+                  }
+                , { x = 3
+                  , y = 2
+                  }
+                ]
+            }
 
         paused : TurnPlayback.Frame
         paused =

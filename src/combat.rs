@@ -277,6 +277,8 @@ impl Combat {
             }
         }
         frames.push(TurnFrame {
+            depots: board.depots.clone(),
+            supply_crates: board.supply_crates.clone(),
             units: board.units.clone(),
             visible_tiles: Vec::new(),
             duration_ms: 450,
@@ -284,6 +286,8 @@ impl Combat {
         });
         // Clear shots while preserving enough time to read the exchange and death marker.
         frames.push(TurnFrame {
+            depots: board.depots.clone(),
+            supply_crates: board.supply_crates.clone(),
             units: board.units.clone(),
             visible_tiles: Vec::new(),
             duration_ms: 600,
@@ -454,6 +458,7 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(index, unit)| MoveOrder {
+                supply: crate::supplies::SupplyOrder::default(),
                 travel: crate::turns::TravelMode::Normal,
                 unit_id: unit.unit_id(),
                 facing: if index == 0 {
@@ -649,6 +654,7 @@ mod tests {
             .fixture()?;
         newcomer.move_to(Coordinate::new(5, 1));
         orders.push(MoveOrder {
+            supply: crate::supplies::SupplyOrder::default(),
             travel: crate::turns::TravelMode::Normal,
             unit_id: newcomer.unit_id(),
             facing: crate::turns::FacingOrder::Unchanged,
@@ -806,6 +812,7 @@ mod tests {
             .fixture()?;
         second_shooter.move_to(Coordinate::new(5, 3));
         orders.push(MoveOrder {
+            supply: crate::supplies::SupplyOrder::default(),
             travel: crate::turns::TravelMode::Normal,
             unit_id: second_shooter.unit_id(),
             facing: crate::turns::FacingOrder::Ambush(Direction::West),
@@ -1012,7 +1019,7 @@ mod tests {
         assert!(!scenario.units[1].is_alive());
         assert!(!scenario.units[2].is_alive());
         assert!(visibility::visible_tiles(&scenario, PlayerNumber::Player2).is_empty());
-        scenario.finish_turn_resources();
+        scenario.finish_turn_resources(1);
         assert_eq!(scenario.units.len(), 1);
         Ok(())
     }

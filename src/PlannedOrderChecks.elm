@@ -67,22 +67,205 @@ orderChecks unitId passengerId =
                     , unloads = [ { unitId = passengerId, destination = { x = 1, y = 2 } } ]
                     }
             }
+
+        freight : PlannedOrder
+        freight =
+            { unitId = unitId
+            , action =
+                SupplyTransfer
+                    { route =
+                        [ { x = 1
+                          , y = 1
+                          }
+                        , { x = 2
+                          , y = 1
+                          }
+                        ]
+                    , destination =
+                        { x = 2
+                        , y = 1
+                        }
+                    , handling =
+                        PlannedOrder.UnloadingCrates
+                            [ { cargoIndex = 1
+                              , destination =
+                                    { x = 2
+                                    , y = 0
+                                    }
+                              }
+                            ]
+                    , passengers =
+                        [ { unitId = passengerId
+                          , destination =
+                                { x = 2
+                                , y = 2
+                                }
+                          }
+                        ]
+                    }
+            }
     in
     List.concat
-        [ expect "attack move preserves its route and sends the attack flag without unloading or facing"
-            (PlannedOrder.toInput attackMove == { attackMove = Present True, ambush = Present False, unitId = UnitId.toString unitId, path = [ { x = 1, y = 1 }, { x = 2, y = 1 } ], direction = Absent, unloads = Present [] } && PlannedOrder.isMoving attackMove && PlannedOrder.unloads attackMove == [])
+        [ expect "supply runs preserve movement, passenger exits, and original crate slots in submission"
+            (PlannedOrder.toInput freight
+                == { loadCrates = Present 0
+                   , crateUnloads =
+                        Present
+                            [ { cargoIndex = 1
+                              , destination =
+                                    { x = 2
+                                    , y = 0
+                                    }
+                              }
+                            ]
+                   , attackMove = Present False
+                   , ambush = Present False
+                   , unitId = UnitId.toString unitId
+                   , path =
+                        [ { x = 1
+                          , y = 1
+                          }
+                        , { x = 2
+                          , y = 1
+                          }
+                        ]
+                   , direction = Absent
+                   , unloads =
+                        Present
+                            [ { unitId = UnitId.toString passengerId
+                              , destination =
+                                    { x = 2
+                                    , y = 2
+                                    }
+                              }
+                            ]
+                   }
+                && PlannedOrder.isMoving freight
+            )
+        , expect "attack move preserves its route and sends the attack flag without unloading or facing"
+            (PlannedOrder.toInput attackMove
+                == { loadCrates = Present 0
+                   , crateUnloads = Present []
+                   , attackMove = Present True
+                   , ambush = Present False
+                   , unitId = UnitId.toString unitId
+                   , path =
+                        [ { x = 1
+                          , y = 1
+                          }
+                        , { x = 2
+                          , y = 1
+                          }
+                        ]
+                   , direction = Absent
+                   , unloads = Present []
+                   }
+                && PlannedOrder.isMoving attackMove
+                && PlannedOrder.unloads attackMove
+                == []
+            )
         , expect "ambush submission must carry combat readiness and chosen facing without movement"
-            (PlannedOrder.toInput ambush == { attackMove = Present False, ambush = Present True, unitId = UnitId.toString unitId, path = [ { x = 1, y = 1 } ], direction = Present Direction.East, unloads = Present [] } && not (PlannedOrder.isMoving ambush))
+            (PlannedOrder.toInput ambush
+                == { loadCrates = Present 0
+                   , crateUnloads = Present []
+                   , attackMove = Present False
+                   , ambush = Present True
+                   , unitId = UnitId.toString unitId
+                   , path =
+                        [ { x = 1
+                          , y = 1
+                          }
+                        ]
+                   , direction = Present Direction.East
+                   , unloads = Present []
+                   }
+                && not (PlannedOrder.isMoving ambush)
+            )
         , expect "hold submission must have one coordinate and no rotation or unloads"
-            (PlannedOrder.toInput hold == { attackMove = Present False, ambush = Present False, unitId = UnitId.toString unitId, path = [ { x = 1, y = 1 } ], direction = Absent, unloads = Present [] })
+            (PlannedOrder.toInput hold
+                == { loadCrates = Present 0
+                   , crateUnloads = Present []
+                   , attackMove = Present False
+                   , ambush = Present False
+                   , unitId = UnitId.toString unitId
+                   , path =
+                        [ { x = 1
+                          , y = 1
+                          }
+                        ]
+                   , direction = Absent
+                   , unloads = Present []
+                   }
+            )
         , expect "rotation submission must be stationary and contain only its facing"
-            (PlannedOrder.toInput rotation == { attackMove = Present False, ambush = Present False, unitId = UnitId.toString unitId, path = [ { x = 1, y = 1 } ], direction = Present Direction.West, unloads = Present [] })
+            (PlannedOrder.toInput rotation
+                == { loadCrates = Present 0
+                   , crateUnloads = Present []
+                   , attackMove = Present False
+                   , ambush = Present False
+                   , unitId = UnitId.toString unitId
+                   , path =
+                        [ { x = 1
+                          , y = 1
+                          }
+                        ]
+                   , direction = Present Direction.West
+                   , unloads = Present []
+                   }
+            )
         , expect "move submission must preserve the route and passenger exit without adding rotation"
-            (PlannedOrder.toInput move == { attackMove = Present False, ambush = Present False, unitId = UnitId.toString unitId, path = [ { x = 1, y = 1 }, { x = 2, y = 1 } ], direction = Absent, unloads = Present [ { unitId = UnitId.toString passengerId, destination = { x = 2, y = 2 } } ] })
+            (PlannedOrder.toInput move
+                == { loadCrates = Present 0
+                   , crateUnloads = Present []
+                   , attackMove = Present False
+                   , ambush = Present False
+                   , unitId = UnitId.toString unitId
+                   , path =
+                        [ { x = 1
+                          , y = 1
+                          }
+                        , { x = 2
+                          , y = 1
+                          }
+                        ]
+                   , direction = Absent
+                   , unloads =
+                        Present
+                            [ { unitId = UnitId.toString passengerId
+                              , destination =
+                                    { x = 2
+                                    , y = 2
+                                    }
+                              }
+                            ]
+                   }
+            )
         , expect "only a traversed move may consume a boarding berth or count as a moving receiver"
             (not (PlannedOrder.isMoving hold) && not (PlannedOrder.isMoving rotation) && PlannedOrder.isMoving move && not (PlannedOrder.isMoving stationaryUnload))
         , expect "stationary trucks must retain their unload choices"
-            (PlannedOrder.toInput stationaryUnload == { attackMove = Present False, ambush = Present False, unitId = UnitId.toString unitId, path = [ { x = 1, y = 1 } ], direction = Absent, unloads = Present [ { unitId = UnitId.toString passengerId, destination = { x = 1, y = 2 } } ] })
+            (PlannedOrder.toInput stationaryUnload
+                == { loadCrates = Present 0
+                   , crateUnloads = Present []
+                   , attackMove = Present False
+                   , ambush = Present False
+                   , unitId = UnitId.toString unitId
+                   , path =
+                        [ { x = 1
+                          , y = 1
+                          }
+                        ]
+                   , direction = Absent
+                   , unloads =
+                        Present
+                            [ { unitId = UnitId.toString passengerId
+                              , destination =
+                                    { x = 1
+                                    , y = 2
+                                    }
+                              }
+                            ]
+                   }
+            )
         , expect "reservations must use the order destination and transport unload exits"
             (PlannedOrder.destination move == { x = 2, y = 1 } && PlannedOrder.destination rotation == { x = 1, y = 1 } && PlannedOrder.destination stationaryUnload == { x = 1, y = 1 } && PlannedOrder.unloads hold == [] && PlannedOrder.unloads rotation == [] && List.length (PlannedOrder.unloads move) == 1)
         ]

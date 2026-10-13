@@ -1,5 +1,6 @@
 module GamePage.OrderPlanning exposing
-    ( Context
+    ( Cargo(..)
+    , Context
     , Drafts
     , Model(..)
     , UnloadChoice
@@ -43,6 +44,7 @@ module GamePage.OrderPlanning exposing
     , submissionDrafts
     , submissionOrders
     , submissionWarningOpen
+    , toggleUnloadCargo
     , toggleUnloadPassenger
     , truckDestination
     , unloadChoice
@@ -66,6 +68,7 @@ import GamePage.Selection as Selection
 import Map exposing (Map)
 import Movement
 import PlannedOrder exposing (MovePlan, PlannedOrder, StationaryUnload)
+import Supply
 import Unit exposing (Unit)
 import Unit.Supplies
 import UnitCommand
@@ -87,6 +90,7 @@ type alias Context =
     { map : Map
     , units : List Unit
     , movementRules : List Movement.Rule
+    , supplyCrates : List Supply.GroundCrate
     , playerSides : List PlayerNumber
     }
 
@@ -97,6 +101,7 @@ only other units' orders; dialogs and board inspection are derived from the stag
 type Model
     = OrdinaryPlanning Drafts
     | ConfirmingSubmission Drafts
+    | ChoosingCrates UnitId Drafts
     | ChoosingPassengers UnloadChoice
     | ChoosingExits UnloadPlanning
 
@@ -107,8 +112,17 @@ type alias Drafts =
     }
 
 
+{-| Crates use their original zero-based slot in the truck's supply cargo list.
+Slots stay stable during planning; the server removes unloaded slots in descending order.
+-}
+type Cargo
+    = Passenger UnitId
+    | Crate Int
+
+
 type alias UnloadingTruck =
     { truckId : UnitId
+    , crateUnloads : List PlannedOrder.CrateUnload
     , plan : TruckPlan
     }
 
@@ -121,15 +135,15 @@ type TruckPlan
 type alias UnloadChoice =
     { truck : UnloadingTruck
     , otherOrders : List PlannedOrder
-    , checked : List UnitId
+    , checked : List Cargo
     }
 
 
 type alias UnloadPlanning =
     { truck : UnloadingTruck
     , otherOrders : List PlannedOrder
-    , passengerId : UnitId
-    , remaining : List UnitId
+    , cargo : Cargo
+    , remaining : List Cargo
     , options : List Movement.Option
     , destinationFeedback : DestinationFeedback
     }
@@ -138,7 +152,7 @@ type alias UnloadPlanning =
 type alias UnloadQueue =
     { truck : UnloadingTruck
     , otherOrders : List PlannedOrder
-    , passengers : List UnitId
+    , passengers : List Cargo
     }
 
 
@@ -168,6 +182,9 @@ orders state =
         ConfirmingSubmission drafts ->
             drafts.orders
 
+        ChoosingCrates _ drafts ->
+            drafts.orders
+
         ChoosingPassengers choice ->
             truckOrder choice.truck :: choice.otherOrders
 
@@ -194,11 +211,19 @@ selection state =
         ConfirmingSubmission drafts ->
             drafts.selection
 
+        ChoosingCrates id _ ->
+            Just (Inspecting (Selection.UnitInspection id))
+
         ChoosingPassengers choice ->
             Just (Inspecting (Selection.UnitInspection choice.truck.truckId))
 
         ChoosingExits unloading ->
-            Just (Inspecting (Selection.UnitInspection unloading.passengerId))
+            case unloading.cargo of
+                Passenger id ->
+                    Just (Inspecting (Selection.UnitInspection id))
+
+                Crate _ ->
+                    Just (Inspecting (Selection.UnitInspection unloading.truck.truckId))
 
 
 setSelection : Maybe Selection -> Model -> Model
@@ -231,6 +256,7 @@ startUnload : UnitId -> Movement.Option -> Model -> Model
 startUnload truckId move state =
     startTruckUnload
         { truckId = truckId
+        , crateUnloads = []
         , plan = MovingTruck { move = move, unloads = [] }
         }
         state
@@ -240,6 +266,7 @@ startStationaryUnload : UnitId -> Coordinate -> Model -> Model
 startStationaryUnload truckId position state =
     startTruckUnload
         { truckId = truckId
+        , crateUnloads = []
         , plan = StationaryTruck { position = position, unloads = [] }
         }
         state
@@ -266,18 +293,23 @@ unloadPlanning state =
 
 
 toggleUnloadPassenger : UnitId -> Bool -> Model -> Model
-toggleUnloadPassenger id checked state =
+toggleUnloadPassenger id =
+    toggleUnloadCargo (Passenger id)
+
+
+toggleUnloadCargo : Cargo -> Bool -> Model -> Model
+toggleUnloadCargo cargo checked state =
     case state of
         ChoosingPassengers choice ->
             let
-                retained : List UnitId
+                retained : List Cargo
                 retained =
-                    List.filter ((/=) id) choice.checked
+                    List.filter ((/=) cargo) choice.checked
 
-                selected : List UnitId
+                selected : List Cargo
                 selected =
                     if checked then
-                        id :: retained
+                        cargo :: retained
 
                     else
                         retained
@@ -288,7 +320,7 @@ toggleUnloadPassenger id checked state =
             state
 
 
-confirmUnloadPassengers : (Model -> UnitId -> List Movement.Option) -> Model -> Model
+confirmUnloadPassengers : (Model -> Cargo -> List Movement.Option) -> Model -> Model
 confirmUnloadPassengers options state =
     case state of
         ChoosingPassengers choice ->
@@ -302,7 +334,7 @@ confirmUnloadPassengers options state =
             state
 
 
-saveUnloadDestination : (Model -> UnitId -> List Movement.Option) -> Coordinate -> Model -> Model
+saveUnloadDestination : (Model -> Cargo -> List Movement.Option) -> Coordinate -> Model -> Model
 saveUnloadDestination options destination state =
     case state of
         ChoosingExits unloading ->
@@ -316,32 +348,62 @@ saveUnloadDestination options destination state =
                     truck =
                         unloading.truck
 
-                    appendUnload : List PlannedOrder.UnloadOrder -> List PlannedOrder.UnloadOrder
-                    appendUnload unloads =
-                        unloads
-                            ++ [ { unitId = unloading.passengerId
-                                 , destination = destination
-                                 }
-                               ]
-
-                    plan : TruckPlan
-                    plan =
-                        case truck.plan of
-                            MovingTruck moving ->
-                                MovingTruck
-                                    { moving
-                                        | unloads = appendUnload moving.unloads
-                                    }
-
-                            StationaryTruck stationary ->
-                                StationaryTruck
-                                    { stationary
-                                        | unloads = appendUnload stationary.unloads
-                                    }
-
                     updated : UnloadingTruck
                     updated =
-                        { truck | plan = plan }
+                        case unloading.cargo of
+                            Passenger passengerId ->
+                                let
+                                    appendPassenger : List PlannedOrder.UnloadOrder -> List PlannedOrder.UnloadOrder
+                                    appendPassenger unloads =
+                                        let
+                                            passengerExit : PlannedOrder.UnloadOrder
+                                            passengerExit =
+                                                { unitId = passengerId
+                                                , destination = destination
+                                                }
+
+                                            exits : List PlannedOrder.UnloadOrder
+                                            exits =
+                                                [ passengerExit
+                                                ]
+                                        in
+                                        unloads ++ exits
+
+                                    plan : TruckPlan
+                                    plan =
+                                        case truck.plan of
+                                            MovingTruck moving ->
+                                                MovingTruck
+                                                    { moving
+                                                        | unloads = appendPassenger moving.unloads
+                                                    }
+
+                                            StationaryTruck stationary ->
+                                                StationaryTruck
+                                                    { stationary
+                                                        | unloads = appendPassenger stationary.unloads
+                                                    }
+                                in
+                                { truck
+                                    | plan = plan
+                                }
+
+                            Crate index ->
+                                let
+                                    crateExit : PlannedOrder.CrateUnload
+                                    crateExit =
+                                        { cargoIndex = index
+                                        , destination = destination
+                                        }
+
+                                    exits : List PlannedOrder.CrateUnload
+                                    exits =
+                                        [ crateExit
+                                        ]
+                                in
+                                { truck
+                                    | crateUnloads = truck.crateUnloads ++ exits
+                                }
                 in
                 nextUnloadPassenger options
                     { truck = updated
@@ -381,6 +443,9 @@ dismissDialog : Model -> Model
 dismissDialog state =
     case state of
         ConfirmingSubmission drafts ->
+            OrdinaryPlanning drafts
+
+        ChoosingCrates _ drafts ->
             OrdinaryPlanning drafts
 
         ChoosingPassengers _ ->
@@ -587,8 +652,20 @@ revokeDependentOrders context revokedIds drafts =
 
         dependsOnDeparture : PlannedOrder -> Bool
         dependsOnDeparture plan =
-            (PlannedOrder.isMoving plan && List.member (PlannedOrder.destination plan) occupiedAgain)
-                || List.any (\unload -> List.member unload.destination occupiedAgain) (PlannedOrder.unloads plan)
+            let
+                needsDestination : Bool
+                needsDestination =
+                    PlannedOrder.isMoving plan && List.member (PlannedOrder.destination plan) occupiedAgain
+
+                needsPassengerExit : Bool
+                needsPassengerExit =
+                    List.any (\unload -> List.member unload.destination occupiedAgain) (PlannedOrder.unloads plan)
+
+                needsCrateExit : Bool
+                needsCrateExit =
+                    List.any (\unload -> List.member unload.destination occupiedAgain) (PlannedOrder.crateUnloads plan)
+            in
+            needsDestination || needsPassengerExit || needsCrateExit
 
         dependentIds : List UnitId
         dependentIds =
@@ -983,7 +1060,28 @@ truckOrder truck =
                     else
                         PlannedOrder.Unload plan
     in
-    { unitId = truck.truckId, action = action }
+    if List.isEmpty truck.crateUnloads then
+        { unitId = truck.truckId
+        , action = action
+        }
+
+    else
+        let
+            order : PlannedOrder
+            order =
+                { unitId = truck.truckId
+                , action = action
+                }
+        in
+        { unitId = truck.truckId
+        , action =
+            PlannedOrder.SupplyTransfer
+                { route = PlannedOrder.path order
+                , destination = PlannedOrder.destination order
+                , handling = PlannedOrder.UnloadingCrates truck.crateUnloads
+                , passengers = PlannedOrder.unloads order
+                }
+        }
 
 
 startTruckUnload : UnloadingTruck -> Model -> Model
@@ -1003,7 +1101,7 @@ startTruckUnload truck state =
             state
 
 
-nextUnloadPassenger : (Model -> UnitId -> List Movement.Option) -> UnloadQueue -> Model
+nextUnloadPassenger : (Model -> Cargo -> List Movement.Option) -> UnloadQueue -> Model
 nextUnloadPassenger options queue =
     case queue.passengers of
         [] ->
@@ -1016,13 +1114,13 @@ nextUnloadPassenger options queue =
                         |> Just
                 }
 
-        passengerId :: remaining ->
+        cargo :: remaining ->
             let
                 unloading : UnloadPlanning
                 unloading =
                     { truck = queue.truck
                     , otherOrders = queue.otherOrders
-                    , passengerId = passengerId
+                    , cargo = cargo
                     , remaining = remaining
                     , options = []
                     , destinationFeedback = NoDestinationFeedback
@@ -1032,12 +1130,15 @@ nextUnloadPassenger options queue =
                 state =
                     ChoosingExits unloading
             in
-            ChoosingExits { unloading | options = options state passengerId }
+            ChoosingExits
+                { unloading
+                    | options = options state cargo
+                }
 
 
 openUnloadPrompt : Context -> Unit -> Movement.Option -> Model -> Model
 openUnloadPrompt context truck move state =
-    if hasPassengers context truck then
+    if hasCargo context truck then
         state
             |> startUnload truck.id move
 
@@ -1045,9 +1146,18 @@ openUnloadPrompt context truck move state =
         state
 
 
-hasPassengers : Context -> Unit -> Bool
-hasPassengers context truck =
-    List.any (\passenger -> Unit.carrierId passenger == Just truck.id) context.units
+hasCargo : Context -> Unit -> Bool
+hasCargo context truck =
+    let
+        hasPassengers : Bool
+        hasPassengers =
+            List.any (\passenger -> Unit.carrierId passenger == Just truck.id) context.units
+
+        hasCrates : Bool
+        hasCrates =
+            Unit.crateCount truck > 0
+    in
+    hasPassengers || hasCrates
 
 
 holdPosition : Context -> Unit -> Model -> Model
@@ -1066,7 +1176,7 @@ holdPosition context unit state =
                         state
                         |> inspectSelectedUnit context
             in
-            if hasPassengers context unit then
+            if hasCargo context unit then
                 next
                     |> startStationaryUnload
                         unit.id
@@ -1079,8 +1189,8 @@ holdPosition context unit state =
             state
 
 
-unloadOptions : Context -> Model -> UnitId -> List Movement.Option
-unloadOptions context state passengerId =
+unloadOptions : Context -> Model -> Cargo -> List Movement.Option
+unloadOptions context state cargo =
     case unloadPlanning state of
         Just planning ->
             let
@@ -1096,24 +1206,112 @@ unloadOptions context state passengerId =
                 projectedUnits =
                     List.map projectTruck context.units
             in
-            case ListUtil.find (\unit -> unit.id == passengerId) projectedUnits of
-                Just passenger ->
-                    Movement.optionsAvoiding [] context.movementRules context.map projectedUnits passenger
-                        |> List.filter
-                            (Movement.canStop
-                                (reservedDestinations context passenger state)
-                                (List.map
-                                    projectTruck
-                                    (destinationUnits context (orders state))
-                                )
-                                passenger
-                            )
+            case cargo of
+                Passenger passengerId ->
+                    case ListUtil.find (\unit -> unit.id == passengerId) projectedUnits of
+                        Just passenger ->
+                            Movement.optionsAvoiding [] context.movementRules context.map projectedUnits passenger
+                                |> List.filter
+                                    (Movement.canStop
+                                        (reservedDestinations context passenger state)
+                                        (List.map
+                                            projectTruck
+                                            (destinationUnits context (orders state))
+                                        )
+                                        passenger
+                                    )
 
-                Nothing ->
-                    []
+                        Nothing ->
+                            []
+
+                Crate _ ->
+                    crateExitOptions context planning (orders state)
 
         Nothing ->
             []
+
+
+crateExitOptions : Context -> UnloadPlanning -> List PlannedOrder -> List Movement.Option
+crateExitOptions context planning plans =
+    let
+        origin : Coordinate
+        origin =
+            truckDestination planning.truck
+
+        reserved : List Coordinate
+        reserved =
+            destinations ++ passengerExits ++ crateExits
+
+        destinations : List Coordinate
+        destinations =
+            List.map PlannedOrder.destination plans
+
+        passengerExits : List Coordinate
+        passengerExits =
+            List.concatMap (PlannedOrder.unloads >> List.map .destination) plans
+
+        crateExits : List Coordinate
+        crateExits =
+            List.concatMap (PlannedOrder.crateUnloads >> List.map .destination) plans
+
+        occupied : Unit -> Bool
+        occupied unit =
+            let
+                leavesSquare : PlannedOrder -> Bool
+                leavesSquare plan =
+                    plan.unitId == unit.id && PlannedOrder.isMoving plan
+            in
+            not (List.any leavesSquare plans)
+
+        available : Coordinate -> Bool
+        available exit =
+            let
+                insideMap : Bool
+                insideMap =
+                    (exit.x >= 0)
+                        && (exit.y >= 0)
+                        && (exit.x < context.map.width)
+                        && (exit.y < context.map.height)
+
+                blocksExit : Unit -> Bool
+                blocksExit unit =
+                    occupied unit && Unit.boardPosition unit == Just exit
+
+                hasUnit : Bool
+                hasUnit =
+                    List.any blocksExit context.units
+
+                hasCrate : Bool
+                hasCrate =
+                    List.any (\crate -> crate.position == exit) context.supplyCrates
+            in
+            insideMap && not (List.member exit reserved) && not hasUnit && not hasCrate
+
+        option : Coordinate -> Movement.Option
+        option exit =
+            { destination = exit
+            , path =
+                [ origin
+                , exit
+                ]
+            , cost = 0
+            }
+    in
+    [ { x = origin.x
+      , y = origin.y - 1
+      }
+    , { x = origin.x + 1
+      , y = origin.y
+      }
+    , { x = origin.x
+      , y = origin.y + 1
+      }
+    , { x = origin.x - 1
+      , y = origin.y
+      }
+    ]
+        |> List.filter available
+        |> List.map option
 
 
 selectedUnit : Context -> Model -> Maybe Unit
@@ -1193,9 +1391,24 @@ boardingSpace context mover truck state =
                 )
                 (orders state)
 
+        plannedCrates : Int
+        plannedCrates =
+            ListUtil.find (\order -> order.unitId == truck.id) (orders state)
+                |> Maybe.map loadingCount
+                |> Maybe.withDefault 0
+
+        loadingCount : PlannedOrder -> Int
+        loadingCount order =
+            case order.action of
+                PlannedOrder.SupplyTransfer plan ->
+                    PlannedOrder.loadingCrates plan
+
+                _ ->
+                    0
+
         fitsCargo : Bool
         fitsCargo =
-            alreadyAboard + List.length (List.filter boarding (orders state)) < truck.cargoCapacity
+            alreadyAboard + Unit.crateCount truck + plannedCrates + List.length (List.filter boarding (orders state)) < truck.cargoCapacity
 
         compatible : Bool
         compatible =
@@ -1225,7 +1438,10 @@ reservedDestinations context unit state =
 
                 isWaitingTarget : Unit -> Bool
                 isWaitingTarget target =
-                    target.id == plan.unitId && not (receivingLoad context target (orders state) && target.cargoCapacity == 0)
+                    target.id
+                        == plan.unitId
+                        && not (receivingLoad context target (orders state) && target.cargoCapacity == 0)
+                        && (target.cargoCapacity == 0 || boardingSpace context unit target state)
 
                 waitingTarget : Bool
                 waitingTarget =
@@ -1251,12 +1467,19 @@ reservedDestinations context unit state =
 
         savedDestinations : List Coordinate
         savedDestinations =
-            List.map
-                PlannedOrder.destination
-                (List.filter reserves (orders state))
-                ++ List.concatMap
-                    (PlannedOrder.unloads >> List.map .destination)
-                    (orders state)
+            destinations ++ passengerExits ++ crateExits
+
+        destinations : List Coordinate
+        destinations =
+            List.map PlannedOrder.destination (List.filter reserves (orders state))
+
+        passengerExits : List Coordinate
+        passengerExits =
+            List.concatMap (PlannedOrder.unloads >> List.map .destination) (orders state)
+
+        crateExits : List Coordinate
+        crateExits =
+            List.concatMap (PlannedOrder.crateUnloads >> List.map .destination) (orders state)
     in
     savedDestinations ++ unavailableReceivers
 
@@ -1289,10 +1512,24 @@ saveMove context unit move state =
                             && (Just plan.unitId /= Maybe.map .id receiver)
                     )
 
+        receiverOrder : Unit -> Maybe PlannedOrder
+        receiverOrder target =
+            case ListUtil.find (\plan -> plan.unitId == target.id) (orders state) of
+                Just plan ->
+                    case plan.action of
+                        PlannedOrder.SupplyTransfer _ ->
+                            Just plan
+
+                        _ ->
+                            holdOrder context.units target
+
+                Nothing ->
+                    holdOrder context.units target
+
         receiverHold : List PlannedOrder
         receiverHold =
             receiver
-                |> Maybe.andThen (holdOrder context.units)
+                |> Maybe.andThen receiverOrder
                 |> Maybe.map List.singleton
                 |> Maybe.withDefault []
     in
@@ -1425,7 +1662,12 @@ setMoveDestinationFeedback feedback state =
 
 hasDialog : Model -> Bool
 hasDialog state =
-    submissionWarningOpen state || unloadChoice state /= Nothing
+    case state of
+        ChoosingCrates _ _ ->
+            True
+
+        _ ->
+            submissionWarningOpen state || unloadChoice state /= Nothing
 
 
 holdOrder : List Unit -> Unit -> Maybe PlannedOrder

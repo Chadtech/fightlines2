@@ -15,6 +15,12 @@ directory is available. A fresh clone does not include that directory.
 - `terrain-forest-illustrated-v3.png`: transparent illustrated forest overlay.
 - `supply-depot-illustrated-v1.png`: neutral concrete building with a rounded
   barrel-vault roof, in a transparent 256px square cell with a 232px footprint.
+- `supply-crate-illustrated-v1.png`: three closed wooden military supply boxes,
+  two on the ground and one of equal size on top, almost directly seen from the
+  side with shallow visible tops. The stack fills a nearly square silhouette.
+  Rough planks and nailed wooden battens, in a transparent 256px
+  square cell with a 232px footprint. Neutral material colors and smooth map
+  scaling at 75% tile size. The pile represents one supply item.
 - `units_illustrated-v4.png`: 1024 x 3072 atlas with four 256px frame columns.
   Rows 0–2 are red/blue/neutral infantry, 3–5 tanks, 6–8 trucks and 9–11 field guns.
   Infantry, tanks and trucks use rigid-part idle loops; field guns use four drawn
@@ -24,6 +30,15 @@ Terrain, buildings and units use smooth scaling. Selection corners use pixelated
 rendering. Eastern units are mirrored to face west. Depots have no ownership
 outlines or team labels. The illustrated assets were generated and edited with
 built-in imagegen on October 6–7, 2026.
+
+## Illustrated supply crate
+
+The supply crate was generated and revised with built-in imagegen on
+October 12, 2026. Its construction uses ordinary planks and wooden braces,
+with small nail heads as the only metal.
+Its local master and exact prompt are in `artwork/supplies/illustrated/`.
+`node tools/build-building-sprites.cjs` (also included in `make sprites`)
+exports both the depot and crate, preserving transparency and aspect ratio.
 
 ## Illustrated command experiment
 
@@ -59,6 +74,21 @@ master and prompt in `artwork/effects/illustrated/attack-marker/`.
 with a maximum dimension of 128px, preserving its aspect ratio.
 
 ## Combat theater backdrops
+
+`field-gun-portraits-anime-v1/` contains transparent 1600 x 640 neutral, red,
+and blue field-gun portraits with long barrels and full-length grounded split
+trails. Each portrait shows a chief directing from the rear, one loader carrying
+a round between the trails, a gunner, and an assistant gunner. The combat theater
+and right-panel inspector share these static portraits;
+the map retains its compact animated atlas sprites. `View.UnitSprite` owns portrait
+selection, proportions, and facing. Field-gun formations use wider staggered
+placements while retaining the existing health counts and casualty timing.
+Built-in imagegen produced the neutral master and color-only team edits. Local
+masters and prompts are in `artwork/units/illustrated/combat-theater/field-gun/`.
+The active masters are `neutral-v4-loader-inside.png`, `red-v2-crew.png`, and
+`blue-v2-crew.png`; team edits preserve the loader's placement between the trails.
+Run `node tools/build-field-gun-portraits.cjs`, also included in `make sprites`,
+to regenerate the exports without changing their aspect ratio.
 
 `combat-backdrops-anime-v1/` contains nine opaque 1536 x 1024 painted 1980s
 anime backdrops. Forest, hills, and plains each have green, snow, and desert

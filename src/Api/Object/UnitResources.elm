@@ -38,3 +38,10 @@ fuel :
     -> SelectionSet (Maybe decodesTo) Api.Object.UnitResources
 fuel object____ =
     Object.selectionForCompositeField "fuel" [] object____ (Basics.identity >> Decode.nullable)
+
+
+supplyCargo :
+    SelectionSet decodesTo Api.Object.SupplyStock
+    -> SelectionSet (List decodesTo) Api.Object.UnitResources
+supplyCargo object____ =
+    Object.selectionForCompositeField "supplyCargo" [] object____ (Basics.identity >> Decode.list)

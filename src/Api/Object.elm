@@ -37,6 +37,10 @@ type GameSnapshot
     = GameSnapshot
 
 
+type GroundSupplyCrate
+    = GroundSupplyCrate
+
+
 type HitPoints
     = HitPoints
 
@@ -71,6 +75,14 @@ type Snapshot
 
 type Supplies
     = Supplies
+
+
+type SupplyRules
+    = SupplyRules
+
+
+type SupplyStock
+    = SupplyStock
 
 
 type TerrainFeature

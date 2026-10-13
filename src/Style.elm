@@ -25,6 +25,7 @@ module Style exposing
     , bgYellow2
     , bgYellow4
     , block
+    , blue1Str
     , border
     , border0
     , borderB

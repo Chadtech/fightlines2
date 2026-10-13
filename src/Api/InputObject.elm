@@ -47,6 +47,35 @@ encodeCoordinateInput input____ =
         [ ( "x", Encode.int input____.x |> Just ), ( "y", Encode.int input____.y |> Just ) ]
 
 
+buildCrateUnloadInput :
+    CrateUnloadInputRequiredFields
+    -> CrateUnloadInput
+buildCrateUnloadInput required____ =
+    { cargoIndex = required____.cargoIndex, destination = required____.destination }
+
+
+type alias CrateUnloadInputRequiredFields =
+    { cargoIndex : Int
+    , destination : CoordinateInput
+    }
+
+
+{-| Type for the CrateUnloadInput input object.
+-}
+type alias CrateUnloadInput =
+    { cargoIndex : Int
+    , destination : CoordinateInput
+    }
+
+
+{-| Encode a CrateUnloadInput into a value that can be used as an argument.
+-}
+encodeCrateUnloadInput : CrateUnloadInput -> Value
+encodeCrateUnloadInput input____ =
+    Encode.maybeObject
+        [ ( "cargoIndex", Encode.int input____.cargoIndex |> Just ), ( "destination", encodeCoordinateInput input____.destination |> Just ) ]
+
+
 buildMoveOrderInput :
     MoveOrderInputRequiredFields
     -> (MoveOrderInputOptionalFields -> MoveOrderInputOptionalFields)
@@ -55,9 +84,9 @@ buildMoveOrderInput required____ fillOptionals____ =
     let
         optionals____ =
             fillOptionals____
-                { direction = Absent, ambush = Absent, attackMove = Absent, unloads = Absent }
+                { direction = Absent, ambush = Absent, attackMove = Absent, unloads = Absent, loadCrates = Absent, crateUnloads = Absent }
     in
-    { unitId = required____.unitId, path = required____.path, direction = optionals____.direction, ambush = optionals____.ambush, attackMove = optionals____.attackMove, unloads = optionals____.unloads }
+    { unitId = required____.unitId, path = required____.path, direction = optionals____.direction, ambush = optionals____.ambush, attackMove = optionals____.attackMove, unloads = optionals____.unloads, loadCrates = optionals____.loadCrates, crateUnloads = optionals____.crateUnloads }
 
 
 type alias MoveOrderInputRequiredFields =
@@ -71,6 +100,8 @@ type alias MoveOrderInputOptionalFields =
     , ambush : OptionalArgument Bool
     , attackMove : OptionalArgument Bool
     , unloads : OptionalArgument (List UnloadOrderInput)
+    , loadCrates : OptionalArgument Int
+    , crateUnloads : OptionalArgument (List CrateUnloadInput)
     }
 
 
@@ -83,6 +114,8 @@ type alias MoveOrderInput =
     , ambush : OptionalArgument Bool
     , attackMove : OptionalArgument Bool
     , unloads : OptionalArgument (List UnloadOrderInput)
+    , loadCrates : OptionalArgument Int
+    , crateUnloads : OptionalArgument (List CrateUnloadInput)
     }
 
 
@@ -91,7 +124,7 @@ type alias MoveOrderInput =
 encodeMoveOrderInput : MoveOrderInput -> Value
 encodeMoveOrderInput input____ =
     Encode.maybeObject
-        [ ( "unitId", Encode.string input____.unitId |> Just ), ( "path", (encodeCoordinateInput |> Encode.list) input____.path |> Just ), ( "direction", Encode.enum Api.Enum.Direction.toString |> Encode.optional input____.direction ), ( "ambush", Encode.bool |> Encode.optional input____.ambush ), ( "attackMove", Encode.bool |> Encode.optional input____.attackMove ), ( "unloads", (encodeUnloadOrderInput |> Encode.list) |> Encode.optional input____.unloads ) ]
+        [ ( "unitId", Encode.string input____.unitId |> Just ), ( "path", (encodeCoordinateInput |> Encode.list) input____.path |> Just ), ( "direction", Encode.enum Api.Enum.Direction.toString |> Encode.optional input____.direction ), ( "ambush", Encode.bool |> Encode.optional input____.ambush ), ( "attackMove", Encode.bool |> Encode.optional input____.attackMove ), ( "unloads", (encodeUnloadOrderInput |> Encode.list) |> Encode.optional input____.unloads ), ( "loadCrates", Encode.int |> Encode.optional input____.loadCrates ), ( "crateUnloads", (encodeCrateUnloadInput |> Encode.list) |> Encode.optional input____.crateUnloads ) ]
 
 
 buildUnloadOrderInput :

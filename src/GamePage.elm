@@ -26,7 +26,6 @@ import Api.Enum.TurnEventKind as TurnEventKind
 import Api.Enum.UnitKind as UnitKind
 import Api.Mutation
 import Api.Object
-import Api.Object.Depot as DepotApi
 import Api.Object.GamePlayerView as PlayerView
 import Api.Object.GameSnapshot as SnapshotApi
 import Api.Object.MovementRule as MovementRuleApi
@@ -34,7 +33,6 @@ import Api.Object.Scenario as Scenario
 import Api.Object.TerrainMovementCost as MovementCostApi
 import Api.Query
 import ApiRequest
-import Browser.Events
 import Camera exposing (Camera)
 import CombatRules
 import Coordinate exposing (Coordinate)
@@ -85,6 +83,7 @@ import Point exposing (Point)
 import Ports.Js.To as ToJs
 import Shared
 import Style as S
+import Supply
 import Svg exposing (Svg)
 import Svg.Attributes as SA
 import Svg.Events as Ev
@@ -101,11 +100,14 @@ import Util.List as ListUtil
 import View.Ambush as Ambush
 import View.Aria as Aria
 import View.Button as Button
+import View.CargoPassenger as CargoPassenger
+import View.Checkbox as Checkbox
 import View.CombatEffects as CombatEffects
 import View.CombatTheater as CombatTheater
 import View.Dialog as Dialog exposing (Dialog)
 import View.MovementRoute as MovementRoute
 import View.RotationChoices as RotationChoices
+import View.SupplyCrate as SupplyCrate
 import View.TerrainInfo as TerrainInfo
 import View.TerrainTile as TerrainTile
 import View.TurnControls as TurnControls
@@ -133,6 +135,8 @@ type alias Model =
     , map : Map
     , units : List Unit
     , depots : List Depot
+    , supplyCrates : List Supply.GroundCrate
+    , supplyRules : Supply.Rules
     , visibleTiles : List Coordinate
     , movementRules : List Movement.Rule
     , navigation : BattlefieldNavigation.Model
@@ -147,6 +151,8 @@ type alias Snapshot =
     , map : Map
     , units : List Unit
     , depots : List Depot
+    , supplyCrates : List Supply.GroundCrate
+    , supplyRules : Supply.Rules
     , visibleTiles : List Coordinate
     , movementRules : List Movement.Rule
     , turn : Turn.Snapshot
@@ -203,6 +209,8 @@ type Msg
     | NextUnorderedUnitKeyPressed
     | ClearMoveClicked
     | CargoUnitClicked UnitId
+    | LoadCratesClicked UnitId Int
+    | UnloadCrateToggled Int Bool
     | UnloadUnitToggled UnitId Bool
     | UnloadChoicesConfirmed
     | UnloadSkipped
@@ -254,6 +262,8 @@ init shared flags =
     , map = flags.snapshot.map
     , units = flags.snapshot.units
     , depots = flags.snapshot.depots
+    , supplyCrates = flags.snapshot.supplyCrates
+    , supplyRules = flags.snapshot.supplyRules
     , visibleTiles = flags.snapshot.visibleTiles
     , movementRules = flags.snapshot.movementRules
     , navigation = BattlefieldNavigation.init
@@ -293,6 +303,7 @@ planningContext model =
     { map = model.map
     , units = model.units
     , movementRules = model.movementRules
+    , supplyCrates = model.supplyCrates
     , playerSides = List.filter .isYou model.players |> List.map .side
     }
 
@@ -496,11 +507,20 @@ applyTurnSnapshot snapshot currentTurn model =
         let
             frame : TurnPlayback.Frame
             frame =
-                TurnPlayback.initial snapshot.playbackFrames { shots = [], durationMs = 180, units = snapshot.units, visibleTiles = snapshot.visibleTiles }
+                TurnPlayback.initial snapshot.playbackFrames
+                    { shots = []
+                    , durationMs = 180
+                    , units = snapshot.units
+                    , visibleTiles = snapshot.visibleTiles
+                    , depots = snapshot.depots
+                    , supplyCrates = snapshot.supplyCrates
+                    }
         in
         { next
             | map = snapshot.map
-            , depots = snapshot.depots
+            , depots = frame.depots
+            , supplyCrates = frame.supplyCrates
+            , supplyRules = snapshot.supplyRules
             , units = frame.units
             , visibleTiles = frame.visibleTiles
         }
@@ -623,7 +643,9 @@ snapshotSelection =
         |> SS.with (SnapshotApi.players playerSelection)
         |> SS.with (SnapshotApi.scenario (Scenario.map Map.selection))
         |> SS.with (SnapshotApi.scenario (Scenario.units Unit.selection))
-        |> SS.with (SnapshotApi.scenario (Scenario.depots (SS.map Depot (DepotApi.position Coordinate.selection))))
+        |> SS.with (SnapshotApi.scenario (Scenario.depots Depot.selection))
+        |> SS.with (SnapshotApi.scenario (Scenario.supplyCrates Supply.crateSelection))
+        |> SS.with (SnapshotApi.scenario (Scenario.supplyRules Supply.rulesSelection))
         |> SS.with (SnapshotApi.visibleTiles Coordinate.selection)
         |> SS.with (SnapshotApi.movementRules movementRuleSelection)
         |> SS.with Turn.selection
@@ -755,19 +777,90 @@ mapNavigation change model =
     { model | navigation = change model.navigation }
 
 
-finishBoardInteraction : Model -> Model -> ( Model, Eff Msg )
+{-| Compare the previous planning phase with the updated page to open newly entered cargo dialogs.
+-}
+finishBoardInteraction : TurnLifecycle.Phase -> Model -> ( Model, Eff Msg )
 finishBoardInteraction previous next =
     let
+        ready : Model
+        ready =
+            promptDepotLoading previous next
+
         effect : Eff Msg
         effect =
-            case ( unloadChoice previous.currentTurn.phase, unloadChoice next.currentTurn.phase ) of
-                ( Nothing, Just _ ) ->
-                    E.toJs (ToJs.OpenDialog { htmlId = unloadDialogHtmlId })
+            case ready.currentTurn.phase of
+                TurnLifecycle.Planning (OrderPlanning.ChoosingCrates _ _) ->
+                    E.toJs (ToJs.OpenDialog { htmlId = loadCratesDialogHtmlId })
 
                 _ ->
-                    E.none
+                    case ( unloadChoice previous, unloadChoice ready.currentTurn.phase ) of
+                        ( Nothing, Just _ ) ->
+                            E.toJs (ToJs.OpenDialog { htmlId = unloadDialogHtmlId })
+
+                        _ ->
+                            E.none
     in
-    ( next, effect )
+    ( ready, effect )
+
+
+promptDepotLoading : TurnLifecycle.Phase -> Model -> Model
+promptDepotLoading previous next =
+    let
+        eligible : PlannedOrder -> Bool
+        eligible order =
+            let
+                changed : Bool
+                changed =
+                    not (List.member order (TurnLifecycle.orders previous)) || finishedUnloading == Just order.unitId
+
+                isTruck : Bool
+                isTruck =
+                    List.any (\unit -> unit.id == order.unitId && unit.kind == UnitKind.Truck && isOwnUnit next unit) next.units
+
+                onDepot : Bool
+                onDepot =
+                    List.any (\depot -> depot.position == PlannedOrder.destination order) next.depots
+
+                handlesSupply : Bool
+                handlesSupply =
+                    case order.action of
+                        PlannedOrder.SupplyTransfer _ ->
+                            True
+
+                        _ ->
+                            False
+            in
+            changed && isTruck && onDepot && not handlesSupply
+
+        finishedUnloading : Maybe UnitId
+        finishedUnloading =
+            case previous of
+                TurnLifecycle.Planning (OrderPlanning.ChoosingPassengers choice) ->
+                    Just choice.truck.truckId
+
+                TurnLifecycle.Planning (OrderPlanning.ChoosingExits unloading) ->
+                    Just unloading.truck.truckId
+
+                _ ->
+                    Nothing
+    in
+    case next.currentTurn.phase of
+        TurnLifecycle.Planning (OrderPlanning.OrdinaryPlanning drafts) ->
+            case ListUtil.find eligible drafts.orders of
+                Just order ->
+                    next
+                        |> mapPlanning (\_ -> OrderPlanning.ChoosingCrates order.unitId drafts)
+
+                Nothing ->
+                    next
+
+        _ ->
+            next
+
+
+loadCratesDialogHtmlId : String
+loadCratesDialogHtmlId =
+    "load-supply-crates-dialog"
 
 
 {-| Enter and Space activate a focused board object. Reserve Meta/Ctrl chords
@@ -978,10 +1071,18 @@ update lobbyId msg model =
 
         BattlefieldNavigationMsg navigationMsg ->
             let
+                updateNavigation : BattlefieldNavigation.Model -> BattlefieldNavigation.Model
+                updateNavigation =
+                    if pathPreview model /= Nothing then
+                        BattlefieldNavigation.updateRoute navigationMsg
+
+                    else
+                        BattlefieldNavigation.update navigationMsg
+
                 traced : Model
                 traced =
                     model
-                        |> mapNavigation (BattlefieldNavigation.update navigationMsg)
+                        |> mapNavigation updateNavigation
             in
             if pathPreview model /= Nothing then
                 let
@@ -1000,7 +1101,7 @@ update lobbyId msg model =
                 in
                 traced
                     |> next
-                    |> finishBoardInteraction model
+                    |> finishBoardInteraction model.currentTurn.phase
 
             else
                 traced
@@ -1019,12 +1120,36 @@ update lobbyId msg model =
         UnloadChoicesConfirmed ->
             model
                 |> mapPlanning (OrderPlanning.confirmPassengers (planningContext model))
-                |> E.withOut
+                |> finishBoardInteraction model.currentTurn.phase
 
         UnloadSkipped ->
             model
                 |> dismissDialog
                 |> clearSelection
+                |> finishBoardInteraction model.currentTurn.phase
+
+        LoadCratesClicked id count ->
+            case
+                ListUtil.find
+                    (\unit -> unit.id == id && isOwnUnit model unit)
+                    model.units
+            of
+                Just _ ->
+                    model
+                        |> mapPlanning
+                            (OrderPlanning.dismissDialog
+                                >> saveCrateLoading id count
+                            )
+                        |> E.withOut
+
+                Nothing ->
+                    model
+                        |> E.withOut
+
+        UnloadCrateToggled index checked ->
+            model
+                |> mapPlanning
+                    (OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate index) checked)
                 |> E.withOut
 
         CargoUnitClicked id ->
@@ -1036,7 +1161,7 @@ update lobbyId msg model =
         NextUnorderedUnitKeyPressed ->
             model
                 |> mapPlanning (OrderPlanning.selectNextUnorderedUnit (planningContext model))
-                |> finishBoardInteraction model
+                |> finishBoardInteraction model.currentTurn.phase
 
         RotationChoicesMsg rotationMsg ->
             let
@@ -1054,7 +1179,7 @@ update lobbyId msg model =
                                 saveRotation direction model
             in
             next
-                |> finishBoardInteraction model
+                |> finishBoardInteraction model.currentTurn.phase
 
         ClickedUnit id click ->
             let
@@ -1067,7 +1192,7 @@ update lobbyId msg model =
                         selectUnit id model
             in
             next
-                |> finishBoardInteraction model
+                |> finishBoardInteraction model.currentTurn.phase
 
         PressedEnterOnUnit id ->
             let
@@ -1085,12 +1210,12 @@ update lobbyId msg model =
                         selectUnit id model
             in
             next
-                |> finishBoardInteraction model
+                |> finishBoardInteraction model.currentTurn.phase
 
         PressedSpaceOnUnit id ->
             model
                 |> selectUnit id
-                |> finishBoardInteraction model
+                |> finishBoardInteraction model.currentTurn.phase
 
         MouseOverUnit id ->
             let
@@ -1107,7 +1232,7 @@ update lobbyId msg model =
                             |> Maybe.withDefault model
             in
             next
-                |> finishBoardInteraction model
+                |> finishBoardInteraction model.currentTurn.phase
 
         ClickedDepot position click ->
             let
@@ -1120,17 +1245,17 @@ update lobbyId msg model =
                         selectTile position model
             in
             next
-                |> finishBoardInteraction model
+                |> finishBoardInteraction model.currentTurn.phase
 
         PressedEnterOnDepot position ->
             model
                 |> selectTile position
-                |> finishBoardInteraction model
+                |> finishBoardInteraction model.currentTurn.phase
 
         PressedSpaceOnDepot position ->
             model
                 |> selectTile position
-                |> finishBoardInteraction model
+                |> finishBoardInteraction model.currentTurn.phase
 
         MouseOverDepot position ->
             let
@@ -1143,7 +1268,7 @@ update lobbyId msg model =
                         previewTile position model
             in
             next
-                |> finishBoardInteraction model
+                |> finishBoardInteraction model.currentTurn.phase
 
         ClickedTile position click ->
             let
@@ -1156,17 +1281,17 @@ update lobbyId msg model =
                         selectTile position model
             in
             next
-                |> finishBoardInteraction model
+                |> finishBoardInteraction model.currentTurn.phase
 
         PressedEnterOnTile position ->
             model
                 |> selectTile position
-                |> finishBoardInteraction model
+                |> finishBoardInteraction model.currentTurn.phase
 
         PressedSpaceOnTile position ->
             model
                 |> selectTile position
-                |> finishBoardInteraction model
+                |> finishBoardInteraction model.currentTurn.phase
 
         MouseOverTile position ->
             let
@@ -1179,7 +1304,7 @@ update lobbyId msg model =
                         previewTile position model
             in
             next
-                |> finishBoardInteraction model
+                |> finishBoardInteraction model.currentTurn.phase
 
         UnitCommandsMsg commandMsg ->
             model
@@ -1207,7 +1332,7 @@ update lobbyId msg model =
         PathEnterPressed ->
             model
                 |> confirmPath
-                |> E.withOut
+                |> finishBoardInteraction model.currentTurn.phase
 
         ClearMoveClicked ->
             model
@@ -1236,7 +1361,7 @@ update lobbyId msg model =
         DialogDismissed ->
             model
                 |> dismissDialog
-                |> E.withOut
+                |> finishBoardInteraction model.currentTurn.phase
 
         SubmitKeyPressed ->
             if canSubmitWithKeyboard model then
@@ -1425,6 +1550,8 @@ applyPlaybackFrame next model =
     in
     { model
         | currentTurn = { currentTurn | phase = next.phase }
+        , depots = next.frame.depots
+        , supplyCrates = next.frame.supplyCrates
         , units = next.frame.units
         , visibleTiles = next.frame.visibleTiles
     }
@@ -1449,7 +1576,7 @@ handleCommandMsg commandMsg model =
         UnitCommands.CommandPicked command ->
             model
                 |> applyCommand command
-                |> finishBoardInteraction model
+                |> finishBoardInteraction model.currentTurn.phase
 
         UnitCommands.ArrowedUpCommandMenu current ->
             ( model
@@ -1588,6 +1715,7 @@ selectionView model =
                                 ]
                                 [ UnitStatus.toHtml (unitPlayerName model unit) unit
                                 , cargoView model unit
+                                , supplyControls model unit
                                 , movementView model
                                 , terrainView model
                                 ]
@@ -1616,7 +1744,16 @@ selectionView model =
 
                                 tileContent : List (Html Msg)
                                 tileContent =
-                                    depotTitle ++ [ terrainView model ]
+                                    depotTitle ++ supplyDetails ++ terrainDetails
+
+                                supplyDetails : List (Html Msg)
+                                supplyDetails =
+                                    supplySourceDetails model position
+
+                                terrainDetails : List (Html Msg)
+                                terrainDetails =
+                                    [ terrainView model
+                                    ]
                             in
                             tileContent
 
@@ -1679,6 +1816,19 @@ panelFooter model =
         ]
 
 
+unloadingCargoLabel : Model -> Unit -> String
+unloadingCargoLabel model unit =
+    case
+        unloadPlanning model.currentTurn.phase
+            |> Maybe.map .cargo
+    of
+        Just (OrderPlanning.Crate index) ->
+            "supply crate " ++ String.fromInt (index + 1)
+
+        _ ->
+            Unit.label unit
+
+
 movementView : Model -> Html Msg
 movementView model =
     let
@@ -1697,8 +1847,12 @@ movementView model =
                         ]
 
                     else if isChoosingUnload model then
-                        [ H.p [] [ H.text ("choose an adjacent square to unload " ++ Unit.label unit) ]
-                        , Button.secondary "skip remaining units" UnloadSkipped |> Button.toHtml
+                        [ H.p
+                            []
+                            [ H.text ("choose an adjacent square to unload " ++ unloadingCargoLabel model unit)
+                            ]
+                        , Button.secondary "skip remaining cargo" UnloadSkipped
+                            |> Button.toHtml
                         ]
 
                     else if Unit.carrierId unit /= Nothing || receivingLoad unit model then
@@ -1834,6 +1988,16 @@ unitOrderView model unit =
                         chosenOrderText : String
                         chosenOrderText =
                             case plan.action of
+                                PlannedOrder.SupplyTransfer supply ->
+                                    "supply run to ("
+                                        ++ String.fromInt supply.destination.x
+                                        ++ ", "
+                                        ++ String.fromInt supply.destination.y
+                                        ++ "): load "
+                                        ++ String.fromInt (PlannedOrder.loadingCrates supply)
+                                        ++ " · unload "
+                                        ++ String.fromInt (List.length (PlannedOrder.unloadingCrates supply))
+
                                 PlannedOrder.Hold _ ->
                                     "hold position"
 
@@ -2117,6 +2281,190 @@ terrainView model =
             H.text ""
 
 
+{-| Save the chosen load count on an existing truck order, retaining its route and passenger exits.
+-}
+saveCrateLoading : UnitId -> Int -> OrderPlanning.Model -> OrderPlanning.Model
+saveCrateLoading id count state =
+    let
+        retainsOrder : PlannedOrder -> Bool
+        retainsOrder order =
+            order.unitId /= id
+
+        loadingOrder : PlannedOrder -> PlannedOrder
+        loadingOrder order =
+            { unitId = id
+            , action =
+                PlannedOrder.SupplyTransfer
+                    { route = PlannedOrder.path order
+                    , destination = PlannedOrder.destination order
+                    , handling = PlannedOrder.LoadingCrates count
+                    , passengers = PlannedOrder.unloads order
+                    }
+            }
+    in
+    case state of
+        OrderPlanning.OrdinaryPlanning drafts ->
+            case ListUtil.find (\order -> order.unitId == id) drafts.orders of
+                Just order ->
+                    OrderPlanning.OrdinaryPlanning
+                        { orders = loadingOrder order :: List.filter retainsOrder drafts.orders
+                        , selection = Just (Inspecting (UnitInspection id))
+                        }
+
+                Nothing ->
+                    state
+
+        _ ->
+            state
+
+
+supplyControls : Model -> Unit -> Html Msg
+supplyControls model unit =
+    let
+        crates : List Supply.Stock
+        crates =
+            unit.resources
+                |> Maybe.map .supplyCargo
+                |> Maybe.withDefault []
+
+        unloads : List PlannedOrder.CrateUnload
+        unloads =
+            plannedOrders model
+                |> ListUtil.find (\order -> order.unitId == unit.id)
+                |> Maybe.map PlannedOrder.crateUnloads
+                |> Maybe.withDefault []
+
+        contents : List (Html Msg)
+        contents =
+            let
+                crateControls : Int -> Supply.Stock -> Html Msg
+                crateControls index stock =
+                    let
+                        selectedExit : Maybe Coordinate
+                        selectedExit =
+                            ListUtil.find (\unload -> unload.cargoIndex == index) unloads
+                                |> Maybe.map .destination
+
+                        pending : String
+                        pending =
+                            selectedExit
+                                |> Maybe.map unloadDescription
+                                |> Maybe.withDefault ""
+
+                        unloadDescription : Coordinate -> String
+                        unloadDescription exit =
+                            " · unload at ("
+                                ++ String.fromInt exit.x
+                                ++ ", "
+                                ++ String.fromInt exit.y
+                                ++ ")"
+
+                        crateContents : List (Html Msg)
+                        crateContents =
+                            [ H.p
+                                []
+                                [ H.text ("crate " ++ String.fromInt (index + 1) ++ ": " ++ String.fromInt stock.current ++ "/" ++ String.fromInt stock.maximum ++ pending)
+                                ]
+                            ]
+                    in
+                    H.div
+                        [ A.css
+                            [ S.col
+                            , S.g1
+                            ]
+                        ]
+                        crateContents
+
+                replenishmentNote : Html Msg
+                replenishmentNote =
+                    H.p
+                        []
+                        [ H.text "automatically refills nearby units before upkeep, while stock lasts"
+                        ]
+
+                crateRows : List (Html Msg)
+                crateRows =
+                    List.indexedMap crateControls crates
+            in
+            replenishmentNote :: crateRows
+
+        canInspectSupplyCargo : Bool
+        canInspectSupplyCargo =
+            isOwnUnit model unit && unit.kind == UnitKind.Truck
+    in
+    if canInspectSupplyCargo then
+        H.div
+            [ A.css
+                [ S.col
+                , S.g2
+                ]
+            ]
+            contents
+
+    else
+        H.text ""
+
+
+supplySourceDetails : Model -> Coordinate -> List (Html Msg)
+supplySourceDetails model position =
+    let
+        stockText : Supply.Stock -> String
+        stockText stock =
+            "supplies: " ++ String.fromInt stock.current ++ "/" ++ String.fromInt stock.maximum
+
+        depotStock : List (Html Msg)
+        depotStock =
+            ListUtil.find (\depot -> depot.position == position) model.depots
+                |> Maybe.map depotDetails
+                |> Maybe.map List.singleton
+                |> Maybe.withDefault []
+
+        crates : List (Html Msg)
+        crates =
+            model.supplyCrates
+                |> List.filter (\crate -> crate.position == position)
+                |> List.map crateDetails
+
+        depotDetails : Depot -> Html Msg
+        depotDetails depot =
+            let
+                description : String
+                description =
+                    depot.stock
+                        |> Maybe.map stockText
+                        |> Maybe.withDefault "stock outside sight"
+            in
+            H.p
+                []
+                [ H.text description
+                ]
+
+        crateDetails : Supply.GroundCrate -> Html Msg
+        crateDetails crate =
+            H.p
+                []
+                [ H.text ("supply crate · " ++ stockText crate.stock)
+                ]
+
+        hasSupplySource : Bool
+        hasSupplySource =
+            not (List.isEmpty depotStock && List.isEmpty crates)
+
+        rules : List (Html Msg)
+        rules =
+            if hasSupplySource then
+                [ H.p
+                    []
+                    [ H.text "refills units on or beside this square before upkeep, while stock lasts"
+                    ]
+                ]
+
+            else
+                []
+    in
+    depotStock ++ crates ++ rules
+
+
 cargoView : Model -> Unit -> Html Msg
 cargoView model unit =
     let
@@ -2124,21 +2472,40 @@ cargoView model unit =
         cargo =
             List.filter (\passenger -> Unit.carrierId passenger == Just unit.id) model.units
 
-        passengerButton : Unit -> Html Msg
-        passengerButton passenger =
-            Button.secondary ("cargo: " ++ Unit.label passenger) (CargoUnitClicked passenger.id)
-                |> Button.toHtml
+        passengerRow : Unit -> Html Msg
+        passengerRow passenger =
+            CargoPassenger.toHtml
+                { onSelect = CargoUnitClicked passenger.id }
+                passenger
+
+        passengerList : List (Html Msg)
+        passengerList =
+            if List.isEmpty cargo then
+                []
+
+            else
+                [ H.div
+                    [ A.css
+                        [ S.col
+                        , S.g2
+                        , S.p2
+                        , S.bgNightwood3
+                        , S.indentStrong
+                        ]
+                    ]
+                    (List.map passengerRow cargo)
+                ]
 
         cargoSummary : Html Msg
         cargoSummary =
             H.p
                 []
-                [ H.text ("cargo: " ++ String.fromInt (List.length cargo) ++ "/" ++ String.fromInt unit.cargoCapacity)
+                [ H.text ("cargo: " ++ String.fromInt (List.length cargo + Unit.crateCount unit) ++ "/" ++ String.fromInt unit.cargoCapacity)
                 ]
 
         cargoContents : List (Html Msg)
         cargoContents =
-            cargoSummary :: List.map passengerButton cargo
+            cargoSummary :: passengerList
 
         canInspectCargo : Bool
         canInspectCargo =
@@ -2194,14 +2561,51 @@ unloadChecklist model choice =
         passengerCheckbox : Unit -> Html Msg
         passengerCheckbox unit =
             UnloadPassenger.toHtml
-                { checked = List.member unit.id choice.checked
+                { checked = List.member (OrderPlanning.Passenger unit.id) choice.checked
                 , onCheck = UnloadUnitToggled unit.id
                 }
                 unit
 
         choices : List (Html Msg)
         choices =
+            passengerChoices ++ crateChoices
+
+        passengerChoices : List (Html Msg)
+        passengerChoices =
             List.map passengerCheckbox passengers
+
+        crateChoices : List (Html Msg)
+        crateChoices =
+            model.units
+                |> ListUtil.find (\unit -> unit.id == choice.truck.truckId)
+                |> Maybe.andThen .resources
+                |> Maybe.map (.supplyCargo >> List.indexedMap crateCheckbox)
+                |> Maybe.withDefault []
+
+        crateCheckbox : Int -> Supply.Stock -> Html Msg
+        crateCheckbox index stock =
+            let
+                label : String
+                label =
+                    "supply crate " ++ String.fromInt (index + 1)
+            in
+            Checkbox.toHtml
+                { label = label
+                , checked = List.member (OrderPlanning.Crate index) choice.checked
+                , onCheck = UnloadCrateToggled index
+                }
+                [ H.img
+                    [ A.src "/assets/supply-crate-illustrated-v1.png"
+                    , A.alt ""
+                    , A.width 48
+                    , A.height 48
+                    ]
+                    []
+                , H.span
+                    []
+                    [ H.text (label ++ " · supplies " ++ String.fromInt stock.current ++ "/" ++ String.fromInt stock.maximum)
+                    ]
+                ]
 
         proceedButton : Html Msg
         proceedButton =
@@ -2216,14 +2620,130 @@ unloadChecklist model choice =
         actions : Html Msg
         actions =
             H.form
-                [ A.attribute "method" "dialog" ]
-                [ proceedButton ]
+                [ A.attribute "method" "dialog"
+                ]
+                [ proceedButton
+                ]
 
         content : List (Html Msg)
         content =
-            choices ++ [ actions ]
+            choices ++ actionContent
+
+        actionContent : List (Html Msg)
+        actionContent =
+            [ actions
+            ]
     in
     Dialog.make unloadDialogHtmlId "unload" DialogDismissed content
+
+
+depotLoadingDialog : Model -> UnitId -> Dialog Msg
+depotLoadingDialog model id =
+    let
+        truck : Maybe Unit
+        truck =
+            ListUtil.find (\unit -> unit.id == id) model.units
+
+        room : Int
+        room =
+            truck
+                |> Maybe.map (depotLoadingRoom model)
+                |> Maybe.withDefault 0
+
+        choice : Int -> Html Msg
+        choice count =
+            if count > room then
+                Button.disabled (String.fromInt count)
+                    |> Button.toHtml
+
+            else
+                Button.secondary (String.fromInt count) (LoadCratesClicked id count)
+                    |> Button.toHtml
+
+        actions : Html Msg
+        actions =
+            H.form
+                [ A.attribute "method" "dialog"
+                , A.css
+                    [ S.row
+                    , S.g2
+                    ]
+                ]
+                (List.range 0 2
+                    |> List.map choice
+                )
+    in
+    Dialog.make loadCratesDialogHtmlId
+        "load supply crates"
+        DialogDismissed
+        [ H.p
+            []
+            [ H.text "how many crates should the truck load from this depot?"
+            ]
+        , actions
+        ]
+
+
+depotLoadingRoom : Model -> Unit -> Int
+depotLoadingRoom model unit =
+    let
+        passengers : Int
+        passengers =
+            List.filter (\passenger -> Unit.carrierId passenger == Just unit.id) model.units
+                |> List.length
+
+        crates : Int
+        crates =
+            unit.resources
+                |> Maybe.map (.supplyCargo >> List.length)
+                |> Maybe.withDefault 0
+
+        incoming : Int
+        incoming =
+            List.filter boardsTruck (plannedOrders model)
+                |> List.length
+
+        boardsTruck : PlannedOrder -> Bool
+        boardsTruck order =
+            (order.unitId /= unit.id)
+                && PlannedOrder.isMoving order
+                && (Just (PlannedOrder.destination order) == Unit.boardPosition unit)
+
+        destination : Maybe Coordinate
+        destination =
+            plannedOrders model
+                |> ListUtil.find (\order -> order.unitId == unit.id)
+                |> Maybe.map PlannedOrder.destination
+
+        pickup : Int
+        pickup =
+            destination
+                |> Maybe.andThen (\position -> OrderPlanning.loadingTarget (planningContext model) unit position (plannedOrders model))
+                |> Maybe.map (\_ -> 1)
+                |> Maybe.withDefault 0
+
+        depot : Maybe Depot
+        depot =
+            destination
+                |> Maybe.andThen destinationDepot
+
+        destinationDepot : Coordinate -> Maybe Depot
+        destinationDepot position =
+            ListUtil.find (\source -> source.position == position) model.depots
+
+        stockLimit : Int
+        stockLimit =
+            case
+                depot
+                    |> Maybe.andThen .stock
+            of
+                Just stock ->
+                    (stock.current + model.supplyRules.crateCapacity - 1) // model.supplyRules.crateCapacity
+
+                Nothing ->
+                    2
+    in
+    min stockLimit (max 0 (unit.cargoCapacity - passengers - crates - incoming - pickup))
 
 
 {-| The active planning alternative determines the dialog; no dialog state is stored.
@@ -2236,6 +2756,9 @@ dialog model =
 
         TurnLifecycle.Planning (OrderPlanning.ChoosingPassengers choice) ->
             Just (unloadChecklist model choice)
+
+        TurnLifecycle.Planning (OrderPlanning.ChoosingCrates id _) ->
+            Just (depotLoadingDialog model id)
 
         _ ->
             Nothing
@@ -2507,7 +3030,10 @@ boardHtml model =
 
         destinationAction : String
         destinationAction =
-            if attacking then
+            if isChoosingUnload model then
+                "unload at"
+
+            else if attacking then
                 "attack move to"
 
             else
@@ -2619,6 +3145,44 @@ boardHtml model =
 
             else
                 String.join " " filters
+
+        crateReservation : PlannedOrder.CrateUnload -> Svg Msg
+        crateReservation unload =
+            at unload.destination
+                [ Svg.rect
+                    [ SA.x "1"
+                    , SA.y "1"
+                    , SA.width "14"
+                    , SA.height "14"
+                    , SA.fill "none"
+                    , SA.stroke S.yellow5Str
+                    , SA.strokeWidth "0.5"
+                    , SA.strokeDasharray "1 1"
+                    , SA.pointerEvents "none"
+                    , Aria.svgHidden True
+                    ]
+                    []
+                ]
+
+        crateView : Supply.GroundCrate -> Svg Msg
+        crateView crate =
+            at crate.position
+                [ SupplyCrate.toSvg
+                , Svg.rect
+                    [ SA.width "16"
+                    , SA.height "16"
+                    , SA.fill "transparent"
+                    , HA.attribute "tabindex" "0"
+                    , Aria.svgRole Aria.Button
+                    , Aria.svgLabel "supply crate"
+                    , onClickWithDetail (ClickedTile crate.position)
+                    , onBoardActivationKeyDown
+                        { pressedEnter = PressedEnterOnTile crate.position
+                        , pressedSpace = PressedSpaceOnTile crate.position
+                        }
+                    ]
+                    []
+                ]
 
         depotView : Depot -> Svg Msg
         depotView depot =
@@ -2756,14 +3320,30 @@ boardHtml model =
                     else
                         0
 
+                crateCount : Int
+                crateCount =
+                    if unit.kind == UnitKind.Truck then
+                        Unit.crateCount unit
+
+                    else
+                        0
+
+                cargoCount : Int
+                cargoCount =
+                    passengerCount + crateCount
+
                 accessibleLabel : String
                 accessibleLabel =
-                    if passengerCount > 0 then
+                    if cargoCount > 0 then
                         Unit.label unit
                             ++ ", cargo: "
-                            ++ String.fromInt passengerCount
+                            ++ String.fromInt cargoCount
                             ++ " / "
                             ++ String.fromInt unit.cargoCapacity
+                            ++ ", passengers: "
+                            ++ String.fromInt passengerCount
+                            ++ ", supply crates: "
+                            ++ String.fromInt crateCount
 
                     else
                         Unit.label unit
@@ -2796,6 +3376,8 @@ boardHtml model =
                         |> StyledSvg.toUnstyled
                     ]
                 , UnitCargo.toSvg passengerCount
+                    |> StyledSvg.toUnstyled
+                , UnitCargo.supplyToSvg crateCount
                     |> StyledSvg.toUnstyled
                 , UnitDeath.toSvg unit
                     |> StyledSvg.toUnstyled
@@ -3050,6 +3632,8 @@ boardHtml model =
                 [ [ terrain, movementOverlay ]
                 , List.map tileTarget positions
                 , List.map depotView model.depots
+                , List.map crateView model.supplyCrates
+                , List.concatMap (PlannedOrder.crateUnloads >> List.map crateReservation) (plannedOrders model)
                 , List.filterMap (\unit -> Unit.boardPosition unit |> Maybe.map (unitView unit)) model.units
                 , ambushCoverage
                 , [ unloadOverlay, shotOverlay ]

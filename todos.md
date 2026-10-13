@@ -1,0 +1,13 @@
+- Checkbox to auto close combat theater
+- Bug: several units will get eliminated and then disappear together instead of one at a time
+- Bug: skull and cross bones should blink and hang around longer
+- When a unit dies there should be a dialog that mentions this so it is not lost
+- Supply Depots configured with different amounts of supplies
+- Field guns should consume a lot more supplies firing
+- Rushing should be possible. If a unit is ambushed and was attack moving, the remaining forces should continue with the attack move
+- 16 little infantry guys in combat theater for infantry
+- Field guns in combat theater should be more spaced out and in various sizes, as if they are more spread out
+- On map health indicator so weak units can be seen
+- On map low supply indicator so exhausted units can be seen
+- Attacking and destroying supply depos and supply crates
+- If you click on a supply depot, the view panel should fill with info about it

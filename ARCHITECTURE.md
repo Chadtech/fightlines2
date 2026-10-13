@@ -141,8 +141,8 @@ move the camera. Subscription events use the navigation module's `Msg` and `upda
 ## GraphQL and generated client
 
 `Unit.resources` is nullable as a whole: concealed enemy resources return `null`.
-A visible `UnitResources` contains required hit points and supplies, plus optional
-fuel for vehicles. Rust keeps authoritative resources present regardless of visibility.
+A visible `UnitResources` contains required hit points and supplies, optional
+fuel for vehicles, and finite crate stocks in `supplyCargo`. Rust keeps authoritative resources present regardless of visibility.
 
 All data operations use `POST /graphql`; the former `/api/*` endpoints are
 removed. Frontend URLs such as `/lobby/<id>` and `/game/<id>` still serve the
@@ -254,7 +254,9 @@ Board data types live in `Coordinate`, `TerrainFeature`, `Map`, `Depot`, `Unit`
 and its local board view; the view composes them without owning domain data.
 `View.Sprite` clips atlas cells using named sheet dimensions and coordinates,
 using styled SVG. `View.UnitSprite` owns the shared unit atlas, kind/side row
-mapping, and facing for both animated board units and static status portraits.
+mapping, and facing. Its portrait API uses separate elongated field-gun assets
+for the status panel and combat formations; other portraits use the board atlas.
+Portrait width drives SVG framing and formation scaling without changing map cells.
 `Camera` names the shared offset/zoom data used by navigation, the page viewport
 and command positioning. `GamePage.BattlefieldNavigation` owns camera offset, zoom and an opaque
 `PointerGesture`. The page handles pointer, button and keyboard events by calling
@@ -519,10 +521,11 @@ Every Rust unit carries `Supplies` with current and maximum quantities plus
 64/64; vehicles start at 32/32. All kinds have upkeep 1. Infantry spend 4 additional
 supplies per traversed tile and field guns spend 1;
 tanks and trucks spend none for movement. These are unit provisions, separate
-from fuel and future truck supply cargo.
+from fuel and carried supply crates.
 
 Validation reserves upkeep before allowing movement expenditure. Resolution
-spends supplies on successful movement, then charges upkeep once to every unit,
+spends supplies on successful movement, then replenishes from nearby finite
+sources before charging upkeep once to every unit,
 including holds and interrupted movement. Units at zero supplies are removed
 immediately, along with passengers of exhausted carriers. `finish_turn_resources`
 returns a presentation snapshot with zero supplies and health for dead units.
@@ -536,8 +539,8 @@ death-focus class. `TurnPlayback.start` omits previously presented casualties
 from later frames, so combat death markers clear after the server's pause
 before subsequent movement resumes. Server visibility and timing remain intact.
 Frame visibility filtering also applies to deaths, concealing hidden enemies.
-Depots do not replenish supplies yet;
-vehicle fuel refills at any depot. Waiting for another player and retrying submissions never
+Nearby depots and crates replenish provisions before upkeep;
+vehicle fuel refills when ending on any depot. Waiting for another player and retrying submissions never
 charge upkeep.
 
 GraphQL supplies state and consumption rates initialize Elm `Unit` values and
@@ -620,7 +623,7 @@ or unloading drafts exist. The truck's status panel exposes cargo buttons;
 carried units have no independent commands. Saving a truck destination opens
 an unload checklist through `OrderPlanning.ChoosingPassengers`. Confirmation
 advances to `ChoosingExits`. Both stages own a typed truck plan distinguishing
-movement from stationary unloading, with all passenger exits accumulated so far,
+movement from stationary unloading, with all passenger and crate exits accumulated so far,
 plus other units' orders.
 There is no independently stored dialog or unload selection. `OrderPlanning.orders`
 assembles the complete planning orders, exposed through `TurnLifecycle.orders`
@@ -639,7 +642,7 @@ Resolution emits ordinary movement followed by explicit `Load` events; `Unload`
 events walk a passenger onto the board. Event initial carrier IDs restore cargo
 when rewinding, and load carrier IDs identify the truck. Playback applies those
 events as location transitions; riding positions are derived from the truck.
-Supply delivery cargo remains future work.
+Supply crates share truck berths with passengers and are resolved through `supplies.rs`.
 `GamePage` counts passengers from the current board's `Aboard` locations
 and overlays `View.UnitCargo` on loaded trucks, outside the sprite's order-dimming
 filter and side-mirroring transform. Load/unload playback therefore updates the
@@ -782,3 +785,47 @@ return fire. Only successful edges spend movement
 resources. Planning reserves the shot cost plus upkeep; a route without an
 encounter spends no firing supplies. Combat events use the existing theater,
 with an `attack move` heading and the usual fog-safe encounter portraits.
+
+
+## Finite supply sources and replenishment
+
+`supplies.rs` owns `SupplyStock`, `GroundSupplyCrate`, validated `SupplyOrder`,
+loading/unloading, and end-of-turn distribution. `Scenario` owns finite depot
+stocks and ground crates; each `Unit` owns its carried crate stocks independently
+of provisions. `SupplyRules` supplies authoritative capacities
+to Elm. `Unit.resources.supplyCargo` follows the existing whole-resource fog gate.
+Depot stock is nullable outside sight; known depot positions remain available.
+Ground crates are projected by visible tile, independently of unit concealment.
+
+`MoveOrderInput.loadCrates` requests a count and `crateUnloads` identifies original
+cargo slots and destinations. Validation checks truck ownership, shared passenger
+capacity including incoming boarding orders, known depot availability, unique
+slots, adjacent exits, and reservations against the observed board. Unknown depot
+stock or concealed exit occupants do not leak through validation. Actual stock,
+arrived trucks, and full-board occupancy decide success after transport and combat.
+Loading cannot combine with crate unloading in the same turn. Resolution removes
+unloaded slots in descending order to preserve identities. Competing freight orders
+use alternating side priority and stable unit IDs, independently of submission order.
+
+`Scenario::finish_turn_resources` replenishes before upkeep and exhaustion cleanup.
+Sources deliver until stock runs out or recipients reach provision capacity, with
+no per-turn transfer limit. Overlapping sources can fill remaining deficits. Sources supply
+living units, using cardinal adjacency and physical carrier positions for passengers.
+All crates are neutral and serve both sides, including a carrier and its passengers. Round-robin distribution rotates its first recipient each turn. Combat
+casualties and passengers of destroyed carriers cannot receive supplies. Empty crates
+are removed. Provision replenishment leaves health and depot fuel rules unchanged.
+
+`PlannedOrder.SupplyTransfer` owns the truck route, load count, crate exits, and
+existing passenger unloads. `OrderPlanning.ChoosingCrates` owns the depot-loading
+dialog and the saved drafts. Saving a truck destination on a depot opens the
+0/1/2 choice after cargo unloading choices. Dismissing keeps the route without
+loading. Depot loading requires the destination square itself. Trucks with room
+collect neutral ground crates at their actual final position, preserving stock.
+The shared unload checklist accepts typed passenger IDs and crate slots. Crates use
+the same sequential board picker with adjacent empty squares, and mixed exits
+assemble a `SupplyTransfer` preserving passenger exits. The inspector shows stock
+and saved destinations; locked phases cannot edit freight. Crate exits participate in movement and
+passenger reservations, and revoke with their truck plan. `Supply` and `Depot` own
+client selections. `TurnFrame` includes source stocks and ground crates so playback
+shows pre-transfer stocks until end-of-turn replenishment. Projection conceals each
+frame independently; `GamePage` applies those sources alongside frame units and sight.

@@ -23,6 +23,7 @@
 !/public/assets/README.md
 !/public/assets/misc_sheet.png
 !/public/assets/supply-depot-illustrated-v1.png
+!/public/assets/supply-crate-illustrated-v1.png
 !/public/assets/death-skull-illustrated-v1.png
 !/public/assets/attack-marker-illustrated-v1.png
 !/public/assets/terrain-forest-illustrated-v3.png
@@ -30,6 +31,8 @@
 !/public/assets/terrain-grass-illustrated-v2.png
 !/public/assets/terrain-hills-illustrated-v3.png
 !/public/assets/units_illustrated-v4.png
+!/public/assets/field-gun-portraits-anime-v1/
+!/public/assets/field-gun-portraits-anime-v1/*.png
 
 # Small illustrated command-menu experiment exports.
 !/public/assets/commands-anime-v1/

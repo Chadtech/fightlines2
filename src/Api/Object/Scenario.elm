@@ -38,3 +38,17 @@ units :
     -> SelectionSet (List decodesTo) Api.Object.Scenario
 units object____ =
     Object.selectionForCompositeField "units" [] object____ (Basics.identity >> Decode.list)
+
+
+supplyCrates :
+    SelectionSet decodesTo Api.Object.GroundSupplyCrate
+    -> SelectionSet (List decodesTo) Api.Object.Scenario
+supplyCrates object____ =
+    Object.selectionForCompositeField "supplyCrates" [] object____ (Basics.identity >> Decode.list)
+
+
+supplyRules :
+    SelectionSet decodesTo Api.Object.SupplyRules
+    -> SelectionSet decodesTo Api.Object.Scenario
+supplyRules object____ =
+    Object.selectionForCompositeField "supplyRules" [] object____ Basics.identity

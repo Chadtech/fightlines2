@@ -13,6 +13,7 @@ mod player_name;
 mod scenario;
 mod seed;
 mod session_token;
+mod supplies;
 mod turns;
 mod visibility;
 

@@ -198,6 +198,11 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   infantry, tanks, trucks and field guns fit within 232 x 232px bounds in 256px
   cells, preserving each master’s aspect ratio. Keep side-profile vehicles, a substantial tank turret and thick barrel,
   and tall truck cab/canopy so their bulk reads as clearly as the infantry.
+- Field-gun combat-theater figures and right-panel portraits use a separate
+  elongated 5:2 canvas with realistic long barrels and grounded split trails,
+  in the same detailed 1980s illustrated anime style and red/blue palettes.
+  Preserve the full silhouette, mirror with sprite facing, and stagger the wider
+  theater figures within the scene. The map keeps its compact animated sprites.
 - Render terrain below depots and units, with a thin, muted gold square inset inside the selected
   tile. Keep its entire stroke within that cell, without a fill or animation. Identify ownership as player 1 and player 2, independently of map position. Show player labels and
   selected-unit details so color is not the only identifier.
@@ -252,6 +257,14 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   roof seen head-on with slight elevation, detailed 1980s anime ink work and painted shading. They fill a comparable
   square cell with neutral material colors and no ownership outlines or team labels.
   Buildings are separate from terrain and units.
+  Ground supply crates use a nearly square stack of three closed wooden military
+  boxes: two on the ground and one of equal size on top. Keep the view almost
+  directly side-on, with shallow visible tops and minimal side depth. Fill the
+  sprite square in both dimensions. Assemble the boxes from
+  rough planks and nailed wooden battens for transport.
+  Preserve detailed 1980s anime ink work and painted shading in neutral material
+  colors, with a 232px footprint inside a transparent 256px cell. Render the
+  crate at 75% scale, centered in its map tile so it reads as portable cargo.
 
 - Allied squares become ordinary move destinations once their occupants have
   saved moves away. Shared final destinations stay unavailable. Revoking a
@@ -262,29 +275,37 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   labels and explain the receiving unit's hold requirement in the right panel.
   Show a gold notice naming the pickup or boarding target during route preview
   and beneath the saved order.
-- Truck status shows `cargo: current / capacity` and one button per passenger.
-  Loaded trucks also show a gold square badge with a dark green border and
-  head-and-shoulders silhouette in the tile's lower-right corner. The badge is
-  about five logical pixels tall (40% larger than the original). Two passengers
-  widen the badge slightly and add `2`. The badge pulses in unison over two seconds
+- Truck status shows `cargo: current / capacity` above a nightwood inset passenger
+  list. Each selectable row reuses the unload dialog's small portrait, kind name,
+  and compact health and supply meters. Rows stay flat, with visible hover and
+  keyboard focus; selecting one opens its inspection details.
+  Trucks carrying passengers show a gold square badge with a dark green border
+  and head-and-shoulders silhouette in the tile's lower-right corner. Carried supply
+  crates show a matching turquoise (`blue1`) badge with a dark green crate graphic
+  in the lower-left corner. Mixed cargo shows both badges; each counts only its
+  own cargo type. Each badge is about five logical pixels tall (40% larger than
+  the original). Two passengers or two crates widen their respective badge
+  slightly and add `2`. Both badges pulse in unison over two seconds
   between full and 65% opacity, remaining visible during the dim phase and above
   ordered-sprite dimming. Reduced-motion preferences keep it steady. Derive cargo
-  from current passenger locations, so loading and unloading update the badge
-  during playback. Empty trucks have no badge; concealed enemy cargo stays hidden.
+  from current passenger locations and projected supply cargo, so loading and
+  unloading update the badges during playback. Empty trucks have no badge; concealed enemy cargo stays hidden.
   The badge ignores pointer events; the truck's accessible label includes its cargo count.
   Passenger selection shows inspection details. Choosing hold position on a loaded
   truck opens the unload checklist for its current square, including with zero fuel.
   Saving a loaded truck's move
   destination opens a modal titled `unload`, with one styled native checkbox per
-  passenger, a small unit portrait, the kind name alone, and compact health and
-  supply meters. Use the usual red/yellow/green resource thresholds and include
+  cargo item: passengers have a small unit portrait, the kind name alone, and
+  compact health and supply meters; crates have their illustrated box and
+  remaining stock. Use the usual red/yellow/green resource thresholds and include
   numeric values plus a `low` label below 25%. `View.Checkbox` owns the inset
   nightwood checkbox, light gray checked fill with a dark checkmark, and visible
   keyboard focus. A single action
   says `proceed without unloading` when nothing is checked and becomes the gold
-  `choose unload squares` action when passengers are checked. Checked passengers choose empty adjacent
+  `choose unload squares` action when cargo is checked. Checked passengers and
+  crates choose empty adjacent
   squares around the truck's planned destination one at a time. Show the current
-  passenger and a skip-remaining action in the side panel, and list saved unload
+  cargo item and a skip-remaining action in the side panel, and list saved unload
   choices under the truck's order. Extend a solid gold branch from the truck's
   destination dot to an outlined diamond on each saved unloading square. Keep
   these markers visible above unit artwork and preserve tile interaction.
@@ -399,3 +420,20 @@ passable, and attack move offers no loading or unloading choices.
 Encounters use the existing combat theater with an `attack move` heading.
 Reciprocal shots appear together. Preserve concealed encounter portraits and
 authoritative health transitions without revealing enemy resources or routes.
+
+
+## Supply logistics
+
+Keep automatic replenishment passive. A selected depot or ground crate shows its
+remaining stock and delivery timing; unseen depot stock reads `stock outside sight`.
+Truck cargo counts include passengers and crates. The selected truck inspector
+shows each carried crate's stock and saved unloading destination.
+Saving a truck destination on a depot opens a modal titled `load supply crates`
+asking how many crates to load, with `0`, `1`, and `2` actions. Disable counts
+that exceed stock or shared cargo room. Dismissal keeps the move without loading.
+Ground crates are neutral and trucks collect them by ending on their square
+with room aboard. Save the route first, then add unloading. These controls
+are absent in locked phases. A saved supply run shows its destination and load/unload
+counts alongside revoke. Planned crate exits use quiet gold dotted outlines.
+Ground crates use the illustrated neutral supply-box asset and support pointer and
+keyboard inspection through their tile. Empty crates disappear on replenishment.

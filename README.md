@@ -5,7 +5,7 @@ A strategy game about supplies and logistics, built with Rust and Elm.
 The current prototype supports creating a lobby, joining through an invite link,
 and starting a game. The game page shows a free-floating animated SVG board with selectable units and depots.
 Both players can plan and submit turns, with shared movement playback.
-Fuel, supplies, and directional ambush combat are authoritative. Persistent
+Fuel, finite supply stocks, replenishment, and directional ambush combat are authoritative. Persistent
 storage is not implemented yet.
 
 ## Run locally
@@ -53,6 +53,8 @@ illustrations, with a grass tile in every square, defined hill ridges and tree
 silhouettes, and a subtle grid.
 Units use detailed illustrated anime sprites with red and blue team colors,
 packed into 256px square cells and smoothly scaled to the board.
+Field guns use separate realistically proportioned, elongated portraits in the
+right panel and combat theater, with matching red/blue colors and sprite facing.
 Direction markers appear only while choosing or maintaining an ambush, including
 turn playback. Infantry, tanks and field guns use a small illustrated red striking arrow for the
 ambush's up/right/down/left facing. Other units have no facing marker.
@@ -101,7 +103,7 @@ costs. Interrupted routes pay only for successfully traveled tiles; holds consum
 vehicles on any supply depot refill to 32, regardless of side. Movement previews and submitted paths must fit both remaining
 fuel and the per-turn movement budget.
 
-Trucks carry up to two allied infantry or field guns; tanks cannot board.
+Trucks have two cargo berths shared by allied infantry, field guns, and supply crates; tanks cannot board.
 Loading is part of a move: move a truck onto a waiting unit, or move a unit onto
 a waiting truck. Compatible occupied squares appear alongside ordinary movement
 choices. The route preview and saved order warn when the move will pick up or board a unit.
@@ -112,10 +114,10 @@ loading move before changing the receiving unit's order.
 Passengers disappear from the board and travel with the truck. They still pay
 turn upkeep but spend no walking supplies while riding, grant no sight, and need
 no separate hold order. Select a truck to see its cargo count and select a
-passenger from its cargo buttons for inspection. Choose **hold position** on a
+passenger from its inset cargo list for inspection. Choose **hold position** on a
 loaded truck to unload beside its current square, even when it has no fuel.
 After choosing the truck's move destination, an **unload** checklist offers its
-passengers and **proceed without unloading**. Check passengers, then choose an empty adjacent square for each
+passengers, carried supply crates, and **proceed without unloading**. Check any combination of cargo, then choose an empty adjacent square for each
 around the truck's planned destination. The truck moves first; unloading uses
 the passenger's normal terrain and supply costs. Both passengers may unload
 onto different squares in the same turn. Blocked truck moves or occupied exits
@@ -125,9 +127,11 @@ and spends no unloading supplies. Revoking the truck's order also removes
 its unload choices.
 Enemy resources and passengers are concealed outside combat. Combat
 encounters involving your units appear even when the enemy is concealed and reveal
-both participants’ before/after health; supplies and fuel stay hidden. Unit transport is separate from supply delivery.
-Loaded trucks show a prominent gold blinking passenger badge in the tile's lower-right
-corner, with `2` when both berths are occupied. It stays clearly visible between
+both participants’ before/after health; supplies and fuel stay hidden. Crate cargo is separate from the truck's own provisions.
+Trucks carrying passengers show a gold blinking silhouette badge in the tile's
+lower-right corner. Supply crates use a turquoise box badge in the lower-left
+corner. Each badge adds `2` when two of its cargo type are aboard; mixed cargo
+shows both badges. It stays clearly visible between
 blinks and remains steady with reduced motion enabled. Empty trucks have no badge.
 
 Sight is shared by all units on your side. Infantry see 5 tiles, field guns 4,
@@ -160,9 +164,41 @@ Units die immediately when supplies reach zero after turn upkeep. A dead truck
 also loses its passengers. During playback, a skull and crossbones blinks once, then pauses briefly
 before dead units vanish; reduced-motion mode shows a steady marker.
 Other sprites and interface animations pause during death feedback, and later
-movement resumes after the death marker clears. Depots do not replenish supplies
-yet. These provisions belong to the unit; supply cargo
-and supply delivery remain future work. Trucks can now carry units.
+movement resumes after the death marker clears.
+
+Depots start with 256 finite supplies. Ground supply crates hold up to 64.
+At the end of each turn, after movement, transport, and combat, depots and ground
+crates automatically replenish living units on their square or one cardinally
+adjacent square, regardless of side. Crates remain neutral when carried and supply either side,
+including the truck and its passengers. Replenishment has no per-turn transfer
+limit: sources deliver until nearby units reach their provision capacity or stock
+runs out. Distribution proceeds one supply at a time through
+recipients in stable ID order, rotating the first recipient each turn.
+Replenishment happens before upkeep, so supplies arriving this turn can avert
+exhaustion. They cannot fund movement or firing earlier in that turn.
+Combat deaths cannot be rescued. Supply sources never refill one another;
+empty crates disappear and free their cargo berths. Vehicle fuel still refills
+only when ending on a depot, independently of its provision stock.
+
+Move a truck onto a depot. Saving its destination opens a **load supply crates**
+dialog with **0**, **1**, and **2** choices; unavailable counts are disabled.
+Choosing 0 or dismissing the dialog keeps the move without loading. Holding on
+a depot also offers this choice. Trucks collect a neutral ground crate automatically
+when ending on its square with a free cargo berth; either player can collect it,
+and its remaining stock is preserved. Full trucks leave the crate on the ground.
+Loading is always explicit and shares cargo capacity with passengers. Each
+crate takes up to 64 supplies from the depot; the last crate may be partially
+filled. Moving or holding a loaded truck opens the shared **unload** checklist.
+Select passengers, crates, or both, then choose their adjacent squares on the map.
+The inspector shows crate stock and saved destinations. Gold dotted squares mark planned crate exits. Loading and crate
+unloading cannot be combined in one turn. Revoke the truck order to clear the
+whole plan. A blocked truck or occupied crate exit leaves cargo aboard; competing
+loaders alternate player priority by turn and may receive less than planned
+when depot stock runs out. Passing a depot never automatically loads cargo.
+
+Click a depot or ground crate to inspect its stock. Depot positions remain known,
+but stock is concealed outside sight. Ground crates appear only within sight;
+enemy truck cargo stays concealed. Supplies do not restore hit points.
 
 The full-height right panel stays in place when selection clears. Its main area
 is empty until a unit, depot or tile is selected, with a quiet inspection hint at
@@ -344,8 +380,8 @@ hills, and forests without changing terrain types, movement costs, or sight.
 Arabia and El Alamein use the desert theme; Supply Point and Blood Gulch use
 green forest, as does Black Forest. Sidewinder uses snow, including the brightened,
 desaturated forest and hill artwork. Ridges use the
-existing traversable hill rules. All depots refill vehicle fuel; depot supply delivery
-is still future work.
+existing traversable hill rules. All depots refill vehicle fuel and provide finite provision stocks for automatic
+replenishment and explicit crate loading.
 
 ## Development
 

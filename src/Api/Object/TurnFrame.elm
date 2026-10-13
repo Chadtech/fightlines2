@@ -26,6 +26,20 @@ shots object____ =
     Object.selectionForCompositeField "shots" [] object____ (Basics.identity >> Decode.list)
 
 
+depots :
+    SelectionSet decodesTo Api.Object.Depot
+    -> SelectionSet (List decodesTo) Api.Object.TurnFrame
+depots object____ =
+    Object.selectionForCompositeField "depots" [] object____ (Basics.identity >> Decode.list)
+
+
+supplyCrates :
+    SelectionSet decodesTo Api.Object.GroundSupplyCrate
+    -> SelectionSet (List decodesTo) Api.Object.TurnFrame
+supplyCrates object____ =
+    Object.selectionForCompositeField "supplyCrates" [] object____ (Basics.identity >> Decode.list)
+
+
 {-| Time from the preceding frame in milliseconds.
 -}
 durationMs : SelectionSet Int Api.Object.TurnFrame

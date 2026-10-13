@@ -123,6 +123,12 @@ pub fn observed_scenario(
             unit.conceal_resources();
         }
     }
+    for depot in &mut observed.depots {
+        depot.stock_visible = visible.contains(&depot.position);
+    }
+    observed
+        .supply_crates
+        .retain(|supply_crate| visible.contains(&supply_crate.position));
     observed
 }
 
@@ -218,6 +224,8 @@ fn observed_frames(
             .map(|frame| {
                 let mut board = scenario.clone();
                 board.units = frame.units.clone();
+                board.depots = frame.depots.clone();
+                board.supply_crates = frame.supply_crates.clone();
                 let mut visible = visible_tiles(&board, side);
                 // Keep the observed exchange visible when the volley kills an observer.
                 if !frame.shots.is_empty() || previous_shots {
@@ -231,7 +239,10 @@ fn observed_frames(
                             unit.side() == side && unit.board_position() == Some(position)
                         })
                 };
+                let observed = observed_scenario(&board, side, &visible);
                 TurnFrame {
+                    depots: observed.depots,
+                    supply_crates: observed.supply_crates,
                     shots: frame
                         .shots
                         .iter()
@@ -243,7 +254,7 @@ fn observed_frames(
                         .cloned()
                         .collect(),
                     duration_ms: frame.duration_ms,
-                    units: observed_scenario(&board, side, &visible).units,
+                    units: observed.units,
                     visible_tiles: visible.into_iter().collect(),
                 }
             })
@@ -252,10 +263,13 @@ fn observed_frames(
     let mut board = initial_scenario(scenario, resolution);
     let project = |board: &Scenario| {
         let visible = visible_tiles(board, side);
+        let observed = observed_scenario(board, side, &visible);
         TurnFrame {
+            depots: observed.depots,
+            supply_crates: observed.supply_crates,
             shots: Vec::new(),
             duration_ms: 180,
-            units: observed_scenario(board, side, &visible).units,
+            units: observed.units,
             visible_tiles: visible.into_iter().collect(),
         }
     };
@@ -340,6 +354,14 @@ mod tests {
         board.map = Map::from_ascii(".....").fixture()?;
         let unit_count = board.units.len();
         for unit in &mut board.units {
+            if unit.kind() == UnitKind::Truck {
+                unit.supply_cargo.push(crate::supplies::SupplyStock {
+                    current: 64,
+                    maximum: 64,
+                });
+            }
+        }
+        for unit in &mut board.units {
             let x = if unit.side() == PlayerNumber::Player1 {
                 1
             } else {
@@ -351,6 +373,8 @@ mod tests {
             turn_number: 1,
             events: vec![],
             frames: vec![TurnFrame {
+                depots: board.depots.clone(),
+                supply_crates: board.supply_crates.clone(),
                 shots: Vec::new(),
                 duration_ms: 0,
                 units: board.units.clone(),
@@ -369,7 +393,7 @@ mod tests {
                 juniper::EmptySubscription::<()>::new(),
             );
             let (data, errors) = juniper::execute_sync(
-                "{ scenario { units { side kind resources { hitPoints { current maximum } supplies { current maximum upkeepPerTurn movementPerTile } fuel { current maximum } } } } resolution { frames { units { side kind resources { hitPoints { current } supplies { current } fuel { current } } } } } }",
+                "{ scenario { units { side kind resources { hitPoints { current maximum } supplies { current maximum upkeepPerTurn movementPerTile } fuel { current maximum } supplyCargo { current maximum } } } } resolution { frames { units { side kind resources { hitPoints { current } supplies { current } fuel { current } supplyCargo { current maximum } } } } } }",
                 None,
                 &schema,
                 &juniper::Variables::new(),
@@ -399,6 +423,8 @@ mod tests {
                         assert_eq!(resources["fuel"].is_object(), vehicle);
                         assert_eq!(resources["fuel"].is_null(), !vehicle);
                         assert_eq!(resources["hitPoints"]["current"], 16);
+                        let cargo = resources["supplyCargo"].as_array().fixture()?;
+                        assert_eq!(cargo.len(), usize::from(unit["kind"] == "TRUCK"));
                     }
                 }
             }

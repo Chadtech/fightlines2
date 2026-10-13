@@ -25,10 +25,12 @@ import Api.Object.TurnFrame as FrameApi
 import Api.Object.TurnResolution as ResolutionApi
 import CombatHealth exposing (CombatHealth)
 import Coordinate exposing (Coordinate)
+import Depot exposing (Depot)
 import Direction
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import Point exposing (Point)
 import Shot exposing (Shot)
+import Supply
 import Unit exposing (Unit)
 import UnitId exposing (UnitId)
 import Util.List as ListUtil
@@ -39,6 +41,8 @@ type alias Frame =
     , units : List Unit
     , shots : List Shot
     , visibleTiles : List Coordinate
+    , depots : List Depot
+    , supplyCrates : List Supply.GroundCrate
     }
 
 
@@ -244,6 +248,8 @@ selection unit coordinate =
                 |> SS.with (FrameApi.units unit)
                 |> SS.with (FrameApi.shots Shot.selection)
                 |> SS.with (FrameApi.visibleTiles coordinate)
+                |> SS.with (FrameApi.depots Depot.selection)
+                |> SS.with (FrameApi.supplyCrates Supply.crateSelection)
             )
         )
         |> SS.map (Maybe.withDefault [])
@@ -432,7 +438,9 @@ presentationFrame playing next =
                 Nothing ->
                     unit
     in
-    { shots = playing.current.shots
+    { depots = playing.current.depots
+    , supplyCrates = playing.current.supplyCrates
+    , shots = playing.current.shots
     , durationMs = playing.current.durationMs
     , units = List.map faceMovement playing.current.units
     , visibleTiles = playing.current.visibleTiles

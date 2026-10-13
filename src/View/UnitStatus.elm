@@ -12,6 +12,7 @@ import Unit.Fuel exposing (Fuel)
 import Unit.HitPoints exposing (HitPoints)
 import Unit.Supplies exposing (Supplies)
 import UnitResources exposing (UnitResources)
+import Util.UnitKind as UnitKindUtil
 import View.Aria as Aria
 import View.InfoMarker as InfoMarker
 import View.UnitSprite as UnitSprite
@@ -72,7 +73,7 @@ portrait : String -> Unit -> Html msg
 portrait playerName unit =
     H.div
         [ Aria.role Aria.Image
-        , Aria.label (playerName ++ " " ++ kindLabel unit.kind)
+        , Aria.label (playerName ++ " " ++ UnitKindUtil.label unit.kind)
         , A.css
             [ S.bgNightwood3
             , S.indentStrong
@@ -80,14 +81,14 @@ portrait playerName unit =
             ]
         ]
         [ Svg.svg
-            [ SA.viewBox "0 0 16 16"
+            [ SA.viewBox ("0 0 " ++ String.fromFloat (UnitSprite.portraitWidth unit) ++ " 16")
             , SA.width "100%"
             , SA.height "128"
             , SA.css
                 [ S.block
                 ]
             ]
-            [ UnitSprite.toSvg 0 unit
+            [ UnitSprite.portraitToSvg unit
             ]
         ]
 
@@ -97,7 +98,7 @@ unitHelp playerName unit =
     H.details
         []
         [ H.summary
-            [ Aria.label ("about " ++ kindLabel unit.kind)
+            [ Aria.label ("about " ++ UnitKindUtil.label unit.kind)
             , A.title "about this unit"
             , A.css
                 [ S.batch summaryStyles
@@ -119,7 +120,7 @@ unitHelp playerName unit =
                         [ S.textGray5
                         ]
                     ]
-                    [ H.text (kindLabel unit.kind)
+                    [ H.text (UnitKindUtil.label unit.kind)
                     ]
                 , InfoMarker.toHtml
                 ]
@@ -348,6 +349,16 @@ gauge kind resource =
 
 supplyExplanation : UnitKind -> String
 supplyExplanation kind =
+    let
+        consumption : String
+        consumption =
+            supplyConsumption kind
+    in
+    consumption ++ " nearby depots, ground crates, and loaded supply trucks replenish provisions automatically before turn upkeep."
+
+
+supplyConsumption : UnitKind -> String
+supplyConsumption kind =
     case kind of
         Kind.Truck ->
             "trucks consume a small amount of supplies each turn. when supplies reach 0, this unit perishes."
@@ -378,22 +389,6 @@ usesOil kind =
             False
 
 
-kindLabel : UnitKind -> String
-kindLabel kind =
-    case kind of
-        Kind.Infantry ->
-            "infantry"
-
-        Kind.Tank ->
-            "tank"
-
-        Kind.Truck ->
-            "truck"
-
-        Kind.FieldGun ->
-            "field gun"
-
-
 roleText : UnitKind -> String
 roleText kind =
     case kind of
@@ -404,7 +399,7 @@ roleText kind =
             "an armored ground unit."
 
         Kind.Truck ->
-            "a vehicle that carries up to two infantry or field guns. supply delivery is not implemented yet."
+            "a vehicle with two cargo berths shared by infantry, field guns, and supply crates. crates are neutral and automatically replenish nearby units of either side. drive onto a ground crate to collect it, or onto a depot to choose how many to load."
 
         Kind.FieldGun ->
             "a ground unit with a crew-operated gun."

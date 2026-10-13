@@ -187,6 +187,9 @@ prototype; do not update it unless the task explicitly requires that.
 
 - Use standard `rustfmt` formatting, snake_case for functions and modules, and
   PascalCase for types. Group imports as the surrounding module does.
+- Import locally used modules and types in the `use` section rather than
+  repeating `crate::` paths in fields, expressions, and signatures. Qualify
+  functions with the imported module; import unambiguous domain types directly.
 - Import known domain types directly. Use newtypes such as `LobbyId`,
   `SessionToken`, and `PlayerName` to distinguish public identifiers,
   credentials, and validated names. Keep their representations private.

@@ -14,6 +14,7 @@ module GamePage.BattlefieldNavigation exposing
     , subscriptions
     , suppressesClick
     , update
+    , updateRoute
     , zoomIn
     , zoomOut
     )
@@ -195,10 +196,23 @@ finish model =
 ----------------------------------------------------------------
 
 
-{-| Route dragging uses the same click-suppression gesture without moving the camera.
--}
 update : Msg -> Model -> Model
 update msg model =
+    case msg of
+        MouseMoved point buttons ->
+            move point buttons model
+
+        MouseReleased point ->
+            release point model
+
+        WindowVisibilityChanged _ ->
+            finish model
+
+
+{-| Route dragging uses the same click-suppression gesture without moving the camera.
+-}
+updateRoute : Msg -> Model -> Model
+updateRoute msg model =
     let
         trace : Point -> Model -> Model
         trace point current =

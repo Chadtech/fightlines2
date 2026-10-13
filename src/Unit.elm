@@ -2,6 +2,7 @@ module Unit exposing
     ( Unit
     , boardPosition
     , carrierId
+    , crateCount
     , faceDirection
     , isDying
     , label
@@ -29,6 +30,7 @@ import Unit.Supplies exposing (Supplies)
 import UnitId exposing (UnitId)
 import UnitResources exposing (UnitResources)
 import Util.List as ListUtil
+import Util.UnitKind as UnitKindUtil
 
 
 type alias Unit =
@@ -62,25 +64,9 @@ selection =
 
 label : Unit -> String
 label unit =
-    let
-        kind : String
-        kind =
-            case unit.kind of
-                UnitKind.Infantry ->
-                    "infantry"
-
-                UnitKind.Tank ->
-                    "tank"
-
-                UnitKind.FieldGun ->
-                    "field gun"
-
-                UnitKind.Truck ->
-                    "truck"
-    in
     String.join " "
         [ PlayerNumber.label unit.playerNumber
-        , kind
+        , UnitKindUtil.label unit.kind
         , UnitId.toString unit.id
         ]
 
@@ -127,10 +113,17 @@ loadingTarget units mover destination =
             let
                 hasRoom : Unit -> Bool
                 hasRoom truck =
-                    truck.kind
-                        == UnitKind.Truck
-                        && List.length (List.filter (\passenger -> carrierId passenger == Just truck.id) units)
-                        < truck.cargoCapacity
+                    let
+                        passengers : List Unit
+                        passengers =
+                            List.filter (\passenger -> carrierId passenger == Just truck.id) units
+
+                        occupiedBerths : Int
+                        occupiedBerths =
+                            List.length passengers + crateCount truck
+                    in
+                    (truck.kind == UnitKind.Truck)
+                        && (occupiedBerths < truck.cargoCapacity)
 
                 portable : Unit -> Bool
                 portable unit =
@@ -189,3 +182,10 @@ faceDirection direction unit =
         | direction = direction
         , spriteFacing = SpriteFacing.turn direction unit.spriteFacing
     }
+
+
+crateCount : Unit -> Int
+crateCount unit =
+    unit.resources
+        |> Maybe.map (.supplyCargo >> List.length)
+        |> Maybe.withDefault 0

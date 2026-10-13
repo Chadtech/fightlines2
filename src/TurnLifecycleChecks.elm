@@ -68,8 +68,24 @@ checks =
 
                 frames : List TurnPlayback.Frame
                 frames =
-                    [ { shots = [], durationMs = 180, units = [], visibleTiles = [] }
-                    , { shots = [], durationMs = 180, units = [], visibleTiles = [ { x = 1, y = 1 } ] }
+                    [ { depots = []
+                      , supplyCrates = []
+                      , shots = []
+                      , durationMs = 180
+                      , units = []
+                      , visibleTiles = []
+                      }
+                    , { depots = []
+                      , supplyCrates = []
+                      , shots = []
+                      , durationMs = 180
+                      , units = []
+                      , visibleTiles =
+                            [ { x = 1
+                              , y = 1
+                              }
+                            ]
+                      }
                     ]
 
                 playing : Phase
@@ -158,11 +174,73 @@ checks =
                 , expect "same-turn submission flags must not interrupt playback"
                     (TurnLifecycle.playback (TurnLifecycle.observeSubmission True playing) == TurnLifecycle.playback playing)
                 , expect "playback completion must open a fresh planning turn and use the final frame"
-                    (TurnLifecycle.tick 1000 playing == Just { phase = Planning (OrdinaryPlanning { orders = [], selection = Nothing }), frame = { shots = [], durationMs = 180, units = [], visibleTiles = [ { x = 1, y = 1 } ] } })
+                    (TurnLifecycle.tick 1000 playing
+                        == Just
+                            { phase =
+                                Planning
+                                    (OrdinaryPlanning
+                                        { orders = []
+                                        , selection = Nothing
+                                        }
+                                    )
+                            , frame =
+                                { depots = []
+                                , supplyCrates = []
+                                , shots = []
+                                , durationMs = 180
+                                , units = []
+                                , visibleTiles =
+                                    [ { x = 1
+                                      , y = 1
+                                      }
+                                    ]
+                                }
+                            }
+                    )
                 , expect "playback completion must retain submission of a turn submitted elsewhere"
-                    (TurnLifecycle.tick 1000 alreadySubmittedPlayback == Just { phase = WaitingForOpponent { orders = [], inspection = Nothing }, frame = { shots = [], durationMs = 180, units = [], visibleTiles = [ { x = 1, y = 1 } ] } })
+                    (TurnLifecycle.tick 1000 alreadySubmittedPlayback
+                        == Just
+                            { phase =
+                                WaitingForOpponent
+                                    { orders = []
+                                    , inspection = Nothing
+                                    }
+                            , frame =
+                                { depots = []
+                                , supplyCrates = []
+                                , shots = []
+                                , durationMs = 180
+                                , units = []
+                                , visibleTiles =
+                                    [ { x = 1
+                                      , y = 1
+                                      }
+                                    ]
+                                }
+                            }
+                    )
                 , expect "submission observed during playback must lock the completed turn"
-                    (TurnLifecycle.tick 1000 (TurnLifecycle.observeSubmission True playing) == Just { phase = WaitingForOpponent { orders = [], inspection = Nothing }, frame = { shots = [], durationMs = 180, units = [], visibleTiles = [ { x = 1, y = 1 } ] } })
+                    (TurnLifecycle.tick 1000 (TurnLifecycle.observeSubmission True playing)
+                        == Just
+                            { phase =
+                                WaitingForOpponent
+                                    { orders = []
+                                    , inspection = Nothing
+                                    }
+                            , frame =
+                                { depots = []
+                                , supplyCrates = []
+                                , shots = []
+                                , durationMs = 180
+                                , units = []
+                                , visibleTiles =
+                                    [ { x = 1
+                                      , y = 1
+                                      }
+                                    ]
+                                }
+                            }
+                    )
                 , expect "turns without playback must enter planning or waiting immediately"
                     (TurnLifecycle.startTurn False [] == Planning (OrdinaryPlanning { orders = [], selection = Nothing }) && TurnLifecycle.startTurn True [] == WaitingForOpponent { orders = [], inspection = Nothing })
                 , expect "stray animation messages must not advance a planning or waiting turn"
@@ -197,7 +275,7 @@ unloadChecks =
                         |> TurnLifecycle.mapPlanning (OrderPlanning.toggleUnloadPassenger first True)
                         |> TurnLifecycle.mapPlanning (OrderPlanning.toggleUnloadPassenger second True)
 
-                exitOptions : OrderPlanning.Model -> UnitId.UnitId -> List Movement.Option
+                exitOptions : OrderPlanning.Model -> OrderPlanning.Cargo -> List Movement.Option
                 exitOptions state _ =
                     let
                         reserved : List Coordinate.Coordinate
@@ -250,7 +328,7 @@ unloadChecks =
                 stationaryHold =
                     { unitId = truck, action = PlannedOrder.Hold stationaryPosition }
 
-                stationaryOptions : OrderPlanning.Model -> UnitId.UnitId -> List Movement.Option
+                stationaryOptions : OrderPlanning.Model -> OrderPlanning.Cargo -> List Movement.Option
                 stationaryOptions state _ =
                     let
                         reserved : List Coordinate.Coordinate
@@ -306,7 +384,13 @@ unloadChecks =
                 reservesFirstExit =
                     case planningExits secondPassenger of
                         Just unloading ->
-                            unloading.passengerId == second && List.map .destination unloading.options == [ { x = 3, y = 1 } ]
+                            unloading.cargo
+                                == OrderPlanning.Passenger second
+                                && List.map .destination unloading.options
+                                == [ { x = 3
+                                     , y = 1
+                                     }
+                                   ]
 
                         Nothing ->
                             False
@@ -345,8 +429,8 @@ unloadChecks =
                 , expect "the next passenger cannot reuse an exit already saved"
                     reservesFirstExit
                 , expect "an unavailable exit cannot advance the workflow"
-                    (Maybe.map .passengerId (planningExits rejectedExit)
-                        == Just second
+                    (Maybe.map .cargo (planningExits rejectedExit)
+                        == Just (OrderPlanning.Passenger second)
                         && TurnLifecycle.orders rejectedExit
                         == TurnLifecycle.orders secondPassenger
                         && Maybe.map .destinationFeedback (planningExits rejectedExit)
@@ -442,8 +526,24 @@ currentTurnChecks =
                 { observation
                     | turn = { turn | number = 2, submitted = False, opponentSubmitted = False }
                     , playbackFrames =
-                        [ { shots = [], durationMs = 180, units = [], visibleTiles = [] }
-                        , { shots = [], durationMs = 180, units = [], visibleTiles = [ { x = 1, y = 1 } ] }
+                        [ { depots = []
+                          , supplyCrates = []
+                          , shots = []
+                          , durationMs = 180
+                          , units = []
+                          , visibleTiles = []
+                          }
+                        , { depots = []
+                          , supplyCrates = []
+                          , shots = []
+                          , durationMs = 180
+                          , units = []
+                          , visibleTiles =
+                                [ { x = 1
+                                  , y = 1
+                                  }
+                                ]
+                          }
                         ]
                 }
                 waiting

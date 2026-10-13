@@ -46,11 +46,56 @@ checks =
 
         routeDragged : Navigation.Model
         routeDragged =
-            routePressed |> Navigation.update (Navigation.MouseMoved { x = 50, y = 20 } 1)
+            routePressed
+                |> Navigation.updateRoute
+                    (Navigation.MouseMoved
+                        { x = 50
+                        , y = 20
+                        }
+                        1
+                    )
 
         routeReleased : Navigation.Model
         routeReleased =
-            routeDragged |> Navigation.update (Navigation.MouseReleased { x = 50, y = 20 })
+            routeDragged
+                |> Navigation.updateRoute
+                    (Navigation.MouseReleased
+                        { x = 50
+                        , y = 20
+                        }
+                    )
+
+        cameraDragged : Navigation.Model
+        cameraDragged =
+            routePressed
+                |> Navigation.update
+                    (Navigation.MouseMoved
+                        { x = 50
+                        , y = 30
+                        }
+                        1
+                    )
+
+        cameraReleased : Navigation.Model
+        cameraReleased =
+            cameraDragged
+                |> Navigation.update
+                    (Navigation.MouseReleased
+                        { x = 60
+                        , y = 40
+                        }
+                    )
+
+        stopped : Navigation.Model
+        stopped =
+            cameraDragged
+                |> Navigation.update
+                    (Navigation.MouseMoved
+                        { x = 100
+                        , y = 100
+                        }
+                        0
+                    )
 
         nextPress : PointerGesture.PointerGesture
         nextPress =
@@ -59,6 +104,23 @@ checks =
     List.concat
         [ expect "route dragging keeps the camera fixed and suppresses its follow-up click"
             (Navigation.camera routeDragged == Navigation.camera routePressed && Navigation.camera routeReleased == Navigation.camera routePressed && Navigation.suppressesClick routeReleased && not (Navigation.active routeReleased))
+        , expect "ordinary dragging pans the camera from its press origin"
+            ((Navigation.camera cameraDragged).offset
+                == { x = 40
+                   , y = 10
+                   }
+                && Navigation.active cameraDragged
+            )
+        , expect "release applies the final pan position and suppresses the follow-up click"
+            ((Navigation.camera cameraReleased).offset
+                == { x = 50
+                   , y = 20
+                   }
+                && Navigation.suppressesClick cameraReleased
+                && not (Navigation.active cameraReleased)
+            )
+        , expect "losing mouse buttons ends panning without applying hover movement"
+            (Navigation.camera stopped == Navigation.camera cameraDragged && not (Navigation.active stopped) && Navigation.suppressesClick stopped)
         , expect "an ordinary press is active and permits clicks"
             (PointerGesture.active pressed && not (PointerGesture.suppressesClick pressed))
         , expect "movement below six pixels must not pan or suppress a click"

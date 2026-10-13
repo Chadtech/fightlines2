@@ -1,22 +1,28 @@
 module PlannedOrder exposing
     ( Action(..)
+    , CrateUnload
     , MovePlan
     , PlannedOrder
     , Rotation
     , StationaryUnload
+    , SupplyHandling(..)
+    , SupplyPlan
     , UnloadOrder
+    , crateUnloads
     , destination
     , isAttackMove
     , isMoving
+    , loadingCrates
     , path
     , toInput
+    , unloadingCrates
     , unloads
     )
 
 import Api.Enum.Direction exposing (Direction)
 import Api.InputObject
 import Coordinate exposing (Coordinate)
-import Graphql.OptionalArgument exposing (OptionalArgument(..))
+import Graphql.OptionalArgument as OptionalArgument exposing (OptionalArgument)
 import Movement
 import UnitId exposing (UnitId)
 
@@ -34,6 +40,26 @@ type Action
     | Rotate Rotation
     | Ambush Rotation
     | Unload StationaryUnload
+    | SupplyTransfer SupplyPlan
+
+
+type alias SupplyPlan =
+    { route : List Coordinate
+    , destination : Coordinate
+    , handling : SupplyHandling
+    , passengers : List UnloadOrder
+    }
+
+
+type SupplyHandling
+    = LoadingCrates Int
+    | UnloadingCrates (List CrateUnload)
+
+
+type alias CrateUnload =
+    { cargoIndex : Int
+    , destination : Coordinate
+    }
 
 
 type alias MovePlan =
@@ -63,6 +89,9 @@ type alias UnloadOrder =
 destination : PlannedOrder -> Coordinate
 destination order =
     case order.action of
+        SupplyTransfer plan ->
+            plan.destination
+
         Hold position ->
             position
 
@@ -85,6 +114,9 @@ destination order =
 path : PlannedOrder -> List Coordinate
 path order =
     case order.action of
+        SupplyTransfer plan ->
+            plan.route
+
         Hold position ->
             [ position ]
 
@@ -107,6 +139,9 @@ path order =
 unloads : PlannedOrder -> List UnloadOrder
 unloads order =
     case order.action of
+        SupplyTransfer plan ->
+            plan.passengers
+
         Move plan ->
             plan.unloads
 
@@ -129,6 +164,9 @@ unloads order =
 isMoving : PlannedOrder -> Bool
 isMoving order =
     case order.action of
+        SupplyTransfer plan ->
+            List.length plan.route > 1
+
         Move plan ->
             List.length plan.move.path > 1
 
@@ -162,26 +200,36 @@ toInput order =
                     Api.InputObject.buildCoordinateInput unload.destination
                 }
 
+        crateUnloadInput : CrateUnload -> Api.InputObject.CrateUnloadInput
+        crateUnloadInput unload =
+            Api.InputObject.buildCrateUnloadInput
+                { cargoIndex = unload.cargoIndex
+                , destination = Api.InputObject.buildCoordinateInput unload.destination
+                }
+
         direction : OptionalArgument Direction
         direction =
             case order.action of
+                SupplyTransfer _ ->
+                    OptionalArgument.Absent
+
                 Ambush ambush ->
-                    Present ambush.direction
+                    OptionalArgument.Present ambush.direction
 
                 Rotate rotation ->
-                    Present rotation.direction
+                    OptionalArgument.Present rotation.direction
 
                 Hold _ ->
-                    Absent
+                    OptionalArgument.Absent
 
                 AttackMove _ ->
-                    Absent
+                    OptionalArgument.Absent
 
                 Move _ ->
-                    Absent
+                    OptionalArgument.Absent
 
                 Unload _ ->
-                    Absent
+                    OptionalArgument.Absent
     in
     Api.InputObject.buildMoveOrderInput
         { unitId = UnitId.toString order.unitId
@@ -189,10 +237,22 @@ toInput order =
         }
         (\optionals ->
             { optionals
-                | unloads = Present (List.map unloadInput (unloads order))
+                | unloads = OptionalArgument.Present (List.map unloadInput (unloads order))
                 , direction = direction
-                , ambush = Present (isAmbush order)
-                , attackMove = Present (isAttackMove order)
+                , ambush = OptionalArgument.Present (isAmbush order)
+                , attackMove = OptionalArgument.Present (isAttackMove order)
+                , loadCrates =
+                    OptionalArgument.Present
+                        (supplyPlan order
+                            |> Maybe.map loadingCrates
+                            |> Maybe.withDefault 0
+                        )
+                , crateUnloads =
+                    OptionalArgument.Present
+                        (supplyPlan order
+                            |> Maybe.map (unloadingCrates >> List.map crateUnloadInput)
+                            |> Maybe.withDefault []
+                        )
             }
         )
 
@@ -215,3 +275,40 @@ isAttackMove order =
 
         _ ->
             False
+
+
+supplyPlan : PlannedOrder -> Maybe SupplyPlan
+supplyPlan order =
+    case order.action of
+        SupplyTransfer plan ->
+            Just plan
+
+        _ ->
+            Nothing
+
+
+crateUnloads : PlannedOrder -> List CrateUnload
+crateUnloads order =
+    supplyPlan order
+        |> Maybe.map unloadingCrates
+        |> Maybe.withDefault []
+
+
+loadingCrates : SupplyPlan -> Int
+loadingCrates plan =
+    case plan.handling of
+        LoadingCrates count ->
+            count
+
+        UnloadingCrates _ ->
+            0
+
+
+unloadingCrates : SupplyPlan -> List CrateUnload
+unloadingCrates plan =
+    case plan.handling of
+        UnloadingCrates exits ->
+            exits
+
+        LoadingCrates _ ->
+            []

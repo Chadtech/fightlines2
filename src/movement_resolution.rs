@@ -54,6 +54,8 @@ pub struct MovementResolution {
 
 fn frame(board: &Scenario, duration_ms: i32) -> TurnFrame {
     TurnFrame {
+        depots: board.depots.clone(),
+        supply_crates: board.supply_crates.clone(),
         shots: Vec::new(),
         units: board.units.clone(),
         visible_tiles: Vec::new(),
@@ -514,6 +516,7 @@ mod tests {
                 let path: Vec<_> = path.iter().map(|(x, y)| Coordinate::new(*x, *y)).collect();
                 moving.move_to(*path.first().ok_or("empty fixture path")?);
                 Ok(MoveOrder {
+                    supply: crate::supplies::SupplyOrder::default(),
                     travel: crate::turns::TravelMode::Normal,
                     facing: crate::turns::FacingOrder::Unchanged,
                     unit_id: moving.unit_id(),

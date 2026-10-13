@@ -1,6 +1,12 @@
-module View.CombatFormation exposing (figureCount, impactStarts, lossStartsAt, toSvg)
+module View.CombatFormation exposing
+    ( figureCount
+    , impactStarts
+    , lossStartsAt
+    , toSvg
+    )
 
 import Api.Enum.SpriteFacing as SpriteFacing
+import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import CombatHealth exposing (CombatHealth)
 import Html.Styled.Attributes as A
 import Svg.Styled as Svg exposing (Svg)
@@ -72,13 +78,46 @@ type Layer
     | Impacts
 
 
-placements : List Placement
-placements =
-    [ { x = 6, y = 25, size = 25 }
-    , { x = 40, y = 27, size = 25 }
-    , { x = 19, y = 32, size = 28 }
-    , { x = 57, y = 34, size = 28 }
-    ]
+placements : UnitKind -> List Placement
+placements kind =
+    case kind of
+        Kind.FieldGun ->
+            [ { x = 2
+              , y = 25
+              , size = 56
+              }
+            , { x = 34
+              , y = 28
+              , size = 56
+              }
+            , { x = 6
+              , y = 35
+              , size = 56
+              }
+            , { x = 38
+              , y = 39
+              , size = 56
+              }
+            ]
+
+        _ ->
+            [ { x = 6
+              , y = 25
+              , size = 25
+              }
+            , { x = 40
+              , y = 27
+              , size = 25
+              }
+            , { x = 19
+              , y = 32
+              , size = 28
+              }
+            , { x = 57
+              , y = 34
+              , size = 28
+              }
+            ]
 
 
 toSvg : Float -> CombatHealth -> Unit -> List (Svg msg)
@@ -95,6 +134,10 @@ toSvg elapsed health unit =
         figure : Layer -> Int -> Placement -> Svg msg
         figure layer index placement =
             let
+                scale : Float
+                scale =
+                    placement.size / UnitSprite.portraitWidth unit
+
                 x : Float
                 x =
                     if unit.spriteFacing == SpriteFacing.Left then
@@ -128,12 +171,12 @@ toSvg elapsed health unit =
                     if visible then
                         [ Svg.g
                             [ SA.transform
-                                ("scale(" ++ String.fromFloat (placement.size / 16) ++ ")")
+                                ("scale(" ++ String.fromFloat scale ++ ")")
                             , SA.opacity (String.fromFloat spriteOpacity)
                             , SA.class "fightlines-combat-figure"
                             , A.attribute "data-figure-index" (String.fromInt index)
                             ]
-                            [ UnitSprite.toSvg 0 unit ]
+                            [ UnitSprite.portraitToSvg unit ]
                         ]
 
                     else
@@ -167,9 +210,9 @@ toSvg elapsed health unit =
                                 ("translate("
                                     ++ String.fromFloat (placement.size / 2)
                                     ++ " "
-                                    ++ String.fromFloat (placement.size / 2)
+                                    ++ String.fromFloat (scale * 8)
                                     ++ ") scale("
-                                    ++ String.fromFloat (placement.size / 16)
+                                    ++ String.fromFloat scale
                                     ++ ")"
                                 )
                             , A.attribute "data-casualty" (String.fromInt index)
@@ -203,7 +246,7 @@ toSvg elapsed health unit =
 
         visiblePlacements : List Placement
         visiblePlacements =
-            List.take beforeCount placements
+            List.take beforeCount (placements unit.kind)
 
         combatants : List (Svg msg)
         combatants =

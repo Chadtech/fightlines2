@@ -24,3 +24,10 @@ position :
     -> SelectionSet decodesTo Api.Object.Depot
 position object____ =
     Object.selectionForCompositeField "position" [] object____ Basics.identity
+
+
+stock :
+    SelectionSet decodesTo Api.Object.SupplyStock
+    -> SelectionSet (Maybe decodesTo) Api.Object.Depot
+stock object____ =
+    Object.selectionForCompositeField "stock" [] object____ (Basics.identity >> Decode.nullable)

@@ -110,6 +110,17 @@ planningChecks infantryId truckId passengerId =
         saved =
             OrderPlanning.confirmPath context moving
 
+        crateChoice : OrderPlanning.Model
+        crateChoice =
+            OrderPlanning.ChoosingCrates truckId
+                { orders = OrderPlanning.orders saved
+                , selection = Just (Inspecting (UnitInspection truckId))
+                }
+
+        dismissedCrates : OrderPlanning.Model
+        dismissedCrates =
+            OrderPlanning.dismissDialog crateChoice
+
         reserved : OrderPlanning.Model
         reserved =
             saved
@@ -143,6 +154,104 @@ planningChecks infantryId truckId passengerId =
                 |> OrderPlanning.selectUnit context infantryId
                 |> OrderPlanning.applyCommand context UnitCommand.Move
                 |> OrderPlanning.selectTile context { x = 3, y = 1 }
+
+        fullFreight : PlannedOrder.PlannedOrder
+        fullFreight =
+            { unitId = truckId
+            , action =
+                PlannedOrder.SupplyTransfer
+                    { route =
+                        [ { x = 3
+                          , y = 1
+                          }
+                        ]
+                    , destination =
+                        { x = 3
+                        , y = 1
+                        }
+                    , handling = PlannedOrder.LoadingCrates 2
+                    , passengers = []
+                    }
+            }
+
+        mixedFreight : PlannedOrder.PlannedOrder
+        mixedFreight =
+            { fullFreight
+                | action =
+                    PlannedOrder.SupplyTransfer
+                        { route =
+                            [ { x = 3
+                              , y = 1
+                              }
+                            ]
+                        , destination =
+                            { x = 3
+                            , y = 1
+                            }
+                        , handling = PlannedOrder.LoadingCrates 1
+                        , passengers = []
+                        }
+            }
+
+        boardingWithFreight : OrderPlanning.Model
+        boardingWithFreight =
+            OrderPlanning.init
+                |> OrderPlanning.setOrders [ mixedFreight ]
+                |> OrderPlanning.selectUnit context infantryId
+                |> OrderPlanning.applyCommand context UnitCommand.Move
+                |> OrderPlanning.selectTile context
+                    { x = 3
+                    , y = 1
+                    }
+
+        tryingFullTruck : OrderPlanning.Model
+        tryingFullTruck =
+            OrderPlanning.init
+                |> OrderPlanning.setOrders [ fullFreight ]
+                |> OrderPlanning.selectUnit context infantryId
+                |> OrderPlanning.applyCommand context UnitCommand.Move
+                |> OrderPlanning.selectTile context
+                    { x = 3
+                    , y = 1
+                    }
+
+        cacheFreight : PlannedOrder.PlannedOrder
+        cacheFreight =
+            { unitId = truckId
+            , action =
+                PlannedOrder.SupplyTransfer
+                    { route =
+                        [ { x = 3
+                          , y = 1
+                          }
+                        ]
+                    , destination =
+                        { x = 3
+                        , y = 1
+                        }
+                    , handling =
+                        PlannedOrder.UnloadingCrates
+                            [ { cargoIndex = 0
+                              , destination =
+                                    { x = 2
+                                    , y = 1
+                                    }
+                              }
+                            ]
+                    , passengers = []
+                    }
+            }
+
+        tryingCrateExit : OrderPlanning.Model
+        tryingCrateExit =
+            OrderPlanning.init
+                |> OrderPlanning.setOrders [ cacheFreight ]
+                |> OrderPlanning.selectUnit context infantryId
+                |> OrderPlanning.applyCommand context UnitCommand.Move
+                |> OrderPlanning.selectTile context
+                    { x = 2
+                    , y = 1
+                    }
 
         chainContext : OrderPlanning.Context
         chainContext =
@@ -236,6 +345,135 @@ planningChecks infantryId truckId passengerId =
                 |> OrderPlanning.confirmPassengers cargoContext
                 |> OrderPlanning.chooseUnloadSquare cargoContext { x = 5, y = 1 }
 
+        freightTruck : Unit
+        freightTruck =
+            { truck
+                | resources =
+                    truck.resources
+                        |> Maybe.map
+                            (\resources ->
+                                { resources
+                                    | supplyCargo =
+                                        [ { current = 48
+                                          , maximum = 64
+                                          }
+                                        ]
+                                }
+                            )
+            }
+
+        mixedContext : OrderPlanning.Context
+        mixedContext =
+            board [ freightTruck, unit infantryId Kind.Infantry (Location.Aboard truckId) ]
+
+        mixedChecklist : OrderPlanning.Model
+        mixedChecklist =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit mixedContext truckId
+                |> OrderPlanning.applyCommand mixedContext UnitCommand.HoldPosition
+
+        mixedExits : OrderPlanning.Model
+        mixedExits =
+            mixedChecklist
+                |> OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate 0) True
+                |> OrderPlanning.toggleUnloadPassenger infantryId True
+                |> OrderPlanning.confirmPassengers mixedContext
+
+        crateExit : OrderPlanning.Model
+        crateExit =
+            OrderPlanning.chooseUnloadSquare mixedContext
+                { x = 3
+                , y = 2
+                }
+                mixedExits
+
+        mixedComplete : OrderPlanning.Model
+        mixedComplete =
+            OrderPlanning.chooseUnloadSquare mixedContext
+                { x = 4
+                , y = 1
+                }
+                crateExit
+
+        passengerFirst : OrderPlanning.Model
+        passengerFirst =
+            mixedChecklist
+                |> OrderPlanning.toggleUnloadPassenger infantryId True
+                |> OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate 0) True
+                |> OrderPlanning.confirmPassengers mixedContext
+                |> OrderPlanning.chooseUnloadSquare mixedContext
+                    { x = 3
+                    , y = 2
+                    }
+
+        crateOnlyContext : OrderPlanning.Context
+        crateOnlyContext =
+            board [ freightTruck ]
+
+        crateOnlyMove : OrderPlanning.Model
+        crateOnlyMove =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit crateOnlyContext truckId
+                |> OrderPlanning.applyCommand crateOnlyContext UnitCommand.Move
+                |> OrderPlanning.selectTile crateOnlyContext
+                    { x = 4
+                    , y = 1
+                    }
+
+        twoCrateTruck : Unit
+        twoCrateTruck =
+            { truck
+                | resources =
+                    truck.resources
+                        |> Maybe.map
+                            (\resources ->
+                                { resources
+                                    | supplyCargo =
+                                        [ { current = 48
+                                          , maximum = 64
+                                          }
+                                        , { current = 16
+                                          , maximum = 64
+                                          }
+                                        ]
+                                }
+                            )
+            }
+
+        twoCrateContext : OrderPlanning.Context
+        twoCrateContext =
+            board [ twoCrateTruck ]
+
+        selectedSecondCrate : OrderPlanning.Model
+        selectedSecondCrate =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit twoCrateContext truckId
+                |> OrderPlanning.applyCommand twoCrateContext UnitCommand.HoldPosition
+                |> OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate 0) True
+                |> OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate 1) True
+                |> OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate 0) False
+                |> OrderPlanning.confirmPassengers twoCrateContext
+                |> OrderPlanning.chooseUnloadSquare twoCrateContext
+                    { x = 3
+                    , y = 2
+                    }
+
+        blockedCrateContext : OrderPlanning.Context
+        blockedCrateContext =
+            { mixedContext
+                | supplyCrates =
+                    [ { position =
+                            { x = 3
+                            , y = 2
+                            }
+                      , stock =
+                            { current = 32
+                            , maximum = 64
+                            }
+                      }
+                    ]
+            }
+
         submitted : TurnLifecycle.Phase
         submitted =
             TurnLifecycle.startSubmission 1 (TurnLifecycle.Planning saved)
@@ -265,7 +503,19 @@ planningChecks infantryId truckId passengerId =
             OrderPlanning.selectNextUnorderedUnit context saved
     in
     List.concat
-        [ expect "attack move traces and saves an occupied enemy destination without creating loading holds"
+        [ expect "crate loading dialog preserves drafts and blocks submission until dismissed"
+            (OrderPlanning.selectNextUnorderedUnit context crateChoice
+                == crateChoice
+                && OrderPlanning.orders crateChoice
+                == OrderPlanning.orders saved
+                && OrderPlanning.submissionDrafts crateChoice
+                == Nothing
+                && OrderPlanning.orders dismissedCrates
+                == OrderPlanning.orders saved
+                && OrderPlanning.submissionDrafts dismissedCrates
+                /= Nothing
+            )
+        , expect "attack move traces and saves an occupied enemy destination without creating loading holds"
             (List.map PlannedOrder.path (OrderPlanning.orders attackSaved) == [ [ { x = 1, y = 1 }, { x = 2, y = 1 }, { x = 3, y = 1 } ] ] && List.all PlannedOrder.isAttackMove (OrderPlanning.orders attackSaved) && OrderPlanning.pathPreview attackSaved == Nothing)
         , expect "attack move cannot board an allied truck"
             (List.isEmpty (OrderPlanning.orders attackLoading) && OrderPlanning.destinationFeedback attackLoading == DestinationUnavailable)
@@ -315,6 +565,87 @@ planningChecks infantryId truckId passengerId =
             (List.concatMap PlannedOrder.unloads (OrderPlanning.orders truckMove) == [ { unitId = infantryId, destination = { x = 5, y = 1 } } ])
         , expect "cargo needs no explicit ready order but receives holds for submission"
             (List.isEmpty (OrderPlanning.missingOrders cargoContext (OrderPlanning.orders completed)) && List.length ordersForSubmission == 3)
+        , expect "explicit crate loading reserves the truck berths against later boarding drafts"
+            (List.map .unitId (OrderPlanning.orders tryingFullTruck) == [ truckId ])
+        , expect "boarding into a spare berth preserves an explicit crate-loading order"
+            (List.member mixedFreight (OrderPlanning.orders boardingWithFreight) && List.length (OrderPlanning.orders boardingWithFreight) == 2)
+        , expect "planned ground crate exits reserve their destination against later unit moves"
+            (List.map .unitId (OrderPlanning.orders tryingCrateExit) == [ truckId ])
+        , expect "mixed cargo can unload a crate then a passenger in one stationary order"
+            (List.concatMap PlannedOrder.crateUnloads (OrderPlanning.orders mixedComplete)
+                == [ { cargoIndex = 0
+                     , destination =
+                        { x = 3
+                        , y = 2
+                        }
+                     }
+                   ]
+                && List.concatMap PlannedOrder.unloads (OrderPlanning.orders mixedComplete)
+                == [ { unitId = infantryId
+                     , destination =
+                        { x = 4
+                        , y = 1
+                        }
+                     }
+                   ]
+                && OrderPlanning.unloadPlanning mixedComplete
+                == Nothing
+            )
+        , expect "crate and passenger exits reserve squares in either selection order"
+            (not
+                (List.member
+                    { x = 3
+                    , y = 2
+                    }
+                    (List.map .destination (OrderPlanning.moveOptions crateExit))
+                )
+                && not
+                    (List.member
+                        { x = 3
+                        , y = 2
+                        }
+                        (List.map .destination (OrderPlanning.moveOptions passengerFirst))
+                    )
+            )
+        , expect "trucks carrying only crates open the unload checklist after moving"
+            (OrderPlanning.unloadChoice crateOnlyMove /= Nothing)
+        , expect "existing ground crates block crate exits"
+            (not
+                (List.member
+                    { x = 3
+                    , y = 2
+                    }
+                    (List.map .destination
+                        (OrderPlanning.moveOptions
+                            (OrderPlanning.confirmPassengers blockedCrateContext
+                                (mixedChecklist
+                                    |> OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate 0) True
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        , expect "unchecking one crate preserves the selected original cargo slot"
+            (List.concatMap PlannedOrder.crateUnloads (OrderPlanning.orders selectedSecondCrate)
+                == [ { cargoIndex = 1
+                     , destination =
+                        { x = 3
+                        , y = 2
+                        }
+                     }
+                   ]
+                && OrderPlanning.unloadPlanning selectedSecondCrate
+                == Nothing
+            )
+        , expect "declining mixed unloading preserves an ordinary hold"
+            (List.map .action (OrderPlanning.orders (OrderPlanning.confirmPassengers mixedContext mixedChecklist))
+                == [ PlannedOrder.Hold
+                        { x = 3
+                        , y = 1
+                        }
+                   ]
+            )
         , expect "lifecycle gating prevents editing submitted drafts"
             (TurnLifecycle.mapPlanning (OrderPlanning.selectTile context { x = 2, y = 2 }) submitted == submitted)
         ]
@@ -325,6 +656,7 @@ board units =
     { map = { width = 7, height = 7, baseTile = Terrain.GrassPlain, theme = Theme.GreenForest, features = [] }
     , units = units
     , movementRules = List.map movementRule [ Kind.Infantry, Kind.Truck, Kind.FieldGun ]
+    , supplyCrates = []
     , playerSides = [ PlayerNumber.Player1 ]
     }
 
@@ -365,7 +697,37 @@ unit id kind location =
             else
                 0
     in
-    { id = id, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, kind = kind, direction = direction, destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = capacity, location = location, resources = Just { hitPoints = { current = 16, maximum = 16 }, supplies = { current = 64, maximum = 64, upkeepPerTurn = 1, movementPerTile = 1 }, fuel = fuel } }
+    { id = id
+    , playerNumber = PlayerNumber.Player1
+    , spriteFacing = SpriteFacing.Right
+    , kind = kind
+    , direction = direction
+    , destroyed = False
+    , combatRules =
+        { range = 1
+        , shape = AmbushShape.Line
+        , damage = 4
+        , readinessCost = 2
+        , shotCost = 2
+        }
+    , cargoCapacity = capacity
+    , location = location
+    , resources =
+        Just
+            { supplyCargo = []
+            , hitPoints =
+                { current = 16
+                , maximum = 16
+                }
+            , supplies =
+                { current = 64
+                , maximum = 64
+                , upkeepPerTurn = 1
+                , movementPerTile = 1
+                }
+            , fuel = fuel
+            }
+    }
 
 
 expect : String -> Bool -> List String

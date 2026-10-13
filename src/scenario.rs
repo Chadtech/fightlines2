@@ -1,4 +1,8 @@
-use crate::map::{Coordinate, Map, MapError, MapTheme};
+use crate::{
+    combat,
+    map::{Coordinate, Map, MapError, MapTheme},
+    supplies::{self, GroundSupplyCrate, SupplyRules, SupplyStock},
+};
 use juniper::{GraphQLEnum, GraphQLObject, GraphQLUnion, graphql_object};
 use std::fmt;
 
@@ -122,7 +126,7 @@ impl Fuel {
     }
 }
 
-/// Unit provisions, separate from fuel and any future truck delivery cargo.
+/// Unit provisions, separate from fuel and finite supply-crate cargo.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Supplies {
     current: i32,
@@ -203,11 +207,12 @@ pub enum UnitLocation {
 }
 
 /// Resource details are disclosed together only for the observing player's units.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLObject)]
+#[derive(Clone, Debug, PartialEq, Eq, GraphQLObject)]
 pub struct UnitResources {
     hit_points: HitPoints,
     supplies: Supplies,
     fuel: Option<Fuel>,
+    supply_cargo: Vec<SupplyStock>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -223,6 +228,7 @@ pub struct Unit {
     supplies: Supplies,
     resources_visible: bool,
     firing_position_revealed: bool,
+    pub(crate) supply_cargo: Vec<SupplyStock>,
 }
 
 #[graphql_object]
@@ -259,6 +265,7 @@ impl Unit {
             hit_points: self.hit_points(),
             supplies: self.supplies(),
             fuel: self.fuel(),
+            supply_cargo: self.supply_cargo.clone(),
         })
     }
 
@@ -274,8 +281,8 @@ impl Unit {
         !self.is_alive() || self.supplies.current == 0
     }
 
-    pub fn combat_rules(&self) -> crate::combat::CombatRules {
-        crate::combat::rules(self.kind)
+    pub fn combat_rules(&self) -> combat::CombatRules {
+        combat::rules(self.kind)
     }
 
     pub fn cargo_capacity(&self) -> i32 {
@@ -293,17 +300,21 @@ impl Unit {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, GraphQLObject)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 /// A neutral supply building, separate from terrain and units.
 pub struct Depot {
-    position: Coordinate,
+    pub(crate) position: Coordinate,
+    pub(crate) stock: SupplyStock,
+    /// Fog projection gate: known depot positions remain visible, but unseen stock is withheld.
+    pub(crate) stock_visible: bool,
 }
 
 /// Current board state, including hit points, fuel and supplies. Combat remains future work.
-#[derive(Clone, Debug, PartialEq, Eq, GraphQLObject)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Scenario {
     pub(crate) map: Map,
-    depots: Vec<Depot>,
+    pub(crate) depots: Vec<Depot>,
+    pub(crate) supply_crates: Vec<GroundSupplyCrate>,
     pub(crate) units: Vec<Unit>,
 }
 
@@ -359,6 +370,10 @@ impl Unit {
 
     pub fn take_damage(&mut self, damage: i32) {
         self.hit_points.current = (self.hit_points.current - damage).max(0);
+    }
+
+    pub(crate) fn receive_supplies(&mut self, amount: i32) {
+        self.supplies.current = (self.supplies.current + amount).min(self.supplies.maximum);
     }
 
     pub fn spend_supplies(&mut self, cost: i32) {
@@ -436,7 +451,7 @@ struct StartingUnit {
 }
 
 impl Scenario {
-    /// A truck has two unit berths. Unit provisions are independent of cargo.
+    /// A truck has two berths shared by passengers and supply crates.
     pub fn loading_pair(&self, mover: &Unit, target: &Unit) -> Option<(UnitId, UnitId)> {
         if mover.side != target.side
             || mover.carrier_id().is_some()
@@ -454,6 +469,7 @@ impl Scenario {
             .iter()
             .filter(|unit| unit.carrier_id() == Some(truck.id))
             .count()
+            + truck.supply_cargo.len()
             >= truck.cargo_capacity() as usize
         {
             None
@@ -475,9 +491,10 @@ impl Scenario {
         }
     }
 
-    /// Charge upkeep and remove exhausted units, including cargo of dead carriers.
+    /// Replenish, charge upkeep, and remove exhausted units and their cargo.
     /// Return the last resource snapshot for death presentation only.
-    pub fn finish_turn_resources(&mut self) -> Vec<Unit> {
+    pub fn finish_turn_resources(&mut self, turn_number: i32) -> Vec<Unit> {
+        supplies::replenish(self, turn_number);
         for unit in &mut self.units {
             unit.supplies.current = (unit.supplies.current - unit.supplies.upkeep_per_turn).max(0);
             let at_depot = self
@@ -542,24 +559,38 @@ impl Scenario {
             vec![
                 Depot {
                     position: Coordinate::new(11, 2),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
                 Depot {
                     position: Coordinate::new(11, 15),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
                 Depot {
                     position: Coordinate::new(16, 6),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
                 Depot {
                     position: Coordinate::new(4, 8),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
                 Depot {
                     position: Coordinate::new(4, 10),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
                 Depot {
                     position: Coordinate::new(20, 11),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
                 Depot {
                     position: Coordinate::new(20, 13),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
             ],
             &[
@@ -668,16 +699,24 @@ impl Scenario {
             vec![
                 Depot {
                     position: Coordinate::new(2, 10),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
                 Depot {
                     position: Coordinate::new(22, 10),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
                 // Flank objectives approximate the original teleporter exits.
                 Depot {
                     position: Coordinate::new(13, 5),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
                 Depot {
                     position: Coordinate::new(11, 15),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
             ],
             &[
@@ -756,9 +795,13 @@ impl Scenario {
             vec![
                 Depot {
                     position: Coordinate::new(2, 10),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
                 Depot {
                     position: Coordinate::new(22, 10),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
             ],
             &[
@@ -830,9 +873,13 @@ impl Scenario {
             vec![
                 Depot {
                     position: Coordinate::new(8, 3),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
                 Depot {
                     position: Coordinate::new(24, 3),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
             ],
             &[
@@ -925,27 +972,43 @@ impl Scenario {
             vec![
                 Depot {
                     position: Coordinate::new(6, 3),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
                 Depot {
                     position: Coordinate::new(4, 10),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
                 Depot {
                     position: Coordinate::new(4, 16),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
                 Depot {
                     position: Coordinate::new(10, 12),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
                 Depot {
                     position: Coordinate::new(26, 3),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
                 Depot {
                     position: Coordinate::new(28, 10),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
                 Depot {
                     position: Coordinate::new(28, 16),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
                 Depot {
                     position: Coordinate::new(22, 12),
+                    stock: SupplyStock::depot(),
+                    stock_visible: true,
                 },
             ],
             &[
@@ -1059,6 +1122,7 @@ impl Scenario {
                     kind: starting.kind,
                     resources_visible: true,
                     firing_position_revealed: false,
+                    supply_cargo: Vec::new(),
                     hit_points: HitPoints::full(),
                     fuel: Fuel::for_kind(starting.kind),
                     supplies: Supplies::for_kind(starting.kind),
@@ -1079,7 +1143,12 @@ impl Scenario {
                 return Err(MapError::PositionOutOfBounds(position));
             }
         }
-        Ok(Self { map, depots, units })
+        Ok(Self {
+            map,
+            depots,
+            units,
+            supply_crates: Vec::new(),
+        })
     }
 
     pub fn supply_point() -> Result<Self, MapError> {
@@ -1106,12 +1175,18 @@ impl Scenario {
         let depots = vec![
             Depot {
                 position: Coordinate::new(2, 8),
+                stock: SupplyStock::depot(),
+                stock_visible: true,
             },
             Depot {
                 position: Coordinate::new(8, 8),
+                stock: SupplyStock::depot(),
+                stock_visible: true,
             },
             Depot {
                 position: Coordinate::new(14, 8),
+                stock: SupplyStock::depot(),
+                stock_visible: true,
             },
         ];
         let mut units = Vec::new();
@@ -1137,6 +1212,7 @@ impl Scenario {
                     kind,
                     resources_visible: true,
                     firing_position_revealed: false,
+                    supply_cargo: Vec::new(),
                     hit_points: HitPoints::full(),
                     fuel: Fuel::for_kind(kind),
                     supplies: Supplies::for_kind(kind),
@@ -1167,6 +1243,7 @@ impl Scenario {
                     kind,
                     resources_visible: true,
                     firing_position_revealed: false,
+                    supply_cargo: Vec::new(),
                     hit_points: HitPoints::full(),
                     fuel: Fuel::for_kind(kind),
                     supplies: Supplies::for_kind(kind),
@@ -1187,7 +1264,12 @@ impl Scenario {
                 return Err(MapError::PositionOutOfBounds(position));
             }
         }
-        Ok(Self { map, depots, units })
+        Ok(Self {
+            map,
+            depots,
+            units,
+            supply_crates: Vec::new(),
+        })
     }
 }
 
@@ -1740,6 +1822,7 @@ mod tests {
     #[test]
     fn exhausted_units_die_and_dead_carriers_leave_no_orphaned_cargo() -> TestResult<()> {
         let mut scenario = Scenario::supply_point().fixture()?;
+        scenario.depots.clear();
         let truck_id = UnitId::parse("4").fixture()?;
         for unit in &mut scenario.units {
             match unit.id().as_str() {
@@ -1748,7 +1831,7 @@ mod tests {
                 _ => {}
             }
         }
-        let snapshot = scenario.finish_turn_resources();
+        let snapshot = scenario.finish_turn_resources(1);
         for id in ["1", "2", "4", "12"] {
             assert!(!scenario.units.iter().any(|unit| unit.id() == id));
             let dead = snapshot.iter().find(|unit| unit.id() == id).fixture()?;
@@ -1775,10 +1858,11 @@ mod tests {
     #[test]
     fn exhausted_passengers_die_without_destroying_their_carrier() -> TestResult<()> {
         let mut scenario = Scenario::supply_point().fixture()?;
+        scenario.depots.clear();
         let passenger = &mut scenario.units[0];
         passenger.board(UnitId::parse("4").fixture()?);
         passenger.supplies.current = 1;
-        scenario.finish_turn_resources();
+        scenario.finish_turn_resources(1);
         assert!(!scenario.units.iter().any(|unit| unit.id() == "1"));
         assert!(scenario.units.iter().any(|unit| unit.id() == "4"));
         assert_eq!(scenario.units.len(), 15);
@@ -1820,7 +1904,7 @@ mod tests {
             }
         }
         scenario.units[0].follow_path(&[Coordinate::new(3, 7), Coordinate::new(3, 6)]);
-        scenario.finish_turn_resources();
+        scenario.finish_turn_resources(1);
         assert!(
             scenario
                 .units
@@ -2048,5 +2132,34 @@ mod tests {
         assert_eq!(scenario, Scenario::supply_point().fixture()?);
 
         Ok(())
+    }
+}
+
+#[graphql_object]
+impl Scenario {
+    fn map(&self) -> &Map {
+        &self.map
+    }
+    fn depots(&self) -> &[Depot] {
+        &self.depots
+    }
+    fn units(&self) -> &[Unit] {
+        &self.units
+    }
+    fn supply_crates(&self) -> &[GroundSupplyCrate] {
+        &self.supply_crates
+    }
+    fn supply_rules(&self) -> SupplyRules {
+        supplies::rules()
+    }
+}
+
+#[graphql_object]
+impl Depot {
+    fn position(&self) -> Coordinate {
+        self.position
+    }
+    fn stock(&self) -> Option<&SupplyStock> {
+        self.stock_visible.then_some(&self.stock)
     }
 }
