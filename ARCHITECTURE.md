@@ -817,7 +817,12 @@ are removed. Provision replenishment leaves health and depot fuel rules unchange
 
 `PlannedOrder.SupplyTransfer` owns the truck route, load count, crate exits, and
 existing passenger unloads. `OrderPlanning.ChoosingCrates` owns the depot-loading
-dialog and the saved drafts. Saving a truck destination on a depot opens the
+dialog and the saved drafts. `OrderPlanning` enters that choice directly when
+saving a truck move or hold, completing passenger exits, or skipping unloading.
+Crate unloading suppresses loading because those operations cannot combine.
+`GamePage.update` opens the native cargo dialog only when its identity changes;
+hover and selection events do not infer new logistics orders.
+Saving a truck destination on a depot opens the
 0/1/2 choice after cargo unloading choices. Dismissing keeps the route without
 loading. Depot loading requires the destination square itself. Trucks with room
 collect neutral ground crates at their actual final position, preserving stock.

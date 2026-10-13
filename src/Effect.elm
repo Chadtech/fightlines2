@@ -1,6 +1,7 @@
 module Effect exposing
     ( Eff
     , after
+    , batch
     , focus
     , load
     , map
@@ -31,6 +32,7 @@ import Task exposing (Task)
 
 type Eff msg
     = None
+    | Batch (List (Eff msg))
     | Request (Task Never msg)
     | Navigate Route
     | PushUrl String
@@ -41,6 +43,13 @@ type Eff msg
 none : Eff msg
 none =
     None
+
+
+{-| Run every effect in the group. As with Cmd.batch, execution order is unspecified.
+-}
+batch : List (Eff msg) -> Eff msg
+batch effects =
+    Batch effects
 
 
 withOut : model -> ( model, Eff msg )
@@ -98,6 +107,9 @@ map toMsg effect =
         None ->
             None
 
+        Batch effects ->
+            Batch (List.map (map toMsg) effects)
+
         Request task ->
             Request (Task.map toMsg task)
 
@@ -119,6 +131,9 @@ toCmd key effect =
     case effect of
         None ->
             Cmd.none
+
+        Batch effects ->
+            Cmd.batch (List.map (toCmd key) effects)
 
         Request task ->
             Task.perform identity task

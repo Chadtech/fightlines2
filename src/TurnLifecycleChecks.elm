@@ -292,23 +292,23 @@ unloadChecks =
 
                 firstPassenger : Phase
                 firstPassenger =
-                    TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers exitOptions) checked
+                    TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] exitOptions) checked
 
                 rejectedFirstExit : Phase
                 rejectedFirstExit =
-                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination exitOptions { x = 9, y = 9 }) firstPassenger
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] exitOptions { x = 9, y = 9 }) firstPassenger
 
                 secondPassenger : Phase
                 secondPassenger =
-                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination exitOptions { x = 2, y = 2 }) rejectedFirstExit
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] exitOptions { x = 2, y = 2 }) rejectedFirstExit
 
                 rejectedExit : Phase
                 rejectedExit =
-                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination exitOptions { x = 2, y = 2 }) secondPassenger
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] exitOptions { x = 2, y = 2 }) secondPassenger
 
                 complete : Phase
                 complete =
-                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination exitOptions { x = 3, y = 1 }) rejectedExit
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] exitOptions { x = 3, y = 1 }) rejectedExit
 
                 completedOrder : PlannedOrder.PlannedOrder
                 completedOrder =
@@ -348,15 +348,15 @@ unloadChecks =
                     stationaryChecklist
                         |> TurnLifecycle.mapPlanning (OrderPlanning.toggleUnloadPassenger first True)
                         |> TurnLifecycle.mapPlanning (OrderPlanning.toggleUnloadPassenger second True)
-                        |> TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers stationaryOptions)
+                        |> TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] stationaryOptions)
 
                 stationarySecond : Phase
                 stationarySecond =
-                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination stationaryOptions { x = 0, y = 1 }) stationaryFirst
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] stationaryOptions { x = 0, y = 1 }) stationaryFirst
 
                 stationaryComplete : Phase
                 stationaryComplete =
-                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination stationaryOptions { x = 1, y = 2 }) stationarySecond
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] stationaryOptions { x = 1, y = 2 }) stationarySecond
 
                 stationaryOrder : PlannedOrder.PlannedOrder
                 stationaryOrder =
@@ -399,9 +399,9 @@ unloadChecks =
                 [ expect "stationary unloading replaces the truck move with one hold at its origin"
                     (TurnLifecycle.orders stationaryChecklist == [ stationaryHold ])
                 , expect "canceling or declining stationary unloading leaves a plain hold"
-                    (TurnLifecycle.orders (TurnLifecycle.mapPlanning OrderPlanning.dismissDialog stationaryChecklist)
+                    (TurnLifecycle.orders (TurnLifecycle.mapPlanning (OrderPlanning.dismissDialog []) stationaryChecklist)
                         == [ stationaryHold ]
-                        && TurnLifecycle.orders (TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers stationaryOptions) stationaryChecklist)
+                        && TurnLifecycle.orders (TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] stationaryOptions) stationaryChecklist)
                         == [ stationaryHold ]
                     )
                 , expect "stationary unloading reserves each exit before choosing the next passenger"
@@ -423,9 +423,9 @@ unloadChecks =
                 , expect "the passenger checklist owns one truck move and derives its inspection"
                     (hasOneOwner && TurnLifecycle.orders checklist == [ order ] && TurnLifecycle.selection checklist == Just (Inspecting (UnitInspection truck)))
                 , expect "canceling the checklist retains the move and returns to ordinary planning"
-                    (TurnLifecycle.mapPlanning OrderPlanning.dismissDialog checked == ordinary)
+                    (TurnLifecycle.mapPlanning (OrderPlanning.dismissDialog []) checked == ordinary)
                 , expect "proceeding without passengers retains the move"
-                    (TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers exitOptions) checklist == ordinary)
+                    (TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] exitOptions) checklist == ordinary)
                 , expect "the next passenger cannot reuse an exit already saved"
                     reservesFirstExit
                 , expect "an unavailable exit cannot advance the workflow"
@@ -463,7 +463,7 @@ unloadChecks =
                 , expect "completed unload orders can be revoked normally"
                     (TurnLifecycle.orders (TurnLifecycle.setOrders [] complete) == [])
                 , expect "submission warning dismissal preserves selection and drafts"
-                    (TurnLifecycle.mapPlanning OrderPlanning.dismissDialog (TurnLifecycle.mapPlanning OrderPlanning.showSubmissionWarning ordinary) == ordinary)
+                    (TurnLifecycle.mapPlanning (OrderPlanning.dismissDialog []) (TurnLifecycle.mapPlanning OrderPlanning.showSubmissionWarning ordinary) == ordinary)
                 , expect "confirming submission accepts the warning state's drafts"
                     (TurnLifecycle.startSubmission 1 (TurnLifecycle.mapPlanning OrderPlanning.showSubmissionWarning ordinary) == TurnLifecycle.startSubmission 1 ordinary)
                 ]

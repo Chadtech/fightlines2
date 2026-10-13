@@ -39,6 +39,7 @@ module GamePage.OrderPlanning exposing
     , setOrders
     , setSelection
     , showSubmissionWarning
+    , skipUnloading
     , startStationaryUnload
     , startUnload
     , submissionDrafts
@@ -53,7 +54,9 @@ module GamePage.OrderPlanning exposing
 
 import Api.Enum.Direction as DirectionEnum exposing (Direction)
 import Api.Enum.PlayerNumber exposing (PlayerNumber)
+import Api.Enum.UnitKind as Kind
 import Coordinate exposing (Coordinate)
+import Depot exposing (Depot)
 import Direction
 import GamePage.Selection as Selection
     exposing
@@ -88,6 +91,7 @@ camera state remain with the page.
 -}
 type alias Context =
     { map : Map
+    , depots : List Depot
     , units : List Unit
     , movementRules : List Movement.Rule
     , supplyCrates : List Supply.GroundCrate
@@ -320,11 +324,12 @@ toggleUnloadCargo cargo checked state =
             state
 
 
-confirmUnloadPassengers : (Model -> Cargo -> List Movement.Option) -> Model -> Model
-confirmUnloadPassengers options state =
+confirmUnloadPassengers : List Depot -> (Model -> Cargo -> List Movement.Option) -> Model -> Model
+confirmUnloadPassengers depots options state =
     case state of
         ChoosingPassengers choice ->
-            nextUnloadPassenger options
+            nextUnloadPassenger depots
+                options
                 { truck = choice.truck
                 , otherOrders = choice.otherOrders
                 , passengers = List.reverse choice.checked
@@ -334,8 +339,8 @@ confirmUnloadPassengers options state =
             state
 
 
-saveUnloadDestination : (Model -> Cargo -> List Movement.Option) -> Coordinate -> Model -> Model
-saveUnloadDestination options destination state =
+saveUnloadDestination : List Depot -> (Model -> Cargo -> List Movement.Option) -> Coordinate -> Model -> Model
+saveUnloadDestination depots options destination state =
     case state of
         ChoosingExits unloading ->
             if
@@ -405,7 +410,8 @@ saveUnloadDestination options destination state =
                                     | crateUnloads = truck.crateUnloads ++ exits
                                 }
                 in
-                nextUnloadPassenger options
+                nextUnloadPassenger depots
+                    options
                     { truck = updated
                     , otherOrders = unloading.otherOrders
                     , passengers = unloading.remaining
@@ -439,8 +445,8 @@ submissionWarningOpen state =
             False
 
 
-dismissDialog : Model -> Model
-dismissDialog state =
+dismissDialog : List Depot -> Model -> Model
+dismissDialog depots state =
     case state of
         ConfirmingSubmission drafts ->
             OrdinaryPlanning drafts
@@ -448,8 +454,8 @@ dismissDialog state =
         ChoosingCrates _ drafts ->
             OrdinaryPlanning drafts
 
-        ChoosingPassengers _ ->
-            setSelection (selection state) state
+        ChoosingPassengers choice ->
+            finishUnloading depots choice.truck choice.otherOrders (selection state)
 
         _ ->
             state
@@ -458,7 +464,7 @@ dismissDialog state =
 chooseUnloadSquare : Context -> Coordinate -> Model -> Model
 chooseUnloadSquare context destination state =
     state
-        |> saveUnloadDestination (unloadOptions context) destination
+        |> saveUnloadDestination context.depots (unloadOptions context) destination
 
 
 applyCommand : Context -> UnitCommand.Command -> Model -> Model
@@ -1017,7 +1023,7 @@ submissionOrders context drafts =
 
 confirmPassengers : Context -> Model -> Model
 confirmPassengers context state =
-    confirmUnloadPassengers (unloadOptions context) state
+    confirmUnloadPassengers context.depots (unloadOptions context) state
 
 
 focusedCommand : Model -> Maybe UnitCommand.MenuOption
@@ -1084,6 +1090,65 @@ truckOrder truck =
         }
 
 
+{-| A saved truck order enters loading only at its own depot destination.
+Crate unloading already owns freight handling and cannot combine with loading.
+-}
+offerCrateLoading : List Depot -> PlannedOrder -> Drafts -> Model
+offerCrateLoading depots order drafts =
+    case order.action of
+        PlannedOrder.SupplyTransfer _ ->
+            OrdinaryPlanning drafts
+
+        _ ->
+            if List.any (\depot -> depot.position == PlannedOrder.destination order) depots then
+                ChoosingCrates order.unitId drafts
+
+            else
+                OrdinaryPlanning drafts
+
+
+offerTruckLoading : Context -> Unit -> Model -> Model
+offerTruckLoading context unit state =
+    case ( unit.kind, state ) of
+        ( Kind.Truck, OrdinaryPlanning drafts ) ->
+            case ListUtil.find (\order -> order.unitId == unit.id) drafts.orders of
+                Just order ->
+                    offerCrateLoading context.depots order drafts
+
+                Nothing ->
+                    state
+
+        _ ->
+            state
+
+
+finishUnloading : List Depot -> UnloadingTruck -> List PlannedOrder -> Maybe Selection -> Model
+finishUnloading depots truck otherOrders selected =
+    let
+        order : PlannedOrder
+        order =
+            truckOrder truck
+    in
+    offerCrateLoading depots
+        order
+        { orders = order :: otherOrders
+        , selection = selected
+        }
+
+
+skipUnloading : Context -> Model -> Model
+skipUnloading context state =
+    case state of
+        ChoosingPassengers choice ->
+            finishUnloading context.depots choice.truck choice.otherOrders Nothing
+
+        ChoosingExits unloading ->
+            finishUnloading context.depots unloading.truck unloading.otherOrders Nothing
+
+        _ ->
+            state
+
+
 startTruckUnload : UnloadingTruck -> Model -> Model
 startTruckUnload truck state =
     case state of
@@ -1101,18 +1166,14 @@ startTruckUnload truck state =
             state
 
 
-nextUnloadPassenger : (Model -> Cargo -> List Movement.Option) -> UnloadQueue -> Model
-nextUnloadPassenger options queue =
+nextUnloadPassenger : List Depot -> (Model -> Cargo -> List Movement.Option) -> UnloadQueue -> Model
+nextUnloadPassenger depots options queue =
     case queue.passengers of
         [] ->
-            OrdinaryPlanning
-                { orders = truckOrder queue.truck :: queue.otherOrders
-                , selection =
-                    queue.truck.truckId
-                        |> Selection.UnitInspection
-                        |> Inspecting
-                        |> Just
-                }
+            finishUnloading depots
+                queue.truck
+                queue.otherOrders
+                (Just (Inspecting (Selection.UnitInspection queue.truck.truckId)))
 
         cargo :: remaining ->
             let
@@ -1143,7 +1204,7 @@ openUnloadPrompt context truck move state =
             |> startUnload truck.id move
 
     else
-        state
+        offerTruckLoading context truck state
 
 
 hasCargo : Context -> Unit -> Bool
@@ -1183,7 +1244,7 @@ holdPosition context unit state =
                         (PlannedOrder.destination hold)
 
             else
-                next
+                offerTruckLoading context unit next
 
         Nothing ->
             state
@@ -1597,35 +1658,51 @@ unitSelection context unit state =
 
 
 selectMovementTile : Context -> Coordinate -> Model -> Model
-selectMovementTile context position state =
+selectMovementTile context position model =
     let
         notOwnUnit : () -> Model
         notOwnUnit _ =
-            setSelection (Just (Inspecting (TileInspection position))) state
+            setSelection (Just (Inspecting (TileInspection position))) model
     in
-    case selectedUnit context state of
+    case selectedUnit context model of
         Just unit ->
-            if isOwnUnit context unit && pathPreview state /= Nothing then
+            if isOwnUnit context unit && pathPreview model /= Nothing then
                 let
                     destinationOption : Movement.Option -> Maybe Movement.Option
                     destinationOption preview =
-                        if canStop (movePurpose state) context unit state preview then
+                        if canStop (movePurpose model) context unit model preview then
                             Just preview
 
                         else
                             Nothing
                 in
                 case
-                    traceTo context position state
+                    traceTo context position model
                         |> Maybe.andThen destinationOption
                 of
                     Just move ->
-                        setOrders (saveMove context unit move state) state
+                        let
+                            offerReceiverLoading : Model -> Model
+                            offerReceiverLoading =
+                                if movePurpose model == AttackMove then
+                                    identity
+
+                                else
+                                    case moveReceiver context unit move model of
+                                        Just receiver ->
+                                            offerTruckLoading context receiver
+
+                                        Nothing ->
+                                            identity
+                        in
+                        model
+                            |> setOrders (saveMove context unit move model)
                             |> inspectSelectedUnit context
                             |> openUnloadPrompt context unit move
+                            |> offerReceiverLoading
 
                     Nothing ->
-                        setMoveDestinationFeedback DestinationUnavailable state
+                        setMoveDestinationFeedback DestinationUnavailable model
 
             else
                 notOwnUnit ()

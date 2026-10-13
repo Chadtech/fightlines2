@@ -8,7 +8,7 @@ module GamePage exposing
     , load
     , setShared
     , subscriptions
-    , update
+    , superUpdate
     , view
     )
 
@@ -298,12 +298,115 @@ setShared shared model =
 ----------------------------------------------------------------
 
 
+{-| Save the chosen load count on an existing truck order, retaining its route and passenger exits.
+-}
+saveCrateLoading : UnitId -> Int -> OrderPlanning.Model -> OrderPlanning.Model
+saveCrateLoading id count state =
+    let
+        retainsOrder : PlannedOrder -> Bool
+        retainsOrder order =
+            order.unitId /= id
+
+        loadingOrder : PlannedOrder -> PlannedOrder
+        loadingOrder order =
+            { unitId = id
+            , action =
+                PlannedOrder.SupplyTransfer
+                    { route = PlannedOrder.path order
+                    , destination = PlannedOrder.destination order
+                    , handling = PlannedOrder.LoadingCrates count
+                    , passengers = PlannedOrder.unloads order
+                    }
+            }
+    in
+    case state of
+        OrderPlanning.OrdinaryPlanning drafts ->
+            case ListUtil.find (\order -> order.unitId == id) drafts.orders of
+                Just order ->
+                    OrderPlanning.OrdinaryPlanning
+                        { orders = loadingOrder order :: List.filter retainsOrder drafts.orders
+                        , selection = Just (Inspecting (UnitInspection id))
+                        }
+
+                Nothing ->
+                    state
+
+        _ ->
+            state
+
+
+depotLoadingRoom : Model -> Unit -> Int
+depotLoadingRoom model unit =
+    let
+        passengers : Int
+        passengers =
+            List.filter (\passenger -> Unit.carrierId passenger == Just unit.id) model.units
+                |> List.length
+
+        crates : Int
+        crates =
+            unit.resources
+                |> Maybe.map (.supplyCargo >> List.length)
+                |> Maybe.withDefault 0
+
+        incoming : Int
+        incoming =
+            List.filter boardsTruck (plannedOrders model)
+                |> List.length
+
+        boardsTruck : PlannedOrder -> Bool
+        boardsTruck order =
+            (order.unitId /= unit.id)
+                && PlannedOrder.isMoving order
+                && (Just (PlannedOrder.destination order) == Unit.boardPosition unit)
+
+        destination : Maybe Coordinate
+        destination =
+            plannedOrders model
+                |> ListUtil.find (\order -> order.unitId == unit.id)
+                |> Maybe.map PlannedOrder.destination
+
+        pickup : Int
+        pickup =
+            destination
+                |> Maybe.andThen
+                    (\position ->
+                        OrderPlanning.loadingTarget (planningContext model) unit position (plannedOrders model)
+                    )
+                |> Maybe.map (\_ -> 1)
+                |> Maybe.withDefault 0
+
+        depot : Maybe Depot
+        depot =
+            destination
+                |> Maybe.andThen destinationDepot
+
+        destinationDepot : Coordinate -> Maybe Depot
+        destinationDepot position =
+            ListUtil.find (\source -> source.position == position) model.depots
+
+        stockLimit : Int
+        stockLimit =
+            case
+                depot
+                    |> Maybe.andThen .stock
+            of
+                Just stock ->
+                    (stock.current + model.supplyRules.crateCapacity - 1) // model.supplyRules.crateCapacity
+
+                Nothing ->
+                    2
+    in
+    min stockLimit (max 0 (unit.cargoCapacity - passengers - crates - incoming - pickup))
+
+
 planningContext : Model -> OrderPlanning.Context
 planningContext model =
     { map = model.map
     , units = model.units
     , movementRules = model.movementRules
     , supplyCrates = model.supplyCrates
+    , depots = model.depots
     , playerSides = List.filter .isYou model.players |> List.map .side
     }
 
@@ -332,7 +435,7 @@ isChoosingUnload model =
 dismissDialog : Model -> Model
 dismissDialog model =
     model
-        |> mapPlanning OrderPlanning.dismissDialog
+        |> mapPlanning (OrderPlanning.dismissDialog model.depots)
 
 
 partialOrdersDialogHtmlId : String
@@ -777,85 +880,17 @@ mapNavigation change model =
     { model | navigation = change model.navigation }
 
 
-{-| Compare the previous planning phase with the updated page to open newly entered cargo dialogs.
--}
-finishBoardInteraction : TurnLifecycle.Phase -> Model -> ( Model, Eff Msg )
-finishBoardInteraction previous next =
-    let
-        ready : Model
-        ready =
-            promptDepotLoading previous next
+cargoDialogHtmlId : TurnLifecycle.Phase -> Maybe String
+cargoDialogHtmlId phase =
+    case phase of
+        TurnLifecycle.Planning (OrderPlanning.ChoosingCrates _ _) ->
+            Just loadCratesDialogHtmlId
 
-        effect : Eff Msg
-        effect =
-            case ready.currentTurn.phase of
-                TurnLifecycle.Planning (OrderPlanning.ChoosingCrates _ _) ->
-                    E.toJs (ToJs.OpenDialog { htmlId = loadCratesDialogHtmlId })
-
-                _ ->
-                    case ( unloadChoice previous, unloadChoice ready.currentTurn.phase ) of
-                        ( Nothing, Just _ ) ->
-                            E.toJs (ToJs.OpenDialog { htmlId = unloadDialogHtmlId })
-
-                        _ ->
-                            E.none
-    in
-    ( ready, effect )
-
-
-promptDepotLoading : TurnLifecycle.Phase -> Model -> Model
-promptDepotLoading previous next =
-    let
-        eligible : PlannedOrder -> Bool
-        eligible order =
-            let
-                changed : Bool
-                changed =
-                    not (List.member order (TurnLifecycle.orders previous)) || finishedUnloading == Just order.unitId
-
-                isTruck : Bool
-                isTruck =
-                    List.any (\unit -> unit.id == order.unitId && unit.kind == UnitKind.Truck && isOwnUnit next unit) next.units
-
-                onDepot : Bool
-                onDepot =
-                    List.any (\depot -> depot.position == PlannedOrder.destination order) next.depots
-
-                handlesSupply : Bool
-                handlesSupply =
-                    case order.action of
-                        PlannedOrder.SupplyTransfer _ ->
-                            True
-
-                        _ ->
-                            False
-            in
-            changed && isTruck && onDepot && not handlesSupply
-
-        finishedUnloading : Maybe UnitId
-        finishedUnloading =
-            case previous of
-                TurnLifecycle.Planning (OrderPlanning.ChoosingPassengers choice) ->
-                    Just choice.truck.truckId
-
-                TurnLifecycle.Planning (OrderPlanning.ChoosingExits unloading) ->
-                    Just unloading.truck.truckId
-
-                _ ->
-                    Nothing
-    in
-    case next.currentTurn.phase of
-        TurnLifecycle.Planning (OrderPlanning.OrdinaryPlanning drafts) ->
-            case ListUtil.find eligible drafts.orders of
-                Just order ->
-                    next
-                        |> mapPlanning (\_ -> OrderPlanning.ChoosingCrates order.unitId drafts)
-
-                Nothing ->
-                    next
+        TurnLifecycle.Planning (OrderPlanning.ChoosingPassengers _) ->
+            Just unloadDialogHtmlId
 
         _ ->
-            next
+            Nothing
 
 
 loadCratesDialogHtmlId : String
@@ -991,6 +1026,38 @@ preventDefault msg =
 ----------------------------------------------------------------
 
 
+superUpdate : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
+superUpdate lobbyId msg model =
+    case update lobbyId msg model of
+        ( next, effect ) ->
+            let
+                previousDialog : Maybe String
+                previousDialog =
+                    cargoDialogHtmlId model.currentTurn.phase
+
+                nextDialog : Maybe String
+                nextDialog =
+                    cargoDialogHtmlId next.currentTurn.phase
+
+                nextEff : Eff Msg
+                nextEff =
+                    case nextDialog of
+                        Just htmlId ->
+                            if nextDialog /= previousDialog then
+                                E.batch
+                                    [ effect
+                                    , E.toJs (ToJs.OpenDialog { htmlId = htmlId })
+                                    ]
+
+                            else
+                                effect
+
+                        Nothing ->
+                            effect
+            in
+            ( next, nextEff )
+
+
 update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 update lobbyId msg model =
     case msg of
@@ -1101,7 +1168,7 @@ update lobbyId msg model =
                 in
                 traced
                     |> next
-                    |> finishBoardInteraction model.currentTurn.phase
+                    |> E.withOut
 
             else
                 traced
@@ -1120,13 +1187,12 @@ update lobbyId msg model =
         UnloadChoicesConfirmed ->
             model
                 |> mapPlanning (OrderPlanning.confirmPassengers (planningContext model))
-                |> finishBoardInteraction model.currentTurn.phase
+                |> E.withOut
 
         UnloadSkipped ->
             model
-                |> dismissDialog
-                |> clearSelection
-                |> finishBoardInteraction model.currentTurn.phase
+                |> mapPlanning (OrderPlanning.skipUnloading (planningContext model))
+                |> E.withOut
 
         LoadCratesClicked id count ->
             case
@@ -1137,7 +1203,7 @@ update lobbyId msg model =
                 Just _ ->
                     model
                         |> mapPlanning
-                            (OrderPlanning.dismissDialog
+                            (OrderPlanning.dismissDialog model.depots
                                 >> saveCrateLoading id count
                             )
                         |> E.withOut
@@ -1161,7 +1227,7 @@ update lobbyId msg model =
         NextUnorderedUnitKeyPressed ->
             model
                 |> mapPlanning (OrderPlanning.selectNextUnorderedUnit (planningContext model))
-                |> finishBoardInteraction model.currentTurn.phase
+                |> E.withOut
 
         RotationChoicesMsg rotationMsg ->
             let
@@ -1179,7 +1245,7 @@ update lobbyId msg model =
                                 saveRotation direction model
             in
             next
-                |> finishBoardInteraction model.currentTurn.phase
+                |> E.withOut
 
         ClickedUnit id click ->
             let
@@ -1192,7 +1258,7 @@ update lobbyId msg model =
                         selectUnit id model
             in
             next
-                |> finishBoardInteraction model.currentTurn.phase
+                |> E.withOut
 
         PressedEnterOnUnit id ->
             let
@@ -1210,12 +1276,12 @@ update lobbyId msg model =
                         selectUnit id model
             in
             next
-                |> finishBoardInteraction model.currentTurn.phase
+                |> E.withOut
 
         PressedSpaceOnUnit id ->
             model
                 |> selectUnit id
-                |> finishBoardInteraction model.currentTurn.phase
+                |> E.withOut
 
         MouseOverUnit id ->
             let
@@ -1232,7 +1298,7 @@ update lobbyId msg model =
                             |> Maybe.withDefault model
             in
             next
-                |> finishBoardInteraction model.currentTurn.phase
+                |> E.withOut
 
         ClickedDepot position click ->
             let
@@ -1245,17 +1311,17 @@ update lobbyId msg model =
                         selectTile position model
             in
             next
-                |> finishBoardInteraction model.currentTurn.phase
+                |> E.withOut
 
         PressedEnterOnDepot position ->
             model
                 |> selectTile position
-                |> finishBoardInteraction model.currentTurn.phase
+                |> E.withOut
 
         PressedSpaceOnDepot position ->
             model
                 |> selectTile position
-                |> finishBoardInteraction model.currentTurn.phase
+                |> E.withOut
 
         MouseOverDepot position ->
             let
@@ -1268,7 +1334,7 @@ update lobbyId msg model =
                         previewTile position model
             in
             next
-                |> finishBoardInteraction model.currentTurn.phase
+                |> E.withOut
 
         ClickedTile position click ->
             let
@@ -1281,17 +1347,17 @@ update lobbyId msg model =
                         selectTile position model
             in
             next
-                |> finishBoardInteraction model.currentTurn.phase
+                |> E.withOut
 
         PressedEnterOnTile position ->
             model
                 |> selectTile position
-                |> finishBoardInteraction model.currentTurn.phase
+                |> E.withOut
 
         PressedSpaceOnTile position ->
             model
                 |> selectTile position
-                |> finishBoardInteraction model.currentTurn.phase
+                |> E.withOut
 
         MouseOverTile position ->
             let
@@ -1304,7 +1370,7 @@ update lobbyId msg model =
                         previewTile position model
             in
             next
-                |> finishBoardInteraction model.currentTurn.phase
+                |> E.withOut
 
         UnitCommandsMsg commandMsg ->
             model
@@ -1332,7 +1398,7 @@ update lobbyId msg model =
         PathEnterPressed ->
             model
                 |> confirmPath
-                |> finishBoardInteraction model.currentTurn.phase
+                |> E.withOut
 
         ClearMoveClicked ->
             model
@@ -1361,7 +1427,7 @@ update lobbyId msg model =
         DialogDismissed ->
             model
                 |> dismissDialog
-                |> finishBoardInteraction model.currentTurn.phase
+                |> E.withOut
 
         SubmitKeyPressed ->
             if canSubmitWithKeyboard model then
@@ -1533,7 +1599,13 @@ setCombatMapView mapView model =
         currentTurn =
             model.currentTurn
     in
-    { model | currentTurn = { currentTurn | phase = TurnLifecycle.setCombatMapView mapView currentTurn.phase } }
+    { model
+        | currentTurn =
+            { currentTurn
+                | phase =
+                    TurnLifecycle.setCombatMapView mapView currentTurn.phase
+            }
+    }
 
 
 applyPlaybackFrame :
@@ -1576,7 +1648,7 @@ handleCommandMsg commandMsg model =
         UnitCommands.CommandPicked command ->
             model
                 |> applyCommand command
-                |> finishBoardInteraction model.currentTurn.phase
+                |> E.withOut
 
         UnitCommands.ArrowedUpCommandMenu current ->
             ( model
@@ -1703,6 +1775,20 @@ selectionView model =
         content =
             case selectedUnit model of
                 Just unit ->
+                    let
+                        unitPlayerName : String
+                        unitPlayerName =
+                            let
+                                ownsUnit : Player -> Bool
+                                ownsUnit player =
+                                    player.side == unit.playerNumber
+                            in
+                            model.players
+                                |> List.filter ownsUnit
+                                |> List.head
+                                |> Maybe.map .name
+                                |> Maybe.withDefault ""
+                    in
                     -- Changing units resets native details disclosures in the inspector.
                     [ Keyed.node "div"
                         []
@@ -1713,7 +1799,7 @@ selectionView model =
                                     , S.g3
                                     ]
                                 ]
-                                [ UnitStatus.toHtml (unitPlayerName model unit) unit
+                                [ UnitStatus.toHtml unitPlayerName unit
                                 , cargoView model unit
                                 , supplyControls model unit
                                 , movementView model
@@ -1771,20 +1857,6 @@ selectionView model =
         content
 
 
-unitPlayerName : Model -> Unit -> String
-unitPlayerName model unit =
-    let
-        ownsUnit : Player -> Bool
-        ownsUnit player =
-            player.side == unit.playerNumber
-    in
-    model.players
-        |> List.filter ownsUnit
-        |> List.head
-        |> Maybe.map .name
-        |> Maybe.withDefault ""
-
-
 panelFooter : Model -> Html Msg
 panelFooter model =
     let
@@ -1816,19 +1888,6 @@ panelFooter model =
         ]
 
 
-unloadingCargoLabel : Model -> Unit -> String
-unloadingCargoLabel model unit =
-    case
-        unloadPlanning model.currentTurn.phase
-            |> Maybe.map .cargo
-    of
-        Just (OrderPlanning.Crate index) ->
-            "supply crate " ++ String.fromInt (index + 1)
-
-        _ ->
-            Unit.label unit
-
-
 movementView : Model -> Html Msg
 movementView model =
     let
@@ -1847,9 +1906,22 @@ movementView model =
                         ]
 
                     else if isChoosingUnload model then
+                        let
+                            unloadingCargoLabel : String
+                            unloadingCargoLabel =
+                                case
+                                    unloadPlanning model.currentTurn.phase
+                                        |> Maybe.map .cargo
+                                of
+                                    Just (OrderPlanning.Crate index) ->
+                                        "supply crate " ++ String.fromInt (index + 1)
+
+                                    _ ->
+                                        Unit.label unit
+                        in
                         [ H.p
                             []
-                            [ H.text ("choose an adjacent square to unload " ++ unloadingCargoLabel model unit)
+                            [ H.text ("choose an adjacent square to unload " ++ unloadingCargoLabel)
                             ]
                         , Button.secondary "skip remaining cargo" UnloadSkipped
                             |> Button.toHtml
@@ -2281,43 +2353,6 @@ terrainView model =
             H.text ""
 
 
-{-| Save the chosen load count on an existing truck order, retaining its route and passenger exits.
--}
-saveCrateLoading : UnitId -> Int -> OrderPlanning.Model -> OrderPlanning.Model
-saveCrateLoading id count state =
-    let
-        retainsOrder : PlannedOrder -> Bool
-        retainsOrder order =
-            order.unitId /= id
-
-        loadingOrder : PlannedOrder -> PlannedOrder
-        loadingOrder order =
-            { unitId = id
-            , action =
-                PlannedOrder.SupplyTransfer
-                    { route = PlannedOrder.path order
-                    , destination = PlannedOrder.destination order
-                    , handling = PlannedOrder.LoadingCrates count
-                    , passengers = PlannedOrder.unloads order
-                    }
-            }
-    in
-    case state of
-        OrderPlanning.OrdinaryPlanning drafts ->
-            case ListUtil.find (\order -> order.unitId == id) drafts.orders of
-                Just order ->
-                    OrderPlanning.OrdinaryPlanning
-                        { orders = loadingOrder order :: List.filter retainsOrder drafts.orders
-                        , selection = Just (Inspecting (UnitInspection id))
-                        }
-
-                Nothing ->
-                    state
-
-        _ ->
-            state
-
-
 supplyControls : Model -> Unit -> Html Msg
 supplyControls model unit =
     let
@@ -2682,68 +2717,6 @@ depotLoadingDialog model id =
             ]
         , actions
         ]
-
-
-depotLoadingRoom : Model -> Unit -> Int
-depotLoadingRoom model unit =
-    let
-        passengers : Int
-        passengers =
-            List.filter (\passenger -> Unit.carrierId passenger == Just unit.id) model.units
-                |> List.length
-
-        crates : Int
-        crates =
-            unit.resources
-                |> Maybe.map (.supplyCargo >> List.length)
-                |> Maybe.withDefault 0
-
-        incoming : Int
-        incoming =
-            List.filter boardsTruck (plannedOrders model)
-                |> List.length
-
-        boardsTruck : PlannedOrder -> Bool
-        boardsTruck order =
-            (order.unitId /= unit.id)
-                && PlannedOrder.isMoving order
-                && (Just (PlannedOrder.destination order) == Unit.boardPosition unit)
-
-        destination : Maybe Coordinate
-        destination =
-            plannedOrders model
-                |> ListUtil.find (\order -> order.unitId == unit.id)
-                |> Maybe.map PlannedOrder.destination
-
-        pickup : Int
-        pickup =
-            destination
-                |> Maybe.andThen (\position -> OrderPlanning.loadingTarget (planningContext model) unit position (plannedOrders model))
-                |> Maybe.map (\_ -> 1)
-                |> Maybe.withDefault 0
-
-        depot : Maybe Depot
-        depot =
-            destination
-                |> Maybe.andThen destinationDepot
-
-        destinationDepot : Coordinate -> Maybe Depot
-        destinationDepot position =
-            ListUtil.find (\source -> source.position == position) model.depots
-
-        stockLimit : Int
-        stockLimit =
-            case
-                depot
-                    |> Maybe.andThen .stock
-            of
-                Just stock ->
-                    (stock.current + model.supplyRules.crateCapacity - 1) // model.supplyRules.crateCapacity
-
-                Nothing ->
-                    2
-    in
-    min stockLimit (max 0 (unit.cargoCapacity - passengers - crates - incoming - pickup))
 
 
 {-| The active planning alternative determines the dialog; no dialog state is stored.
@@ -3634,7 +3607,12 @@ boardHtml model =
                 , List.map depotView model.depots
                 , List.map crateView model.supplyCrates
                 , List.concatMap (PlannedOrder.crateUnloads >> List.map crateReservation) (plannedOrders model)
-                , List.filterMap (\unit -> Unit.boardPosition unit |> Maybe.map (unitView unit)) model.units
+                , List.filterMap
+                    (\unit ->
+                        Unit.boardPosition unit
+                            |> Maybe.map (unitView unit)
+                    )
+                    model.units
                 , ambushCoverage
                 , [ unloadOverlay, shotOverlay ]
                 , selection

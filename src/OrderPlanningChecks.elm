@@ -119,7 +119,7 @@ planningChecks infantryId truckId passengerId =
 
         dismissedCrates : OrderPlanning.Model
         dismissedCrates =
-            OrderPlanning.dismissDialog crateChoice
+            OrderPlanning.dismissDialog [] crateChoice
 
         reserved : OrderPlanning.Model
         reserved =
@@ -474,6 +474,94 @@ planningChecks infantryId truckId passengerId =
                     ]
             }
 
+        depotContext : OrderPlanning.Context
+        depotContext =
+            { context
+                | depots =
+                    [ { position = { x = 3, y = 1 }, stock = Just { current = 256, maximum = 256 } }
+                    , { position = { x = 4, y = 1 }, stock = Nothing }
+                    ]
+            }
+
+        depotMovePreview : OrderPlanning.Model
+        depotMovePreview =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit depotContext truckId
+                |> OrderPlanning.applyCommand depotContext UnitCommand.Move
+                |> OrderPlanning.extendPath depotContext DirectionEnum.East
+
+        depotMove : OrderPlanning.Model
+        depotMove =
+            OrderPlanning.selectTile depotContext { x = 4, y = 1 } depotMovePreview
+
+        depotKeyboardMove : OrderPlanning.Model
+        depotKeyboardMove =
+            OrderPlanning.confirmPath depotContext depotMovePreview
+
+        depotBoarding : OrderPlanning.Model
+        depotBoarding =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit depotContext infantryId
+                |> OrderPlanning.applyCommand depotContext UnitCommand.Move
+                |> OrderPlanning.selectTile depotContext { x = 3, y = 1 }
+
+        depotHold : OrderPlanning.Model
+        depotHold =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit depotContext truckId
+                |> OrderPlanning.applyCommand depotContext UnitCommand.HoldPosition
+
+        dismissedDepot : OrderPlanning.Model
+        dismissedDepot =
+            OrderPlanning.dismissDialog depotContext.depots depotMove
+
+        depotCargoContext : OrderPlanning.Context
+        depotCargoContext =
+            { cargoContext | depots = depotContext.depots }
+
+        depotChecklist : OrderPlanning.Model
+        depotChecklist =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit depotCargoContext truckId
+                |> OrderPlanning.applyCommand depotCargoContext UnitCommand.HoldPosition
+
+        depotExits : OrderPlanning.Model
+        depotExits =
+            depotChecklist
+                |> OrderPlanning.toggleUnloadPassenger infantryId True
+                |> OrderPlanning.toggleUnloadPassenger passengerId True
+                |> OrderPlanning.confirmPassengers depotCargoContext
+
+        depotFirstExit : OrderPlanning.Model
+        depotFirstExit =
+            OrderPlanning.chooseUnloadSquare depotCargoContext { x = 3, y = 2 } depotExits
+
+        depotCompleted : OrderPlanning.Model
+        depotCompleted =
+            OrderPlanning.chooseUnloadSquare depotCargoContext { x = 4, y = 1 } depotFirstExit
+
+        depotMixedContext : OrderPlanning.Context
+        depotMixedContext =
+            { mixedContext | depots = depotContext.depots }
+
+        depotCrateUnloaded : OrderPlanning.Model
+        depotCrateUnloaded =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit depotMixedContext truckId
+                |> OrderPlanning.applyCommand depotMixedContext UnitCommand.HoldPosition
+                |> OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate 0) True
+                |> OrderPlanning.confirmPassengers depotMixedContext
+                |> OrderPlanning.chooseUnloadSquare depotMixedContext { x = 3, y = 2 }
+
+        choosingCrates : OrderPlanning.Model -> Bool
+        choosingCrates state =
+            case state of
+                OrderPlanning.ChoosingCrates id _ ->
+                    id == truckId
+
+                _ ->
+                    False
+
         submitted : TurnLifecycle.Phase
         submitted =
             TurnLifecycle.startSubmission 1 (TurnLifecycle.Planning saved)
@@ -503,7 +591,40 @@ planningChecks infantryId truckId passengerId =
             OrderPlanning.selectNextUnorderedUnit context saved
     in
     List.concat
-        [ expect "crate loading dialog preserves drafts and blocks submission until dismissed"
+        [ expect "saving an empty truck move on a depot opens loading through mouse and keyboard"
+            (choosingCrates depotMove && depotKeyboardMove == depotMove)
+        , expect "boarding a truck on a depot offers loading for its automatically saved hold"
+            (choosingCrates depotBoarding)
+        , expect "holding an empty truck on a depot opens loading"
+            (choosingCrates depotHold)
+        , expect "hovering, selecting, and dismissing preserve drafts without reopening loading"
+            (not (choosingCrates depotMovePreview)
+                && not (choosingCrates (OrderPlanning.previewTile depotContext { x = 4, y = 1 } dismissedDepot))
+                && not (choosingCrates (OrderPlanning.selectUnit depotContext truckId dismissedDepot))
+                && OrderPlanning.orders dismissedDepot
+                == OrderPlanning.orders depotMove
+            )
+        , expect "loaded trucks offer unloading before depot loading"
+            (OrderPlanning.unloadChoice depotChecklist /= Nothing)
+        , expect "confirming no unloads, skipping, and dismissing unloading offer depot loading"
+            (choosingCrates (OrderPlanning.confirmPassengers depotCargoContext depotChecklist)
+                && choosingCrates (OrderPlanning.skipUnloading depotCargoContext depotChecklist)
+                && choosingCrates (OrderPlanning.dismissDialog depotCargoContext.depots depotChecklist)
+            )
+        , expect "finishing or skipping remaining passenger exits preserves them before depot loading"
+            (choosingCrates depotCompleted
+                && List.concatMap PlannedOrder.unloads (OrderPlanning.orders depotCompleted)
+                == List.concatMap PlannedOrder.unloads (OrderPlanning.orders completed)
+                && choosingCrates (OrderPlanning.skipUnloading depotCargoContext depotFirstExit)
+                && List.concatMap PlannedOrder.unloads (OrderPlanning.orders (OrderPlanning.skipUnloading depotCargoContext depotFirstExit))
+                == [ { unitId = infantryId, destination = { x = 3, y = 2 } } ]
+            )
+        , expect "crate unloading on a depot completes without offering incompatible loading"
+            (not (choosingCrates depotCrateUnloaded)
+                && List.concatMap PlannedOrder.crateUnloads (OrderPlanning.orders depotCrateUnloaded)
+                == [ { cargoIndex = 0, destination = { x = 3, y = 2 } } ]
+            )
+        , expect "crate loading dialog preserves drafts and blocks submission until dismissed"
             (OrderPlanning.selectNextUnorderedUnit context crateChoice
                 == crateChoice
                 && OrderPlanning.orders crateChoice
@@ -656,6 +777,7 @@ board units =
     { map = { width = 7, height = 7, baseTile = Terrain.GrassPlain, theme = Theme.GreenForest, features = [] }
     , units = units
     , movementRules = List.map movementRule [ Kind.Infantry, Kind.Truck, Kind.FieldGun ]
+    , depots = []
     , supplyCrates = []
     , playerSides = [ PlayerNumber.Player1 ]
     }
