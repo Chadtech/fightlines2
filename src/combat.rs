@@ -528,7 +528,30 @@ impl Combat {
         frames: &mut Vec<TurnFrame>,
         contacts: &[(UnitId, UnitId)],
     ) {
-        let interceptions = self.field_gun_interceptions(board, contacts);
+        // Resolving an allied traffic jam can retract a participant's movement.
+        // Only contacts that remain physically adjacent can trigger direct fire
+        // or a field gun's contact interception from the settled board positions.
+        let adjacent_contacts: Vec<_> = contacts
+            .iter()
+            .copied()
+            .filter(|(shooter_id, target_id)| {
+                let position = |id| {
+                    board
+                        .units
+                        .iter()
+                        .find(|unit| unit.unit_id() == id)
+                        .and_then(Unit::board_position)
+                };
+                match (position(*shooter_id), position(*target_id)) {
+                    (Some(origin), Some(destination)) => {
+                        (destination.x() - origin.x()).abs() + (destination.y() - origin.y()).abs()
+                            == 1
+                    }
+                    _ => false,
+                }
+            })
+            .collect();
+        let interceptions = self.field_gun_interceptions(board, &adjacent_contacts);
         self.volley(board, &interceptions, frames);
         // Survivors may return fire with their reduced strength; other encounters
         // retain simultaneous resolution within their usual volley.
@@ -577,7 +600,7 @@ impl Combat {
             })
             .collect();
         let mut opening: Vec<_> = opening.into_iter().cloned().collect();
-        for (shooter_id, target_id) in contacts {
+        for (shooter_id, target_id) in &adjacent_contacts {
             let shooter = board
                 .units
                 .iter()
@@ -961,6 +984,31 @@ mod tests {
         let reversed = resolve_completed_movement(&board, &orders, 1)?;
         assert_eq!(result.paths, reversed.paths);
         assert_eq!(self::shots(&reversed).first().fixture()?.damage, 16);
+        Ok(())
+    }
+
+    #[test]
+    fn stale_attack_contacts_require_cardinal_adjacency_before_interception() -> TestResult<()> {
+        for defender in [UnitKind::Infantry, UnitKind::FieldGun] {
+            for position in [Coordinate::new(5, 3), Coordinate::new(4, 4)] {
+                let (mut board, mut orders) = fixture(defender, UnitKind::Tank, position)?;
+                orders.first_mut().fixture()?.facing = FacingOrder::Ambush(Direction::East);
+                orders.get_mut(1).fixture()?.travel = TravelMode::AttackMove;
+                let tank_id = board.units.get(1).fixture()?.unit_id();
+                let defender_id = board.units.first().fixture()?.unit_id();
+                let mut combat = Combat::prepare(&mut board, &orders);
+                let prepared = board.units.clone();
+                let mut frames = Vec::new();
+                combat.engage_contacts(
+                    &mut board,
+                    &mut BTreeSet::new(),
+                    &mut frames,
+                    &[(tank_id, defender_id)],
+                );
+                assert!(frames.iter().all(|frame| frame.shots.is_empty()));
+                assert_eq!(board.units, prepared);
+            }
+        }
         Ok(())
     }
 

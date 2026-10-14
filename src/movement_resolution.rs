@@ -3,8 +3,8 @@
 use crate::{
     map::Coordinate,
     movement,
-    scenario::{PlayerNumber, Scenario, UnitId},
-    turns::{MoveOrder, TurnFrame},
+    scenario::{PlayerNumber, Scenario, Unit, UnitId},
+    turns::{self, MoveOrder, PlannedLoad, TurnFrame},
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -113,6 +113,7 @@ pub fn resolve(
     orders: &[MoveOrder],
     turn: i32,
 ) -> Result<MovementResolution, ResolutionError> {
+    let loads = turns::planned_loads(scenario, orders);
     let mut routes = orders.to_vec();
     let mut stopped = BTreeSet::new();
     loop {
@@ -134,13 +135,22 @@ pub fn resolve(
         }
         let mut retreat = None;
         for units in occupied.values().filter(|units| units.len() > 1) {
+            let ready_to_board = |unit: &Unit| {
+                let reached_destination = orders.iter().any(|order| {
+                    order.unit_id == unit.unit_id()
+                        && order.path.last() == unit.board_position().as_ref()
+                });
+                reached_destination && !result.stopped.contains(&unit.unit_id())
+            };
             // A mover and its loading target intentionally meet before boarding occurs.
             let loading = units.iter().any(|carrier| {
                 units.iter().all(|passenger| {
+                    let planned_pair = loads.contains(&PlannedLoad {
+                        truck: carrier.unit_id(),
+                        passenger: passenger.unit_id(),
+                    });
                     carrier.unit_id() == passenger.unit_id()
-                        || (scenario.loading_pair(carrier, passenger).is_some()
-                            && !result.stopped.contains(&carrier.unit_id())
-                            && !result.stopped.contains(&passenger.unit_id()))
+                        || (planned_pair && ready_to_board(carrier) && ready_to_board(passenger))
                 })
             });
             if loading {
@@ -426,7 +436,7 @@ fn resolve_arrivals(
             }
         }
         // A contact can interrupt passage through an allied square. Retreat before
-        // combat so occupancy retries do not discard the encounter that caused it.
+        // combat so its contact check uses the final, unoccupied positions.
         let participants: BTreeSet<_> = contacts
             .iter()
             .flat_map(|(attacker, target)| [*attacker, *target])
@@ -543,6 +553,39 @@ mod tests {
             .get(&UnitId::parse(id).ok_or("invalid fixture id")?)
             .ok_or("missing fixture path")?
             .clone())
+    }
+
+    #[test]
+    fn jammed_attack_moves_cannot_fire_across_allied_units()
+    -> Result<(), Box<dyn std::error::Error>> {
+        for destination in [1, 2, 3] {
+            let route: Vec<_> = (0..=destination).map(|x| (x, 0)).collect();
+            let (scenario, mut orders) = setup(&[
+                ("11", &route),
+                ("1", &[(1, 0)]),
+                ("2", &[(2, 0)]),
+                ("6", &[(3, 0)]),
+            ])?;
+            orders.first_mut().ok_or("missing attack order")?.travel =
+                crate::turns::TravelMode::AttackMove;
+            for turn in [1, 2] {
+                let result = resolve(&scenario, &orders, turn)?;
+                assert_eq!(path(&result, "11")?, vec![Coordinate::new(0, 0)]);
+                assert!(result.frames.iter().all(|frame| frame.shots.is_empty()));
+                let final_units = &result.frames.last().ok_or("missing final frame")?.units;
+                for unit in final_units {
+                    let initial = scenario
+                        .units
+                        .iter()
+                        .find(|initial| initial.unit_id() == unit.unit_id())
+                        .ok_or("missing initial unit")?;
+                    assert_eq!(unit.hit_points(), initial.hit_points());
+                    assert_eq!(unit.fuel(), initial.fuel());
+                }
+                orders.reverse();
+            }
+        }
+        Ok(())
     }
 
     #[test]
@@ -761,7 +804,7 @@ mod tests {
     }
 
     #[test]
-    fn attack_move_interrupted_during_allied_passage_keeps_its_combat()
+    fn attack_move_interrupted_during_allied_passage_loses_contact()
     -> Result<(), Box<dyn std::error::Error>> {
         let (scenario, mut orders) = setup(&[
             ("11", &[(0, 0), (1, 0), (2, 0), (3, 0)]),
@@ -776,9 +819,7 @@ mod tests {
             .iter()
             .flat_map(|frame| &frame.shots)
             .collect();
-        assert_eq!(shots.len(), 1);
-        assert_eq!(shots[0].destination, Coordinate::new(2, 0));
-        assert_eq!(shots[0].target_health.after.current(), 0);
+        assert!(shots.is_empty());
         let units = &result.frames.last().ok_or("missing frame")?.units;
         assert_eq!(
             units
@@ -795,6 +836,15 @@ mod tests {
             .filter_map(|unit| unit.board_position())
             .collect();
         assert_eq!(occupied.len(), units.len());
+        assert_eq!(
+            units
+                .iter()
+                .find(|unit| unit.id() == "6")
+                .ok_or("missing target")?
+                .hit_points()
+                .current(),
+            16
+        );
         Ok(())
     }
 

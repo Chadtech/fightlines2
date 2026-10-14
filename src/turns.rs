@@ -3,8 +3,8 @@ use crate::{
     map::Coordinate,
     movement,
     scenario::{
-        Depot, DepotKind, Direction, PlayerNumber, ResourceSettlement, Scenario, SpriteFacing,
-        Unit, UnitId, UnitKind,
+        Depot, Direction, PlayerNumber, ResourceSettlement, Scenario, SpriteFacing, Unit, UnitId,
+        UnitKind,
     },
     supplies::{self, CrateUnload, GroundSupplyCrate, SupplyOrder},
 };
@@ -274,6 +274,57 @@ pub fn player_index(player_number: PlayerNumber) -> usize {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PlannedLoad {
+    pub truck: UnitId,
+    pub passenger: UnitId,
+}
+
+/// Boarding intent is determined by final destinations, independently of submission order.
+/// Capacity is checked for the whole group during validation, before any unloading.
+pub(crate) fn planned_loads(scenario: &Scenario, orders: &[MoveOrder]) -> Vec<PlannedLoad> {
+    let permits_boarding = |order: &MoveOrder| {
+        order.travel == TravelMode::Normal
+            && match order.facing {
+                FacingOrder::Unchanged => true,
+                FacingOrder::Rotate(_)
+                | FacingOrder::Ambush(_)
+                | FacingOrder::StandGround
+                | FacingOrder::IndirectFire(_) => false,
+            }
+    };
+    let mut loads = Vec::new();
+    for truck_order in orders {
+        if !permits_boarding(truck_order) {
+            continue;
+        }
+        let Some(truck) = scenario.units.iter().find(|unit| {
+            unit.unit_id() == truck_order.unit_id
+                && unit.kind() == UnitKind::Truck
+                && unit.carrier_id().is_none()
+        }) else {
+            continue;
+        };
+        for passenger_order in orders {
+            if !permits_boarding(passenger_order)
+                || truck_order.path.last() != passenger_order.path.last()
+                || (truck_order.path.len() == 1 && passenger_order.path.len() == 1)
+            {
+                continue;
+            }
+            if let Some(passenger) = scenario
+                .units
+                .iter()
+                .find(|unit| unit.unit_id() == passenger_order.unit_id)
+                && let Some((truck, passenger)) = scenario.loading_pair(truck, passenger)
+            {
+                loads.push(PlannedLoad { truck, passenger });
+            }
+        }
+    }
+    loads
+}
+
 pub fn validate(
     scenario: &Scenario,
     player_number: PlayerNumber,
@@ -487,28 +538,17 @@ pub fn validate(
             {
                 return Err("unloading requires an empty square.");
             }
-        } else if let Some(target) = planning_scenario.units.iter().find(|other| {
-            other.unit_id() != unit.unit_id()
-                && other.carrier_id().is_none()
-                && other.board_position() == Some(destination)
-        }) && (target.player_number() != player_number
-            || !departing.contains(&target.unit_id()))
-            && ((!attack_move && scenario.loading_pair(unit, target).is_none())
-                || (attack_move && target.player_number() == player_number))
+        } else if !attack_move
+            && planning_scenario.units.iter().any(|other| {
+                other.player_number() != player_number
+                    && other.carrier_id().is_none()
+                    && other.board_position() == Some(destination)
+            })
         {
             return Err("occupied squares cannot be destinations.");
         }
-        // A stationary loading target may share its destination with the mover.
-        // Validate those pairs together after all individual paths are checked.
-        if path.len() > 1
-            && !destinations.insert(destination)
-            && !scenario.units.iter().any(|target| {
-                target.board_position() == Some(destination)
-                    && !departing.contains(&target.unit_id())
-                    && scenario.loading_pair(unit, target).is_some()
-            })
-        {
-            return Err("units must have different destinations.");
+        if path.len() > 1 {
+            destinations.insert(destination);
         }
         let mut unloads: Vec<UnloadOrder> = Vec::new();
         for unload in input.unloads.unwrap_or_default() {
@@ -556,7 +596,7 @@ pub fn validate(
                 || ambush
                 || stand_ground)
         {
-            return Err("only on-map trucks can handle supply crates.");
+            return Err("only on-map trucks can handle freight.");
         }
         if load_crates > 0 && !crate_inputs.is_empty() {
             return Err("choose loading or unloading crates for this turn.");
@@ -570,14 +610,14 @@ pub fn validate(
             let nearby: Vec<_> = planning_scenario
                 .depots
                 .iter()
-                .filter(|depot| depot.kind == DepotKind::Supply && destination == depot.position)
+                .filter(|depot| destination == depot.position)
                 .collect();
             let unknown_stock = nearby.iter().any(|depot| !depot.stock_visible);
             let known_stock: i32 = nearby.iter().map(|depot| depot.stock.current).sum();
             let minimum_stock =
                 (load_crates.saturating_sub(1) as i32) * supplies::rules().crate_capacity;
             if nearby.is_empty() || (!unknown_stock && known_stock <= minimum_stock) {
-                return Err("loading crates requires a depot with supplies at the destination.");
+                return Err("loading cargo requires a stocked depot at the destination.");
             }
         }
         let mut crate_unloads: Vec<CrateUnload> = Vec::new();
@@ -648,80 +688,75 @@ pub fn validate(
             }
         }
     }
-    let mut loading_passengers = BTreeSet::new();
-    let mut loading_counts = BTreeMap::new();
-    for order in orders
-        .iter()
-        .filter(|order| order.path.len() > 1 && order.travel == TravelMode::Normal)
-    {
+    let loads = planned_loads(scenario, &orders);
+    let mut arrivals: BTreeMap<Coordinate, Vec<UnitId>> = BTreeMap::new();
+    for order in &orders {
         let unit = scenario
             .units
             .iter()
             .find(|unit| unit.unit_id() == order.unit_id)
             .ok_or("the order references a missing unit.")?;
         if let Some(carrier) = unit.carrier_id() {
-            let carrier_order = orders
-                .iter()
-                .find(|order| order.unit_id == carrier)
-                .ok_or("the carrier has no submitted order.")?;
-            if carrier_order.path.len() != 1 {
-                return Err("the truck must hold while unloading.");
+            if order.path.len() > 1 {
+                if orders
+                    .iter()
+                    .any(|other| other.unit_id == carrier && other.path.len() > 1)
+                {
+                    return Err("the truck must hold while unloading.");
+                }
+            } else {
+                continue;
             }
-            continue;
         }
         let destination = *order
             .path
             .last()
             .ok_or("movement requires a starting position.")?;
-        if let Some(target) = scenario.units.iter().find(|target| {
-            target.player_number() == player_number
-                && target.carrier_id().is_none()
-                && target.board_position() == Some(destination)
-                && target.unit_id() != unit.unit_id()
+        arrivals.entry(destination).or_default().push(order.unit_id);
+    }
+    for unload in orders.iter().flat_map(|order| &order.unloads) {
+        if arrivals.contains_key(&unload.destination) {
+            return Err("units must have different destinations.");
+        }
+    }
+    for ids in arrivals.values().filter(|ids| ids.len() > 1) {
+        let conflict_error = if orders
+            .iter()
+            .any(|order| ids.contains(&order.unit_id) && order.path.len() == 1)
+        {
+            "occupied squares cannot be destinations."
+        } else {
+            "units must have different destinations."
+        };
+        let truck = ids
+            .iter()
+            .find(|id| loads.iter().any(|load| load.truck == **id))
+            .ok_or(conflict_error)?;
+        if !ids.iter().all(|id| {
+            id == truck
+                || loads.contains(&PlannedLoad {
+                    truck: *truck,
+                    passenger: *id,
+                })
         }) {
-            let target_order = orders
-                .iter()
-                .find(|order| order.unit_id == target.unit_id())
-                .ok_or("the receiving unit has no submitted order.")?;
-            if target_order.path.len() > 1 {
-                continue;
-            }
-            if target_order.facing.direction().is_some()
-                || target_order.facing.indirect_target().is_some()
-            {
-                return Err("the receiving unit must hold while loading.");
-            }
-            let (truck, passenger) = scenario
-                .loading_pair(unit, target)
-                .ok_or("the units cannot load together.")?;
-            if !loading_passengers.insert(passenger) {
-                return Err("a unit cannot board two trucks.");
-            }
-            let count = loading_counts.entry(truck).or_insert_with(|| {
-                scenario
-                    .units
-                    .iter()
-                    .filter(|unit| unit.carrier_id() == Some(truck))
-                    .count()
-                    + scenario
-                        .units
-                        .iter()
-                        .find(|unit| unit.unit_id() == truck)
-                        .map_or(0, |unit| unit.supply_cargo.len())
-            });
-            *count += 1;
-            let incoming_crates = orders
-                .iter()
-                .find(|order| order.unit_id == truck)
-                .map_or(0, |order| order.supply.loading_count());
-            let truck_unit = scenario
-                .units
-                .iter()
-                .find(|unit| unit.unit_id() == truck)
-                .ok_or("the order references a missing unit.")?;
-            if *count + incoming_crates > truck_unit.cargo_capacity() as usize {
-                return Err("the truck has no room for another unit.");
-            }
+            return Err(conflict_error);
+        }
+    }
+    for order in &orders {
+        let truck = scenario
+            .units
+            .iter()
+            .find(|unit| unit.unit_id() == order.unit_id)
+            .ok_or("the order references a missing unit.")?;
+        let incoming = loads
+            .iter()
+            .filter(|load| load.truck == order.unit_id)
+            .count();
+        if incoming > 0
+            && supplies::occupied_berths(scenario, truck) + incoming + order.supply.loading_count()
+                > truck.cargo_capacity() as usize
+        {
+            return Err("the truck has no room for another unit.");
         }
     }
     Ok(orders)
@@ -869,17 +904,13 @@ impl Turns {
             let mut combat = movement.combat;
             let mut combat_stopped = BTreeSet::new();
             let mut events = Vec::new();
-            let mut loads = Vec::new();
+            let loads = planned_loads(scenario, &orders);
             for order in &orders {
                 let unit = scenario
                     .units
                     .iter()
                     .find(|unit| unit.unit_id() == order.unit_id)
                     .ok_or("the order references a missing unit.")?;
-                let destination = *order
-                    .path
-                    .last()
-                    .ok_or("movement requires a starting position.")?;
                 let conflict = conflicts.contains(&order.unit_id);
                 let kind = if conflict {
                     TurnEventKind::MovementStopped
@@ -901,22 +932,6 @@ impl Turns {
                     .get(&order.unit_id)
                     .ok_or("the unit has no resolved movement path.")?
                     .clone();
-                if order.travel == TravelMode::Normal
-                    && !conflict
-                    && order.path.len() > 1
-                    && unit.carrier_id().is_none()
-                    && let Some(target) = scenario.units.iter().find(|target| {
-                        target.carrier_id().is_none()
-                            && target.board_position() == Some(destination)
-                            && target.unit_id() != unit.unit_id()
-                    })
-                    && orders.iter().any(|receiver| {
-                        receiver.unit_id == target.unit_id() && receiver.path.len() == 1
-                    })
-                    && let Some(pair) = scenario.loading_pair(unit, target)
-                {
-                    loads.push(pair);
-                }
                 events.push(TurnEvent {
                     rotation_direction: order.facing.direction(),
                     initial_direction: unit.direction(),
@@ -946,7 +961,7 @@ impl Turns {
             }
             // Attach after movement, so stable event order cannot move cargo back
             // to its old hold position. The explicit event makes playback reversible.
-            for (truck, passenger) in loads {
+            for PlannedLoad { truck, passenger } in loads {
                 let carrier_alive = scenario
                     .units
                     .iter()
@@ -956,7 +971,21 @@ impl Turns {
                     .iter_mut()
                     .find(|unit| unit.unit_id() == passenger)
                     .ok_or("the order references a missing unit.")?;
-                if !unit.is_alive() || !carrier_alive {
+                let reached = orders
+                    .iter()
+                    .find(|order| order.unit_id == passenger)
+                    .and_then(|order| order.path.last());
+                let carrier_position = combat_units
+                    .iter()
+                    .find(|unit| unit.unit_id() == truck)
+                    .and_then(Unit::board_position);
+                if !unit.is_alive()
+                    || !carrier_alive
+                    || conflicts.contains(&truck)
+                    || conflicts.contains(&passenger)
+                    || unit.board_position() != carrier_position
+                    || unit.board_position().as_ref() != reached
+                {
                     continue;
                 }
                 events.push(TurnEvent {
@@ -1147,7 +1176,7 @@ mod tests {
     use crate::{
         combat::CombatKind,
         map::{Map, Terrain},
-        supplies::ResourceStock,
+        scenario::DepotKind,
         test_support::{FixtureValue, TestResult},
         visibility,
     };
@@ -3287,6 +3316,179 @@ mod tests {
     }
 
     #[test]
+    fn moving_truck_boards_two_arriving_units_independent_of_order() -> TestResult<()> {
+        for reverse in [false, true] {
+            let mut scenario = departure_fixture()?;
+            let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+            set_path(&mut orders, "4", &[(4, 1), (4, 0), (3, 0), (2, 0)])?;
+            set_path(&mut orders, "1", &[(1, 1), (1, 0), (2, 0)])?;
+            set_path(&mut orders, "2", &[(2, 1), (2, 0)])?;
+            if reverse {
+                orders.reverse();
+            }
+            let mut turns = Turns::default();
+            resolve_orders(&mut scenario, &mut turns, orders)?;
+            let truck = UnitId::parse("4").fixture()?;
+            for id in ["1", "2"] {
+                assert_eq!(vehicle(&mut scenario, id)?.carrier_id(), Some(truck));
+            }
+            assert_eq!(
+                vehicle(&mut scenario, "4")?.board_position(),
+                Some(Coordinate::new(2, 0))
+            );
+            assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 29);
+            assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 41);
+            assert_eq!(vehicle(&mut scenario, "2")?.supplies().current(), 44);
+            assert_eq!(
+                turns
+                    .last_resolution
+                    .as_ref()
+                    .fixture()?
+                    .events
+                    .iter()
+                    .filter(|event| event.kind == TurnEventKind::Load)
+                    .count(),
+                2
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn moving_truck_picks_up_waiting_and_arriving_passengers() -> TestResult<()> {
+        let mut scenario = departure_fixture()?;
+        let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+        set_path(&mut orders, "4", &[(4, 1), (4, 0), (3, 0), (2, 0), (2, 1)])?;
+        set_path(&mut orders, "1", &[(1, 1), (2, 1)])?;
+        let mut turns = Turns::default();
+        resolve_orders(&mut scenario, &mut turns, orders)?;
+        for id in ["1", "2"] {
+            assert_eq!(vehicle(&mut scenario, id)?.carrier_id(), UnitId::parse("4"));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn rendezvous_reserves_existing_cargo_and_rejects_attack_moves() -> TestResult<()> {
+        #[derive(Debug)]
+        enum Conflict {
+            ExistingPassenger,
+            ExistingFreight,
+            UnloadingFreight,
+            AttackMove,
+            ThirdPassenger,
+        }
+        for conflict in [
+            Conflict::ExistingPassenger,
+            Conflict::ExistingFreight,
+            Conflict::UnloadingFreight,
+            Conflict::AttackMove,
+            Conflict::ThirdPassenger,
+        ] {
+            let mut scenario = departure_fixture()?;
+            match conflict {
+                Conflict::ExistingPassenger => {
+                    vehicle(&mut scenario, "3")?.board(UnitId::parse("4").fixture()?);
+                }
+                Conflict::ExistingFreight | Conflict::UnloadingFreight => {
+                    vehicle(&mut scenario, "4")?
+                        .supply_cargo
+                        .push(supplies::CargoStock::new(DepotKind::Supply, 64));
+                }
+                Conflict::AttackMove | Conflict::ThirdPassenger => {}
+            }
+            let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+            set_path(&mut orders, "4", &[(4, 1), (4, 0), (3, 0), (2, 0)])?;
+            set_path(&mut orders, "1", &[(1, 1), (1, 0), (2, 0)])?;
+            set_path(&mut orders, "2", &[(2, 1), (2, 0)])?;
+            match conflict {
+                Conflict::UnloadingFreight => {
+                    orders
+                        .iter_mut()
+                        .find(|order| order.unit_id == "4")
+                        .fixture()?
+                        .crate_unloads = Some(vec![CrateUnloadInput {
+                        cargo_index: 0,
+                        destination: CoordinateInput { x: 2, y: 1 },
+                    }]);
+                }
+                Conflict::AttackMove => {
+                    orders
+                        .iter_mut()
+                        .find(|order| order.unit_id == "1")
+                        .fixture()?
+                        .attack_move = Some(true);
+                }
+                Conflict::ThirdPassenger => {
+                    set_path(&mut orders, "3", &[(3, 1), (3, 0), (2, 0)])?;
+                }
+                Conflict::ExistingPassenger | Conflict::ExistingFreight => {}
+            }
+            assert!(
+                validate(&scenario, PlayerNumber::Player1, orders).is_err(),
+                "{conflict:?} must prevent boarding"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn blocked_rendezvous_keeps_passengers_separate_and_does_not_load() -> TestResult<()> {
+        for truck_blocked in [false, true] {
+            let mut scenario = departure_fixture()?;
+            let mut enemy = Scenario::supply_point()
+                .fixture()?
+                .units
+                .into_iter()
+                .find(|unit| unit.player_number() == PlayerNumber::Player2)
+                .fixture()?;
+            enemy.move_to(if truck_blocked {
+                Coordinate::new(4, 0)
+            } else {
+                Coordinate::new(1, 0)
+            });
+            scenario.units.push(enemy);
+            let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+            set_path(&mut orders, "4", &[(4, 1), (4, 0), (3, 0), (2, 0)])?;
+            set_path(&mut orders, "1", &[(1, 1), (1, 0), (2, 0)])?;
+            set_path(&mut orders, "2", &[(2, 1), (2, 0)])?;
+            let mut turns = Turns::default();
+            resolve_orders(&mut scenario, &mut turns, orders)?;
+            let mut occupied = BTreeSet::new();
+            for unit in scenario.units.iter().filter(|unit| unit.is_alive()) {
+                if let Some(position) = unit.board_position() {
+                    assert!(occupied.insert(position));
+                }
+                let expected_carrier = if !truck_blocked && unit.id() == "2" {
+                    UnitId::parse("4")
+                } else {
+                    None
+                };
+                assert_eq!(unit.carrier_id(), expected_carrier);
+            }
+            let expected_position = if truck_blocked {
+                Coordinate::new(4, 1)
+            } else {
+                Coordinate::new(2, 0)
+            };
+            assert_eq!(
+                vehicle(&mut scenario, "4")?.board_position(),
+                Some(expected_position)
+            );
+            let loads = turns
+                .last_resolution
+                .as_ref()
+                .fixture()?
+                .events
+                .iter()
+                .filter(|event| event.kind == TurnEventKind::Load)
+                .count();
+            assert_eq!(loads, if truck_blocked { 0 } else { 1 });
+        }
+        Ok(())
+    }
+
+    #[test]
     fn allied_departures_allow_chains_and_swaps_in_either_order() -> TestResult<()> {
         for reverse in [false, true] {
             for swap in [false, true] {
@@ -3707,10 +3909,7 @@ mod tests {
                     vehicle(&mut scenario, "4")?.move_to(Coordinate::new(1, 1));
                     vehicle(&mut scenario, "4")?
                         .supply_cargo
-                        .push(supplies::ResourceStock {
-                            current: 64,
-                            maximum: 64,
-                        });
+                        .push(supplies::CargoStock::new(DepotKind::Supply, 64));
                     if passenger {
                         vehicle(&mut scenario, "1")?.board(UnitId::parse("4").fixture()?);
                     } else {
@@ -3762,13 +3961,7 @@ mod tests {
         scenario.units.retain(|unit| unit.id() == "4");
         let truck = vehicle(&mut scenario, "4")?;
         truck.move_to(Coordinate::new(1, 1));
-        truck.supply_cargo = vec![
-            supplies::ResourceStock {
-                current: 64,
-                maximum: 64
-            };
-            2
-        ];
+        truck.supply_cargo = vec![supplies::CargoStock::new(DepotKind::Supply, 64); 2];
         let mut own = holds(&scenario, PlayerNumber::Player1)?;
         own.first_mut().fixture()?.crate_unloads = Some(vec![
             CrateUnloadInput {
@@ -3793,10 +3986,7 @@ mod tests {
         vehicle(&mut scenario, "4")?.move_to(Coordinate::new(3, 8));
         scenario.supply_crates.push(GroundSupplyCrate {
             position: Coordinate::new(4, 8),
-            stock: ResourceStock {
-                current: 23,
-                maximum: 64,
-            },
+            stock: supplies::CargoStock::new(DepotKind::Supply, 23),
         });
         let mut first = holds(&scenario, PlayerNumber::Player1)?;
         set_path(&mut first, "4", &[(3, 8), (4, 8)])?;
@@ -3812,7 +4002,7 @@ mod tests {
     }
 
     #[test]
-    fn fuel_depots_reject_supply_crate_loading() -> TestResult<()> {
+    fn fuel_depots_allow_fuel_drum_loading() -> TestResult<()> {
         let mut scenario = Scenario::supply_point().fixture()?;
         let mut fuel_depot = scenario.depots.first().fixture()?.clone();
         fuel_depot.kind = DepotKind::Fuel;
@@ -3831,10 +4021,7 @@ mod tests {
             .find(|order| order.unit_id == "4")
             .fixture()?
             .load_crates = Some(1);
-        assert_eq!(
-            validate(&scenario, PlayerNumber::Player1, orders).err(),
-            Some("loading crates requires a depot with supplies at the destination.")
-        );
+        assert!(validate(&scenario, PlayerNumber::Player1, orders).is_ok());
         Ok(())
     }
 
@@ -3850,7 +4037,7 @@ mod tests {
             .load_crates = Some(1);
         assert_eq!(
             validate(&scenario, PlayerNumber::Player1, first).err(),
-            Some("loading crates requires a depot with supplies at the destination.")
+            Some("loading cargo requires a stocked depot at the destination.")
         );
         Ok(())
     }
@@ -3895,7 +4082,7 @@ mod tests {
             .load_crates = Some(1);
         assert_eq!(
             validate(&scenario, PlayerNumber::Player1, first).err(),
-            Some("only on-map trucks can handle supply crates.")
+            Some("only on-map trucks can handle freight.")
         );
         Ok(())
     }
@@ -3911,10 +4098,7 @@ mod tests {
         vehicle(&mut scenario, "4")?.move_to(Coordinate::new(2, 0));
         vehicle(&mut scenario, "4")?
             .supply_cargo
-            .push(ResourceStock {
-                current: 64,
-                maximum: 64,
-            });
+            .push(supplies::CargoStock::new(DepotKind::Supply, 64));
         vehicle(&mut scenario, "9")?.move_to(Coordinate::new(2, 1));
         let mut first = holds(&scenario, PlayerNumber::Player1)?;
         first.first_mut().fixture()?.crate_unloads = Some(vec![CrateUnloadInput {

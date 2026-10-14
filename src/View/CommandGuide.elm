@@ -98,7 +98,7 @@ description : Command -> String
 description command =
     case command of
         Move ->
-            "plan a route to another square within the unit's movement, supply, and fuel limits. trace the route with the pointer or arrow keys, then save its destination. ordinary movement stops when it encounters an enemy. trucks can pick up compatible allied units or supply crates, load crates at supply depots, and unload cargo beside their destination."
+            "plan a route to another square within the unit's movement, supply, and fuel limits. trace the route with the pointer or arrow keys, then save its destination. ordinary movement stops when it encounters an enemy. trucks can pick up compatible allied units, supply crates, or fuel drums, load freight at supply or fuel depots, and unload cargo beside their destination."
 
         HoldPosition ->
             "stay on the current square and keep the current facing, paying normal supply upkeep without movement costs or combat readiness. a loaded truck can also choose cargo to unload beside its current square."

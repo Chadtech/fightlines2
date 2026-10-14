@@ -466,43 +466,12 @@ depotLoadingRoom model unit =
 
         incoming : Int
         incoming =
-            List.filter boardsTruck (plannedOrders model)
+            OrderPlanning.boardingPassengers (planningContext model) unit.id (plannedOrders model)
                 |> List.length
-
-        boardsTruck : PlannedOrder -> Bool
-        boardsTruck order =
-            (order.unitId /= unit.id)
-                && PlannedOrder.isMoving order
-                && (Just (PlannedOrder.destination order) == Unit.boardPosition unit)
-
-        destination : Maybe Coordinate
-        destination =
-            plannedOrders model
-                |> ListUtil.find (\order -> order.unitId == unit.id)
-                |> Maybe.map PlannedOrder.destination
-
-        pickup : Int
-        pickup =
-            destination
-                |> Maybe.andThen
-                    (\position ->
-                        OrderPlanning.loadingTarget
-                            (planningContext model)
-                            unit
-                            position
-                            (plannedOrders model)
-                    )
-                |> Maybe.map (\_ -> 1)
-                |> Maybe.withDefault 0
 
         depot : Maybe Depot
         depot =
-            destination
-                |> Maybe.andThen destinationDepot
-
-        destinationDepot : Coordinate -> Maybe Depot
-        destinationDepot position =
-            ListUtil.find (\source -> Depot.supplies source && source.position == position) model.depots
+            plannedDepot model unit.id
 
         stockLimit : Int
         stockLimit =
@@ -519,7 +488,21 @@ depotLoadingRoom model unit =
     in
     min
         stockLimit
-        (max 0 (unit.cargoCapacity - passengers - crates - incoming - pickup))
+        (max 0 (unit.cargoCapacity - passengers - crates - incoming))
+
+
+plannedDepot : Model -> UnitId -> Maybe Depot
+plannedDepot model id =
+    let
+        atDestination : PlannedOrder -> Maybe Depot
+        atDestination order =
+            ListUtil.find
+                (\depot -> depot.position == PlannedOrder.destination order)
+                model.depots
+    in
+    plannedOrders model
+        |> ListUtil.find (\order -> order.unitId == id)
+        |> Maybe.andThen atDestination
 
 
 planningContext : Model -> OrderPlanning.Context
@@ -2363,7 +2346,7 @@ movementView model =
                                         |> Maybe.map .cargo
                                 of
                                     Just (OrderPlanning.Crate index) ->
-                                        "supply crate " ++ String.fromInt (index + 1)
+                                        "cargo " ++ String.fromInt (index + 1)
 
                                     _ ->
                                         Unit.label unit
@@ -2376,8 +2359,20 @@ movementView model =
                             |> Button.toHtml
                         ]
 
-                    else if Unit.carrierId unit /= Nothing || receivingLoad unit model then
+                    else if Unit.carrierId unit /= Nothing then
                         transportDetails model unit
+
+                    else if receivingLoad unit model then
+                        let
+                            orderDetails : List (Html Msg)
+                            orderDetails =
+                                unitOrderView model unit
+
+                            cargoDetails : List (Html Msg)
+                            cargoDetails =
+                                transportDetails model unit
+                        in
+                        orderDetails ++ cargoDetails
 
                     else if choosingIndirectFire model then
                         indirectFireDetails unit
@@ -2513,7 +2508,7 @@ unitOrderView model unit =
                         chosenOrderText =
                             case plan.action of
                                 PlannedOrder.SupplyTransfer supply ->
-                                    "supply run to ("
+                                    "cargo run to ("
                                         ++ String.fromInt supply.destination.x
                                         ++ ", "
                                         ++ String.fromInt supply.destination.y
@@ -2694,7 +2689,7 @@ loadingNotice model unit destination =
                         "this move will pick up " ++ Unit.label target ++ " into this truck. the passenger will hold position."
 
                     else
-                        "this move will board " ++ Unit.label target ++ ". the truck will hold position."
+                        "this move will board " ++ Unit.label target ++ " when both units reach the destination."
             in
             [ H.p
                 [ Aria.role Aria.Status
@@ -2822,7 +2817,7 @@ terrainView model =
 supplyControls : Model -> Unit -> Html Msg
 supplyControls model unit =
     let
-        crates : List Supply.Stock
+        crates : List Supply.CargoStock
         crates =
             unit.resources
                 |> Maybe.map .supplyCargo
@@ -2838,7 +2833,7 @@ supplyControls model unit =
         contents : List (Html Msg)
         contents =
             let
-                crateControls : Int -> Supply.Stock -> Html Msg
+                crateControls : Int -> Supply.CargoStock -> Html Msg
                 crateControls index stock =
                     let
                         selectedExit : Maybe Coordinate
@@ -2864,7 +2859,7 @@ supplyControls model unit =
                         crateContents =
                             [ H.p
                                 []
-                                [ H.text ("crate " ++ String.fromInt (index + 1) ++ ": " ++ String.fromInt stock.current ++ "/" ++ String.fromInt stock.maximum ++ pending)
+                                [ H.text (Supply.cargoLabel stock.kind ++ " " ++ String.fromInt (index + 1) ++ ": " ++ String.fromInt stock.current ++ "/" ++ String.fromInt stock.maximum ++ pending)
                                 ]
                             ]
                     in
@@ -2880,7 +2875,7 @@ supplyControls model unit =
                 replenishmentNote =
                     H.p
                         []
-                        [ H.text "automatically refills nearby units before upkeep, while stock lasts"
+                        [ H.text "supplies refill provisions; fuel drums refill vehicles before upkeep, while stock lasts"
                         ]
 
                 crateRows : List (Html Msg)
@@ -2909,9 +2904,13 @@ supplyControls model unit =
 supplyCrateDetails : Model -> Coordinate -> List (Html Msg)
 supplyCrateDetails model position =
     let
-        stockText : Supply.Stock -> String
+        stockText : Supply.CargoStock -> String
         stockText stock =
-            "supplies: " ++ String.fromInt stock.current ++ "/" ++ String.fromInt stock.maximum
+            Supply.resourceLabel stock.kind
+                ++ ": "
+                ++ String.fromInt stock.current
+                ++ "/"
+                ++ String.fromInt stock.maximum
 
         crates : List (Html Msg)
         crates =
@@ -2923,7 +2922,7 @@ supplyCrateDetails model position =
         crateDetails crate =
             H.p
                 []
-                [ H.text ("supply crate · " ++ stockText crate.stock)
+                [ H.text (Supply.cargoLabel crate.stock.kind ++ " · " ++ stockText crate.stock)
                 ]
 
         hasSupplySource : Bool
@@ -2935,7 +2934,7 @@ supplyCrateDetails model position =
             if hasSupplySource then
                 [ H.p
                     []
-                    [ H.text "refills units on or beside this square before upkeep, while stock lasts"
+                    [ H.text "refills the matching resource on or beside this square before upkeep, while stock lasts"
                     ]
                 ]
 
@@ -3010,7 +3009,7 @@ transportDetails model unit =
         description : String
         description =
             if receivingLoad unit model then
-                "holding for loading or unloading. revoke the other unit's order before changing this order."
+                "receiving cargo at the planned destination. revoking this order also clears dependent boarding moves."
 
             else if Unit.carrierId unit /= Nothing then
                 "aboard a truck. select the truck and choose its move destination to unload passengers."
@@ -3022,7 +3021,7 @@ transportDetails model unit =
                 "tanks cannot board trucks."
 
             else
-                "move onto an allied truck with room to board. the truck will hold. trucks carry two units."
+                "move onto an allied truck or its planned destination to board. trucks have two berths shared with supply crates and fuel drums."
     in
     [ H.p
         []
@@ -3067,12 +3066,12 @@ unloadChecklist model choice =
                 |> Maybe.map (.supplyCargo >> List.indexedMap crateCheckbox)
                 |> Maybe.withDefault []
 
-        crateCheckbox : Int -> Supply.Stock -> Html Msg
+        crateCheckbox : Int -> Supply.CargoStock -> Html Msg
         crateCheckbox index stock =
             let
                 label : String
                 label =
-                    "supply crate " ++ String.fromInt (index + 1)
+                    Supply.cargoLabel stock.kind ++ " " ++ String.fromInt (index + 1)
             in
             Checkbox.toHtmlDisabled (unavailable (OrderPlanning.Crate index))
                 { label = label
@@ -3080,7 +3079,7 @@ unloadChecklist model choice =
                 , onCheck = UnloadCrateToggled index
                 }
                 [ H.img
-                    [ A.src "/assets/supply-crate-illustrated-v1.png"
+                    [ A.src (Supply.cargoImage stock.kind)
                     , A.alt ""
                     , A.width 48
                     , A.height 48
@@ -3088,7 +3087,7 @@ unloadChecklist model choice =
                     []
                 , H.span
                     []
-                    [ H.text (label ++ " · supplies " ++ String.fromInt stock.current ++ "/" ++ String.fromInt stock.maximum)
+                    [ H.text (label ++ " · " ++ Supply.resourceLabel stock.kind ++ " " ++ String.fromInt stock.current ++ "/" ++ String.fromInt stock.maximum)
                     ]
                 ]
 
@@ -3161,6 +3160,12 @@ depotLoadingDialog model id =
                 |> Maybe.map (depotLoadingRoom model)
                 |> Maybe.withDefault 0
 
+        cargoLabel : String
+        cargoLabel =
+            plannedDepot model id
+                |> Maybe.map (.kind >> Supply.cargoPlural)
+                |> Maybe.withDefault "cargo"
+
         choice : Int -> Html Msg
         choice count =
             if count > room then
@@ -3185,11 +3190,11 @@ depotLoadingDialog model id =
                 )
     in
     Dialog.make loadCratesDialogHtmlId
-        "load supply crates"
+        ("load " ++ cargoLabel)
         DialogDismissed
         [ H.p
             []
-            [ H.text "how many crates should the truck load from this depot?"
+            [ H.text "how many loads should the truck take from this depot?"
             ]
         , actions
         ]
@@ -3707,14 +3712,14 @@ boardSvg model =
         crateView : Supply.GroundCrate -> Svg Msg
         crateView crate =
             at crate.position
-                [ SupplyCrate.toSvg
+                [ SupplyCrate.toSvg crate.stock.kind
                 , Svg.rect
                     [ SA.width "16"
                     , SA.height "16"
                     , SA.fill "transparent"
                     , HA.attribute "tabindex" "0"
                     , Aria.svgRole Aria.Button
-                    , Aria.svgLabel "supply crate"
+                    , Aria.svgLabel (Supply.cargoLabel crate.stock.kind)
                     , onClickWithDetail (ClickedTile crate.position)
                     , onBoardActivationKeyDown
                         { pressedEnter = PressedEnterOnTile crate.position
@@ -3914,6 +3919,12 @@ boardSvg model =
                 cargoCount =
                     passengerCount + crateCount
 
+                freight : List Supply.CargoStock
+                freight =
+                    unit.resources
+                        |> Maybe.map .supplyCargo
+                        |> Maybe.withDefault []
+
                 cargoLabel : String
                 cargoLabel =
                     if cargoCount > 0 then
@@ -3924,7 +3935,7 @@ boardSvg model =
                             ++ String.fromInt unit.cargoCapacity
                             ++ ", passengers: "
                             ++ String.fromInt passengerCount
-                            ++ ", supply crates: "
+                            ++ ", freight: "
                             ++ String.fromInt crateCount
 
                     else
@@ -3971,7 +3982,7 @@ boardSvg model =
                     ]
                 , UnitCargo.toSvg passengerCount
                     |> StyledSvg.toUnstyled
-                , UnitCargo.supplyToSvg crateCount
+                , UnitCargo.freightToSvg freight
                     |> StyledSvg.toUnstyled
                 , UnitWarnings.toSvg unit
                     |> StyledSvg.toUnstyled

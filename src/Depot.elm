@@ -6,7 +6,6 @@ module Depot exposing
     , resourceLabel
     , selection
     , stockDescription
-    , supplies
     )
 
 import Api.Enum.DepotKind as DepotKind exposing (DepotKind)
@@ -32,19 +31,9 @@ selection =
         |> SS.with (DepotApi.stock Supply.stockSelection)
 
 
-supplies : Depot -> Bool
-supplies depot =
-    depot.kind == DepotKind.Supply
-
-
 resourceLabel : Depot -> String
 resourceLabel depot =
-    case depot.kind of
-        DepotKind.Supply ->
-            "supplies"
-
-        DepotKind.Fuel ->
-            "fuel"
+    Supply.resourceLabel depot.kind
 
 
 label : Depot -> String
@@ -84,4 +73,4 @@ stockDescription depot =
             "finite stock, shared by both players. delivery and loading crates draw from these supplies."
 
         DepotKind.Fuel ->
-            "finite stock, shared by both players. refills vehicle tanks up to capacity while fuel remains."
+            "finite stock, shared by both players. vehicle refilling and loading fuel drums draw from this fuel."

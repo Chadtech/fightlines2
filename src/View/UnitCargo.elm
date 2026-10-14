@@ -1,12 +1,14 @@
 module View.UnitCargo exposing
-    ( styles
-    , supplyToSvg
+    ( freightToSvg
+    , styles
     , toSvg
     )
 
+import Api.Enum.DepotKind as Kind exposing (DepotKind)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
+import Supply
 import Svg.Styled as Svg exposing (Svg)
 import Svg.Styled.Attributes as SA
 import View.Aria as Aria
@@ -28,6 +30,7 @@ styles =
 type CargoKind
     = Passengers
     | SupplyCrates
+    | FuelDrums
 
 
 {-| Cargo is derived from the board's current passenger locations, including
@@ -36,13 +39,6 @@ load and unload transitions during playback. Zero means no badge.
 toSvg : Int -> Svg msg
 toSvg =
     badge Passengers
-
-
-{-| Supply cargo uses the same badge treatment on the opposite corner.
--}
-supplyToSvg : Int -> Svg msg
-supplyToSvg =
-    badge SupplyCrates
 
 
 badge : CargoKind -> Int -> Svg msg
@@ -89,6 +85,9 @@ badge kind count =
                     SupplyCrates ->
                         S.blue1Str
 
+                    FuelDrums ->
+                        S.red1Str
+
             left : Float
             left =
                 case kind of
@@ -96,6 +95,9 @@ badge kind count =
                         15.26 - width * badgeScale
 
                     SupplyCrates ->
+                        0.74
+
+                    FuelDrums ->
                         0.74
 
             graphic : List (Svg msg)
@@ -117,6 +119,16 @@ badge kind count =
                     SupplyCrates ->
                         [ Svg.path
                             [ SA.d "M0.6 0.8H2.92V2.88H0.6ZM0.6 1.38H2.92M1.18 0.8V2.88M2.34 0.8V2.88"
+                            , SA.fill "none"
+                            , SA.stroke S.nightwood3Str
+                            , SA.strokeWidth "0.24"
+                            ]
+                            []
+                        ]
+
+                    FuelDrums ->
+                        [ Svg.path
+                            [ SA.d "M0.8 1.1Q1.76 0.5 2.72 1.1V2.6Q1.76 3.2 0.8 2.6ZM0.8 1.1Q1.76 1.7 2.72 1.1M0.8 1.85H2.72"
                             , SA.fill "none"
                             , SA.stroke S.nightwood3Str
                             , SA.strokeWidth "0.24"
@@ -154,3 +166,41 @@ badge kind count =
             , Aria.hidden True
             ]
             content
+
+
+{-| Freight kinds remain distinct, including a truck carrying one of each.
+-}
+freightToSvg : List Supply.CargoStock -> Svg msg
+freightToSvg cargo =
+    let
+        count : DepotKind -> Int
+        count kind =
+            cargo
+                |> List.filter (\stock -> stock.kind == kind)
+                |> List.length
+
+        supplies : Int
+        supplies =
+            count Kind.Supply
+
+        fuel : Int
+        fuel =
+            count Kind.Fuel
+
+        fuelOffset : String
+        fuelOffset =
+            if supplies > 0 then
+                "translate(5.4 0)"
+
+            else
+                "translate(0 0)"
+    in
+    Svg.g
+        []
+        [ badge SupplyCrates supplies
+        , Svg.g
+            [ SA.transform fuelOffset
+            ]
+            [ badge FuelDrums fuel
+            ]
+        ]

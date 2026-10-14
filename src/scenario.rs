@@ -2,7 +2,7 @@ use crate::{
     combat,
     map::{Coordinate, Map, MapError, Terrain},
     map_definition::MapDefinition,
-    supplies::{self, GroundSupplyCrate, ResourceStock, SupplyRules},
+    supplies::{self, CargoStock, GroundSupplyCrate, ResourceStock, SupplyRules},
 };
 use juniper::{GraphQLEnum, GraphQLObject, GraphQLUnion, graphql_object};
 use serde::{Deserialize, Serialize};
@@ -245,7 +245,7 @@ pub struct UnitResources {
     hit_points: HitPoints,
     supplies: Supplies,
     fuel: Option<Fuel>,
-    supply_cargo: Vec<ResourceStock>,
+    supply_cargo: Vec<CargoStock>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -261,7 +261,7 @@ pub struct Unit {
     supplies: Supplies,
     resources_visible: bool,
     firing_position_revealed: bool,
-    pub(crate) supply_cargo: Vec<ResourceStock>,
+    pub(crate) supply_cargo: Vec<CargoStock>,
 }
 
 #[graphql_object]

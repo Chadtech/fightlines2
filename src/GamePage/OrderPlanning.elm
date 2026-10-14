@@ -6,6 +6,7 @@ module GamePage.OrderPlanning exposing
     , UnloadChoice
     , UnloadPlanning
     , applyCommand
+    , boardingPassengers
     , canSelectUnloadCargo
     , chooseUnloadSquare
     , choosingDirection
@@ -709,27 +710,65 @@ commandMenuUnit context state =
             Nothing
 
 
-{-| Only stationary units can receive a load. Departing allies free their
-starting squares while their planned destinations remain reserved.
+{-| Trucks receive boarding units at their planned destination. Other departing
+allies free their starting squares while their destinations remain reserved.
 -}
 loadingTarget : Context -> Unit -> Coordinate -> List PlannedOrder -> Maybe Unit
 loadingTarget context mover destination drafts =
     Unit.loadingTarget (destinationUnits context drafts) mover destination
 
 
+{-| Include arriving passengers and waiting pickups at the truck's destination.
+Existing passengers remain separate because unloading does not free a berth yet.
+-}
+boardingPassengers : Context -> UnitId -> List PlannedOrder -> List UnitId
+boardingPassengers context truckId drafts =
+    let
+        boardsTruck : PlannedOrder -> Bool
+        boardsTruck plan =
+            let
+                receiver : Unit -> Maybe Unit
+                receiver passenger =
+                    loadingTarget context passenger (PlannedOrder.destination plan) drafts
+
+                targetId : Maybe UnitId
+                targetId =
+                    context.units
+                        |> ListUtil.find (\unit -> unit.id == plan.unitId)
+                        |> Maybe.andThen receiver
+                        |> Maybe.map .id
+            in
+            (plan.unitId /= truckId)
+                && not (PlannedOrder.isAttackMove plan)
+                && (targetId == Just truckId)
+    in
+    drafts
+        |> List.filter boardsTruck
+        |> List.map .unitId
+
+
 destinationUnits : Context -> List PlannedOrder -> List Unit
 destinationUnits context drafts =
     let
-        departing : Unit -> Bool
-        departing unit =
-            List.any
-                (\plan ->
-                    (plan.unitId == unit.id)
-                        && PlannedOrder.isMoving plan
-                )
-                drafts
+        destinationUnit : Unit -> Maybe Unit
+        destinationUnit unit =
+            let
+                departure : PlannedOrder -> Bool
+                departure plan =
+                    (plan.unitId == unit.id) && PlannedOrder.isMoving plan
+            in
+            case ListUtil.find departure drafts of
+                Just plan ->
+                    if unit.kind == Kind.Truck then
+                        Just (Unit.setOnMap (PlannedOrder.destination plan) unit)
+
+                    else
+                        Nothing
+
+                Nothing ->
+                    Just unit
     in
-    List.filter (departing >> not) context.units
+    List.filterMap destinationUnit context.units
 
 
 receivingLoad : Context -> Unit -> List PlannedOrder -> Bool
@@ -837,11 +876,23 @@ revokeDependentOrders context revokedIds drafts =
                 needsPassengerExit =
                     List.any (\unload -> List.member unload.destination occupiedAgain) (PlannedOrder.unloads plan)
 
+                needsTruck : Bool
+                needsTruck =
+                    context.units
+                        |> ListUtil.find (\unit -> unit.id == plan.unitId)
+                        |> Maybe.andThen boardingTarget
+                        |> Maybe.map (\truck -> List.member truck.id revokedIds)
+                        |> Maybe.withDefault False
+
+                boardingTarget : Unit -> Maybe Unit
+                boardingTarget unit =
+                    loadingTarget context unit (PlannedOrder.destination plan) drafts
+
                 needsCrateExit : Bool
                 needsCrateExit =
                     List.any (\unload -> List.member unload.destination occupiedAgain) (PlannedOrder.crateUnloads plan)
             in
-            needsDestination || needsPassengerExit || needsCrateExit
+            needsDestination || needsPassengerExit || needsCrateExit || needsTruck
 
         dependentIds : List UnitId
         dependentIds =
@@ -1365,19 +1416,21 @@ Crate unloading already owns freight handling and cannot combine with loading.
 -}
 offerCrateLoading : List Depot -> PlannedOrder -> Drafts -> Model
 offerCrateLoading depots order drafts =
+    let
+        atDestination : Depot -> Bool
+        atDestination depot =
+            depot.position == PlannedOrder.destination order
+
+        endsAtDepot : Bool
+        endsAtDepot =
+            List.any atDestination depots
+    in
     case order.action of
         PlannedOrder.SupplyTransfer _ ->
             OrdinaryPlanning drafts
 
         _ ->
-            if
-                List.any
-                    (\depot ->
-                        Depot.supplies depot
-                            && (depot.position == PlannedOrder.destination order)
-                    )
-                    depots
-            then
+            if endsAtDepot then
                 ChoosingCrates order.unitId drafts
 
             else
@@ -1694,19 +1747,11 @@ boardingSpace context mover truck state =
                     context.units
                 )
 
-        boarding : PlannedOrder -> Bool
-        boarding plan =
-            (plan.unitId /= mover.id)
-                && PlannedOrder.isMoving plan
-                && (Just (PlannedOrder.destination plan) == Unit.boardPosition truck)
-
-        truckMoving : Bool
-        truckMoving =
-            List.any
-                (\plan ->
-                    plan.unitId == truck.id && PlannedOrder.isMoving plan
-                )
-                (orders state)
+        incomingPassengers : Int
+        incomingPassengers =
+            boardingPassengers context truck.id (orders state)
+                |> List.filter ((/=) mover.id)
+                |> List.length
 
         plannedCrates : Int
         plannedCrates =
@@ -1725,7 +1770,7 @@ boardingSpace context mover truck state =
 
         fitsCargo : Bool
         fitsCargo =
-            alreadyAboard + Unit.crateCount truck + plannedCrates + List.length (List.filter boarding (orders state)) < truck.cargoCapacity
+            alreadyAboard + Unit.crateCount truck + plannedCrates + incomingPassengers < truck.cargoCapacity
 
         compatible : Bool
         compatible =
@@ -1734,9 +1779,10 @@ boardingSpace context mover truck state =
                     (\destination ->
                         loadingTarget context mover destination (orders state)
                     )
-                |> (==) (Just truck)
+                |> Maybe.map .id
+                |> (==) (Just truck.id)
     in
-    compatible && not truckMoving && fitsCargo
+    compatible && fitsCargo
 
 
 reservedDestinations : Context -> Unit -> Model -> List Coordinate
@@ -1772,13 +1818,29 @@ reservedDestinations context unit state =
 
         unavailableReceiver : Unit -> Bool
         unavailableReceiver target =
+            let
+                boardingTarget : Coordinate -> Maybe Unit
+                boardingTarget position =
+                    loadingTarget context unit position (orders state)
+
+                hasBoardingSpace : Unit -> Bool
+                hasBoardingSpace truck =
+                    boardingSpace context unit truck state
+
+                canBoardAtTarget : Bool
+                canBoardAtTarget =
+                    Unit.boardPosition target
+                        |> Maybe.andThen boardingTarget
+                        |> Maybe.map hasBoardingSpace
+                        |> Maybe.withDefault False
+            in
             (target.id /= unit.id)
                 && receivingLoad context target (orders state)
-                && not (boardingSpace context unit target state)
+                && not canBoardAtTarget
 
         unavailableReceivers : List Coordinate
         unavailableReceivers =
-            context.units
+            destinationUnits context (orders state)
                 |> List.filter unavailableReceiver
                 |> List.filterMap Unit.boardPosition
 
@@ -1834,7 +1896,11 @@ saveMove context unit move state =
                             Just plan
 
                         _ ->
-                            holdOrder context.units target
+                            if PlannedOrder.isMoving plan then
+                                Just plan
+
+                            else
+                                holdOrder context.units target
 
                 Nothing ->
                     holdOrder context.units target

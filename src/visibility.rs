@@ -388,6 +388,8 @@ fn observed_frames(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scenario::DepotKind;
+    use crate::supplies::CargoStock;
     use crate::test_support::{FixtureValue, TestResult};
     use crate::turns::{TurnEvent, TurnEventKind};
 
@@ -505,10 +507,7 @@ mod tests {
         let unit_count = board.units.len();
         for unit in &mut board.units {
             if unit.kind() == UnitKind::Truck {
-                unit.supply_cargo.push(crate::supplies::ResourceStock {
-                    current: 64,
-                    maximum: 64,
-                });
+                unit.supply_cargo.push(CargoStock::new(DepotKind::Fuel, 64));
             }
         }
         for unit in &mut board.units {
@@ -545,7 +544,7 @@ mod tests {
                 juniper::EmptySubscription::<()>::new(),
             );
             let (data, errors) = juniper::execute_sync(
-                "{ scenario { units { playerNumber kind resources { hitPoints { current maximum } supplies { current maximum upkeepPerTurn movementPerTile } fuel { current maximum } supplyCargo { current maximum } } } } resolution { frames { units { playerNumber kind resources { hitPoints { current } supplies { current } fuel { current } supplyCargo { current maximum } } } } } }",
+                "{ scenario { units { playerNumber kind resources { hitPoints { current maximum } supplies { current maximum upkeepPerTurn movementPerTile } fuel { current maximum } supplyCargo { kind current maximum } } } } resolution { frames { units { playerNumber kind resources { hitPoints { current } supplies { current } fuel { current } supplyCargo { kind current maximum } } } } } }",
                 None,
                 &schema,
                 &juniper::Variables::new(),
@@ -577,6 +576,10 @@ mod tests {
                         assert_eq!(resources["hitPoints"]["current"], 16);
                         let cargo = resources["supplyCargo"].as_array().fixture()?;
                         assert_eq!(cargo.len(), usize::from(unit["kind"] == "TRUCK"));
+                        for stock in cargo {
+                            assert_eq!(stock["kind"], "FUEL");
+                            assert_eq!(stock["current"], 64);
+                        }
                     }
                 }
             }

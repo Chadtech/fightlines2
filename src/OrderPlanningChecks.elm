@@ -21,7 +21,7 @@ import Unit.Location as Location exposing (Location)
 import Unit.Supplies
 import UnitCommand
 import UnitId exposing (UnitId)
-import UnitResources
+import UnitResources exposing (UnitResources)
 
 
 port results : List String -> Cmd msg
@@ -378,6 +378,81 @@ planningChecks infantryId truckId passengerId =
                 |> OrderPlanning.selectUnit chainContext truckId
                 |> OrderPlanning.revokeSelectedOrder chainContext
 
+        rendezvousContext : OrderPlanning.Context
+        rendezvousContext =
+            board [ infantry, truck, unit passengerId Kind.FieldGun (Location.OnMap { x = 2, y = 1 }) ]
+
+        rendezvous : OrderPlanning.Model
+        rendezvous =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit rendezvousContext truckId
+                |> OrderPlanning.applyCommand rendezvousContext UnitCommand.Move
+                |> OrderPlanning.selectTile rendezvousContext { x = 2, y = 2 }
+                |> OrderPlanning.selectUnit rendezvousContext infantryId
+                |> OrderPlanning.applyCommand rendezvousContext UnitCommand.Move
+                |> OrderPlanning.selectTile rendezvousContext { x = 2, y = 2 }
+                |> OrderPlanning.selectUnit rendezvousContext passengerId
+                |> OrderPlanning.applyCommand rendezvousContext UnitCommand.Move
+                |> OrderPlanning.selectTile rendezvousContext { x = 2, y = 2 }
+
+        pickupRendezvous : OrderPlanning.Model
+        pickupRendezvous =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit rendezvousContext truckId
+                |> OrderPlanning.applyCommand rendezvousContext UnitCommand.Move
+                |> OrderPlanning.selectTile rendezvousContext { x = 2, y = 1 }
+                |> OrderPlanning.selectUnit rendezvousContext infantryId
+                |> OrderPlanning.applyCommand rendezvousContext UnitCommand.Move
+                |> OrderPlanning.selectTile rendezvousContext { x = 2, y = 1 }
+
+        freightRendezvousContext : OrderPlanning.Context
+        freightRendezvousContext =
+            let
+                addCrate : UnitResources -> UnitResources
+                addCrate resources =
+                    { resources
+                        | supplyCargo =
+                            [ { kind = DepotKind.Supply
+                              , current = 64
+                              , maximum = 64
+                              }
+                            ]
+                    }
+
+                withCrate : Unit -> Unit
+                withCrate cargoUnit =
+                    if cargoUnit.id == truckId then
+                        { cargoUnit | resources = Maybe.map addCrate cargoUnit.resources }
+
+                    else
+                        cargoUnit
+            in
+            { rendezvousContext | units = List.map withCrate rendezvousContext.units }
+
+        freightRendezvous : OrderPlanning.Model
+        freightRendezvous =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit freightRendezvousContext truckId
+                |> OrderPlanning.applyCommand freightRendezvousContext UnitCommand.Move
+                |> OrderPlanning.selectTile freightRendezvousContext { x = 2, y = 2 }
+                |> OrderPlanning.skipUnloading freightRendezvousContext
+                |> OrderPlanning.selectUnit freightRendezvousContext infantryId
+                |> OrderPlanning.applyCommand freightRendezvousContext UnitCommand.Move
+                |> OrderPlanning.selectTile freightRendezvousContext { x = 2, y = 2 }
+
+        overfullRendezvous : OrderPlanning.Model
+        overfullRendezvous =
+            freightRendezvous
+                |> OrderPlanning.selectUnit freightRendezvousContext passengerId
+                |> OrderPlanning.applyCommand freightRendezvousContext UnitCommand.Move
+                |> OrderPlanning.selectTile freightRendezvousContext { x = 2, y = 2 }
+
+        revokedRendezvous : OrderPlanning.Model
+        revokedRendezvous =
+            rendezvous
+                |> OrderPlanning.selectUnit rendezvousContext truckId
+                |> OrderPlanning.revokeSelectedOrder rendezvousContext
+
         loading : OrderPlanning.Model
         loading =
             OrderPlanning.init
@@ -456,7 +531,8 @@ planningChecks infantryId truckId passengerId =
                             (\resources ->
                                 { resources
                                     | supplyCargo =
-                                        [ { current = 48
+                                        [ { kind = DepotKind.Supply
+                                          , current = 48
                                           , maximum = 64
                                           }
                                         ]
@@ -531,10 +607,12 @@ planningChecks infantryId truckId passengerId =
                             (\resources ->
                                 { resources
                                     | supplyCargo =
-                                        [ { current = 48
+                                        [ { kind = DepotKind.Supply
+                                          , current = 48
                                           , maximum = 64
                                           }
-                                        , { current = 16
+                                        , { kind = DepotKind.Supply
+                                          , current = 16
                                           , maximum = 64
                                           }
                                         ]
@@ -569,7 +647,8 @@ planningChecks infantryId truckId passengerId =
                             , y = 2
                             }
                       , stock =
-                            { current = 32
+                            { kind = DepotKind.Supply
+                            , current = 32
                             , maximum = 64
                             }
                       }
@@ -715,7 +794,7 @@ planningChecks infantryId truckId passengerId =
         scarceCrateContext =
             { mixedContext
                 | map = { width = 4, height = 2, baseTile = mixedContext.map.baseTile, theme = mixedContext.map.theme, features = [] }
-                , supplyCrates = [ { position = { x = 3, y = 0 }, stock = { current = 64, maximum = 64 } } ]
+                , supplyCrates = [ { position = { x = 3, y = 0 }, stock = { kind = DepotKind.Supply, current = 64, maximum = 64 } } ]
             }
 
         scarceCrateExits : OrderPlanning.Model
@@ -887,8 +966,8 @@ planningChecks infantryId truckId passengerId =
                 && List.length (List.concatMap PlannedOrder.crateUnloads (OrderPlanning.orders selectionWithFreight))
                 == 1
             )
-        , expect "fuel depot destinations preserve moves without offering supply crates"
-            (not (choosingCrates fuelMove) && List.length (OrderPlanning.orders fuelMove) == 1)
+        , expect "fuel depot destinations offer fuel drum loading"
+            (choosingCrates fuelMove && List.length (OrderPlanning.orders fuelMove) == 1)
         , expect "saving an empty truck move on a depot opens loading through mouse and keyboard"
             (choosingCrates depotMove && depotKeyboardMove == depotMove)
         , expect "boarding a truck on a depot offers loading for its automatically saved hold"
@@ -1007,6 +1086,18 @@ planningChecks infantryId truckId passengerId =
             (List.length (OrderPlanning.orders chain) == 3 && List.isEmpty (OrderPlanning.orders revokedChain))
         , expect "moving onto a departing truck keeps both moves and creates no loading target"
             (List.length (OrderPlanning.orders enteringTruckOrigin) == 2 && List.all PlannedOrder.isMoving (OrderPlanning.orders enteringTruckOrigin) && OrderPlanning.loadingTarget context infantry { x = 3, y = 1 } (OrderPlanning.orders enteringTruckOrigin) == Nothing)
+        , expect "two arriving passengers preserve the moving truck route"
+            (List.length (OrderPlanning.orders rendezvous) == 3 && List.all PlannedOrder.isMoving (OrderPlanning.orders rendezvous) && List.all (\plan -> PlannedOrder.destination plan == { x = 2, y = 2 }) (OrderPlanning.orders rendezvous))
+        , expect "a moving truck can pick up a waiting unit and an arriving passenger together"
+            (List.length (OrderPlanning.orders pickupRendezvous) == 3 && List.length (List.filter PlannedOrder.isMoving (OrderPlanning.orders pickupRendezvous)) == 2)
+        , expect "freight capacity reserves arriving passengers at the moving truck destination"
+            (List.length (OrderPlanning.boardingPassengers rendezvousContext truckId (OrderPlanning.orders rendezvous)) == 2)
+        , expect "freight capacity reserves waiting pickups as well as arriving passengers"
+            (List.length (OrderPlanning.boardingPassengers rendezvousContext truckId (OrderPlanning.orders pickupRendezvous)) == 2)
+        , expect "a carried crate leaves only one berth at a moving truck destination"
+            (List.length (OrderPlanning.orders freightRendezvous) == 2 && OrderPlanning.orders overfullRendezvous == OrderPlanning.orders freightRendezvous && OrderPlanning.destinationFeedback overfullRendezvous == DestinationUnavailable)
+        , expect "revoking the moving truck clears both dependent boarding orders"
+            (List.isEmpty (OrderPlanning.orders revokedRendezvous))
         , expect "loading saves the mover and a holding receiver"
             (List.length (OrderPlanning.orders loading) == 2 && OrderPlanning.receivingLoad context truck (OrderPlanning.orders loading))
         , expect "a receiving truck is inspection only"

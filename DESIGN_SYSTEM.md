@@ -543,7 +543,10 @@ for the report. Keep these figures viewer-specific and retain zero totals.
 Fuel depots use the illustrated fuel-storage tank sprite, the same selection
 behavior, inspector, stock bars, low/empty warnings, and fog treatment as supply
 depots. Their copy names fuel and describes automatic vehicle refilling.
-Only supply depots open the supply-crate loading dialog.
+Fuel depots open the same 0/1/2 loading dialog titled `load fuel drums`. Fuel
+freight uses the red three-drum stack in ground rendering and cargo choices,
+with a red drum badge on trucks. Mixed supply/fuel freight uses separate
+lower-left badges and shares the same capacity and unloading rules.
 
 ## Stand ground
 

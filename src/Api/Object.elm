@@ -9,6 +9,10 @@ type Aboard
     = Aboard
 
 
+type CargoStock
+    = CargoStock
+
+
 type CombatHealth
     = CombatHealth
 

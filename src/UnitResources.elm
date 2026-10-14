@@ -19,7 +19,7 @@ type alias UnitResources =
     { hitPoints : HitPoints
     , supplies : Supplies
     , fuel : Maybe Fuel
-    , supplyCargo : List Supply.Stock
+    , supplyCargo : List Supply.CargoStock
     }
 
 
@@ -29,4 +29,4 @@ selection =
         |> SS.with (ResourcesApi.hitPoints HitPoints.selection)
         |> SS.with (ResourcesApi.supplies Supplies.selection)
         |> SS.with (ResourcesApi.fuel Fuel.selection)
-        |> SS.with (ResourcesApi.supplyCargo Supply.stockSelection)
+        |> SS.with (ResourcesApi.supplyCargo Supply.cargoSelection)

@@ -671,8 +671,12 @@ changes it to `OnMap`. Own cargo remains in snapshots for inspection and unload
 planning; enemy cargo is withheld.
 
 Paths ending on compatible allies load at their destination. Validation checks
-the receiving unit holds and counts existing plus incoming cargo, allowing two
-boarding paths to share a truck destination. Paths for carried units are holds
+the units share a final destination and counts existing plus incoming cargo,
+allowing two boarding paths to share a moving or holding truck destination.
+`turns::planned_loads` derives the same boarding intent for validation, movement
+occupancy, and final attachment. Only living units that complete their routes
+board; failed rendezvous use ordinary occupancy fallback. Boarding capacity is
+reserved before unloading. Paths for carried units are holds
 or one-edge unloads onto empty squares; unloading requires the truck to hold.
 The submission still includes every unit, with Elm filling passenger holds
 without counting them as missing orders. Riding consumes only turn upkeep.
@@ -686,9 +690,10 @@ unloads passengers at their chosen squares. A conflicted truck or an occupied
 exit leaves the passenger aboard.
 
 `GamePage` offers loading squares with movement destinations and saves the
-receiving unit's hold alongside a loading or unloading draft. It reserves
-remaining berths across drafts and prevents moving a receiver while its loading
-or unloading drafts exist. The truck's status panel exposes cargo buttons;
+receiving unit's hold alongside a loading or unloading draft, preserving an
+already moving truck’s route. Destination occupancy projects moving trucks onto
+their planned arrival square. It reserves remaining berths across drafts;
+revoking a truck’s order clears boarding moves that depend on it. The truck's status panel exposes cargo buttons;
 carried units have no independent commands. Saving a truck destination opens
 an unload checklist through `OrderPlanning.ChoosingPassengers`. Confirmation
 advances to `ChoosingExits`. Both stages own a typed truck plan distinguishing
@@ -890,6 +895,8 @@ attack-move route also triggers an attack against an enemy on the adjacent squar
 directly ahead, using the facing of the final traveled segment. This contact is
 checked after simultaneous arrivals, includes concealed enemies, and interrupts
 the target's remaining movement. Both participants stop their remaining routes.
+`Combat.engage_contacts` rechecks cardinal adjacency after interrupted allied
+passage retracts movement, before direct shots or field-gun contact interceptions.
 Opposing attack movers fire simultaneously; other orders do not gain automatic
 return fire. Only successful edges spend movement
 resources. Attack move and ambush both spend 2 readiness supplies per turn,
@@ -900,10 +907,14 @@ with an `attack move` heading and the usual fog-safe encounter portraits.
 
 ## Finite supply sources and replenishment
 
-`supplies.rs` owns `ResourceStock`, `GroundSupplyCrate`, validated `SupplyOrder`,
+`supplies.rs` owns `ResourceStock`, typed `CargoStock`, `GroundSupplyCrate`, validated `SupplyOrder`,
 loading/unloading, and end-of-turn distribution. `Scenario` owns finite depot
 stocks and ground crates; each `Unit` owns its carried crate stocks independently
-of provisions. `SupplyRules` supplies authoritative capacities
+of provisions. Ground and carried freight use `CargoStock.kind` to distinguish
+supply crates from fuel drums; the existing crate collection and slot-order API
+carry both kinds. Each fuel stack holds up to the exported crate capacity and
+occupies one shared berth. Depot loading derives the freight kind from the actual
+destination depot. `SupplyRules` supplies authoritative capacities
 to Elm. `Unit.resources.supplyCargo` follows the existing whole-resource fog gate.
 Depot stock is nullable outside sight; known depot positions remain available.
 Ground crates are projected by visible tile, independently of unit concealment.
@@ -929,7 +940,7 @@ living units, using cardinal adjacency and physical carrier positions for passen
 All crates are neutral and serve both players, including a carrier and its passengers. Round-robin distribution rotates its first recipient each turn. Combat
 casualties and passengers of destroyed carriers cannot receive supplies. Empty crates
 are removed. Provision replenishment leaves health and vehicle fuel unchanged. Fuel depots
-use the same distribution algorithm to refill vehicle fuel instead.
+and fuel drums use the same distribution algorithm to refill vehicle fuel instead.
 
 `PlannedOrder.SupplyTransfer` owns the truck route, load count, crate exits, and
 existing passenger unloads. `OrderPlanning.ChoosingCrates` owns the depot-loading

@@ -100,9 +100,10 @@ switching units. Unsubmitted plans are local drafts and disappear on refresh.
 Routes can pass through allied units or enemy starting positions; enemies encountered
 during resolution stop movement. Occupied
 squares can be destinations when an allied occupant has a saved move away, or
-when loading a stationary truck. Plan the departure first. Revoking that departure
-also revokes routes depending on its freed square. A saved move reserves its destination so other
-units cannot choose it; changing or clearing the move frees that square. Routes
+when loading a compatible truck. Plan the departure first. Revoking that departure
+also revokes routes depending on its freed square. A saved move reserves its destination; eligible passengers may share a truck’s
+planned destination while it has cargo room. Otherwise other units cannot choose
+it; changing or clearing the move frees that square. Routes
 can pass through reserved destinations. Depots are passable.
 The selection panel shows the selected unit's illustration, name, and player,
 with expandable unit and gauge explanations. Every unit starts with 16/16 hit points, supplied by the server. Combat damage uses weapon matchup, health, readiness, facing, cover, and ambush advantage; see [combat_factors.md](combat_factors.md). Healing and trench protection are not implemented yet. Tanks and trucks start with 32/32 fuel. Each
@@ -111,21 +112,25 @@ terrain movement costs. Interrupted routes pay only for successfully traveled ti
 Neutral fuel depots refill living tanks and trucks at turn end from finite stocks. Movement previews and submitted paths must fit both remaining
 fuel and the per-turn movement budget.
 
-Trucks have two cargo berths shared by allied infantry, field guns, and supply crates; tanks cannot board.
-Loading is part of a move: move a truck onto a waiting unit, or move a unit onto
-a waiting truck. Compatible occupied squares appear alongside ordinary movement
-choices. The route preview and saved order warn when the move will pick up or board a unit.
+Trucks have two cargo berths shared by allied infantry, field guns, supply crates, and fuel drums; tanks cannot board.
+Loading is part of a move: move a truck onto a waiting unit, move a unit onto
+a waiting truck, or plan the truck’s move first and send units to its destination.
+Compatible occupied squares appear alongside ordinary movement choices. The route preview and saved order warn when the move will pick up or board a unit.
 Loading happens only at the destination, after paying the moving unit's
-usual movement costs. The receiving unit gets a hold order automatically. Two
-units may board the same holding truck in one turn when it has room. Clear the
-loading move before changing the receiving unit's order.
+usual movement costs. A waiting receiving unit gets a hold order automatically;
+a moving truck keeps its saved route. Multiple units may converge on the same
+truck destination when its two berths can fit all incoming passengers, existing
+cargo, and planned crate loads. Unloading that turn does not free boarding space.
+Boarding requires both units to reach the destination alive; interrupted routes
+use ordinary occupancy rules so failed rendezvous leave units on separate squares.
+Revoking a truck’s order also clears dependent boarding moves.
 Passengers disappear from the board and travel with the truck. They still pay
 turn upkeep but spend no walking supplies while riding, grant no sight, and need
 no separate hold order. Select a truck to see its cargo count and select a
 passenger from its inset cargo list for inspection. Choose **hold position** on a
 loaded truck to unload beside its current square, even when it has no fuel.
 After choosing the truck's move destination, an **unload** checklist offers its
-passengers, carried supply crates, and **proceed without unloading**. Select cargo
+passengers, carried supply crates or fuel drums, and **proceed without unloading**. Select cargo
 that can all be placed, then choose adjacent squares around the truck's planned
 destination. Passengers require free squares; crates may share with allied units. The truck moves first; unloading uses
 the passenger's normal terrain and supply costs. Both passengers may unload
@@ -490,6 +495,8 @@ attack-move route also triggers an attack against an enemy on the adjacent squar
 directly ahead, using the facing of the final traveled segment. This contact is
 checked after simultaneous arrivals, includes concealed enemies, and interrupts
 the target's remaining movement. Both participants stop their remaining routes.
+If allied traffic forces a participant back to a free square, direct fire occurs
+only if the participants are still cardinally adjacent after that adjustment.
 Opposing attack movers fire simultaneously; other orders do not gain automatic
 return fire. Only successful edges spend movement
 resources. Attack move and ambush both spend 2 readiness supplies per turn,
@@ -509,7 +516,11 @@ Fuel depots are available for manual map placement and start with 256 fuel.
 They refill vehicles on their square or one cardinally adjacent square up to
 capacity, after movement and combat and before upkeep. Both players share the
 finite stock, using the same rotating distribution priority as supply depots.
-Fuel depots do not load supply crates. Their inspector and stock bars conceal
+Fuel depots offer a **load fuel drums** dialog with the same 0/1/2 choices.
+Each drum stack occupies one berth and holds up to 64 fuel, drawn from depot
+stock. Ground and carried drums refill nearby vehicles before upkeep, retain
+remaining fuel when picked up or unloaded, and disappear when empty.
+Fuel depot inspectors and stock bars conceal
 quantities outside sight and show low/empty warnings like supply depots.
 
 Choose **stand ground** for infantry, tanks, or field guns to stay in place with
