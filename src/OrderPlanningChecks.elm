@@ -11,6 +11,7 @@ import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Coordinate exposing (Coordinate)
 import GamePage.OrderPlanning as OrderPlanning
 import GamePage.Selection exposing (DestinationFeedback(..), Inspection(..), Selection(..))
+import Map exposing (Map)
 import Movement
 import PlannedOrder
 import Platform
@@ -102,6 +103,78 @@ planningChecks infantryId truckId passengerId =
                 |> OrderPlanning.selectUnit context infantryId
                 |> OrderPlanning.applyCommand context UnitCommand.AttackMove
                 |> OrderPlanning.selectTile context { x = 3, y = 1 }
+
+        fieldGun : Unit
+        fieldGun =
+            { infantry
+                | kind = Kind.FieldGun
+                , combatRules =
+                    { range = 3
+                    , indirectRange = 12
+                    , shape = AmbushShape.Cross
+                    , damage = 12
+                    , readinessCost = 2
+                    , shotCost = 3
+                    }
+            }
+
+        indirectContext : OrderPlanning.Context
+        indirectContext =
+            { context
+                | units = [ fieldGun, truck ]
+            }
+
+        aiming : OrderPlanning.Model
+        aiming =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit indirectContext infantryId
+                |> OrderPlanning.applyCommand indirectContext UnitCommand.IndirectFire
+
+        bombardment : OrderPlanning.Model
+        bombardment =
+            aiming
+                |> OrderPlanning.selectTile indirectContext
+                    { x = 3
+                    , y = 3
+                    }
+
+        aimedOrder : Coordinate -> PlannedOrder.PlannedOrder
+        aimedOrder target =
+            { unitId = infantryId
+            , action =
+                PlannedOrder.IndirectFire
+                    { position =
+                        { x = 1
+                        , y = 1
+                        }
+                    , target = target
+                    }
+            }
+
+        selfBombardment : OrderPlanning.Model
+        selfBombardment =
+            aiming |> OrderPlanning.selectUnit indirectContext infantryId
+
+        rangeMap : Map
+        rangeMap =
+            { width = 20
+            , height = 3
+            , baseTile = Terrain.GrassPlain
+            , theme = Theme.GreenForest
+            , features = []
+            }
+
+        outOfRangeContext : OrderPlanning.Context
+        outOfRangeContext =
+            { indirectContext
+                | map = rangeMap
+            }
+
+        edgeAim : OrderPlanning.Model
+        edgeAim =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit outOfRangeContext infantryId
+                |> OrderPlanning.applyCommand outOfRangeContext UnitCommand.IndirectFire
 
         standingGround : OrderPlanning.Model
         standingGround =
@@ -871,6 +944,33 @@ planningChecks infantryId truckId passengerId =
             (List.isEmpty (OrderPlanning.orders attackLoading) && OrderPlanning.destinationFeedback attackLoading == DestinationUnavailable)
         , expect "attack move revocation restores commands"
             (OrderPlanning.commandMenuUnit attackContext (OrderPlanning.revokeSelectedOrder attackContext attackSaved) == Just infantry)
+        , expect "indirect fire chooses tiles without movement or occupancy restrictions"
+            (OrderPlanning.choosingIndirectFire aiming
+                && List.member { x = 3, y = 3 } (OrderPlanning.indirectTargets indirectContext aiming)
+                && OrderPlanning.orders bombardment
+                == [ aimedOrder { x = 3, y = 3 } ]
+                && List.map PlannedOrder.path (OrderPlanning.orders bombardment)
+                == [ [ { x = 1, y = 1 } ] ]
+                && List.isEmpty (OrderPlanning.orders (OrderPlanning.revokeSelectedOrder indirectContext bombardment))
+            )
+        , expect "indirect fire on occupied tiles retains the firing gun"
+            (OrderPlanning.orders (OrderPlanning.selectUnit indirectContext truckId aiming)
+                == [ aimedOrder { x = 3, y = 1 } ]
+            )
+        , expect "indirect fire accepts the firing gun's own tile"
+            (OrderPlanning.orders selfBombardment == [ aimedOrder { x = 1, y = 1 } ])
+        , expect "indirect fire rejects out-of-range tiles without leaving targeting"
+            (OrderPlanning.selectTile outOfRangeContext { x = 14, y = 1 } edgeAim == edgeAim)
+        , expect "indirect fire includes the circular range boundary"
+            (List.member { x = 13, y = 1 } (OrderPlanning.indirectTargets outOfRangeContext edgeAim)
+                && not (List.member { x = 13, y = 2 } (OrderPlanning.indirectTargets outOfRangeContext edgeAim))
+            )
+        , expect "indirect fire excludes other kinds, passengers, and insufficient supplies"
+            (not (UnitCommand.canUse infantry UnitCommand.IndirectFire)
+                && not (UnitCommand.canUse truck UnitCommand.IndirectFire)
+                && not (UnitCommand.canUse { fieldGun | location = Location.Aboard truckId } UnitCommand.IndirectFire)
+                && not (UnitCommand.canUse { insufficientReadiness | kind = Kind.FieldGun } UnitCommand.IndirectFire)
+            )
         , expect "stand ground saves immediately and can be revoked"
             (OrderPlanning.orders standingGround
                 == [ { unitId = infantryId, action = PlannedOrder.StandGround { x = 1, y = 1 } } ]
@@ -1062,6 +1162,7 @@ unit id kind location =
     , destroyed = False
     , combatRules =
         { range = 1
+        , indirectRange = 0
         , shape = AmbushShape.Line
         , damage = 4
         , readinessCost = 2

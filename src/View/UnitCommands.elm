@@ -201,6 +201,9 @@ commandButton unit command =
             if implemented then
                 Command.label command
 
+            else if command == Command.IndirectFire then
+                "not enough supplies for readiness and one shell"
+
             else if command == Command.StandGround then
                 "not enough supplies to stand ground"
 

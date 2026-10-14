@@ -8,6 +8,7 @@ import Graphql.SelectionSet as SS exposing (SelectionSet)
 
 type alias CombatRules =
     { range : Int
+    , indirectRange : Int
     , shape : AmbushShape
     , damage : Int
     , readinessCost : Int
@@ -19,6 +20,7 @@ selection : SelectionSet CombatRules Api.Object.CombatRules
 selection =
     SS.succeed CombatRules
         |> SS.with RulesApi.range
+        |> SS.with RulesApi.indirectRange
         |> SS.with RulesApi.shape
         |> SS.with RulesApi.damage
         |> SS.with RulesApi.readinessCost

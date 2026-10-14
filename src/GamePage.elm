@@ -832,7 +832,8 @@ applyTurnSnapshot snapshot currentTurn model =
             frame : TurnPlayback.Frame
             frame =
                 TurnPlayback.initial snapshot.playbackFrames
-                    { shots = []
+                    { indirectImpacts = []
+                    , shots = []
                     , durationMs = 180
                     , units = snapshot.units
                     , visibleTiles = snapshot.visibleTiles
@@ -934,6 +935,9 @@ rotationSelection model =
                             )
 
                 CommandMenu _ ->
+                    Nothing
+
+                ChoosingIndirectFire ->
                     Nothing
 
                 ChoosingMove _ ->
@@ -1052,7 +1056,11 @@ selectTile position model =
 
 inspectDepot : Coordinate -> Model -> Model
 inspectDepot position model =
-    setSelection (Just (Inspecting (TileInspection position))) model
+    if choosingIndirectFire model then
+        selectTile position model
+
+    else
+        setSelection (Just (Inspecting (TileInspection position))) model
 
 
 previewTile : Coordinate -> Model -> Model
@@ -1245,6 +1253,44 @@ suppressesBattlefieldClick click model =
 preventDefault : Msg -> ( Msg, Bool )
 preventDefault msg =
     ( msg, True )
+
+
+choosingIndirectFire : Model -> Bool
+choosingIndirectFire model =
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.map OrderPlanning.choosingIndirectFire
+        |> Maybe.withDefault False
+
+
+indirectTargets : Model -> List Coordinate
+indirectTargets model =
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.map (OrderPlanning.indirectTargets (planningContext model))
+        |> Maybe.withDefault []
+
+
+indirectFireDetails : Unit -> List (Html Msg)
+indirectFireDetails unit =
+    let
+        costs : String
+        costs =
+            "range: "
+                ++ String.fromInt unit.combatRules.indirectRange
+                ++ " tiles · supplies: upkeep + "
+                ++ String.fromInt unit.combatRules.readinessCost
+                ++ " readiness + "
+                ++ String.fromInt unit.combatRules.shotCost
+                ++ " per shot"
+    in
+    [ H.p
+        []
+        [ H.text "choose any tile in range, including fog. fires after movement and unloading at whoever remains there; friendly units can be hit. empty tiles waste the shot. unseen hits stay unconfirmed."
+        ]
+    , H.p
+        []
+        [ H.text costs
+        ]
+    ]
 
 
 
@@ -2333,6 +2379,9 @@ movementView model =
                     else if Unit.carrierId unit /= Nothing || receivingLoad unit model then
                         transportDetails model unit
 
+                    else if choosingIndirectFire model then
+                        indirectFireDetails unit
+
                     else if choosingAmbush model then
                         ambushDetails unit
 
@@ -2473,6 +2522,9 @@ unitOrderView model unit =
                                         ++ " · unload "
                                         ++ String.fromInt (List.length (PlannedOrder.unloadingCrates supply))
 
+                                PlannedOrder.IndirectFire fire ->
+                                    "indirect fire: (" ++ String.fromInt fire.target.x ++ ", " ++ String.fromInt fire.target.y ++ ")"
+
                                 PlannedOrder.StandGround _ ->
                                     "stand ground"
 
@@ -2594,6 +2646,9 @@ unitIsAmbushing model unit =
 ambushCosts : Unit -> PlannedOrder -> List (Html Msg)
 ambushCosts unit order =
     case order.action of
+        PlannedOrder.IndirectFire _ ->
+            indirectFireDetails unit
+
         PlannedOrder.StandGround _ ->
             [ H.p [] [ H.text "combat ready when attacked; does not fire" ]
             , H.p [] [ H.text ("supplies: normal upkeep + " ++ String.fromInt unit.combatRules.readinessCost ++ " readiness") ]
@@ -3493,11 +3548,11 @@ boardSvg model =
 
         choosingDestination : Bool
         choosingDestination =
-            pathPreview model /= Nothing || isChoosingUnload model
+            pathPreview model /= Nothing || isChoosingUnload model || choosingIndirectFire model
 
         reachable : List Coordinate
         reachable =
-            List.map .destination (moveOptions model)
+            List.map .destination (moveOptions model) ++ indirectTargets model
 
         paths : List PlannedOrder
         paths =
@@ -3512,7 +3567,10 @@ boardSvg model =
 
         destinationAction : String
         destinationAction =
-            if isChoosingUnload model then
+            if choosingIndirectFire model then
+                "fire indirectly at"
+
+            else if isChoosingUnload model then
                 "unload at"
 
             else if attacking then
@@ -3628,9 +3686,9 @@ boardSvg model =
             else
                 String.join " " filters
 
-        crateReservation : PlannedOrder.CrateUnload -> Svg Msg
-        crateReservation unload =
-            at unload.destination
+        targetOutline : Coordinate -> Svg Msg
+        targetOutline destination =
+            at destination
                 [ Svg.rect
                     [ SA.x "1"
                     , SA.y "1"
@@ -4110,11 +4168,30 @@ boardSvg model =
             in
             List.filterMap saved (plannedOrders model) ++ preview
 
+        indirectFireOverlay : Svg Msg
+        indirectFireOverlay =
+            let
+                targetMarker : PlannedOrder -> Maybe (Svg Msg)
+                targetMarker order =
+                    case order.action of
+                        PlannedOrder.IndirectFire fire ->
+                            Just (targetOutline fire.target)
+
+                        _ ->
+                            Nothing
+            in
+            Svg.g
+                [ Aria.svgHidden True
+                ]
+                (List.filterMap targetMarker paths)
+
         shotOverlay : Svg Msg
         shotOverlay =
             case model.currentTurn.phase of
                 TurnLifecycle.Playing playing ->
-                    CombatEffects.impacts (TurnPlayback.visibleShots playing.animation)
+                    CombatEffects.impacts
+                        (TurnPlayback.visibleIndirectImpacts playing.animation)
+                        (TurnPlayback.visibleShots playing.animation)
 
                 _ ->
                     Svg.text ""
@@ -4162,7 +4239,7 @@ boardSvg model =
             , List.map tileTarget positions
             , List.map depotView model.depots
             , List.map crateView model.supplyCrates
-            , List.concatMap (PlannedOrder.crateUnloads >> List.map crateReservation) (plannedOrders model)
+            , List.concatMap (PlannedOrder.crateUnloads >> List.map (.destination >> targetOutline)) (plannedOrders model)
             , List.filterMap
                 (\unit ->
                     Unit.boardPosition unit
@@ -4170,7 +4247,7 @@ boardSvg model =
                 )
                 model.units
             , ambushCoverage
-            , [ unloadOverlay, shotOverlay ]
+            , [ unloadOverlay, indirectFireOverlay, shotOverlay ]
             , selection
             , rotationOverlay
             , facingOverlay
@@ -4267,6 +4344,9 @@ keyCommands model =
                                 , downKeys (PathDirectionKeyPressed DirectionEnum.South)
                                 , KeyCmd.enter PathEnterPressed
                                 ]
+
+                            ChoosingIndirectFire ->
+                                []
 
                             CommandMenu _ ->
                                 [ upKeys PreviousCommandPressed

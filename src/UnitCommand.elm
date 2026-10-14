@@ -12,6 +12,7 @@ module UnitCommand exposing
 
 import Api.Enum.UnitKind as Kind
 import Unit exposing (Unit)
+import UnitResources exposing (UnitResources)
 
 
 type Command
@@ -70,6 +71,9 @@ available unit =
 isImplemented : Command -> Bool
 isImplemented command =
     case command of
+        IndirectFire ->
+            True
+
         AttackMove ->
             True
 
@@ -150,7 +154,25 @@ assetName command =
 
 canUse : Unit -> Command -> Bool
 canUse unit command =
-    if command == Ambush || command == StandGround then
+    if command == IndirectFire then
+        let
+            canAffordShell : UnitResources -> Bool
+            canAffordShell resources =
+                resources.supplies.current
+                    >= (resources.supplies.upkeepPerTurn
+                            + unit.combatRules.readinessCost
+                            + unit.combatRules.shotCost
+                       )
+
+            affordable : Bool
+            affordable =
+                unit.resources
+                    |> Maybe.map canAffordShell
+                    |> Maybe.withDefault False
+        in
+        (unit.kind == Kind.FieldGun) && Unit.onBoard unit && affordable
+
+    else if command == Ambush || command == StandGround then
         let
             affordable : Bool
             affordable =

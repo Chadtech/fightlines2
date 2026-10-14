@@ -147,6 +147,9 @@ toHtml config map panel =
         title : String
         title =
             case panel.exchange.kind of
+                CombatKind.IndirectFire ->
+                    "indirect fire"
+
                 CombatKind.Ambush ->
                     "ambush"
 

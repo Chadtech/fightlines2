@@ -1,5 +1,5 @@
 use crate::{
-    combat::{self, Shot},
+    combat::{self, IndirectImpact, Shot},
     map::Coordinate,
     movement,
     scenario::{
@@ -28,6 +28,8 @@ pub struct MoveOrderInput {
     ambush: Option<bool>,
     /// Stationary defensive readiness without firing.
     stand_ground: Option<bool>,
+    /// Stationary field-gun shell aimed at a tile, independently of sight.
+    indirect_fire: Option<CoordinateInput>,
     /// Move until contact, then fire at the encountered enemy.
     attack_move: Option<bool>,
     /// Passenger destinations after this truck moves.
@@ -52,19 +54,27 @@ pub enum TravelMode {
     AttackMove,
 }
 
-/// Validated stationary facing action. An ambush always owns its direction.
+/// Validated stationary action. Ambush owns a direction; indirect fire owns a tile.
 #[derive(Clone, Copy, Debug)]
 pub enum FacingOrder {
     Unchanged,
     Rotate(Direction),
     Ambush(Direction),
     StandGround,
+    IndirectFire(Coordinate),
 }
 
 impl FacingOrder {
+    pub fn indirect_target(self) -> Option<Coordinate> {
+        match self {
+            Self::IndirectFire(target) => Some(target),
+            Self::Unchanged | Self::Rotate(_) | Self::Ambush(_) | Self::StandGround => None,
+        }
+    }
+
     pub fn direction(self) -> Option<Direction> {
         match self {
-            Self::Unchanged | Self::StandGround => None,
+            Self::Unchanged | Self::StandGround | Self::IndirectFire(_) => None,
             Self::Rotate(direction) | Self::Ambush(direction) => Some(direction),
         }
     }
@@ -72,14 +82,14 @@ impl FacingOrder {
     pub fn is_standing_ground(self) -> bool {
         match self {
             Self::StandGround => true,
-            Self::Unchanged | Self::Rotate(_) | Self::Ambush(_) => false,
+            Self::Unchanged | Self::Rotate(_) | Self::Ambush(_) | Self::IndirectFire(_) => false,
         }
     }
 
     pub fn is_ambush(self) -> bool {
         match self {
             Self::Ambush(_) => true,
-            Self::Unchanged | Self::Rotate(_) | Self::StandGround => false,
+            Self::Unchanged | Self::Rotate(_) | Self::StandGround | Self::IndirectFire(_) => false,
         }
     }
 }
@@ -158,6 +168,7 @@ impl TurnEvent {
 
 #[derive(Clone, Debug, GraphQLObject)]
 pub struct TurnFrame {
+    pub indirect_impacts: Vec<IndirectImpact>,
     pub shots: Vec<Shot>,
     pub depots: Vec<Depot>,
     pub supply_crates: Vec<GroundSupplyCrate>,
@@ -329,6 +340,44 @@ pub fn validate(
         if Some(path[0]) != scenario.physical_position(unit) {
             return Err("movement must start at the unit's current position.");
         }
+        let indirect_fire = if let Some(target) = input.indirect_fire {
+            if unit.kind() != UnitKind::FieldGun || unit.carrier_id().is_some() {
+                return Err("only on-map field guns can fire indirectly.");
+            }
+            if path.len() != 1
+                || input.direction.is_some()
+                || input.ambush == Some(true)
+                || input.stand_ground == Some(true)
+                || input.attack_move == Some(true)
+                || !input.unloads.as_ref().is_none_or(Vec::is_empty)
+                || input.load_crates.is_some_and(|count| count != 0)
+                || !input.crate_unloads.as_ref().is_none_or(Vec::is_empty)
+            {
+                return Err("indirect fire must be an in-place order without other actions.");
+            }
+            let x = u16::try_from(target.x).map_err(|_| "target is outside the map.")?;
+            let y = u16::try_from(target.y).map_err(|_| "target is outside the map.")?;
+            let target = Coordinate::new(x, y);
+            if scenario.map.tile_at(target).is_none() {
+                return Err("target is outside the map.");
+            }
+            if !combat::within_indirect_range(
+                path[0],
+                target,
+                combat::rules(unit.kind()).indirect_range,
+            ) {
+                return Err("target is outside indirect fire range.");
+            }
+            let rule = combat::rules(unit.kind());
+            if unit.supplies().current()
+                < unit.supplies().upkeep_per_turn() + rule.readiness_cost + rule.shot_cost
+            {
+                return Err("not enough supplies for indirect fire.");
+            }
+            Some(target)
+        } else {
+            None
+        };
         let stand_ground = input.stand_ground == Some(true);
         if stand_ground {
             if unit.direction().is_none() || unit.carrier_id().is_some() {
@@ -572,7 +621,9 @@ pub fn validate(
             } else {
                 TravelMode::Normal
             },
-            facing: if stand_ground {
+            facing: if let Some(target) = indirect_fire {
+                FacingOrder::IndirectFire(target)
+            } else if stand_ground {
                 FacingOrder::StandGround
             } else {
                 match (ambush, input.direction) {
@@ -635,7 +686,9 @@ pub fn validate(
             if target_order.path.len() > 1 {
                 continue;
             }
-            if target_order.facing.direction().is_some() {
+            if target_order.facing.direction().is_some()
+                || target_order.facing.indirect_target().is_some()
+            {
                 return Err("the receiving unit must hold while loading.");
             }
             let (truck, passenger) = scenario
@@ -921,6 +974,7 @@ impl Turns {
                 });
                 unit.board(truck);
                 frames.push(TurnFrame {
+                    indirect_impacts: Vec::new(),
                     depots: scenario.depots.clone(),
                     supply_crates: scenario.supply_crates.clone(),
                     shots: Vec::new(),
@@ -977,6 +1031,7 @@ impl Turns {
                         .follow_terrain_path(&scenario.map, &event.path);
                     events.push(event);
                     frames.push(TurnFrame {
+                        indirect_impacts: Vec::new(),
                         depots: scenario.depots.clone(),
                         supply_crates: scenario.supply_crates.clone(),
                         shots: Vec::new(),
@@ -989,13 +1044,8 @@ impl Turns {
             }
 
             combat.finish(scenario, &mut combat_stopped, &mut frames);
-            let fired: BTreeSet<_> = frames
-                .iter()
-                .flat_map(|frame| &frame.shots)
-                .map(|shot| shot.attacker.unit_id())
-                .collect();
             for unit in &mut scenario.units {
-                unit.finish_firing_reveal(fired.contains(&unit.unit_id()));
+                unit.finish_firing_reveal(combat.has_fired(unit.unit_id()));
             }
             let events = playback_order(scenario, self.number, events)?;
             let supply_orders: Vec<_> = orders
@@ -1021,8 +1071,14 @@ impl Turns {
             }
             let resource_snapshot = settlement.units;
             let deaths = resource_snapshot.len() != scenario.units.len();
-            if deaths {
+            // Bombardments retain identical settlement timing for empty and unseen hits.
+            let settlement_pause = deaths
+                || frames
+                    .iter()
+                    .any(|frame| !frame.indirect_impacts.is_empty());
+            if settlement_pause {
                 frames.push(TurnFrame {
+                    indirect_impacts: Vec::new(),
                     depots: scenario.depots.clone(),
                     supply_crates: scenario.supply_crates.clone(),
                     shots: Vec::new(),
@@ -1032,12 +1088,13 @@ impl Turns {
                 });
             }
             frames.push(TurnFrame {
+                indirect_impacts: Vec::new(),
                 depots: scenario.depots.clone(),
                 supply_crates: scenario.supply_crates.clone(),
                 shots: Vec::new(),
                 units: scenario.units.clone(),
                 visible_tiles: Vec::new(),
-                duration_ms: if deaths { 1400 } else { 180 },
+                duration_ms: if settlement_pause { 1400 } else { 180 },
             });
             self.last_resolution = Some(TurnResolution {
                 reports,
@@ -1088,9 +1145,11 @@ fn legal_unload(
 mod tests {
     use super::*;
     use crate::{
-        map::Map,
+        combat::CombatKind,
+        map::{Map, Terrain},
         supplies::ResourceStock,
         test_support::{FixtureValue, TestResult},
+        visibility,
     };
 
     fn playback_fixture(scenario: &Scenario, counts: [usize; 2]) -> TestResult<Vec<TurnEvent>> {
@@ -1211,6 +1270,7 @@ mod tests {
                     Ok(MoveOrderInput {
                         ambush: None,
                         stand_ground: None,
+                        indirect_fire: None,
                         attack_move: None,
                         direction: None,
                         unit_id: unit.id(),
@@ -3874,6 +3934,308 @@ mod tests {
                 .current,
             64
         );
+        Ok(())
+    }
+
+    fn bombardment_fixture() -> TestResult<Scenario> {
+        let mut scenario = Scenario::supply_point().fixture()?;
+        let gun = scenario
+            .units
+            .iter()
+            .find(|unit| {
+                unit.player_number() == PlayerNumber::Player1 && unit.kind() == UnitKind::FieldGun
+            })
+            .cloned()
+            .fixture()?;
+        let target = scenario
+            .units
+            .iter()
+            .find(|unit| {
+                unit.player_number() == PlayerNumber::Player2 && unit.kind() == UnitKind::Infantry
+            })
+            .cloned()
+            .fixture()?;
+        scenario.units = vec![gun, target];
+        scenario.map = Map::new(20, 3, Terrain::GrassPlain, BTreeMap::new()).fixture()?;
+        scenario.depots.clear();
+        scenario.supply_crates.clear();
+        scenario
+            .units
+            .first_mut()
+            .fixture()?
+            .move_to(Coordinate::new(1, 1));
+        scenario
+            .units
+            .last_mut()
+            .fixture()?
+            .move_to(Coordinate::new(9, 1));
+        Ok(scenario)
+    }
+
+    #[test]
+    fn indirect_fire_resolves_final_occupancy_and_spends_on_misses() -> TestResult<()> {
+        for (aim_x, moves, hits) in [
+            (9, false, true),
+            (8, false, false),
+            (9, true, false),
+            (8, true, true),
+        ] {
+            let mut scenario = bombardment_fixture()?;
+            let initial = scenario.units.first().fixture()?.supplies();
+            let mut first = holds(&scenario, PlayerNumber::Player1)?;
+            first.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: aim_x, y: 1 });
+            let mut second = holds(&scenario, PlayerNumber::Player2)?;
+            if moves {
+                second
+                    .first_mut()
+                    .fixture()?
+                    .path
+                    .push(CoordinateInput { x: 8, y: 1 });
+            }
+            let mut turns = Turns::default();
+            turns.submit(&mut scenario, PlayerNumber::Player1, 1, first)?;
+            turns.submit(&mut scenario, PlayerNumber::Player2, 1, second)?;
+            let resolution = turns.last_resolution.as_ref().fixture()?;
+            let shots: Vec<_> = resolution
+                .frames
+                .iter()
+                .flat_map(|frame| &frame.shots)
+                .collect();
+            assert_eq!(shots.len(), usize::from(hits));
+            if hits {
+                assert_eq!(shots.first().fixture()?.kind, CombatKind::IndirectFire);
+            }
+            assert_eq!(
+                scenario.units.first().fixture()?.supplies().current(),
+                initial.current() - initial.upkeep_per_turn() - 2 - 3
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn indirect_fire_hidden_hits_stay_unconfirmed_for_shooter() -> TestResult<()> {
+        let mut scenario = bombardment_fixture()?;
+        let mut first = holds(&scenario, PlayerNumber::Player1)?;
+        first.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 9, y: 1 });
+        let second = holds(&scenario, PlayerNumber::Player2)?;
+        let mut turns = Turns::default();
+        turns.submit(&mut scenario, PlayerNumber::Player1, 1, first)?;
+        turns.submit(&mut scenario, PlayerNumber::Player2, 1, second)?;
+        let resolution = turns.last_resolution.as_ref().fixture()?;
+        for player in [PlayerNumber::Player1, PlayerNumber::Player2] {
+            let visible = visibility::visible_tiles(&scenario, player);
+            let projected =
+                visibility::observed_resolution(&scenario, player, &visible, resolution);
+            let shots: Vec<_> = projected
+                .frames
+                .iter()
+                .flat_map(|frame| &frame.shots)
+                .collect();
+            if player == PlayerNumber::Player1 {
+                assert!(shots.is_empty());
+                assert!(projected.frames.iter().all(|frame| {
+                    frame
+                        .units
+                        .iter()
+                        .all(|unit| unit.player_number() == player)
+                }));
+                let report = projected.reports.first().fixture()?;
+                assert_eq!(report.damage_inflicted, 0);
+                assert_eq!(report.enemy_units_destroyed, 0);
+            } else {
+                assert_eq!(shots.len(), 1);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn indirect_fire_validation_checks_kind_bounds_range_and_exclusive_action() -> TestResult<()> {
+        let scenario = bombardment_fixture()?;
+        for target in [
+            CoordinateInput { x: -1, y: 1 },
+            CoordinateInput { x: 20, y: 1 },
+            CoordinateInput { x: 14, y: 1 },
+        ] {
+            let mut first = holds(&scenario, PlayerNumber::Player1)?;
+            first.first_mut().fixture()?.indirect_fire = Some(target);
+            assert!(validate(&scenario, PlayerNumber::Player1, first).is_err());
+        }
+        let mut second = holds(&scenario, PlayerNumber::Player2)?;
+        second.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 1, y: 1 });
+        assert!(validate(&scenario, PlayerNumber::Player2, second).is_err());
+        let mut first = holds(&scenario, PlayerNumber::Player1)?;
+        first.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 13, y: 1 });
+        assert!(validate(&scenario, PlayerNumber::Player1, first).is_ok());
+        for action in 0..4 {
+            let mut first = holds(&scenario, PlayerNumber::Player1)?;
+            let order = first.first_mut().fixture()?;
+            order.indirect_fire = Some(CoordinateInput { x: 9, y: 1 });
+            match action {
+                0 => order.path.push(CoordinateInput { x: 2, y: 1 }),
+                1 => order.stand_ground = Some(true),
+                2 => order.direction = Some(Direction::East),
+                _ => order.load_crates = Some(1),
+            }
+            assert!(validate(&scenario, PlayerNumber::Player1, first).is_err());
+        }
+        let mut depleted = scenario.clone();
+        depleted.units.first_mut().fixture()?.spend_supplies(60);
+        let mut first = holds(&depleted, PlayerNumber::Player1)?;
+        first.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 9, y: 1 });
+        assert!(validate(&depleted, PlayerNumber::Player1, first).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn indirect_fire_can_hit_friendly_units() -> TestResult<()> {
+        let mut scenario = bombardment_fixture()?;
+        let mut friendly = scenario.units.first().cloned().fixture()?;
+        // Target the firing gun itself: an allied occupied tile is still legal.
+        friendly.rotate(Direction::West);
+        *scenario.units.first_mut().fixture()? = friendly;
+        let mut first = holds(&scenario, PlayerNumber::Player1)?;
+        first.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 1, y: 1 });
+        let second = holds(&scenario, PlayerNumber::Player2)?;
+        let mut turns = Turns::default();
+        turns.submit(&mut scenario, PlayerNumber::Player1, 1, first)?;
+        turns.submit(&mut scenario, PlayerNumber::Player2, 1, second)?;
+        let shot = turns
+            .last_resolution
+            .as_ref()
+            .fixture()?
+            .frames
+            .iter()
+            .flat_map(|frame| &frame.shots)
+            .next()
+            .fixture()?;
+        assert_eq!(shot.attacker.unit_id(), shot.target.unit_id());
+        assert!(shot.damage > 0);
+        Ok(())
+    }
+
+    #[test]
+    fn indirect_fire_hidden_hit_and_miss_have_identical_projected_timing() -> TestResult<()> {
+        let mut timelines = Vec::new();
+        for x in [8, 9] {
+            let mut scenario = bombardment_fixture()?;
+            let mut first = holds(&scenario, PlayerNumber::Player1)?;
+            first.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x, y: 1 });
+            let second = holds(&scenario, PlayerNumber::Player2)?;
+            let mut turns = Turns::default();
+            turns.submit(&mut scenario, PlayerNumber::Player1, 1, first)?;
+            turns.submit(&mut scenario, PlayerNumber::Player2, 1, second)?;
+            let visible = visibility::visible_tiles(&scenario, PlayerNumber::Player1);
+            let projected = visibility::observed_resolution(
+                &scenario,
+                PlayerNumber::Player1,
+                &visible,
+                turns.last_resolution.as_ref().fixture()?,
+            );
+            assert_eq!(
+                projected
+                    .frames
+                    .iter()
+                    .flat_map(|frame| &frame.indirect_impacts)
+                    .count(),
+                1
+            );
+            assert!(projected.frames.iter().all(|frame| frame.shots.is_empty()));
+            timelines.push(
+                projected
+                    .frames
+                    .iter()
+                    .map(|frame| frame.duration_ms)
+                    .collect::<Vec<_>>(),
+            );
+        }
+        assert_eq!(timelines.first().fixture()?, timelines.last().fixture()?);
+        Ok(())
+    }
+
+    #[test]
+    fn indirect_fire_ignores_obstructions_and_gun_facing() -> TestResult<()> {
+        let mut damages = Vec::new();
+        for direction in [Direction::East, Direction::West] {
+            let mut scenario = bombardment_fixture()?;
+            scenario.map =
+                Map::from_ascii("....................\n....###.............\n....................")
+                    .fixture()?;
+            scenario.units.first_mut().fixture()?.rotate(direction);
+            let mut first = holds(&scenario, PlayerNumber::Player1)?;
+            first.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 9, y: 1 });
+            let second = holds(&scenario, PlayerNumber::Player2)?;
+            let mut turns = Turns::default();
+            turns.submit(&mut scenario, PlayerNumber::Player1, 1, first)?;
+            turns.submit(&mut scenario, PlayerNumber::Player2, 1, second)?;
+            let shot = turns
+                .last_resolution
+                .as_ref()
+                .fixture()?
+                .frames
+                .iter()
+                .flat_map(|frame| &frame.shots)
+                .next()
+                .fixture()?;
+            damages.push(shot.damage);
+        }
+        assert_eq!(damages.first().fixture()?, damages.last().fixture()?);
+        Ok(())
+    }
+
+    #[test]
+    fn indirect_fire_surviving_guns_fire_simultaneously() -> TestResult<()> {
+        let mut scenario = Scenario::supply_point().fixture()?;
+        let mut selected = Vec::new();
+        for player in [PlayerNumber::Player1, PlayerNumber::Player2] {
+            selected.push(
+                scenario
+                    .units
+                    .iter()
+                    .find(|unit| {
+                        unit.kind() == UnitKind::FieldGun && unit.player_number() == player
+                    })
+                    .cloned()
+                    .fixture()?,
+            );
+        }
+        scenario.units = selected;
+        scenario.map = Map::new(20, 3, Terrain::GrassPlain, BTreeMap::new()).fixture()?;
+        scenario.depots.clear();
+        scenario
+            .units
+            .first_mut()
+            .fixture()?
+            .move_to(Coordinate::new(1, 1));
+        scenario
+            .units
+            .last_mut()
+            .fixture()?
+            .move_to(Coordinate::new(9, 1));
+        let mut first = holds(&scenario, PlayerNumber::Player1)?;
+        first.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 9, y: 1 });
+        let mut second = holds(&scenario, PlayerNumber::Player2)?;
+        second.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 1, y: 1 });
+        let mut turns = Turns::default();
+        turns.submit(&mut scenario, PlayerNumber::Player1, 1, first)?;
+        turns.submit(&mut scenario, PlayerNumber::Player2, 1, second)?;
+        let shots: Vec<_> = turns
+            .last_resolution
+            .as_ref()
+            .fixture()?
+            .frames
+            .iter()
+            .flat_map(|frame| &frame.shots)
+            .collect();
+        assert_eq!(shots.len(), 2);
+        assert!(
+            shots
+                .iter()
+                .all(|shot| shot.attacker_health.before.current() == 16
+                    && shot.target_health.after.current() == 0)
+        );
+        assert!(scenario.units.is_empty());
         Ok(())
     }
 }

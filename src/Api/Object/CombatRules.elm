@@ -25,6 +25,13 @@ range =
     Object.selectionForField "Int" "range" [] Decode.int
 
 
+{-| Euclidean tile radius; zero disables indirect fire.
+-}
+indirectRange : SelectionSet Int Api.Object.CombatRules
+indirectRange =
+    Object.selectionForField "Int" "indirectRange" [] Decode.int
+
+
 shape : SelectionSet Api.Enum.AmbushShape.AmbushShape Api.Object.CombatRules
 shape =
     Object.selectionForField "Enum.AmbushShape.AmbushShape" "shape" [] Api.Enum.AmbushShape.decoder

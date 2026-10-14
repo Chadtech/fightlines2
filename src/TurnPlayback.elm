@@ -22,6 +22,7 @@ module TurnPlayback exposing
     , start
     , tick
     , tickUntilLoss
+    , visibleIndirectImpacts
     , visibleShots
     )
 
@@ -29,6 +30,7 @@ import Api.Enum.CombatKind as CombatKind exposing (CombatKind)
 import Api.Enum.Direction exposing (Direction)
 import Api.Object
 import Api.Object.GameSnapshot as GameApi
+import Api.Object.IndirectImpact as IndirectImpactApi
 import Api.Object.TurnFrame as FrameApi
 import Api.Object.TurnResolution as ResolutionApi
 import CombatHealth exposing (CombatHealth)
@@ -49,6 +51,7 @@ import Util.List as ListUtil
 type alias Frame =
     { durationMs : Int
     , units : List Unit
+    , indirectImpacts : List Coordinate
     , shots : List Shot
     , visibleTiles : List Coordinate
     , depots : List Depot
@@ -525,6 +528,7 @@ selection unit coordinate =
             (SS.succeed Frame
                 |> SS.with FrameApi.durationMs
                 |> SS.with (FrameApi.units unit)
+                |> SS.with (FrameApi.indirectImpacts (IndirectImpactApi.destination coordinate))
                 |> SS.with (FrameApi.shots Shot.selection)
                 |> SS.with (FrameApi.visibleTiles coordinate)
                 |> SS.with (FrameApi.depots Depot.selection)
@@ -871,7 +875,8 @@ presentationFrame playing next =
                 Nothing ->
                     unit
     in
-    { depots = playing.current.depots
+    { indirectImpacts = playing.current.indirectImpacts
+    , depots = playing.current.depots
     , supplyCrates = playing.current.supplyCrates
     , shots = playing.current.shots
     , durationMs = playing.current.durationMs
@@ -954,3 +959,13 @@ movingPositions playback =
                     []
     in
     Maybe.map positions playback |> Maybe.withDefault []
+
+
+visibleIndirectImpacts : Playback -> List Coordinate
+visibleIndirectImpacts playback =
+    case playback.presentation of
+        Battlefield ->
+            playback.current.indirectImpacts
+
+        _ ->
+            []

@@ -9,6 +9,7 @@ module GamePage.OrderPlanning exposing
     , canSelectUnloadCargo
     , chooseUnloadSquare
     , choosingDirection
+    , choosingIndirectFire
     , commandGuideOpen
     , commandMenuUnit
     , confirmPassengers
@@ -19,6 +20,7 @@ module GamePage.OrderPlanning exposing
     , extendPath
     , focusCommand
     , focusedCommand
+    , indirectTargets
     , init
     , isOwnUnit
     , loadingTarget
@@ -577,6 +579,9 @@ applyCommand context command model =
             in
             if canApply then
                 case command of
+                    UnitCommand.IndirectFire ->
+                        setUnitInteraction unit.id ChoosingIndirectFire model
+
                     UnitCommand.Move ->
                         beginMovement NormalMove context unit model
 
@@ -917,12 +922,14 @@ selectUnit context id state =
 
         Just unit ->
             let
+                choosingTransportDestination : Bool
+                choosingTransportDestination =
+                    ((pathPreview state /= Nothing) || (unloadPlanning state /= Nothing))
+                        && (Maybe.map .id (selectedUnit context state) /= Just id)
+
                 choosingOccupiedDestination : Bool
                 choosingOccupiedDestination =
-                    ((pathPreview state /= Nothing)
-                        || (unloadPlanning state /= Nothing)
-                    )
-                        && (Maybe.map .id (selectedUnit context state) /= Just id)
+                    choosingIndirectFire state || choosingTransportDestination
             in
             if choosingOccupiedDestination then
                 Unit.boardPosition unit
@@ -985,6 +992,15 @@ selectNextUnorderedUnit context state =
 
 selectTile : Context -> Coordinate -> Model -> Model
 selectTile context position state =
+    if choosingIndirectFire state then
+        saveIndirectFire context position state
+
+    else
+        selectTransportTile context position state
+
+
+selectTransportTile : Context -> Coordinate -> Model -> Model
+selectTransportTile context position state =
     case unloadPlanning state of
         Just _ ->
             chooseUnloadSquare context position state
@@ -1040,6 +1056,45 @@ confirmPath context state =
             state
 
 
+choosingIndirectFire : Model -> Bool
+choosingIndirectFire state =
+    case selection state of
+        Just (UnitSelection { interaction }) ->
+            interaction == ChoosingIndirectFire
+
+        _ ->
+            False
+
+
+indirectTargets : Context -> Model -> List Coordinate
+indirectTargets context model =
+    if choosingIndirectFire model then
+        case
+            selectedUnit context model
+                |> Maybe.andThen
+                    (\unit ->
+                        Unit.boardPosition unit
+                            |> Maybe.map
+                                (Tuple.pair
+                                    unit.combatRules.indirectRange
+                                )
+                    )
+        of
+            Just ( indirectRange, origin ) ->
+                let
+                    inRange : Coordinate -> Bool
+                    inRange target =
+                        ((target.x - origin.x) ^ 2 + (target.y - origin.y) ^ 2) <= (indirectRange ^ 2)
+                in
+                Map.positions context.map |> List.filter inRange
+
+            Nothing ->
+                []
+
+    else
+        []
+
+
 choosingDirection : Model -> Bool
 choosingDirection state =
     case selection state of
@@ -1049,6 +1104,9 @@ choosingDirection state =
                     True
 
                 CommandMenu _ ->
+                    False
+
+                ChoosingIndirectFire ->
                     False
 
                 ChoosingMove _ ->
@@ -1206,6 +1264,9 @@ focusedCommand state =
                 CommandMenu (ReadingGuide focused) ->
                     focused
 
+                ChoosingIndirectFire ->
+                    Nothing
+
                 ChoosingMove _ ->
                     Nothing
 
@@ -1220,6 +1281,43 @@ focusedCommand state =
 ----------------------------------------------------------------
 -- HELPERS --
 ----------------------------------------------------------------
+
+
+saveIndirectFire : Context -> Coordinate -> Model -> Model
+saveIndirectFire context target state =
+    let
+        aimedOrder : Unit -> Maybe PlannedOrder
+        aimedOrder unit =
+            let
+                atOrigin : Coordinate -> PlannedOrder
+                atOrigin origin =
+                    { unitId = unit.id
+                    , action =
+                        PlannedOrder.IndirectFire
+                            { position = origin
+                            , target = target
+                            }
+                    }
+            in
+            Unit.boardPosition unit |> Maybe.map atOrigin
+    in
+    case selectedUnit context state |> Maybe.andThen aimedOrder of
+        Just order ->
+            let
+                otherUnitOrder : PlannedOrder -> Bool
+                otherUnitOrder plan =
+                    plan.unitId /= order.unitId
+            in
+            if List.member target (indirectTargets context state) then
+                state
+                    |> setOrders (order :: List.filter otherUnitOrder (orders state))
+                    |> inspectSelectedUnit context
+
+            else
+                state
+
+        Nothing ->
+            state
 
 
 truckOrder : UnloadingTruck -> PlannedOrder

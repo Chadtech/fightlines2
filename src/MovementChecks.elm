@@ -83,7 +83,14 @@ check rules fixture =
                 unit : Unit.Unit
                 unit =
                     { destroyed = False
-                    , combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }
+                    , combatRules =
+                        { range = 1
+                        , indirectRange = 0
+                        , shape = AmbushShape.Line
+                        , damage = 4
+                        , readinessCost = 2
+                        , shotCost = 2
+                        }
                     , cargoCapacity = 0
                     , id = id
                     , kind = fixture.kind
@@ -227,6 +234,7 @@ traceChecks rules =
                     { destroyed = False
                     , combatRules =
                         { range = 1
+                        , indirectRange = 0
                         , shape = AmbushShape.Line
                         , damage = 4
                         , readinessCost = 2
@@ -375,6 +383,7 @@ reservationChecks rules =
                     { destroyed = False
                     , combatRules =
                         { range = 1
+                        , indirectRange = 0
                         , shape = AmbushShape.Line
                         , damage = 4
                         , readinessCost = 2
@@ -467,6 +476,7 @@ fuelChecks rules =
                     { destroyed = False
                     , combatRules =
                         { range = 1
+                        , indirectRange = 0
                         , shape = AmbushShape.Line
                         , damage = 4
                         , readinessCost = 2
@@ -573,6 +583,7 @@ supplyChecks rules =
                     { destroyed = False
                     , combatRules =
                         { range = 1
+                        , indirectRange = 0
                         , shape = AmbushShape.Line
                         , damage = 4
                         , readinessCost = 2
@@ -703,6 +714,7 @@ transportChecks rules =
                     , destroyed = False
                     , combatRules =
                         { range = 1
+                        , indirectRange = 0
                         , shape = AmbushShape.Line
                         , damage = 4
                         , readinessCost = 2
@@ -734,7 +746,23 @@ transportChecks rules =
 
                 truck : Unit.Unit
                 truck =
-                    { passenger | id = truckId, kind = UnitKind.Truck, destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 2, direction = Nothing, location = Location.OnMap { x = 1, y = 0 }, resources = Maybe.map (\resources -> { resources | fuel = Just { current = 64, maximum = 64, movementPerTile = 1 } }) passenger.resources }
+                    { passenger
+                        | id = truckId
+                        , kind = UnitKind.Truck
+                        , destroyed = False
+                        , combatRules =
+                            { range = 1
+                            , indirectRange = 0
+                            , shape = AmbushShape.Line
+                            , damage = 4
+                            , readinessCost = 2
+                            , shotCost = 2
+                            }
+                        , cargoCapacity = 2
+                        , direction = Nothing
+                        , location = Location.OnMap { x = 1, y = 0 }
+                        , resources = Maybe.map (\resources -> { resources | fuel = Just { current = 64, maximum = 64, movementPerTile = 1 } }) passenger.resources
+                    }
 
                 map : Map
                 map =

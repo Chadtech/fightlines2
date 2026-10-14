@@ -151,7 +151,7 @@ shows both badges. It stays clearly visible between
 blinks and remains steady with reduced motion enabled. Empty trucks have no badge.
 
 Sight is shared by all your units. Infantry see 3 tiles, field guns 3,
-trucks 2, and tanks 1, using a circular radius measured between tile
+trucks 1, and tanks 1, using a circular radius measured between tile
 centers. Standing on a hill grants +1 sight and lets units see over intervening
 hills and forests. For units off hills, intervening hills and forests block
 sight beyond them when the sight line crosses their tile. Merely touching a
@@ -369,7 +369,7 @@ Hidden participants never appear in the panels.
 Destroyed units are removed before the next planning turn;
 destroyed trucks also lose their passengers. Hidden shooters and targets are
 withheld from combat effects, and enemy resource gauges outside the combat card remain concealed.
-Stand ground, attack move, indirect fire, digging in, and victory remain future work.
+Digging in and victory remain future work.
 
 ## Maps
 
@@ -529,3 +529,22 @@ existing rough-terrain provision surcharge and grant no additional combat cover.
 Green, snowy, and desert maps use the matching approved mountain sprites. Combat
 theater scenes currently reuse the corresponding hill backdrops. Existing map
 layouts are unchanged; place mountains with `^` in a scenario's ASCII sketch.
+
+### Indirect fire
+
+Only on-board field guns can choose **indirect fire**. Select any tile within a
+12-tile circular radius, including fog-covered and occupied tiles. Intervening
+terrain does not block the shell. The gun stays in place and fires once after
+movement and unloading finish; whoever occupies the tile then takes damage,
+including friendly units. Units that leave before impact escape, and units that
+arrive can be hit. An empty tile wastes the shot. Guns destroyed or loaded before
+impact cannot fire.
+
+This uses the existing supply-based ammunition model: normal upkeep plus 2
+readiness supplies and 3 firing supplies, including misses. Damage uses normal
+field-gun power, health, matchup, defender readiness/facing, and target cover;
+the gun's initial facing does not reduce aim. Surviving guns fire simultaneously.
+Saved targets remain marked and can be revoked. Target tiles support Tab and
+Enter/Space. Every fired shell shows a tile impact, including shots into fog;
+unseen enemy hits, casualties, and damage reports remain unconfirmed. Hidden
+hits and empty shots use the same playback timing.

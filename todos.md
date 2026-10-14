@@ -11,3 +11,4 @@
 - Inquire about the separation of UnitCommand and View.UnitCommand
 - Being on a hill should not permit you to see past mountains
 - Hide map editor UI in Elm code if flag is not set
+- Truck and unit driving to same spot should enable loading

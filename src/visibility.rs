@@ -1,4 +1,5 @@
 use crate::{
+    combat::CombatKind,
     map::{Coordinate, Map, Terrain},
     scenario::{Direction, PlayerNumber, Scenario, Unit, UnitKind},
     turns::{TurnEventKind, TurnFrame, TurnResolution},
@@ -10,7 +11,7 @@ pub fn sight_range(kind: UnitKind) -> i32 {
     match kind {
         UnitKind::Infantry => 3,
         UnitKind::FieldGun => 3,
-        UnitKind::Truck => 2,
+        UnitKind::Truck => 1,
         UnitKind::Tank => 1,
     }
 }
@@ -297,15 +298,29 @@ fn observed_frames(
                     .units
                     .retain(|unit| !concealed_casualties.contains(&unit.unit_id()));
                 TurnFrame {
+                    indirect_impacts: frame
+                        .indirect_impacts
+                        .iter()
+                        .filter(|impact| {
+                            impact.player_number == player_number
+                                || known_endpoint(impact.destination)
+                        })
+                        .cloned()
+                        .collect(),
                     depots: observed.depots,
                     supply_crates: observed.supply_crates,
                     shots: frame
                         .shots
                         .iter()
                         .filter(|shot| {
-                            shot.attacker.player_number() == player_number
-                                || shot.target.player_number() == player_number
-                                || (known_endpoint(shot.origin) && known_endpoint(shot.destination))
+                            let unconfirmed_bombardment = shot.kind == CombatKind::IndirectFire
+                                && shot.target.player_number() != player_number
+                                && !known_endpoint(shot.destination);
+                            !unconfirmed_bombardment
+                                && (shot.attacker.player_number() == player_number
+                                    || shot.target.player_number() == player_number
+                                    || (known_endpoint(shot.origin)
+                                        && known_endpoint(shot.destination)))
                         })
                         .cloned()
                         .collect(),
@@ -321,6 +336,7 @@ fn observed_frames(
         let visible = visible_tiles(board, player_number);
         let observed = observed_scenario(board, player_number, &visible);
         TurnFrame {
+            indirect_impacts: Vec::new(),
             depots: observed.depots,
             supply_crates: observed.supply_crates,
             shots: Vec::new(),
@@ -405,6 +421,7 @@ mod tests {
             let enemy_id = enemy.unit_id();
             board.units.push(enemy);
             let frame = |board: &Scenario| TurnFrame {
+                indirect_impacts: Vec::new(),
                 units: board.units.clone(),
                 depots: board.depots.clone(),
                 supply_crates: board.supply_crates.clone(),
@@ -507,6 +524,7 @@ mod tests {
             turn_number: 1,
             events: vec![],
             frames: vec![TurnFrame {
+                indirect_impacts: Vec::new(),
                 depots: board.depots.clone(),
                 supply_crates: board.supply_crates.clone(),
                 shots: Vec::new(),
@@ -599,7 +617,7 @@ mod tests {
         for (kind, range) in [
             (UnitKind::Infantry, 3),
             (UnitKind::FieldGun, 3),
-            (UnitKind::Truck, 2),
+            (UnitKind::Truck, 1),
             (UnitKind::Tank, 1),
         ] {
             for (sketch, bonus) in [("........", 0), ("%.......", 1), ("^.......", 2)] {

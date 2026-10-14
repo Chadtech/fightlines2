@@ -622,7 +622,7 @@ uses each authoritative frame's resource quantities, including the death snapsho
 ## Observability and fog of war
 
 `visibility.rs` owns per-kind sight ranges and the player's union of observable
-tiles. Circular distance uses ranges 3/3/2/1 for infantry/field guns/trucks/tanks;
+tiles. Circular distance uses ranges 3/3/1/1 for infantry/field guns/trucks/tanks;
 an observer on hills gains one tile and sees over intervening hills and forests.
 For observers off hills, a center-to-center ray treats intervening
 hills and forests as blockers only when it crosses their tile interior; terrain
@@ -1024,3 +1024,27 @@ field guns. Nonpositive costs are impassable in client previews, order validatio
 unload validation and resolution. Visibility grants +2 radius to mountain observers
 and treats them as elevated observers. `View.TerrainTile` selects dedicated green,
 snow and desert mountain assets without applying the older feature tint filters.
+
+## Indirect fire
+
+`MoveOrderInput.indirectFire` carries a tile coordinate. Validation converts it
+to `FacingOrder::IndirectFire`, requires a stationary on-board field gun with no
+other actions, checks map bounds and the server-exported circular `indirectRange`
+of 12 tiles, and reserves upkeep, readiness, and one shot. Target validation never
+consults visibility or occupancy. Ammunition continues to use supplies.
+
+`Combat.prepare` charges readiness, and `Combat.finish` resolves all surviving
+bombardments simultaneously after movement and transport. Occupancy at impact
+decides the target, including allies; empty shots still pay firing cost. `Shot`
+uses `CombatKind::IndirectFire` for observable combat and casualty presentation.
+`TurnFrame.indirectImpacts` records tile landings independently of hit confirmation.
+Visibility projects own landings and observable opposing landings, and removes
+unseen enemy hit shots before theater, loss, and report derivation. Bombardment
+and settlement frames keep uniform timing for hidden hits and misses. Firing
+reveal includes misses as well as hits.
+
+Elm's `ChoosingIndirectFire` lives inside unit selection. `OrderPlanning` computes
+range from the selected unit's server rule without consulting fog or occupancy,
+and saves `PlannedOrder.IndirectFire` with distinct stationary and target positions.
+The board offers tile buttons for pointer and keyboard targeting, preserves a
+saved target outline, and plays projected shell impacts even without a theater.

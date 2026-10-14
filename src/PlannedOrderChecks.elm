@@ -1,6 +1,7 @@
 port module PlannedOrderChecks exposing (main)
 
 import Api.Enum.Direction as Direction
+import Api.InputObject
 import Graphql.OptionalArgument exposing (OptionalArgument(..))
 import PlannedOrder exposing (Action(..), PlannedOrder)
 import Platform
@@ -42,11 +43,23 @@ orderChecks unitId passengerId =
 
         ambush : PlannedOrder
         ambush =
-            { unitId = unitId, action = Ambush { position = { x = 1, y = 1 }, direction = Direction.East } }
+            { unitId = unitId
+            , action =
+                Ambush
+                    { position = { x = 1, y = 1 }
+                    , direction = Direction.East
+                    }
+            }
 
         rotation : PlannedOrder
         rotation =
-            { unitId = unitId, action = Rotate { position = { x = 1, y = 1 }, direction = Direction.West } }
+            { unitId = unitId
+            , action =
+                Rotate
+                    { position = { x = 1, y = 1 }
+                    , direction = Direction.West
+                    }
+            }
 
         move : PlannedOrder
         move =
@@ -108,6 +121,23 @@ orderChecks unitId passengerId =
                         ]
                     }
             }
+
+        indirectInput : Api.InputObject.MoveOrderInput
+        indirectInput =
+            PlannedOrder.toInput
+                { unitId = unitId
+                , action =
+                    IndirectFire
+                        { position =
+                            { x = 1
+                            , y = 1
+                            }
+                        , target =
+                            { x = 8
+                            , y = 9
+                            }
+                        }
+                }
     in
     List.concat
         [ expect "supply runs preserve movement, passenger exits, and original crate slots in submission"
@@ -134,6 +164,7 @@ orderChecks unitId passengerId =
                           , y = 1
                           }
                         ]
+                   , indirectFire = Absent
                    , direction = Absent
                    , unloads =
                         Present
@@ -146,6 +177,12 @@ orderChecks unitId passengerId =
                             ]
                    }
                 && PlannedOrder.isMoving freight
+            )
+        , expect "indirect fire serializes a stationary route and a separate target"
+            ((indirectInput.path == [ { x = 1, y = 1 } ])
+                && (indirectInput.indirectFire == Present { x = 8, y = 9 })
+                && (indirectInput.direction == Absent)
+                && (indirectInput.ambush == Present False)
             )
         , expect "attack move preserves its route and sends the attack flag without unloading or facing"
             (PlannedOrder.toInput attackMove
@@ -163,6 +200,7 @@ orderChecks unitId passengerId =
                           , y = 1
                           }
                         ]
+                   , indirectFire = Absent
                    , direction = Absent
                    , unloads = Present []
                    }
@@ -174,6 +212,7 @@ orderChecks unitId passengerId =
             (PlannedOrder.toInput standingGround
                 == { unitId = UnitId.toString unitId
                    , path = [ { x = 1, y = 1 } ]
+                   , indirectFire = Absent
                    , direction = Absent
                    , standGround = Present True
                    , ambush = Present False
@@ -197,6 +236,7 @@ orderChecks unitId passengerId =
                           , y = 1
                           }
                         ]
+                   , indirectFire = Absent
                    , direction = Present Direction.East
                    , unloads = Present []
                    }
@@ -215,6 +255,7 @@ orderChecks unitId passengerId =
                           , y = 1
                           }
                         ]
+                   , indirectFire = Absent
                    , direction = Absent
                    , unloads = Present []
                    }
@@ -232,6 +273,7 @@ orderChecks unitId passengerId =
                           , y = 1
                           }
                         ]
+                   , indirectFire = Absent
                    , direction = Present Direction.West
                    , unloads = Present []
                    }
@@ -252,6 +294,7 @@ orderChecks unitId passengerId =
                           , y = 1
                           }
                         ]
+                   , indirectFire = Absent
                    , direction = Absent
                    , unloads =
                         Present
@@ -279,6 +322,7 @@ orderChecks unitId passengerId =
                           , y = 1
                           }
                         ]
+                   , indirectFire = Absent
                    , direction = Absent
                    , unloads =
                         Present

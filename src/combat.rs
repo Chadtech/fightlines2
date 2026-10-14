@@ -1,8 +1,8 @@
 //! Stationary directional combat. Outcomes are resolved at shared movement and transport boundaries.
 use crate::{
     map::{Coordinate, Terrain},
-    scenario::{Direction, HitPoints, Scenario, Unit, UnitId, UnitKind},
-    turns::{MoveOrder, TravelMode, TurnFrame},
+    scenario::{Direction, HitPoints, PlayerNumber, Scenario, Unit, UnitId, UnitKind},
+    turns::{FacingOrder, MoveOrder, TravelMode, TurnFrame},
     visibility,
 };
 use juniper::{GraphQLEnum, GraphQLObject};
@@ -17,6 +17,8 @@ pub enum AmbushShape {
 #[derive(Clone, Copy, Debug, GraphQLObject)]
 pub struct CombatRules {
     pub range: i32,
+    /// Euclidean tile radius; zero disables indirect fire.
+    pub indirect_range: i32,
     pub shape: AmbushShape,
     /// Full-health weapon power before matchup and situational factors.
     pub damage: i32,
@@ -33,6 +35,7 @@ pub fn rules(kind: UnitKind) -> CombatRules {
     };
     CombatRules {
         range,
+        indirect_range: if kind == UnitKind::FieldGun { 12 } else { 0 },
         shape: match kind {
             UnitKind::FieldGun => AmbushShape::Cross,
             UnitKind::Infantry | UnitKind::Tank | UnitKind::Truck => AmbushShape::Line,
@@ -50,6 +53,7 @@ pub fn rules(kind: UnitKind) -> CombatRules {
 pub enum CombatKind {
     Ambush,
     AttackMove,
+    IndirectFire,
 }
 
 #[derive(Clone, Debug, GraphQLObject)]
@@ -167,7 +171,27 @@ fn attack_aspect(unit: &Unit, opponent: &Unit) -> AttackAspect {
     }
 }
 
+#[derive(Clone, Debug, GraphQLObject)]
+pub struct IndirectImpact {
+    pub player_number: PlayerNumber,
+    pub destination: Coordinate,
+}
+
+pub fn within_indirect_range(origin: Coordinate, target: Coordinate, range: i32) -> bool {
+    let dx = i64::from(target.x() - origin.x());
+    let dy = i64::from(target.y() - origin.y());
+    range > 0 && dx * dx + dy * dy <= i64::from(range).pow(2)
+}
+
+#[derive(Clone, Copy)]
+struct ShellLaunch {
+    shooter: UnitId,
+    origin: Coordinate,
+    destination: Coordinate,
+}
+
 pub struct Combat {
+    indirect_targets: BTreeMap<UnitId, Coordinate>,
     ambushers: BTreeSet<UnitId>,
     standing_ground: BTreeSet<UnitId>,
     fired: BTreeSet<UnitId>,
@@ -181,6 +205,7 @@ impl Combat {
         for order in orders.iter().filter(|order| {
             order.facing.is_ambush()
                 || order.facing.is_standing_ground()
+                || order.facing.indirect_target().is_some()
                 || order.travel == TravelMode::AttackMove
         }) {
             if let Some(unit) = board
@@ -198,6 +223,13 @@ impl Combat {
             }
         }
         let mut combat = Self {
+            indirect_targets: orders
+                .iter()
+                .filter_map(|order| match order.facing {
+                    FacingOrder::IndirectFire(target) => Some((order.unit_id, target)),
+                    _ => None,
+                })
+                .collect(),
             ambushers,
             standing_ground: orders
                 .iter()
@@ -226,6 +258,10 @@ impl Combat {
             combat.deferred_targets.insert(shooter.unit_id(), targets);
         }
         combat
+    }
+
+    pub fn has_fired(&self, id: UnitId) -> bool {
+        self.fired.contains(&id)
     }
 
     fn can_fire(&self, unit: &Unit) -> bool {
@@ -265,10 +301,14 @@ impl Combat {
         } else {
             1.0
         };
-        let aim = match attack_aspect(shooter, target) {
-            AttackAspect::Front => 1.0,
-            AttackAspect::Flank => 0.85,
-            AttackAspect::Rear => 0.7,
+        let aim = if kind == CombatKind::IndirectFire {
+            1.0
+        } else {
+            match attack_aspect(shooter, target) {
+                AttackAspect::Front => 1.0,
+                AttackAspect::Flank => 0.85,
+                AttackAspect::Rear => 0.7,
+            }
         };
         let cover = match target
             .board_position()
@@ -348,6 +388,21 @@ impl Combat {
         })
     }
 
+    /// Spend one shot and face its landing, whether or not a target is present.
+    fn fire(&mut self, board: &mut Scenario, launch: ShellLaunch) {
+        self.fired.insert(launch.shooter);
+        if let Some(unit) = board
+            .units
+            .iter_mut()
+            .find(|unit| unit.unit_id() == launch.shooter)
+        {
+            unit.spend_supplies(rules(unit.kind()).shot_cost);
+            if let Some(direction) = Direction::between(launch.origin, launch.destination) {
+                unit.rotate(direction);
+            }
+        }
+    }
+
     fn volley(
         &mut self,
         board: &mut Scenario,
@@ -360,20 +415,15 @@ impl Combat {
         let shots = theater_shots(board, engagements);
         let mut damage = BTreeMap::<UnitId, i32>::new();
         for engagement in engagements {
-            self.fired.insert(engagement.shooter);
+            self.fire(
+                board,
+                ShellLaunch {
+                    shooter: engagement.shooter,
+                    origin: engagement.shot.origin,
+                    destination: engagement.shot.destination,
+                },
+            );
             *damage.entry(engagement.target).or_default() += engagement.shot.damage;
-            if let Some(unit) = board
-                .units
-                .iter_mut()
-                .find(|unit| unit.unit_id() == engagement.shooter)
-            {
-                unit.spend_supplies(rules(unit.kind()).shot_cost);
-                if let Some(direction) =
-                    Direction::between(engagement.shot.origin, engagement.shot.destination)
-                {
-                    unit.rotate(direction);
-                }
-            }
         }
         for unit in &mut board.units {
             if let Some(damage) = damage.get(&unit.unit_id()) {
@@ -395,6 +445,7 @@ impl Combat {
             }
         }
         frames.push(TurnFrame {
+            indirect_impacts: Vec::new(),
             depots: board.depots.clone(),
             supply_crates: board.supply_crates.clone(),
             units: board.units.clone(),
@@ -402,13 +453,18 @@ impl Combat {
             duration_ms: 450,
             shots,
         });
+        let has_bombardment = engagements
+            .iter()
+            .any(|engagement| engagement.shot.kind == CombatKind::IndirectFire);
+        let casualty_pause = !dead_carriers.is_empty() || has_bombardment;
         // Clear shots while preserving enough time to read the exchange and death marker.
         frames.push(TurnFrame {
+            indirect_impacts: Vec::new(),
             depots: board.depots.clone(),
             supply_crates: board.supply_crates.clone(),
             units: board.units.clone(),
             visible_tiles: Vec::new(),
-            duration_ms: if dead_carriers.is_empty() { 600 } else { 1400 },
+            duration_ms: if casualty_pause { 1400 } else { 600 },
             shots: Vec::new(),
         });
     }
@@ -586,6 +642,90 @@ impl Combat {
     ) {
         self.deferred_targets.clear();
         self.engage(board, stopped, frames);
+        self.bombard(board, frames);
+    }
+
+    /// All surviving guns fire together after transport. Empty tiles still spend ammunition.
+    fn bombard(&mut self, board: &mut Scenario, frames: &mut Vec<TurnFrame>) {
+        let mut engagements = Vec::new();
+        let mut misses = Vec::new();
+        let mut impacts = Vec::new();
+        for (id, destination) in &self.indirect_targets {
+            let Some(shooter) = board
+                .units
+                .iter()
+                .find(|unit| unit.unit_id() == *id && self.can_fire(unit))
+            else {
+                continue;
+            };
+            let Some(origin) = shooter.board_position() else {
+                continue;
+            };
+            impacts.push(IndirectImpact {
+                player_number: shooter.player_number(),
+                destination: *destination,
+            });
+            if let Some(target) = board
+                .units
+                .iter()
+                .find(|unit| unit.is_alive() && unit.board_position() == Some(*destination))
+            {
+                engagements.push(Engagement {
+                    shooter: *id,
+                    target: target.unit_id(),
+                    shot: Shot {
+                        kind: CombatKind::IndirectFire,
+                        origin,
+                        destination: *destination,
+                        damage: self.damage(board, shooter, target, CombatKind::IndirectFire),
+                        attacker: theater_participant(shooter),
+                        target: theater_participant(target),
+                        attacker_health: CombatHealth {
+                            before: shooter.hit_points(),
+                            after: shooter.hit_points(),
+                        },
+                        target_health: CombatHealth {
+                            before: target.hit_points(),
+                            after: target.hit_points(),
+                        },
+                    },
+                });
+            } else {
+                misses.push(ShellLaunch {
+                    shooter: *id,
+                    origin,
+                    destination: *destination,
+                });
+            }
+        }
+        for launch in &misses {
+            self.fire(board, *launch);
+        }
+        let volley_frame = frames.len();
+        self.volley(board, &engagements, frames);
+        if engagements.is_empty() && !misses.is_empty() {
+            frames.push(TurnFrame {
+                indirect_impacts: Vec::new(),
+                depots: board.depots.clone(),
+                supply_crates: board.supply_crates.clone(),
+                units: board.units.clone(),
+                visible_tiles: Vec::new(),
+                duration_ms: 450,
+                shots: Vec::new(),
+            });
+            frames.push(TurnFrame {
+                indirect_impacts: Vec::new(),
+                depots: board.depots.clone(),
+                supply_crates: board.supply_crates.clone(),
+                units: board.units.clone(),
+                visible_tiles: Vec::new(),
+                duration_ms: 1400,
+                shots: Vec::new(),
+            });
+        }
+        if let Some(frame) = frames.get_mut(volley_frame) {
+            frame.indirect_impacts = impacts;
+        }
     }
 }
 

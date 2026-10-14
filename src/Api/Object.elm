@@ -49,6 +49,10 @@ type HitPoints
     = HitPoints
 
 
+type IndirectImpact
+    = IndirectImpact
+
+
 type Map
     = Map
 

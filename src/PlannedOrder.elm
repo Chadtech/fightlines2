@@ -40,8 +40,15 @@ type Action
     | Rotate Rotation
     | Ambush Rotation
     | StandGround Coordinate
+    | IndirectFire Bombardment
     | Unload StationaryUnload
     | SupplyTransfer SupplyPlan
+
+
+type alias Bombardment =
+    { position : Coordinate
+    , target : Coordinate
+    }
 
 
 type alias SupplyPlan =
@@ -93,6 +100,9 @@ destination order =
         SupplyTransfer plan ->
             plan.destination
 
+        IndirectFire fire ->
+            fire.position
+
         StandGround position ->
             position
 
@@ -120,6 +130,9 @@ path order =
     case order.action of
         SupplyTransfer plan ->
             plan.route
+
+        IndirectFire fire ->
+            [ fire.position ]
 
         StandGround position ->
             [ position ]
@@ -161,6 +174,9 @@ unloads order =
         Hold _ ->
             []
 
+        IndirectFire _ ->
+            []
+
         StandGround _ ->
             []
 
@@ -184,6 +200,9 @@ isMoving order =
             List.length move.path > 1
 
         Hold _ ->
+            False
+
+        IndirectFire _ ->
             False
 
         StandGround _ ->
@@ -232,6 +251,9 @@ toInput order =
                 Rotate rotation ->
                     OptionalArgument.Present rotation.direction
 
+                IndirectFire _ ->
+                    OptionalArgument.Absent
+
                 StandGround _ ->
                     OptionalArgument.Absent
 
@@ -255,6 +277,7 @@ toInput order =
             { optionals
                 | unloads = OptionalArgument.Present (List.map unloadInput (unloads order))
                 , direction = direction
+                , indirectFire = indirectTarget order
                 , standGround = OptionalArgument.Present (isStandingGround order)
                 , ambush = OptionalArgument.Present (isAmbush order)
                 , attackMove = OptionalArgument.Present (isAttackMove order)
@@ -339,3 +362,13 @@ isStandingGround order =
 
         _ ->
             False
+
+
+indirectTarget : PlannedOrder -> OptionalArgument Api.InputObject.CoordinateInput
+indirectTarget order =
+    case order.action of
+        IndirectFire fire ->
+            OptionalArgument.Present (Api.InputObject.buildCoordinateInput fire.target)
+
+        _ ->
+            OptionalArgument.Absent

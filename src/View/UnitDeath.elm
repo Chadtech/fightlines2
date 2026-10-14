@@ -228,6 +228,9 @@ causeDetails cause =
                 attack : String
                 attack =
                     case kind of
+                        CombatKind.IndirectFire ->
+                            "indirect fire"
+
                         CombatKind.Ambush ->
                             "ambush"
 

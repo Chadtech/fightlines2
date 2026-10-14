@@ -577,3 +577,15 @@ explicit scales scroll inside its inset map surface. Keep view scale and the
 active-brush hint inside the workspace card. On narrow screens, bound the tools
 card's height and put the workspace below it. Mirror painting swaps unit players
 and reflects horizontal facing.
+
+## Indirect fire
+
+Field guns enable the existing indirect-fire command. Choosing it highlights all
+in-range tiles, including fog, with the existing quiet gold tile outlines. Tile
+buttons say `fire indirectly at (x, y)` and support Tab and Enter/Space. Saving
+keeps the gun selected, shows target coordinates and revoke, and leaves a gold
+dotted target outline on the board. The inspector explains final-occupancy
+resolution, friendly fire, uncertain fog hits, the 12-tile radius, and readiness
+and shot costs. Projected tile landings reuse the combat burst even on empty or
+fogged squares. Confirmed hits use the theater and unit-loss dialog headed or
+labeled `indirect fire`.

@@ -10,11 +10,12 @@ import Json.Decode as Decode exposing (Decoder)
 type CombatKind
     = Ambush
     | AttackMove
+    | IndirectFire
 
 
 list : List CombatKind
 list =
-    [ Ambush, AttackMove ]
+    [ Ambush, AttackMove, IndirectFire ]
 
 
 decoder : Decoder CombatKind
@@ -28,6 +29,9 @@ decoder =
 
                     "ATTACK_MOVE" ->
                         Decode.succeed AttackMove
+
+                    "INDIRECT_FIRE" ->
+                        Decode.succeed IndirectFire
 
                     _ ->
                         Decode.fail ("Invalid CombatKind type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
@@ -44,6 +48,9 @@ toString enum____ =
 
         AttackMove ->
             "ATTACK_MOVE"
+
+        IndirectFire ->
+            "INDIRECT_FIRE"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -65,6 +72,9 @@ fromString enumString____ =
 
         "ATTACK_MOVE" ->
             Just AttackMove
+
+        "INDIRECT_FIRE" ->
+            Just IndirectFire
 
         _ ->
             Nothing

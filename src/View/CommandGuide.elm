@@ -116,7 +116,7 @@ description command =
             "send infantry or a tank along a route prepared to fight enemies it encounters. plan it like a move; the red route marks the attack order, and enemy squares can be destinations. combat can interrupt the route. movement, readiness, firing, and normal upkeep spend supplies, and tanks also spend fuel. attack move does not load or unload cargo."
 
         IndirectFire ->
-            "not implemented yet. this field-gun command is intended for firing at a target from a distance. it is currently disabled and cannot be submitted as an order."
+            "keep a field gun stationary and select any tile within its indirect range, including fog. one shell lands after movement and unloading, hitting whoever occupies that tile, including allies. terrain does not block the shot. empty tiles waste ammunition; unseen hits stay unconfirmed. readiness, firing, and normal upkeep spend supplies."
 
         DigIn ->
             "not implemented yet. this infantry and field-gun command is intended for preparing a defensive position. it is currently disabled; trench protection is not available."

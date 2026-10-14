@@ -1,4 +1,10 @@
-module View.CombatEffects exposing (explosion, impacts, mapPeek, spotlight, styles)
+module View.CombatEffects exposing
+    ( explosion
+    , impacts
+    , mapPeek
+    , spotlight
+    , styles
+    )
 
 import Coordinate exposing (Coordinate)
 import Html.Styled as H exposing (Html)
@@ -178,8 +184,8 @@ spotlightView className map exchange =
         content
 
 
-impacts : List Shot -> Svg msg
-impacts shots =
+impacts : List Coordinate -> List Shot -> Svg msg
+impacts landings shots =
     let
         unique : Coordinate -> List Coordinate -> List Coordinate
         unique position positions =
@@ -193,7 +199,7 @@ impacts shots =
 
         targets : List Coordinate
         targets =
-            List.map .destination shots |> List.foldl unique []
+            (landings ++ List.map .destination shots) |> List.foldl unique []
 
         shooters : List Coordinate
         shooters =
@@ -219,7 +225,7 @@ impacts shots =
         content =
             explosions ++ flashes
     in
-    if List.isEmpty shots then
+    if List.isEmpty content then
         Svg.text ""
 
     else

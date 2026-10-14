@@ -19,6 +19,13 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+indirectImpacts :
+    SelectionSet decodesTo Api.Object.IndirectImpact
+    -> SelectionSet (List decodesTo) Api.Object.TurnFrame
+indirectImpacts object____ =
+    Object.selectionForCompositeField "indirectImpacts" [] object____ (Basics.identity >> Decode.list)
+
+
 shots :
     SelectionSet decodesTo Api.Object.Shot
     -> SelectionSet (List decodesTo) Api.Object.TurnFrame

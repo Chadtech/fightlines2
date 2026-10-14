@@ -54,6 +54,7 @@ playbackChecks first second =
             [ { destroyed = False
               , combatRules =
                     { range = 1
+                    , indirectRange = 0
                     , shape = AmbushShape.Line
                     , damage = 4
                     , readinessCost = 2
@@ -90,6 +91,7 @@ playbackChecks first second =
             , { destroyed = False
               , combatRules =
                     { range = 1
+                    , indirectRange = 0
                     , shape = AmbushShape.Line
                     , damage = 4
                     , readinessCost = 2
@@ -200,6 +202,7 @@ playbackChecks first second =
         firstFrame =
             { depots = []
             , supplyCrates = []
+            , indirectImpacts = []
             , shots = []
             , durationMs = 180
             , units = rewound
@@ -214,6 +217,7 @@ playbackChecks first second =
         lastFrame =
             { depots = []
             , supplyCrates = []
+            , indirectImpacts = []
             , shots = []
             , durationMs = 180
             , units = units
@@ -236,6 +240,7 @@ playbackChecks first second =
         middleFrame =
             { depots = []
             , supplyCrates = []
+            , indirectImpacts = []
             , shots = []
             , durationMs = 180
             , units =
@@ -323,6 +328,7 @@ truckPlaybackChecks unitId =
             [ { destroyed = False
               , combatRules =
                     { range = 1
+                    , indirectRange = 0
                     , shape = AmbushShape.Line
                     , damage = 4
                     , readinessCost = 2
@@ -409,6 +415,7 @@ transportPlaybackChecks passengerId truckId =
             , destroyed = False
             , combatRules =
                 { range = 1
+                , indirectRange = 0
                 , shape = AmbushShape.Line
                 , damage = 4
                 , readinessCost = 2
@@ -445,7 +452,23 @@ transportPlaybackChecks passengerId truckId =
 
         passenger : Unit.Unit
         passenger =
-            { truck | id = passengerId, kind = Kind.Infantry, direction = Just Direction.East, destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.Aboard truckId, resources = Maybe.map (\resources -> { resources | fuel = Nothing }) truck.resources }
+            { truck
+                | id = passengerId
+                , kind = Kind.Infantry
+                , direction = Just Direction.East
+                , destroyed = False
+                , combatRules =
+                    { range = 1
+                    , indirectRange = 0
+                    , shape = AmbushShape.Line
+                    , damage = 4
+                    , readinessCost = 2
+                    , shotCost = 2
+                    }
+                , cargoCapacity = 0
+                , location = Location.Aboard truckId
+                , resources = Maybe.map (\resources -> { resources | fuel = Nothing }) truck.resources
+            }
 
         units : List Unit
         units =
@@ -512,6 +535,7 @@ transportPlaybackChecks passengerId truckId =
                 { current =
                     { depots = []
                     , supplyCrates = []
+                    , indirectImpacts = []
                     , shots = []
                     , durationMs = 180
                     , units = units
@@ -520,6 +544,7 @@ transportPlaybackChecks passengerId truckId =
                 , remaining =
                     [ { depots = []
                       , supplyCrates = []
+                      , indirectImpacts = []
                       , shots = []
                       , durationMs = 180
                       , units = unloadUnits
@@ -568,6 +593,7 @@ spriteFacingChecks id =
             , destroyed = False
             , combatRules =
                 { range = 1
+                , indirectRange = 0
                 , shape = AmbushShape.Line
                 , damage = 4
                 , readinessCost = 2
@@ -618,6 +644,7 @@ spriteFacingChecks id =
         frame unit =
             { depots = []
             , supplyCrates = []
+            , indirectImpacts = []
             , shots = []
             , durationMs = 180
             , units = [ unit ]
@@ -713,7 +740,24 @@ combatPlaybackChecks first second =
     let
         attacker : Unit
         attacker =
-            { id = first, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, kind = Kind.Tank, destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 8, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.OnMap { x = 2, y = 2 }, resources = Nothing }
+            { id = first
+            , playerNumber = PlayerNumber.Player1
+            , spriteFacing = SpriteFacing.Right
+            , direction = Just Direction.East
+            , kind = Kind.Tank
+            , destroyed = False
+            , combatRules =
+                { range = 1
+                , indirectRange = 0
+                , shape = AmbushShape.Line
+                , damage = 8
+                , readinessCost = 2
+                , shotCost = 2
+                }
+            , cargoCapacity = 0
+            , location = Location.OnMap { x = 2, y = 2 }
+            , resources = Nothing
+            }
 
         target : Unit
         target =
@@ -723,6 +767,7 @@ combatPlaybackChecks first second =
         before =
             { depots = []
             , supplyCrates = []
+            , indirectImpacts = []
             , shots = []
             , durationMs = 180
             , units = [ attacker, target ]
@@ -1043,7 +1088,24 @@ combatDeathChecks first second =
             let
                 attacker : Unit
                 attacker =
-                    { id = first, playerNumber = PlayerNumber.Player1, spriteFacing = SpriteFacing.Right, direction = Just Direction.East, kind = Kind.Tank, destroyed = False, combatRules = { range = 1, shape = AmbushShape.Line, damage = 8, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.OnMap { x = 2, y = 2 }, resources = Nothing }
+                    { id = first
+                    , playerNumber = PlayerNumber.Player1
+                    , spriteFacing = SpriteFacing.Right
+                    , direction = Just Direction.East
+                    , kind = Kind.Tank
+                    , destroyed = False
+                    , combatRules =
+                        { range = 1
+                        , indirectRange = 0
+                        , shape = AmbushShape.Line
+                        , damage = 8
+                        , readinessCost = 2
+                        , shotCost = 2
+                        }
+                    , cargoCapacity = 0
+                    , location = Location.OnMap { x = 2, y = 2 }
+                    , resources = Nothing
+                    }
 
                 target : Unit
                 target =
@@ -1055,7 +1117,14 @@ combatDeathChecks first second =
 
                 before : TurnPlayback.Frame
                 before =
-                    { units = [ attacker, target, other ], shots = [], durationMs = 0, visibleTiles = [ { x = 2, y = 2 }, { x = 3, y = 2 }, { x = 2, y = 3 } ], depots = [], supplyCrates = [] }
+                    { units = [ attacker, target, other ]
+                    , indirectImpacts = []
+                    , shots = []
+                    , durationMs = 0
+                    , visibleTiles = [ { x = 2, y = 2 }, { x = 3, y = 2 }, { x = 2, y = 3 } ]
+                    , depots = []
+                    , supplyCrates = []
+                    }
 
                 lethalShot : Unit -> Shot
                 lethalShot victim =
@@ -1190,6 +1259,7 @@ deathPlaybackChecks id =
             , destroyed = False
             , combatRules =
                 { range = 1
+                , indirectRange = 0
                 , shape = AmbushShape.Line
                 , damage = 4
                 , readinessCost = 2
@@ -1223,6 +1293,7 @@ deathPlaybackChecks id =
         dying =
             { depots = []
             , supplyCrates = []
+            , indirectImpacts = []
             , shots = []
             , durationMs = 180
             , units = [ dead ]
@@ -1237,6 +1308,7 @@ deathPlaybackChecks id =
         gone =
             { depots = []
             , supplyCrates = []
+            , indirectImpacts = []
             , shots = []
             , durationMs = 1400
             , units = []
@@ -1286,7 +1358,24 @@ deathFocusChecks first second =
     let
         dead : Unit
         dead =
-            { id = first, playerNumber = PlayerNumber.Player2, spriteFacing = SpriteFacing.Left, direction = Just Direction.West, kind = Kind.Infantry, destroyed = True, combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }, cargoCapacity = 0, location = Location.OnMap { x = 2, y = 2 }, resources = Nothing }
+            { id = first
+            , playerNumber = PlayerNumber.Player2
+            , spriteFacing = SpriteFacing.Left
+            , direction = Just Direction.West
+            , kind = Kind.Infantry
+            , destroyed = True
+            , combatRules =
+                { range = 1
+                , indirectRange = 0
+                , shape = AmbushShape.Line
+                , damage = 4
+                , readinessCost = 2
+                , shotCost = 2
+                }
+            , cargoCapacity = 0
+            , location = Location.OnMap { x = 2, y = 2 }
+            , resources = Nothing
+            }
 
         survivor : Unit
         survivor =
@@ -1296,6 +1385,7 @@ deathFocusChecks first second =
         dying =
             { depots = []
             , supplyCrates = []
+            , indirectImpacts = []
             , shots = []
             , durationMs = 450
             , units = [ dead, survivor ]
@@ -1418,7 +1508,14 @@ lossDetailsChecks first second =
             , resources = Nothing
             , cargoCapacity = 0
             , destroyed = True
-            , combatRules = { range = 1, shape = AmbushShape.Line, damage = 4, readinessCost = 2, shotCost = 2 }
+            , combatRules =
+                { range = 1
+                , indirectRange = 0
+                , shape = AmbushShape.Line
+                , damage = 4
+                , readinessCost = 2
+                , shotCost = 2
+                }
             , location = Location.OnMap { x = 0, y = 0 }
             }
 
@@ -1512,7 +1609,24 @@ carrierLossEventChecks first second =
             let
                 truck : Unit
                 truck =
-                    { id = first, playerNumber = PlayerNumber.Player2, spriteFacing = SpriteFacing.Left, direction = Nothing, kind = Kind.Truck, destroyed = True, combatRules = { range = 0, shape = AmbushShape.Line, damage = 0, readinessCost = 0, shotCost = 0 }, cargoCapacity = 2, location = Location.OnMap { x = 2, y = 2 }, resources = Nothing }
+                    { id = first
+                    , playerNumber = PlayerNumber.Player2
+                    , spriteFacing = SpriteFacing.Left
+                    , direction = Nothing
+                    , kind = Kind.Truck
+                    , destroyed = True
+                    , combatRules =
+                        { range = 0
+                        , indirectRange = 0
+                        , shape = AmbushShape.Line
+                        , damage = 0
+                        , readinessCost = 0
+                        , shotCost = 0
+                        }
+                    , cargoCapacity = 2
+                    , location = Location.OnMap { x = 2, y = 2 }
+                    , resources = Nothing
+                    }
 
                 passenger : Unit
                 passenger =
@@ -1528,7 +1642,14 @@ carrierLossEventChecks first second =
 
                 frame : TurnPlayback.Frame
                 frame =
-                    { units = [ passenger, independent, truck, otherPassenger ], durationMs = 1400, shots = [], visibleTiles = [ { x = 2, y = 2 }, { x = 3, y = 2 } ], depots = [], supplyCrates = [] }
+                    { units = [ passenger, independent, truck, otherPassenger ]
+                    , durationMs = 1400
+                    , indirectImpacts = []
+                    , shots = []
+                    , visibleTiles = [ { x = 2, y = 2 }, { x = 3, y = 2 } ]
+                    , depots = []
+                    , supplyCrates = []
+                    }
 
                 animation : TurnPlayback.Playback
                 animation =

@@ -44,6 +44,7 @@ type UnitInteraction
     = CommandMenu CommandMenuState
     | ChoosingMove MovePlanning
     | ChoosingDirection FacingPurpose Direction
+    | ChoosingIndirectFire
 
 
 type CommandMenuState

@@ -54,6 +54,7 @@ pub struct MovementResolution {
 
 fn frame(board: &Scenario, duration_ms: i32) -> TurnFrame {
     TurnFrame {
+        indirect_impacts: Vec::new(),
         depots: board.depots.clone(),
         supply_crates: board.supply_crates.clone(),
         shots: Vec::new(),
@@ -254,10 +255,11 @@ fn resolve_arrivals(
         stopped: BTreeSet::new(),
         frames: vec![initial_frame],
     };
-    if orders
-        .iter()
-        .any(|order| order.facing.is_ambush() || order.facing.is_standing_ground())
-    {
+    if orders.iter().any(|order| {
+        order.facing.is_ambush()
+            || order.facing.is_standing_ground()
+            || order.facing.indirect_target().is_some()
+    }) {
         result.frames.push(frame(&board, 180));
     }
     let priority = if turn % 2 == 1 {
