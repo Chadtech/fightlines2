@@ -71,6 +71,7 @@ module Style exposing
     , displayNone
     , evenChildren
     , firstChild
+    , fitWithinContainer
     , fixed
     , flex00auto
     , flex1
@@ -135,6 +136,7 @@ module Style exposing
     , hAuto
     , hFull
     , hFullViewport
+    , hViewportInsetRem
     , hideDetailsMarker
     , hover
     , hyphensAuto
@@ -150,6 +152,7 @@ module Style exposing
     , inset0
     , isolate
     , itemsCenter
+    , itemsEnd
     , itemsStart
     , justifyCenter
     , justifyEnd
@@ -176,6 +179,7 @@ module Style exposing
     , maxH18
     , maxH24
     , maxH32
+    , maxH40Viewport
     , maxH64
     , maxHContainerInset4
     , maxHViewportInset8
@@ -216,6 +220,7 @@ module Style exposing
     , minW40
     , minW56Clamped
     , minW72
+    , minWFitContent
     , mixBlendScreen
     , ml1
     , ml128
@@ -3169,3 +3174,35 @@ evenChildren styles =
 firstChild : List Css.Style -> Css.Style
 firstChild styles =
     Css.firstChild styles
+
+
+itemsEnd : Css.Style
+itemsEnd =
+    Css.alignItems Css.flexEnd
+
+
+minWFitContent : Css.Style
+minWFitContent =
+    Css.property "min-width" "fit-content"
+
+
+fitWithinContainer : { width : Int, height : Int } -> Css.Style
+fitWithinContainer ratio =
+    Css.batch
+        [ Css.property "width"
+            ("min(100cqw, calc(100cqh * "
+                ++ String.fromFloat (toFloat ratio.width / toFloat ratio.height)
+                ++ "))"
+            )
+        , Css.height Css.auto
+        ]
+
+
+hViewportInsetRem : Float -> Css.Style
+hViewportInsetRem inset =
+    Css.height (Css.calc (Css.vh 100) (Css.minus (Css.rem inset)))
+
+
+maxH40Viewport : Css.Style
+maxH40Viewport =
+    Css.maxHeight (Css.vh 40)

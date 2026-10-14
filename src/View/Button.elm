@@ -1,12 +1,14 @@
 module View.Button exposing
     ( Button
     , accessibleLabel
+    , choice
     , disabled
     , large
     , onClick
     , primary
     , secondary
     , toHtml
+    , withIcon
     )
 
 import Css
@@ -33,6 +35,7 @@ type alias Button msg =
     , label : String
     , variant : Variant
     , size : Size
+    , icon : Maybe (Html msg)
     }
 
 
@@ -40,6 +43,7 @@ type Variant
     = Variant__Primary
     | Variant__Secondary
     | Disabled
+    | Choice Bool
 
 
 type Size
@@ -60,6 +64,7 @@ fromLabelAndVariant label variant =
     , label = label
     , variant = variant
     , size = Regular
+    , icon = Nothing
     }
 
 
@@ -79,6 +84,17 @@ primary : String -> msg -> Button msg
 primary label msg =
     fromLabelAndVariant label Variant__Primary
         |> onClick msg
+
+
+choice : String -> Bool -> msg -> Button msg
+choice label selected msg =
+    fromLabelAndVariant label (Choice selected)
+        |> onClick msg
+
+
+withIcon : Html msg -> Button msg -> Button msg
+withIcon icon button =
+    { button | icon = Just icon }
 
 
 onClick : msg -> Button msg -> Button msg
@@ -114,6 +130,45 @@ toHtml button =
             ]
                 |> List.filterMap identity
 
+        selectionAttrs : List (Attribute msg)
+        selectionAttrs =
+            case button.variant of
+                Choice selected ->
+                    let
+                        pressed : String
+                        pressed =
+                            if selected then
+                                "true"
+
+                            else
+                                "false"
+                    in
+                    [ A.attribute "aria-pressed" pressed
+                    ]
+
+                _ ->
+                    []
+
+        content : List (Html msg)
+        content =
+            List.filterMap identity
+                [ button.icon
+                , Just (H.text button.label)
+                ]
+
+        iconStyles : List Css.Style
+        iconStyles =
+            case button.icon of
+                Just _ ->
+                    [ S.row
+                    , S.itemsCenter
+                    , S.justifyCenter
+                    , S.g2
+                    ]
+
+                Nothing ->
+                    []
+
         baseAttrs : List (Attribute msg)
         baseAttrs =
             let
@@ -140,6 +195,28 @@ toHtml button =
                                 ]
                             ]
 
+                        Choice selected ->
+                            [ S.row
+                            , S.itemsCenter
+                            , S.justifyCenter
+                            , S.g2
+                            , S.bgGray1
+                            , S.textGray4
+                            , S.wFull
+                            , S.selfStretch
+                            , S.when selected
+                                (S.batch
+                                    [ S.bgNightwood3
+                                    , S.textGray5
+                                    , S.indentStrong
+                                    ]
+                                )
+                            , S.when (not selected) S.outdentStrong
+                            , Css.hover
+                                [ S.textGray5
+                                ]
+                            ]
+
                         Variant__Secondary ->
                             [ S.bgGray1
                             , S.textGray4
@@ -159,9 +236,15 @@ toHtml button =
                 sizeStyles =
                     case button.size of
                         Regular ->
-                            [ S.px4
-                            , S.py3
-                            ]
+                            case button.variant of
+                                Choice _ ->
+                                    [ S.p2
+                                    ]
+
+                                _ ->
+                                    [ S.px4
+                                    , S.py3
+                                    ]
 
                         Large ->
                             [ S.px6
@@ -172,6 +255,7 @@ toHtml button =
             [ A.disabled (button.variant == Disabled)
             , A.css
                 [ S.batch sizeStyles
+                , S.batch iconStyles
                 , Css.alignSelf Css.flexStart
                 , Css.maxWidth (Css.pct 100)
                 , S.pointerCursor
@@ -180,6 +264,5 @@ toHtml button =
             ]
     in
     H.button
-        (baseAttrs ++ conditionalAttrs)
-        [ H.text button.label
-        ]
+        (baseAttrs ++ conditionalAttrs ++ selectionAttrs)
+        content

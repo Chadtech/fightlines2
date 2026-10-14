@@ -64,7 +64,7 @@ toSvg config =
                     Nothing
 
                 Terrain.Hills ->
-                    Just "/assets/terrain-hills-illustrated-v3.png"
+                    Just (hillPath config.theme)
 
                 Terrain.Forest ->
                     Just "/assets/terrain-forest-illustrated-v3.png"
@@ -74,11 +74,12 @@ toSvg config =
 
         featureFilter : String
         featureFilter =
-            if config.terrain == Terrain.Mountains then
-                "none"
+            case config.terrain of
+                Terrain.Forest ->
+                    art.featureFilter
 
-            else
-                art.featureFilter
+                _ ->
+                    "none"
 
         featureImages : List (Svg msg)
         featureImages =
@@ -97,6 +98,19 @@ toSvg config =
     Svg.g
         []
         images
+
+
+hillPath : MapTheme -> String
+hillPath theme =
+    case theme of
+        MapTheme.GreenForest ->
+            "/assets/terrain-hills-illustrated-v7.png"
+
+        MapTheme.Snow ->
+            "/assets/terrain-hills-snow-illustrated-v7.png"
+
+        MapTheme.Desert ->
+            "/assets/terrain-hills-desert-illustrated-v7.png"
 
 
 mountainPath : MapTheme -> String

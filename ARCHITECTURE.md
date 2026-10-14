@@ -412,7 +412,7 @@ pose atlases and legacy pixel-art depot atlases. Terrain renders one 16px grass 
 16px hills/forest overlays in their own cells, with subtle grid strokes above.
 All terrain artwork renders before the cell hit targets, depots and units;
 artwork cannot intercept cell selection events. `make sprites` copies
-the v2 grass and v3 feature sources from `artwork/terrain/illustrated/` without reducing their
+the v2 grass, v3 forest, and v7 theme-specific hill sources from `artwork/terrain/illustrated/` without reducing their
 resolution. Earlier terrain atlases remain available locally and are ignored by Git.
 
 ## Styles and views

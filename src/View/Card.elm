@@ -1,6 +1,7 @@
 module View.Card exposing
     ( Card
     , compactForm
+    , panel
     , simple
     , toHtml
     , withHeader
@@ -27,6 +28,7 @@ type alias Card =
 type Variant
     = Simple
     | CompactForm
+    | Panel
 
 
 simple : Card
@@ -43,6 +45,16 @@ compactForm =
     }
 
 
+{-| A card that fills a bounded layout slot. Headered panels have a fixed header
+and a scrolling body.
+-}
+panel : Card
+panel =
+    { variant = Panel
+    , header = Nothing
+    }
+
+
 withHeader : CardHeader -> Card -> Card
 withHeader header card =
     { card | header = Just header }
@@ -55,6 +67,14 @@ toHtml card content =
             [ S.bgGray1
             , S.col
             , S.outdent
+            , S.when (card.variant == Panel)
+                (S.batch
+                    [ S.flex1
+                    , S.minH0
+                    , S.minW0
+                    , S.overflowHidden
+                    ]
+                )
             , S.when (card.header == Nothing)
                 (S.batch
                     [ S.g3
@@ -76,7 +96,8 @@ toHtml card content =
             Just header ->
                 [ H.div
                     [ A.css
-                        [ S.p2px
+                        [ S.when (card.variant == Panel) S.shrink0
+                        , S.p2px
                         ]
                     ]
                     [ CardHeader.toHtml header
@@ -86,6 +107,13 @@ toHtml card content =
                         [ S.col
                         , S.g3
                         , S.p3
+                        , S.when (card.variant == Panel)
+                            (S.batch
+                                [ S.flex1
+                                , S.minH0
+                                , S.overflowAuto
+                                ]
+                            )
                         ]
                     ]
                     content

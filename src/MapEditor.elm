@@ -80,7 +80,7 @@ type alias Model =
     , saveState : SaveState
     , mirror : Bool
     , brushSize : Int
-    , tileSize : Int
+    , viewScale : ViewScale
     , widthInput : String
     , heightInput : String
     }
@@ -92,6 +92,19 @@ type Brush
     | PlaceDepot DepotKind
     | EraseUnit
     | EraseDepot
+
+
+type BrushGroup
+    = TerrainBrushes
+    | UnitBrushes
+    | DepotBrushes
+
+
+type ViewScale
+    = FitWorkspace
+    | SmallTiles
+    | MediumTiles
+    | LargeTiles
 
 
 type alias BrushSettings =
@@ -160,7 +173,7 @@ init shared flags =
     , saveState = Idle
     , mirror = False
     , brushSize = 1
-    , tileSize = 32
+    , viewScale = FitWorkspace
     , widthInput = String.fromInt flags.first.definition.width
     , heightInput = String.fromInt flags.first.definition.height
     }
@@ -198,6 +211,38 @@ saveEffect pending =
 ----------------------------------------------------------------
 -- HELPERS --
 ----------------------------------------------------------------
+
+
+viewScaleValue : ViewScale -> String
+viewScaleValue scale =
+    case scale of
+        FitWorkspace ->
+            "fit"
+
+        SmallTiles ->
+            "16"
+
+        MediumTiles ->
+            "32"
+
+        LargeTiles ->
+            "48"
+
+
+viewTileSize : ViewScale -> Int
+viewTileSize scale =
+    case scale of
+        FitWorkspace ->
+            32
+
+        SmallTiles ->
+            16
+
+        MediumTiles ->
+            32
+
+        LargeTiles ->
+            48
 
 
 editingSaveState : SaveState -> SaveState
@@ -601,7 +646,26 @@ update msg model =
             ( { model | brushSize = String.toInt value |> Maybe.withDefault model.brushSize }, E.none )
 
         ZoomInputChanged value ->
-            ( { model | tileSize = String.toInt value |> Maybe.withDefault model.tileSize }, E.none )
+            let
+                scale : ViewScale
+                scale =
+                    case value of
+                        "fit" ->
+                            FitWorkspace
+
+                        "16" ->
+                            SmallTiles
+
+                        "32" ->
+                            MediumTiles
+
+                        "48" ->
+                            LargeTiles
+
+                        _ ->
+                            model.viewScale
+            in
+            ( { model | viewScale = scale }, E.none )
 
         TileMousePressed position ->
             let
@@ -718,9 +782,104 @@ view model =
         [ A.css
             [ S.col
             , S.g3
+            , S.hViewportInsetRem 2
+            , S.minH0
+            , S.overflowHidden
             ]
         ]
         [ H.div
+            [ A.css
+                [ S.col
+                , S.shrink0
+                , S.maxH40Viewport
+                , S.minH0
+                , S.overflowHidden
+                ]
+            ]
+            [ toolbar model
+            ]
+        , H.div
+            [ A.css
+                [ S.row
+                , S.g3
+                , S.flex1
+                , S.minH0
+                , S.belowWidth 768
+                    [ S.col
+                    ]
+                ]
+            ]
+            [ H.div
+                [ A.css
+                    [ S.w72
+                    , S.shrink0
+                    , S.col
+                    , S.minH0
+                    , S.belowWidth 768
+                        [ S.wFull
+                        , S.flexP4
+                        ]
+                    ]
+                ]
+                [ paintingTools model
+                ]
+            , H.div
+                [ A.css
+                    [ S.flex1
+                    , S.minH0
+                    , S.minW0
+                    , S.col
+                    ]
+                ]
+                [ workspace model
+                ]
+            ]
+        ]
+    ]
+
+
+toolbar : Model -> Html Msg
+toolbar model =
+    Card.toHtml (Card.panel |> Card.withHeader (CardHeader.simple "map editor"))
+        [ H.div
+            [ A.css
+                [ S.row
+                , S.flexWrap
+                , S.g3
+                , S.itemsEnd
+                , S.justifySpaceBetween
+                ]
+            ]
+            [ toolbarActions model
+            , mapSettings model
+            ]
+        , H.p
+            [ A.attribute "role" "status"
+            , A.css
+                [ S.m0
+                ]
+            ]
+            [ H.text (status model)
+            ]
+        ]
+
+
+toolbarActions : Model -> Html Msg
+toolbarActions model =
+    H.div
+        [ A.css
+            [ S.row
+            , S.flexWrap
+            , S.g3
+            , S.itemsEnd
+            ]
+        ]
+        [ select "map-editor-map"
+            "map"
+            (EditableMap.name model.current.mapType)
+            MapInputChanged
+            (List.map (\kind -> ( EditableMap.name kind, MapType.label kind )) MapType.list)
+        , H.div
             [ A.css
                 [ S.row
                 , S.flexWrap
@@ -728,16 +887,7 @@ view model =
                 , S.itemsCenter
                 ]
             ]
-            [ H.text "map editor"
-            , select "map-editor-map"
-                "map"
-                (EditableMap.name model.current.mapType)
-                MapInputChanged
-                (List.map
-                    (\kind -> ( EditableMap.name kind, MapType.label kind ))
-                    MapType.list
-                )
-            , action "undo" (List.isEmpty model.current.undo) UndoButtonClicked
+            [ action "undo" (List.isEmpty model.current.undo) UndoButtonClicked
             , action "redo" (List.isEmpty model.current.redo) RedoButtonClicked
             , saveButton model
             , H.a
@@ -746,6 +896,7 @@ view model =
                 , A.rel "noopener"
                 , A.css
                     [ S.textGray4
+                    , S.selfCenter
                     , S.hover
                         [ S.textGray5
                         ]
@@ -754,49 +905,68 @@ view model =
                 [ H.text "play in new tab"
                 ]
             ]
-        , H.p
-            [ A.attribute "role" "status"
-            ]
-            [ H.text (status model)
-            ]
-        , H.fieldset
+        ]
+
+
+workspace : Model -> Html Msg
+workspace model =
+    Card.toHtml Card.panel
+        [ H.div
             [ A.css
-                [ S.border0
-                , S.minW0
-                , S.wFull
-                , S.row
-                , S.flexWrap
-                , S.g3
+                [ S.flex1
+                , S.minH0
+                , S.overflowAuto
+                , S.bgNightwood3
+                , S.indentStrong
+                , S.p3
                 ]
             ]
             [ H.div
                 [ A.css
-                    [ S.w72
-                    , S.maxHViewportInset8
-                    , S.overflowAuto
-                    , S.belowWidth 768
-                        [ S.wFull
-                        , S.maxH64
-                        ]
+                    [ S.hFull
+                    , S.containerSize
                     ]
                 ]
-                [ controls model
+                [ H.div
+                    [ A.css
+                        [ S.row
+                        , S.hFull
+                        , S.when (model.viewScale == FitWorkspace) S.itemsCenter
+                        , S.justifyCenter
+                        , S.when (model.viewScale /= FitWorkspace) S.minWFitContent
+                        ]
+                    ]
+                    [ board model
+                    ]
                 ]
-            , H.div
+            ]
+        , H.div
+            [ A.css
+                [ S.row
+                , S.flexWrap
+                , S.g3
+                , S.itemsEnd
+                , S.shrink0
+                ]
+            ]
+            [ select "map-editor-tile-size"
+                "view scale"
+                (viewScaleValue model.viewScale)
+                ZoomInputChanged
+                [ ( "fit", "fit to workspace" )
+                , ( "16", "small" )
+                , ( "32", "medium" )
+                , ( "48", "large" )
+                ]
+            , H.p
                 [ A.css
-                    [ S.flex1
-                    , S.minW0
-                    , S.overflowAuto
-                    , S.belowWidth 768
-                        [ S.basisFull
-                        ]
+                    [ S.m0
                     ]
                 ]
-                [ board model
+                [ H.text ("active brush · " ++ brushLabel model.brush ++ " · click or drag to paint")
                 ]
             ]
         ]
-    ]
 
 
 saveButton : Model -> Html Msg
@@ -837,7 +1007,7 @@ status model =
                 "unsaved changes · drafts stay here while switching maps"
 
             else
-                "click or drag to paint · save writes the map file · existing games keep their board"
+                "no unsaved changes · existing games keep their board"
 
 
 select : String -> String -> String -> (String -> Msg) -> List ( String, String ) -> Html Msg
@@ -856,8 +1026,10 @@ select htmlId label value changed options =
             ]
         ]
         [ H.label
-            [ A.for htmlId ]
-            [ H.text label ]
+            [ A.for htmlId
+            ]
+            [ H.text label
+            ]
         , Select.toHtml
             { htmlId = htmlId
             , disabled = False
@@ -870,142 +1042,259 @@ select htmlId label value changed options =
         ]
 
 
-controls : Model -> Html Msg
-controls model =
+brushGroup : Brush -> BrushGroup
+brushGroup brush =
+    case brush of
+        PaintTerrain _ ->
+            TerrainBrushes
+
+        PlaceUnit _ ->
+            UnitBrushes
+
+        EraseUnit ->
+            UnitBrushes
+
+        PlaceDepot _ ->
+            DepotBrushes
+
+        EraseDepot ->
+            DepotBrushes
+
+
+brushLabel : Brush -> String
+brushLabel brush =
+    case brush of
+        PaintTerrain terrain ->
+            Terrain.label terrain
+
+        PlaceUnit kind ->
+            Util.UnitKind.label kind
+
+        PlaceDepot DepotKind.Supply ->
+            "supply depot"
+
+        PlaceDepot DepotKind.Fuel ->
+            "fuel depot"
+
+        EraseUnit ->
+            "erase unit"
+
+        EraseDepot ->
+            "erase depot"
+
+
+paintingTools : Model -> Html Msg
+paintingTools model =
     let
-        terrainButton : Terrain -> Html Msg
-        terrainButton terrain =
-            brushButton model (Terrain.label terrain) (PaintTerrain terrain)
+        group : BrushGroup
+        group =
+            brushGroup model.brush
 
-        unitButton : UnitKind -> Html Msg
-        unitButton kind =
-            brushButton model (Util.UnitKind.label kind) (PlaceUnit kind)
+        groupButton : String -> BrushGroup -> Brush -> Html Msg
+        groupButton label target initial =
+            let
+                brush : Brush
+                brush =
+                    if group == target then
+                        model.brush
+
+                    else
+                        initial
+            in
+            Button.choice label (group == target) (BrushButtonClicked brush)
+                |> Button.toHtml
+
+        brushes : List Brush
+        brushes =
+            case group of
+                TerrainBrushes ->
+                    List.map PaintTerrain Terrain.list
+
+                UnitBrushes ->
+                    List.map PlaceUnit UnitKind.list
+                        ++ [ EraseUnit
+                           ]
+
+                DepotBrushes ->
+                    [ PlaceDepot DepotKind.Supply
+                    , PlaceDepot DepotKind.Fuel
+                    , EraseDepot
+                    ]
+
+        unitSettings : List (Html Msg)
+        unitSettings =
+            case group of
+                UnitBrushes ->
+                    [ select "map-editor-player"
+                        "player"
+                        (PlayerNumber.toString model.playerNumber)
+                        PlayerNumberInputChanged
+                        [ ( "PLAYER1", "player 1 · red" )
+                        , ( "PLAYER2", "player 2 · blue" )
+                        ]
+                    , select "map-editor-facing"
+                        "facing"
+                        (Direction.toString model.facing)
+                        FacingInputChanged
+                        (List.map (\direction -> ( Direction.toString direction, String.toLower (Direction.toString direction) )) Direction.list)
+                    ]
+
+                _ ->
+                    []
+
+        content : List (Html Msg)
+        content =
+            [ H.div
+                [ A.css
+                    [ S.col
+                    , S.g1
+                    ]
+                ]
+                [ groupButton "terrain" TerrainBrushes (PaintTerrain Terrain.Forest)
+                , groupButton "starting units" UnitBrushes (PlaceUnit UnitKind.Infantry)
+                , groupButton "depots" DepotBrushes (PlaceDepot DepotKind.Supply)
+                ]
+            , H.div
+                [ A.css
+                    [ S.grid
+                    , S.gridCols2
+                    , S.g1
+                    ]
+                ]
+                (List.map (brushButton model) brushes)
+            ]
+                ++ unitSettings
+                ++ [ select "map-editor-brush-size"
+                        "brush size"
+                        (String.fromInt model.brushSize)
+                        BrushSizeInputChanged
+                        [ ( "1", "1 × 1" )
+                        , ( "3", "3 × 3" )
+                        , ( "5", "5 × 5" )
+                        ]
+                   , Checkbox.toHtml
+                        { label = "mirror paint horizontally", checked = model.mirror, onCheck = MirrorInputChanged }
+                        [ H.text "mirror paint horizontally"
+                        ]
+                   , H.p
+                        [ A.css
+                            [ S.m0
+                            ]
+                        ]
+                        [ H.text "mirrored units swap players and reflect facing."
+                        ]
+                   ]
     in
-    [ H.text "terrain"
-    , H.div
+    Card.toHtml (Card.panel |> Card.withHeader (CardHeader.simple "painting tools")) content
+
+
+mapSettings : Model -> Html Msg
+mapSettings model =
+    H.div
         [ A.css
             [ S.row
             , S.flexWrap
-            , S.g1
+            , S.itemsEnd
+            , S.g3
             ]
         ]
-        (List.map terrainButton Terrain.list)
-    , H.text "starting units"
-    , select "map-editor-player"
-        "player"
-        (PlayerNumber.toString model.playerNumber)
-        PlayerNumberInputChanged
-        [ ( "PLAYER1", "player 1 · red" )
-        , ( "PLAYER2", "player 2 · blue" )
-        ]
-    , select "map-editor-facing"
-        "facing"
-        (Direction.toString model.facing)
-        FacingInputChanged
-        (List.map
-            (\direction ->
-                ( Direction.toString
-                    direction
-                , String.toLower (Direction.toString direction)
-                )
-            )
-            Direction.list
-        )
-    , H.div
-        [ A.css
-            [ S.row
-            , S.flexWrap
-            , S.g1
+        [ select "map-editor-theme"
+            "theme"
+            (MapTheme.toString model.current.draft.theme)
+            ThemeInputChanged
+            [ ( "GREEN_FOREST", "green forest" )
+            , ( "DESERT", "desert" )
+            , ( "SNOW", "snow" )
             ]
-        ]
-        (List.map unitButton UnitKind.list)
-    , brushButton model "erase unit" EraseUnit
-    , H.text "depots"
-    , H.div
-        [ A.css
-            [ S.row
-            , S.flexWrap
-            , S.g1
-            ]
-        ]
-        [ brushButton model "supply" (PlaceDepot DepotKind.Supply)
-        , brushButton model "fuel" (PlaceDepot DepotKind.Fuel)
-        , brushButton model "erase depot" EraseDepot
-        ]
-    , select "map-editor-theme"
-        "theme"
-        (MapTheme.toString model.current.draft.theme)
-        ThemeInputChanged
-        [ ( "GREEN_FOREST", "green forest" )
-        , ( "DESERT", "desert" )
-        , ( "SNOW", "snow" )
-        ]
-    , select "map-editor-brush-size"
-        "brush size"
-        (String.fromInt model.brushSize)
-        BrushSizeInputChanged
-        [ ( "1", "1 × 1" )
-        , ( "3", "3 × 3" )
-        , ( "5", "5 × 5" )
-        ]
-    , Checkbox.toHtml
-        { label = "mirror paint horizontally"
-        , checked = model.mirror
-        , onCheck = MirrorInputChanged
-        }
-        [ H.text "mirror paint horizontally"
-        ]
-    , H.p []
-        [ H.text "mirrored units use the opposing player and reflected facing."
-        ]
-    , select "map-editor-tile-size"
-        "tile size"
-        (String.fromInt model.tileSize)
-        ZoomInputChanged
-        [ ( "16", "small" )
-        , ( "32", "medium" )
-        , ( "48", "large" )
-        ]
-    , H.div
-        [ A.css
-            [ S.row
-            , S.g2
-            ]
-        ]
-        [ H.label
+        , H.div
             [ A.css
-                [ S.col
-                , S.g1
+                [ S.row
+                , S.g2
                 ]
             ]
-            [ H.text "width"
-            , TextField.simple model.widthInput WidthInputChanged |> TextField.toHtml
+            [ dimensionField "width" model.widthInput WidthInputChanged
+            , dimensionField "height" model.heightInput HeightInputChanged
             ]
-        , H.label
-            [ A.css
-                [ S.col
-                , S.g1
-                ]
-            ]
-            [ H.text "height"
-            , TextField.simple model.heightInput HeightInputChanged |> TextField.toHtml
+        , H.div
+            []
+            [ Button.secondary "resize" ResizeButtonClicked
+                |> Button.accessibleLabel "resize · shrinking crops outside tiles and objects; undo restores them"
+                |> Button.toHtml
             ]
         ]
-    , Button.secondary "resize" ResizeButtonClicked |> Button.toHtml
-    , H.p []
-        [ H.text "shrinking crops outside tiles and objects. undo restores them."
+
+
+dimensionField : String -> String -> (String -> Msg) -> Html Msg
+dimensionField label value changed =
+    H.label
+        [ A.css
+            [ S.col
+            , S.g1
+            , S.w16
+            ]
         ]
-    ]
-        |> Card.toHtml (Card.simple |> Card.withHeader (CardHeader.simple "tools"))
+        [ H.text label
+        , TextField.simple value changed |> TextField.toHtml
+        ]
 
 
-brushButton : Model -> String -> Brush -> Html Msg
-brushButton model label brush =
-    if model.brush == brush then
-        Button.primary label (BrushButtonClicked brush) |> Button.toHtml
+brushButton : Model -> Brush -> Html Msg
+brushButton model brush =
+    let
+        button : Button.Button Msg
+        button =
+            Button.choice (brushLabel brush) (model.brush == brush) (BrushButtonClicked brush)
 
-    else
-        Button.secondary label (BrushButtonClicked brush) |> Button.toHtml
+        illustrated : Button.Button Msg
+        illustrated =
+            case brush of
+                EraseUnit ->
+                    button
+
+                EraseDepot ->
+                    button
+
+                _ ->
+                    button |> Button.withIcon (brushPreview model brush)
+    in
+    illustrated |> Button.toHtml
+
+
+brushPreview : Model -> Brush -> Html Msg
+brushPreview model brush =
+    let
+        artwork : List (Svg Msg)
+        artwork =
+            case brush of
+                PaintTerrain terrain ->
+                    [ TerrainTile.toSvg { theme = model.current.draft.theme, terrain = terrain }
+                    ]
+
+                PlaceUnit kind ->
+                    [ unitArt { id = 0, position = { x = 0, y = 0 }, playerNumber = model.playerNumber, kind = kind, direction = Just model.facing }
+                    ]
+
+                PlaceDepot kind ->
+                    [ depotArt { position = { x = 0, y = 0 }, kind = kind }
+                    ]
+
+                EraseUnit ->
+                    []
+
+                EraseDepot ->
+                    []
+    in
+    Svg.svg
+        [ SA.width "32"
+        , SA.height "32"
+        , SA.viewBox "0 0 16 16"
+        , A.attribute "aria-hidden" "true"
+        , A.css
+            [ S.shrink0
+            , S.pointerEventsNone
+            ]
+        ]
+        artwork
 
 
 board : Model -> Html Msg
@@ -1020,12 +1309,16 @@ board model =
             Map.positions (EditableMap.map draft) |> List.map (tile model)
     in
     Svg.svg
-        [ SA.width (String.fromInt (draft.width * model.tileSize))
-        , SA.height (String.fromInt (draft.height * model.tileSize))
+        [ SA.width (String.fromInt (draft.width * viewTileSize model.viewScale))
+        , SA.height (String.fromInt (draft.height * viewTileSize model.viewScale))
         , SA.viewBox ("0 0 " ++ String.fromInt (draft.width * 16) ++ " " ++ String.fromInt (draft.height * 16))
         , A.attribute "aria-label" "editable battlefield"
         , A.css
             [ S.userSelectNone
+            , S.block
+            , S.shrink0
+            , S.when (model.viewScale == FitWorkspace)
+                (S.fitWithinContainer { width = draft.width, height = draft.height })
             ]
         ]
         tiles

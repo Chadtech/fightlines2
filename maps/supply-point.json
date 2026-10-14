@@ -5,6 +5,48 @@
   "features": [
     {
       "position": {
+        "x": 8,
+        "y": 14
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 13
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 12
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 4
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 3
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 2
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
         "x": 1,
         "y": 1
       },
@@ -96,13 +138,6 @@
     },
     {
       "position": {
-        "x": 8,
-        "y": 2
-      },
-      "terrain": "Hills"
-    },
-    {
-      "position": {
         "x": 9,
         "y": 2
       },
@@ -160,13 +195,6 @@
     {
       "position": {
         "x": 7,
-        "y": 3
-      },
-      "terrain": "Hills"
-    },
-    {
-      "position": {
-        "x": 8,
         "y": 3
       },
       "terrain": "Hills"
@@ -223,13 +251,6 @@
     {
       "position": {
         "x": 7,
-        "y": 4
-      },
-      "terrain": "Hills"
-    },
-    {
-      "position": {
-        "x": 8,
         "y": 4
       },
       "terrain": "Hills"
@@ -488,13 +509,6 @@
     },
     {
       "position": {
-        "x": 8,
-        "y": 12
-      },
-      "terrain": "Hills"
-    },
-    {
-      "position": {
         "x": 9,
         "y": 12
       },
@@ -545,13 +559,6 @@
     {
       "position": {
         "x": 7,
-        "y": 13
-      },
-      "terrain": "Hills"
-    },
-    {
-      "position": {
-        "x": 8,
         "y": 13
       },
       "terrain": "Hills"
@@ -615,13 +622,6 @@
     {
       "position": {
         "x": 7,
-        "y": 14
-      },
-      "terrain": "Hills"
-    },
-    {
-      "position": {
-        "x": 8,
         "y": 14
       },
       "terrain": "Hills"

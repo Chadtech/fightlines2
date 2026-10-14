@@ -11,7 +11,12 @@ directory is available. A fresh clone does not include that directory.
 - `terrain-grass-illustrated-v2.png`: opaque grass tile, rendered in each grass-map cell.
 - `terrain-desert.svg`: editable sandy floor used under every desert-themed cell,
   including Arabia and El Alamein.
-- `terrain-hills-illustrated-v3.png`: transparent illustrated hill overlay.
+- `terrain-hills-illustrated-v7.png`, `terrain-hills-snow-illustrated-v7.png`, and
+  `terrain-hills-desert-illustrated-v7.png`: transparent green, snow, and desert hill
+  overlays, generated with built-in imagegen on October 14, 2026. Each fills its
+  square with one larger rounded hill surrounded by four smaller hills, two in front and two behind, with a balanced silhouette, muted ground-matching colors,
+  and soft slope shading. Sources and exact prompts are in `artwork/terrain/illustrated/v7/`;
+  `tools/build-terrain-sprites.cjs` exports all three without additional color filters.
 - `terrain-forest-illustrated-v3.png`: transparent illustrated forest overlay.
 - `supply-depot-illustrated-v1.png`: neutral concrete building with a rounded
   barrel-vault roof, in a transparent 256px square cell with a 232px footprint.

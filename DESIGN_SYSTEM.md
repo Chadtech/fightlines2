@@ -191,14 +191,19 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   layered painted shading, botanical detail and textured rock faces within
   broad readable shapes.
   Render one grass image per 16px cell, including under hills and forests; match
-  ground texture scale across the board. Keep hill ridges, exposed rock faces,
+  ground texture scale across the board. Hills fill the square with one larger
+  rounded hill surrounded by four smaller hills, two in front and two behind,
+  in a balanced, approximately
+  symmetrical cluster. Match the ground palette, soften slope shading, and avoid
+  directional grass streaks or bright outer fringes. Keep rounded crowns, scattered rocks,
   pointed tree crowns and trunks exaggerated enough to read at 30px display size.
   Terrain features stay inside their own cells. Keep tile hit targets separate
   from the artwork and use subtle square grid strokes to clarify cell boundaries.
 - Maps have a visual theme independent of terrain rules. `View.TerrainTile`
   renders each grass, hill, or forest cell with its map's theme. GreenForest uses
-  the original artwork; Desert uses a sandy SVG floor with warm-tinted hills and
-  forests; Snow uses a pale ground and desaturated, brighter features. Fog applies
+  the green artwork; Desert uses a sandy SVG floor and dedicated sandy hills,
+  with warm-tinted forests; Snow uses a pale ground, dedicated snow-covered hills,
+  and desaturated, brighter forests. Hill sprites use no extra theme filters. Fog applies
   after theme styling. BloodGulch uses GreenForest, including ordinary forest
   artwork for its hiding spots. Arabia and ElAlamein use Desert. Tile inspection and
   movement costs continue to use the underlying grass, hills, and forest rules.
@@ -557,10 +562,18 @@ explains +2 sight, infantry's extra movement point, and vehicle impassability.
 
 ## Development map editor
 
-Use a quiet toolbar for map selection, undo/redo, and the gold save action.
-Place terrain, starting-unit, and depot brushes in a scrollable tools card next
-to the illustrated, tiled board. Keep the selected brush gold and label player,
-facing, theme, dimensions, and brush size explicitly. On narrow screens, bound
-the tools card's height and put the horizontally scrollable board below it.
-Report unsaved changes, save failures, and successful source-file saves near
-the toolbar. Mirror painting swaps unit players and reflects horizontal facing.
+Contain all editor content in beveled cards within the viewport; the page itself
+does not scroll. The top editor card contains map selection, undo/redo, the gold
+save action, play navigation, theme, dimensions, resize, and live save feedback.
+Let controls wrap, with internal scrolling on short or narrow screens.
+
+Use one tools card with a fixed title bar and scrolling body beside a headerless
+workspace card. Choose terrain, starting units, or depots first, then show the
+relevant brushes in a regular grid with artwork previews. Use inset, pressed
+choices with accessible pressed state for selected tools; reserve gold for save.
+Show player and facing with unit tools. Keep brush size and mirror painting in
+the tools card. Fit the board to the workspace's actual available space by default;
+explicit scales scroll inside its inset map surface. Keep view scale and the
+active-brush hint inside the workspace card. On narrow screens, bound the tools
+card's height and put the workspace below it. Mirror painting swaps unit players
+and reflects horizontal facing.

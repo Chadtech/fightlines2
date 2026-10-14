@@ -1,62 +1,7 @@
 {
-  "depots": [
-    {
-      "kind": "Supply",
-      "position": {
-        "x": 6,
-        "y": 3
-      }
-    },
-    {
-      "kind": "Supply",
-      "position": {
-        "x": 4,
-        "y": 10
-      }
-    },
-    {
-      "kind": "Supply",
-      "position": {
-        "x": 4,
-        "y": 16
-      }
-    },
-    {
-      "kind": "Supply",
-      "position": {
-        "x": 10,
-        "y": 12
-      }
-    },
-    {
-      "kind": "Supply",
-      "position": {
-        "x": 26,
-        "y": 3
-      }
-    },
-    {
-      "kind": "Supply",
-      "position": {
-        "x": 28,
-        "y": 10
-      }
-    },
-    {
-      "kind": "Supply",
-      "position": {
-        "x": 28,
-        "y": 16
-      }
-    },
-    {
-      "kind": "Supply",
-      "position": {
-        "x": 22,
-        "y": 12
-      }
-    }
-  ],
+  "width": 33,
+  "height": 25,
+  "theme": "GreenForest",
   "features": [
     {
       "position": {
@@ -1054,13 +999,6 @@
     },
     {
       "position": {
-        "x": 6,
-        "y": 5
-      },
-      "terrain": "Forest"
-    },
-    {
-      "position": {
         "x": 7,
         "y": 5
       },
@@ -1174,13 +1112,6 @@
     {
       "position": {
         "x": 25,
-        "y": 5
-      },
-      "terrain": "Forest"
-    },
-    {
-      "position": {
-        "x": 26,
         "y": 5
       },
       "terrain": "Forest"
@@ -1257,13 +1188,6 @@
     },
     {
       "position": {
-        "x": 6,
-        "y": 6
-      },
-      "terrain": "Forest"
-    },
-    {
-      "position": {
         "x": 7,
         "y": 6
       },
@@ -1363,13 +1287,6 @@
     {
       "position": {
         "x": 25,
-        "y": 6
-      },
-      "terrain": "Forest"
-    },
-    {
-      "position": {
-        "x": 26,
         "y": 6
       },
       "terrain": "Forest"
@@ -1762,27 +1679,6 @@
     {
       "position": {
         "x": 13,
-        "y": 11
-      },
-      "terrain": "Forest"
-    },
-    {
-      "position": {
-        "x": 15,
-        "y": 11
-      },
-      "terrain": "Forest"
-    },
-    {
-      "position": {
-        "x": 16,
-        "y": 11
-      },
-      "terrain": "Forest"
-    },
-    {
-      "position": {
-        "x": 17,
         "y": 11
       },
       "terrain": "Forest"
@@ -3517,389 +3413,465 @@
       "terrain": "Forest"
     }
   ],
-  "height": 25,
-  "theme": "GreenForest",
+  "depots": [
+    {
+      "position": {
+        "x": 16,
+        "y": 12
+      },
+      "kind": "Fuel"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 14
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 14
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 3
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 10
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 16
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 12
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 26,
+        "y": 3
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 10
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 16
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 22,
+        "y": 12
+      },
+      "kind": "Supply"
+    }
+  ],
   "units": [
     {
-      "direction": "East",
       "id": 1,
-      "kind": "Infantry",
       "position": {
         "x": 9,
         "y": 7
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
     },
     {
-      "direction": "East",
       "id": 2,
-      "kind": "Infantry",
       "position": {
         "x": 9,
         "y": 9
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
     },
     {
-      "direction": "East",
       "id": 3,
-      "kind": "Infantry",
       "position": {
         "x": 9,
         "y": 11
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
     },
     {
-      "direction": "East",
       "id": 4,
-      "kind": "Infantry",
       "position": {
         "x": 9,
         "y": 13
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
     },
     {
-      "direction": "East",
       "id": 5,
-      "kind": "Infantry",
       "position": {
         "x": 9,
         "y": 15
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
     },
     {
-      "direction": "East",
       "id": 6,
-      "kind": "Infantry",
       "position": {
         "x": 9,
         "y": 17
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
     },
     {
-      "direction": "East",
       "id": 7,
-      "kind": "Infantry",
       "position": {
         "x": 10,
         "y": 10
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
     },
     {
-      "direction": "East",
       "id": 8,
-      "kind": "Infantry",
       "position": {
         "x": 10,
         "y": 14
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
     },
     {
-      "direction": "East",
       "id": 9,
-      "kind": "Infantry",
       "position": {
         "x": 8,
         "y": 8
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
     },
     {
-      "direction": "East",
       "id": 10,
-      "kind": "Infantry",
       "position": {
         "x": 8,
         "y": 16
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
     },
     {
-      "direction": "East",
       "id": 11,
-      "kind": "FieldGun",
       "position": {
         "x": 7,
         "y": 7
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "FieldGun",
+      "direction": "East"
     },
     {
-      "direction": "East",
       "id": 12,
-      "kind": "FieldGun",
       "position": {
         "x": 7,
         "y": 9
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "FieldGun",
+      "direction": "East"
     },
     {
-      "direction": "East",
       "id": 13,
-      "kind": "FieldGun",
       "position": {
         "x": 7,
         "y": 11
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "FieldGun",
+      "direction": "East"
     },
     {
-      "direction": "East",
       "id": 14,
-      "kind": "FieldGun",
       "position": {
         "x": 7,
         "y": 13
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "FieldGun",
+      "direction": "East"
     },
     {
-      "direction": "East",
       "id": 15,
-      "kind": "FieldGun",
       "position": {
         "x": 7,
         "y": 15
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "FieldGun",
+      "direction": "East"
     },
     {
-      "direction": "East",
       "id": 16,
-      "kind": "FieldGun",
       "position": {
         "x": 7,
         "y": 17
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "FieldGun",
+      "direction": "East"
     },
     {
-      "direction": null,
       "id": 17,
-      "kind": "Truck",
       "position": {
         "x": 5,
         "y": 12
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "Truck",
+      "direction": null
     },
     {
-      "direction": null,
       "id": 18,
-      "kind": "Truck",
       "position": {
         "x": 5,
         "y": 14
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "Truck",
+      "direction": null
     },
     {
-      "direction": "East",
       "id": 19,
-      "kind": "Tank",
       "position": {
         "x": 8,
         "y": 12
       },
-      "playerNumber": "Player1"
+      "playerNumber": "Player1",
+      "kind": "Tank",
+      "direction": "East"
     },
     {
-      "direction": "West",
       "id": 20,
-      "kind": "Infantry",
       "position": {
         "x": 23,
         "y": 7
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
     },
     {
-      "direction": "West",
       "id": 21,
-      "kind": "Infantry",
       "position": {
         "x": 23,
         "y": 9
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
     },
     {
-      "direction": "West",
       "id": 22,
-      "kind": "Infantry",
       "position": {
         "x": 23,
         "y": 11
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
     },
     {
-      "direction": "West",
       "id": 23,
-      "kind": "Infantry",
       "position": {
         "x": 23,
         "y": 13
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
     },
     {
-      "direction": "West",
       "id": 24,
-      "kind": "Infantry",
       "position": {
         "x": 23,
         "y": 15
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
     },
     {
-      "direction": "West",
       "id": 25,
-      "kind": "Infantry",
       "position": {
         "x": 23,
         "y": 17
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
     },
     {
-      "direction": "West",
       "id": 26,
-      "kind": "Infantry",
       "position": {
         "x": 22,
         "y": 10
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
     },
     {
-      "direction": "West",
       "id": 27,
-      "kind": "Infantry",
       "position": {
         "x": 22,
         "y": 14
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
     },
     {
-      "direction": "West",
       "id": 28,
-      "kind": "Infantry",
       "position": {
         "x": 24,
         "y": 8
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
     },
     {
-      "direction": "West",
       "id": 29,
-      "kind": "Infantry",
       "position": {
         "x": 24,
         "y": 16
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
     },
     {
-      "direction": "West",
       "id": 30,
-      "kind": "FieldGun",
       "position": {
         "x": 25,
         "y": 7
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "FieldGun",
+      "direction": "West"
     },
     {
-      "direction": "West",
       "id": 31,
-      "kind": "FieldGun",
       "position": {
         "x": 25,
         "y": 9
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "FieldGun",
+      "direction": "West"
     },
     {
-      "direction": "West",
       "id": 32,
-      "kind": "FieldGun",
       "position": {
         "x": 25,
         "y": 11
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "FieldGun",
+      "direction": "West"
     },
     {
-      "direction": "West",
       "id": 33,
-      "kind": "FieldGun",
       "position": {
         "x": 25,
         "y": 13
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "FieldGun",
+      "direction": "West"
     },
     {
-      "direction": "West",
       "id": 34,
-      "kind": "FieldGun",
       "position": {
         "x": 25,
         "y": 15
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "FieldGun",
+      "direction": "West"
     },
     {
-      "direction": "West",
       "id": 35,
-      "kind": "FieldGun",
       "position": {
         "x": 25,
         "y": 17
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "FieldGun",
+      "direction": "West"
     },
     {
-      "direction": null,
       "id": 36,
-      "kind": "Truck",
       "position": {
         "x": 27,
         "y": 12
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "Truck",
+      "direction": null
     },
     {
-      "direction": null,
       "id": 37,
-      "kind": "Truck",
       "position": {
         "x": 27,
         "y": 14
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "Truck",
+      "direction": null
     },
     {
-      "direction": "West",
       "id": 38,
-      "kind": "Tank",
       "position": {
         "x": 24,
         "y": 12
       },
-      "playerNumber": "Player2"
+      "playerNumber": "Player2",
+      "kind": "Tank",
+      "direction": "West"
     }
-  ],
-  "width": 33
+  ]
 }
