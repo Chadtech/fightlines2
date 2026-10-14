@@ -136,6 +136,9 @@ start snapshot =
                 EventKind.Move ->
                     True
 
+                EventKind.StandGround ->
+                    False
+
                 EventKind.Ambush ->
                     True
 

@@ -109,6 +109,7 @@ import View.CargoPassenger as CargoPassenger
 import View.Checkbox as Checkbox
 import View.CombatEffects as CombatEffects
 import View.CombatTheater as CombatTheater
+import View.CommandGuide as CommandGuide
 import View.DepotStatus as DepotStatus
 import View.DepotStock as DepotStock
 import View.Dialog as Dialog exposing (Dialog)
@@ -174,7 +175,7 @@ type alias Snapshot =
 
 type alias Player =
     { name : String
-    , side : PlayerNumber
+    , playerNumber : PlayerNumber
     , isYou : Bool
     }
 
@@ -501,7 +502,7 @@ depotLoadingRoom model unit =
 
         destinationDepot : Coordinate -> Maybe Depot
         destinationDepot position =
-            ListUtil.find (\source -> source.position == position) model.depots
+            ListUtil.find (\source -> Depot.supplies source && source.position == position) model.depots
 
         stockLimit : Int
         stockLimit =
@@ -528,7 +529,7 @@ planningContext model =
     , movementRules = model.movementRules
     , supplyCrates = model.supplyCrates
     , depots = model.depots
-    , playerSides = List.filter .isYou model.players |> List.map .side
+    , playerNumbers = List.filter .isYou model.players |> List.map .playerNumber
     }
 
 
@@ -570,6 +571,13 @@ partialOrdersDialogHtmlId =
     "submit-turn-warning"
 
 
+commandGuideOpen : Model -> Bool
+commandGuideOpen model =
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.map OrderPlanning.commandGuideOpen
+        |> Maybe.withDefault False
+
+
 hasDialog : Model -> Bool
 hasDialog model =
     dialog model /= Nothing
@@ -606,7 +614,7 @@ ownerName model unit =
     let
         ownsUnit : Player -> Bool
         ownsUnit player =
-            player.side == unit.playerNumber
+            player.playerNumber == unit.playerNumber
     in
     model.players
         |> ListUtil.find ownsUnit
@@ -638,7 +646,10 @@ logNewLossError model =
 
 activeDialogHtmlId : Model -> Maybe String
 activeDialogHtmlId model =
-    if showTurnIntroduction model then
+    if commandGuideOpen model then
+        Just CommandGuide.dialogHtmlId
+
+    else if showTurnIntroduction model then
         Just TurnIntroduction.dialogHtmlId
 
     else
@@ -955,7 +966,7 @@ snapshotSelection =
         playerSelection =
             SS.succeed Player
                 |> SS.with PlayerView.name
-                |> SS.with PlayerView.side
+                |> SS.with PlayerView.playerNumber
                 |> SS.with PlayerView.isYou
 
         terrainCostSelection : SelectionSet Movement.TerrainCost Api.Object.TerrainMovementCost
@@ -1831,7 +1842,11 @@ confirmSubmission lobbyId model =
 
 requestSubmission : LobbyId -> Model -> ( Model, Eff Msg )
 requestSubmission lobbyId model =
-    if planningLocked model || isChoosingUnload model || unloadChoice model.currentTurn.phase /= Nothing then
+    if
+        planningLocked model
+            || isChoosingUnload model
+            || (unloadChoice model.currentTurn.phase /= Nothing)
+    then
         model |> E.withOut
 
     else if List.isEmpty (unitsWithoutOrders model) then
@@ -1841,7 +1856,8 @@ requestSubmission lobbyId model =
     else
         ( model
             |> mapPlanning OrderPlanning.showSubmissionWarning
-        , E.toJs (ToJs.OpenDialog { htmlId = partialOrdersDialogHtmlId })
+        , E.toJs
+            (ToJs.OpenDialog { htmlId = partialOrdersDialogHtmlId })
         )
 
 
@@ -1959,6 +1975,15 @@ handleCommandMsg commandMsg model =
     case commandMsg of
         UnitCommands.MenuPressed ->
             model |> E.withOut
+
+        UnitCommands.InfoClicked ->
+            if hasDialog model then
+                model |> E.withOut
+
+            else
+                model
+                    |> mapPlanning (OrderPlanning.openCommandGuide (planningContext model))
+                    |> E.withOut
 
         UnitCommands.CancelClicked ->
             model
@@ -2082,7 +2107,7 @@ view model =
                 , S.hFull
                 , S.overflowAuto
                 , S.wrapAnywhere
-                , Css.property "width" "min(18rem, 45vw)"
+                , S.widthMinRemVw 18 45
                 ]
             ]
             [ selectionView model
@@ -2095,7 +2120,16 @@ view model =
 
 commandMenu : Model -> Html Msg
 commandMenu model =
-    case commandMenuUnit model of
+    let
+        menuUnit : Maybe Unit
+        menuUnit =
+            if commandGuideOpen model then
+                selectedUnit model
+
+            else
+                commandMenuUnit model
+    in
+    case menuUnit of
         Just unit ->
             case Unit.physicalPosition model.units unit of
                 Just position ->
@@ -2126,7 +2160,7 @@ selectionView model =
                             let
                                 ownsUnit : Player -> Bool
                                 ownsUnit player =
-                                    player.side == unit.playerNumber
+                                    player.playerNumber == unit.playerNumber
                             in
                             model.players
                                 |> List.filter ownsUnit
@@ -2439,6 +2473,9 @@ unitOrderView model unit =
                                         ++ " · unload "
                                         ++ String.fromInt (List.length (PlannedOrder.unloadingCrates supply))
 
+                                PlannedOrder.StandGround _ ->
+                                    "stand ground"
+
                                 PlannedOrder.Hold _ ->
                                     "hold position"
 
@@ -2557,6 +2594,11 @@ unitIsAmbushing model unit =
 ambushCosts : Unit -> PlannedOrder -> List (Html Msg)
 ambushCosts unit order =
     case order.action of
+        PlannedOrder.StandGround _ ->
+            [ H.p [] [ H.text "combat ready when attacked; does not fire" ]
+            , H.p [] [ H.text ("supplies: normal upkeep + " ++ String.fromInt unit.combatRules.readinessCost ++ " readiness") ]
+            ]
+
         PlannedOrder.Ambush _ ->
             List.drop 1 (ambushDetails unit)
 
@@ -3098,15 +3140,25 @@ depotLoadingDialog model id =
         ]
 
 
-{-| Dialogs derive from turn introduction, playback loss, or the active planning workflow.
+{-| Dialogs derive from the command guide, turn introduction, playback loss, or the active planning workflow.
 -}
 dialog : Model -> Maybe (Dialog Msg)
 dialog model =
     MaybeUtil.lazyFirst
-        [ introductionDialog model
+        [ commandGuideDialog model
+        , introductionDialog model
         , lossDialog model
         , planningDialog model
         ]
+
+
+commandGuideDialog : Model -> () -> Maybe (Dialog Msg)
+commandGuideDialog model _ =
+    if commandGuideOpen model then
+        Just (CommandGuide.dialog DialogDismissed)
+
+    else
+        Nothing
 
 
 introductionDialog : Model -> () -> Maybe (Dialog Msg)
@@ -3249,7 +3301,7 @@ turnPanel model =
             in
             TurnControls.playerRow
                 { name = player.name
-                , side = player.side
+                , playerNumber = player.playerNumber
                 , status = status
                 }
 
@@ -3339,13 +3391,38 @@ battlefieldView model =
         camera =
             BattlefieldNavigation.camera model.navigation
 
+        cameraTransform : String
+        cameraTransform =
+            case playback model |> Maybe.andThen TurnPlayback.panels of
+                Just panel ->
+                    case panel.mapView of
+                        TurnPlayback.SeeingMap ->
+                            let
+                                isCombatant : Unit -> Bool
+                                isCombatant unit =
+                                    unit.id == panel.exchange.attacker.id || unit.id == panel.exchange.target.id
+
+                                visiblePositions : List Coordinate
+                                visiblePositions =
+                                    model.units
+                                        |> List.filter isCombatant
+                                        |> List.filterMap Unit.boardPosition
+                            in
+                            Camera.focusTransform model.map visiblePositions camera
+
+                        TurnPlayback.CardVisible ->
+                            Camera.transform camera
+
+                Nothing ->
+                    Camera.transform camera
+
         cursorStyle : Css.Style
         cursorStyle =
             if BattlefieldNavigation.active model.navigation then
-                Css.cursor Css.grabbing
+                S.grabbingCursor
 
             else
-                Css.cursor Css.grab
+                S.grabCursor
     in
     H.div
         [ A.attribute "tabindex" "0"
@@ -3360,7 +3437,7 @@ battlefieldView model =
             , S.justifyCenter
             , S.overflowHidden
             , S.userSelectNone
-            , Css.property "container-type" "size"
+            , S.containerSize
             , cursorStyle
             ]
         , HtmlEvents.on "mousedown" mousePressedDecoder
@@ -3372,17 +3449,17 @@ battlefieldView model =
         [ H.div
             [ A.css
                 [ S.relative
-                , Css.property "width" Camera.boardWidth
+                , S.widthValue Camera.boardWidth
                 , S.shrink0
-                , Css.property "transform"
-                    (Camera.transform camera)
+                , S.transform
+                    cameraTransform
                 , Css.Global.descendants
                     [ Css.Global.selector "rect[role=button]"
-                        [ Css.outline Css.none
-                        , Css.pseudoClass "focus-visible"
-                            [ Css.property "outline" ("0.5px solid " ++ S.yellow5Str)
-                            , Css.property "outline-offset" "-1px"
-                            , Css.property "border-radius" "0"
+                        [ S.outlineNone
+                        , S.focusVisible
+                            [ S.outlineYellow5HalfPixel
+                            , S.outlineOffsetNeg1
+                            , S.rounded0
                             ]
                         ]
                     ]
@@ -3595,7 +3672,7 @@ boardSvg model =
                 [ Svg.image
                     [ SA.width "16"
                     , SA.height "16"
-                    , SA.xlinkHref "/assets/supply-depot-illustrated-v1.png"
+                    , SA.xlinkHref (Depot.image depot)
                     , HA.style "filter" (terrainFilter depot.position)
                     , HA.style "image-rendering" "auto"
                     , SA.pointerEvents "none"
@@ -3608,7 +3685,7 @@ boardSvg model =
                     , SA.fill "transparent"
                     , HA.attribute "tabindex" "0"
                     , Aria.svgRole Aria.Button
-                    , Aria.svgLabel "supply depot"
+                    , Aria.svgLabel (Depot.label depot)
                     , Ev.onMouseOver (MouseOverDepot depot.position)
                     , onClickWithDetail (ClickedDepot depot.position)
                     , onBoardActivationKeyDown
@@ -3618,7 +3695,7 @@ boardSvg model =
                     ]
                     [ Svg.title
                         []
-                        [ Svg.text "supply depot"
+                        [ Svg.text (Depot.label depot)
                         ]
                     ]
                 ]
@@ -3640,14 +3717,14 @@ boardSvg model =
                             , HA.style "--depot-focus-color" S.yellow5Str
                             , HA.attribute "tabindex" "0"
                             , Aria.svgRole Aria.Button
-                            , Aria.svgLabel (DepotStock.label stock)
+                            , Aria.svgLabel (DepotStock.label depot stock)
                             , onClickWithDetail (ClickedDepotStock depot.position)
                             , onBoardActivationKeyDown
                                 { pressedEnter = PressedEnterOnDepotStock depot.position
                                 , pressedSpace = PressedSpaceOnDepotStock depot.position
                                 }
                             ]
-                            [ Svg.title [] [ Svg.text (DepotStock.label stock) ]
+                            [ Svg.title [] [ Svg.text (DepotStock.label depot stock) ]
                             ]
                         ]
             in
@@ -4076,6 +4153,7 @@ boardSvg model =
                 ++ String.fromInt (model.map.height * 16)
             )
         , SA.width "100%"
+        , HA.style "display" "block"
         , Aria.svgRole Aria.Group
         , Aria.svgLabel "battlefield"
         ]

@@ -27,7 +27,7 @@ position object____ =
 
 
 stock :
-    SelectionSet decodesTo Api.Object.SupplyStock
+    SelectionSet decodesTo Api.Object.ResourceStock
     -> SelectionSet decodesTo Api.Object.GroundSupplyCrate
 stock object____ =
     Object.selectionForCompositeField "stock" [] object____ Basics.identity

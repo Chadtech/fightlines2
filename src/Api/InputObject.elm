@@ -4,7 +4,12 @@
 
 module Api.InputObject exposing (..)
 
+import Api.Enum.DepotKind
 import Api.Enum.Direction
+import Api.Enum.MapTheme
+import Api.Enum.PlayerNumber
+import Api.Enum.Terrain
+import Api.Enum.UnitKind
 import Api.Interface
 import Api.Object
 import Api.Scalar
@@ -76,6 +81,72 @@ encodeCrateUnloadInput input____ =
         [ ( "cargoIndex", Encode.int input____.cargoIndex |> Just ), ( "destination", encodeCoordinateInput input____.destination |> Just ) ]
 
 
+buildDepotPlacementInput :
+    DepotPlacementInputRequiredFields
+    -> DepotPlacementInput
+buildDepotPlacementInput required____ =
+    { position = required____.position, kind = required____.kind }
+
+
+type alias DepotPlacementInputRequiredFields =
+    { position : PositionInput
+    , kind : Api.Enum.DepotKind.DepotKind
+    }
+
+
+{-| Type for the DepotPlacementInput input object.
+-}
+type alias DepotPlacementInput =
+    { position : PositionInput
+    , kind : Api.Enum.DepotKind.DepotKind
+    }
+
+
+{-| Encode a DepotPlacementInput into a value that can be used as an argument.
+-}
+encodeDepotPlacementInput : DepotPlacementInput -> Value
+encodeDepotPlacementInput input____ =
+    Encode.maybeObject
+        [ ( "position", encodePositionInput input____.position |> Just ), ( "kind", Encode.enum Api.Enum.DepotKind.toString input____.kind |> Just ) ]
+
+
+buildMapDefinitionInput :
+    MapDefinitionInputRequiredFields
+    -> MapDefinitionInput
+buildMapDefinitionInput required____ =
+    { width = required____.width, height = required____.height, theme = required____.theme, features = required____.features, depots = required____.depots, units = required____.units }
+
+
+type alias MapDefinitionInputRequiredFields =
+    { width : Int
+    , height : Int
+    , theme : Api.Enum.MapTheme.MapTheme
+    , features : List TerrainPlacementInput
+    , depots : List DepotPlacementInput
+    , units : List UnitPlacementInput
+    }
+
+
+{-| Type for the MapDefinitionInput input object.
+-}
+type alias MapDefinitionInput =
+    { width : Int
+    , height : Int
+    , theme : Api.Enum.MapTheme.MapTheme
+    , features : List TerrainPlacementInput
+    , depots : List DepotPlacementInput
+    , units : List UnitPlacementInput
+    }
+
+
+{-| Encode a MapDefinitionInput into a value that can be used as an argument.
+-}
+encodeMapDefinitionInput : MapDefinitionInput -> Value
+encodeMapDefinitionInput input____ =
+    Encode.maybeObject
+        [ ( "width", Encode.int input____.width |> Just ), ( "height", Encode.int input____.height |> Just ), ( "theme", Encode.enum Api.Enum.MapTheme.toString input____.theme |> Just ), ( "features", (encodeTerrainPlacementInput |> Encode.list) input____.features |> Just ), ( "depots", (encodeDepotPlacementInput |> Encode.list) input____.depots |> Just ), ( "units", (encodeUnitPlacementInput |> Encode.list) input____.units |> Just ) ]
+
+
 buildMoveOrderInput :
     MoveOrderInputRequiredFields
     -> (MoveOrderInputOptionalFields -> MoveOrderInputOptionalFields)
@@ -84,9 +155,9 @@ buildMoveOrderInput required____ fillOptionals____ =
     let
         optionals____ =
             fillOptionals____
-                { direction = Absent, ambush = Absent, attackMove = Absent, unloads = Absent, loadCrates = Absent, crateUnloads = Absent }
+                { direction = Absent, ambush = Absent, standGround = Absent, attackMove = Absent, unloads = Absent, loadCrates = Absent, crateUnloads = Absent }
     in
-    { unitId = required____.unitId, path = required____.path, direction = optionals____.direction, ambush = optionals____.ambush, attackMove = optionals____.attackMove, unloads = optionals____.unloads, loadCrates = optionals____.loadCrates, crateUnloads = optionals____.crateUnloads }
+    { unitId = required____.unitId, path = required____.path, direction = optionals____.direction, ambush = optionals____.ambush, standGround = optionals____.standGround, attackMove = optionals____.attackMove, unloads = optionals____.unloads, loadCrates = optionals____.loadCrates, crateUnloads = optionals____.crateUnloads }
 
 
 type alias MoveOrderInputRequiredFields =
@@ -98,6 +169,7 @@ type alias MoveOrderInputRequiredFields =
 type alias MoveOrderInputOptionalFields =
     { direction : OptionalArgument Api.Enum.Direction.Direction
     , ambush : OptionalArgument Bool
+    , standGround : OptionalArgument Bool
     , attackMove : OptionalArgument Bool
     , unloads : OptionalArgument (List UnloadOrderInput)
     , loadCrates : OptionalArgument Int
@@ -112,6 +184,7 @@ type alias MoveOrderInput =
     , path : List CoordinateInput
     , direction : OptionalArgument Api.Enum.Direction.Direction
     , ambush : OptionalArgument Bool
+    , standGround : OptionalArgument Bool
     , attackMove : OptionalArgument Bool
     , unloads : OptionalArgument (List UnloadOrderInput)
     , loadCrates : OptionalArgument Int
@@ -124,7 +197,109 @@ type alias MoveOrderInput =
 encodeMoveOrderInput : MoveOrderInput -> Value
 encodeMoveOrderInput input____ =
     Encode.maybeObject
-        [ ( "unitId", Encode.string input____.unitId |> Just ), ( "path", (encodeCoordinateInput |> Encode.list) input____.path |> Just ), ( "direction", Encode.enum Api.Enum.Direction.toString |> Encode.optional input____.direction ), ( "ambush", Encode.bool |> Encode.optional input____.ambush ), ( "attackMove", Encode.bool |> Encode.optional input____.attackMove ), ( "unloads", (encodeUnloadOrderInput |> Encode.list) |> Encode.optional input____.unloads ), ( "loadCrates", Encode.int |> Encode.optional input____.loadCrates ), ( "crateUnloads", (encodeCrateUnloadInput |> Encode.list) |> Encode.optional input____.crateUnloads ) ]
+        [ ( "unitId", Encode.string input____.unitId |> Just ), ( "path", (encodeCoordinateInput |> Encode.list) input____.path |> Just ), ( "direction", Encode.enum Api.Enum.Direction.toString |> Encode.optional input____.direction ), ( "ambush", Encode.bool |> Encode.optional input____.ambush ), ( "standGround", Encode.bool |> Encode.optional input____.standGround ), ( "attackMove", Encode.bool |> Encode.optional input____.attackMove ), ( "unloads", (encodeUnloadOrderInput |> Encode.list) |> Encode.optional input____.unloads ), ( "loadCrates", Encode.int |> Encode.optional input____.loadCrates ), ( "crateUnloads", (encodeCrateUnloadInput |> Encode.list) |> Encode.optional input____.crateUnloads ) ]
+
+
+buildPositionInput :
+    PositionInputRequiredFields
+    -> PositionInput
+buildPositionInput required____ =
+    { x = required____.x, y = required____.y }
+
+
+type alias PositionInputRequiredFields =
+    { x : Int
+    , y : Int
+    }
+
+
+{-| Type for the PositionInput input object.
+-}
+type alias PositionInput =
+    { x : Int
+    , y : Int
+    }
+
+
+{-| Encode a PositionInput into a value that can be used as an argument.
+-}
+encodePositionInput : PositionInput -> Value
+encodePositionInput input____ =
+    Encode.maybeObject
+        [ ( "x", Encode.int input____.x |> Just ), ( "y", Encode.int input____.y |> Just ) ]
+
+
+buildTerrainPlacementInput :
+    TerrainPlacementInputRequiredFields
+    -> TerrainPlacementInput
+buildTerrainPlacementInput required____ =
+    { position = required____.position, terrain = required____.terrain }
+
+
+type alias TerrainPlacementInputRequiredFields =
+    { position : PositionInput
+    , terrain : Api.Enum.Terrain.Terrain
+    }
+
+
+{-| Type for the TerrainPlacementInput input object.
+-}
+type alias TerrainPlacementInput =
+    { position : PositionInput
+    , terrain : Api.Enum.Terrain.Terrain
+    }
+
+
+{-| Encode a TerrainPlacementInput into a value that can be used as an argument.
+-}
+encodeTerrainPlacementInput : TerrainPlacementInput -> Value
+encodeTerrainPlacementInput input____ =
+    Encode.maybeObject
+        [ ( "position", encodePositionInput input____.position |> Just ), ( "terrain", Encode.enum Api.Enum.Terrain.toString input____.terrain |> Just ) ]
+
+
+buildUnitPlacementInput :
+    UnitPlacementInputRequiredFields
+    -> (UnitPlacementInputOptionalFields -> UnitPlacementInputOptionalFields)
+    -> UnitPlacementInput
+buildUnitPlacementInput required____ fillOptionals____ =
+    let
+        optionals____ =
+            fillOptionals____
+                { direction = Absent }
+    in
+    { id = required____.id, position = required____.position, playerNumber = required____.playerNumber, kind = required____.kind, direction = optionals____.direction }
+
+
+type alias UnitPlacementInputRequiredFields =
+    { id : Int
+    , position : PositionInput
+    , playerNumber : Api.Enum.PlayerNumber.PlayerNumber
+    , kind : Api.Enum.UnitKind.UnitKind
+    }
+
+
+type alias UnitPlacementInputOptionalFields =
+    { direction : OptionalArgument Api.Enum.Direction.Direction }
+
+
+{-| Type for the UnitPlacementInput input object.
+-}
+type alias UnitPlacementInput =
+    { id : Int
+    , position : PositionInput
+    , playerNumber : Api.Enum.PlayerNumber.PlayerNumber
+    , kind : Api.Enum.UnitKind.UnitKind
+    , direction : OptionalArgument Api.Enum.Direction.Direction
+    }
+
+
+{-| Encode a UnitPlacementInput into a value that can be used as an argument.
+-}
+encodeUnitPlacementInput : UnitPlacementInput -> Value
+encodeUnitPlacementInput input____ =
+    Encode.maybeObject
+        [ ( "id", Encode.int input____.id |> Just ), ( "position", encodePositionInput input____.position |> Just ), ( "playerNumber", Encode.enum Api.Enum.PlayerNumber.toString input____.playerNumber |> Just ), ( "kind", Encode.enum Api.Enum.UnitKind.toString input____.kind |> Just ), ( "direction", Encode.enum Api.Enum.Direction.toString |> Encode.optional input____.direction ) ]
 
 
 buildUnloadOrderInput :

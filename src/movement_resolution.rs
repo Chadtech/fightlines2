@@ -94,7 +94,7 @@ fn arrival_time(
         cost += rule
             .terrain_costs
             .iter()
-            .find(|entry| entry.terrain == terrain)
+            .find(|entry| entry.terrain == terrain && entry.cost > 0)
             .ok_or(ResolutionError::MissingTerrainCost)?
             .cost;
     }
@@ -225,7 +225,7 @@ fn resolve_arrivals(
             cost += rule
                 .terrain_costs
                 .iter()
-                .find(|entry| entry.terrain == terrain)
+                .find(|entry| entry.terrain == terrain && entry.cost > 0)
                 .ok_or(ResolutionError::MissingTerrainCost)?
                 .cost;
             arrivals
@@ -254,7 +254,10 @@ fn resolve_arrivals(
         stopped: BTreeSet::new(),
         frames: vec![initial_frame],
     };
-    if orders.iter().any(|order| order.facing.is_ambush()) {
+    if orders
+        .iter()
+        .any(|order| order.facing.is_ambush() || order.facing.is_standing_ground())
+    {
         result.frames.push(frame(&board, 180));
     }
     let priority = if turn % 2 == 1 {
@@ -285,13 +288,13 @@ fn resolve_arrivals(
                 .ok_or(ResolutionError::MissingUnit)?;
             if intents.iter().any(|(other_id, other_destination)| {
                 other_destination == destination
-                    && board
-                        .units
-                        .iter()
-                        .any(|other| other.unit_id() == *other_id && other.side() != unit.side())
+                    && board.units.iter().any(|other| {
+                        other.unit_id() == *other_id
+                            && other.player_number() != unit.player_number()
+                    })
             }) {
                 stop_after_arrival.insert(*id);
-                if unit.side() != priority {
+                if unit.player_number() != priority {
                     blocked.insert(*id);
                 }
             }
@@ -308,7 +311,7 @@ fn resolve_arrivals(
                     .ok_or(ResolutionError::MissingUnit)?;
                 for enemy in board.units.iter().filter(|enemy| {
                     enemy.is_alive()
-                        && enemy.side() != unit.side()
+                        && enemy.player_number() != unit.player_number()
                         && enemy.board_position() == Some(*destination)
                 }) {
                     let departure = intents.get(&enemy.unit_id());
@@ -348,7 +351,7 @@ fn resolve_arrivals(
             let target = board
                 .units
                 .iter()
-                .filter(|unit| unit.is_alive() && unit.side() != mover.side())
+                .filter(|unit| unit.is_alive() && unit.player_number() != mover.player_number())
                 .filter(|unit| {
                     (unit.board_position() == Some(*destination)
                         && (blocked.contains(&unit.unit_id())
@@ -405,7 +408,7 @@ fn resolve_arrivals(
             let target = board
                 .units
                 .iter()
-                .filter(|unit| unit.is_alive() && unit.side() != mover.side())
+                .filter(|unit| unit.is_alive() && unit.player_number() != mover.player_number())
                 .filter(|unit| {
                     unit.board_position().is_some_and(|destination| {
                         (destination.x() - origin.x()).abs() + (destination.y() - origin.y()).abs()
@@ -493,6 +496,7 @@ mod tests {
     use super::*;
     use crate::{
         map::{Map, Terrain},
+        scenario::UnitKind,
         turns::MoveOrder,
     };
 
@@ -613,6 +617,39 @@ mod tests {
         assert_eq!(result.stopped.len(), 3);
         for order in orders {
             assert_eq!(result.paths[&order.unit_id], vec![order.path[0]]);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn mountain_entry_uses_the_full_infantry_movement_timeline()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let (mut scenario, orders) = setup(&[("1", &[(0, 0), (1, 0)])])?;
+        scenario.map = Map::from_ascii(".^.").map_err(|error| format!("{error:?}"))?;
+        let arrival = arrival_time(&scenario, orders[0].unit_id, &orders[0].path)?;
+        assert_eq!(arrival.cost, arrival.allowance);
+        let result = resolve(&scenario, &orders, 1)?;
+        assert_eq!(path(&result, "1")?, orders[0].path);
+        assert_eq!(result.frames[1].duration_ms, MOVEMENT_DURATION_MS);
+        Ok(())
+    }
+
+    #[test]
+    fn resolution_rejects_vehicle_mountain_routes() -> Result<(), Box<dyn std::error::Error>> {
+        for kind in [UnitKind::Tank, UnitKind::Truck, UnitKind::FieldGun] {
+            let fixture = Scenario::supply_point().map_err(|error| format!("{error:?}"))?;
+            let id = fixture
+                .units
+                .iter()
+                .find(|unit| unit.kind() == kind)
+                .ok_or("missing fixture vehicle")?
+                .id();
+            let (mut scenario, orders) = setup(&[(&id, &[(0, 0), (1, 0)])])?;
+            scenario.map = Map::from_ascii(".^.").map_err(|error| format!("{error:?}"))?;
+            assert!(matches!(
+                resolve(&scenario, &orders, 1),
+                Err(ResolutionError::MissingTerrainCost)
+            ));
         }
         Ok(())
     }

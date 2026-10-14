@@ -20,7 +20,7 @@ type alias Details =
 
 
 type DetailsError
-    = OwnerNotFound { unitId : UnitId, side : PlayerNumber }
+    = OwnerNotFound { unitId : UnitId, playerNumber : PlayerNumber }
 
 
 type alias NamedUnit =
@@ -48,7 +48,7 @@ resolve ownerName loss =
 resolveOwner : (Unit -> Maybe String) -> Unit -> Result DetailsError String
 resolveOwner ownerName unit =
     ownerName unit
-        |> Result.fromMaybe (OwnerNotFound { unitId = unit.id, side = unit.playerNumber })
+        |> Result.fromMaybe (OwnerNotFound { unitId = unit.id, playerNumber = unit.playerNumber })
 
 
 resolveCause : (Unit -> Maybe String) -> LossCause -> Result DetailsError Cause

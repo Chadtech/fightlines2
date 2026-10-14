@@ -7,4 +7,4 @@ import UnitId exposing (UnitId)
 
 type Error
     = LocalStorageDecodeFailed { key : String, error : JD.Error }
-    | UnitOwnerNotFound { unitId : UnitId, side : PlayerNumber }
+    | UnitOwnerNotFound { unitId : UnitId, playerNumber : PlayerNumber }

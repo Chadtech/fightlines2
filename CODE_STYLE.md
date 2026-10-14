@@ -153,6 +153,12 @@ prototype; do not update it unless the task explicitly requires that.
   Keep `Style` domain-independent: put generic utilities and palette tokens
   there, component-specific styling in the component, and page-specific
   composition in its page.
+- Prefer element-local Elm CSS for layout, typography, responsive rules, and
+  pseudo-elements. Keep manually named classes only for selectors that need to
+  coordinate across components or for unsupported CSS features such as container
+  queries. Raw style nodes may define keyframes; applying an animation and its
+  reduced-motion rule can still live in Elm CSS. Remove unused class hooks rather
+  than retaining names for every element.
 - Page views return `List (Html Msg)`. Keep page load-failure views with the
   corresponding page module or a dedicated failure-page module.
 - Give reusable components semantic variants or modifiers rather than arbitrary

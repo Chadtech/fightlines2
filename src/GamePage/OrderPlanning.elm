@@ -9,6 +9,7 @@ module GamePage.OrderPlanning exposing
     , canSelectUnloadCargo
     , chooseUnloadSquare
     , choosingDirection
+    , commandGuideOpen
     , commandMenuUnit
     , confirmPassengers
     , confirmPath
@@ -24,6 +25,7 @@ module GamePage.OrderPlanning exposing
     , missingOrders
     , moveOptions
     , movementPlanning
+    , openCommandGuide
     , orders
     , pathPreview
     , previewRotation
@@ -62,7 +64,8 @@ import Depot exposing (Depot)
 import Direction
 import GamePage.Selection as Selection
     exposing
-        ( DestinationFeedback(..)
+        ( CommandMenuState(..)
+        , DestinationFeedback(..)
         , FacingPurpose(..)
         , Inspection(..)
         , MovePlanning
@@ -97,7 +100,7 @@ type alias Context =
     , units : List Unit
     , movementRules : List Movement.Rule
     , supplyCrates : List Supply.GroundCrate
-    , playerSides : List PlayerNumber
+    , playerNumbers : List PlayerNumber
     }
 
 
@@ -244,7 +247,11 @@ submissionDrafts : Model -> Maybe Drafts
 submissionDrafts state =
     case state of
         OrdinaryPlanning drafts ->
-            Just drafts
+            if commandGuideOpen state then
+                Nothing
+
+            else
+                Just drafts
 
         ConfirmingSubmission drafts ->
             Just drafts
@@ -499,7 +506,11 @@ showSubmissionWarning : Model -> Model
 showSubmissionWarning state =
     case state of
         OrdinaryPlanning drafts ->
-            ConfirmingSubmission drafts
+            if commandGuideOpen state then
+                state
+
+            else
+                ConfirmingSubmission drafts
 
         _ ->
             state
@@ -518,6 +529,21 @@ submissionWarningOpen state =
 dismissDialog : List Depot -> Model -> Model
 dismissDialog depots state =
     case state of
+        OrdinaryPlanning drafts ->
+            case drafts.selection of
+                Just (UnitSelection selected) ->
+                    case selected.interaction of
+                        CommandMenu (ReadingGuide focused) ->
+                            setSelection
+                                (Just (UnitSelection { selected | interaction = CommandMenu (ChoosingCommand focused) }))
+                                state
+
+                        _ ->
+                            state
+
+                _ ->
+                    state
+
         ConfirmingSubmission drafts ->
             OrdinaryPlanning drafts
 
@@ -538,27 +564,27 @@ chooseUnloadSquare context destination state =
 
 
 applyCommand : Context -> UnitCommand.Command -> Model -> Model
-applyCommand context command state =
-    case commandMenuUnit context state of
+applyCommand context command model =
+    case commandMenuUnit context model of
         Just unit ->
             let
                 canApply : Bool
                 canApply =
                     isOwnUnit context unit
-                        && not (receivingLoad context unit (orders state))
+                        && not (receivingLoad context unit (orders model))
                         && List.member command (UnitCommand.available unit)
                         && UnitCommand.canUse unit command
             in
             if canApply then
                 case command of
                     UnitCommand.Move ->
-                        beginMovement NormalMove context unit state
+                        beginMovement NormalMove context unit model
 
                     UnitCommand.AttackMove ->
-                        beginMovement AttackMove context unit state
+                        beginMovement AttackMove context unit model
 
                     UnitCommand.Rotate ->
-                        state
+                        model
                             |> setUnitInteraction
                                 unit.id
                                 (ChoosingDirection
@@ -570,7 +596,7 @@ applyCommand context command state =
                                 )
 
                     UnitCommand.Ambush ->
-                        state
+                        model
                             |> setUnitInteraction
                                 unit.id
                                 (ChoosingDirection
@@ -581,14 +607,83 @@ applyCommand context command state =
                                     )
                                 )
 
+                    UnitCommand.StandGround ->
+                        case Unit.boardPosition unit of
+                            Just position ->
+                                let
+                                    newOrder : PlannedOrder
+                                    newOrder =
+                                        { unitId = unit.id
+                                        , action =
+                                            PlannedOrder.StandGround position
+                                        }
+                                in
+                                model
+                                    |> setOrders
+                                        (newOrder
+                                            :: List.filter
+                                                (\plan -> plan.unitId /= unit.id)
+                                                (orders model)
+                                        )
+                                    |> inspectSelectedUnit context
+
+                            Nothing ->
+                                model
+
                     UnitCommand.HoldPosition ->
-                        holdPosition context unit state
+                        holdPosition context unit model
 
                     _ ->
-                        state
+                        model
 
             else
-                state
+                model
+
+        _ ->
+            model
+
+
+commandGuideOpen : Model -> Bool
+commandGuideOpen state =
+    case state of
+        OrdinaryPlanning drafts ->
+            case drafts.selection of
+                Just (UnitSelection { interaction }) ->
+                    case interaction of
+                        CommandMenu (ReadingGuide _) ->
+                            True
+
+                        _ ->
+                            False
+
+                _ ->
+                    False
+
+        _ ->
+            False
+
+
+openCommandGuide : Context -> Model -> Model
+openCommandGuide context state =
+    case ( state, commandMenuUnit context state ) of
+        ( OrdinaryPlanning drafts, Just unit ) ->
+            case drafts.selection of
+                Just (UnitSelection selected) ->
+                    case selected.interaction of
+                        CommandMenu (ChoosingCommand focused) ->
+                            if isOwnUnit context unit then
+                                setSelection
+                                    (Just (UnitSelection { selected | interaction = CommandMenu (ReadingGuide focused) }))
+                                    state
+
+                            else
+                                state
+
+                        _ ->
+                            state
+
+                _ ->
+                    state
 
         _ ->
             state
@@ -670,7 +765,7 @@ focusCommand context command state =
                     state
                         |> setUnitInteraction
                             selected.id
-                            (CommandMenu (Just command))
+                            (CommandMenu (ChoosingCommand (Just command)))
 
                 _ ->
                     state
@@ -844,8 +939,8 @@ selectUnit context id state =
 
 selectNextUnorderedUnit : Context -> Model -> Model
 selectNextUnorderedUnit context state =
-    case state of
-        OrdinaryPlanning _ ->
+    case ( state, hasDialog state ) of
+        ( OrdinaryPlanning _, False ) ->
             let
                 candidates : List Unit
                 candidates =
@@ -1041,7 +1136,7 @@ moveOptions state =
 
 isOwnUnit : Context -> Unit -> Bool
 isOwnUnit context unit =
-    List.member unit.playerNumber context.playerSides
+    List.member unit.playerNumber context.playerNumbers
 
 
 selectedUnitFromSelection : Context -> Maybe Selection -> Maybe Unit
@@ -1105,7 +1200,10 @@ focusedCommand state =
     case selection state of
         Just (UnitSelection selected) ->
             case selected.interaction of
-                CommandMenu focused ->
+                CommandMenu (ChoosingCommand focused) ->
+                    focused
+
+                CommandMenu (ReadingGuide focused) ->
                     focused
 
                 ChoosingMove _ ->
@@ -1174,7 +1272,14 @@ offerCrateLoading depots order drafts =
             OrdinaryPlanning drafts
 
         _ ->
-            if List.any (\depot -> depot.position == PlannedOrder.destination order) depots then
+            if
+                List.any
+                    (\depot ->
+                        Depot.supplies depot
+                            && (depot.position == PlannedOrder.destination order)
+                    )
+                    depots
+            then
                 ChoosingCrates order.unitId drafts
 
             else
@@ -1700,7 +1805,7 @@ unitSelection context unit state =
                 && not hasOrder
     in
     if canChooseCommand then
-        UnitSelection { id = unit.id, interaction = CommandMenu Nothing }
+        UnitSelection { id = unit.id, interaction = CommandMenu (ChoosingCommand Nothing) }
 
     else
         Inspecting (UnitInspection unit.id)
@@ -1793,7 +1898,7 @@ hasDialog state =
             True
 
         _ ->
-            submissionWarningOpen state || unloadChoice state /= Nothing
+            commandGuideOpen state || submissionWarningOpen state || unloadChoice state /= Nothing
 
 
 holdOrder : List Unit -> Unit -> Maybe PlannedOrder

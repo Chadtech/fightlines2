@@ -1,6 +1,7 @@
 use crate::{
     lobby::{self, GameSnapshot, Snapshot, Store},
     lobby_id::LobbyId,
+    map_editor,
     map_type::MapType,
     session_token::SessionToken,
 };
@@ -17,6 +18,7 @@ use std::sync::{
 
 pub struct Context {
     pub store: Arc<Store>,
+    pub editor: map_editor::Access,
     identity: Mutex<Option<SessionToken>>,
     persist_identity: AtomicBool,
 }
@@ -48,6 +50,10 @@ pub struct Query;
 
 #[graphql_object(context = Context)]
 impl Query {
+    fn maps(context: &Context) -> FieldResult<map_editor::MapCatalog> {
+        map_editor::maps(context)
+    }
+
     fn health() -> bool {
         true
     }
@@ -69,6 +75,14 @@ pub struct Mutation;
 
 #[graphql_object(context = Context)]
 impl Mutation {
+    fn save_map(
+        context: &Context,
+        map_type: MapType,
+        definition: map_editor::MapDefinitionInput,
+    ) -> FieldResult<map_editor::NamedMap> {
+        map_editor::save_map(context, map_type, definition)
+    }
+
     fn create_lobby(context: &Context, name: String, lobby_name: String) -> FieldResult<Snapshot> {
         lobby::create(context, &name, &lobby_name)
     }
@@ -113,12 +127,14 @@ pub async fn handle(
     request: HttpRequest,
     input: web::Json<GraphQLRequest>,
     store: web::Data<Store>,
+    editor: Option<web::Data<map_editor::Editor>>,
     schema: web::Data<Schema>,
 ) -> HttpResponse {
     // Mutations in one document share the newly created browser identity.
     let original = SessionToken::from_request(&request);
     let context = Context {
         store: store.into_inner(),
+        editor: map_editor::Access::from_request(editor, &request),
         identity: Mutex::new(original),
         persist_identity: AtomicBool::new(false),
     };
@@ -142,6 +158,7 @@ pub async fn handle(
 pub fn export_schema() -> std::io::Result<()> {
     let context = Context {
         store: Arc::new(Store::new(crate::seed::Seed::new([0; 32]))),
+        editor: map_editor::Access::Disabled,
         identity: Mutex::new(None),
         persist_identity: AtomicBool::new(false),
     };
@@ -170,7 +187,7 @@ mod tests {
 
     #[actix_web::test]
     async fn development_game_is_opt_in_and_does_not_replace_identity() -> TestResult<()> {
-        let query = "{ game(id: \"00000000000000000000000000000000\") { id name isHost players { side isYou } movementRules { kind budget terrainCosts { terrain cost } } visibleTiles { x y } scenario { units { id side } depots { position { x y } } } } }";
+        let query = "{ game(id: \"00000000000000000000000000000000\") { id name isHost players { playerNumber isYou } movementRules { kind budget terrainCosts { terrain cost } } visibleTiles { x y } scenario { units { id playerNumber } depots { position { x y } } } } }";
         for development in [false, true] {
             let seed = crate::seed::Seed::new([7; 32]);
             let store = if development {
@@ -204,9 +221,9 @@ mod tests {
                     assert_eq!(game["movementRules"].as_array().fixture()?.len(), 4);
                     assert_eq!(game["movementRules"][0]["budget"], 4);
                     assert_eq!(game["name"], "Test game");
-                    assert_eq!(game["players"][0]["side"], "PLAYER1");
+                    assert_eq!(game["players"][0]["playerNumber"], "PLAYER1");
                     assert_eq!(game["players"][0]["isYou"], true);
-                    assert_eq!(game["players"][1]["side"], "PLAYER2");
+                    assert_eq!(game["players"][1]["playerNumber"], "PLAYER2");
                     assert_eq!(game["players"][1]["isYou"], false);
                     assert_eq!(game["scenario"]["units"].as_array().fixture()?.len(), 8);
                     assert!(
@@ -214,7 +231,7 @@ mod tests {
                             .as_array()
                             .fixture()?
                             .iter()
-                            .all(|unit| unit["side"] == "PLAYER1")
+                            .all(|unit| unit["playerNumber"] == "PLAYER1")
                     );
                     assert!(!game["visibleTiles"].as_array().fixture()?.is_empty());
                     assert_eq!(game["scenario"]["depots"].as_array().fixture()?.len(), 3);
@@ -415,7 +432,7 @@ mod tests {
                 .contains("already started")
         );
         let game = format!(
-            "{{ game(id: \"{id}\") {{ {FIELDS} visibleTiles {{ x y }} players {{ side isYou }} scenario {{ map {{ width height baseTile theme features {{ position {{ x y }} terrain }} }} depots {{ position {{ x y }} }} units {{ id side kind location {{ __typename ... on OnMap {{ position {{ x y }} }} ... on Aboard {{ carrierId }} }} }} }} }} }}"
+            "{{ game(id: \"{id}\") {{ {FIELDS} visibleTiles {{ x y }} players {{ playerNumber isYou }} scenario {{ map {{ width height baseTile theme features {{ position {{ x y }} terrain }} }} depots {{ position {{ x y }} }} units {{ id playerNumber kind location {{ __typename ... on OnMap {{ position {{ x y }} }} ... on Aboard {{ carrierId }} }} }} }} }} }}"
         );
         let (member, _) = execute!(&game, Some(guest.clone()));
         assert_eq!(member["data"]["game"]["name"], "Friday Night");
@@ -434,8 +451,14 @@ mod tests {
                 && unit["location"]["position"]["x"].is_number()
                 && unit["location"].get("carrierId").is_none()
         }));
-        assert_eq!(member["data"]["game"]["players"][0]["side"], "PLAYER1");
-        assert_eq!(member["data"]["game"]["players"][1]["side"], "PLAYER2");
+        assert_eq!(
+            member["data"]["game"]["players"][0]["playerNumber"],
+            "PLAYER1"
+        );
+        assert_eq!(
+            member["data"]["game"]["players"][1]["playerNumber"],
+            "PLAYER2"
+        );
         assert_eq!(member["data"]["game"]["players"][1]["isYou"], true);
         let (host_view, _) = execute!(&game, Some(host.clone()));
         let host_scenario = &host_view["data"]["game"]["scenario"];
@@ -445,14 +468,14 @@ mod tests {
                 .as_array()
                 .fixture()?
                 .iter()
-                .all(|unit| unit["side"] == "PLAYER2")
+                .all(|unit| unit["playerNumber"] == "PLAYER2")
         );
         assert!(
             host_scenario["units"]
                 .as_array()
                 .fixture()?
                 .iter()
-                .all(|unit| unit["side"] == "PLAYER1")
+                .all(|unit| unit["playerNumber"] == "PLAYER1")
         );
         assert_ne!(
             host_view["data"]["game"]["visibleTiles"],
@@ -487,8 +510,8 @@ mod tests {
             );
             assert_eq!(owner["data"]["lobby"]["isHost"], true);
         }
-        let submit = |side: &str| -> TestResult<String> {
-            let own_scenario = if side == "PLAYER1" {
+        let submit = |player_number: &str| -> TestResult<String> {
+            let own_scenario = if player_number == "PLAYER1" {
                 host_scenario
             } else {
                 scenario
@@ -497,7 +520,7 @@ mod tests {
                 .as_array()
                 .fixture()?
                 .iter()
-                .filter(|unit| unit["side"] == side)
+                .filter(|unit| unit["playerNumber"] == player_number)
                 .map(|unit| {
                     Ok(format!(
                         "{{unitId: \"{}\", path: [{{x: {}, y: {}}}]}}",
@@ -509,7 +532,7 @@ mod tests {
                 .collect::<TestResult<Vec<_>>>()?
                 .join(",");
             Ok(format!(
-                "mutation {{ submitTurn(id: \"{id}\", turnNumber: 1, orders: [{orders}]) {{ turnNumber submitted opponentSubmitted lastResolution {{ turnNumber reports {{ side unitsLost enemyUnitsDestroyed damageInflicted suppliesConsumed }} events {{ kind unitId }} frames {{ units {{ id side }} visibleTiles {{ x y }} }} }} }} }}"
+                "mutation {{ submitTurn(id: \"{id}\", turnNumber: 1, orders: [{orders}]) {{ turnNumber submitted opponentSubmitted lastResolution {{ turnNumber reports {{ playerNumber unitsLost enemyUnitsDestroyed damageInflicted suppliesConsumed }} events {{ kind unitId }} frames {{ units {{ id playerNumber }} visibleTiles {{ x y }} }} }} }} }}"
             ))
         };
         for identity in [None, Some(cookie.clone())] {
@@ -536,7 +559,7 @@ mod tests {
             .fixture()?;
         assert_eq!(reports.len(), 1);
         let report = reports.first().fixture()?;
-        assert_eq!(report["side"], "PLAYER2");
+        assert_eq!(report["playerNumber"], "PLAYER2");
         assert_eq!(report["unitsLost"], 0);
         assert_eq!(report["enemyUnitsDestroyed"], 0);
         assert_eq!(report["damageInflicted"], 0);
@@ -551,7 +574,7 @@ mod tests {
                 .as_array()
                 .fixture()?
                 .iter()
-                .all(|unit| unit["side"] == "PLAYER2")
+                .all(|unit| unit["playerNumber"] == "PLAYER2")
         );
 
         assert_eq!(

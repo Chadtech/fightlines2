@@ -21,12 +21,6 @@ styles =
                 0%, 20%, 100% { opacity: 1; }
                 50%, 70% { opacity: 0.65; }
             }
-            .fightlines-unit-cargo {
-                animation: fightlines-unit-cargo-pulse 2s ease-in-out infinite;
-            }
-            @media (prefers-reduced-motion: reduce) {
-                .fightlines-unit-cargo { animation: none; opacity: 1; }
-            }
         """
         ]
 
@@ -104,15 +98,6 @@ badge kind count =
                     SupplyCrates ->
                         0.74
 
-            badgeClass : String
-            badgeClass =
-                case kind of
-                    Passengers ->
-                        "fightlines-unit-cargo fightlines-passenger-cargo"
-
-                    SupplyCrates ->
-                        "fightlines-unit-cargo fightlines-supply-cargo"
-
             graphic : List (Svg msg)
             graphic =
                 case kind of
@@ -158,7 +143,13 @@ badge kind count =
         Svg.g
             [ SA.transform ("translate(" ++ String.fromFloat left ++ " " ++ String.fromFloat (15.26 - 3.52 * badgeScale) ++ ") scale(" ++ String.fromFloat badgeScale ++ ")")
             , SA.fill S.nightwood3Str
-            , SA.class badgeClass
+            , SA.css
+                [ S.animation "fightlines-unit-cargo-pulse 2s ease-in-out infinite"
+                , S.reducedMotion
+                    [ S.animationNone
+                    , S.opaque
+                    ]
+                ]
             , SA.pointerEvents "none"
             , Aria.hidden True
             ]

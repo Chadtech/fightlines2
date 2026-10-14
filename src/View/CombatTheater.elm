@@ -42,12 +42,10 @@ styles =
                 70% { transform: scale(1.04); opacity: 1; }
                 100% { transform: scale(1); opacity: 1; }
             }
-            .fightlines-combat-panels { animation: fightlines-combat-pop 200ms ease-out both; }
             .fightlines-combat-focus *:not(.fightlines-combat-shine),
             .fightlines-combat-focus *::before,
             .fightlines-combat-focus *::after { animation-play-state: paused !important; }
             @media (prefers-reduced-motion: reduce) {
-                .fightlines-combat-panels { animation: none; }
                 .fightlines-combat-figure { opacity: 1 !important; }
                 .fightlines-combat-rumble { transform: none !important; }
             }
@@ -206,31 +204,34 @@ toHtml config map panel =
                 , S.left0
                 , S.right0
                 , S.bgNightwood2
-                , Css.opacity (Css.num shadeOpacity)
+                , S.opacity shadeOpacity
                 ]
             ]
             []
         , H.div
-            [ A.class "fightlines-combat-card"
-            , A.css
+            [ A.css
                 [ S.relative
                 , S.wFull
                 , S.textGray5
-                , Css.maxWidth (Css.rem 64)
-                , Css.opacity (Css.num cardOpacity)
-                , Css.maxHeight (Css.calc (Css.vh 100) (Css.minus (Css.rem 1.5)))
+                , S.maxW256
+                , S.opacity cardOpacity
+                , S.maxHViewportInsetRem 1.5
                 , S.overflowAuto
                 ]
             ]
             [ H.div
-                [ A.class "fightlines-combat-panels"
+                [ A.css
+                    [ S.animation "fightlines-combat-pop 200ms ease-out both"
+                    , S.reducedMotion
+                        [ S.animationNone ]
+                    ]
                 ]
                 [ Card.toHtml card
                     [ H.div
                         [ A.css
                             [ S.grid
                             , S.g3
-                            , Css.property "grid-template-columns" "minmax(0, 1fr) minmax(0, 1fr)"
+                            , S.gridCols2
                             ]
                         ]
                         portraits
@@ -291,6 +292,15 @@ backdropPath theme terrain =
 
                 ( MapTheme.Desert, Terrain.Hills ) ->
                     "desert-hills"
+
+                ( MapTheme.GreenForest, Terrain.Mountains ) ->
+                    "mountains"
+
+                ( MapTheme.Snow, Terrain.Mountains ) ->
+                    "snowy-mountains"
+
+                ( MapTheme.Desert, Terrain.Mountains ) ->
+                    "desert-mountains"
 
                 ( MapTheme.GreenForest, Terrain.GrassPlain ) ->
                     "plains"
@@ -414,7 +424,7 @@ portrait map panel health unit =
         [ Svg.g
             [ SA.class "fightlines-combat-rumble"
             , SA.css
-                [ Css.property "transform" (rumbleTransform panel)
+                [ S.transform (rumbleTransform panel)
                 , Css.property "transform-origin" "48px 32px"
                 ]
             ]

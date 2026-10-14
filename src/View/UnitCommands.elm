@@ -16,10 +16,12 @@ import Style as S
 import Unit exposing (Unit)
 import UnitCommand as Command exposing (Command, MenuOption(..))
 import View.Aria as Aria
+import View.InfoMarker as InfoMarker
 
 
 type Msg
     = MenuPressed
+    | InfoClicked
     | CancelClicked
     | CommandFocused MenuOption
     | CommandPicked Command
@@ -79,15 +81,15 @@ toHtml map camera position unit =
         , Ev.stopPropagationOn "mousedown" (Decode.succeed ( MenuPressed, True ))
         , A.css
             [ S.absolute
-            , Css.property "left" menuAnchor.x
-            , Css.property "top" menuAnchor.y
+            , S.leftValue menuAnchor.x
+            , S.topValue menuAnchor.y
             , S.z4
-            , Css.width (Css.rem 13)
-            , Css.property "max-width" "calc(100cqw - 1rem)"
-            , Css.property "max-height" "calc(100cqh - 1rem)"
+            , S.w52
+            , S.maxWContainerInset4
+            , S.maxHContainerInset4
             , S.overflowAuto
             , S.transformOriginTopLeft
-            , Css.property "transform" translation
+            , S.transform translation
             , S.bgGray1
             , S.textGray4
             , S.outdent
@@ -98,15 +100,21 @@ toHtml map camera position unit =
             , S.g1
             ]
         ]
-        [ H.h3
+        [ H.div
             [ A.css
-                [ S.bgGray3
+                [ S.row
+                , S.itemsCenter
+                , S.justifySpaceBetween
+                , S.bgGray3
                 , S.shrink0
                 , S.textGray0
                 , S.p2
                 ]
             ]
-            [ H.text "commands"
+            [ H.h3
+                []
+                [ H.text "commands" ]
+            , infoButton
             ]
         , H.div
             [ Aria.role Aria.Group
@@ -119,6 +127,28 @@ toHtml map camera position unit =
             (List.map (commandButton unit) commands)
         , cancelRow
         ]
+
+
+infoButton : Html Msg
+infoButton =
+    H.button
+        [ A.type_ "button"
+        , Aria.label "about commands"
+        , A.title "about commands"
+        , A.attribute "aria-haspopup" "dialog"
+        , Ev.onClick InfoClicked
+        , A.css
+            [ S.p1
+            , S.pointerCursor
+            , S.textGray0
+            , S.hover
+                [ S.textGray5 ]
+            , S.focusVisible
+                [ S.outlineCurrent
+                ]
+            ]
+        ]
+        [ InfoMarker.toHtml ]
 
 
 commandHtmlId : Command -> String
@@ -150,8 +180,8 @@ cancelRow =
             [ Aria.hidden True
             , A.css
                 [ S.shrink0
-                , Css.width (Css.rem 1.875)
-                , Css.height (Css.rem 1.875)
+                , S.w7p5
+                , S.h7p5
                 ]
             ]
             []
@@ -171,6 +201,9 @@ commandButton unit command =
             if implemented then
                 Command.label command
 
+            else if command == Command.StandGround then
+                "not enough supplies to stand ground"
+
             else if command == Command.Ambush then
                 "not enough supplies to maintain ambush readiness"
 
@@ -186,7 +219,7 @@ commandButton unit command =
                 commandRowStyles
 
             else
-                commandRowStyles ++ [ Css.opacity (Css.num 0.45), Css.cursor Css.notAllowed ]
+                commandRowStyles ++ [ S.opacity 0.45, S.notAllowedCursor ]
     in
     H.button
         [ A.id (commandHtmlId command)
@@ -234,24 +267,24 @@ commandRowStyles =
     , S.itemsCenter
     , S.g2
     , S.p2
-    , Css.width (Css.pct 100)
-    , Css.textAlign Css.left_
-    , Css.border3 (Css.px 1) Css.solid (Css.rgba 0 0 0 0)
+    , S.wFull
+    , S.textLeft
+    , S.borderTransparent
     , S.bgGray1
     , S.textGray5
     , S.pointerCursor
-    , Css.hover
+    , S.hover
         [ S.outdent
         , S.bgGray2
         , S.textYellow5
         ]
-    , Css.pseudoClass "focus-visible"
+    , S.focusVisible
         [ S.outdent
         , S.textYellow5
-        , Css.outline3 (Css.px 1) Css.solid (Css.hex S.yellow5Str)
-        , Css.outlineOffset (Css.px -3)
+        , S.outlineYellow5
+        , S.outlineOffsetNeg3
         ]
-    , Css.active
+    , S.active
         [ S.indent
         ]
     ]
@@ -264,10 +297,10 @@ commandIcon command =
         , A.alt ""
         , A.css
             [ S.shrink0
-            , Css.width (Css.rem 1.875)
-            , Css.height (Css.rem 1.875)
-            , Css.property "object-fit" "contain"
-            , Css.property "image-rendering" "auto"
+            , S.w7p5
+            , S.h7p5
+            , S.objectContain
+            , S.imageRenderingAuto
             ]
         ]
         []

@@ -1,6 +1,8 @@
-module View.LoadingBar exposing (toHtml)
+module View.LoadingBar exposing
+    ( styles
+    , toHtml
+    )
 
-import Css
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
@@ -17,12 +19,16 @@ toHtml active =
         content =
             if active then
                 [ H.div
-                    [ A.class barClass
-                    , A.css
+                    [ A.css
                         [ S.absolute
                         , S.hFull
                         , S.bgGray4
-                        , Css.width (Css.pct 40)
+                        , S.w40Pct
+                        , S.animation "fightlines-loading-sweep 1.8s linear infinite"
+                        , S.reducedMotion
+                            [ S.animationNone
+                            , S.left30Pct
+                            ]
                         ]
                     ]
                     []
@@ -30,10 +36,6 @@ toHtml active =
 
             else
                 []
-
-        children : List (Html msg)
-        children =
-            styles :: content
     in
     H.div
         [ Aria.hidden True
@@ -42,31 +44,22 @@ toHtml active =
             , S.bgNightwood3
             , S.overflowHidden
             , S.relative
-            , Css.height (Css.rem 1.25)
-            , Css.width (Css.rem 9)
+            , S.h5
+            , S.w36
             , S.maxWFull
             ]
         ]
-        children
-
-
-barClass : String
-barClass =
-    "fightlines-loading-bar"
+        content
 
 
 styles : Html msg
 styles =
     H.node "style"
         []
-        [ H.text
-            ("." ++ barClass ++ """ { animation: fightlines-loading-sweep 1.8s linear infinite; }
+        [ H.text """
             @keyframes fightlines-loading-sweep {
                 from { transform: translateX(-100%); }
                 to { transform: translateX(250%); }
             }
-            @media (prefers-reduced-motion: reduce) {
-                .""" ++ barClass ++ """ { animation: none; left: 30%; }
-            }
-            """)
+        """
         ]

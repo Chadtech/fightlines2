@@ -11,6 +11,7 @@ module View.TurnControls exposing
 
 import Api.Enum.PlayerNumber as PlayerNumber exposing (PlayerNumber)
 import Css
+import Css.Global
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
@@ -36,7 +37,6 @@ panel : List (Html msg) -> Html msg
 panel children =
     H.section
         [ Aria.label "game controls"
-        , A.class controlsClass
         , A.css
             [ S.bgGray1
             , S.outdentTopRight
@@ -48,12 +48,12 @@ panel children =
             , S.g3
             , S.shrink0
             , S.maxWFull
-            , Css.width (Css.rem 64)
+            , S.w256
             , S.row
             , S.flexWrap
-            , Css.alignItems Css.center
-            , Css.minHeight (Css.rem 6)
-            , Css.property "container-type" "inline-size"
+            , S.itemsCenter
+            , S.minH24
+            , S.containerInlineSize
             ]
         ]
         children
@@ -74,24 +74,34 @@ submit activity label =
                 _ ->
                     Button.disabled label
 
-        className : String
-        className =
+        activityStyles : Css.Style
+        activityStyles =
             case activity of
                 Ready ->
-                    String.join " " [ submitClass, readyClass ]
+                    readyButtonStyles
 
                 Waiting ->
-                    String.join " " [ submitClass, sentClass ]
+                    Css.Global.descendants
+                        [ Css.Global.button
+                            [ S.textYellow5
+                            ]
+                        ]
 
                 _ ->
-                    submitClass
+                    S.batch []
     in
     H.div
-        [ A.class className
-        , A.css
+        [ A.css
             [ S.col
             , S.g2
             , S.shrink0
+            , Css.Global.descendants
+                [ Css.Global.button
+                    [ S.minW36
+                    , S.minH14
+                    ]
+                ]
+            , activityStyles
             ]
         ]
         [ button
@@ -104,18 +114,17 @@ submit activity label =
 feedback : List (Html msg) -> Html msg
 feedback children =
     H.div
-        [ A.class feedbackClass
-        , A.css
+        [ A.css
             [ S.col
             , S.g1
-            , S.minW0
+            , S.minW56Clamped
             , S.flex1
             , S.wrapAnywhere
             , S.indentStrong
             , S.bgNightwood3
             , S.p3
             , S.overflowAuto
-            , Css.alignSelf Css.stretch
+            , S.selfStretch
             ]
         ]
         children
@@ -125,18 +134,50 @@ navigation : Html msg -> Html msg
 navigation controls =
     H.div
         [ A.class navigationClass
-        , A.css [ S.shrink0, S.minW0, S.maxWFull ]
+        , A.css
+            [ S.shrink0
+            , S.minW0
+            , S.maxWFull
+            , Css.Global.descendants
+                [ Css.Global.selector "[role=group]"
+                    [ S.grid
+                    , S.gridRowsRem 3 2.75
+                    , S.itemsCenter
+                    , S.justifyItemsCenter
+                    , Css.Global.children
+                        [ Css.Global.div
+                            [ S.grid
+                            , S.gridColumnsRem 3 2.75
+                            , S.g1
+                            , S.itemsCenter
+                            , S.justifyItemsCenter
+                            ]
+                        ]
+                    ]
+                , Css.Global.button
+                    [ S.h11
+                    , S.minW11
+                    , S.selfCenter
+                    ]
+                , Css.Global.selector "[aria-label=\"zoom map\"]"
+                    [ Css.Global.children
+                        [ Css.Global.button
+                            [ S.wFull
+                            ]
+                        ]
+                    ]
+                ]
+            ]
         ]
         [ controls ]
 
 
-playerRow : { name : String, side : PlayerNumber, status : String } -> Html msg
+playerRow : { name : String, playerNumber : PlayerNumber, status : String } -> Html msg
 playerRow player =
     H.li
-        [ A.class playerRowClass
-        , A.css
+        [ A.css
             [ S.grid
-            , Css.property "grid-template-columns" "repeat(2, minmax(0, 1fr))"
+            , S.gridCols2
             , S.g2
             , S.itemsStart
             ]
@@ -149,7 +190,7 @@ playerRow player =
                 , S.minW0
                 ]
             ]
-            [ playerColor player.side
+            [ playerColor player.playerNumber
             , H.span
                 []
                 [ H.text player.name ]
@@ -161,11 +202,11 @@ playerRow player =
 
 
 playerColor : PlayerNumber -> Html msg
-playerColor side =
+playerColor playerNumber =
     let
         color : Css.Style
         color =
-            case side of
+            case playerNumber of
                 PlayerNumber.Player1 ->
                     S.bgRed1
 
@@ -174,7 +215,7 @@ playerColor side =
 
         label : String
         label =
-            case side of
+            case playerNumber of
                 PlayerNumber.Player1 ->
                     "player 1: red"
 
@@ -184,7 +225,6 @@ playerColor side =
     H.span
         [ Aria.role Aria.Image
         , Aria.label label
-        , A.class playerColorClass
         , A.css
             [ color
             , S.w3
@@ -195,49 +235,44 @@ playerColor side =
         []
 
 
-controlsClass : String
-controlsClass =
-    "fightlines-turn-controls"
-
-
-submitClass : String
-submitClass =
-    "fightlines-turn-submit"
-
-
-readyClass : String
-readyClass =
-    "fightlines-turn-ready"
-
-
-sentClass : String
-sentClass =
-    "fightlines-turn-sent"
-
-
-feedbackClass : String
-feedbackClass =
-    "fightlines-turn-feedback"
-
-
 navigationClass : String
 navigationClass =
     "fightlines-turn-navigation"
 
 
-playerRowClass : String
-playerRowClass =
-    "fightlines-player-row"
-
-
-playerColorClass : String
-playerColorClass =
-    "fightlines-player-color"
-
-
-shineAnimation : String
-shineAnimation =
-    "fightlines-turn-shine"
+{-| Button effects are scoped through Elm CSS; the style node only defines
+keyframes and the container query unsupported by this version of elm-css.
+-}
+readyButtonStyles : Css.Style
+readyButtonStyles =
+    Css.Global.descendants
+        [ Css.Global.button
+            [ S.relative
+            , S.overflowHidden
+            , S.animation "fightlines-turn-ready 1.8s ease-in-out infinite"
+            , S.focusVisible
+                [ S.outlineCurrentThick
+                , S.outlineOffset3
+                ]
+            , S.after
+                [ S.contentEmpty
+                , S.absolute
+                , S.inset0
+                , Css.property "background" "linear-gradient(110deg, transparent 35%, currentColor 50%, transparent 65%)"
+                , S.opacity 0.16
+                , S.transform "translateX(-150%)"
+                , S.animation "fightlines-turn-shine 3.6s ease-in-out infinite"
+                , S.pointerEventsNone
+                ]
+            , S.reducedMotion
+                [ S.animationNone
+                , S.after
+                    [ S.animationNone
+                    , S.displayNone
+                    ]
+                ]
+            ]
+        ]
 
 
 styles : Html msg
@@ -246,82 +281,17 @@ styles =
         []
         [ H.text
             ("""
-            ."""
-                ++ feedbackClass
-                ++ """ { min-width: min(14rem, 100%); }
-            ."""
-                ++ submitClass
-                ++ """ button { min-width: 9rem; min-height: 3.5rem; }
-            ."""
-                ++ navigationClass
-                ++ """ section { flex-wrap: nowrap; }
-            ."""
-                ++ navigationClass
-                ++ """ [role="group"] {
-                display: grid;
-                grid-template-rows: repeat(3, 2.75rem);
-                align-items: center;
-                justify-items: center;
-            }
-            ."""
-                ++ navigationClass
-                ++ """ button { height: 2.75rem; min-width: 2.75rem; align-self: center; }
-            ."""
-                ++ navigationClass
-                ++ """ [role="group"] > div {
-                display: grid;
-                grid-template-columns: repeat(3, 2.75rem);
-                gap: .25rem;
-                align-items: center;
-                justify-items: center;
-            }
-            ."""
-                ++ navigationClass
-                ++ """ [aria-label="zoom map"] > button { width: 100%; }
-
-            ."""
-                ++ readyClass
-                ++ """ button {
-                position: relative;
-                overflow: hidden;
-                animation: """
-                ++ readyClass
-                ++ """ 1.8s ease-in-out infinite;
-            }
-            ."""
-                ++ readyClass
-                ++ """ button::after {
-                content: '';
-                position: absolute;
-                inset: 0;
-                background: linear-gradient(110deg, transparent 35%, currentColor 50%, transparent 65%);
-                opacity: .16;
-                transform: translateX(-150%);
-                animation: """
-                ++ shineAnimation
-                ++ """ 3.6s ease-in-out infinite;
-                pointer-events: none;
-            }
-            ."""
-                ++ readyClass
-                ++ """ button:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
-            ."""
-                ++ sentClass
-                ++ """ button { color: """
-                ++ S.yellow5Str
-                ++ """; }
-            @keyframes """
-                ++ readyClass
-                ++ """ {
+            @keyframes fightlines-turn-ready {
                 0%, 100% { filter: brightness(1); }
                 50% { filter: brightness(1.45); }
             }
-            @keyframes """
-                ++ shineAnimation
-                ++ """ {
+            @keyframes fightlines-turn-shine {
                 0%, 35% { transform: translateX(-150%); }
                 75%, 100% { transform: translateX(150%); }
             }
+            ."""
+                ++ navigationClass
+                ++ """ section { flex-wrap: nowrap; }
             @container (max-width: 57rem) {
                 ."""
                 ++ navigationClass
@@ -329,16 +299,6 @@ styles =
                 ."""
                 ++ navigationClass
                 ++ """ section { flex-wrap: wrap; }
-            }
-            @media (prefers-reduced-motion: reduce) {
-                ."""
-                ++ readyClass
-                ++ """ button, ."""
-                ++ readyClass
-                ++ """ button::after { animation: none; }
-                ."""
-                ++ readyClass
-                ++ """ button::after { display: none; }
             }
             """
             )

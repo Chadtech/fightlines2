@@ -69,10 +69,21 @@ toSvg config =
                 Terrain.Forest ->
                     Just "/assets/terrain-forest-illustrated-v3.png"
 
+                Terrain.Mountains ->
+                    Just (mountainPath config.theme)
+
+        featureFilter : String
+        featureFilter =
+            if config.terrain == Terrain.Mountains then
+                "none"
+
+            else
+                art.featureFilter
+
         featureImages : List (Svg msg)
         featureImages =
             featurePath
-                |> Maybe.map (\path -> [ image { path = path, filter = art.featureFilter } ])
+                |> Maybe.map (\path -> [ image { path = path, filter = featureFilter } ])
                 |> Maybe.withDefault []
 
         groundImage : Svg msg
@@ -86,3 +97,16 @@ toSvg config =
     Svg.g
         []
         images
+
+
+mountainPath : MapTheme -> String
+mountainPath theme =
+    case theme of
+        MapTheme.GreenForest ->
+            "/assets/terrain-mountains-illustrated-v1.png"
+
+        MapTheme.Snow ->
+            "/assets/terrain-mountains-snow-illustrated-v1.png"
+
+        MapTheme.Desert ->
+            "/assets/terrain-mountains-desert-illustrated-v1.png"

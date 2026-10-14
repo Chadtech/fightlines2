@@ -47,3 +47,8 @@
 !/public/assets/combat-impact-side-anime-v1/*.png
 !/public/assets/combat-impact-side-anime-v2/
 !/public/assets/combat-impact-side-anime-v2/*.png
+
+# Mountain terrain in each map theme.
+!/public/assets/terrain-mountains-illustrated-v1.png
+!/public/assets/terrain-mountains-snow-illustrated-v1.png
+!/public/assets/terrain-mountains-desert-illustrated-v1.png

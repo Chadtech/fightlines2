@@ -19,6 +19,13 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode exposing (Decoder)
 
 
+maps :
+    SelectionSet decodesTo Api.Object.MapCatalog
+    -> SelectionSet decodesTo RootQuery
+maps object____ =
+    Object.selectionForCompositeField "maps" [] object____ Basics.identity
+
+
 health : SelectionSet Bool RootQuery
 health =
     Object.selectionForField "Bool" "health" [] Decode.bool

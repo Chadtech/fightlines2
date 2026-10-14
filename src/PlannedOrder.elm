@@ -39,6 +39,7 @@ type Action
     | AttackMove Movement.Option
     | Rotate Rotation
     | Ambush Rotation
+    | StandGround Coordinate
     | Unload StationaryUnload
     | SupplyTransfer SupplyPlan
 
@@ -92,6 +93,9 @@ destination order =
         SupplyTransfer plan ->
             plan.destination
 
+        StandGround position ->
+            position
+
         Hold position ->
             position
 
@@ -116,6 +120,9 @@ path order =
     case order.action of
         SupplyTransfer plan ->
             plan.route
+
+        StandGround position ->
+            [ position ]
 
         Hold position ->
             [ position ]
@@ -154,6 +161,9 @@ unloads order =
         Hold _ ->
             []
 
+        StandGround _ ->
+            []
+
         Ambush _ ->
             []
 
@@ -174,6 +184,9 @@ isMoving order =
             List.length move.path > 1
 
         Hold _ ->
+            False
+
+        StandGround _ ->
             False
 
         Ambush _ ->
@@ -219,6 +232,9 @@ toInput order =
                 Rotate rotation ->
                     OptionalArgument.Present rotation.direction
 
+                StandGround _ ->
+                    OptionalArgument.Absent
+
                 Hold _ ->
                     OptionalArgument.Absent
 
@@ -239,6 +255,7 @@ toInput order =
             { optionals
                 | unloads = OptionalArgument.Present (List.map unloadInput (unloads order))
                 , direction = direction
+                , standGround = OptionalArgument.Present (isStandingGround order)
                 , ambush = OptionalArgument.Present (isAmbush order)
                 , attackMove = OptionalArgument.Present (isAttackMove order)
                 , loadCrates =
@@ -312,3 +329,13 @@ unloadingCrates plan =
 
         LoadingCrates _ ->
             []
+
+
+isStandingGround : PlannedOrder -> Bool
+isStandingGround order =
+    case order.action of
+        StandGround _ ->
+            True
+
+        _ ->
+            False

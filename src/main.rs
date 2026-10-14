@@ -6,6 +6,8 @@ mod lobby;
 mod lobby_id;
 mod lobby_name;
 mod map;
+mod map_definition;
+mod map_editor;
 mod map_type;
 mod movement;
 mod movement_resolution;
@@ -63,11 +65,20 @@ async fn run() -> io::Result<()> {
     } else {
         lobby::Store::new(seed)
     };
+    let editor_enabled = env::args().any(|argument| argument == "--map-editor");
+    let editor = web::Data::new(map_editor::Editor {
+        directory: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("maps"),
+        index: frontend.join("index.html"),
+        writes: std::sync::Mutex::new(()),
+    });
+    if editor_enabled {
+        println!("Map editor: http://{}/map-editor", listener.local_addr()?);
+    }
     let store = web::Data::new(store);
     let schema = web::Data::new(graphql::schema());
     HttpServer::new(move || {
         let index = frontend.join("index.html");
-        App::new()
+        let mut app = App::new()
             .wrap(DefaultHeaders::new().add(("Cache-Control", "no-cache")))
             .app_data(store.clone())
             .app_data(schema.clone())
@@ -88,8 +99,13 @@ async fn run() -> io::Result<()> {
                     let index = index.clone();
                     async move { NamedFile::open(index) }
                 }),
-            )
-            .service(Files::new("/", &frontend).index_file("index.html"))
+            );
+        if editor_enabled {
+            app = app
+                .app_data(editor.clone())
+                .configure(|config| map_editor::configure(config, true));
+        }
+        app.service(Files::new("/", &frontend).index_file("index.html"))
     })
     .listen(listener)?
     .run()

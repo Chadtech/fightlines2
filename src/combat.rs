@@ -168,7 +168,8 @@ fn attack_aspect(unit: &Unit, opponent: &Unit) -> AttackAspect {
 }
 
 pub struct Combat {
-    ready: BTreeSet<UnitId>,
+    ambushers: BTreeSet<UnitId>,
+    standing_ground: BTreeSet<UnitId>,
     fired: BTreeSet<UnitId>,
     attack_movers: BTreeSet<UnitId>,
     deferred_targets: BTreeMap<UnitId, BTreeSet<UnitId>>,
@@ -176,11 +177,12 @@ pub struct Combat {
 
 impl Combat {
     pub fn prepare(board: &mut Scenario, orders: &[MoveOrder]) -> Self {
-        let mut ready = BTreeSet::new();
-        for order in orders
-            .iter()
-            .filter(|order| order.facing.is_ambush() || order.travel == TravelMode::AttackMove)
-        {
+        let mut ambushers = BTreeSet::new();
+        for order in orders.iter().filter(|order| {
+            order.facing.is_ambush()
+                || order.facing.is_standing_ground()
+                || order.travel == TravelMode::AttackMove
+        }) {
             if let Some(unit) = board
                 .units
                 .iter_mut()
@@ -191,12 +193,17 @@ impl Combat {
                 }
                 unit.spend_supplies(rules(unit.kind()).readiness_cost);
                 if order.facing.is_ambush() {
-                    ready.insert(unit.unit_id());
+                    ambushers.insert(unit.unit_id());
                 }
             }
         }
         let mut combat = Self {
-            ready,
+            ambushers,
+            standing_ground: orders
+                .iter()
+                .filter(|order| order.facing.is_standing_ground())
+                .map(|order| order.unit_id)
+                .collect(),
             fired: BTreeSet::new(),
             attack_movers: orders
                 .iter()
@@ -208,7 +215,7 @@ impl Combat {
         for shooter in board
             .units
             .iter()
-            .filter(|unit| combat.ready.contains(&unit.unit_id()))
+            .filter(|unit| combat.ambushers.contains(&unit.unit_id()))
         {
             let targets = board
                 .units
@@ -234,7 +241,8 @@ impl Combat {
     fn damage(&self, board: &Scenario, shooter: &Unit, target: &Unit, kind: CombatKind) -> i32 {
         let health = shooter.hit_points();
         let strength = f64::from(health.current()) / f64::from(health.maximum());
-        let battle_ready = self.ready.contains(&target.unit_id())
+        let battle_ready = self.standing_ground.contains(&target.unit_id())
+            || self.ambushers.contains(&target.unit_id())
             || (self.attack_movers.contains(&target.unit_id())
                 && (self.can_fire(target) || self.fired.contains(&target.unit_id())));
         let matchup = match (shooter.kind(), target.kind()) {
@@ -267,7 +275,7 @@ impl Combat {
             .and_then(|position| board.map.tile_at(position))
         {
             Some(Terrain::Hills | Terrain::Forest) => 0.85,
-            Some(Terrain::GrassPlain) | None => 1.0,
+            Some(Terrain::GrassPlain | Terrain::Mountains) | None => 1.0,
         };
         let ambush = if kind == CombatKind::Ambush && self.attack_movers.contains(&target.unit_id())
         {
@@ -308,10 +316,10 @@ impl Combat {
             AmbushShape::Line => false,
             AmbushShape::Cross => forward == (rule.range + 1) / 2 && sideways.abs() == 1,
         };
-        let visible = visibility::visible_tiles(board, shooter.side());
+        let visible = visibility::visible_tiles(board, shooter.player_number());
         if !self.can_fire(shooter)
             || !target.is_alive()
-            || shooter.side() == target.side()
+            || shooter.player_number() == target.player_number()
             || !(in_line || in_cross_arm)
             || !visibility::observable(&board.map, &visible, destination)
             || !visibility::clear_line(&board.map, origin, destination)
@@ -414,7 +422,7 @@ impl Combat {
         self.engage_contacts(board, stopped, frames, &[]);
     }
 
-    /// A ready field gun gets the first shot when a tank contacts it or aims
+    /// An ambushing field gun gets the first shot when a tank contacts it or aims
     /// an opposing ambush at it inside its observable firing area. Initial-contact
     /// deferral must not let a tank charge down that area before the gun responds.
     fn field_gun_interceptions(
@@ -425,7 +433,9 @@ impl Combat {
         board
             .units
             .iter()
-            .filter(|gun| gun.kind() == UnitKind::FieldGun && self.ready.contains(&gun.unit_id()))
+            .filter(|gun| {
+                gun.kind() == UnitKind::FieldGun && self.ambushers.contains(&gun.unit_id())
+            })
             .filter_map(|gun| {
                 board
                     .units
@@ -436,7 +446,7 @@ impl Combat {
                             .deferred_targets
                             .get(&gun.unit_id())
                             .is_some_and(|targets| targets.contains(&tank.unit_id()));
-                        let opposing_ambush = self.ready.contains(&tank.unit_id())
+                        let opposing_ambush = self.ambushers.contains(&tank.unit_id())
                             && !deferred
                             && self.engagement(board, tank, gun).is_some();
                         tank.kind() == UnitKind::Tank && (contact || opposing_ambush)
@@ -469,7 +479,7 @@ impl Combat {
         let eligible: Vec<_> = board
             .units
             .iter()
-            .filter(|unit| self.ready.contains(&unit.unit_id()))
+            .filter(|unit| self.ambushers.contains(&unit.unit_id()))
             .flat_map(|shooter| {
                 board
                     .units
@@ -488,7 +498,7 @@ impl Combat {
             });
         }
         let opening: Vec<_> = self
-            .ready
+            .ambushers
             .iter()
             .filter_map(|shooter| {
                 eligible
@@ -520,7 +530,7 @@ impl Combat {
             if let (Some(shooter), Some(target)) = (shooter, target)
                 && self.can_fire(shooter)
                 && target.is_alive()
-                && shooter.side() != target.side()
+                && shooter.player_number() != target.player_number()
                 && let (Some(origin), Some(destination)) =
                     (shooter.board_position(), target.board_position())
                 && !opening
@@ -598,13 +608,13 @@ mod tests {
         let shooter = scenario
             .units
             .iter()
-            .find(|unit| unit.side() == PlayerNumber::Player1 && unit.kind() == kind)
+            .find(|unit| unit.player_number() == PlayerNumber::Player1 && unit.kind() == kind)
             .cloned()
             .fixture()?;
         let target = scenario
             .units
             .iter()
-            .find(|unit| unit.side() == PlayerNumber::Player2 && unit.kind() == enemy_kind)
+            .find(|unit| unit.player_number() == PlayerNumber::Player2 && unit.kind() == enemy_kind)
             .cloned()
             .fixture()?;
         scenario.units = vec![shooter, target];
@@ -998,7 +1008,9 @@ mod tests {
             );
         }
         let mut combat = combat;
-        combat.ready.insert(board.units.get(1).fixture()?.unit_id());
+        combat
+            .ambushers
+            .insert(board.units.get(1).fixture()?.unit_id());
         for (direction, expected) in [
             (Direction::West, 8),
             (Direction::North, 10),
@@ -1016,7 +1028,7 @@ mod tests {
             );
         }
         combat
-            .ready
+            .ambushers
             .remove(&board.units.get(1).fixture()?.unit_id());
         board.units.get_mut(1).fixture()?.rotate(Direction::West);
         for (direction, expected) in [
@@ -1256,7 +1268,7 @@ mod tests {
             .units
             .into_iter()
             .find(|unit| {
-                unit.side() == PlayerNumber::Player2
+                unit.player_number() == PlayerNumber::Player2
                     && unit.kind() == UnitKind::Truck
                     && unit.unit_id() != scenario.units[1].unit_id()
             })
@@ -1344,7 +1356,7 @@ mod tests {
             assert_eq!(target.hit_points().current(), if survived { 5 } else { 0 });
             assert_eq!(
                 target.fuel().fixture()?.current,
-                if survived { 30 } else { 31 }
+                if survived { 28 } else { 30 }
             );
             assert_eq!(
                 target.supplies().current(),
@@ -1366,7 +1378,7 @@ mod tests {
             .units
             .into_iter()
             .find(|unit| {
-                unit.side() == PlayerNumber::Player1
+                unit.player_number() == PlayerNumber::Player1
                     && unit.kind() == UnitKind::Tank
                     && unit.unit_id() != orders[0].unit_id
             })
@@ -1394,7 +1406,7 @@ mod tests {
         assert!(result.stopped.contains(&orders[1].unit_id));
         let mover = result.frames.last().fixture()?.units.get(1).fixture()?;
         assert_eq!(mover.supplies().current(), 28);
-        assert_eq!(mover.fuel().fixture()?.current, 30);
+        assert_eq!(mover.fuel().fixture()?.current, 28);
         Ok(())
     }
 
@@ -1427,11 +1439,88 @@ mod tests {
         assert_eq!(units[0].supplies().current(), 28);
         assert_eq!(units[1].supplies(), scenario.units[1].supplies());
         assert_eq!(units[1].direction(), Some(Direction::South));
-        assert_eq!(units[1].fuel().fixture()?.current, 31);
+        assert_eq!(units[1].fuel().fixture()?.current, 30);
         assert_eq!(
             result.paths.get(&orders[1].unit_id).fixture()?,
             &vec![Coordinate::new(4, 2), Coordinate::new(4, 3)]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn stand_ground_pays_readiness_without_initiating_combat() -> TestResult<()> {
+        for kind in [UnitKind::Infantry, UnitKind::Tank, UnitKind::FieldGun] {
+            let (mut board, mut orders) = fixture(kind, UnitKind::Tank, Coordinate::new(4, 3))?;
+            orders[0].facing = crate::turns::FacingOrder::StandGround;
+            let direction = board.units[0].direction();
+            let supplies = board.units[0].supplies().current();
+            let mut combat = Combat::prepare(&mut board, &orders);
+            let mut frames = Vec::new();
+            combat.engage(&mut board, &mut BTreeSet::new(), &mut frames);
+            combat.finish(&mut board, &mut BTreeSet::new(), &mut frames);
+            assert!(frames.iter().all(|frame| frame.shots.is_empty()));
+            assert_eq!(
+                board.units[0].supplies().current(),
+                supplies - rules(kind).readiness_cost
+            );
+            assert_eq!(board.units[0].direction(), direction);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn stand_ground_defends_like_ambush_without_return_fire_or_interception() -> TestResult<()> {
+        for kind in [UnitKind::Infantry, UnitKind::Tank, UnitKind::FieldGun] {
+            for enemy_kind in [UnitKind::Infantry, UnitKind::Tank] {
+                let (mut board, mut orders) = fixture(kind, enemy_kind, Coordinate::new(4, 3))?;
+                board.units[0].rotate(Direction::East);
+                board.units[1].rotate(Direction::West);
+                orders[0].facing = crate::turns::FacingOrder::StandGround;
+                orders[1].travel = TravelMode::AttackMove;
+                let mut prepared = board.clone();
+                let combat = Combat::prepare(&mut prepared, &orders);
+                let damage = combat.damage(
+                    &prepared,
+                    &prepared.units[1],
+                    &prepared.units[0],
+                    CombatKind::AttackMove,
+                );
+                let mut ambush_board = board.clone();
+                orders[0].facing = crate::turns::FacingOrder::Ambush(Direction::East);
+                let ambush = Combat::prepare(&mut ambush_board, &orders);
+                assert_eq!(
+                    damage,
+                    ambush.damage(
+                        &ambush_board,
+                        &ambush_board.units[1],
+                        &ambush_board.units[0],
+                        CombatKind::AttackMove
+                    )
+                );
+                orders[0].facing = crate::turns::FacingOrder::StandGround;
+                let defender_supplies = board.units[0].supplies().current();
+                let defender_id = board.units[0].unit_id();
+                let attacker_id = board.units[1].unit_id();
+                let mut combat = Combat::prepare(&mut board, &orders);
+                let mut frames = Vec::new();
+                combat.engage_contacts(
+                    &mut board,
+                    &mut BTreeSet::new(),
+                    &mut frames,
+                    &[(attacker_id, defender_id)],
+                );
+                combat.finish(&mut board, &mut BTreeSet::new(), &mut frames);
+                let shots: Vec<_> = frames.iter().flat_map(|frame| &frame.shots).collect();
+                assert_eq!(shots.len(), 1);
+                assert_eq!(shots[0].kind, CombatKind::AttackMove);
+                assert_eq!(shots[0].damage, damage);
+                assert_eq!(
+                    board.units[0].supplies().current(),
+                    defender_supplies - rules(kind).readiness_cost
+                );
+                assert_eq!(board.units[1].hit_points().current(), 16);
+            }
+        }
         Ok(())
     }
 
@@ -1502,7 +1591,7 @@ mod tests {
             .units
             .iter()
             .find(|unit| {
-                unit.side() == PlayerNumber::Player1
+                unit.player_number() == PlayerNumber::Player1
                     && unit.kind() == UnitKind::Tank
                     && unit.unit_id() != first_id
             })
@@ -1537,15 +1626,16 @@ mod tests {
                 .fixture()?
                 .is_alive()
         );
-        for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
+        for player_number in [PlayerNumber::Player1, PlayerNumber::Player2] {
             let resolution = crate::turns::TurnResolution {
                 reports: Vec::new(),
                 turn_number: 1,
                 events: Vec::new(),
                 frames: result.frames.clone(),
             };
-            let visible = visibility::visible_tiles(&scenario, side);
-            let observed = visibility::observed_resolution(&scenario, side, &visible, &resolution);
+            let visible = visibility::visible_tiles(&scenario, player_number);
+            let observed =
+                visibility::observed_resolution(&scenario, player_number, &visible, &resolution);
             let projected: Vec<_> = observed
                 .frames
                 .iter()
@@ -1579,9 +1669,10 @@ mod tests {
             events: Vec::new(),
             frames: result.frames,
         };
-        for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
-            let visible = visibility::visible_tiles(&scenario, side);
-            let observed = visibility::observed_resolution(&scenario, side, &visible, &resolution);
+        for player_number in [PlayerNumber::Player1, PlayerNumber::Player2] {
+            let visible = visibility::visible_tiles(&scenario, player_number);
+            let observed =
+                visibility::observed_resolution(&scenario, player_number, &visible, &resolution);
             let volley = observed
                 .frames
                 .iter()
@@ -1613,9 +1704,10 @@ mod tests {
             events: Vec::new(),
             frames: result.frames,
         };
-        let side = PlayerNumber::Player2;
-        let visible = visibility::visible_tiles(&scenario, side);
-        let observed = visibility::observed_resolution(&scenario, side, &visible, &resolution);
+        let player_number = PlayerNumber::Player2;
+        let visible = visibility::visible_tiles(&scenario, player_number);
+        let observed =
+            visibility::observed_resolution(&scenario, player_number, &visible, &resolution);
         let volley = observed
             .frames
             .iter()
@@ -1635,9 +1727,10 @@ mod tests {
                 .iter()
                 .all(|unit| unit.unit_id() != scenario.units[0].unit_id())
         }));
-        let side = PlayerNumber::Player1;
-        let visible = visibility::visible_tiles(&scenario, side);
-        let observed = visibility::observed_resolution(&scenario, side, &visible, &resolution);
+        let player_number = PlayerNumber::Player1;
+        let visible = visibility::visible_tiles(&scenario, player_number);
+        let observed =
+            visibility::observed_resolution(&scenario, player_number, &visible, &resolution);
         assert_eq!(
             observed
                 .frames
@@ -1711,7 +1804,9 @@ mod tests {
             .fixture()?
             .units
             .into_iter()
-            .find(|unit| unit.side() == PlayerNumber::Player2 && unit.kind() == UnitKind::Infantry)
+            .find(|unit| {
+                unit.player_number() == PlayerNumber::Player2 && unit.kind() == UnitKind::Infantry
+            })
             .fixture()?;
         passenger.board(scenario.units[1].unit_id());
         scenario.units.push(passenger);

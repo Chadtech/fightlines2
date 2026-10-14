@@ -27,7 +27,8 @@ import Util.List as ListUtil
 {-| The cost to enter a terrain square, as supplied by Rust's movement rules.
 A movement point is a unit of the unit's travel budget: entering a square spends
 that terrain's cost. For example, infantry has a budget of 2 movement points;
-grass, hills, and forest each cost 1.
+grass, hills, and forest each cost 1; mountains cost 2. Nonpositive entry costs
+mean that terrain cannot be crossed.
 
 The integers store twice the displayed value so half-point costs stay exact:
 a grass cost of 1 is stored as 2, and a hill cost of 1.5 is stored as 3.
@@ -102,7 +103,7 @@ tileLimit unit =
 
         fuelLimit : Maybe Int
         fuelLimit =
-            unit.resources |> Maybe.andThen .fuel |> Maybe.map .current
+            unit.resources |> Maybe.andThen .fuel |> Maybe.map (\fuel -> fuel.current // fuel.movementPerTile)
     in
     if Unit.carrierId unit /= Nothing then
         Just (min 1 (Maybe.withDefault 1 supplyLimit))
@@ -412,7 +413,7 @@ remainingResources map current resources =
     in
     { resources
         | supplies = { supplies | current = supplies.current - supplyCost map supplies current.path }
-        , fuel = Maybe.map (\fuel -> { fuel | current = fuel.current - tiles }) resources.fuel
+        , fuel = Maybe.map (\fuel -> { fuel | current = fuel.current - tiles * fuel.movementPerTile }) resources.fuel
     }
 
 

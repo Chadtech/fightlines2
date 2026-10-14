@@ -2,7 +2,7 @@
 -- https://github.com/dillonkearns/elm-graphql
 
 
-module Api.Object.SupplyStock exposing (..)
+module Api.Object.MapCatalog exposing (..)
 
 import Api.InputObject
 import Api.Interface
@@ -19,11 +19,15 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
-current : SelectionSet Int Api.Object.SupplyStock
-current =
-    Object.selectionForField "Int" "current" [] Decode.int
+first :
+    SelectionSet decodesTo Api.Object.NamedMap
+    -> SelectionSet decodesTo Api.Object.MapCatalog
+first object____ =
+    Object.selectionForCompositeField "first" [] object____ Basics.identity
 
 
-maximum : SelectionSet Int Api.Object.SupplyStock
-maximum =
-    Object.selectionForField "Int" "maximum" [] Decode.int
+rest :
+    SelectionSet decodesTo Api.Object.NamedMap
+    -> SelectionSet (List decodesTo) Api.Object.MapCatalog
+rest object____ =
+    Object.selectionForCompositeField "rest" [] object____ (Basics.identity >> Decode.list)

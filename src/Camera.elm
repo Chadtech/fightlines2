@@ -2,9 +2,12 @@ module Camera exposing
     ( Camera
     , anchor
     , boardWidth
+    , focusTransform
     , transform
     )
 
+import Coordinate exposing (Coordinate)
+import Map exposing (Map)
 import Point exposing (Point)
 
 
@@ -53,3 +56,79 @@ transform camera =
             displacement camera { x = 0, y = 0 }
     in
     "translate(" ++ translation.x ++ ", " ++ translation.y ++ ") scale(" ++ String.fromFloat camera.zoom ++ ")"
+
+
+{-| Frame visible tiles without changing the saved camera. Container units keep
+the framing correct through viewport resizing, without measuring unit elements.
+-}
+focusTransform : Map -> List Coordinate -> Camera -> String
+focusTransform map positions camera =
+    case positions of
+        [] ->
+            transform camera
+
+        first :: rest ->
+            let
+                bounds :
+                    { left : Int
+                    , right : Int
+                    , top : Int
+                    , bottom : Int
+                    }
+                bounds =
+                    List.foldl extend
+                        { left = first.x, right = first.x, top = first.y, bottom = first.y }
+                        rest
+
+                extend :
+                    Coordinate
+                    -> { left : Int, right : Int, top : Int, bottom : Int }
+                    -> { left : Int, right : Int, top : Int, bottom : Int }
+                extend position current =
+                    { left = min current.left position.x
+                    , right = max current.right position.x
+                    , top = min current.top position.y
+                    , bottom = max current.bottom position.y
+                    }
+
+                mapWidth : Float
+                mapWidth =
+                    toFloat map.width
+
+                -- Include the tiles themselves and one tile of breathing room
+                -- on each side. Both SVG axes use the board's rendered width.
+                span : Float
+                span =
+                    toFloat
+                        (max
+                            (bounds.right - bounds.left + 3)
+                            (bounds.bottom - bounds.top + 3)
+                        )
+
+                zoom : Float
+                zoom =
+                    min camera.zoom (mapWidth / span)
+
+                center : Point
+                center =
+                    { x =
+                        (toFloat (bounds.left + bounds.right + 1) - mapWidth) / (2 * mapWidth)
+                    , y =
+                        (toFloat (bounds.top + bounds.bottom + 1) - toFloat map.height) / (2 * mapWidth)
+                    }
+
+                axis : Float -> String
+                axis fraction =
+                    "calc("
+                        ++ boardWidth
+                        ++ " * "
+                        ++ String.fromFloat (negate fraction * zoom)
+                        ++ ")"
+            in
+            "translate("
+                ++ axis center.x
+                ++ ", "
+                ++ axis center.y
+                ++ ") scale("
+                ++ String.fromFloat zoom
+                ++ ")"

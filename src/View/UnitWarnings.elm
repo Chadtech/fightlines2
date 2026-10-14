@@ -22,12 +22,6 @@ styles =
                 0%, 100% { opacity: 1; }
                 50% { opacity: 0; }
             }
-            .fightlines-unit-warnings {
-                animation: fightlines-unit-warning-blink 2s step-end infinite;
-            }
-            @media (prefers-reduced-motion: reduce) {
-                .fightlines-unit-warnings { animation: none; opacity: 1; }
-            }
         """
         ]
 
@@ -100,7 +94,13 @@ They sit above ordered-sprite dimming and leave the cargo corners free.
 toSvg : Unit -> Svg msg
 toSvg unit =
     Svg.g
-        [ SA.class "fightlines-unit-warnings"
+        [ SA.css
+            [ S.animation "fightlines-unit-warning-blink 2s step-end infinite"
+            , S.reducedMotion
+                [ S.animationNone
+                , S.opaque
+                ]
+            ]
         , SA.pointerEvents "none"
         , Aria.hidden True
         ]
@@ -190,7 +190,6 @@ badge index warning =
         , SA.width "3.2"
         , SA.height "3.2"
         , SA.viewBox "0 0 24 24"
-        , SA.class "fightlines-unit-warning"
         ]
         [ Svg.rect
             [ SA.x "0.6"

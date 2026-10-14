@@ -4,6 +4,8 @@ module View.DepotStock exposing
     , toSvg
     )
 
+import Css
+import Depot exposing (Depot)
 import Html.Styled as H exposing (Html)
 import Style as S
 import Supply
@@ -21,23 +23,17 @@ styles =
                 0%, 100% { opacity: 1; }
                 50% { opacity: 0; }
             }
-            .fightlines-depot-stock-low {
-                animation: fightlines-depot-stock-blink 2s step-end infinite;
-            }
             .fightlines-depot-stock-target { cursor: pointer; outline: none; }
             .fightlines-depot-stock-target:focus-visible {
                 outline: 0.5px solid var(--depot-focus-color);
                 outline-offset: -0.5px;
             }
-            @media (prefers-reduced-motion: reduce) {
-                .fightlines-depot-stock-low { animation: none; opacity: 1; }
-            }
         """
         ]
 
 
-label : Supply.Stock -> String
-label stock =
+label : Depot -> Supply.Stock -> String
+label depot stock =
     let
         warning : String
         warning =
@@ -50,7 +46,8 @@ label stock =
             else
                 ""
     in
-    "supply depot · "
+    Depot.label depot
+        ++ " · "
         ++ String.fromInt stock.current
         ++ " / "
         ++ String.fromInt stock.maximum
@@ -82,13 +79,18 @@ toSvg stock =
             else
                 S.green1Str
 
-        warningClass : String
-        warningClass =
+        warningStyles : List Css.Style
+        warningStyles =
             if stock.current > 0 && fraction <= 0.25 then
-                "fightlines-depot-stock-low"
+                [ S.animation "fightlines-depot-stock-blink 2s step-end infinite"
+                , S.reducedMotion
+                    [ S.animationNone
+                    , S.opaque
+                    ]
+                ]
 
             else
-                ""
+                []
 
         emptySymbol : List (Svg msg)
         emptySymbol =
@@ -131,7 +133,7 @@ toSvg stock =
             ]
             []
         , Svg.g
-            [ SA.class warningClass
+            [ SA.css warningStyles
             ]
             [ Svg.rect
                 [ SA.x "0.8"

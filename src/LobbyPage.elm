@@ -604,7 +604,7 @@ lobbyView model =
             else if List.length model.players < 2 then
                 H.p
                     []
-                    [ H.text "this map needs two players. share the invite link to fill the other side."
+                    [ H.text "this map needs two players. share the invite link to fill the second player slot."
                     ]
 
             else if model.isHost then

@@ -17,21 +17,26 @@ pub struct MovementRule {
 
 pub fn rules() -> Vec<MovementRule> {
     [
-        (UnitKind::Infantry, 4, [2, 2, 2]),
-        (UnitKind::Tank, 12, [2, 4, 6]),
+        (UnitKind::Infantry, 4, [2, 2, 2, 4]),
+        (UnitKind::Tank, 12, [2, 4, 6, 0]),
         // One adjacent passable square, regardless of terrain.
-        (UnitKind::FieldGun, 2, [2, 2, 2]),
-        (UnitKind::Truck, 14, [2, 6, 8]),
+        (UnitKind::FieldGun, 2, [2, 2, 2, 0]),
+        (UnitKind::Truck, 14, [2, 6, 8, 0]),
     ]
     .into_iter()
     .map(|(kind, budget, costs)| MovementRule {
         kind,
         budget,
-        terrain_costs: [Terrain::GrassPlain, Terrain::Hills, Terrain::Forest]
-            .into_iter()
-            .zip(costs)
-            .map(|(terrain, cost)| TerrainMovementCost { terrain, cost })
-            .collect(),
+        terrain_costs: [
+            Terrain::GrassPlain,
+            Terrain::Hills,
+            Terrain::Forest,
+            Terrain::Mountains,
+        ]
+        .into_iter()
+        .zip(costs)
+        .map(|(terrain, cost)| TerrainMovementCost { terrain, cost })
+        .collect(),
     })
     .collect()
 }
@@ -86,6 +91,7 @@ mod tests {
                     "GRASS_PLAIN" => Terrain::GrassPlain,
                     "HILLS" => Terrain::Hills,
                     "FOREST" => Terrain::Forest,
+                    "MOUNTAINS" => Terrain::Mountains,
                     _ => return Err("unknown fixture terrain".into()),
                 };
                 assert_eq!(entry.terrain, terrain);
@@ -132,13 +138,16 @@ mod tests {
                         let Some(terrain) = map.tile_at(next) else {
                             continue;
                         };
-                        let total = cost
-                            + rule
-                                .terrain_costs
-                                .iter()
-                                .find(|entry| entry.terrain == terrain)
-                                .fixture()?
-                                .cost;
+                        let entry_cost = rule
+                            .terrain_costs
+                            .iter()
+                            .find(|entry| entry.terrain == terrain)
+                            .fixture()?
+                            .cost;
+                        if entry_cost <= 0 {
+                            continue;
+                        }
+                        let total = cost + entry_cost;
                         if total <= rule.budget
                             && costs.get(&next).is_none_or(|previous| total < *previous)
                         {

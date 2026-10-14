@@ -41,7 +41,7 @@ fuel object____ =
 
 
 supplyCargo :
-    SelectionSet decodesTo Api.Object.SupplyStock
+    SelectionSet decodesTo Api.Object.ResourceStock
     -> SelectionSet (List decodesTo) Api.Object.UnitResources
 supplyCargo object____ =
     Object.selectionForCompositeField "supplyCargo" [] object____ (Basics.identity >> Decode.list)

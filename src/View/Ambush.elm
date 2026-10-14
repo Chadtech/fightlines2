@@ -11,11 +11,6 @@ import Svg exposing (Svg)
 import Svg.Attributes as SA
 
 
-coverageClass : String
-coverageClass =
-    "fightlines-ambush-coverage"
-
-
 coverage : Map -> Coordinate -> Direction -> CombatRules -> Svg msg
 coverage map origin facing rules =
     let
@@ -81,7 +76,6 @@ coverage map origin facing rules =
                 , SA.stroke S.red1Str
                 , SA.strokeWidth "0.85"
                 , SA.strokeDasharray "1 1"
-                , SA.class coverageClass
                 ]
                 []
     in

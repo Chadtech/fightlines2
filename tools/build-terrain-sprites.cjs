@@ -17,7 +17,19 @@ async function main() {
     }
     await fs.copyFile(source, path.join(root, "public/assets", `terrain-${kind}-illustrated-${revision}.png`));
   }
-  console.log("Exported illustrated grass, hills and forest terrain.");
+  for (const [sourceName, exportName] of [
+    ["mountains", "terrain-mountains-illustrated-v1.png"],
+    ["snowy-mountains", "terrain-mountains-snow-illustrated-v1.png"],
+    ["desert-mountains", "terrain-mountains-desert-illustrated-v1.png"],
+  ]) {
+    const source = path.join(root, "artwork/terrain/illustrated/mountains-v1", `${sourceName}.png`);
+    const metadata = await sharp(source).metadata();
+    const stats = await sharp(source).stats();
+    assert.equal(metadata.width, metadata.height, `${sourceName} source must be square`);
+    assert(metadata.hasAlpha && !stats.isOpaque, `${sourceName} needs transparent edges`);
+    await fs.copyFile(source, path.join(root, "public/assets", exportName));
+  }
+  console.log("Exported illustrated grass, hills, forest and mountain terrain.");
 }
 
 main().catch((error) => {

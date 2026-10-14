@@ -50,12 +50,12 @@ styles =
 
 spotlight : Map -> Exchange -> Svg msg
 spotlight =
-    spotlightView "fightlines-combat-spotlight"
+    spotlightView ""
 
 
 mapPeek : Map -> Exchange -> Svg msg
 mapPeek =
-    spotlightView "fightlines-combat-spotlight fightlines-combat-map-peek"
+    spotlightView "fightlines-combat-map-peek"
 
 
 spotlightView : String -> Map -> Exchange -> Svg msg
@@ -226,7 +226,6 @@ impacts shots =
         Svg.g
             [ SA.pointerEvents "none"
             , Aria.svgLabel "combat impact"
-            , SA.class "fightlines-combat-impacts"
             ]
             content
 

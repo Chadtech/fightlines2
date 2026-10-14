@@ -4,6 +4,7 @@
 
 module Api.Object.Depot exposing (..)
 
+import Api.Enum.DepotKind
 import Api.InputObject
 import Api.Interface
 import Api.Object
@@ -19,6 +20,11 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+kind : SelectionSet Api.Enum.DepotKind.DepotKind Api.Object.Depot
+kind =
+    Object.selectionForField "Enum.DepotKind.DepotKind" "kind" [] Api.Enum.DepotKind.decoder
+
+
 position :
     SelectionSet decodesTo Api.Object.Coordinate
     -> SelectionSet decodesTo Api.Object.Depot
@@ -27,7 +33,7 @@ position object____ =
 
 
 stock :
-    SelectionSet decodesTo Api.Object.SupplyStock
+    SelectionSet decodesTo Api.Object.ResourceStock
     -> SelectionSet (Maybe decodesTo) Api.Object.Depot
 stock object____ =
     Object.selectionForCompositeField "stock" [] object____ (Basics.identity >> Decode.nullable)

@@ -1,6 +1,7 @@
 module UnitCommand exposing
     ( Command(..)
     , MenuOption(..)
+    , all
     , assetName
     , available
     , canUse
@@ -27,6 +28,11 @@ type Command
 type MenuOption
     = CommandOption Command
     | CancelOption
+
+
+all : List Command
+all =
+    [ Move, HoldPosition, Rotate, Ambush, StandGround, AttackMove, IndirectFire, DigIn ]
 
 
 enabledOptions : Unit -> List MenuOption
@@ -58,7 +64,7 @@ available unit =
                 [ Move, HoldPosition ]
 
             Kind.FieldGun ->
-                [ Move, HoldPosition, Rotate, Ambush, IndirectFire, DigIn ]
+                [ Move, HoldPosition, Rotate, Ambush, StandGround, IndirectFire, DigIn ]
 
 
 isImplemented : Command -> Bool
@@ -68,6 +74,9 @@ isImplemented command =
             True
 
         Move ->
+            True
+
+        StandGround ->
             True
 
         Ambush ->
@@ -141,7 +150,7 @@ assetName command =
 
 canUse : Unit -> Command -> Bool
 canUse unit command =
-    if command == Ambush then
+    if command == Ambush || command == StandGround then
         let
             affordable : Bool
             affordable =

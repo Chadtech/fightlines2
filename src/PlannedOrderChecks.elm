@@ -36,6 +36,10 @@ orderChecks unitId passengerId =
         hold =
             { unitId = unitId, action = Hold { x = 1, y = 1 } }
 
+        standingGround : PlannedOrder
+        standingGround =
+            { unitId = unitId, action = StandGround { x = 1, y = 1 } }
+
         ambush : PlannedOrder
         ambush =
             { unitId = unitId, action = Ambush { position = { x = 1, y = 1 }, direction = Direction.East } }
@@ -119,6 +123,7 @@ orderChecks unitId passengerId =
                               }
                             ]
                    , attackMove = Present False
+                   , standGround = Present False
                    , ambush = Present False
                    , unitId = UnitId.toString unitId
                    , path =
@@ -147,6 +152,7 @@ orderChecks unitId passengerId =
                 == { loadCrates = Present 0
                    , crateUnloads = Present []
                    , attackMove = Present True
+                   , standGround = Present False
                    , ambush = Present False
                    , unitId = UnitId.toString unitId
                    , path =
@@ -164,11 +170,26 @@ orderChecks unitId passengerId =
                 && PlannedOrder.unloads attackMove
                 == []
             )
+        , expect "stand ground submits defensive readiness without facing, combat, movement, or cargo"
+            (PlannedOrder.toInput standingGround
+                == { unitId = UnitId.toString unitId
+                   , path = [ { x = 1, y = 1 } ]
+                   , direction = Absent
+                   , standGround = Present True
+                   , ambush = Present False
+                   , attackMove = Present False
+                   , unloads = Present []
+                   , loadCrates = Present 0
+                   , crateUnloads = Present []
+                   }
+                && not (PlannedOrder.isMoving standingGround)
+            )
         , expect "ambush submission must carry combat readiness and chosen facing without movement"
             (PlannedOrder.toInput ambush
                 == { loadCrates = Present 0
                    , crateUnloads = Present []
                    , attackMove = Present False
+                   , standGround = Present False
                    , ambush = Present True
                    , unitId = UnitId.toString unitId
                    , path =
@@ -186,6 +207,7 @@ orderChecks unitId passengerId =
                 == { loadCrates = Present 0
                    , crateUnloads = Present []
                    , attackMove = Present False
+                   , standGround = Present False
                    , ambush = Present False
                    , unitId = UnitId.toString unitId
                    , path =
@@ -202,6 +224,7 @@ orderChecks unitId passengerId =
                 == { loadCrates = Present 0
                    , crateUnloads = Present []
                    , attackMove = Present False
+                   , standGround = Present False
                    , ambush = Present False
                    , unitId = UnitId.toString unitId
                    , path =
@@ -218,6 +241,7 @@ orderChecks unitId passengerId =
                 == { loadCrates = Present 0
                    , crateUnloads = Present []
                    , attackMove = Present False
+                   , standGround = Present False
                    , ambush = Present False
                    , unitId = UnitId.toString unitId
                    , path =
@@ -247,6 +271,7 @@ orderChecks unitId passengerId =
                 == { loadCrates = Present 0
                    , crateUnloads = Present []
                    , attackMove = Present False
+                   , standGround = Present False
                    , ambush = Present False
                    , unitId = UnitId.toString unitId
                    , path =

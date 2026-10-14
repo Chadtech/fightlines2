@@ -1,6 +1,7 @@
 port module OrderPlanningChecks exposing (main)
 
 import Api.Enum.AmbushShape as AmbushShape
+import Api.Enum.DepotKind as DepotKind
 import Api.Enum.Direction as DirectionEnum
 import Api.Enum.MapTheme as Theme
 import Api.Enum.PlayerNumber as PlayerNumber
@@ -101,6 +102,16 @@ planningChecks infantryId truckId passengerId =
                 |> OrderPlanning.selectUnit context infantryId
                 |> OrderPlanning.applyCommand context UnitCommand.AttackMove
                 |> OrderPlanning.selectTile context { x = 3, y = 1 }
+
+        standingGround : OrderPlanning.Model
+        standingGround =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit context infantryId
+                |> OrderPlanning.applyCommand context UnitCommand.StandGround
+
+        insufficientReadiness : Unit
+        insufficientReadiness =
+            { infantry | resources = Maybe.map (\resources -> { resources | supplies = { current = 2, maximum = 48, upkeepPerTurn = 1, roughTerrainSurcharge = 1, movementPerTile = 3 } }) infantry.resources }
 
         ambushing : OrderPlanning.Model
         ambushing =
@@ -496,10 +507,22 @@ planningChecks infantryId truckId passengerId =
         depotContext =
             { context
                 | depots =
-                    [ { position = { x = 3, y = 1 }, stock = Just { current = 256, maximum = 256 } }
-                    , { position = { x = 4, y = 1 }, stock = Nothing }
+                    [ { kind = DepotKind.Supply, position = { x = 3, y = 1 }, stock = Just { current = 256, maximum = 256 } }
+                    , { kind = DepotKind.Supply, position = { x = 4, y = 1 }, stock = Nothing }
                     ]
             }
+
+        fuelContext : OrderPlanning.Context
+        fuelContext =
+            { depotContext | depots = List.map (\depot -> { depot | kind = DepotKind.Fuel }) depotContext.depots }
+
+        fuelMove : OrderPlanning.Model
+        fuelMove =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit fuelContext truckId
+                |> OrderPlanning.applyCommand fuelContext UnitCommand.Move
+                |> OrderPlanning.extendPath fuelContext DirectionEnum.East
+                |> OrderPlanning.selectTile fuelContext { x = 4, y = 1 }
 
         depotMovePreview : OrderPlanning.Model
         depotMovePreview =
@@ -678,9 +701,62 @@ planningChecks infantryId truckId passengerId =
         afterOrder : OrderPlanning.Model
         afterOrder =
             OrderPlanning.selectNextUnorderedUnit context saved
+
+        guideMenu : OrderPlanning.Model
+        guideMenu =
+            afterOrder
+                |> OrderPlanning.focusCommand context (UnitCommand.CommandOption UnitCommand.Move)
+
+        readingGuide : OrderPlanning.Model
+        readingGuide =
+            OrderPlanning.openCommandGuide context guideMenu
+
+        guideLocked : TurnLifecycle.Phase
+        guideLocked =
+            TurnLifecycle.observeSubmission True (TurnLifecycle.Planning readingGuide)
     in
     List.concat
-        [ expect "passenger and crate share the only crate-compatible exit"
+        [ expect "command guide preserves orders and returns to the focused command menu"
+            (OrderPlanning.commandGuideOpen readingGuide
+                && OrderPlanning.orders readingGuide
+                == OrderPlanning.orders guideMenu
+                && OrderPlanning.focusedCommand readingGuide
+                == Just (UnitCommand.CommandOption UnitCommand.Move)
+                && OrderPlanning.dismissDialog [] readingGuide
+                == guideMenu
+            )
+        , expect "command guide only opens from an ordinary command menu"
+            (OrderPlanning.openCommandGuide context OrderPlanning.init
+                == OrderPlanning.init
+                && OrderPlanning.openCommandGuide context moving
+                == moving
+                && OrderPlanning.openCommandGuide context crateChoice
+                == crateChoice
+                && OrderPlanning.openCommandGuide context (OrderPlanning.showSubmissionWarning guideMenu)
+                == OrderPlanning.showSubmissionWarning guideMenu
+            )
+        , expect "command guide blocks command edits, unit cycling and submission"
+            (OrderPlanning.applyCommand context UnitCommand.HoldPosition readingGuide
+                == readingGuide
+                && OrderPlanning.focusCommand context UnitCommand.CancelOption readingGuide
+                == readingGuide
+                && OrderPlanning.selectNextUnorderedUnit context readingGuide
+                == readingGuide
+                && OrderPlanning.submissionDrafts readingGuide
+                == Nothing
+                && OrderPlanning.showSubmissionWarning readingGuide
+                == readingGuide
+                && TurnLifecycle.startSubmission 1 (TurnLifecycle.Planning readingGuide)
+                == TurnLifecycle.Planning readingGuide
+            )
+        , expect "locking planning discards the guide interaction and keeps only inspection"
+            (TurnLifecycle.planning guideLocked
+                == Nothing
+                && TurnLifecycle.selection guideLocked
+                == Just (Inspecting (UnitInspection truckId))
+                && not (OrderPlanning.commandGuideOpen (OrderPlanning.setSelection Nothing readingGuide))
+            )
+        , expect "passenger and crate share the only crate-compatible exit"
             (let
                 complete : OrderPlanning.Model
                 complete =
@@ -738,6 +814,8 @@ planningChecks infantryId truckId passengerId =
                 && List.length (List.concatMap PlannedOrder.crateUnloads (OrderPlanning.orders selectionWithFreight))
                 == 1
             )
+        , expect "fuel depot destinations preserve moves without offering supply crates"
+            (not (choosingCrates fuelMove) && List.length (OrderPlanning.orders fuelMove) == 1)
         , expect "saving an empty truck move on a depot opens loading through mouse and keyboard"
             (choosingCrates depotMove && depotKeyboardMove == depotMove)
         , expect "boarding a truck on a depot offers loading for its automatically saved hold"
@@ -793,6 +871,16 @@ planningChecks infantryId truckId passengerId =
             (List.isEmpty (OrderPlanning.orders attackLoading) && OrderPlanning.destinationFeedback attackLoading == DestinationUnavailable)
         , expect "attack move revocation restores commands"
             (OrderPlanning.commandMenuUnit attackContext (OrderPlanning.revokeSelectedOrder attackContext attackSaved) == Just infantry)
+        , expect "stand ground saves immediately and can be revoked"
+            (OrderPlanning.orders standingGround
+                == [ { unitId = infantryId, action = PlannedOrder.StandGround { x = 1, y = 1 } } ]
+                && List.isEmpty (OrderPlanning.orders (OrderPlanning.revokeSelectedOrder context standingGround))
+            )
+        , expect "stand ground requires readiness supplies and excludes trucks and passengers"
+            (not (UnitCommand.canUse insufficientReadiness UnitCommand.StandGround)
+                && not (List.member UnitCommand.StandGround (UnitCommand.available truck))
+                && not (List.member UnitCommand.StandGround (UnitCommand.available { infantry | location = Location.Aboard truckId }))
+            )
         , expect "ambush direction preview saves a stationary ambush instead of rotation"
             (OrderPlanning.orders ambushing == [ { unitId = infantryId, action = PlannedOrder.Ambush { position = { x = 1, y = 1 }, direction = DirectionEnum.East } } ])
         , expect "ambush can be revoked and trucks cannot ambush"
@@ -926,7 +1014,7 @@ board units =
     , movementRules = List.map movementRule [ Kind.Infantry, Kind.Truck, Kind.FieldGun ]
     , depots = []
     , supplyCrates = []
-    , playerSides = [ PlayerNumber.Player1 ]
+    , playerNumbers = [ PlayerNumber.Player1 ]
     }
 
 
@@ -950,10 +1038,10 @@ unit id kind location =
             else
                 Just DirectionEnum.North
 
-        fuel : Maybe { current : Int, maximum : Int }
+        fuel : Maybe { current : Int, maximum : Int, movementPerTile : Int }
         fuel =
             if vehicle then
-                Just { current = 64, maximum = 64 }
+                Just { current = 64, maximum = 64, movementPerTile = 1 }
 
             else
                 Nothing

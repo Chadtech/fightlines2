@@ -387,7 +387,7 @@ and its loss cause. Use projected playback data so concealed casualties never
 appear on the map or in the loss queue.
 
 If an owner name is missing from the roster, replace all loss information with
-an `unable to display unit loss` error identifying the missing player side.
+an `unable to display unit loss` error identifying the missing player number.
 Keep `continue` and the skip checkbox available so playback can proceed.
 
 Place `continue` and the `skip this dialog` checkbox together below all information.
@@ -457,6 +457,10 @@ The card remains open when unchecked, with a `continue` button. Enter also conti
 an explanatory keyboard prompt. Holding `see map` makes the whole card completely transparent
 and clears the backdrop while darkening all board tiles except the combatants,
 whose shine repeats while held; mouse release or leaving the button restores it.
+While held, center the battlefield camera on the visible combatants and reduce
+zoom only as needed to fit their tiles with one tile of padding on each side.
+Restore the previous pan and zoom on release or leaving the button. Concealed
+combatants remain absent from the battlefield and do not affect camera framing.
 Combine reciprocal shots into one display. After continuing each theater, show
 its casualties’ skull markers for the server-provided death pause, then remove
 those units before the next theater.
@@ -530,3 +534,33 @@ report: `your units lost`, `confirmed enemy losses`, `known damage inflicted` in
 and `your supplies consumed`. Use four quiet metric cells in two columns, wrapping
 to single rows on narrow screens. Reduce the decorative numeral to leave space
 for the report. Keep these figures viewer-specific and retain zero totals.
+
+Fuel depots use the illustrated fuel-storage tank sprite, the same selection
+behavior, inspector, stock bars, low/empty warnings, and fog treatment as supply
+depots. Their copy names fuel and describes automatic vehicle refilling.
+Only supply depots open the supply-crate loading dialog.
+
+## Stand ground
+
+Stand ground saves immediately from the combat unit command popup, preserving
+facing. Show the saved order, revoke action, defensive readiness explanation, and
+normal upkeep plus readiness supply cost in the inspector. Disable it when
+readiness plus upkeep is unaffordable. It has no firing-area or ambush marker.
+
+## Mountain terrain
+
+Use the approved pointed mountain overlay, preserving the grassy hill artwork's
+fine ink work, painted shading and exposed rock faces. Green, snow and desert
+themes use their own transparent sprites without extra theme filters. Keep the
+terrain inside its cell, over the existing themed ground. Terrain inspection
+explains +2 sight, infantry's extra movement point, and vehicle impassability.
+
+## Development map editor
+
+Use a quiet toolbar for map selection, undo/redo, and the gold save action.
+Place terrain, starting-unit, and depot brushes in a scrollable tools card next
+to the illustrated, tiled board. Keep the selected brush gold and label player,
+facing, theme, dimensions, and brush size explicitly. On narrow screens, bound
+the tools card's height and put the horizontally scrollable board below it.
+Report unsaved changes, save failures, and successful source-file saves near
+the toolbar. Mirror painting swaps unit players and reflects horizontal facing.

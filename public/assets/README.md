@@ -90,11 +90,12 @@ The active masters are `neutral-v4-loader-inside.png`, `red-v2-crew.png`, and
 Run `node tools/build-field-gun-portraits.cjs`, also included in `make sprites`,
 to regenerate the exports without changing their aspect ratio.
 
-`combat-backdrops-anime-v1/` contains nine opaque 1536 x 1024 painted 1980s
-anime backdrops. Forest, hills, and plains each have green, snow, and desert
+`combat-backdrops-anime-v1/` contains twelve opaque 1536 x 1024 painted 1980s
+anime backdrops. Forest, hills, mountains, and plains each have green, snow, and desert
 variants. Snow plains use `tundra-plains.png`. Forest clearings are enclosed by
 nearby trees; hill firing ledges sit among local ground contours. All provide
-open footing for staggered unit formations.
+open footing for staggered unit formations. Mountain scenes place the firing
+ledge among steep rocky peaks, with matching snow and desert variants.
 
 `View.CombatTheater` selects scenery using each participant's occupied terrain
 and the map theme. Local masters and generation/edit prompts are under
@@ -117,3 +118,12 @@ Built-in imagegen produced the added approach frame and exact edit prompt in
 Run `node tools/build-combat-explosion.cjs`, also included in `make sprites`,
 to export the runtime frames. Earlier variants remain in
 `combat-impact-side-anime-v1/` and `combat-explosion-anime-v1/`.
+
+## Mountain terrain
+
+`terrain-mountains-illustrated-v1.png`, `terrain-mountains-snow-illustrated-v1.png`,
+and `terrain-mountains-desert-illustrated-v1.png` are transparent 1254px square
+overlays for green, snow and desert themes. Built-in imagegen created the approved
+green master and biome variants. Local masters and prompts are in
+`artwork/terrain/illustrated/mountains-v1/`; `tools/build-terrain-sprites.cjs`
+exports them alongside the other terrain.

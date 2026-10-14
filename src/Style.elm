@@ -1,15 +1,21 @@
 module Style exposing
     ( absolute
+    , active
+    , after
+    , animation
+    , animationNone
     , appearanceNone
     , aspectRatio
     , backdrop
     , basisFull
     , batch
+    , belowHeight
     , belowWidth
     , bgBlack70
     , bgBlue0
     , bgBlue1
     , bgGray0
+    , bgGray0_60
     , bgGray1
     , bgGray2
     , bgGray3
@@ -23,6 +29,7 @@ module Style exposing
     , bgNone
     , bgRed0
     , bgRed1
+    , bgTransparent
     , bgYellow1
     , bgYellow2
     , bgYellow4
@@ -38,10 +45,13 @@ module Style exposing
     , borderNone
     , borderR
     , borderT
+    , borderTransparent
     , borderX
+    , borderYellow5_20
     , bottom0
     , bottom12
     , bottom16
+    , bottom18
     , bottom24
     , bottom4
     , bottom8
@@ -52,10 +62,15 @@ module Style exposing
     , col
     , colReverse
     , colorTransition2
+    , containerInlineSize
+    , containerSize
+    , contentEmpty
     , cursorPointer
     , d1
     , defaultCursor
     , displayNone
+    , evenChildren
+    , firstChild
     , fixed
     , flex00auto
     , flex1
@@ -66,27 +81,40 @@ module Style exposing
     , flexP4
     , flexP5
     , flexWrap
+    , focusVisible
     , fontItalic
     , fontMonospace
+    , fontSizeRem
+    , fontSizeValue
     , g0p5
     , g1
+    , g1p4
     , g2
     , g3
     , g4
     , g8
     , global
+    , grabCursor
+    , grabbingCursor
     , gray0Str
     , gray3Str
     , gray4Str
     , gray5Str
     , green1Str
     , grid
+    , gridCols1
+    , gridCols2
+    , gridColumnsRem
+    , gridRowsRem
     , grow
     , h0
     , h1
+    , h11
     , h12
     , h128
+    , h128px
     , h16
+    , h160Pct
     , h16px
     , h1px
     , h2
@@ -101,13 +129,16 @@ module Style exposing
     , h64
     , h72
     , h75Viewport
+    , h7p5
     , h8
     , h80
     , hAuto
     , hFull
     , hFullViewport
+    , hideDetailsMarker
     , hover
     , hyphensAuto
+    , imageRenderingAuto
     , importantIndent
     , importantOutdent
     , indent
@@ -116,53 +147,76 @@ module Style exposing
     , inlineBlock
     , inlineCol
     , inlineRow
+    , inset0
+    , isolate
     , itemsCenter
     , itemsStart
     , justifyCenter
     , justifyEnd
+    , justifyItemsCenter
     , justifySpaceAround
     , justifySpaceBetween
     , left0
+    , left30Pct
     , left4
     , left50Pct
     , leftNeg128
+    , leftValue
+    , letterSpacingEm
     , lg
+    , lineHeight1
     , link
     , listNone
     , listStyleNone
     , m0
     , m2
     , m4
+    , mAuto
     , maxH16
     , maxH18
     , maxH24
     , maxH32
     , maxH64
+    , maxHContainerInset4
     , maxHViewportInset8
+    , maxHViewportInsetRem
     , maxW12
+    , maxW120
     , maxW128
     , maxW16
     , maxW160
     , maxW192
     , maxW240
+    , maxW256
     , maxW32
     , maxW320
     , maxW64
     , maxW8
     , maxW96
+    , maxWContainerInset4
     , maxWFull
+    , maxWViewportInsetRem
+    , mb1p4
     , mb24
     , mb4
     , md
     , minH0
     , minH14
+    , minH24
     , minH32
+    , minH36
+    , minH76
     , minH96
     , minHFullViewport
     , minW0
+    , minW11
     , minW16
+    , minW28
+    , minW36
     , minW40
+    , minW56Clamped
     , minW72
+    , mixBlendScreen
     , ml1
     , ml128
     , ml16
@@ -170,6 +224,7 @@ module Style exposing
     , ml40
     , ml64
     , ml96
+    , mlNeg3
     , mr1
     , mr128
     , mr16
@@ -178,7 +233,9 @@ module Style exposing
     , mr40
     , mr64
     , mr96
+    , mrNeg3
     , mt16
+    , mt2
     , mt3
     , mt4
     , mx4
@@ -189,13 +246,24 @@ module Style exposing
     , noScrollbar
     , noWrap
     , none
+    , notAllowedCursor
+    , objectContain
+    , opacity
     , opaque
     , outdent
     , outdentDark
     , outdentLeft
     , outdentStrong
     , outdentTopRight
+    , outlineCurrent
+    , outlineCurrentThick
     , outlineNone
+    , outlineOffset3
+    , outlineOffsetNeg1
+    , outlineOffsetNeg3
+    , outlineYellow5
+    , outlineYellow5HalfPixel
+    , outlineYellow5Thick
     , overflowAuto
     , overflowHidden
     , p0
@@ -204,6 +272,7 @@ module Style exposing
     , p2px
     , p3
     , p4
+    , paddingRightEm
     , pb0
     , pb128
     , pb16
@@ -218,6 +287,7 @@ module Style exposing
     , pl4
     , placeContentCenter
     , pointerCursor
+    , pointerEventsNone
     , pr1
     , pr16
     , pr2
@@ -240,7 +310,10 @@ module Style exposing
     , py2
     , py3
     , py4
+    , py6
+    , py8
     , red1Str
+    , reducedMotion
     , relative
     , right0
     , right1
@@ -250,6 +323,7 @@ module Style exposing
     , right8
     , rightFull
     , rounded
+    , rounded0
     , rounded2
     , rounded2px
     , rounded4
@@ -264,12 +338,14 @@ module Style exposing
     , sNeg128
     , selectableListRow
     , selfCenter
+    , selfStretch
     , setBgColorVar
     , setPrimaryColorVar
     , shadowMenu
     , shrink0
     , squareBL
     , squareBR
+    , tabularNums
     , textAlignCenter
     , textAlignRight
     , textBlue0
@@ -296,8 +372,12 @@ module Style exposing
     , top32
     , top4
     , top8
+    , topAuto
     , topFull
+    , topNeg30Pct
     , topNeg4
+    , topValue
+    , transform
     , transformOriginTopLeft
     , translateXNeg50pct
     , transparent
@@ -306,31 +386,44 @@ module Style exposing
     , userSelectNone
     , w0
     , w1
+    , w104
     , w12
     , w120
     , w128
+    , w128px
+    , w14
     , w152
     , w16
     , w16px
     , w196
     , w2
     , w20
+    , w256
     , w2x
     , w3
+    , w30Pct
     , w32
+    , w36
     , w4
     , w40
+    , w40Pct
     , w48
     , w5
+    , w52
     , w6
     , w64
     , w72
+    , w7p5
     , w8
+    , w96
     , wAuto
     , wFull
     , wFullViewport
     , when
     , whitespacePreWrap
+    , widthMinRemVw
+    , widthPct
+    , widthValue
     , wrapAnywhere
     , yellow1Str
     , yellow5Str
@@ -354,6 +447,46 @@ import Css.Value
 basisFull : Css.Style
 basisFull =
     Css.flexBasis (Css.pct 100)
+
+
+animationNone : Css.Style
+animationNone =
+    Css.property "animation" "none"
+
+
+pointerEventsNone : Css.Style
+pointerEventsNone =
+    Css.property "pointer-events" "none"
+
+
+justifyItemsCenter : Css.Style
+justifyItemsCenter =
+    Css.property "justify-items" "center"
+
+
+gridRowsRem : Int -> Float -> Css.Style
+gridRowsRem count size =
+    Css.property "grid-template-rows" ("repeat(" ++ String.fromInt count ++ ", " ++ String.fromFloat size ++ "rem)")
+
+
+gridColumnsRem : Int -> Float -> Css.Style
+gridColumnsRem count size =
+    Css.property "grid-template-columns" ("repeat(" ++ String.fromInt count ++ ", " ++ String.fromFloat size ++ "rem)")
+
+
+h11 : Css.Style
+h11 =
+    Css.height (Css.rem 2.75)
+
+
+minW11 : Css.Style
+minW11 =
+    Css.minWidth (Css.rem 2.75)
+
+
+minW36 : Css.Style
+minW36 =
+    Css.minWidth s36
 
 
 belowWidth : Float -> List Css.Style -> Css.Style
@@ -2611,3 +2744,428 @@ aspectRatio ratio =
 shadowMenu : Css.Style
 shadowMenu =
     Css.property "box-shadow" "3px 5px 0 rgba(0, 0, 0, 0.3)"
+
+
+objectContain : Css.Style
+objectContain =
+    Css.objectFit Css.contain_
+
+
+grabbingCursor : Css.Style
+grabbingCursor =
+    Css.cursor Css.grabbing
+
+
+grabCursor : Css.Style
+grabCursor =
+    Css.cursor Css.grab
+
+
+notAllowedCursor : Css.Style
+notAllowedCursor =
+    Css.cursor Css.notAllowed
+
+
+containerSize : Css.Style
+containerSize =
+    Css.property "container-type" "size"
+
+
+containerInlineSize : Css.Style
+containerInlineSize =
+    Css.property "container-type" "inline-size"
+
+
+selfStretch : Css.Style
+selfStretch =
+    Css.alignSelf Css.stretch
+
+
+isolate : Css.Style
+isolate =
+    Css.property "isolation" "isolate"
+
+
+contentEmpty : Css.Style
+contentEmpty =
+    Css.property "content" "''"
+
+
+inset0 : Css.Style
+inset0 =
+    Css.property "inset" "0"
+
+
+mixBlendScreen : Css.Style
+mixBlendScreen =
+    Css.property "mix-blend-mode" "screen"
+
+
+lineHeight1 : Css.Style
+lineHeight1 =
+    Css.lineHeight (Css.num 1)
+
+
+gridCols2 : Css.Style
+gridCols2 =
+    Css.property "grid-template-columns" "repeat(2, minmax(0, 1fr))"
+
+
+gridCols1 : Css.Style
+gridCols1 =
+    Css.property "grid-template-columns" "1fr"
+
+
+mAuto : Css.Style
+mAuto =
+    Css.margin Css.auto
+
+
+topAuto : Css.Style
+topAuto =
+    Css.top Css.auto
+
+
+bgTransparent : Css.Style
+bgTransparent =
+    Css.backgroundColor Css.transparent
+
+
+borderTransparent : Css.Style
+borderTransparent =
+    Css.border3 (Css.px 1) Css.solid (Css.rgba 0 0 0 0)
+
+
+outlineCurrent : Css.Style
+outlineCurrent =
+    Css.outline3 (Css.px 1) Css.solid Css.currentcolor
+
+
+outlineYellow5 : Css.Style
+outlineYellow5 =
+    Css.outline3 (Css.px 1) Css.solid (Css.hex yellow5Str)
+
+
+outlineYellow5Thick : Css.Style
+outlineYellow5Thick =
+    Css.property "outline" ("2px solid " ++ yellow5Str)
+
+
+outlineYellow5HalfPixel : Css.Style
+outlineYellow5HalfPixel =
+    Css.property "outline" ("0.5px solid " ++ yellow5Str)
+
+
+outlineCurrentThick : Css.Style
+outlineCurrentThick =
+    Css.property "outline" "2px solid currentColor"
+
+
+outlineOffset3 : Css.Style
+outlineOffset3 =
+    Css.property "outline-offset" "3px"
+
+
+outlineOffsetNeg1 : Css.Style
+outlineOffsetNeg1 =
+    Css.property "outline-offset" "-1px"
+
+
+outlineOffsetNeg3 : Css.Style
+outlineOffsetNeg3 =
+    Css.outlineOffset (Css.px -3)
+
+
+rounded0 : Css.Style
+rounded0 =
+    Css.property "border-radius" "0"
+
+
+imageRenderingAuto : Css.Style
+imageRenderingAuto =
+    Css.property "image-rendering" "auto"
+
+
+mt2 : Css.Style
+mt2 =
+    Css.marginTop (Css.rem 0.5)
+
+
+mlNeg3 : Css.Style
+mlNeg3 =
+    Css.marginLeft (Css.rem -0.75)
+
+
+mrNeg3 : Css.Style
+mrNeg3 =
+    Css.marginRight (Css.rem -0.75)
+
+
+mb1p4 : Css.Style
+mb1p4 =
+    Css.marginBottom (Css.rem 0.35)
+
+
+g1p4 : Css.Style
+g1p4 =
+    Css.property "gap" ".35rem"
+
+
+tabularNums : Css.Style
+tabularNums =
+    Css.property "font-variant-numeric" "tabular-nums"
+
+
+w128px : Css.Style
+w128px =
+    Css.width (Css.px 128)
+
+
+h128px : Css.Style
+h128px =
+    Css.height (Css.px 128)
+
+
+w7p5 : Css.Style
+w7p5 =
+    Css.width (Css.rem 1.875)
+
+
+h7p5 : Css.Style
+h7p5 =
+    Css.height (Css.rem 1.875)
+
+
+w52 : Css.Style
+w52 =
+    Css.width (Css.rem 13)
+
+
+w36 : Css.Style
+w36 =
+    Css.width (Css.rem 9)
+
+
+w104 : Css.Style
+w104 =
+    Css.width (Css.rem 26)
+
+
+w96 : Css.Style
+w96 =
+    Css.width (Css.rem 24)
+
+
+maxW120 : Css.Style
+maxW120 =
+    Css.maxWidth (Css.rem 30)
+
+
+minW28 : Css.Style
+minW28 =
+    Css.minWidth (Css.rem 7)
+
+
+w14 : Css.Style
+w14 =
+    Css.width (Css.rem 3.5)
+
+
+h160Pct : Css.Style
+h160Pct =
+    Css.height (Css.pct 160)
+
+
+left30Pct : Css.Style
+left30Pct =
+    Css.left (Css.pct 30)
+
+
+topNeg30Pct : Css.Style
+topNeg30Pct =
+    Css.top (Css.pct -30)
+
+
+w30Pct : Css.Style
+w30Pct =
+    Css.width (Css.pct 30)
+
+
+w40Pct : Css.Style
+w40Pct =
+    Css.width (Css.pct 40)
+
+
+minH76 : Css.Style
+minH76 =
+    Css.minHeight (Css.rem 19)
+
+
+minH36 : Css.Style
+minH36 =
+    Css.minHeight (Css.rem 9)
+
+
+minH24 : Css.Style
+minH24 =
+    Css.minHeight (Css.rem 6)
+
+
+minW56Clamped : Css.Style
+minW56Clamped =
+    Css.property "min-width" "min(14rem, 100%)"
+
+
+maxWContainerInset4 : Css.Style
+maxWContainerInset4 =
+    Css.property "max-width" "calc(100cqw - 1rem)"
+
+
+maxHContainerInset4 : Css.Style
+maxHContainerInset4 =
+    Css.property "max-height" "calc(100cqh - 1rem)"
+
+
+py6 : Css.Style
+py6 =
+    Css.batch [ Css.paddingTop (Css.rem 1.5), Css.paddingBottom (Css.rem 1.5) ]
+
+
+py8 : Css.Style
+py8 =
+    Css.batch [ Css.paddingTop (Css.rem 2), Css.paddingBottom (Css.rem 2) ]
+
+
+opacity : Float -> Css.Style
+opacity value =
+    Css.opacity (Css.num value)
+
+
+widthPct : Float -> Css.Style
+widthPct value =
+    Css.width (Css.pct value)
+
+
+maxHViewportInsetRem : Float -> Css.Style
+maxHViewportInsetRem inset =
+    Css.maxHeight (Css.calc (Css.vh 100) (Css.minus (Css.rem inset)))
+
+
+maxWViewportInsetRem : Float -> Css.Style
+maxWViewportInsetRem inset =
+    Css.maxWidth (Css.calc (Css.vw 100) (Css.minus (Css.rem inset)))
+
+
+widthMinRemVw : Float -> Float -> Css.Style
+widthMinRemVw width viewportWidth =
+    Css.property "width" ("min(" ++ String.fromFloat width ++ "rem, " ++ String.fromFloat viewportWidth ++ "vw)")
+
+
+widthValue : String -> Css.Style
+widthValue value =
+    Css.property "width" value
+
+
+leftValue : String -> Css.Style
+leftValue value =
+    Css.property "left" value
+
+
+topValue : String -> Css.Style
+topValue value =
+    Css.property "top" value
+
+
+transform : String -> Css.Style
+transform value =
+    Css.property "transform" value
+
+
+focusVisible : List Css.Style -> Css.Style
+focusVisible styles =
+    Css.pseudoClass "focus-visible" styles
+
+
+reducedMotion : List Css.Style -> Css.Style
+reducedMotion styles =
+    Css.Media.withMediaQuery [ "(prefers-reduced-motion: reduce)" ] styles
+
+
+w256 : Css.Style
+w256 =
+    Css.width (Css.rem 64)
+
+
+maxW256 : Css.Style
+maxW256 =
+    Css.maxWidth (Css.rem 64)
+
+
+bottom18 : Css.Style
+bottom18 =
+    Css.bottom (Css.rem 4.5)
+
+
+bgGray0_60 : Css.Style
+bgGray0_60 =
+    Css.property "background" (gray0Str ++ "99")
+
+
+borderYellow5_20 : Css.Style
+borderYellow5_20 =
+    Css.property "border" ("1px solid " ++ yellow5Str ++ "33")
+
+
+active : List Css.Style -> Css.Style
+active styles =
+    Css.active styles
+
+
+hideDetailsMarker : Css.Style
+hideDetailsMarker =
+    Css.pseudoElement "-webkit-details-marker" [ displayNone ]
+
+
+letterSpacingEm : Float -> Css.Style
+letterSpacingEm value =
+    Css.letterSpacing (Css.em value)
+
+
+paddingRightEm : Float -> Css.Style
+paddingRightEm value =
+    Css.paddingRight (Css.em value)
+
+
+fontSizeRem : Float -> Css.Style
+fontSizeRem value =
+    Css.fontSize (Css.rem value)
+
+
+fontSizeValue : String -> Css.Style
+fontSizeValue value =
+    Css.property "font-size" value
+
+
+belowHeight : Float -> List Css.Style -> Css.Style
+belowHeight height styles =
+    Css.Media.withMediaQuery [ "(max-height: " ++ String.fromFloat height ++ "px)" ] styles
+
+
+animation : String -> Css.Style
+animation value =
+    Css.property "animation" value
+
+
+after : List Css.Style -> Css.Style
+after styles =
+    Css.after styles
+
+
+evenChildren : List Css.Style -> Css.Style
+evenChildren styles =
+    Css.pseudoClass "nth-child(even)" styles
+
+
+firstChild : List Css.Style -> Css.Style
+firstChild styles =
+    Css.firstChild styles

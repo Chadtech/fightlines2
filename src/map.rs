@@ -1,7 +1,8 @@
 use juniper::{GraphQLEnum, GraphQLObject, graphql_object};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Coordinate {
     x: u16,
     y: u16,
@@ -24,15 +25,16 @@ impl Coordinate {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
 pub enum Terrain {
     GrassPlain,
     Hills,
     Forest,
+    Mountains,
 }
 
 /// Appearance is independent of terrain movement and visibility rules.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, GraphQLEnum)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
 pub enum MapTheme {
     #[default]
     GreenForest,
@@ -52,18 +54,55 @@ pub struct Map {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum MapError {
+    InvalidDefinition(String),
     EmptyDimensions,
+    #[cfg(test)]
     DimensionsTooLarge,
+    #[cfg(test)]
     UnequalRowWidth {
         row: usize,
         expected: usize,
         actual: usize,
     },
+    #[cfg(test)]
     UnknownTerrain {
         position: Coordinate,
         symbol: char,
     },
     PositionOutOfBounds(Coordinate),
+}
+
+impl std::fmt::Display for MapError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidDefinition(message) => formatter.write_str(message),
+            Self::EmptyDimensions => formatter.write_str("map dimensions must be positive"),
+            Self::PositionOutOfBounds(position) => write!(
+                formatter,
+                "tile ({}, {}) lies outside the map",
+                position.x(),
+                position.y()
+            ),
+            #[cfg(test)]
+            Self::DimensionsTooLarge => formatter.write_str("map dimensions are too large"),
+            #[cfg(test)]
+            Self::UnequalRowWidth {
+                row,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "row {row} has {actual} tiles; expected {expected}"
+            ),
+            #[cfg(test)]
+            Self::UnknownTerrain { position, symbol } => write!(
+                formatter,
+                "unknown terrain '{symbol}' at ({}, {})",
+                position.x(),
+                position.y()
+            ),
+        }
+    }
 }
 
 impl Map {
@@ -94,8 +133,9 @@ impl Map {
     }
 
     /// Parse a rectangular terrain sketch: space or `.` is grass, `#` forest,
-    /// and `%` hills. Spaces are cells, so leading/trailing spaces are preserved.
+    /// `%` hills, and `^` mountains. Spaces are cells, so leading/trailing spaces are preserved.
     /// A final newline is optional; blank rows and unknown symbols are errors.
+    #[cfg(test)]
     pub fn from_ascii(sketch: &str) -> Result<Self, MapError> {
         let rows: Vec<&str> = sketch.lines().collect();
         let width = rows.first().map_or(0, |row| row.chars().count());
@@ -120,6 +160,7 @@ impl Map {
                     ' ' | '.' => continue,
                     '#' => Terrain::Forest,
                     '%' => Terrain::Hills,
+                    '^' => Terrain::Mountains,
                     _ => return Err(MapError::UnknownTerrain { position, symbol }),
                 };
                 features.insert(position, terrain);
@@ -225,6 +266,13 @@ mod tests {
             assert_eq!(map.features.len(), 2);
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn ascii_parses_mountains() -> TestResult<()> {
+        let map = Map::from_ascii(".^.").fixture()?;
+        assert_eq!(map.tile_at(Coordinate::new(1, 0)), Some(Terrain::Mountains));
         Ok(())
     }
 

@@ -4,8 +4,8 @@ import Api.Enum.PlayerNumber as PlayerNumber exposing (PlayerNumber)
 
 
 label : PlayerNumber -> String
-label side =
-    case side of
+label playerNumber =
+    case playerNumber of
         PlayerNumber.Player1 ->
             "player 1"
 

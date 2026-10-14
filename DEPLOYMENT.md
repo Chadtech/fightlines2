@@ -7,9 +7,9 @@ precedence over `.env`, so shell exports and hosting configuration still work.
 A missing `.env` is allowed; malformed or unreadable files stop startup with an
 error. Schema export does not load `.env`.
 
-`make dev` passes `--dev-game` to the server to seed a public development preview
+`make dev` passes `--dev-game --map-editor` to the server to seed a public development preview
 at `/game/00000000000000000000000000000000`. Use `make run` for ordinary play
-and omit `--dev-game` on hosted servers. The fixture is absent by default;
+and omit both development flags on hosted servers. The fixture is absent by default;
 the flag does not alter authorization
 for normal games.
 
@@ -35,3 +35,20 @@ responses use `no-store`.
 For other devices on your network, bind `FIGHTLINES_ADDR=0.0.0.0:8080` and share
 your machine's reachable address rather than `127.0.0.1`. Internet play requires
 deploying the server at a reachable URL.
+
+
+## Map authoring
+
+`make editor` enables `--map-editor` without seeding a fixture. Only this flag
+registers `/map-editor` and enables the `maps` and `saveMap` operations on
+`/graphql`. These fields remain visible in the shared schema when the flag is
+absent, but their resolvers reject requests before filesystem access. Editor
+reads require loopback clients; saves additionally require a matching localhost
+Origin. Do not enable this flag on hosted servers. Production serves no editor
+page and rejects authoring operations, including with the same frontend bundle.
+
+The editor writes only the six known `maps/*.json` files in the source checkout,
+using validation and atomic replacement. Editor-enabled servers read the current
+files when starting a new game. Production embeds those files at compile time,
+so deploy a rebuilt Rust executable after map edits. No map directory is needed
+on a production host. Existing games are unaffected by saves.

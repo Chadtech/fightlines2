@@ -1,13 +1,13 @@
 module View.Dropdown exposing
     ( Dropdown
     , Option
-    , globalStyles
     , option
     , simple
     , toHtml
     , withHtmlId
     )
 
+import Css
 import Css.Global
 import Html.Styled as Html
     exposing
@@ -43,17 +43,6 @@ type alias Option msg =
 ----------------------------------------------------------------
 -- API --
 ----------------------------------------------------------------
-
-
-globalStyles : Css.Global.Snippet
-globalStyles =
-    Css.Global.selector ".dropdown:hover"
-        [ Css.Global.children
-            [ Css.Global.class "dropdown-label"
-                [ S.textGray5
-                ]
-            ]
-        ]
 
 
 simple : String -> msg -> Dropdown msg
@@ -138,8 +127,16 @@ toHtml maybeOptions dropdown =
                 , S.justifySpaceBetween
                 , S.pointerCursor
                 , S.w48
+                , S.hover
+                    [ Css.Global.children
+                        [ Css.Global.div
+                            [ S.firstChild
+                                [ S.textGray5
+                                ]
+                            ]
+                        ]
+                    ]
                 ]
-            , Attr.class "dropdown"
             , Ev.onClick dropdown.onClick
             ]
 
@@ -152,8 +149,7 @@ toHtml maybeOptions dropdown =
     Html.div
         (baseAttrs ++ conditionalAttrs)
         [ Html.div
-            [ Attr.class "dropdown-label"
-            ]
+            []
             [ Html.text dropdown.label
             ]
         , Html.div

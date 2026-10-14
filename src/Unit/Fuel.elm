@@ -11,6 +11,7 @@ import Graphql.SelectionSet as SS exposing (SelectionSet)
 type alias Fuel =
     { current : Int
     , maximum : Int
+    , movementPerTile : Int
     }
 
 
@@ -19,3 +20,4 @@ selection =
     SS.succeed Fuel
         |> SS.with FuelApi.current
         |> SS.with FuelApi.maximum
+        |> SS.with FuelApi.movementPerTile

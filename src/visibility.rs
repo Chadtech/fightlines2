@@ -8,24 +8,28 @@ use std::collections::BTreeSet;
 /// Sight is a circular radius measured between tile centers.
 pub fn sight_range(kind: UnitKind) -> i32 {
     match kind {
-        UnitKind::Infantry => 4,
-        UnitKind::FieldGun => 4,
-        UnitKind::Truck => 3,
-        UnitKind::Tank => 2,
+        UnitKind::Infantry => 3,
+        UnitKind::FieldGun => 3,
+        UnitKind::Truck => 2,
+        UnitKind::Tank => 1,
     }
 }
 
-pub fn visible_tiles(scenario: &Scenario, side: PlayerNumber) -> BTreeSet<Coordinate> {
+pub fn visible_tiles(scenario: &Scenario, player_number: PlayerNumber) -> BTreeSet<Coordinate> {
     let mut visible = BTreeSet::new();
     for (unit, origin) in scenario
         .units
         .iter()
-        .filter(|unit| unit.side() == side && unit.is_alive())
+        .filter(|unit| unit.player_number() == player_number && unit.is_alive())
         .filter_map(|unit| unit.board_position().map(|origin| (unit, origin)))
     {
         // The occupied square is known even when the unit is in a forest.
         visible.insert(origin);
-        let bonus = i32::from(scenario.map.tile_at(origin) == Some(Terrain::Hills));
+        let bonus = match scenario.map.tile_at(origin) {
+            Some(Terrain::Mountains) => 2,
+            Some(Terrain::Hills) => 1,
+            _ => 0,
+        };
         let range = sight_range(unit.kind()) + bonus;
         for y in (origin.y() - range).max(0)..=(origin.y() + range).min(scenario.map.height() - 1) {
             for x in
@@ -49,7 +53,7 @@ pub fn visible_tiles(scenario: &Scenario, side: PlayerNumber) -> BTreeSet<Coordi
         scenario
             .units
             .iter()
-            .filter(|unit| unit.side() != side && unit.firing_position_revealed())
+            .filter(|unit| unit.player_number() != player_number && unit.firing_position_revealed())
             .filter_map(Unit::board_position),
     );
     visible
@@ -57,11 +61,15 @@ pub fn visible_tiles(scenario: &Scenario, side: PlayerNumber) -> BTreeSet<Coordi
 
 /// Trace cells crossed by the center-to-center sight line. Touching a corner
 /// does not enter the adjacent cells, so their terrain does not block sight.
-/// Target hills remain visible; forests conceal their contents. Intervening
-/// hills and forests block ground-level observers. Hill observers see over
+/// Target hills and mountains remain visible; forests conceal their contents.
+/// Intervening hills, mountains and forests block ground-level observers.
+/// Hill and mountain observers see over
 /// intervening terrain; forests still conceal their contents.
 pub(crate) fn clear_line(map: &Map, origin: Coordinate, target: Coordinate) -> bool {
-    if map.tile_at(origin) == Some(Terrain::Hills) {
+    if matches!(
+        map.tile_at(origin),
+        Some(Terrain::Hills | Terrain::Mountains)
+    ) {
         return true;
     }
     let dx = target.x() - origin.x();
@@ -75,7 +83,7 @@ pub(crate) fn clear_line(map: &Map, origin: Coordinate, target: Coordinate) -> b
     let blocks = |x: i32, y: i32| {
         let position = Coordinate::new(x as u16, y as u16);
         let blocking_terrain = match map.tile_at(position) {
-            Some(Terrain::Hills | Terrain::Forest) => true,
+            Some(Terrain::Hills | Terrain::Forest | Terrain::Mountains) => true,
             Some(Terrain::GrassPlain) | None => false,
         };
         position != origin && position != target && blocking_terrain
@@ -108,18 +116,18 @@ pub(crate) fn observable(map: &Map, visible: &BTreeSet<Coordinate>, position: Co
 
 pub fn observed_scenario(
     scenario: &Scenario,
-    side: PlayerNumber,
+    player_number: PlayerNumber,
     visible: &BTreeSet<Coordinate>,
 ) -> Scenario {
     let mut observed = scenario.clone();
     observed.units.retain(|unit| {
-        unit.side() == side
+        unit.player_number() == player_number
             || unit.board_position().is_some_and(|position| {
                 unit.firing_position_revealed() || observable(&scenario.map, visible, position)
             })
     });
     for unit in &mut observed.units {
-        if unit.side() != side {
+        if unit.player_number() != player_number {
             unit.conceal_resources();
         }
     }
@@ -136,21 +144,26 @@ pub fn observed_scenario(
 /// Partial enemy sightings are represented exclusively by projected frames.
 pub fn observed_resolution(
     scenario: &Scenario,
-    side: PlayerNumber,
+    player_number: PlayerNumber,
     visible: &BTreeSet<Coordinate>,
     resolution: &TurnResolution,
 ) -> TurnResolution {
     let before = initial_scenario(scenario, resolution);
-    let initial_visible = visible_tiles(&before, side);
+    let initial_visible = visible_tiles(&before, player_number);
     let mut observed = resolution.clone();
-    observed.frames = observed_frames(scenario, side, resolution);
-    observed.reports.retain(|report| report.side == side);
+    observed.frames = observed_frames(scenario, player_number, resolution);
+    observed
+        .reports
+        .retain(|report| report.player_number == player_number);
     for report in &mut observed.reports {
         let shots: Vec<_> = observed
             .frames
             .iter()
             .flat_map(|frame| &frame.shots)
-            .filter(|shot| shot.attacker.side() == side && shot.target.side() != side)
+            .filter(|shot| {
+                shot.attacker.player_number() == player_number
+                    && shot.target.player_number() != player_number
+            })
             .collect();
         report.damage_inflicted = shots
             .iter()
@@ -179,7 +192,7 @@ pub fn observed_resolution(
                     .find(|unit| unit.unit_id() == event.unit_id)
             });
         unit.is_some_and(|unit| {
-            unit.side() == side
+            unit.player_number() == player_number
                 || (unit
                     .board_position()
                     .is_some_and(|position| observable(&scenario.map, visible, position))
@@ -235,7 +248,7 @@ fn initial_scenario(scenario: &Scenario, resolution: &TurnResolution) -> Scenari
 /// Event-only fixtures retain the legacy reconstruction fallback.
 fn observed_frames(
     scenario: &Scenario,
-    side: PlayerNumber,
+    player_number: PlayerNumber,
     resolution: &TurnResolution,
 ) -> Vec<TurnFrame> {
     if !resolution.frames.is_empty() {
@@ -251,7 +264,7 @@ fn observed_frames(
                 board.units = frame.units.clone();
                 board.depots = frame.depots.clone();
                 board.supply_crates = frame.supply_crates.clone();
-                let mut visible = visible_tiles(&board, side);
+                let mut visible = visible_tiles(&board, player_number);
                 // Keep the observed exchange visible when the volley kills an observer.
                 if !frame.shots.is_empty() || previous_shots {
                     visible.extend(&previous_visible);
@@ -261,14 +274,15 @@ fn observed_frames(
                 let known_endpoint = |position| {
                     observable(&board.map, &visible, position)
                         || board.units.iter().any(|unit| {
-                            unit.side() == side && unit.board_position() == Some(position)
+                            unit.player_number() == player_number
+                                && unit.board_position() == Some(position)
                         })
                 };
-                let mut observed = observed_scenario(&board, side, &visible);
+                let mut observed = observed_scenario(&board, player_number, &visible);
                 // Corpses persist until cleanup. Later sight or a firing reveal
                 // must not disclose a casualty that was hidden when it happened.
                 for unit in &board.units {
-                    if unit.side() != side
+                    if unit.player_number() != player_number
                         && unit.destroyed()
                         && casualties.insert(unit.unit_id())
                         && !observed
@@ -289,8 +303,8 @@ fn observed_frames(
                         .shots
                         .iter()
                         .filter(|shot| {
-                            shot.attacker.side() == side
-                                || shot.target.side() == side
+                            shot.attacker.player_number() == player_number
+                                || shot.target.player_number() == player_number
                                 || (known_endpoint(shot.origin) && known_endpoint(shot.destination))
                         })
                         .cloned()
@@ -304,8 +318,8 @@ fn observed_frames(
     }
     let mut board = initial_scenario(scenario, resolution);
     let project = |board: &Scenario| {
-        let visible = visible_tiles(board, side);
-        let observed = observed_scenario(board, side, &visible);
+        let visible = visible_tiles(board, player_number);
+        let observed = observed_scenario(board, player_number, &visible);
         TurnFrame {
             depots: observed.depots,
             supply_crates: observed.supply_crates,
@@ -365,9 +379,9 @@ mod tests {
         Ok({
             let mut scenario = Scenario::supply_point().fixture()?;
             scenario.map = Map::from_ascii(sketch).fixture()?;
-            scenario
-                .units
-                .retain(|unit| unit.side() == PlayerNumber::Player1 && unit.kind() == kind);
+            scenario.units.retain(|unit| {
+                unit.player_number() == PlayerNumber::Player1 && unit.kind() == kind
+            });
             scenario.units.truncate(1);
             scenario.units[0].move_to(Coordinate::new(0, 0));
             scenario
@@ -383,7 +397,8 @@ mod tests {
                 .units
                 .into_iter()
                 .find(|unit| {
-                    unit.side() == PlayerNumber::Player2 && unit.kind() == UnitKind::FieldGun
+                    unit.player_number() == PlayerNumber::Player2
+                        && unit.kind() == UnitKind::FieldGun
                 })
                 .fixture()?;
             enemy.move_to(Coordinate::new(6, 0));
@@ -473,14 +488,14 @@ mod tests {
         let unit_count = board.units.len();
         for unit in &mut board.units {
             if unit.kind() == UnitKind::Truck {
-                unit.supply_cargo.push(crate::supplies::SupplyStock {
+                unit.supply_cargo.push(crate::supplies::ResourceStock {
                     current: 64,
                     maximum: 64,
                 });
             }
         }
         for unit in &mut board.units {
-            let x = if unit.side() == PlayerNumber::Player1 {
+            let x = if unit.player_number() == PlayerNumber::Player1 {
                 1
             } else {
                 2
@@ -500,11 +515,11 @@ mod tests {
                 visible_tiles: vec![],
             }],
         };
-        for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
-            let visible = visible_tiles(&board, side);
+        for player_number in [PlayerNumber::Player1, PlayerNumber::Player2] {
+            let visible = visible_tiles(&board, player_number);
             let query = ResourceQuery {
-                board: observed_scenario(&board, side, &visible),
-                resolution: observed_resolution(&board, side, &visible, &resolution),
+                board: observed_scenario(&board, player_number, &visible),
+                resolution: observed_resolution(&board, player_number, &visible, &resolution),
             };
             let schema = juniper::RootNode::new(
                 query,
@@ -512,7 +527,7 @@ mod tests {
                 juniper::EmptySubscription::<()>::new(),
             );
             let (data, errors) = juniper::execute_sync(
-                "{ scenario { units { side kind resources { hitPoints { current maximum } supplies { current maximum upkeepPerTurn movementPerTile } fuel { current maximum } supplyCargo { current maximum } } } } resolution { frames { units { side kind resources { hitPoints { current } supplies { current } fuel { current } supplyCargo { current maximum } } } } } }",
+                "{ scenario { units { playerNumber kind resources { hitPoints { current maximum } supplies { current maximum upkeepPerTurn movementPerTile } fuel { current maximum } supplyCargo { current maximum } } } } resolution { frames { units { playerNumber kind resources { hitPoints { current } supplies { current } fuel { current } supplyCargo { current maximum } } } } } }",
                 None,
                 &schema,
                 &juniper::Variables::new(),
@@ -527,13 +542,13 @@ mod tests {
                     .fixture()?,
             ] {
                 assert_eq!(units.len(), unit_count);
-                let own_side = match side {
+                let own_player_number = match player_number {
                     PlayerNumber::Player1 => "PLAYER1",
                     PlayerNumber::Player2 => "PLAYER2",
                 };
                 for unit in units {
                     let resources = &unit["resources"];
-                    let own_unit = unit["side"] == own_side;
+                    let own_unit = unit["playerNumber"] == own_player_number;
                     assert_eq!(resources.is_null(), !own_unit);
                     if own_unit {
                         assert!(resources["hitPoints"].is_object());
@@ -582,12 +597,12 @@ mod tests {
     #[test]
     fn ranges_and_hill_bonus_follow_each_kind() -> TestResult<()> {
         for (kind, range) in [
-            (UnitKind::Infantry, 4),
-            (UnitKind::FieldGun, 4),
-            (UnitKind::Truck, 3),
-            (UnitKind::Tank, 2),
+            (UnitKind::Infantry, 3),
+            (UnitKind::FieldGun, 3),
+            (UnitKind::Truck, 2),
+            (UnitKind::Tank, 1),
         ] {
-            for (sketch, bonus) in [("........", 0), ("%.......", 1)] {
+            for (sketch, bonus) in [("........", 0), ("%.......", 1), ("^.......", 2)] {
                 let board = scenario(kind, sketch)?;
                 let visible = visible_tiles(&board, PlayerNumber::Player1);
                 assert!(visible.contains(&Coordinate::new(range + bonus, 0)));
@@ -608,15 +623,22 @@ mod tests {
             UnitKind::Truck,
             UnitKind::Tank,
         ] {
-            for bonus in [0, 1] {
+            for bonus in [0, 1, 2] {
                 let mut board = scenario(kind, &sketch)?;
                 board.units[0].move_to(origin);
-                if bonus == 1 {
+                if bonus > 0 {
                     board.map = Map::new(
                         13,
                         13,
                         Terrain::GrassPlain,
-                        std::collections::BTreeMap::from([(origin, Terrain::Hills)]),
+                        std::collections::BTreeMap::from([(
+                            origin,
+                            if bonus == 2 {
+                                Terrain::Mountains
+                            } else {
+                                Terrain::Hills
+                            },
+                        )]),
                     )
                     .fixture()?;
                 }
@@ -636,6 +658,21 @@ mod tests {
             }
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn mountains_block_ground_sight_and_grant_elevated_sight() -> TestResult<()> {
+        let ground = scenario(UnitKind::Infantry, ".^.....")?;
+        let visible = visible_tiles(&ground, PlayerNumber::Player1);
+        assert!(visible.contains(&Coordinate::new(1, 0)));
+        assert!(!visible.contains(&Coordinate::new(2, 0)));
+        for sketch in ["^%.....", "^^.....", "^#....."] {
+            let board = scenario(UnitKind::Infantry, sketch)?;
+            let visible = visible_tiles(&board, PlayerNumber::Player1);
+            assert!(visible.contains(&Coordinate::new(5, 0)));
+            assert!(!visible.contains(&Coordinate::new(6, 0)));
+        }
         Ok(())
     }
 
@@ -696,11 +733,15 @@ mod tests {
                     )
                     .fixture()?;
                     let visible = visible_tiles(&board, PlayerNumber::Player1);
-                    assert!(
+                    assert!(clear_line(&board.map, origin, target));
+                    let range = (sight_range(kind) + 1) as u16;
+                    let within_sight = target.x() * target.x() + target.y() * target.y()
+                        <= i32::from(range) * i32::from(range);
+                    assert_eq!(
                         visible.contains(&target),
+                        within_sight,
                         "{kind:?}, {terrain:?}, {target:?}"
                     );
-                    let range = (sight_range(kind) + 1) as u16;
                     assert!(visible.contains(&Coordinate::new(range, 0)));
                     assert!(!visible.contains(&Coordinate::new(range + 1, 0)));
                 }
@@ -717,7 +758,7 @@ mod tests {
             .fixture()?
             .units
             .into_iter()
-            .find(|unit| unit.side() == PlayerNumber::Player2)
+            .find(|unit| unit.player_number() == PlayerNumber::Player2)
             .fixture()?;
         enemy.move_to(Coordinate::new(4, 0));
         board.units.push(enemy);
@@ -829,7 +870,7 @@ mod tests {
             .fixture()?
             .units
             .into_iter()
-            .find(|unit| unit.side() == PlayerNumber::Player2)
+            .find(|unit| unit.player_number() == PlayerNumber::Player2)
             .fixture()?;
         enemy.move_to(Coordinate::new(1, 0));
         board.units.push(enemy);
@@ -876,9 +917,9 @@ mod tests {
             .fixture()?
             .units
             .into_iter()
-            .find(|unit| unit.side() == PlayerNumber::Player2)
+            .find(|unit| unit.player_number() == PlayerNumber::Player2)
             .fixture()?;
-        enemy.move_to(Coordinate::new(6, 0));
+        enemy.move_to(Coordinate::new(5, 0));
         let enemy_id = enemy.unit_id();
         board.units.push(enemy);
         let resolution = TurnResolution {
@@ -893,7 +934,7 @@ mod tests {
                 carrier_id: None,
                 kind: TurnEventKind::Move,
                 unit_id: enemy_id,
-                path: [6, 5, 4, 5, 6].map(|x| Coordinate::new(x, 0)).to_vec(),
+                path: [5, 4, 3, 4, 5].map(|x| Coordinate::new(x, 0)).to_vec(),
             }],
         };
         let projected = observed_resolution(
@@ -916,7 +957,7 @@ mod tests {
             .collect();
         assert_eq!(
             sightings,
-            vec![None, None, Some(Coordinate::new(4, 0)), None, None]
+            vec![None, None, Some(Coordinate::new(3, 0)), None, None]
         );
 
         Ok(())
@@ -932,9 +973,9 @@ mod tests {
             .fixture()?
             .units
             .into_iter()
-            .find(|unit| unit.side() == PlayerNumber::Player2)
+            .find(|unit| unit.player_number() == PlayerNumber::Player2)
             .fixture()?;
-        enemy.move_to(Coordinate::new(6, 0));
+        enemy.move_to(Coordinate::new(5, 0));
         let enemy_id = enemy.unit_id();
         board.units.push(enemy);
         let event = |unit_id, path: Vec<Coordinate>| TurnEvent {
@@ -953,13 +994,13 @@ mod tests {
             frames: Vec::new(),
             events: vec![
                 event(own_id, [0, 1, 2].map(|x| Coordinate::new(x, 0)).to_vec()),
-                event(enemy_id, [8, 7, 6].map(|x| Coordinate::new(x, 0)).to_vec()),
+                event(enemy_id, [7, 6, 5].map(|x| Coordinate::new(x, 0)).to_vec()),
             ],
         };
         let frames = observed_frames(&board, PlayerNumber::Player1, &resolution);
         assert_eq!(frames.len(), 5);
-        assert!(!frames[0].visible_tiles.contains(&Coordinate::new(6, 0)));
-        assert!(frames[1].visible_tiles.contains(&Coordinate::new(5, 0)));
+        assert!(!frames[0].visible_tiles.contains(&Coordinate::new(5, 0)));
+        assert!(frames[1].visible_tiles.contains(&Coordinate::new(4, 0)));
         assert!(
             !frames[1]
                 .units
@@ -972,7 +1013,7 @@ mod tests {
                 .iter()
                 .find(|unit| unit.unit_id() == enemy_id)
                 .and_then(Unit::board_position),
-            Some(Coordinate::new(6, 0))
+            Some(Coordinate::new(5, 0))
         );
         let opposing = observed_frames(&board, PlayerNumber::Player2, &resolution);
         assert_eq!(opposing.len(), frames.len());
@@ -982,14 +1023,14 @@ mod tests {
                 .iter()
                 .find(|unit| unit.unit_id() == enemy_id)
                 .and_then(Unit::board_position),
-            Some(Coordinate::new(8, 0))
+            Some(Coordinate::new(7, 0))
         );
         // Both viewers share the schedule, including concealed movement steps.
         for frame in &frames[..=2] {
             assert!(!frame.units.iter().any(|unit| unit.unit_id() == enemy_id));
         }
         for (index, frame) in opposing.iter().enumerate() {
-            let expected_x = [8, 8, 8, 7, 6][index];
+            let expected_x = [7, 7, 7, 6, 5][index];
             assert_eq!(
                 frame
                     .units
@@ -1006,13 +1047,13 @@ mod tests {
     #[test]
     fn summary_does_not_reveal_enemies_hidden_only_mid_turn() -> TestResult<()> {
         let mut board = scenario(UnitKind::Infantry, ".......")?;
-        board.units[0].move_to(Coordinate::new(4, 0));
+        board.units[0].move_to(Coordinate::new(3, 0));
         let own_id = board.units[0].unit_id();
         let mut enemy = Scenario::supply_point()
             .fixture()?
             .units
             .into_iter()
-            .find(|unit| unit.side() == PlayerNumber::Player2)
+            .find(|unit| unit.player_number() == PlayerNumber::Player2)
             .fixture()?;
         enemy.move_to(Coordinate::new(0, 0));
         let enemy_id = enemy.unit_id();
@@ -1035,7 +1076,7 @@ mod tests {
                 event(
                     own_id,
                     TurnEventKind::Move,
-                    [4, 5, 4].map(|x| Coordinate::new(x, 0)).to_vec(),
+                    [3, 4, 3].map(|x| Coordinate::new(x, 0)).to_vec(),
                 ),
                 event(enemy_id, TurnEventKind::Hold, vec![Coordinate::new(0, 0)]),
             ],
@@ -1081,9 +1122,9 @@ mod tests {
             .fixture()?
             .units
             .into_iter()
-            .find(|unit| unit.side() == PlayerNumber::Player2)
+            .find(|unit| unit.player_number() == PlayerNumber::Player2)
             .fixture()?;
-        enemy.move_to(Coordinate::new(3, 0));
+        enemy.move_to(Coordinate::new(2, 0));
         let enemy_id = enemy.unit_id();
         board.units.push(enemy);
         let resolution = TurnResolution {
@@ -1099,9 +1140,9 @@ mod tests {
                 kind: TurnEventKind::Move,
                 unit_id: enemy_id,
                 path: vec![
-                    Coordinate::new(5, 0),
                     Coordinate::new(4, 0),
                     Coordinate::new(3, 0),
+                    Coordinate::new(2, 0),
                 ],
             }],
         };

@@ -35,6 +35,6 @@ isYou =
     Object.selectionForField "Bool" "isYou" [] Decode.bool
 
 
-side : SelectionSet Api.Enum.PlayerNumber.PlayerNumber Api.Object.GamePlayerView
-side =
-    Object.selectionForField "Enum.PlayerNumber.PlayerNumber" "side" [] Api.Enum.PlayerNumber.decoder
+playerNumber : SelectionSet Api.Enum.PlayerNumber.PlayerNumber Api.Object.GamePlayerView
+playerNumber =
+    Object.selectionForField "Enum.PlayerNumber.PlayerNumber" "playerNumber" [] Api.Enum.PlayerNumber.decoder

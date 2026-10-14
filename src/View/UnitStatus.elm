@@ -127,7 +127,7 @@ unitHelp playerName unit =
             , H.span
                 [ A.css
                     [ S.textGray4
-                    , Css.textAlign Css.right_
+                    , S.textAlignRight
                     ]
                 ]
                 [ H.text playerName
@@ -138,9 +138,9 @@ unitHelp playerName unit =
             , A.css
                 [ S.bgYellow2
                 , S.textGray5
-                , Css.marginTop (Css.rem 0.75)
-                , Css.marginLeft (Css.rem -0.75)
-                , Css.marginRight (Css.rem -0.75)
+                , S.mt3
+                , S.mlNeg3
+                , S.mrNeg3
                 ]
             ]
             [ H.dl
@@ -193,9 +193,7 @@ summaryStyles : List Css.Style
 summaryStyles =
     [ S.pointerCursor
     , S.listStyleNone
-    , Css.pseudoElement "-webkit-details-marker"
-        [ S.displayNone
-        ]
+    , S.hideDetailsMarker
     ]
 
 
@@ -224,7 +222,9 @@ gauge kind resource =
                     { current = supplies.current, maximum = supplies.maximum }
 
                 Fuel fuel ->
-                    fuel
+                    { current = fuel.current
+                    , maximum = fuel.maximum
+                    }
 
         fraction : Float
         fraction =
@@ -250,8 +250,8 @@ gauge kind resource =
                 Supply _ ->
                     Just (supplyExplanation kind)
 
-                Fuel _ ->
-                    Just "each traversed tile uses 1 fuel. holds and canceled moves use none. fuel cannot be replenished."
+                Fuel fuel ->
+                    Just ("each traversed tile uses " ++ String.fromInt fuel.movementPerTile ++ " fuel. holds and canceled moves use none. nearby fuel depots refill vehicle tanks at turn end.")
 
         labelChildren : List (Html msg)
         labelChildren =
@@ -283,8 +283,8 @@ gauge kind resource =
                     labelChildren
                 , H.span
                     [ A.css
-                        [ Css.property "white-space" "nowrap"
-                        , Css.property "font-variant-numeric" "tabular-nums"
+                        [ S.noWrap
+                        , S.tabularNums
                         ]
                     ]
                     [ H.text (String.fromInt level.current ++ " / " ++ String.fromInt level.maximum)
@@ -311,7 +311,7 @@ gauge kind resource =
                                 [ S.bgYellow2
                                 , S.textGray5
                                 , S.p2
-                                , Css.marginTop (Css.rem 0.5)
+                                , S.mt2
                                 ]
                             ]
                             [ H.text info ]
@@ -332,14 +332,14 @@ gauge kind resource =
             , Aria.valueNow level.current
             , A.css
                 [ S.bgGray0
-                , Css.height (Css.rem 0.75)
+                , S.h3
                 ]
             ]
             [ H.div
                 [ A.css
                     [ fill
                     , S.hFull
-                    , Css.width (Css.pct (fraction * 100))
+                    , S.widthPct (fraction * 100)
                     ]
                 ]
                 []
@@ -354,7 +354,7 @@ supplyExplanation kind =
         consumption =
             supplyConsumption kind
     in
-    consumption ++ " nearby depots, ground crates, and loaded supply trucks replenish provisions automatically before turn upkeep."
+    consumption ++ " nearby supply depots, ground crates, and loaded supply trucks replenish provisions automatically before turn upkeep."
 
 
 supplyConsumption : UnitKind -> String
@@ -399,7 +399,7 @@ roleText kind =
             "an armored ground unit."
 
         Kind.Truck ->
-            "a vehicle with two cargo berths shared by infantry, field guns, and supply crates. crates are neutral and automatically replenish nearby units of either side. drive onto a ground crate to collect it, or onto a depot to choose how many to load."
+            "a vehicle with two cargo berths shared by infantry, field guns, and supply crates. crates are neutral and automatically replenish nearby units of either player. drive onto a ground crate to collect it, or onto a supply depot to choose how many to load."
 
         Kind.FieldGun ->
             "a ground unit with a crew-operated gun."

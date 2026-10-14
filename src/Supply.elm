@@ -9,8 +9,8 @@ module Supply exposing
 
 import Api.Object
 import Api.Object.GroundSupplyCrate as CrateApi
+import Api.Object.ResourceStock as StockApi
 import Api.Object.SupplyRules as RulesApi
-import Api.Object.SupplyStock as StockApi
 import Coordinate exposing (Coordinate)
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 
@@ -33,7 +33,7 @@ type alias Rules =
     }
 
 
-stockSelection : SelectionSet Stock Api.Object.SupplyStock
+stockSelection : SelectionSet Stock Api.Object.ResourceStock
 stockSelection =
     SS.succeed Stock
         |> SS.with StockApi.current

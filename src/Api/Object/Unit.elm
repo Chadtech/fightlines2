@@ -28,9 +28,9 @@ id =
     Object.selectionForField "String" "id" [] Decode.string
 
 
-side : SelectionSet Api.Enum.PlayerNumber.PlayerNumber Api.Object.Unit
-side =
-    Object.selectionForField "Enum.PlayerNumber.PlayerNumber" "side" [] Api.Enum.PlayerNumber.decoder
+playerNumber : SelectionSet Api.Enum.PlayerNumber.PlayerNumber Api.Object.Unit
+playerNumber =
+    Object.selectionForField "Enum.PlayerNumber.PlayerNumber" "playerNumber" [] Api.Enum.PlayerNumber.decoder
 
 
 kind : SelectionSet Api.Enum.UnitKind.UnitKind Api.Object.Unit

@@ -20,6 +20,20 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode exposing (Decoder)
 
 
+type alias SaveMapRequiredArguments =
+    { mapType : Api.Enum.MapType.MapType
+    , definition : Api.InputObject.MapDefinitionInput
+    }
+
+
+saveMap :
+    SaveMapRequiredArguments
+    -> SelectionSet decodesTo Api.Object.NamedMap
+    -> SelectionSet decodesTo RootMutation
+saveMap requiredArgs____ object____ =
+    Object.selectionForCompositeField "saveMap" [ Argument.required "mapType" requiredArgs____.mapType (Encode.enum Api.Enum.MapType.toString), Argument.required "definition" requiredArgs____.definition Api.InputObject.encodeMapDefinitionInput ] object____ Basics.identity
+
+
 type alias CreateLobbyRequiredArguments =
     { name : String
     , lobbyName : String

@@ -10,7 +10,6 @@ module View.UnitDeath exposing
 import Api.Enum.CombatKind as CombatKind
 import Api.Enum.UnitKind as Kind
 import Coordinate exposing (Coordinate)
-import Css
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Map exposing (Map)
@@ -124,7 +123,7 @@ dialog config loss =
                             [ S.textRed1
                             ]
                         ]
-                        [ H.text ("could not find the owner name for " ++ PlayerNumber.label missing.side ++ ".")
+                        [ H.text ("could not find the owner name for " ++ PlayerNumber.label missing.playerNumber ++ ".")
                         ]
                     , H.p
                         []
@@ -278,7 +277,7 @@ detail label content =
         [ H.span
             [ A.css
                 [ S.textGray4
-                , Css.minWidth (Css.rem 7)
+                , S.minW28
                 ]
             ]
             [ H.text label
@@ -301,8 +300,8 @@ portrait unit =
         [ SA.viewBox ("0 0 " ++ String.fromFloat (UnitSprite.portraitWidth unit) ++ " 16")
         , Aria.hidden True
         , SA.css
-            [ Css.width (Css.rem 3.5)
-            , Css.height (Css.rem 3)
+            [ S.w14
+            , S.h12
             , S.shrink0
             ]
         ]

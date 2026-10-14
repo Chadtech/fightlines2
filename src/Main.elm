@@ -29,6 +29,7 @@ import LobbyId
 import LobbyLoadFailed
 import LobbyPage
 import LocalStorage exposing (LocalStorage)
+import MapEditor
 import NewLobby
 import OperatingSystem exposing (OperatingSystem)
 import Ports.Js.From as FromJs
@@ -49,7 +50,7 @@ import View.CombatEffects as CombatEffects
 import View.CombatTheater as CombatTheater
 import View.DepotStock as DepotStock
 import View.Dialog as Dialog exposing (Dialog)
-import View.Dropdown as Dropdown
+import View.LoadingBar as LoadingBar
 import View.TurnControls as TurnControls
 import View.TurnIntroduction as TurnIntroduction
 import View.UnitCargo as UnitCargo
@@ -75,6 +76,9 @@ type Page
     | LoadingGame Shared.Model LobbyId
     | GameLoadFailed LobbyId GameLoadFailed.Model
     | Game LobbyId GamePage.Model
+    | LoadingMapEditor Shared.Model
+    | MapEditorLoadFailed Shared.Model String
+    | MapEditor MapEditor.Model
     | NotFound Shared.Model
 
 
@@ -95,6 +99,8 @@ type Msg
     | GameMsg LobbyId GamePage.Msg
     | GameResponseReceived LobbyId (Response GamePage.Flags)
     | GameLoadFailedMsg LobbyId GameLoadFailed.Msg
+    | MapEditorResponseReceived (ApiRequest.Response MapEditor.Flags)
+    | MapEditorMsg MapEditor.Msg
     | ReturnHomeButtonClicked
     | JsErrorReceived FromJs.Error
     | LocalStorageChanged LocalStorage
@@ -202,6 +208,15 @@ getShared page =
         Game _ model ->
             Just model.shared
 
+        LoadingMapEditor shared ->
+            Just shared
+
+        MapEditorLoadFailed shared _ ->
+            Just shared
+
+        MapEditor model ->
+            Just model.shared
+
         NotFound shared ->
             Just shared
 
@@ -238,6 +253,15 @@ setShared shared page =
 
         Game id model ->
             Game id (GamePage.setShared shared model)
+
+        LoadingMapEditor _ ->
+            LoadingMapEditor shared
+
+        MapEditorLoadFailed _ error ->
+            MapEditorLoadFailed shared error
+
+        MapEditor model ->
+            MapEditor (MapEditor.setShared shared model)
 
         NotFound _ ->
             NotFound shared
@@ -276,6 +300,12 @@ loadGame shared id =
 handleRoute : Shared.Model -> Maybe Route -> Page -> ( Page, Eff Msg )
 handleRoute shared route page =
     case route of
+        Just Route.MapEditor ->
+            ( LoadingMapEditor shared
+            , MapEditor.load
+                |> E.request MapEditorResponseReceived
+            )
+
         Just Route.NewLobby ->
             ( NewLobby (NewLobby.init shared), E.none )
 
@@ -298,6 +328,29 @@ handleRoute shared route page =
 update : Msg -> Page -> ( Page, Eff Msg )
 update msg page =
     case msg of
+        MapEditorResponseReceived result ->
+            case page of
+                LoadingMapEditor shared ->
+                    case result of
+                        Ok flags ->
+                            ( MapEditor (MapEditor.init shared flags), E.none )
+
+                        Err error ->
+                            ( MapEditorLoadFailed shared (ApiRequest.errorMessage error), E.none )
+
+                _ ->
+                    ( page, E.none )
+
+        MapEditorMsg editorMsg ->
+            case page of
+                MapEditor model ->
+                    MapEditor.update editorMsg model
+                        |> Tuple.mapFirst MapEditor
+                        |> Tuple.mapSecond (E.map MapEditorMsg)
+
+                _ ->
+                    ( page, E.none )
+
         LocalStorageChanged storage ->
             let
                 updateStorage : Shared.Model -> Shared.Model
@@ -558,6 +611,17 @@ shell page =
                 Game id model ->
                     List.map (H.map (GameMsg id)) (GamePage.view model)
 
+                LoadingMapEditor _ ->
+                    [ H.p [] [ H.text "loading map editor…" ] ]
+
+                MapEditorLoadFailed _ error ->
+                    [ H.p [] [ H.text error ]
+                    , H.a [ A.href (Route.toString Route.MapEditor) ] [ H.text "retry" ]
+                    ]
+
+                MapEditor model ->
+                    List.map (H.map MapEditorMsg) (MapEditor.view model)
+
                 NotFound _ ->
                     [ [ H.p
                             []
@@ -571,15 +635,12 @@ shell page =
 
         globalStyles : Html Msg
         globalStyles =
-            Css.Global.global
-                (S.global
-                    ++ [ Dropdown.globalStyles
-                       ]
-                )
+            Css.Global.global S.global
 
         shellContent : List (Html Msg)
         shellContent =
             [ globalStyles
+            , LoadingBar.styles
             , UnitFacing.styles
             , UnitCargo.styles
             , UnitWarnings.styles
@@ -629,6 +690,9 @@ pageSubscriptions shared page =
             Lobby id model ->
                 LobbyPage.subscriptions model
                     |> Sub.map (LobbyMsg id)
+
+            MapEditor model ->
+                MapEditor.subscriptions model |> Sub.map MapEditorMsg
 
             Game id model ->
                 GamePage.subscriptions model

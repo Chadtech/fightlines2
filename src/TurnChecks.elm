@@ -357,6 +357,7 @@ truckPlaybackChecks unitId =
                             Just
                                 { current = 15
                                 , maximum = 64
+                                , movementPerTile = 1
                                 }
                         }
               }
@@ -437,6 +438,7 @@ transportPlaybackChecks passengerId truckId =
                         Just
                             { current = 63
                             , maximum = 64
+                            , movementPerTile = 1
                             }
                     }
             }
@@ -595,6 +597,7 @@ spriteFacingChecks id =
                         Just
                             { current = 64
                             , maximum = 64
+                            , movementPerTile = 2
                             }
                     }
             }
@@ -868,7 +871,7 @@ combatPlaybackChecks first second =
                         && (resumed |> Maybe.andThen (TurnPlayback.tick 2000 >> Tuple.first))
                         == Nothing
                     )
-                ++ expect "both sides of a combined exchange begin their impacts together"
+                ++ expect "both players of a combined exchange begin their impacts together"
                     (Maybe.map (\pair -> List.head (CombatFormation.impactStarts pair.attackerHealth) == Just 1200 && List.head (CombatFormation.impactStarts pair.targetHealth) == Just 1200) exchange == Just True)
                 ++ expect "movement between shots keeps separate encounters"
                     (separate { waiting | units = [ attacker, Unit.setOnMap { x = 4, y = 2 } target ] })
@@ -1458,7 +1461,7 @@ lossDetailsChecks first second =
 
         missing : UnitLoss.DetailsError
         missing =
-            UnitLoss.OwnerNotFound { unitId = second, side = PlayerNumber.Player2 }
+            UnitLoss.OwnerNotFound { unitId = second, playerNumber = PlayerNumber.Player2 }
 
         expect : String -> Bool -> List String
         expect label passed =
@@ -1475,15 +1478,15 @@ lossDetailsChecks first second =
             (resolve ownerName (TurnPlayback.Destroyed CombatKind.AttackMove attacker)
                 == Ok { ownerName = "Alice", cause = UnitLoss.Destroyed CombatKind.AttackMove { unit = attacker, ownerName = "Bob" } }
             )
-        , expect "missing casualty owner retains unit ID and side"
+        , expect "missing casualty owner retains unit ID and player number"
             (resolve (always Nothing) TurnPlayback.SuppliesExhausted
-                == Err (UnitLoss.OwnerNotFound { unitId = first, side = PlayerNumber.Player1 })
+                == Err (UnitLoss.OwnerNotFound { unitId = first, playerNumber = PlayerNumber.Player1 })
             )
-        , expect "missing attacker owner retains unit ID and side"
+        , expect "missing attacker owner retains unit ID and player number"
             (resolve missingOwner (TurnPlayback.Destroyed CombatKind.Ambush attacker) == Err missing)
         , expect "missing carrier owner fails the entire loss notice"
             (resolve missingOwner (TurnPlayback.CarrierLost carrier TurnPlayback.SuppliesExhausted)
-                == Err (UnitLoss.OwnerNotFound { unitId = second, side = PlayerNumber.Player1 })
+                == Err (UnitLoss.OwnerNotFound { unitId = second, playerNumber = PlayerNumber.Player1 })
             )
         , expect "nested carrier cause propagates a missing attacker owner"
             (resolve missingAttackerOwner

@@ -1,7 +1,7 @@
 //! Finite stock, explicit crate cargo, and automatic end-of-turn replenishment.
 use crate::{
     map::Coordinate,
-    scenario::{PlayerNumber, Scenario, Unit, UnitId, UnitKind},
+    scenario::{DepotKind, PlayerNumber, Scenario, Unit, UnitId, UnitKind},
 };
 use juniper::GraphQLObject;
 
@@ -20,12 +20,12 @@ pub fn rules() -> SupplyRules {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, GraphQLObject)]
-pub struct SupplyStock {
+pub struct ResourceStock {
     pub current: i32,
     pub maximum: i32,
 }
 
-impl SupplyStock {
+impl ResourceStock {
     pub fn depot() -> Self {
         Self {
             current: rules().depot_capacity,
@@ -44,7 +44,7 @@ impl SupplyStock {
 #[derive(Clone, Debug, PartialEq, Eq, GraphQLObject)]
 pub struct GroundSupplyCrate {
     pub position: Coordinate,
-    pub stock: SupplyStock,
+    pub stock: ResourceStock,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -85,7 +85,7 @@ pub fn occupied_berths(scenario: &Scenario, truck: &Unit) -> usize {
 
 pub fn legal_crate_exit(
     scenario: &Scenario,
-    side: PlayerNumber,
+    player_number: PlayerNumber,
     origin: Coordinate,
     exit: Coordinate,
 ) -> bool {
@@ -93,7 +93,9 @@ pub fn legal_crate_exit(
         && adjacent(origin, exit)
         && scenario.map.contains(exit)
         && !scenario.units.iter().any(|unit| {
-            unit.is_alive() && unit.side() != side && unit.board_position() == Some(exit)
+            unit.is_alive()
+                && unit.player_number() != player_number
+                && unit.board_position() == Some(exit)
         })
         && !scenario
             .supply_crates
@@ -101,22 +103,22 @@ pub fn legal_crate_exit(
             .any(|supply_crate| supply_crate.position == exit)
 }
 
-/// Competing orders alternate their side priority each turn. Actual positions
+/// Competing orders alternate their player priority each turn. Actual positions
 /// and stock decide success; blocked deliveries leave the cargo aboard.
 pub fn resolve_orders(scenario: &mut Scenario, orders: &[(UnitId, SupplyOrder)], turn_number: i32) {
     let mut scheduled = orders.to_vec();
     scheduled.sort_by_key(|(id, _)| {
-        let side = scenario
+        let player_number = scenario
             .units
             .iter()
             .find(|unit| unit.unit_id() == *id)
-            .map(Unit::side);
+            .map(Unit::player_number);
         let preferred = if turn_number % 2 == 1 {
             PlayerNumber::Player1
         } else {
             PlayerNumber::Player2
         };
-        (side != Some(preferred), *id)
+        (player_number != Some(preferred), *id)
     });
     for (id, order) in scheduled {
         let Some(index) = scenario.units.iter().position(|unit| {
@@ -143,18 +145,18 @@ pub fn resolve_orders(scenario: &mut Scenario, orders: &[(UnitId, SupplyOrder)],
         let room = (scenario.units[index].cargo_capacity() as usize)
             .saturating_sub(occupied_berths(scenario, &scenario.units[index]));
         for _ in 0..order.loading_count().min(room) {
-            let Some(depot) = scenario
-                .depots
-                .iter_mut()
-                .find(|depot| origin == depot.position && depot.stock.current > 0)
-            else {
+            let Some(depot) = scenario.depots.iter_mut().find(|depot| {
+                depot.kind == DepotKind::Supply
+                    && origin == depot.position
+                    && depot.stock.current > 0
+            }) else {
                 break;
             };
             let amount = depot.stock.current.min(rules().crate_capacity);
             depot.stock.current -= amount;
             scenario.units[index]
                 .supply_cargo
-                .push(SupplyStock::crate_stock(amount));
+                .push(ResourceStock::crate_stock(amount));
         }
         // Remove from the highest slot first so input slots keep their identity.
         let mut unloads = match order {
@@ -166,7 +168,7 @@ pub fn resolve_orders(scenario: &mut Scenario, orders: &[(UnitId, SupplyOrder)],
             if unload.cargo_index < scenario.units[index].supply_cargo.len()
                 && legal_crate_exit(
                     scenario,
-                    scenario.units[index].side(),
+                    scenario.units[index].player_number(),
                     origin,
                     unload.destination,
                 )
@@ -189,13 +191,19 @@ pub fn replenish(scenario: &mut Scenario, turn_number: i32) {
     for index in 0..scenario.depots.len() {
         let origin = scenario.depots[index].position;
         let mut stock = scenario.depots[index].stock.clone();
-        distribute(scenario, origin, &mut stock, turn_number);
+        distribute(
+            scenario,
+            origin,
+            &mut stock,
+            turn_number,
+            scenario.depots[index].kind,
+        );
         scenario.depots[index].stock = stock;
     }
     for index in 0..scenario.supply_crates.len() {
         let origin = scenario.supply_crates[index].position;
         let mut stock = scenario.supply_crates[index].stock.clone();
-        distribute(scenario, origin, &mut stock, turn_number);
+        distribute(scenario, origin, &mut stock, turn_number, DepotKind::Supply);
         scenario.supply_crates[index].stock = stock;
     }
     let trucks: Vec<_> = scenario
@@ -213,7 +221,7 @@ pub fn replenish(scenario: &mut Scenario, turn_number: i32) {
         };
         for slot in 0..scenario.units[index].supply_cargo.len() {
             let mut stock = scenario.units[index].supply_cargo[slot].clone();
-            distribute(scenario, origin, &mut stock, turn_number);
+            distribute(scenario, origin, &mut stock, turn_number, DepotKind::Supply);
             scenario.units[index].supply_cargo[slot] = stock;
         }
         scenario.units[index]
@@ -228,14 +236,19 @@ pub fn replenish(scenario: &mut Scenario, turn_number: i32) {
 fn distribute(
     scenario: &mut Scenario,
     origin: Coordinate,
-    stock: &mut SupplyStock,
+    stock: &mut ResourceStock,
     turn_number: i32,
+    kind: DepotKind,
 ) {
     let mut recipients: Vec<_> = scenario
         .units
         .iter()
         .filter(|unit| {
             unit.is_alive()
+                && match kind {
+                    DepotKind::Supply => true,
+                    DepotKind::Fuel => unit.fuel().is_some(),
+                }
                 && unit.carrier_id().is_none_or(|id| {
                     scenario
                         .units
@@ -263,8 +276,15 @@ fn distribute(
             let Some(unit) = scenario.units.iter_mut().find(|unit| unit.unit_id() == *id) else {
                 continue;
             };
-            if unit.supplies().current() < unit.supplies().maximum() {
-                unit.receive_supplies(1);
+            let needs_resource = match kind {
+                DepotKind::Supply => unit.supplies().current() < unit.supplies().maximum(),
+                DepotKind::Fuel => unit.fuel().is_some_and(|fuel| fuel.current < fuel.maximum),
+            };
+            if needs_resource {
+                match kind {
+                    DepotKind::Supply => unit.receive_supplies(1),
+                    DepotKind::Fuel => unit.receive_fuel(1),
+                }
                 stock.current -= 1;
                 delivered = true;
             }
@@ -280,7 +300,7 @@ mod tests {
     use super::*;
     use crate::{
         map::Map,
-        scenario::Depot,
+        scenario::{Depot, DepotKind},
         test_support::{FixtureValue, TestResult},
     };
 
@@ -299,7 +319,118 @@ mod tests {
     }
 
     #[test]
-    fn limited_stock_is_shared_without_side_ownership_or_overfill() -> TestResult<()> {
+    fn fuel_depots_share_finite_stock_without_provisions_or_crate_loading() -> TestResult<()> {
+        let mut board = board()?;
+        board.depots.push(Depot {
+            kind: DepotKind::Fuel,
+            position: Coordinate::new(2, 1),
+            stock: ResourceStock {
+                current: 3,
+                maximum: 256,
+            },
+            stock_visible: true,
+        });
+        for unit in &mut board.units {
+            unit.set_fuel_for_test(0);
+        }
+        let truck = UnitId::parse("4").fixture()?;
+        resolve_orders(&mut board, &[(truck, SupplyOrder::LoadCrates(2))], 1);
+        replenish(&mut board, 1);
+        assert_eq!(board.depots.first().fixture()?.stock.current, 0);
+        assert_eq!(
+            board
+                .units
+                .iter()
+                .find(|unit| unit.id() == "4")
+                .fixture()?
+                .fuel()
+                .fixture()?
+                .current,
+            2
+        );
+        assert_eq!(
+            board
+                .units
+                .iter()
+                .find(|unit| unit.id() == "9")
+                .fixture()?
+                .fuel()
+                .fixture()?
+                .current,
+            1
+        );
+        assert!(
+            board
+                .units
+                .iter()
+                .all(|unit| unit.supplies().current() == 10 && unit.supply_cargo.is_empty())
+        );
+        board.depots.first_mut().fixture()?.stock.current = 3;
+        replenish(&mut board, 2);
+        assert_eq!(
+            board
+                .units
+                .iter()
+                .find(|unit| unit.id() == "4")
+                .fixture()?
+                .fuel()
+                .fixture()?
+                .current,
+            3
+        );
+        assert_eq!(
+            board
+                .units
+                .iter()
+                .find(|unit| unit.id() == "9")
+                .fixture()?
+                .fuel()
+                .fixture()?
+                .current,
+            3
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn fuel_refills_to_capacity_only_in_cardinal_range_and_skips_dead_vehicles() -> TestResult<()> {
+        let mut board = Scenario::supply_point().fixture()?;
+        board.depots = vec![Depot {
+            kind: DepotKind::Fuel,
+            position: Coordinate::new(8, 8),
+            stock: ResourceStock::depot(),
+            stock_visible: true,
+        }];
+        board
+            .units
+            .retain(|unit| ["4", "5", "9", "10", "11"].contains(&unit.id().as_str()));
+        for (unit, position) in board
+            .units
+            .iter_mut()
+            .zip([(8, 8), (8, 9), (9, 9), (7, 8), (9, 8)])
+        {
+            unit.set_fuel_for_test(0);
+            unit.move_to(Coordinate::new(position.0, position.1));
+            if unit.id() == "10" {
+                unit.take_damage(16);
+            }
+        }
+        board.finish_turn_resources(1);
+        for unit in &board.units {
+            assert_eq!(
+                unit.fuel().fixture()?.current,
+                if unit.id() == "9" { 0 } else { 32 }
+            );
+        }
+        assert!(!board.units.iter().any(|unit| unit.id() == "10"));
+        assert_eq!(board.depots.first().fixture()?.stock.current, 160);
+        board.finish_turn_resources(2);
+        assert_eq!(board.depots.first().fixture()?.stock.current, 160);
+        Ok(())
+    }
+
+    #[test]
+    fn limited_stock_is_shared_without_player_number_ownership_or_overfill() -> TestResult<()> {
         let mut board = board()?;
         board
             .units
@@ -316,7 +447,7 @@ mod tests {
             .move_to(Coordinate::new(4, 1));
         board.supply_crates.push(GroundSupplyCrate {
             position: Coordinate::new(3, 1),
-            stock: SupplyStock::crate_stock(5),
+            stock: ResourceStock::crate_stock(5),
         });
         replenish(&mut board, 1);
         assert_eq!(board.units.get_mut(0).fixture()?.supplies().current(), 13);
@@ -324,7 +455,7 @@ mod tests {
         assert!(board.supply_crates.is_empty());
         board.supply_crates.push(GroundSupplyCrate {
             position: Coordinate::new(3, 1),
-            stock: SupplyStock::crate_stock(5),
+            stock: ResourceStock::crate_stock(5),
         });
         replenish(&mut board, 2);
         assert_eq!(board.units.get_mut(0).fixture()?.supplies().current(), 15);
@@ -339,11 +470,11 @@ mod tests {
         board.supply_crates = vec![
             GroundSupplyCrate {
                 position: Coordinate::new(0, 0),
-                stock: SupplyStock::crate_stock(64),
+                stock: ResourceStock::crate_stock(64),
             },
             GroundSupplyCrate {
                 position: Coordinate::new(0, 2),
-                stock: SupplyStock::crate_stock(2),
+                stock: ResourceStock::crate_stock(2),
             },
         ];
         replenish(&mut board, 1);
@@ -364,11 +495,11 @@ mod tests {
         board.supply_crates = vec![
             GroundSupplyCrate {
                 position: Coordinate::new(0, 0),
-                stock: SupplyStock::crate_stock(20),
+                stock: ResourceStock::crate_stock(20),
             },
             GroundSupplyCrate {
                 position: Coordinate::new(0, 2),
-                stock: SupplyStock::crate_stock(40),
+                stock: ResourceStock::crate_stock(40),
             },
         ];
         replenish(&mut board, 1);
@@ -379,7 +510,7 @@ mod tests {
     }
 
     #[test]
-    fn truck_crates_supply_both_sides_and_passengers() -> TestResult<()> {
+    fn truck_crates_supply_both_player_numbers_and_passengers() -> TestResult<()> {
         let mut board = board()?;
         let truck_id = UnitId::parse("4").fixture()?;
         board
@@ -406,7 +537,7 @@ mod tests {
             .find(|unit| unit.id() == "4")
             .fixture()?
             .supply_cargo
-            .push(SupplyStock::crate_stock(64));
+            .push(ResourceStock::crate_stock(64));
         replenish(&mut board, 1);
         assert_eq!(
             board
@@ -422,7 +553,7 @@ mod tests {
             board
                 .units
                 .iter()
-                .filter(|unit| unit.side() == PlayerNumber::Player1)
+                .filter(|unit| unit.player_number() == PlayerNumber::Player1)
                 .map(|unit| unit.supplies().current() - 10)
                 .sum::<i32>(),
             48
@@ -444,8 +575,9 @@ mod tests {
     {
         let mut board = board()?;
         board.depots.push(Depot {
+            kind: DepotKind::Supply,
             position: Coordinate::new(1, 1),
-            stock: SupplyStock::depot(),
+            stock: ResourceStock::depot(),
             stock_visible: true,
         });
         board
@@ -493,8 +625,9 @@ mod tests {
             .fixture()?
             .board(truck_id);
         board.depots.push(Depot {
+            kind: DepotKind::Supply,
             position: Coordinate::new(2, 1),
-            stock: SupplyStock::crate_stock(20),
+            stock: ResourceStock::crate_stock(20),
             stock_visible: true,
         });
         resolve_orders(&mut board, &[(truck_id, SupplyOrder::LoadCrates(2))], 1);
@@ -527,19 +660,20 @@ mod tests {
     }
 
     #[test]
-    fn either_side_can_collect_neutral_ground_crates_without_refilling_stock() -> TestResult<()> {
-        for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
+    fn either_player_number_can_collect_neutral_ground_crates_without_refilling_stock()
+    -> TestResult<()> {
+        for player_number in [PlayerNumber::Player1, PlayerNumber::Player2] {
             let mut board = Scenario::supply_point().fixture()?;
-            board
-                .units
-                .retain(|unit| unit.kind() == UnitKind::Truck && unit.side() == side);
+            board.units.retain(|unit| {
+                unit.kind() == UnitKind::Truck && unit.player_number() == player_number
+            });
             let truck = board.units.first_mut().fixture()?;
             let id = truck.unit_id();
             let position = Coordinate::new(8, 8);
             truck.move_to(position);
             board.supply_crates.push(GroundSupplyCrate {
                 position,
-                stock: SupplyStock::crate_stock(23),
+                stock: ResourceStock::crate_stock(23),
             });
             resolve_orders(&mut board, &[(id, SupplyOrder::None)], 1);
             assert!(board.supply_crates.is_empty());
@@ -568,10 +702,13 @@ mod tests {
             .fixture()?;
         let id = truck.unit_id();
         let position = truck.board_position().fixture()?;
-        truck.supply_cargo = vec![SupplyStock::crate_stock(12), SupplyStock::crate_stock(34)];
+        truck.supply_cargo = vec![
+            ResourceStock::crate_stock(12),
+            ResourceStock::crate_stock(34),
+        ];
         board.supply_crates.push(GroundSupplyCrate {
             position,
-            stock: SupplyStock::crate_stock(23),
+            stock: ResourceStock::crate_stock(23),
         });
         resolve_orders(&mut board, &[(id, SupplyOrder::None)], 1);
         assert_eq!(board.supply_crates.first().fixture()?.stock.current, 23);
@@ -584,8 +721,9 @@ mod tests {
             .clear();
         board.supply_crates.clear();
         board.depots.push(Depot {
+            kind: DepotKind::Supply,
             position: Coordinate::new(2, 0),
-            stock: SupplyStock::depot(),
+            stock: ResourceStock::depot(),
             stock_visible: true,
         });
         resolve_orders(&mut board, &[(id, SupplyOrder::LoadCrates(1))], 1);
@@ -612,7 +750,7 @@ mod tests {
             .find(|unit| unit.id() == "4")
             .fixture()?
             .supply_cargo
-            .push(SupplyStock::crate_stock(64));
+            .push(ResourceStock::crate_stock(64));
         board
             .units
             .iter_mut()
@@ -673,7 +811,7 @@ mod visibility_tests {
     use super::*;
     use crate::{
         map::Map,
-        scenario::Depot,
+        scenario::{Depot, DepotKind},
         test_support::{FixtureValue, TestResult},
         visibility,
     };
@@ -690,24 +828,26 @@ mod visibility_tests {
             .move_to(Coordinate::new(0, 0));
         board.depots = vec![
             Depot {
+                kind: DepotKind::Fuel,
                 position: Coordinate::new(1, 0),
-                stock: SupplyStock::depot(),
+                stock: ResourceStock::depot(),
                 stock_visible: true,
             },
             Depot {
+                kind: DepotKind::Fuel,
                 position: Coordinate::new(19, 0),
-                stock: SupplyStock::depot(),
+                stock: ResourceStock::depot(),
                 stock_visible: true,
             },
         ];
         board.supply_crates = vec![
             GroundSupplyCrate {
                 position: Coordinate::new(1, 0),
-                stock: SupplyStock::crate_stock(64),
+                stock: ResourceStock::crate_stock(64),
             },
             GroundSupplyCrate {
                 position: Coordinate::new(19, 0),
-                stock: SupplyStock::crate_stock(64),
+                stock: ResourceStock::crate_stock(64),
             },
         ];
         let visible = visibility::visible_tiles(&board, PlayerNumber::Player1);

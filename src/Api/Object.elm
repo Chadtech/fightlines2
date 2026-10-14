@@ -25,6 +25,10 @@ type Depot
     = Depot
 
 
+type DepotPlacement
+    = DepotPlacement
+
+
 type Fuel
     = Fuel
 
@@ -49,8 +53,20 @@ type Map
     = Map
 
 
+type MapCatalog
+    = MapCatalog
+
+
+type MapDefinition
+    = MapDefinition
+
+
 type MovementRule
     = MovementRule
+
+
+type NamedMap
+    = NamedMap
 
 
 type OnMap
@@ -59,6 +75,10 @@ type OnMap
 
 type PlayerView
     = PlayerView
+
+
+type ResourceStock
+    = ResourceStock
 
 
 type Scenario
@@ -81,16 +101,16 @@ type SupplyRules
     = SupplyRules
 
 
-type SupplyStock
-    = SupplyStock
-
-
 type TerrainFeature
     = TerrainFeature
 
 
 type TerrainMovementCost
     = TerrainMovementCost
+
+
+type TerrainPlacement
+    = TerrainPlacement
 
 
 type TurnEvent
@@ -111,6 +131,10 @@ type TurnResolution
 
 type Unit
     = Unit
+
+
+type UnitPlacement
+    = UnitPlacement
 
 
 type UnitResources

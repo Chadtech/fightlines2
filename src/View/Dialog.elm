@@ -4,6 +4,7 @@ module View.Dialog exposing
     , atBottom
     , make
     , map
+    , reference
     , toHtml
     )
 
@@ -37,6 +38,7 @@ type Placement
     = Centered
     | Bottom
     | Announcement
+    | Reference
 
 
 
@@ -59,6 +61,11 @@ make htmlId title onCancel body =
 announcement : Dialog msg -> Dialog msg
 announcement (Dialog model) =
     Dialog { model | placement = Announcement }
+
+
+reference : Dialog msg -> Dialog msg
+reference (Dialog model) =
+    Dialog { model | placement = Reference }
 
 
 atBottom : Dialog msg -> Dialog msg
@@ -89,6 +96,12 @@ toHtml (Dialog model) =
                 Centered ->
                     []
 
+                Reference ->
+                    [ S.w152
+                    , S.maxHViewportInset8
+                    , S.overflowAuto
+                    ]
+
                 Announcement ->
                     [ S.w152
                     , S.maxHViewportInset8
@@ -99,27 +112,46 @@ toHtml (Dialog model) =
                     ]
 
                 Bottom ->
-                    [ Css.position Css.fixed
-                    , Css.top Css.auto
-                    , Css.bottom (Css.rem 4.5)
-                    , Css.maxHeight (Css.calc (Css.vh 100) (Css.minus (Css.rem 6)))
+                    [ S.fixed
+                    , S.topAuto
+                    , S.bottom18
+                    , S.maxHViewportInsetRem 6
                     , S.overflowAuto
-                    , Css.width (Css.rem 26)
-                    , Css.pseudoElement "backdrop"
-                        [ Css.backgroundColor Css.transparent
+                    , S.w104
+                    , S.backdrop
+                        [ S.bgTransparent
                         ]
                     ]
 
         baseStyles : List Css.Style
         baseStyles =
-            [ Css.margin Css.auto
-            , Css.maxWidth (Css.calc (Css.vw 100) (Css.minus (Css.rem 2)))
-            , Css.width (Css.rem 24)
+            [ S.mAuto
+            , S.maxWViewportInsetRem 2
+            , S.w96
             , S.p0
             , S.bgGray1
             , S.textGray4
             , S.outdent
             ]
+
+        titleFocusAttributes : List (H.Attribute msg)
+        titleFocusAttributes =
+            case model.placement of
+                Reference ->
+                    [ A.tabindex -1
+                    , A.autofocus True
+                    ]
+
+                _ ->
+                    []
+
+        titleAttributes : List (H.Attribute msg)
+        titleAttributes =
+            [ A.id (model.htmlId ++ "-title")
+            , A.css
+                [ S.p2px ]
+            ]
+                ++ titleFocusAttributes
 
         dialogStyles : List Css.Style
         dialogStyles =
@@ -132,11 +164,7 @@ toHtml (Dialog model) =
         , A.css dialogStyles
         ]
         [ H.div
-            [ A.id (model.htmlId ++ "-title")
-            , A.css
-                [ S.p2px
-                ]
-            ]
+            titleAttributes
             [ CardHeader.simple model.title
                 |> CardHeader.toHtml
             ]

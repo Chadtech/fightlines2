@@ -22,10 +22,10 @@ linkToHtml events depot =
         label =
             case depot.stock of
                 Just stock ->
-                    DepotStock.label stock
+                    DepotStock.label depot stock
 
                 Nothing ->
-                    "supply depot · stock outside sight"
+                    Depot.label depot ++ " · stock outside sight"
     in
     H.button
         [ A.type_ "button"
@@ -38,8 +38,8 @@ linkToHtml events depot =
             , S.textLeft
             , S.border0
             , S.hover [ S.bgYellow2 ]
-            , Css.pseudoClass "focus-visible"
-                [ Css.property "outline" ("2px solid " ++ S.yellow5Str) ]
+            , S.focusVisible
+                [ S.outlineYellow5Thick ]
             ]
         ]
         [ H.text label ]
@@ -52,7 +52,7 @@ toHtml depot =
         stock =
             case depot.stock of
                 Just level ->
-                    stockGauge level
+                    stockGauge depot level
 
                 Nothing ->
                     H.p
@@ -73,12 +73,12 @@ toHtml depot =
         [ H.details
             []
             [ H.summary
-                [ Aria.label "about supply depot"
+                [ Aria.label ("about " ++ Depot.label depot)
                 , A.css summaryStyles
                 ]
                 [ H.h2
                     []
-                    [ H.text "supply depot"
+                    [ H.text (Depot.label depot)
                     ]
                 , InfoMarker.toHtml
                 ]
@@ -87,12 +87,12 @@ toHtml depot =
                     [ S.bgYellow2
                     , S.textGray5
                     , S.p3
-                    , Css.marginTop (Css.rem 0.75)
-                    , Css.marginLeft (Css.rem -0.75)
-                    , Css.marginRight (Css.rem -0.75)
+                    , S.mt3
+                    , S.mlNeg3
+                    , S.mrNeg3
                     ]
                 ]
-                [ H.text "a neutral supply source for either side. replenishes units on its square or one cardinally adjacent square at the end of the turn, before upkeep."
+                [ H.text (Depot.description depot)
                 ]
             ]
         , H.div
@@ -105,14 +105,14 @@ toHtml depot =
                 ]
             ]
             [ H.img
-                [ A.src "/assets/supply-depot-illustrated-v1.png"
-                , A.alt "illustrated concrete supply depot"
+                [ A.src (Depot.image depot)
+                , A.alt (Depot.label depot)
                 , A.css
                     [ S.block
-                    , Css.width (Css.px 128)
-                    , Css.height (Css.px 128)
-                    , Css.maxWidth (Css.pct 100)
-                    , Css.objectFit Css.contain_
+                    , S.w128px
+                    , S.h128px
+                    , S.maxWFull
+                    , S.objectContain
                     ]
                 ]
                 []
@@ -128,14 +128,12 @@ summaryStyles =
     , S.row
     , S.itemsCenter
     , S.g2
-    , Css.pseudoElement "-webkit-details-marker"
-        [ S.displayNone
-        ]
+    , S.hideDetailsMarker
     ]
 
 
-stockGauge : Supply.Stock -> Html msg
-stockGauge stock =
+stockGauge : Depot -> Supply.Stock -> Html msg
+stockGauge depot stock =
     let
         fraction : Float
         fraction =
@@ -181,7 +179,7 @@ stockGauge stock =
             [ H.details
                 []
                 [ H.summary
-                    [ Aria.label "about depot supplies"
+                    [ Aria.label ("about depot " ++ Depot.resourceLabel depot)
                     , A.css
                         [ S.batch summaryStyles
                         , S.justifySpaceBetween
@@ -196,13 +194,13 @@ stockGauge stock =
                             , S.g2
                             ]
                         ]
-                        [ H.text "supplies"
+                        [ H.text (Depot.resourceLabel depot)
                         , InfoMarker.toHtml
                         ]
                     , H.span
                         [ A.css
-                            [ Css.whiteSpace Css.nowrap
-                            , Css.property "font-variant-numeric" "tabular-nums"
+                            [ S.noWrap
+                            , S.tabularNums
                             ]
                         ]
                         [ H.text (String.fromInt stock.current ++ " / " ++ String.fromInt stock.maximum)
@@ -213,28 +211,28 @@ stockGauge stock =
                         [ S.bgYellow2
                         , S.textGray5
                         , S.p2
-                        , Css.marginTop (Css.rem 0.5)
+                        , S.mt2
                         ]
                     ]
-                    [ H.text "finite stock, shared by both sides. delivery and loading crates draw from these supplies."
+                    [ H.text (Depot.stockDescription depot)
                     ]
                 ]
             , H.div
                 [ Aria.role Aria.Meter
-                , Aria.label "depot supplies"
+                , Aria.label ("depot " ++ Depot.resourceLabel depot)
                 , Aria.valueMin 0
                 , Aria.valueMax stock.maximum
                 , Aria.valueNow stock.current
                 , A.css
                     [ S.bgGray0
-                    , Css.height (Css.rem 0.75)
+                    , S.h3
                     ]
                 ]
                 [ H.div
                     [ A.css
                         [ fill
                         , S.hFull
-                        , Css.width (Css.pct (fraction * 100))
+                        , S.widthPct (fraction * 100)
                         ]
                     ]
                     []

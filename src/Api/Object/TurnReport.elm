@@ -20,9 +20,9 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
-side : SelectionSet Api.Enum.PlayerNumber.PlayerNumber Api.Object.TurnReport
-side =
-    Object.selectionForField "Enum.PlayerNumber.PlayerNumber" "side" [] Api.Enum.PlayerNumber.decoder
+playerNumber : SelectionSet Api.Enum.PlayerNumber.PlayerNumber Api.Object.TurnReport
+playerNumber =
+    Object.selectionForField "Enum.PlayerNumber.PlayerNumber" "playerNumber" [] Api.Enum.PlayerNumber.decoder
 
 
 unitsLost : SelectionSet Int Api.Object.TurnReport

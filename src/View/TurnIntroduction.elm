@@ -5,6 +5,7 @@ module View.TurnIntroduction exposing
     , styles
     )
 
+import Css
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
@@ -38,14 +39,17 @@ dialog config =
         ("turn " ++ String.fromInt config.turnNumber)
         BeginClicked
         [ H.div
-            [ A.class (emblemClass config.previousTurn)
-            , A.css [ S.bgNightwood3, S.indentStrong ]
+            [ A.css (emblemStyles config.previousTurn)
             ]
             [ H.div
-                [ A.class "fightlines-turn-kicker" ]
+                [ A.css
+                    [ S.letterSpacingEm 0.16
+                    , S.textAlignCenter
+                    ]
+                ]
                 [ H.text "a new turn begins" ]
             , H.div
-                [ A.class "fightlines-turn-number"
+                [ A.css (numberStyles config.previousTurn)
                 , Aria.hidden True
                 ]
                 [ H.text (String.padLeft 2 '0' (String.fromInt config.turnNumber)) ]
@@ -69,14 +73,85 @@ dialog config =
         |> Dialog.announcement
 
 
-emblemClass : Maybe Turn.Resolution -> String
-emblemClass previousTurn =
-    case Maybe.andThen .report previousTurn of
-        Just _ ->
-            "fightlines-turn-emblem fightlines-turn-with-report"
+{-| Layout stays local to the styled elements; only keyframe definitions and
+native-dialog animation rules need the shared style node.
+-}
+emblemStyles : Maybe Turn.Resolution -> List Css.Style
+emblemStyles previousTurn =
+    let
+        reportLayout : Css.Style
+        reportLayout =
+            if hasReport previousTurn then
+                S.batch
+                    [ S.g3
+                    , S.batch [ S.py6, S.px4 ]
+                    ]
 
-        Nothing ->
-            "fightlines-turn-emblem"
+            else
+                S.batch []
+    in
+    [ S.bgNightwood3
+    , S.indentStrong
+    , S.relative
+    , S.isolate
+    , S.overflowHidden
+    , S.col
+    , S.itemsCenter
+    , S.justifyCenter
+    , S.g4
+    , S.minH76
+    , S.batch [ S.py8, S.px4 ]
+    , S.textYellow5
+    , reportLayout
+    , S.after
+        [ S.contentEmpty
+        , S.absolute
+        , S.topNeg30Pct
+        , S.left0
+        , S.w30Pct
+        , S.h160Pct
+        , S.pointerEventsNone
+        , Css.property "background" ("linear-gradient(90deg, transparent, " ++ S.gray5Str ++ "88, transparent)")
+        , S.mixBlendScreen
+        , S.animation "fightlines-turn-introduction-shine 4.8s ease-in-out .2s infinite"
+        , S.reducedMotion
+            [ S.animationNone
+            , S.transparent
+            ]
+        ]
+    , S.belowHeight 600
+        [ S.minH36
+        , S.g2
+        , S.p4
+        ]
+    ]
+
+
+hasReport : Maybe Turn.Resolution -> Bool
+hasReport previousTurn =
+    Maybe.andThen .report previousTurn /= Nothing
+
+
+numberStyles : Maybe Turn.Resolution -> List Css.Style
+numberStyles previousTurn =
+    let
+        fontSize : String
+        fontSize =
+            if hasReport previousTurn then
+                "clamp(4rem, 14vw, 6rem)"
+
+            else
+                "clamp(5rem, 18vw, 9rem)"
+    in
+    [ S.fontSizeValue fontSize
+    , S.lineHeight1
+    , S.letterSpacingEm -0.06
+    , S.paddingRightEm 0.06
+    , Css.property "text-shadow" ("0 2px 0 " ++ S.yellow5Str ++ "33, 0 0 32px " ++ S.yellow5Str ++ "33")
+    , S.belowHeight 600
+        [ S.fontSizeRem 5
+        ]
+    ]
 
 
 reportView : Maybe Turn.Resolution -> Html msg
@@ -86,14 +161,32 @@ reportView previousTurn =
             case resolution.report of
                 Just report ->
                     H.section
-                        [ A.class "fightlines-turn-report"
+                        [ A.css
+                            [ S.wFull
+                            , S.maxW120
+                            ]
                         , Aria.label "previous turn report"
                         ]
                         [ H.div
-                            [ A.class "fightlines-turn-report-title" ]
+                            [ A.css
+                                [ S.textGray4
+                                , S.textAlignCenter
+                                , S.mt3
+                                ]
+                            ]
                             [ H.text ("turn " ++ String.fromInt resolution.number ++ " report") ]
                         , H.dl
-                            [ A.class "fightlines-turn-report-grid" ]
+                            [ A.css
+                                [ S.grid
+                                , S.gridCols2
+                                , S.g3
+                                , S.m0
+                                , S.belowWidth 440
+                                    [ S.gridCols1
+                                    , S.g1p4
+                                    ]
+                                ]
+                            ]
                             [ reportMetric "your units lost" (String.fromInt report.unitsLost)
                             , reportMetric "confirmed enemy losses" (String.fromInt report.enemyUnitsDestroyed)
                             , reportMetric "known damage inflicted" (String.fromInt report.damageInflicted ++ " hp")
@@ -111,19 +204,44 @@ reportView previousTurn =
 battlefieldCaption : Html msg
 battlefieldCaption =
     H.div
-        [ A.class "fightlines-turn-caption" ]
+        [ A.css
+            [ S.textGray4
+            , S.textAlignCenter
+            ]
+        ]
         [ H.text "the battlefield awaits" ]
 
 
 reportMetric : String -> String -> Html msg
 reportMetric label value =
     H.div
-        [ A.class "fightlines-turn-report-metric" ]
+        [ A.css
+            [ S.p2
+            , S.bgGray0_60
+            , S.borderYellow5_20
+            , S.belowWidth 440
+                [ S.row
+                , S.justifySpaceBetween
+                , S.g2
+                ]
+            ]
+        ]
         [ H.dt
-            []
+            [ A.css
+                [ S.textGray4
+                , S.mb1p4
+                , S.belowWidth 440
+                    [ S.m0
+                    ]
+                ]
+            ]
             [ H.text label ]
         , H.dd
-            []
+            [ A.css
+                [ S.m0
+                , S.textYellow5
+                ]
+            ]
             [ H.text value ]
         ]
 
@@ -149,53 +267,12 @@ styles =
                 animation: fightlines-turn-pop 320ms cubic-bezier(.2,.8,.2,1) both;
                 box-shadow: 0 24px 90px SHADOW, 0 0 48px GOLDGLOW;
             }
-            .fightlines-turn-emblem {
-                position: relative; isolation: isolate; overflow: hidden;
-                display: flex; flex-direction: column; align-items: center;
-                justify-content: center; gap: 1rem; min-height: 19rem; padding: 2rem 1rem;
-                color: GOLD;
-            }
-            .fightlines-turn-emblem::after {
-                content: ''; position: absolute; top: -30%; left: 0;
-                width: 30%; height: 160%; pointer-events: none;
-                background: linear-gradient(90deg, transparent, SHINE, transparent);
-                mix-blend-mode: screen;
-                animation: fightlines-turn-introduction-shine 4.8s ease-in-out .2s infinite;
-            }
-            .fightlines-turn-kicker { letter-spacing: .16em; text-align: center; }
-            .fightlines-turn-number {
-                font-size: clamp(5rem, 18vw, 9rem); line-height: 1;
-                letter-spacing: -.06em; padding-right: .06em;
-                text-shadow: 0 2px 0 GOLDGLOW, 0 0 32px GOLDGLOW;
-            }
-            .fightlines-turn-caption { color: MUTED; text-align: center; }
-            .fightlines-turn-with-report { gap: .75rem; padding: 1.5rem 1rem; }
-            .fightlines-turn-with-report .fightlines-turn-number { font-size: clamp(4rem, 14vw, 6rem); }
-            .fightlines-turn-report { width: 100%; max-width: 30rem; }
-            .fightlines-turn-report-title { color: MUTED; text-align: center; margin-bottom: .75rem; }
-            .fightlines-turn-report-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin: 0; }
-            .fightlines-turn-report-metric { padding: .5rem; background: SHADOW; border: 1px solid GOLDGLOW; }
-            .fightlines-turn-report-metric dt { color: MUTED; margin-bottom: .35rem; }
-            .fightlines-turn-report-metric dd { margin: 0; color: GOLD; }
-            @media (max-width: 440px) {
-                .fightlines-turn-report-grid { grid-template-columns: 1fr; gap: .35rem; }
-                .fightlines-turn-report-metric { display: flex; justify-content: space-between; gap: .5rem; }
-                .fightlines-turn-report-metric dt { margin: 0; }
-            }
-            @media (max-height: 600px) {
-                .fightlines-turn-emblem { min-height: 9rem; gap: .5rem; padding: 1rem; }
-                .fightlines-turn-number { font-size: 5rem; }
-            }
             @media (prefers-reduced-motion: reduce) {
                 #turn-introduction[open] { animation: none; }
-                .fightlines-turn-emblem::after { animation: none; opacity: 0; }
             }
             """
                 |> String.replace "SHADOW" (S.gray0Str ++ "99")
-                |> String.replace "SHINE" (S.gray5Str ++ "88")
                 |> String.replace "GOLDGLOW" (S.yellow5Str ++ "33")
-                |> String.replace "GOLD" S.yellow5Str
-                |> String.replace "MUTED" S.gray4Str
     in
     H.node "style"
         []

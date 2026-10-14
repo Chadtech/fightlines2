@@ -15,6 +15,10 @@
         {
           "terrain": "FOREST",
           "cost": 2
+        },
+        {
+          "terrain": "MOUNTAINS",
+          "cost": 4
         }
       ]
     },
@@ -33,6 +37,10 @@
         {
           "terrain": "FOREST",
           "cost": 6
+        },
+        {
+          "terrain": "MOUNTAINS",
+          "cost": 0
         }
       ]
     },
@@ -51,6 +59,10 @@
         {
           "terrain": "FOREST",
           "cost": 2
+        },
+        {
+          "terrain": "MOUNTAINS",
+          "cost": 0
         }
       ]
     },
@@ -69,6 +81,10 @@
         {
           "terrain": "FOREST",
           "cost": 8
+        },
+        {
+          "terrain": "MOUNTAINS",
+          "cost": 0
         }
       ]
     }
@@ -452,6 +468,78 @@
           7,
           0,
           14
+        ]
+      ]
+    },
+    {
+      "name": "infantry mountain entry and passage",
+      "kind": "INFANTRY",
+      "sketch": ".^..",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "allies": [],
+      "expected": [
+        [
+          1,
+          0,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "tank mountain entry and passage",
+      "kind": "TANK",
+      "sketch": ".^..",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "allies": [],
+      "expected": []
+    },
+    {
+      "name": "truck mountain entry and passage",
+      "kind": "TRUCK",
+      "sketch": ".^..",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "allies": [],
+      "expected": []
+    },
+    {
+      "name": "field_gun mountain entry and passage",
+      "kind": "FIELD_GUN",
+      "sketch": ".^..",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "allies": [],
+      "expected": []
+    },
+    {
+      "name": "infantry cannot enter mountain after grass",
+      "kind": "INFANTRY",
+      "sketch": "..^",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "allies": [],
+      "expected": [
+        [
+          1,
+          0,
+          2
         ]
       ]
     }

@@ -2,3 +2,12 @@
 - Field guns should consume a lot more supplies firing
 - 16 little infantry guys in combat theater for infantry
 - Attacking and destroying supply depots and supply crates
+- Possible to initiate combat theater with 0 enemies in animation
+- After field gun fires it should be visible immediately in the turn animation, rather than right now it only becomes visible next turn
+- When I click "see map" in combat theater, I need a way to move the map in case the combatants are not on screen
+- Info UI for all menu commands
+- Get rid of rotate command, since, direction is only relevant in attack commands
+- Make sure stand ground has a direction setting step
+- Inquire about the separation of UnitCommand and View.UnitCommand
+- Being on a hill should not permit you to see past mountains
+- Hide map editor UI in Elm code if flag is not set

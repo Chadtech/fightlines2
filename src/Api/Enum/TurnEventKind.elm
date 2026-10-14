@@ -10,6 +10,7 @@ import Json.Decode as Decode exposing (Decoder)
 type TurnEventKind
     = Move
     | Ambush
+    | StandGround
     | Rotate
     | Load
     | Unload
@@ -19,7 +20,7 @@ type TurnEventKind
 
 list : List TurnEventKind
 list =
-    [ Move, Ambush, Rotate, Load, Unload, Hold, MovementStopped ]
+    [ Move, Ambush, StandGround, Rotate, Load, Unload, Hold, MovementStopped ]
 
 
 decoder : Decoder TurnEventKind
@@ -33,6 +34,9 @@ decoder =
 
                     "AMBUSH" ->
                         Decode.succeed Ambush
+
+                    "STAND_GROUND" ->
+                        Decode.succeed StandGround
 
                     "ROTATE" ->
                         Decode.succeed Rotate
@@ -64,6 +68,9 @@ toString enum____ =
 
         Ambush ->
             "AMBUSH"
+
+        StandGround ->
+            "STAND_GROUND"
 
         Rotate ->
             "ROTATE"
@@ -100,6 +107,9 @@ fromString enumString____ =
 
         "AMBUSH" ->
             Just Ambush
+
+        "STAND_GROUND" ->
+            Just StandGround
 
         "ROTATE" ->
             Just Rotate

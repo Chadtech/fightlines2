@@ -1,0 +1,122 @@
+module View.CommandGuide exposing
+    ( dialog
+    , dialogHtmlId
+    )
+
+import Html.Styled as H exposing (Html)
+import Html.Styled.Attributes as A
+import Style as S
+import UnitCommand as Command exposing (Command(..))
+import View.Button as Button
+import View.Dialog as Dialog exposing (Dialog)
+
+
+dialogHtmlId : String
+dialogHtmlId =
+    "command-guide-dialog"
+
+
+dialog : msg -> Dialog msg
+dialog dismissed =
+    let
+        entries : List (Html msg)
+        entries =
+            List.map commandDescription Command.all
+
+        close : Html msg
+        close =
+            Button.secondary "close" dismissed
+                |> Button.toHtml
+
+        content : List (Html msg)
+        content =
+            [ H.ul
+                [ A.tabindex 0
+                , A.attribute "aria-label" "command descriptions"
+                , A.css
+                    [ S.col
+                    , S.p0
+                    , S.indentStrong
+                    , S.bgNightwood3
+                    , S.textGray5
+                    , S.overflowAuto
+                    , S.h128
+                    , S.maxHViewportInsetRem 10
+                    ]
+                ]
+                entries
+            , close
+            ]
+    in
+    Dialog.make dialogHtmlId "commands" dismissed content
+        |> Dialog.reference
+
+
+commandDescription : Command -> Html msg
+commandDescription command =
+    H.li
+        [ A.css
+            [ S.row
+            , S.g3
+            , S.shrink0
+            , S.p3
+            , S.evenChildren
+                [ S.bgNightwood2 ]
+            ]
+        ]
+        [ H.img
+            [ A.src ("/assets/commands-anime-v1/" ++ Command.assetName command ++ ".png")
+            , A.alt ""
+            , A.css
+                [ S.w16
+                , S.h16
+                , S.shrink0
+                , S.objectContain
+                ]
+            ]
+            []
+        , H.div
+            [ A.css
+                [ S.col
+                , S.g1
+                , S.minW0
+                ]
+            ]
+            [ H.h3
+                [ A.css
+                    [ S.textGray5 ]
+                ]
+                [ H.text (Command.label command) ]
+            , H.p
+                []
+                [ H.text (description command) ]
+            ]
+        ]
+
+
+description : Command -> String
+description command =
+    case command of
+        Move ->
+            "plan a route to another square within the unit's movement, supply, and fuel limits. trace the route with the pointer or arrow keys, then save its destination. ordinary movement stops when it encounters an enemy. trucks can pick up compatible allied units or supply crates, load crates at supply depots, and unload cargo beside their destination."
+
+        HoldPosition ->
+            "stay on the current square and keep the current facing, paying normal supply upkeep without movement costs or combat readiness. a loaded truck can also choose cargo to unload beside its current square."
+
+        Rotate ->
+            "turn infantry, a tank, or a field gun to face north, east, south, or west without moving. choose a direction on the map or with an arrow key. the new facing takes effect when the turn resolves and costs only normal supply upkeep."
+
+        Ambush ->
+            "keep infantry, a tank, or a field gun in place and choose the direction it watches. the highlighted firing area shows where it can intercept enemies during movement. ambush costs readiness supplies in addition to normal upkeep, and each shot spends more supplies. facing, terrain, health, and the opposing unit affect combat."
+
+        StandGround ->
+            "keep infantry, a tank, or a field gun in place with combat readiness when attacked. the unit keeps its facing and gains the same defensive readiness as an ambush, but does not fire or intercept enemies. this order costs normal supply upkeep plus readiness supplies."
+
+        AttackMove ->
+            "send infantry or a tank along a route prepared to fight enemies it encounters. plan it like a move; the red route marks the attack order, and enemy squares can be destinations. combat can interrupt the route. movement, readiness, firing, and normal upkeep spend supplies, and tanks also spend fuel. attack move does not load or unload cargo."
+
+        IndirectFire ->
+            "not implemented yet. this field-gun command is intended for firing at a target from a distance. it is currently disabled and cannot be submitted as an order."
+
+        DigIn ->
+            "not implemented yet. this infantry and field-gun command is intended for preparing a defensive position. it is currently disabled; trench protection is not available."

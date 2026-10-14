@@ -104,11 +104,11 @@ when loading a stationary truck. Plan the departure first. Revoking that departu
 also revokes routes depending on its freed square. A saved move reserves its destination so other
 units cannot choose it; changing or clearing the move frees that square. Routes
 can pass through reserved destinations. Depots are passable.
-The selection panel shows the selected unit's illustration, name, and side,
+The selection panel shows the selected unit's illustration, name, and player,
 with expandable unit and gauge explanations. Every unit starts with 16/16 hit points, supplied by the server. Combat damage uses weapon matchup, health, readiness, facing, cover, and ambush advantage; see [combat_factors.md](combat_factors.md). Healing and trench protection are not implemented yet. Tanks and trucks start with 32/32 fuel. Each
-successfully traversed tile costs 1 fuel, independently of terrain movement
-costs. Interrupted routes pay only for successfully traveled tiles; holds consume none.
-Fuel cannot be replenished. Movement previews and submitted paths must fit both remaining
+successfully traversed tile costs tanks 2 fuel and trucks 1 fuel, independently of
+terrain movement costs. Interrupted routes pay only for successfully traveled tiles; holds consume none.
+Neutral fuel depots refill living tanks and trucks at turn end from finite stocks. Movement previews and submitted paths must fit both remaining
 fuel and the per-turn movement budget.
 
 Trucks have two cargo berths shared by allied infantry, field guns, and supply crates; tanks cannot board.
@@ -150,8 +150,8 @@ corner. Each badge adds `2` when two of its cargo type are aboard; mixed cargo
 shows both badges. It stays clearly visible between
 blinks and remains steady with reduced motion enabled. Empty trucks have no badge.
 
-Sight is shared by all units on your side. Infantry see 4 tiles, field guns 4,
-trucks 3, and tanks 2, using a circular radius measured between tile
+Sight is shared by all your units. Infantry see 3 tiles, field guns 3,
+trucks 2, and tanks 1, using a circular radius measured between tile
 centers. Standing on a hill grants +1 sight and lets units see over intervening
 hills and forests. For units off hills, intervening hills and forests block
 sight beyond them when the sight line crosses their tile. Merely touching a
@@ -185,7 +185,7 @@ movement resumes after the death marker clears.
 Depots start with 256 finite supplies. Ground supply crates hold up to 64.
 At the end of each turn, after movement, transport, and combat, depots and ground
 crates automatically replenish living units on their square or one cardinally
-adjacent square, regardless of side. Crates remain neutral when carried and supply either side,
+adjacent square, regardless of player. Crates remain neutral when carried and supply either player,
 including the truck and its passengers. Replenishment has no per-turn transfer
 limit: sources deliver until nearby units reach their provision capacity or stock
 runs out. Distribution proceeds one supply at a time through
@@ -193,7 +193,7 @@ recipients in stable ID order, rotating the first recipient each turn.
 Replenishment happens before upkeep, so supplies arriving this turn can avert
 exhaustion. They cannot fund movement or firing earlier in that turn.
 Combat deaths cannot be rescued. Supply sources never refill one another;
-empty crates disappear and free their cargo berths. Replenishment does not restore vehicle fuel.
+empty crates disappear and free their cargo berths. Supply sources do not restore vehicle fuel; fuel depots do.
 
 Move a truck onto a depot. Saving its destination opens a **load supply crates**
 dialog with **0**, **1**, and **2** choices; unavailable counts are disabled.
@@ -222,9 +222,13 @@ enemy truck cargo stays concealed. Supplies do not restore hit points.
 
 The full-height right panel stays in place when selection clears. Its main area
 is empty until a unit, depot or tile is selected, with a quiet inspection hint at
-its lower edge. Selected units show their name and side, inset portrait, gauges,
+its lower edge. Selected units show their name and player, inset portrait, gauges,
 and resource details in the panel. Illustrated commands open in a popup beside
 the selected unit on the board.
+The command popup’s info button opens a green inset, beveled, scrollable guide.
+Each row pairs its command sprite with the name and a paragraph explaining it,
+including commands not yet implemented. Close or Escape returns
+to the popup without changing orders.
 Move and hold position appear first. Carried units have inspection details
 and no independent commands. While the
 popup is open, up/down arrows or W/S cycle available commands even before the list has
@@ -278,6 +282,29 @@ is handled during resolution rather than causing a submission error.
 New players cannot join after a game starts. All lobbies and games disappear
 when the server restarts.
 
+## Edit maps locally
+
+Run `make editor`, then open http://127.0.0.1:8080/map-editor. `make dev`
+also enables the editor alongside the development game.
+
+Choose a map and paint terrain by clicking or dragging. Place starting units for
+either player, choose their facing, and place supply or fuel depots. Larger
+brushes, horizontal mirroring, themes, tile sizes, resizing, and undo/redo speed
+up authoring. Mirroring units swaps players and reflects east/west facing.
+Shrinking a map crops terrain and objects outside the new bounds; undo restores
+them. Drafts survive switching maps within the page, but refresh discards unsaved edits.
+
+**Save map** validates and writes the corresponding `maps/*.json` source file.
+New games on an editor-enabled server read those files immediately; existing
+games keep their initial board. Choose **play in new tab** to create a normal
+lobby and test the saved map. Rebuild the server to embed edits in production.
+The editor currently edits the six existing map choices.
+
+The page is absent and the `maps` and `saveMap` operations on `/graphql` are
+disabled unless the server starts with `--map-editor`. Editor requests require
+localhost; saves require a matching Origin. Ordinary `make run` leaves editing
+disabled. See [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ## Ambush combat
 
 Infantry, tanks, and field guns can choose **ambush**, then point around the
@@ -328,7 +355,10 @@ removing a figure.
 Visible encounter health is shared for both players; enemy supplies and fuel remain concealed.
 Each pair stays open until the player selects **continue** or presses Enter. Hold
 **see map** to hide the card and spotlight the two shining combatants on the frozen
-battlefield; release to restore the card.
+battlefield. While held, the camera centers on the visible combatants and zooms
+out only when needed to fit them with a tile of padding. Release or leave the
+button to restore the card and your previous pan and zoom. Concealed enemies
+remain absent from the battlefield and do not influence this camera framing.
 Reciprocal shots share one display; overlapping ambushes show successive health losses, carrying remaining health into the next pair;
 after each lethal pair, the card closes for its casualties’ skull pause, then
 those units disappear before the next theater opens. Reciprocal casualties share
@@ -438,7 +468,7 @@ The export scripts remain in `tools/`. Back up source artwork separately.
 - [Deployment](DEPLOYMENT.md): configuration, access from other devices, and hosting.
 
 To edit terrain, change the ASCII sketch in `src/scenario.rs`: `#` is forest,
-`%` is hills, and spaces or `.` are grass. Keep rows the same width; spaces
+`%` is hills, `^` is mountains, and spaces or `.` are grass. Keep rows the same width; spaces
 count as cells. Restart `make dev` and refresh the test game URL, or start a new
 normal game, to see the layout.
 Depots and units are placed separately.
@@ -474,3 +504,28 @@ lost carrier. A destroyed truck and its lost passengers share one dialog and
 one **continue** action; unrelated losses have separate dialogs. The adjacent
 **skip this dialog** checkbox remembers your preference and preserves the brief
 timed skull feedback while skipping future dialogs.
+
+Fuel depots are available for manual map placement and start with 256 fuel.
+They refill vehicles on their square or one cardinally adjacent square up to
+capacity, after movement and combat and before upkeep. Both players share the
+finite stock, using the same rotating distribution priority as supply depots.
+Fuel depots do not load supply crates. Their inspector and stock bars conceal
+quantities outside sight and show low/empty warnings like supply depots.
+
+Choose **stand ground** for infantry, tanks, or field guns to stay in place with
+combat readiness when attacked. It keeps the current facing, never fires, and
+costs normal upkeep plus 2 readiness supplies each turn. It saves immediately,
+counts as an order, and can be revoked before submission. Trucks and passengers
+cannot stand ground.
+
+## Mountains
+
+Mountains grant +2 sight radius and elevated sight over intervening terrain,
+while forests still conceal their contents. They block ground-level sight like hills.
+Infantry spend 2 movement points per mountain square (1 extra), so entering one
+uses their full turn movement budget. Tanks, trucks, and wheeled field guns cannot
+enter or pass through mountains, including passenger unloading. Mountains use the
+existing rough-terrain provision surcharge and grant no additional combat cover.
+Green, snowy, and desert maps use the matching approved mountain sprites. Combat
+theater scenes currently reuse the corresponding hill backdrops. Existing map
+layouts are unchanged; place mountains with `^` in a scenario's ASCII sketch.

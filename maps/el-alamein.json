@@ -1,0 +1,1219 @@
+{
+  "depots": [
+    {
+      "kind": "Supply",
+      "position": {
+        "x": 11,
+        "y": 2
+      }
+    },
+    {
+      "kind": "Supply",
+      "position": {
+        "x": 11,
+        "y": 15
+      }
+    },
+    {
+      "kind": "Supply",
+      "position": {
+        "x": 16,
+        "y": 6
+      }
+    },
+    {
+      "kind": "Supply",
+      "position": {
+        "x": 4,
+        "y": 8
+      }
+    },
+    {
+      "kind": "Supply",
+      "position": {
+        "x": 4,
+        "y": 10
+      }
+    },
+    {
+      "kind": "Supply",
+      "position": {
+        "x": 20,
+        "y": 11
+      }
+    },
+    {
+      "kind": "Supply",
+      "position": {
+        "x": 20,
+        "y": 13
+      }
+    }
+  ],
+  "features": [
+    {
+      "position": {
+        "x": 24,
+        "y": 0
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 1
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 2
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 2
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 2
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 3
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 3
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 3
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 3
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 3
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 4
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 4
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 4
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 4
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 12,
+        "y": 4
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 4
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 5
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 5
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 5
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 5
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 12,
+        "y": 5
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 5
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 6
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 6
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 7
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 7
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 7
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 7
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 12,
+        "y": 7
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 7
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 8
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 8
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 8
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 8
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 8
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 9
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 9
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 9
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 9
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 9
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 9
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 10
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 10
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 10
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 11
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 11
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 11
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 12,
+        "y": 11
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 11
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 11
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 12
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 12
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 12
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 12
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 12
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 12
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 13
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 13
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 13
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 13
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 13
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 13
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 13
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 14
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 14
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 14
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 14
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 14
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 14
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 15
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 15
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 15
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 15
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 15
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 15
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 16
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 16
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 16
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 16
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 16
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 16
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 17
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 17
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 17
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 12,
+        "y": 17
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 17
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 17
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 17
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 18
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 18
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 18
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 12,
+        "y": 18
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 18
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 23,
+        "y": 18
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 18
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 19
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 19
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 20,
+        "y": 19
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 19
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 20
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 20
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 20
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 20
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 20
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 12,
+        "y": 20
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 20
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 20
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 15,
+        "y": 20
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 16,
+        "y": 20
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 17,
+        "y": 20
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 18,
+        "y": 20
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 20
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 20,
+        "y": 20
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 21,
+        "y": 20
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 22,
+        "y": 20
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 23,
+        "y": 20
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 20
+      },
+      "terrain": "Hills"
+    }
+  ],
+  "height": 21,
+  "theme": "Desert",
+  "units": [
+    {
+      "direction": "East",
+      "id": 1,
+      "kind": "Tank",
+      "position": {
+        "x": 5,
+        "y": 5
+      },
+      "playerNumber": "Player1"
+    },
+    {
+      "direction": "East",
+      "id": 2,
+      "kind": "Tank",
+      "position": {
+        "x": 6,
+        "y": 5
+      },
+      "playerNumber": "Player1"
+    },
+    {
+      "direction": "East",
+      "id": 3,
+      "kind": "Tank",
+      "position": {
+        "x": 5,
+        "y": 7
+      },
+      "playerNumber": "Player1"
+    },
+    {
+      "direction": "East",
+      "id": 4,
+      "kind": "Tank",
+      "position": {
+        "x": 5,
+        "y": 11
+      },
+      "playerNumber": "Player1"
+    },
+    {
+      "direction": "East",
+      "id": 5,
+      "kind": "Tank",
+      "position": {
+        "x": 5,
+        "y": 13
+      },
+      "playerNumber": "Player1"
+    },
+    {
+      "direction": "East",
+      "id": 6,
+      "kind": "Tank",
+      "position": {
+        "x": 6,
+        "y": 13
+      },
+      "playerNumber": "Player1"
+    },
+    {
+      "direction": "East",
+      "id": 7,
+      "kind": "Infantry",
+      "position": {
+        "x": 7,
+        "y": 4
+      },
+      "playerNumber": "Player1"
+    },
+    {
+      "direction": "East",
+      "id": 8,
+      "kind": "Infantry",
+      "position": {
+        "x": 7,
+        "y": 7
+      },
+      "playerNumber": "Player1"
+    },
+    {
+      "direction": "East",
+      "id": 9,
+      "kind": "Infantry",
+      "position": {
+        "x": 7,
+        "y": 9
+      },
+      "playerNumber": "Player1"
+    },
+    {
+      "direction": "East",
+      "id": 10,
+      "kind": "Infantry",
+      "position": {
+        "x": 7,
+        "y": 11
+      },
+      "playerNumber": "Player1"
+    },
+    {
+      "direction": "East",
+      "id": 11,
+      "kind": "Infantry",
+      "position": {
+        "x": 7,
+        "y": 14
+      },
+      "playerNumber": "Player1"
+    },
+    {
+      "direction": "East",
+      "id": 12,
+      "kind": "FieldGun",
+      "position": {
+        "x": 4,
+        "y": 6
+      },
+      "playerNumber": "Player1"
+    },
+    {
+      "direction": "East",
+      "id": 13,
+      "kind": "FieldGun",
+      "position": {
+        "x": 4,
+        "y": 12
+      },
+      "playerNumber": "Player1"
+    },
+    {
+      "direction": null,
+      "id": 14,
+      "kind": "Truck",
+      "position": {
+        "x": 2,
+        "y": 6
+      },
+      "playerNumber": "Player1"
+    },
+    {
+      "direction": null,
+      "id": 15,
+      "kind": "Truck",
+      "position": {
+        "x": 2,
+        "y": 9
+      },
+      "playerNumber": "Player1"
+    },
+    {
+      "direction": null,
+      "id": 16,
+      "kind": "Truck",
+      "position": {
+        "x": 2,
+        "y": 12
+      },
+      "playerNumber": "Player1"
+    },
+    {
+      "direction": null,
+      "id": 17,
+      "kind": "Truck",
+      "position": {
+        "x": 2,
+        "y": 15
+      },
+      "playerNumber": "Player1"
+    },
+    {
+      "direction": "West",
+      "id": 18,
+      "kind": "Tank",
+      "position": {
+        "x": 19,
+        "y": 8
+      },
+      "playerNumber": "Player2"
+    },
+    {
+      "direction": "West",
+      "id": 19,
+      "kind": "Tank",
+      "position": {
+        "x": 18,
+        "y": 8
+      },
+      "playerNumber": "Player2"
+    },
+    {
+      "direction": "West",
+      "id": 20,
+      "kind": "Tank",
+      "position": {
+        "x": 19,
+        "y": 10
+      },
+      "playerNumber": "Player2"
+    },
+    {
+      "direction": "West",
+      "id": 21,
+      "kind": "Tank",
+      "position": {
+        "x": 19,
+        "y": 14
+      },
+      "playerNumber": "Player2"
+    },
+    {
+      "direction": "West",
+      "id": 22,
+      "kind": "Tank",
+      "position": {
+        "x": 19,
+        "y": 16
+      },
+      "playerNumber": "Player2"
+    },
+    {
+      "direction": "West",
+      "id": 23,
+      "kind": "Tank",
+      "position": {
+        "x": 18,
+        "y": 16
+      },
+      "playerNumber": "Player2"
+    },
+    {
+      "direction": "West",
+      "id": 24,
+      "kind": "Infantry",
+      "position": {
+        "x": 17,
+        "y": 7
+      },
+      "playerNumber": "Player2"
+    },
+    {
+      "direction": "West",
+      "id": 25,
+      "kind": "Infantry",
+      "position": {
+        "x": 17,
+        "y": 10
+      },
+      "playerNumber": "Player2"
+    },
+    {
+      "direction": "West",
+      "id": 26,
+      "kind": "Infantry",
+      "position": {
+        "x": 17,
+        "y": 12
+      },
+      "playerNumber": "Player2"
+    },
+    {
+      "direction": "West",
+      "id": 27,
+      "kind": "Infantry",
+      "position": {
+        "x": 17,
+        "y": 14
+      },
+      "playerNumber": "Player2"
+    },
+    {
+      "direction": "West",
+      "id": 28,
+      "kind": "Infantry",
+      "position": {
+        "x": 17,
+        "y": 17
+      },
+      "playerNumber": "Player2"
+    },
+    {
+      "direction": "West",
+      "id": 29,
+      "kind": "FieldGun",
+      "position": {
+        "x": 20,
+        "y": 9
+      },
+      "playerNumber": "Player2"
+    },
+    {
+      "direction": "West",
+      "id": 30,
+      "kind": "FieldGun",
+      "position": {
+        "x": 20,
+        "y": 15
+      },
+      "playerNumber": "Player2"
+    },
+    {
+      "direction": null,
+      "id": 31,
+      "kind": "Truck",
+      "position": {
+        "x": 22,
+        "y": 9
+      },
+      "playerNumber": "Player2"
+    },
+    {
+      "direction": null,
+      "id": 32,
+      "kind": "Truck",
+      "position": {
+        "x": 22,
+        "y": 12
+      },
+      "playerNumber": "Player2"
+    },
+    {
+      "direction": null,
+      "id": 33,
+      "kind": "Truck",
+      "position": {
+        "x": 22,
+        "y": 15
+      },
+      "playerNumber": "Player2"
+    },
+    {
+      "direction": null,
+      "id": 34,
+      "kind": "Truck",
+      "position": {
+        "x": 22,
+        "y": 18
+      },
+      "playerNumber": "Player2"
+    }
+  ],
+  "width": 25
+}

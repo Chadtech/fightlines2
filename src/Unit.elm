@@ -51,7 +51,7 @@ selection : SelectionSet Unit Api.Object.Unit
 selection =
     SS.succeed Unit
         |> SS.with UnitId.selection
-        |> SS.with UnitApi.side
+        |> SS.with UnitApi.playerNumber
         |> SS.with UnitApi.kind
         |> SS.with UnitApi.direction
         |> SS.with UnitApi.spriteFacing

@@ -1,7 +1,6 @@
 module View.TerrainInfo exposing (toHtml)
 
 import Api.Enum.Terrain as Terrain exposing (Terrain)
-import Css
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
@@ -25,11 +24,9 @@ toHtml terrain =
                 , S.g2
                 , S.pointerCursor
                 , S.listStyleNone
-                , Css.pseudoElement "-webkit-details-marker"
-                    [ S.displayNone
-                    ]
+                , S.hideDetailsMarker
                 , S.outlineNone
-                , Css.pseudoClass "focus-visible"
+                , S.focusVisible
                     [ S.underline
                     ]
                 ]
@@ -44,7 +41,7 @@ toHtml terrain =
                 , S.bgYellow2
                 , S.textGray5
                 , S.p2
-                , Css.marginTop (Css.rem 0.5)
+                , S.mt2
                 ]
             ]
             [ H.p
@@ -63,6 +60,9 @@ visibilityText terrain =
 
         Terrain.Hills ->
             "units on top of hills have greater line of sight and can see over obstacles (forests and other hills)."
+
+        Terrain.Mountains ->
+            "mountains give +2 line of sight and let infantry see over obstacles. each mountain square costs infantry 2 movement points (1 extra). tanks, trucks, and field guns cannot cross mountains."
 
         Terrain.Forest ->
             "units inside forests are completely concealed, forests also obstruct line of sight."

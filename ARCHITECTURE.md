@@ -38,23 +38,40 @@ terrain overrides. Lookup returns no tile outside the map; missing in-bounds
 coordinates fall back to the base tile. There is no stored dense grid. `Map::from_ascii` parses rectangular sketches
 with `#` for forests, `%` for hills, and spaces or `.` for grass. Spaces are
 preserved; malformed rows and unknown symbols return explicit errors.
-Terrain for SupplyPoint, ElAlamein, BloodGulch, and Arabia is authored as fixed
-ASCII sketches in `scenario.rs`. Maps carry a separate typed `MapTheme`
-(`GreenForest`, `Desert`, or `Snow`), exposed through GraphQL and stored in Elm's
-`Map`. Arabia and ElAlamein use Desert; SupplyPoint and BloodGulch use GreenForest.
-BloodGulch forest patches provide concealed hiding spots along its canyon walls.
-Themes affect only artwork in `View.TerrainTile`; base and feature terrain types,
-movement costs, visibility, and scenario geometry remain independent of theme.
-Each new map authors its own `StartingUnit` formation. `Scenario::with_deployment`
-mirrors that formation for player 2, with a three-tile southward offset for
-ElAlamein's eastern base, assigns stable unique IDs, initializes full
-resources, and applies facing. ElAlamein has 17 units per side (5 infantry,
-6 tanks, 2 guns, 4 trucks); BloodGulch has 10 (6 infantry, 1 tank, 1 gun, 2 trucks);
-Arabia has 6 (3 infantry, 1 tank, 2 guns). SupplyPoint retains its original roster
-and IDs. Tests validate counts, clear starting ground, depot access, unique
-occupancy, resources, and mirrored positions.
-`scenario.rs` owns the fixed map layouts, separate neutral supply-depot buildings,
-and units with stable typed IDs, kinds, sides, positions, and optional four-way `Direction` values. Trucks have no direction.
+The six built-in scenarios are authored in `maps/*.json`, with dimensions,
+typed themes, sparse terrain placements, separate supply/fuel depot placements,
+and explicit starting units (stable IDs, player, kind, position, and facing).
+Map JSON enums use Rust variant spelling, such as `GreenForest`, `FieldGun`, and
+`Player1`; GraphQL keeps its independently generated uppercase enum names.
+`map_definition.rs` validates dimensions, bounds, unique terrain and depot
+positions, unit IDs and occupancy, mountain passability, facing, and a force for
+each player. `Scenario::from_definition` initializes resources using ordinary
+rules. The named constructors embed JSON at compile time; the ASCII parser
+remains available to tests for concise fixtures. Initial layouts and deployments
+were preserved during migration, including ElAlamein's asymmetric eastern base.
+Themes affect artwork only; movement, sight and scenario geometry remain separate.
+
+`MapEditor` is an Elm page reached through `/map-editor`. `Main` owns its initial
+load and failure dispatch; `EditableMap` owns the authoring data and its generated
+GraphQL boundary.
+The page keeps a draft, saved snapshot, and bounded undo/redo history per map;
+a drag is one history entry. Each page session retains drafts when switching maps.
+Saving carries the target map and submitted definition in `Saving PendingSave`.
+Other editor events remain active; only another save request is blocked. Responses
+update the submitted map's saved snapshot, preserving later draft edits and map
+selection. Editing errors shown during a request retain the pending save.
+The page owns its initialization `Flags` and GraphQL selection. `map_editor.rs`
+owns map authoring resolvers exposed through the ordinary `/graphql` schema.
+The schema includes `maps` and `saveMap`; both reject requests unless the server
+starts with `--map-editor`. Request-derived editor access also restricts reads to
+loopback clients and saves to matching localhost Origins. Ordinary game queries
+and mutations retain their own authorization. `EditableMap` uses the shared
+`Api.*` enums, selections and inputs without editor enum conversions. All requests
+use `ApiRequest` and `Effect.request`.
+Saves validate before atomically replacing a known map file. In editor mode,
+`MapType::scenario` reads the latest source file at game creation; production
+uses compiled-in data. Existing games own independent scenarios.
+
 Hit points, supplies and vehicle fuel are authoritative. Directional ambush combat is authoritative; victory resolution remains future work.
 Starting requires exactly two players and initializes the scenario once before
 consuming the lobby. The host is `Player1` and the second player is `Player2`. Player ownership is
@@ -63,7 +80,7 @@ start requests return the existing game. Joining is capped at two players,
 while reconnecting members can rejoin a full lobby.
 
 The member-only `game` query returns `GameSnapshot`, including the scenario and
-players with `side` and `isYou`. Lobby snapshots stay small and never include the
+players with `playerNumber` and `isYou`. Lobby snapshots stay small and never include the
 board. The frontend receives sparse terrain overrides and expands them for
 rendering; authoritative initial positions and bounds remain in Rust.
 
@@ -177,14 +194,15 @@ move the camera. Subscription events use the navigation module's `Msg` and `upda
 A visible `UnitResources` contains required hit points and supplies, optional
 fuel for vehicles, and finite crate stocks in `supplyCargo`. Rust keeps authoritative resources present regardless of visibility.
 
-All data operations use `POST /graphql`; the former `/api/*` endpoints are
+Live game data operations use `POST /graphql`; the former `/api/*` endpoints are
 removed. Frontend URLs such as `/lobby/<id>` and `/game/<id>` still serve the
 application.
 
-Queries are `health`, `lobby(id)`, and `game(id)`. Mutations are
+Queries are `health`, `lobby(id)`, `game(id)`, and `maps`. Mutations are
 `createLobby(name, lobbyName)`, `joinLobby(id, name)`,
 `setLobbyMap(id, mapType)`, `startGame(id)`, and
-`submitTurn(id, turnNumber, orders)`. Lobby
+`submitTurn(id, turnNumber, orders)`, and `saveMap(mapType, definition)`.
+The map authoring operations require `--map-editor`. Lobby
 and game selections expose `id`, `name`, `mapType`, `players { name isHost }`, `isHost`,
 `isMember`, and `gameUrl`. For example:
 
@@ -211,12 +229,12 @@ Rust objects and resolver signatures in `src/graphql.rs` and `src/lobby.rs` are
 the source of the schema. `make generate-api` exports introspection to
 `schema.json` and runs the pinned `@dillonkearns/elm-graphql` generator to
 produce `src/Api/`. The schema and generated files are checked in; do not edit
-generated files manually. `make frontend`, `make build`, `make run`, and `make check` all regenerate them before compiling Elm. Rust schema export needs no
+them manually. `make frontend`, `make build`, `make run`, and `make check` all regenerate them before compiling Elm. Rust schema export needs no
 running server. `npm ci` installs the generator from `package-lock.json`.
 
 Each page that loads initial data chooses its own fields and assembles a
 page-specific `Flags` record. `LobbyPage.load` returns `Graphql.Http.Request LobbyPage.Flags`, while `GamePage.load` returns `Graphql.Http.Request GamePage.Flags`. The lobby page selects the roster, membership, host controls,
-and game navigation; the game page selects the scenario, map type, name, and player sides. Creating a
+and game navigation; the game page selects the scenario, map type, name, and player numbers. Creating a
 lobby selects only the ID needed to navigate, returning `LobbyId`.
 
 `ApiRequest` shares query/mutation configuration and error presentation without
@@ -246,7 +264,7 @@ warning and unload checklist are rendered directly from these alternatives;
 `TurnLifecycle` owns the outer phases and delegates editable planning through
 `mapPlanning`; the planning module operates only on `OrderPlanning.Model`, without
 knowing about submission, waiting or playback. `OrderPlanning.Context` supplies
-read-only map, units, movement rules and player sides. The module owns command
+read-only map, units, movement rules and player numbers. The module owns command
 selection, move tracing and confirmation, rotation drafts, reservations, loading
 partner holds, moving/stationary truck unload workflows, readiness and default
 submission holds. `UnitCommand.MenuOption` owns command choices independently of
@@ -268,6 +286,14 @@ commands when eligible.
 options; neither can exist outside movement selection. `ChoosingExits` owns the
 current passenger's reachable options and remaining queue. Leaving a workflow
 keeps saved drafts and passenger exits while dropping its interaction data.
+
+The command guide is a `ReadingGuide` state inside the selected unit's
+`CommandMenu`, alongside `ChoosingCommand`. It retains the focused menu option
+and drafts while open. `OrderPlanning` owns opening, dismissal, and submission
+gating; locked lifecycle phases convert the selection to inspection and discard
+the guide. `GamePage` derives the native dialog from that interaction and opens
+it through the existing dialog-change effect.
+
 `View.UnitCommands` renders the board-anchored command popup and emits command choices
 and arrow-key events. `GamePage.update` chooses the adjacent enabled command,
 wrapping at the ends, and `Effect.focus` uses Elm's DOM API to focus its HTML ID. Selection tracks the focused command. While the popup is open, page-level
@@ -286,7 +312,7 @@ popup stops mouse presses from starting a battlefield drag.
 Board data types live in `Coordinate`, `TerrainFeature`, `Map`, `Depot`, `Unit`
 and its local board view; the view composes them without owning domain data.
 `View.Sprite` clips atlas cells using named sheet dimensions and coordinates,
-using styled SVG. `View.UnitSprite` owns the shared unit atlas, kind/side row
+using styled SVG. `View.UnitSprite` owns the shared unit atlas, kind/player row
 mapping, and facing. Its portrait API uses separate elongated field-gun assets
 for the status panel and combat formations; other portraits use the board atlas.
 Portrait width drives SVG framing and formation scaling without changing map cells.
@@ -404,8 +430,9 @@ keep ownership of those rules; page views do not mount additional style nodes.
 The copied modules are Button, Dialog, Dropdown, PersonProfile, Textarea, and
 TextField. PersonProfile's only adaptation is accepting a record with `name` and
 a display-ready string `id`, removing its dependency on People's generated
-database bindings. Other copied modules retain their behavior, with exposing
-lists and record fields expanded onto separate lines.
+database bindings. Dropdown now scopes its label hover styles locally through Elm
+CSS, without manual classes or a shell-mounted global rule. Other copied modules retain their
+behavior, with exposing lists and record fields expanded onto separate lines.
 
 `make check` compiles every copied module, including those not yet used by the
 main page. These are local copies; changes in People are not synced
@@ -460,9 +487,9 @@ owned unit. The frontend warns before submitting incomplete drafts; confirmation
 adds hold orders for unassigned units at the submission boundary. Validation checks ownership, unique orders/destinations, origin,
 bounds, adjacency, terrain costs, budgets and starting occupancy. The store locks
 membership checks, submission and resolution together. Repeated submission for
-an already locked side is idempotent; stale turn numbers are rejected.
+an already locked player is idempotent; stale turn numbers are rejected.
 
-Both submitted sides resolve together. `movement_resolution.rs` schedules arrivals
+Both submitted players resolve together. `movement_resolution.rs` schedules arrivals
 using accumulated terrain entry cost divided by the kind's full movement budget.
 The least common multiple of budgets supplies exact integer ticks; no speed
 parameter or floating-point comparison participates in authoritative outcomes.
@@ -539,13 +566,14 @@ model as part of that experiment rather than copying the old engine.
 ## Vehicle fuel
 
 Rust units carry optional `Fuel` state: tanks and trucks start at 32/32;
-infantry and field guns have none. One traversed path edge consumes one fuel,
-independent of terrain movement points. Validation rejects paths exceeding
+infantry and field guns have none. One traversed path edge consumes two fuel for
+tanks and one for trucks, independent of terrain movement points. Validation rejects paths exceeding
 available fuel before locking orders. Resolution consumes fuel only on
-successful movement. Fuel cannot be replenished. Interrupted routes pay only for
+successful movement. Fuel depots replenish living vehicles from finite stock at turn settlement. Interrupted routes pay only for
 traversed tiles; holds spend no fuel.
 
-Snapshots expose current and maximum fuel through GraphQL. Elm selects it into
+Snapshots expose current and maximum fuel and consumption per tile through
+GraphQL. Elm selects it into
 `Unit`, displays the authoritative gauge and bounds both reachable paths and
 traced extensions by remaining fuel. Search tracks both terrain cost and path
 length so a shorter, more expensive route is retained when a cheaper detour
@@ -593,8 +621,8 @@ uses each authoritative frame's resource quantities, including the death snapsho
 
 ## Observability and fog of war
 
-`visibility.rs` owns per-kind sight ranges and the side's union of observable
-tiles. Circular distance uses ranges 4/4/3/2 for infantry/field guns/trucks/tanks;
+`visibility.rs` owns per-kind sight ranges and the player's union of observable
+tiles. Circular distance uses ranges 3/3/2/1 for infantry/field guns/trucks/tanks;
 an observer on hills gains one tile and sees over intervening hills and forests.
 For observers off hills, a center-to-center ray treats intervening
 hills and forests as blockers only when it crosses their tile interior; terrain
@@ -607,7 +635,7 @@ includes each revealed gun and its occupied tile regardless of sight or forest
 cover, without granting surrounding sight or exposing resources or cargo. The
 previous reveal remains in playback frames until the final turn boundary.
 
-`game_view` projects the authoritative scenario for the requesting side,
+`game_view` projects the authoritative scenario for the requesting player,
 including the development preview. `GameSnapshot.visibleTiles` supplies the
 fog mask; the scenario includes all own units and only observable enemies.
 Response copies conceal enemy resource fields through nullable GraphQL resolvers,
@@ -616,7 +644,7 @@ Terrain and static depots remain public map knowledge. Turn resolutions include
 a shared timeline captured during authoritative movement resolution, followed by
 loading and unloading.
 `visibility.rs` projects every frame independently, including only observable
-enemies and the side's current sight mask. Hidden paths remain withheld from
+enemies and the player's current sight mask. Hidden paths remain withheld from
 the summary events; transient sightings are carried by frames rather than by
 complete enemy paths. Stored units and authoritative movement validation still use the complete board. `GamePage` stores the mask
 and refreshes it at each playback tile boundary; `GamePage` darkens and desaturates unseen
@@ -651,7 +679,7 @@ without counting them as missing orders. Riding consumes only turn upkeep.
 Truck move inputs additionally accept optional `unloads { unitId destination }`.
 Validation checks cargo ownership, passenger holds, adjacent destinations,
 resources, known occupancy and reservations. Submission occupancy checks use the
-side's `observed_scenario`, including direct passenger unload paths, so concealed
+player's `observed_scenario`, including direct passenger unload paths, so concealed
 enemies do not cause validation errors. Resolution uses the full board. After
 vehicle movement, resolution
 unloads passengers at their chosen squares. A conflicted truck or an occupied
@@ -717,14 +745,18 @@ clicking or pressing an arrow key or WASD saves a revocable draft and counts tow
 ## Player numbering and sprite orientation
 
 `PlayerNumber` identifies the two player slots (`Player1` and `Player2`) in Rust,
-GraphQL, and Elm. Ownership fields such as `Unit.side` carry that type.
+GraphQL, and Elm. Ownership fields use `player_number` in Rust and
+`playerNumber` in GraphQL, Elm, and map JSON.
 `Direction` is the cardinal orientation used for movement and rotation;
 `SpriteFacing` retains the left/right artwork orientation through vertical turns.
 The view module `View.UnitFacing` renders the cardinal direction marker.
 
 `View.TurnControls.Msg` owns the submit-button event. `GamePage` wraps it in
-`TurnControlsMsg` and dispatches it through `handleTurnControlsMsg`. Shared
-class constants supply both markup and the component's scoped CSS selectors.
+`TurnControlsMsg` and dispatches it through `handleTurnControlsMsg`. Layout,
+button effects, and reduced-motion rules use element-local Elm CSS.
+Its shared style node defines keyframes and the navigation container query;
+only that query needs a manually named navigation class. Native-dialog animation
+rules and coordinated SVG playback selectors also remain component-owned raw CSS.
 
 ## Ambush orders and combat
 
@@ -834,6 +866,12 @@ anticipation beat, up to four staggered casualties, and the automatic-close paus
 to finish. The clock sequences individual figure explosions and removal, without HP bars; Continue/Enter
 or the saved automatic-close preference advances the pair. SeeingMap hides the card completely and restores the board
 spotlight with repeating shine. Mouse release restores the card even outside the button.
+While SeeingMap is active, `GamePage` derives a temporary `Camera.focusTransform`
+from participant IDs present in the projected battlefield units. It centers their
+tile bounds and limits zoom to fit them with padding, using the board's CSS
+container dimensions. Concealed portrait positions do not affect framing.
+The navigation model remains untouched, so returning to CardVisible or leaving
+the encounter restores the saved camera without additional restoration state.
 
 ## Attack move
 
@@ -862,7 +900,7 @@ with an `attack move` heading and the usual fog-safe encounter portraits.
 
 ## Finite supply sources and replenishment
 
-`supplies.rs` owns `SupplyStock`, `GroundSupplyCrate`, validated `SupplyOrder`,
+`supplies.rs` owns `ResourceStock`, `GroundSupplyCrate`, validated `SupplyOrder`,
 loading/unloading, and end-of-turn distribution. `Scenario` owns finite depot
 stocks and ground crates; each `Unit` owns its carried crate stocks independently
 of provisions. `SupplyRules` supplies authoritative capacities
@@ -882,15 +920,16 @@ stock or concealed exit occupants do not leak through validation. Actual stock,
 arrived trucks, and full-board occupancy decide success after transport and combat.
 Loading cannot combine with crate unloading in the same turn. Resolution removes
 unloaded slots in descending order to preserve identities. Competing freight orders
-use alternating side priority and stable unit IDs, independently of submission order.
+use alternating player priority and stable unit IDs, independently of submission order.
 
 `Scenario::finish_turn_resources` replenishes before upkeep and exhaustion cleanup.
 Sources deliver until stock runs out or recipients reach provision capacity, with
 no per-turn transfer limit. Overlapping sources can fill remaining deficits. Sources supply
 living units, using cardinal adjacency and physical carrier positions for passengers.
-All crates are neutral and serve both sides, including a carrier and its passengers. Round-robin distribution rotates its first recipient each turn. Combat
+All crates are neutral and serve both players, including a carrier and its passengers. Round-robin distribution rotates its first recipient each turn. Combat
 casualties and passengers of destroyed carriers cannot receive supplies. Empty crates
-are removed. Provision replenishment leaves health and vehicle fuel unchanged.
+are removed. Provision replenishment leaves health and vehicle fuel unchanged. Fuel depots
+use the same distribution algorithm to refill vehicle fuel instead.
 
 `PlannedOrder.SupplyTransfer` owns the truck route, load count, crate exits, and
 existing passenger unloads. `OrderPlanning.ChoosingCrates` owns the depot-loading
@@ -950,14 +989,38 @@ its shine animation has a separate name from the turn controls' shine. The page 
 through the existing local-storage effect, defaults it to false, records malformed
 values as shared errors, and refreshes it on shared-storage notifications.
 
-`TurnResolution.reports` retains per-side own casualties and supply consumption.
+`TurnResolution.reports` retains per-player own casualties and supply consumption.
 Resolution measures movement/readiness/firing spending before replenishment;
 `Scenario.finish_turn_resources` returns `ResourceSettlement` with the death
 snapshot and actual upkeep charged before cleanup. Refilled supplies do not
 reduce consumption, and destroyed cargo stock does not increase it. Visibility
-filters reports to the viewer's side and calculates known damage/confirmed enemy
+filters reports to the viewer's player number and calculates known damage/confirmed enemy
 losses exclusively from that viewer's outgoing projected shots. Damage uses
 capped before/after target HP and confirmed losses deduplicate target IDs. No
 report exposes the opponent's supply spending or unseen supply deaths. Elm
 decodes at most one report into `Turn.Resolution`, retains it with the existing
 turn state, and shows it on the introduction after playback, including on reload.
+
+`DepotKind` distinguishes `Supply` and `Fuel` buildings through GraphQL and Elm.
+`ResourceStock` is the shared finite quantity for depots and supply crates.
+Fuel depots can be authored in map layouts with 256 starting stock; existing
+layouts retain only their supply depots. Fuel recipients are living vehicles on the depot or one cardinally adjacent tile;
+refilling draws only the deficit, without a per-turn cap. Sources never refill
+each other. Supply crate validation and loading dialogs accept only supply
+depots. Depot kind and location remain public; stock follows the existing fog
+projection gate in snapshots and playback frames.
+
+`FacingOrder::StandGround` preserves facing and grants defensive readiness only.
+Validation requires an on-map combat unit, an in-place route, no other actions,
+and enough supplies for readiness plus upkeep. `Combat.standing_ground` is separate
+from ambush shooters, so defensive readiness cannot trigger targeting, return fire,
+or field-gun interceptions. Elm saves `PlannedOrder.StandGround` directly from the
+command menu and submits the generated `standGround` input; resolution emits a
+`StandGround` event.
+
+Mountain terrain flows through the generated GraphQL `Terrain` enum. Rust movement
+rules export a cost of 4 half-points for infantry and zero for tanks, trucks and
+field guns. Nonpositive costs are impassable in client previews, order validation,
+unload validation and resolution. Visibility grants +2 radius to mountain observers
+and treats them as elevated observers. `View.TerrainTile` selects dedicated green,
+snow and desert mountain assets without applying the older feature tint filters.

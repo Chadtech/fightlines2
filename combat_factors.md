@@ -31,10 +31,11 @@ chosen to express the expectations above rather than a fixed outcome table.
 | Hills or forest cover | ×0.85 incoming damage |
 | Ambush firing on an attack mover | ×1.125 |
 
-Battle readiness means an ambush order or an attack-move order with enough
+Battle readiness means an ambush or stand-ground order, or an attack-move order with enough
 supplies to fire while preserving upkeep. An attack mover that already fired
 retains its defensive readiness for the turn. Ordinary holds, moves, and rotations
-are unready. Readiness does not grant automatic return fire or change targeting.
+are unready. Stand ground costs the same readiness supplies as ambush but never fires.
+Readiness does not grant automatic return fire or change targeting.
 Facing uses 90-degree front and rear sectors, including diagonal boundaries;
 other bearings are flank hits. Defensive facing applies only to battle-ready
 units. An unready tank takes the same damage from every approach direction;

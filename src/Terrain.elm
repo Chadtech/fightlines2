@@ -12,5 +12,8 @@ label terrain =
         Terrain.Hills ->
             "hills"
 
+        Terrain.Mountains ->
+            "mountains"
+
         Terrain.Forest ->
             "forest"

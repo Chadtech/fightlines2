@@ -1,19 +1,21 @@
 use crate::{
     combat,
-    map::{Coordinate, Map, MapError, MapTheme, Terrain},
-    supplies::{self, GroundSupplyCrate, SupplyRules, SupplyStock},
+    map::{Coordinate, Map, MapError, Terrain},
+    map_definition::MapDefinition,
+    supplies::{self, GroundSupplyCrate, ResourceStock, SupplyRules},
 };
 use juniper::{GraphQLEnum, GraphQLObject, GraphQLUnion, graphql_object};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Player ownership, independent of starting position on a map.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
 pub enum PlayerNumber {
     Player1,
     Player2,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
 pub enum UnitKind {
     Infantry,
     Tank,
@@ -21,7 +23,7 @@ pub enum UnitKind {
     Truck,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
 pub enum Direction {
     North,
     East,
@@ -37,8 +39,8 @@ pub enum SpriteFacing {
 }
 
 impl SpriteFacing {
-    fn starting(side: PlayerNumber) -> Self {
-        match side {
+    fn starting(player_number: PlayerNumber) -> Self {
+        match player_number {
             PlayerNumber::Player1 => Self::Right,
             PlayerNumber::Player2 => Self::Left,
         }
@@ -54,8 +56,9 @@ impl SpriteFacing {
 }
 
 impl Direction {
-    fn starting(side: PlayerNumber) -> Self {
-        match side {
+    #[cfg(test)]
+    fn starting(player_number: PlayerNumber) -> Self {
+        match player_number {
             PlayerNumber::Player1 => Self::East,
             PlayerNumber::Player2 => Self::West,
         }
@@ -111,11 +114,12 @@ impl HitPoints {
     }
 }
 
-/// One fuel unit powers one traversed tile, independently of movement points.
+/// Vehicle fuel consumption per traversed tile, independent of movement points.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLObject)]
 pub struct Fuel {
     pub(crate) current: i32,
-    maximum: i32,
+    pub(crate) maximum: i32,
+    pub(crate) movement_per_tile: i32,
 }
 
 impl Fuel {
@@ -124,6 +128,11 @@ impl Fuel {
             UnitKind::Tank | UnitKind::Truck => Some(Self {
                 current: 32,
                 maximum: 32,
+                movement_per_tile: match kind {
+                    UnitKind::Tank => 2,
+                    UnitKind::Truck => 1,
+                    UnitKind::Infantry | UnitKind::FieldGun => 0,
+                },
             }),
             UnitKind::Infantry | UnitKind::FieldGun => None,
         }
@@ -185,7 +194,9 @@ impl Supplies {
             .skip(1)
             .map(|position| {
                 let surcharge = match map.tile_at(*position) {
-                    Some(Terrain::Hills | Terrain::Forest) => self.rough_terrain_surcharge,
+                    Some(Terrain::Hills | Terrain::Forest | Terrain::Mountains) => {
+                        self.rough_terrain_surcharge
+                    }
                     _ => 0,
                 };
                 self.movement_per_tile + surcharge
@@ -234,13 +245,13 @@ pub struct UnitResources {
     hit_points: HitPoints,
     supplies: Supplies,
     fuel: Option<Fuel>,
-    supply_cargo: Vec<SupplyStock>,
+    supply_cargo: Vec<ResourceStock>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unit {
     id: UnitId,
-    side: PlayerNumber,
+    player_number: PlayerNumber,
     kind: UnitKind,
     location: Location,
     direction: Option<Direction>,
@@ -250,7 +261,7 @@ pub struct Unit {
     supplies: Supplies,
     resources_visible: bool,
     firing_position_revealed: bool,
-    pub(crate) supply_cargo: Vec<SupplyStock>,
+    pub(crate) supply_cargo: Vec<ResourceStock>,
 }
 
 #[graphql_object]
@@ -259,8 +270,8 @@ impl Unit {
         self.id.to_string()
     }
 
-    pub fn side(&self) -> PlayerNumber {
-        self.side
+    pub fn player_number(&self) -> PlayerNumber {
+        self.player_number
     }
 
     pub fn kind(&self) -> UnitKind {
@@ -322,11 +333,18 @@ impl Unit {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
+/// A neutral resource building, separate from terrain and units.
+pub enum DepotKind {
+    Supply,
+    Fuel,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
-/// A neutral supply building, separate from terrain and units.
 pub struct Depot {
+    pub(crate) kind: DepotKind,
     pub(crate) position: Coordinate,
-    pub(crate) stock: SupplyStock,
+    pub(crate) stock: ResourceStock,
     /// Fog projection gate: known depot positions remain visible, but unseen stock is withheld.
     pub(crate) stock_visible: bool,
 }
@@ -334,7 +352,7 @@ pub struct Depot {
 /// Supplies actually charged during resource settlement, before casualty cleanup.
 #[derive(Clone, Debug)]
 pub struct SupplyConsumption {
-    pub side: PlayerNumber,
+    pub player_number: PlayerNumber,
     pub amount: i32,
 }
 
@@ -360,6 +378,13 @@ impl Unit {
     /// A field gun's shot reveals its position for the following turn.
     pub(crate) fn finish_firing_reveal(&mut self, fired: bool) {
         self.firing_position_revealed = self.kind == UnitKind::FieldGun && fired;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_fuel_for_test(&mut self, current: i32) {
+        if let Some(fuel) = &mut self.fuel {
+            fuel.current = current;
+        }
     }
 
     #[cfg(test)]
@@ -406,6 +431,12 @@ impl Unit {
         self.hit_points.current = (self.hit_points.current - damage).max(0);
     }
 
+    pub(crate) fn receive_fuel(&mut self, amount: i32) {
+        if let Some(fuel) = &mut self.fuel {
+            fuel.current = (fuel.current + amount).min(fuel.maximum);
+        }
+    }
+
     pub(crate) fn receive_supplies(&mut self, amount: i32) {
         self.supplies.current = (self.supplies.current + amount).min(self.supplies.maximum);
     }
@@ -445,7 +476,7 @@ impl Unit {
             }
         }
         if let Some(fuel) = &mut self.fuel {
-            fuel.current -= path.len().saturating_sub(1) as i32;
+            fuel.current -= path.len().saturating_sub(1) as i32 * fuel.movement_per_tile;
         }
         self.supplies.current -=
             path.len().saturating_sub(1) as i32 * self.supplies.movement_per_tile;
@@ -468,7 +499,7 @@ impl Unit {
         let removed_tiles = discarded_path.len().saturating_sub(1);
         self.supplies.current += self.supplies.movement_cost(map, discarded_path);
         if let Some(fuel) = &mut self.fuel {
-            fuel.current += removed_tiles as i32;
+            fuel.current += removed_tiles as i32 * fuel.movement_per_tile;
         }
         self.direction = initial.direction;
         self.sprite_facing = initial.sprite_facing;
@@ -487,16 +518,51 @@ impl Unit {
     }
 }
 
-/// One player's authored formation, mirrored horizontally for the opposing side.
-struct StartingUnit {
-    kind: UnitKind,
-    position: Coordinate,
-}
-
 impl Scenario {
+    pub(crate) fn from_definition(definition: &MapDefinition) -> Result<Self, MapError> {
+        let map = definition.terrain_map()?;
+        let units = definition
+            .units
+            .iter()
+            .map(|starting| Unit {
+                id: UnitId(starting.id),
+                player_number: starting.player_number,
+                sprite_facing: starting.direction.map_or(
+                    SpriteFacing::starting(starting.player_number),
+                    |direction| SpriteFacing::starting(starting.player_number).turned(direction),
+                ),
+                kind: starting.kind,
+                resources_visible: true,
+                firing_position_revealed: false,
+                supply_cargo: Vec::new(),
+                hit_points: HitPoints::full(),
+                fuel: Fuel::for_kind(starting.kind),
+                supplies: Supplies::for_kind(starting.kind),
+                location: Location::OnMap(starting.position),
+                direction: starting.direction,
+            })
+            .collect();
+        let depots = definition
+            .depots
+            .iter()
+            .map(|starting| Depot {
+                kind: starting.kind,
+                position: starting.position,
+                stock: ResourceStock::depot(),
+                stock_visible: true,
+            })
+            .collect();
+        Ok(Self {
+            map,
+            units,
+            depots,
+            supply_crates: Vec::new(),
+        })
+    }
+
     /// A truck has two berths shared by passengers and supply crates.
     pub fn loading_pair(&self, mover: &Unit, target: &Unit) -> Option<(UnitId, UnitId)> {
-        if mover.side != target.side
+        if mover.player_number != target.player_number
             || mover.carrier_id().is_some()
             || target.carrier_id().is_some()
         {
@@ -540,12 +606,12 @@ impl Scenario {
         supplies::replenish(self, turn_number);
         let upkeep = [PlayerNumber::Player1, PlayerNumber::Player2]
             .into_iter()
-            .map(|side| SupplyConsumption {
-                side,
+            .map(|player_number| SupplyConsumption {
+                player_number,
                 amount: self
                     .units
                     .iter()
-                    .filter(|unit| unit.side() == side)
+                    .filter(|unit| unit.player_number() == player_number)
                     .map(|unit| unit.supplies.current.min(unit.supplies.upkeep_per_turn))
                     .sum(),
             })
@@ -580,754 +646,36 @@ impl Scenario {
     }
 
     pub fn el_alamein() -> Result<Self, MapError> {
-        // Two desert passes divide the ridge; the southern outpost has a plateau.
-        let map = Map::from_ascii(concat!(
-            "........................%\n",
-            "........................%\n",
-            "%........%..............%\n",
-            "%........%%%............%\n",
-            "%........%%%%...........%\n",
-            "%........%%%%...........%\n",
-            "%.......................%\n",
-            "%........%%%%...........%\n",
-            "%........%%%............%\n",
-            "%........%%%.%..........%\n",
-            "%............%..........%\n",
-            "%........%%.%%..........%\n",
-            "%........%%..%%.........%\n",
-            "%........%%%.%%.........%\n",
-            "%........%%..%%.........%\n",
-            "%........%%..%%.........%\n",
-            "%........%%..%%.........%\n",
-            "%.........%%%%%.........%\n",
-            "%.........%%%%.........%%\n",
-            "%..................%%...%\n",
-            "%.......%%%%%%%%%%%%%%%%%\n",
-        ))?
-        .with_theme(MapTheme::Desert);
-        Self::with_deployment(
-            map,
-            vec![
-                Depot {
-                    position: Coordinate::new(11, 2),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-                Depot {
-                    position: Coordinate::new(11, 15),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-                Depot {
-                    position: Coordinate::new(16, 6),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-                Depot {
-                    position: Coordinate::new(4, 8),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-                Depot {
-                    position: Coordinate::new(4, 10),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-                Depot {
-                    position: Coordinate::new(20, 11),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-                Depot {
-                    position: Coordinate::new(20, 13),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-            ],
-            &[
-                StartingUnit {
-                    kind: UnitKind::Tank,
-                    position: Coordinate::new(5, 5),
-                },
-                StartingUnit {
-                    kind: UnitKind::Tank,
-                    position: Coordinate::new(6, 5),
-                },
-                StartingUnit {
-                    kind: UnitKind::Tank,
-                    position: Coordinate::new(5, 7),
-                },
-                StartingUnit {
-                    kind: UnitKind::Tank,
-                    position: Coordinate::new(5, 11),
-                },
-                StartingUnit {
-                    kind: UnitKind::Tank,
-                    position: Coordinate::new(5, 13),
-                },
-                StartingUnit {
-                    kind: UnitKind::Tank,
-                    position: Coordinate::new(6, 13),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(7, 4),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(7, 7),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(7, 9),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(7, 11),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(7, 14),
-                },
-                StartingUnit {
-                    kind: UnitKind::FieldGun,
-                    position: Coordinate::new(4, 6),
-                },
-                StartingUnit {
-                    kind: UnitKind::FieldGun,
-                    position: Coordinate::new(4, 12),
-                },
-                StartingUnit {
-                    kind: UnitKind::Truck,
-                    position: Coordinate::new(2, 6),
-                },
-                StartingUnit {
-                    kind: UnitKind::Truck,
-                    position: Coordinate::new(2, 9),
-                },
-                StartingUnit {
-                    kind: UnitKind::Truck,
-                    position: Coordinate::new(2, 12),
-                },
-                StartingUnit {
-                    kind: UnitKind::Truck,
-                    position: Coordinate::new(2, 15),
-                },
-            ],
-            3,
-        )
+        MapDefinition::parse(include_str!("../maps/el-alamein.json"))?.scenario()
     }
 
     pub fn blood_gulch() -> Result<Self, MapError> {
-        // Broad, uneven canyon walls and winding shelves exaggerate the original
-        // contours at tile scale while leaving both bases and the middle route open.
-        // Forest patches (#) provide concealed hiding spots along the canyon walls.
-        let map = Map::from_ascii(concat!(
-            "%%%%%%%%%%%%%%%%%%%%%%%%%\n",
-            "%%%%%%%%%%%%%%%%%%%%%%%%%\n",
-            "%%%%%%%%%%%%%%%%%%%%%%%%%\n",
-            "%%%%%..#%%%%#.#...%%%%%%%\n",
-            "%%%%....#..#...#%..%..%%.\n",
-            "%%%......%%......%#......\n",
-            "%%......#...............%\n",
-            "%......%%%..............%\n",
-            "%......%%%%.............%\n",
-            "%.......%%%%............%\n",
-            "%........%%.............%\n",
-            "%..............%%.......%\n",
-            "%.............%%%%......%\n",
-            "%............%%%%%......%\n",
-            "%%.....................%%\n",
-            "%%%...................%%%\n",
-            "%%%%.............%%##%%%%\n",
-            "%%%%%...%%%%%%..%%%%%%%%%\n",
-            "%%%%%.%%%%%%%%%%%%%%%%%%%\n",
-            "%%%%%%%%%%%%%%%%%%%%%%%%%\n",
-            "%%%%%%%%%%%%%%%%%%%%%%%%%\n",
-        ))?;
-        Self::with_deployment(
-            map,
-            vec![
-                Depot {
-                    position: Coordinate::new(2, 10),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-                Depot {
-                    position: Coordinate::new(22, 10),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-                // Flank objectives approximate the original teleporter exits.
-                Depot {
-                    position: Coordinate::new(13, 5),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-                Depot {
-                    position: Coordinate::new(11, 15),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-            ],
-            &[
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(5, 7),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(5, 9),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(5, 11),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(4, 8),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(4, 10),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(4, 12),
-                },
-                StartingUnit {
-                    kind: UnitKind::Tank,
-                    position: Coordinate::new(3, 10),
-                },
-                StartingUnit {
-                    kind: UnitKind::FieldGun,
-                    position: Coordinate::new(3, 12),
-                },
-                StartingUnit {
-                    kind: UnitKind::Truck,
-                    position: Coordinate::new(2, 9),
-                },
-                StartingUnit {
-                    kind: UnitKind::Truck,
-                    position: Coordinate::new(2, 11),
-                },
-            ],
-            0,
-        )
+        MapDefinition::parse(include_str!("../maps/blood-gulch.json"))?.scenario()
     }
 
     pub fn arabia() -> Result<Self, MapError> {
-        let map = Map::from_ascii(concat!(
-            ".........................\n",
-            ".........................\n",
-            ".....##....%%............\n",
-            ".....#.....%....##.......\n",
-            "..%%............#........\n",
-            "..%..........#.......##..\n",
-            "......#...##......#..#...\n",
-            "..........#..............\n",
-            ".........................\n",
-            "...............%%........\n",
-            "...............%.........\n",
-            ".........................\n",
-            "........%%..#............\n",
-            "........%................\n",
-            ".........................\n",
-            ".........................\n",
-            "..##.............##......\n",
-            "..#....%%........#.......\n",
-            ".......%..#....#.....%%..\n",
-            ".....................%...\n",
-            ".........................\n",
-        ))?
-        .with_theme(MapTheme::Desert);
-        Self::with_deployment(
-            map,
-            vec![
-                Depot {
-                    position: Coordinate::new(2, 10),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-                Depot {
-                    position: Coordinate::new(22, 10),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-            ],
-            &[
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(4, 8),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(4, 10),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(4, 12),
-                },
-                StartingUnit {
-                    kind: UnitKind::FieldGun,
-                    position: Coordinate::new(3, 9),
-                },
-                StartingUnit {
-                    kind: UnitKind::FieldGun,
-                    position: Coordinate::new(3, 11),
-                },
-                StartingUnit {
-                    kind: UnitKind::Tank,
-                    position: Coordinate::new(5, 10),
-                },
-            ],
-            0,
-        )
+        MapDefinition::parse(include_str!("../maps/arabia.json"))?.scenario()
     }
 
     /// Snowy horseshoe: a long open loop, wooded shortcut, and two deep rear depots.
     pub fn sidewinder() -> Result<Self, MapError> {
-        let map = Map::from_ascii(concat!(
-            "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n",
-            "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n",
-            "%%%%%%%###################%%%%%%%\n",
-            "%%%%%%%#..#############..#%%%%%%%\n",
-            "%%%%%%%#..#############..#%%%%%%%\n",
-            "%%%%%%%#..#############..#%%%%%%%\n",
-            "%%%%%%%#..#############..#%%%%%%%\n",
-            "%%%%%%%#..#############..#%%%%%%%\n",
-            "%%%.......###.......###.......%%%\n",
-            "%%%.......###.#####.###.......%%%\n",
-            "%%%...........#####...........%%%\n",
-            "%%%.......#############.......%%%\n",
-            "%%%.......#############.......%%%\n",
-            "%%%.......#############.......%%%\n",
-            "%%%.......#############.......%%%\n",
-            "%%%......###############......%%%\n",
-            "%%%......###############......%%%\n",
-            "%%%.......#############.......%%%\n",
-            "%%%%.......###########.......%%%%\n",
-            "%%%%.#....#############....#.%%%%\n",
-            "%%%%%......###########......%%%%%\n",
-            "%%%%%.......#########.......%%%%%\n",
-            "%%%%%%.....#.%%%%%%%.#.....%%%%%%\n",
-            "%%%%%%.....................%%%%%%\n",
-            "%%%%%%.....................%%%%%%\n",
-            "%%%%%%.....................%%%%%%\n",
-            "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n",
-            "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n",
-            "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n",
-        ))?
-        .with_theme(MapTheme::Snow);
-        Self::with_deployment(
-            map,
-            vec![
-                Depot {
-                    position: Coordinate::new(8, 3),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-                Depot {
-                    position: Coordinate::new(24, 3),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-            ],
-            &[
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(7, 11),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(8, 12),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(7, 13),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(8, 14),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(6, 12),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(6, 14),
-                },
-                StartingUnit {
-                    kind: UnitKind::Tank,
-                    position: Coordinate::new(4, 11),
-                },
-                StartingUnit {
-                    kind: UnitKind::Tank,
-                    position: Coordinate::new(5, 15),
-                },
-                StartingUnit {
-                    kind: UnitKind::FieldGun,
-                    position: Coordinate::new(5, 9),
-                },
-                StartingUnit {
-                    kind: UnitKind::FieldGun,
-                    position: Coordinate::new(7, 9),
-                },
-                StartingUnit {
-                    kind: UnitKind::Truck,
-                    position: Coordinate::new(4, 8),
-                },
-                StartingUnit {
-                    kind: UnitKind::Truck,
-                    position: Coordinate::new(6, 8),
-                },
-            ],
-            0,
-        )
+        MapDefinition::parse(include_str!("../maps/sidewinder.json"))?.scenario()
     }
 
     /// Two large supplied clearings separated by thick forest and a single narrow passage.
     pub fn black_forest() -> Result<Self, MapError> {
-        // Loose trees and grass pockets feather selected clearing edges for infiltration.
-        let map = Map::from_ascii(concat!(
-            "#################################\n",
-            "#################################\n",
-            "#####...#################...#####\n",
-            "###......###############......###\n",
-            "#####.....#############.....#####\n",
-            "#####.####.###########.####.#####\n",
-            "#####.####.#.#######.#.####.#####\n",
-            "###........#..#####..#........###\n",
-            "#..........###########..........#\n",
-            "##.#...........###...........#.##\n",
-            "#.#.........##.###.##.........#.#\n",
-            ".##........###.###.###........##.\n",
-            "#..........###.....###..........#\n",
-            ".#............#####............#.\n",
-            "##.#........#########........#.##\n",
-            "#.#........##.#####.##........#.#\n",
-            "##..........#########..........##\n",
-            "##.#.......#.#######.#.......#.##\n",
-            "##........#...#####...#........##\n",
-            "###..#.....###########.....#..###\n",
-            "####...#..#.#########.#..#...####\n",
-            "#####....#.###########.#....#####\n",
-            "########.###############.########\n",
-            "#################################\n",
-            "#################################\n",
-        ))?
-        .with_theme(MapTheme::GreenForest);
-        Self::with_deployment(
-            map,
-            vec![
-                Depot {
-                    position: Coordinate::new(6, 3),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-                Depot {
-                    position: Coordinate::new(4, 10),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-                Depot {
-                    position: Coordinate::new(4, 16),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-                Depot {
-                    position: Coordinate::new(10, 12),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-                Depot {
-                    position: Coordinate::new(26, 3),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-                Depot {
-                    position: Coordinate::new(28, 10),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-                Depot {
-                    position: Coordinate::new(28, 16),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-                Depot {
-                    position: Coordinate::new(22, 12),
-                    stock: SupplyStock::depot(),
-                    stock_visible: true,
-                },
-            ],
-            &[
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(9, 7),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(9, 9),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(9, 11),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(9, 13),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(9, 15),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(9, 17),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(10, 10),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(10, 14),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(8, 8),
-                },
-                StartingUnit {
-                    kind: UnitKind::Infantry,
-                    position: Coordinate::new(8, 16),
-                },
-                StartingUnit {
-                    kind: UnitKind::FieldGun,
-                    position: Coordinate::new(7, 7),
-                },
-                StartingUnit {
-                    kind: UnitKind::FieldGun,
-                    position: Coordinate::new(7, 9),
-                },
-                StartingUnit {
-                    kind: UnitKind::FieldGun,
-                    position: Coordinate::new(7, 11),
-                },
-                StartingUnit {
-                    kind: UnitKind::FieldGun,
-                    position: Coordinate::new(7, 13),
-                },
-                StartingUnit {
-                    kind: UnitKind::FieldGun,
-                    position: Coordinate::new(7, 15),
-                },
-                StartingUnit {
-                    kind: UnitKind::FieldGun,
-                    position: Coordinate::new(7, 17),
-                },
-                StartingUnit {
-                    kind: UnitKind::Truck,
-                    position: Coordinate::new(5, 12),
-                },
-                StartingUnit {
-                    kind: UnitKind::Truck,
-                    position: Coordinate::new(5, 14),
-                },
-                StartingUnit {
-                    kind: UnitKind::Tank,
-                    position: Coordinate::new(8, 12),
-                },
-            ],
-            0,
-        )
-    }
-
-    /// Map-specific formations share initialization and face the opposing force.
-    fn with_deployment(
-        map: Map,
-        depots: Vec<Depot>,
-        formation: &[StartingUnit],
-        player2_south_offset: u16,
-    ) -> Result<Self, MapError> {
-        for starting in formation {
-            if !map.contains(starting.position) {
-                return Err(MapError::PositionOutOfBounds(starting.position));
-            }
-        }
-        let mut units = Vec::new();
-        for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
-            for starting in formation {
-                let position = match side {
-                    PlayerNumber::Player1 => starting.position,
-                    PlayerNumber::Player2 => Coordinate::new(
-                        (map.width() - 1 - starting.position.x()) as u16,
-                        starting.position.y() as u16 + player2_south_offset,
-                    ),
-                };
-                units.push(Unit {
-                    id: UnitId(units.len() as u16 + 1),
-                    side,
-                    sprite_facing: SpriteFacing::starting(side),
-                    kind: starting.kind,
-                    resources_visible: true,
-                    firing_position_revealed: false,
-                    supply_cargo: Vec::new(),
-                    hit_points: HitPoints::full(),
-                    fuel: Fuel::for_kind(starting.kind),
-                    supplies: Supplies::for_kind(starting.kind),
-                    location: Location::OnMap(position),
-                    direction: match starting.kind {
-                        UnitKind::Truck => None,
-                        _ => Some(Direction::starting(side)),
-                    },
-                });
-            }
-        }
-        for position in units
-            .iter()
-            .filter_map(Unit::board_position)
-            .chain(depots.iter().map(|depot| depot.position))
-        {
-            if !map.contains(position) {
-                return Err(MapError::PositionOutOfBounds(position));
-            }
-        }
-        Ok(Self {
-            map,
-            depots,
-            units,
-            supply_crates: Vec::new(),
-        })
+        MapDefinition::parse(include_str!("../maps/black-forest.json"))?.scenario()
     }
 
     pub fn supply_point() -> Result<Self, MapError> {
-        // Space = grass, # = forest, % = hills. Each row is 17 cells.
-        let map = Map::from_ascii(concat!(
-            "                 \n",
-            " ###   % %   ### \n",
-            " ##  ##%%%##  ## \n",
-            "   % ##%%%## %   \n",
-            "   %% #%%%# %%   \n",
-            " #  %       %  # \n",
-            " #   ##% %##   # \n",
-            "     #     #     \n",
-            "                 \n",
-            "     #     #     \n",
-            " #   ##% %##   # \n",
-            " #  %       %  # \n",
-            "   %% #%%%# %%   \n",
-            "   % ##%%%## %   \n",
-            " ##  ##%%%##  ## \n",
-            " ###   % %   ### \n",
-            "                 \n",
-        ))?;
-        let depots = vec![
-            Depot {
-                position: Coordinate::new(2, 8),
-                stock: SupplyStock::depot(),
-                stock_visible: true,
-            },
-            Depot {
-                position: Coordinate::new(8, 8),
-                stock: SupplyStock::depot(),
-                stock_visible: true,
-            },
-            Depot {
-                position: Coordinate::new(14, 8),
-                stock: SupplyStock::depot(),
-                stock_visible: true,
-            },
-        ];
-        let mut units = Vec::new();
-        for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
-            for (index, (kind, x, y)) in [
-                (UnitKind::Infantry, 3, 7),
-                (UnitKind::Infantry, 3, 8),
-                (UnitKind::Infantry, 3, 9),
-                (UnitKind::Truck, 2, 7),
-                (UnitKind::Truck, 2, 9),
-            ]
-            .into_iter()
-            .enumerate()
-            {
-                let (offset, x) = match side {
-                    PlayerNumber::Player1 => (0, x),
-                    PlayerNumber::Player2 => (5, 16 - x),
-                };
-                units.push(Unit {
-                    id: UnitId(offset + index as u16 + 1),
-                    side,
-                    sprite_facing: SpriteFacing::starting(side),
-                    kind,
-                    resources_visible: true,
-                    firing_position_revealed: false,
-                    supply_cargo: Vec::new(),
-                    hit_points: HitPoints::full(),
-                    fuel: Fuel::for_kind(kind),
-                    supplies: Supplies::for_kind(kind),
-                    location: Location::OnMap(Coordinate::new(x, y)),
-                    direction: match kind {
-                        UnitKind::Truck => None,
-                        _ => Some(Direction::starting(side)),
-                    },
-                });
-            }
-        }
-        for (side, first_id, x) in [
-            (PlayerNumber::Player1, 11, 4),
-            (PlayerNumber::Player2, 14, 12),
-        ] {
-            for (index, (kind, y)) in [
-                (UnitKind::Tank, 8),
-                (UnitKind::FieldGun, 7),
-                (UnitKind::FieldGun, 9),
-            ]
-            .into_iter()
-            .enumerate()
-            {
-                units.push(Unit {
-                    id: UnitId(first_id + index as u16),
-                    side,
-                    sprite_facing: SpriteFacing::starting(side),
-                    kind,
-                    resources_visible: true,
-                    firing_position_revealed: false,
-                    supply_cargo: Vec::new(),
-                    hit_points: HitPoints::full(),
-                    fuel: Fuel::for_kind(kind),
-                    supplies: Supplies::for_kind(kind),
-                    location: Location::OnMap(Coordinate::new(x, y)),
-                    direction: match kind {
-                        UnitKind::Truck => None,
-                        _ => Some(Direction::starting(side)),
-                    },
-                });
-            }
-        }
-        for position in units
-            .iter()
-            .filter_map(Unit::board_position)
-            .chain(depots.iter().map(|depot| depot.position))
-        {
-            if map.tile_at(position).is_none() {
-                return Err(MapError::PositionOutOfBounds(position));
-            }
-        }
-        Ok(Self {
-            map,
-            depots,
-            units,
-            supply_crates: Vec::new(),
-        })
+        MapDefinition::parse(include_str!("../maps/supply-point.json"))?.scenario()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::Terrain;
+    use crate::map::{MapTheme, Terrain};
     use crate::test_support::{FixtureValue, TestResult};
     use std::collections::BTreeSet;
 
@@ -1415,14 +763,14 @@ mod tests {
                 crate::map_type::MapType::BlackForest => [10, 1, 6, 2],
                 crate::map_type::MapType::SupplyPoint => [3, 1, 2, 2],
             };
-            let per_side: usize = expected.iter().sum();
+            let per_player_number: usize = expected.iter().sum();
             let dimensions = match map_type {
                 crate::map_type::MapType::Sidewinder => (33, 29),
                 crate::map_type::MapType::BlackForest => (33, 25),
                 _ => (25, 21),
             };
             assert_eq!((scenario.map.width(), scenario.map.height()), dimensions);
-            assert_eq!(scenario.units.len(), per_side * 2);
+            assert_eq!(scenario.units.len(), per_player_number * 2);
             assert_eq!(
                 scenario
                     .units
@@ -1455,11 +803,11 @@ mod tests {
                 assert_eq!(unit.fuel, Fuel::for_kind(unit.kind));
                 let expected_direction = match unit.kind {
                     UnitKind::Truck => None,
-                    _ => Some(Direction::starting(unit.side)),
+                    _ => Some(Direction::starting(unit.player_number)),
                 };
                 assert_eq!(unit.direction, expected_direction);
             }
-            for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
+            for player_number in [PlayerNumber::Player1, PlayerNumber::Player2] {
                 for (kind, count) in [
                     UnitKind::Infantry,
                     UnitKind::Tank,
@@ -1473,7 +821,7 @@ mod tests {
                         scenario
                             .units
                             .iter()
-                            .filter(|unit| unit.side == side && unit.kind == kind)
+                            .filter(|unit| unit.player_number == player_number && unit.kind == kind)
                             .count(),
                         count
                     );
@@ -1482,11 +830,11 @@ mod tests {
             let player1 = scenario
                 .units
                 .iter()
-                .filter(|unit| unit.side == PlayerNumber::Player1);
+                .filter(|unit| unit.player_number == PlayerNumber::Player1);
             let player2 = scenario
                 .units
                 .iter()
-                .filter(|unit| unit.side == PlayerNumber::Player2);
+                .filter(|unit| unit.player_number == PlayerNumber::Player2);
             for (left, right) in player1.zip(player2) {
                 assert_eq!(left.kind, right.kind);
                 let left_position = left.board_position().fixture()?;
@@ -1551,6 +899,7 @@ mod tests {
                             Terrain::GrassPlain => '.',
                             Terrain::Forest => '#',
                             Terrain::Hills => '%',
+                            Terrain::Mountains => '^',
                         }
                     };
                     sketch.push(symbol);
@@ -1665,6 +1014,7 @@ mod tests {
             scenario
                 .depots
                 .iter()
+                .filter(|depot| depot.kind == DepotKind::Supply)
                 .map(|depot| depot.position)
                 .collect::<Vec<_>>(),
             vec![
@@ -1751,6 +1101,7 @@ mod tests {
             scenario
                 .depots
                 .iter()
+                .filter(|depot| depot.kind == DepotKind::Supply)
                 .map(|depot| depot.position)
                 .collect::<Vec<_>>(),
             vec![
@@ -1783,14 +1134,14 @@ mod tests {
         let observer = scenario
             .units
             .iter_mut()
-            .find(|unit| unit.side == PlayerNumber::Player1)
+            .find(|unit| unit.player_number == PlayerNumber::Player1)
             .fixture()?;
         observer.location =
             Location::OnMap(Coordinate::new(forest.x() as u16, (forest.y() + 1) as u16));
         let enemy = scenario
             .units
             .iter_mut()
-            .find(|unit| unit.side == PlayerNumber::Player2)
+            .find(|unit| unit.player_number == PlayerNumber::Player2)
             .fixture()?;
         let enemy_id = enemy.id;
         enemy.location = Location::OnMap(forest);
@@ -1980,7 +1331,8 @@ mod tests {
                         unit.fuel(),
                         Some(Fuel {
                             current: 32,
-                            maximum: 32
+                            maximum: 32,
+                            movement_per_tile: if unit.kind == UnitKind::Tank { 2 } else { 1 },
                         })
                     );
                 }
@@ -2031,12 +1383,12 @@ mod tests {
     #[test]
     fn sprite_facing_retains_last_horizontal_direction_across_vertical_moves() -> TestResult<()> {
         for kind in [UnitKind::Infantry, UnitKind::Tank, UnitKind::FieldGun] {
-            for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
+            for player_number in [PlayerNumber::Player1, PlayerNumber::Player2] {
                 let mut unit = Scenario::supply_point()
                     .fixture()?
                     .units
                     .into_iter()
-                    .find(|unit| unit.kind == kind && unit.side == side)
+                    .find(|unit| unit.kind == kind && unit.player_number == player_number)
                     .fixture()?;
                 unit.follow_path(&[
                     Coordinate::new(4, 8),
@@ -2085,12 +1437,12 @@ mod tests {
 
     #[test]
     fn trucks_face_horizontal_travel_without_combat_direction() -> TestResult<()> {
-        for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
+        for player_number in [PlayerNumber::Player1, PlayerNumber::Player2] {
             let mut unit = Scenario::supply_point()
                 .fixture()?
                 .units
                 .into_iter()
-                .find(|unit| unit.kind == UnitKind::Truck && unit.side == side)
+                .find(|unit| unit.kind == UnitKind::Truck && unit.player_number == player_number)
                 .fixture()?;
             for (from, to, facing) in [
                 ((4, 8), (3, 8), SpriteFacing::Left),
@@ -2134,7 +1486,7 @@ mod tests {
                 .len(),
             16
         );
-        for side in [PlayerNumber::Player1, PlayerNumber::Player2] {
+        for player_number in [PlayerNumber::Player1, PlayerNumber::Player2] {
             for (kind, expected) in [
                 (UnitKind::Infantry, 3),
                 (UnitKind::Truck, 2),
@@ -2145,7 +1497,7 @@ mod tests {
                     scenario
                         .units
                         .iter()
-                        .filter(|unit| unit.side == side && unit.kind == kind)
+                        .filter(|unit| unit.player_number == player_number && unit.kind == kind)
                         .count(),
                     expected
                 );
@@ -2166,11 +1518,11 @@ mod tests {
         let player1_units = scenario
             .units
             .iter()
-            .filter(|unit| unit.side == PlayerNumber::Player1);
+            .filter(|unit| unit.player_number == PlayerNumber::Player1);
         let player2_units = scenario
             .units
             .iter()
-            .filter(|unit| unit.side == PlayerNumber::Player2);
+            .filter(|unit| unit.player_number == PlayerNumber::Player2);
         for (player1, player2) in player1_units.zip(player2_units) {
             let (player1_direction, player2_direction) = match player1.kind {
                 UnitKind::Truck => (None, None),
@@ -2269,10 +1621,13 @@ impl Scenario {
 
 #[graphql_object]
 impl Depot {
+    fn kind(&self) -> DepotKind {
+        self.kind
+    }
     fn position(&self) -> Coordinate {
         self.position
     }
-    fn stock(&self) -> Option<&SupplyStock> {
+    fn stock(&self) -> Option<&ResourceStock> {
         self.stock_visible.then_some(&self.stock)
     }
 }

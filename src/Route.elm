@@ -24,6 +24,7 @@ type Route
     = NewLobby
     | Lobby LobbyId
     | Game LobbyId
+    | MapEditor
 
 
 fromUrl : Url -> Maybe Route
@@ -34,7 +35,8 @@ fromUrl =
 parser : Parser (Route -> a) a
 parser =
     P.oneOf
-        [ P.map NewLobby P.top
+        [ P.map MapEditor (P.s "map-editor")
+        , P.map NewLobby P.top
         , P.map Lobby (P.s "lobby" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe))
         , P.map Game (P.s "game" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe))
         ]
@@ -46,6 +48,9 @@ toString route =
         parts : List String
         parts =
             case route of
+                MapEditor ->
+                    [ "map-editor" ]
+
                 NewLobby ->
                     []
 

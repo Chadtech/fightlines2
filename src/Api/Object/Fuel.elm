@@ -27,3 +27,8 @@ current =
 maximum : SelectionSet Int Api.Object.Fuel
 maximum =
     Object.selectionForField "Int" "maximum" [] Decode.int
+
+
+movementPerTile : SelectionSet Int Api.Object.Fuel
+movementPerTile =
+    Object.selectionForField "Int" "movementPerTile" [] Decode.int

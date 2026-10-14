@@ -110,8 +110,8 @@ map toMsg effect =
         Batch effects ->
             Batch (List.map (map toMsg) effects)
 
-        Request task ->
-            Request (Task.map toMsg task)
+        Request pending ->
+            Request (Task.map toMsg pending)
 
         Navigate route ->
             Navigate route
@@ -135,8 +135,8 @@ toCmd key effect =
         Batch effects ->
             Cmd.batch (List.map (toCmd key) effects)
 
-        Request task ->
-            Task.perform identity task
+        Request pending ->
+            Task.perform identity pending
 
         Navigate route ->
             Navigation.pushUrl key (Route.toString route)

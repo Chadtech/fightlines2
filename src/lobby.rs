@@ -9,6 +9,7 @@ use crate::{
     seed::{self, Seed},
     session_token::SessionToken,
     turns::{MoveOrderInput, TurnResolution, Turns},
+    visibility,
 };
 use juniper::{FieldError, FieldResult, GraphQLObject};
 
@@ -183,7 +184,7 @@ struct GamePlayerView {
     name: String,
     is_host: bool,
     is_you: bool,
-    side: PlayerNumber,
+    player_number: PlayerNumber,
 }
 
 //----------------------------------------------------------------
@@ -254,18 +255,18 @@ fn game_snapshot(game: &Game, session: Option<&SessionToken>) -> Snapshot {
 
 fn game_view(game: &Game, session: &SessionToken) -> GameSnapshot {
     let index = usize::from(session != &game.host);
-    let side = if index == 0 {
+    let player_number = if index == 0 {
         PlayerNumber::Player1
     } else {
         PlayerNumber::Player2
     };
-    let visible = crate::visibility::visible_tiles(&game.scenario, side);
+    let visible = visibility::visible_tiles(&game.scenario, player_number);
     GameSnapshot {
         turn_number: game.turns.number,
         submitted: game.turns.orders[index].is_some(),
         opponent_submitted: game.turns.orders[1 - index].is_some(),
         last_resolution: game.turns.last_resolution.as_ref().map(|resolution| {
-            crate::visibility::observed_resolution(&game.scenario, side, &visible, resolution)
+            visibility::observed_resolution(&game.scenario, player_number, &visible, resolution)
         }),
         id: game.source_lobby.to_string(),
         name: game.name.to_string(),
@@ -274,17 +275,17 @@ fn game_view(game: &Game, session: &SessionToken) -> GameSnapshot {
             .players
             .iter()
             .zip([PlayerNumber::Player1, PlayerNumber::Player2])
-            .map(|(player, side)| GamePlayerView {
+            .map(|(player, player_number)| GamePlayerView {
                 name: player.name.to_string(),
                 is_host: player.session == game.host,
                 is_you: &player.session == session,
-                side,
+                player_number,
             })
             .collect(),
         is_host: session == &game.host,
         is_member: true,
         game_url: Some(format!("/game/{}", game.source_lobby)),
-        scenario: crate::visibility::observed_scenario(&game.scenario, side, &visible),
+        scenario: visibility::observed_scenario(&game.scenario, player_number, &visible),
         visible_tiles: visible.into_iter().collect(),
         movement_rules: crate::movement::rules(),
     }
@@ -515,13 +516,13 @@ pub fn submit_turn(
                 juniper::Value::null(),
             )
         })?;
-    let side = if index == 0 {
+    let player_number = if index == 0 {
         PlayerNumber::Player1
     } else {
         PlayerNumber::Player2
     };
     game.turns
-        .submit(&mut game.scenario, side, turn_number, orders)
+        .submit(&mut game.scenario, player_number, turn_number, orders)
         .map_err(|message| FieldError::new(message, juniper::Value::null()))?;
     Ok(game_view(game, &identity))
 }
