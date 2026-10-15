@@ -1,7 +1,6 @@
 module View.RotationChoices exposing
     ( Msg(..)
     , ambushToSvg
-    , toSvg
     )
 
 import Api.Enum.Direction as Direction exposing (Direction)
@@ -10,7 +9,6 @@ import Direction
 import Html.Attributes as A
 import Json.Decode as Decode
 import Map exposing (Map)
-import Style as S
 import Svg exposing (Svg)
 import Svg.Attributes as SA
 import Svg.Events as Ev
@@ -22,18 +20,8 @@ type Msg
     | ClickedDirection Direction
 
 
-toSvg : Map -> Coordinate -> Direction -> Svg Msg
-toSvg map position preview =
-    view Direction.all map position preview
-
-
 ambushToSvg : Map -> Coordinate -> Direction -> Svg Msg
-ambushToSvg map position preview =
-    view [] map position preview
-
-
-view : List Direction -> Map -> Coordinate -> Direction -> Svg Msg
-view labeledDirections map position preview =
+ambushToSvg map position _ =
     let
         centerX : Float
         centerX =
@@ -78,70 +66,12 @@ view labeledDirections map position preview =
                 ]
                 []
 
-        label : Direction -> Svg Msg
-        label direction =
-            let
-                offset : { x : Float, y : Float }
-                offset =
-                    case direction of
-                        Direction.North ->
-                            { x = 0
-                            , y = -24
-                            }
-
-                        Direction.East ->
-                            { x = 28
-                            , y = 0
-                            }
-
-                        Direction.South ->
-                            { x = 0
-                            , y = 24
-                            }
-
-                        Direction.West ->
-                            { x = -28
-                            , y = 0
-                            }
-
-                color : String
-                color =
-                    if direction == preview then
-                        S.yellow5Str
-
-                    else
-                        S.gray5Str
-            in
-            Svg.text_
-                [ SA.x (String.fromFloat (clamp 16 (toFloat (map.width * 16 - 16)) (centerX + offset.x)))
-                , SA.y (String.fromFloat (clamp 8 (toFloat (map.height * 16 - 8)) (centerY + offset.y)))
-                , SA.textAnchor "middle"
-                , SA.dominantBaseline "central"
-                , SA.fontSize "6"
-                , SA.fill color
-                , SA.stroke S.gray0Str
-                , SA.strokeWidth "1.5"
-                , SA.strokeLinejoin "round"
-                , SA.style "font-size: 8px; paint-order: stroke fill"
-                , SA.pointerEvents "none"
-                ]
-                [ Svg.text (Direction.label direction)
-                ]
-
         sectors : List (Svg Msg)
         sectors =
             List.map sector Direction.all
-
-        labels : List (Svg Msg)
-        labels =
-            List.map label labeledDirections
-
-        content : List (Svg Msg)
-        content =
-            sectors ++ labels
     in
     Svg.g
         [ Aria.svgLabel "choose direction on the map"
         , SA.cursor "crosshair"
         ]
-        content
+        sectors

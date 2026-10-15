@@ -32,11 +32,11 @@ module GamePage.OrderPlanning exposing
     , openCommandGuide
     , orders
     , pathPreview
-    , previewRotation
+    , previewAmbush
     , previewTile
     , receivingLoad
     , revokeSelectedOrder
-    , saveRotation
+    , saveAmbush
     , saveUnloadDestination
     , selectNextUnorderedUnit
     , selectTile
@@ -70,7 +70,6 @@ import GamePage.Selection as Selection
     exposing
         ( CommandMenuState(..)
         , DestinationFeedback(..)
-        , FacingPurpose(..)
         , Inspection(..)
         , MovePlanning
         , MovePurpose(..)
@@ -590,24 +589,11 @@ applyCommand context command model =
                     UnitCommand.AttackMove ->
                         beginMovement AttackMove context unit model
 
-                    UnitCommand.Rotate ->
-                        model
-                            |> setUnitInteraction
-                                unit.id
-                                (ChoosingDirection
-                                    RotationFacing
-                                    (Maybe.withDefault
-                                        DirectionEnum.North
-                                        unit.direction
-                                    )
-                                )
-
                     UnitCommand.Ambush ->
                         model
                             |> setUnitInteraction
                                 unit.id
                                 (ChoosingDirection
-                                    AmbushFacing
                                     (Maybe.withDefault
                                         DirectionEnum.North
                                         unit.direction
@@ -906,23 +892,8 @@ revokeDependentOrders context revokedIds drafts =
         revokeDependentOrders context dependentIds retained
 
 
-facingAction : Model -> PlannedOrder.Rotation -> PlannedOrder.Action
-facingAction state facing =
-    case selection state of
-        Just (UnitSelection { interaction }) ->
-            case interaction of
-                ChoosingDirection AmbushFacing _ ->
-                    PlannedOrder.Ambush facing
-
-                _ ->
-                    PlannedOrder.Rotate facing
-
-        _ ->
-            PlannedOrder.Rotate facing
-
-
-saveRotation : Context -> Direction -> Model -> Model
-saveRotation context direction state =
+saveAmbush : Context -> Direction -> Model -> Model
+saveAmbush context direction state =
     case selectedUnit context state of
         Just unit ->
             let
@@ -936,19 +907,18 @@ saveRotation context direction state =
                 case Unit.boardPosition unit of
                     Just position ->
                         let
-                            rotation : PlannedOrder
-                            rotation =
+                            ambush : PlannedOrder
+                            ambush =
                                 { unitId = unit.id
                                 , action =
-                                    facingAction
-                                        state
+                                    PlannedOrder.Ambush
                                         { position = position
                                         , direction = direction
                                         }
                                 }
                         in
                         setOrders
-                            (rotation
+                            (ambush
                                 :: List.filter
                                     (\plan -> plan.unitId /= unit.id)
                                     (orders state)
@@ -1157,7 +1127,7 @@ choosingDirection state =
     case selection state of
         Just (UnitSelection selected) ->
             case selected.interaction of
-                ChoosingDirection _ _ ->
+                ChoosingDirection _ ->
                     True
 
                 CommandMenu _ ->
@@ -1176,15 +1146,15 @@ choosingDirection state =
 previewFacing : UnitInteraction -> Direction -> UnitInteraction
 previewFacing interaction direction =
     case interaction of
-        ChoosingDirection purpose _ ->
-            ChoosingDirection purpose direction
+        ChoosingDirection _ ->
+            ChoosingDirection direction
 
         _ ->
             interaction
 
 
-previewRotation : Direction -> Model -> Model
-previewRotation direction state =
+previewAmbush : Direction -> Model -> Model
+previewAmbush direction state =
     case selection state of
         Just (UnitSelection selected) ->
             let
@@ -1327,7 +1297,7 @@ focusedCommand state =
                 ChoosingMove _ ->
                     Nothing
 
-                ChoosingDirection _ _ ->
+                ChoosingDirection _ ->
                     Nothing
 
         _ ->

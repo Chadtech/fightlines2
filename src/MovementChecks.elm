@@ -680,17 +680,17 @@ fuelChecks rules =
                                 , maximum = 16
                                 }
                             , supplies =
-                                { current = 64
-                                , maximum = 64
+                                { current = 128
+                                , maximum = 128
                                 , upkeepPerTurn = 1
                                 , roughTerrainSurcharge = 0
                                 , movementPerTile = 0
                                 }
                             , fuel =
                                 Just
-                                    { current = 5
-                                    , maximum = 64
-                                    , movementPerTile = 2
+                                    { current = 20
+                                    , maximum = 128
+                                    , movementPerTile = 8
                                     }
                             }
                     }
@@ -709,7 +709,7 @@ fuelChecks rules =
 
                 emptyUnit : Unit.Unit
                 emptyUnit =
-                    { unit | resources = Maybe.map (\resources -> { resources | fuel = Just { current = 0, maximum = 64, movementPerTile = 2 } }) unit.resources }
+                    { unit | resources = Maybe.map (\resources -> { resources | fuel = Just { current = 0, maximum = 128, movementPerTile = 8 } }) unit.resources }
 
                 traced : Maybe Movement.Option
                 traced =
@@ -741,7 +741,7 @@ fuelChecks rules =
                 , test "fuel-limited previews reroute to an affordable path"
                     (traced |> Maybe.andThen (\path -> Movement.preview rules map units unit path { x = 1, y = 0 }) |> Maybe.map (\path -> List.length path.path == 2) |> Maybe.withDefault False)
                 , test "full fuel does not override the movement budget"
-                    (Movement.options [] rules map units { unit | resources = Maybe.map (\resources -> { resources | fuel = Just { current = 64, maximum = 64, movementPerTile = 2 } }) unit.resources } |> List.all (\option -> option.cost <= 12))
+                    (Movement.options [] rules map units { unit | resources = Maybe.map (\resources -> { resources | fuel = Just { current = 128, maximum = 128, movementPerTile = 8 } }) unit.resources } |> List.all (\option -> option.cost <= 12))
                 ]
 
 

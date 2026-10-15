@@ -19,7 +19,6 @@ type Command
     = StandGround
     | HoldPosition
     | Move
-    | Rotate
     | AttackMove
     | IndirectFire
     | DigIn
@@ -33,7 +32,7 @@ type MenuOption
 
 all : List Command
 all =
-    [ Move, HoldPosition, Rotate, Ambush, StandGround, AttackMove, IndirectFire, DigIn ]
+    [ Move, HoldPosition, Ambush, StandGround, AttackMove, IndirectFire, DigIn ]
 
 
 enabledOptions : Unit -> List MenuOption
@@ -56,16 +55,16 @@ available unit =
     else
         case unit.kind of
             Kind.Infantry ->
-                [ Move, HoldPosition, Rotate, Ambush, StandGround, AttackMove, DigIn ]
+                [ Move, HoldPosition, Ambush, StandGround, AttackMove, DigIn ]
 
             Kind.Tank ->
-                [ Move, HoldPosition, Rotate, Ambush, StandGround, AttackMove ]
+                [ Move, HoldPosition, Ambush, StandGround, AttackMove ]
 
             Kind.Truck ->
                 [ Move, HoldPosition ]
 
             Kind.FieldGun ->
-                [ Move, HoldPosition, Rotate, Ambush, StandGround, IndirectFire, DigIn ]
+                [ Move, HoldPosition, Ambush, StandGround, IndirectFire, DigIn ]
 
 
 isImplemented : Command -> Bool
@@ -86,9 +85,6 @@ isImplemented command =
         Ambush ->
             True
 
-        Rotate ->
-            True
-
         HoldPosition ->
             True
 
@@ -104,9 +100,6 @@ label command =
 
         HoldPosition ->
             "hold position"
-
-        Rotate ->
-            "rotate"
 
         Move ->
             "move"
@@ -132,9 +125,6 @@ assetName command =
 
         HoldPosition ->
             "hold-position"
-
-        Rotate ->
-            "rotate"
 
         Move ->
             "move"

@@ -37,7 +37,6 @@ type Action
     = Hold Coordinate
     | Move MovePlan
     | AttackMove Movement.Option
-    | Rotate Rotation
     | Ambush Rotation
     | StandGround Coordinate
     | IndirectFire Bombardment
@@ -118,9 +117,6 @@ destination order =
         Ambush ambush ->
             ambush.position
 
-        Rotate rotation ->
-            rotation.position
-
         Unload plan ->
             plan.position
 
@@ -148,9 +144,6 @@ path order =
 
         Ambush ambush ->
             [ ambush.position ]
-
-        Rotate rotation ->
-            [ rotation.position ]
 
         Unload plan ->
             [ plan.position ]
@@ -183,9 +176,6 @@ unloads order =
         Ambush _ ->
             []
 
-        Rotate _ ->
-            []
-
 
 isMoving : PlannedOrder -> Bool
 isMoving order =
@@ -211,15 +201,12 @@ isMoving order =
         Ambush _ ->
             False
 
-        Rotate _ ->
-            False
-
         Unload _ ->
             False
 
 
 {-| Convert a saved order to the existing wire contract at submission time.
-Moving and stationary trucks can carry unloads; rotation has only a facing.
+Moving and stationary trucks can carry unloads; ambush has a required facing.
 -}
 toInput : PlannedOrder -> Api.InputObject.MoveOrderInput
 toInput order =
@@ -247,9 +234,6 @@ toInput order =
 
                 Ambush ambush ->
                     OptionalArgument.Present ambush.direction
-
-                Rotate rotation ->
-                    OptionalArgument.Present rotation.direction
 
                 IndirectFire _ ->
                     OptionalArgument.Absent

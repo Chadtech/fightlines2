@@ -51,16 +51,6 @@ orderChecks unitId passengerId =
                     }
             }
 
-        rotation : PlannedOrder
-        rotation =
-            { unitId = unitId
-            , action =
-                Rotate
-                    { position = { x = 1, y = 1 }
-                    , direction = Direction.West
-                    }
-            }
-
         move : PlannedOrder
         move =
             { unitId = unitId
@@ -260,24 +250,6 @@ orderChecks unitId passengerId =
                    , unloads = Present []
                    }
             )
-        , expect "rotation submission must be stationary and contain only its facing"
-            (PlannedOrder.toInput rotation
-                == { loadCrates = Present 0
-                   , crateUnloads = Present []
-                   , attackMove = Present False
-                   , standGround = Present False
-                   , ambush = Present False
-                   , unitId = UnitId.toString unitId
-                   , path =
-                        [ { x = 1
-                          , y = 1
-                          }
-                        ]
-                   , indirectFire = Absent
-                   , direction = Present Direction.West
-                   , unloads = Present []
-                   }
-            )
         , expect "move submission must preserve the route and passenger exit without adding rotation"
             (PlannedOrder.toInput move
                 == { loadCrates = Present 0
@@ -308,7 +280,7 @@ orderChecks unitId passengerId =
                    }
             )
         , expect "only a traversed move may consume a boarding berth or count as a moving receiver"
-            (not (PlannedOrder.isMoving hold) && not (PlannedOrder.isMoving rotation) && PlannedOrder.isMoving move && not (PlannedOrder.isMoving stationaryUnload))
+            (not (PlannedOrder.isMoving hold) && not (PlannedOrder.isMoving ambush) && PlannedOrder.isMoving move && not (PlannedOrder.isMoving stationaryUnload))
         , expect "stationary trucks must retain their unload choices"
             (PlannedOrder.toInput stationaryUnload
                 == { loadCrates = Present 0
@@ -336,7 +308,7 @@ orderChecks unitId passengerId =
                    }
             )
         , expect "reservations must use the order destination and transport unload exits"
-            (PlannedOrder.destination move == { x = 2, y = 1 } && PlannedOrder.destination rotation == { x = 1, y = 1 } && PlannedOrder.destination stationaryUnload == { x = 1, y = 1 } && PlannedOrder.unloads hold == [] && PlannedOrder.unloads rotation == [] && List.length (PlannedOrder.unloads move) == 1)
+            (PlannedOrder.destination move == { x = 2, y = 1 } && PlannedOrder.destination ambush == { x = 1, y = 1 } && PlannedOrder.destination stationaryUnload == { x = 1, y = 1 } && PlannedOrder.unloads hold == [] && PlannedOrder.unloads ambush == [] && List.length (PlannedOrder.unloads move) == 1)
         ]
 
 

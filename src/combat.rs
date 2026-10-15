@@ -41,10 +41,10 @@ pub fn rules(kind: UnitKind) -> CombatRules {
             UnitKind::Infantry | UnitKind::Tank | UnitKind::Truck => AmbushShape::Line,
         },
         damage,
-        readiness_cost: 2,
+        readiness_cost: 8,
         shot_cost: match kind {
-            UnitKind::Infantry | UnitKind::FieldGun => 3,
-            UnitKind::Tank | UnitKind::Truck => 2,
+            UnitKind::Infantry | UnitKind::FieldGun => 12,
+            UnitKind::Tank | UnitKind::Truck => 8,
         },
     }
 }
@@ -1293,7 +1293,7 @@ mod tests {
         );
         // An attack order without firing supplies cannot provide battle readiness.
         combat.fired.clear();
-        board.units.get_mut(1).fixture()?.spend_supplies(31);
+        board.units.get_mut(1).fixture()?.spend_supplies(124);
         assert_eq!(
             combat.damage(
                 &board,
@@ -1504,8 +1504,8 @@ mod tests {
         let units = &result.frames.last().fixture()?.units;
         assert_eq!(units[0].hit_points().current(), 16);
         assert_eq!(units[1].hit_points().current(), 10);
-        assert_eq!(units[0].supplies().current(), 43);
-        assert_eq!(units[1].supplies().current(), 45);
+        assert_eq!(units[0].supplies().current(), 172);
+        assert_eq!(units[1].supplies().current(), 180);
         assert!(
             result
                 .frames
@@ -1544,7 +1544,7 @@ mod tests {
             assert_eq!(target.hit_points().current(), if survived { 5 } else { 0 });
             assert_eq!(
                 target.fuel().fixture()?.current,
-                if survived { 28 } else { 30 }
+                if survived { 112 } else { 120 }
             );
             assert_eq!(
                 target.supplies().current(),
@@ -1593,8 +1593,8 @@ mod tests {
         assert_eq!(shots[1].target_health.after.current(), 15);
         assert!(result.stopped.contains(&orders[1].unit_id));
         let mover = result.frames.last().fixture()?.units.get(1).fixture()?;
-        assert_eq!(mover.supplies().current(), 28);
-        assert_eq!(mover.fuel().fixture()?.current, 28);
+        assert_eq!(mover.supplies().current(), 112);
+        assert_eq!(mover.fuel().fixture()?.current, 112);
         Ok(())
     }
 
@@ -1624,10 +1624,10 @@ mod tests {
         assert_eq!(shots(&result)[0].target_health.after.current(), 4);
         assert_eq!(units[0].hit_points().current(), 16);
         assert_eq!(units[1].hit_points().current(), 4);
-        assert_eq!(units[0].supplies().current(), 28);
+        assert_eq!(units[0].supplies().current(), 112);
         assert_eq!(units[1].supplies(), scenario.units[1].supplies());
         assert_eq!(units[1].direction(), Some(Direction::South));
-        assert_eq!(units[1].fuel().fixture()?.current, 30);
+        assert_eq!(units[1].fuel().fixture()?.current, 120);
         assert_eq!(
             result.paths.get(&orders[1].unit_id).fixture()?,
             &vec![Coordinate::new(4, 2), Coordinate::new(4, 3)]
@@ -1934,14 +1934,14 @@ mod tests {
     fn readiness_and_firing_costs_reserve_upkeep_and_do_not_repeat() -> TestResult<()> {
         let (mut scenario, orders) =
             fixture(UnitKind::FieldGun, UnitKind::Truck, Coordinate::new(4, 3))?;
-        scenario.units[0].spend_supplies(59);
+        scenario.units[0].spend_supplies(236);
         let result = resolve_completed_movement(&scenario, &orders, 1)?;
         assert!(shots(&result).is_empty());
         assert_eq!(
             result.frames.last().fixture()?.units[0]
                 .supplies()
                 .current(),
-            3
+            12
         );
         let (mut scenario, orders) =
             fixture(UnitKind::FieldGun, UnitKind::Truck, Coordinate::new(4, 3))?;
@@ -1951,7 +1951,7 @@ mod tests {
         combat.finish(&mut scenario, &mut stopped, &mut frames);
         combat.engage(&mut scenario, &mut stopped, &mut frames);
         assert_eq!(frames.iter().flat_map(|frame| &frame.shots).count(), 1);
-        assert_eq!(scenario.units[0].supplies().current(), 59);
+        assert_eq!(scenario.units[0].supplies().current(), 236);
         Ok(())
     }
 

@@ -13,7 +13,7 @@ try {
       console.error(failures.join('\n'));
       process.exitCode = 1;
     } else {
-      console.log('Order planning, reservations, loading, stationary/moving unloads, rotation, and lifecycle gating passed.');
+      console.log('Order planning, reservations, loading, stationary/moving unloads, ambush, and lifecycle gating passed.');
     }
   });
 } finally {

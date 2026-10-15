@@ -789,7 +789,7 @@ mod tests {
                 .ok_or("missing attacker")?
                 .supplies()
                 .current(),
-            40
+            160
         );
         assert_eq!(
             units
@@ -798,7 +798,7 @@ mod tests {
                 .ok_or("missing target")?
                 .supplies()
                 .current(),
-            48
+            192
         );
         Ok(())
     }
@@ -829,7 +829,7 @@ mod tests {
                 .fuel()
                 .ok_or("missing fuel")?
                 .current,
-            32
+            128
         );
         let occupied: BTreeSet<_> = units
             .iter()
@@ -884,7 +884,7 @@ mod tests {
                     .iter()
                     .find(|unit| unit.id() == attacker)
                     .ok_or("missing attacker")?;
-                let supplies = if attacker == "11" { 28 } else { 40 };
+                let supplies = if attacker == "11" { 112 } else { 160 };
                 assert_eq!(unit.supplies().current(), supplies);
                 assert_eq!(result.stopped.len(), 2);
             }

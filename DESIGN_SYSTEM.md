@@ -142,8 +142,8 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   Units show their type and owning player’s name on one line, spaced to opposite
   edges, above their illustration in a nightwood3
   inset screen, without position coordinates. Display
-  authoritative hit points (out of 16), supplies (out of 64 for infantry and field guns, 32 for vehicles), and fuel (out
-  of 32) (for tanks and trucks) as horizontal gauges with `current / maximum` labels. Use red1 below 25%, yellow4 from
+  authoritative hit points (out of 16), supplies (out of 192 for infantry, 256 for field guns, 128 for vehicles), and fuel (out
+  of 128) (for tanks and trucks) as horizontal gauges with `current / maximum` labels. Use red1 below 25%, yellow4 from
   25–75%, and green1 (`#4BBF63`) above 75%; retain the numeric labels alongside color.
 - Terrain appears as a muted `terrain: forest [i]` row beneath selection details,
   without a card or heading. Selecting an empty tile shows only this row; depots
@@ -161,11 +161,6 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   truck. Keep the popup at a fixed display size as the board zooms, constrain it
   inside the battlefield edges, and scroll its contents when the viewport is
   shorter than the menu. Put move and hold position first. Carried units have no command popup.
-  Rotate follows move and hold for infantry, tanks, and field guns. It closes
-  the popup and labels north/east/south/west around the unit on the map. Pointer
-  position previews sprite orientation; clicking saves the facing. Arrow keys or WASD
-  save their corresponding direction while rotation is active. The side panel
-  gives brief instructions without direction buttons. Saving shows the chosen facing and revoke order.
   Rows are flat at rest; hover and keyboard focus add an outset bevel, and
   pressing reverses it. Unimplemented commands are disabled. Tab enters the
   list; up/down arrows or W/S cycle enabled commands whenever the popup is open, including
@@ -181,7 +176,7 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   bounded to 35–300% of the overview scale. Open at 100%, centered on the whole map.
   Reset restores that centered overview at 100%; the bottom-left panel supplies pan arrows, zoom and reset controls. Keyboard
   arrows or WASD pan through game-page window commands while the command popup is closed
-  and movement and rotation selection are inactive,
+  and movement and ambush selection are inactive,
   without requiring battlefield focus.
   Plus/minus zoom through game-page window commands without requiring battlefield
   focus. Home resets the view while the battlefield is focused.
@@ -238,12 +233,12 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   budget and preview cost while planning, then the chosen destination/cost and
   revoke order in the right panel. Arrow keys or WASD extend or retrace the
   previewed route without panning; Enter saves that route. Reachable tiles support Tab and Enter/Space.
-  Units with saved move, hold, or rotation orders render their board artwork at
+  Units with saved orders render their board artwork at
   60% brightness until the order is revoked or the turn resolves. Keep facing
   markers and selection outlines bright and readable.
 - Units and depots support keyboard focus and Enter/Space activation. Illustrated
   unit sprites face right for east and mirror left for west, following stored direction
-  during movement and rotation previews. North/south movement and rotation retain the last horizontal sprite facing,
+  during movement and ambush previews. North/south movement and ambush retain the last horizontal sprite facing,
   including after refresh. Profiles start right for player 1 and left for player 2;
   trucks also follow horizontal travel and retain their last profile vertically. The facing marker
   shows the full four-way direction. Overlay a small illustrated crimson striking
@@ -252,8 +247,7 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   Keep the arrow 5.4 logical pixels wide and 8 pixels tall, with its tip protruding 5.2 pixels
   beyond the cell edge. Selected units brighten the red artwork by 25%.
   Trucks have no stored direction or facing marker.
-  Markers show the ambush's north/east/south/west direction. Ordinary rotation
-  previews, movement, and idle units have no marker. Ambush previews stay steady;
+  Markers show the ambush's north/east/south/west direction. Movement and idle units have no marker. Ambush previews stay steady;
   saved ambush markers use a two-second
   brightness pulse that fades to zero, pauses invisibly, then returns in unison
   across ambushing units. Keep marker size fixed and ignore pointer events.
@@ -407,7 +401,7 @@ Reduced-motion mode retains a steady marker and highlight.
 
 ## Ambush planning and playback
 
-Choosing ambush uses the same cardinal direction picker as rotation. Pointing
+Choosing ambush uses a cardinal direction picker. Pointing
 previews facing and a firing area; clicking or an arrow/WASD key saves the order.
 Ambush selection omits cardinal text labels on the board; highlighted squares
 show the chosen direction.
@@ -464,7 +458,10 @@ and clears the backdrop while darkening all board tiles except the combatants,
 whose shine repeats while held; mouse release or leaving the button restores it.
 While held, center the battlefield camera on the visible combatants and reduce
 zoom only as needed to fit their tiles with one tile of padding on each side.
-Restore the previous pan and zoom on release or leaving the button. Concealed
+Keep this framing throughout combat, including its spotlight, card, and casualty
+pause. Playback also centers on interpolated visible movers, fitting simultaneous
+movement together, and on projected indirect-fire impacts. Restore the saved pan
+and zoom when playback finishes. Concealed
 combatants remain absent from the battlefield and do not affect camera framing.
 Combine reciprocal shots into one display. After continuing each theater, show
 its casualties’ skull markers for the server-provided death pause, then remove

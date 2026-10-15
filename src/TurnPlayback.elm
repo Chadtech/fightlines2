@@ -11,6 +11,7 @@ module TurnPlayback exposing
     , acknowledgeLoss
     , combat
     , continueCombat
+    , focusPositions
     , initial
     , lossEvent
     , losses
@@ -959,6 +960,56 @@ movingPositions playback =
                     []
     in
     Maybe.map positions playback |> Maybe.withDefault []
+
+
+{-| Follow only projected battlefield sightings. Theater portraits can contain
+concealed positions, so resolve participant IDs against the held frame instead.
+Movement uses the same fog-safe interpolation as the unit sprites.
+-}
+focusPositions : Playback -> List Point
+focusPositions playback =
+    let
+        point : Coordinate -> Point
+        point position =
+            { x = toFloat position.x, y = toFloat position.y }
+
+        participants : Frame -> List UnitId -> List Point
+        participants frame ids =
+            frame.units
+                |> List.filter (\unit -> List.member unit.id ids)
+                |> List.filterMap (Unit.physicalPosition frame.units)
+                |> List.map point
+
+        exchangePositions : CombatFocus -> List Point
+        exchangePositions focus =
+            participants focus.before [ focus.exchange.attacker.id, focus.exchange.target.id ]
+    in
+    case playback.presentation of
+        Combat focus ->
+            exchangePositions focus
+
+        Deaths { focus } ->
+            exchangePositions focus
+
+        Battlefield ->
+            let
+                combatantIds : List UnitId
+                combatantIds =
+                    List.concatMap (\shot -> [ shot.attacker.id, shot.target.id ]) playback.current.shots
+
+                casualtyPositions : List Point
+                casualtyPositions =
+                    losses playback
+                        |> List.filterMap (\loss -> Unit.physicalPosition playback.current.units loss.unit)
+                        |> List.map point
+
+                feedback : List Point
+                feedback =
+                    participants playback.current combatantIds
+                        ++ List.map point playback.current.indirectImpacts
+                        ++ casualtyPositions
+            in
+            feedback ++ (movingPositions (Just playback) |> List.map .position)
 
 
 visibleIndirectImpacts : Playback -> List Coordinate

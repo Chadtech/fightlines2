@@ -11,7 +11,6 @@ type TurnEventKind
     = Move
     | Ambush
     | StandGround
-    | Rotate
     | Load
     | Unload
     | Hold
@@ -20,7 +19,7 @@ type TurnEventKind
 
 list : List TurnEventKind
 list =
-    [ Move, Ambush, StandGround, Rotate, Load, Unload, Hold, MovementStopped ]
+    [ Move, Ambush, StandGround, Load, Unload, Hold, MovementStopped ]
 
 
 decoder : Decoder TurnEventKind
@@ -37,9 +36,6 @@ decoder =
 
                     "STAND_GROUND" ->
                         Decode.succeed StandGround
-
-                    "ROTATE" ->
-                        Decode.succeed Rotate
 
                     "LOAD" ->
                         Decode.succeed Load
@@ -71,9 +67,6 @@ toString enum____ =
 
         StandGround ->
             "STAND_GROUND"
-
-        Rotate ->
-            "ROTATE"
 
         Load ->
             "LOAD"
@@ -110,9 +103,6 @@ fromString enumString____ =
 
         "STAND_GROUND" ->
             Just StandGround
-
-        "ROTATE" ->
-            Just Rotate
 
         "LOAD" ->
             Just Load

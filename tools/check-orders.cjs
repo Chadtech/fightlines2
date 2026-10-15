@@ -13,7 +13,7 @@ try {
       console.error(failures.join('\n'));
       process.exitCode = 1;
     } else {
-      console.log('Saved hold, move, rotation, and unload order checks passed.');
+      console.log('Saved hold, move, ambush, and unload order checks passed.');
     }
   });
 } finally {

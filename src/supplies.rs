@@ -14,8 +14,8 @@ pub struct SupplyRules {
 
 pub fn rules() -> SupplyRules {
     SupplyRules {
-        depot_capacity: 256,
-        crate_capacity: 64,
+        depot_capacity: 1024,
+        crate_capacity: 256,
     }
 }
 
@@ -355,8 +355,8 @@ mod tests {
             kind: DepotKind::Fuel,
             position: Coordinate::new(2, 1),
             stock: ResourceStock {
-                current: 70,
-                maximum: 256,
+                current: 262,
+                maximum: 1024,
             },
             stock_visible: true,
         });
@@ -365,7 +365,7 @@ mod tests {
         assert_eq!(
             board.units.first().fixture()?.supply_cargo,
             vec![
-                CargoStock::new(DepotKind::Fuel, 64),
+                CargoStock::new(DepotKind::Fuel, 256),
                 CargoStock::new(DepotKind::Fuel, 6)
             ]
         );
@@ -492,7 +492,7 @@ mod tests {
             position: Coordinate::new(2, 1),
             stock: ResourceStock {
                 current: 3,
-                maximum: 256,
+                maximum: 1024,
             },
             stock_visible: true,
         });
@@ -583,13 +583,13 @@ mod tests {
         for unit in &board.units {
             assert_eq!(
                 unit.fuel().fixture()?.current,
-                if unit.id() == "9" { 0 } else { 32 }
+                if unit.id() == "9" { 0 } else { 128 }
             );
         }
         assert!(!board.units.iter().any(|unit| unit.id() == "10"));
-        assert_eq!(board.depots.first().fixture()?.stock.current, 160);
+        assert_eq!(board.depots.first().fixture()?.stock.current, 640);
         board.finish_turn_resources(2);
-        assert_eq!(board.depots.first().fixture()?.stock.current, 160);
+        assert_eq!(board.depots.first().fixture()?.stock.current, 640);
         Ok(())
     }
 
@@ -634,7 +634,7 @@ mod tests {
         board.supply_crates = vec![
             GroundSupplyCrate {
                 position: Coordinate::new(0, 0),
-                stock: CargoStock::supply(64),
+                stock: CargoStock::supply(256),
             },
             GroundSupplyCrate {
                 position: Coordinate::new(0, 2),
@@ -642,13 +642,13 @@ mod tests {
             },
         ];
         replenish(&mut board, 1);
-        assert_eq!(board.units.get_mut(0).fixture()?.supplies().current(), 48);
-        assert_eq!(board.supply_crates.get_mut(0).fixture()?.stock.current, 26);
+        assert_eq!(board.units.get_mut(0).fixture()?.supplies().current(), 192);
+        assert_eq!(board.supply_crates.get_mut(0).fixture()?.stock.current, 74);
         assert_eq!(board.supply_crates.get_mut(1).fixture()?.stock.current, 2);
-        board.units.get_mut(0).fixture()?.set_supplies_for_test(47);
+        board.units.get_mut(0).fixture()?.set_supplies_for_test(191);
         replenish(&mut board, 2);
-        assert_eq!(board.units.get_mut(0).fixture()?.supplies().current(), 48);
-        assert_eq!(board.supply_crates.get_mut(0).fixture()?.stock.current, 25);
+        assert_eq!(board.units.get_mut(0).fixture()?.supplies().current(), 192);
+        assert_eq!(board.supply_crates.get_mut(0).fixture()?.stock.current, 73);
         Ok(())
     }
 
@@ -659,17 +659,17 @@ mod tests {
         board.supply_crates = vec![
             GroundSupplyCrate {
                 position: Coordinate::new(0, 0),
-                stock: CargoStock::supply(20),
+                stock: CargoStock::supply(80),
             },
             GroundSupplyCrate {
                 position: Coordinate::new(0, 2),
-                stock: CargoStock::supply(40),
+                stock: CargoStock::supply(160),
             },
         ];
         replenish(&mut board, 1);
-        assert_eq!(board.units.first().fixture()?.supplies().current(), 48);
+        assert_eq!(board.units.first().fixture()?.supplies().current(), 192);
         assert_eq!(board.supply_crates.len(), 1);
-        assert_eq!(board.supply_crates.first().fixture()?.stock.current, 22);
+        assert_eq!(board.supply_crates.first().fixture()?.stock.current, 58);
         Ok(())
     }
 
@@ -761,7 +761,7 @@ mod tests {
             board
                 .units
                 .iter()
-                .any(|unit| unit.id() == "1" && unit.supplies().current() == 47)
+                .any(|unit| unit.id() == "1" && unit.supplies().current() == 188)
         );
         assert!(!board.units.iter().any(|unit| unit.id() == "2"));
         assert!(
@@ -773,7 +773,7 @@ mod tests {
                 .supply_cargo
                 .is_empty()
         );
-        assert_eq!(board.depots.get_mut(0).fixture()?.stock.current, 187);
+        assert_eq!(board.depots.get_mut(0).fixture()?.stock.current, 715);
         Ok(())
     }
 
@@ -900,7 +900,7 @@ mod tests {
                 .supply_cargo
                 .is_empty()
         );
-        assert_eq!(board.depots.first().fixture()?.stock.current, 256);
+        assert_eq!(board.depots.first().fixture()?.stock.current, 1024);
         Ok(())
     }
 
@@ -1007,11 +1007,11 @@ mod visibility_tests {
         board.supply_crates = vec![
             GroundSupplyCrate {
                 position: Coordinate::new(1, 0),
-                stock: CargoStock::new(DepotKind::Fuel, 64),
+                stock: CargoStock::new(DepotKind::Fuel, 256),
             },
             GroundSupplyCrate {
                 position: Coordinate::new(19, 0),
-                stock: CargoStock::new(DepotKind::Fuel, 64),
+                stock: CargoStock::new(DepotKind::Fuel, 256),
             },
         ];
         let visible = visibility::visible_tiles(&board, PlayerNumber::Player1);

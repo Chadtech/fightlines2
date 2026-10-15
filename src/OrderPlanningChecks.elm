@@ -192,15 +192,15 @@ planningChecks infantryId truckId passengerId =
             OrderPlanning.init
                 |> OrderPlanning.selectUnit context infantryId
                 |> OrderPlanning.applyCommand context UnitCommand.Ambush
-                |> OrderPlanning.previewRotation DirectionEnum.East
-                |> OrderPlanning.saveRotation context DirectionEnum.East
+                |> OrderPlanning.previewAmbush DirectionEnum.East
+                |> OrderPlanning.saveAmbush context DirectionEnum.East
 
         truckAmbush : OrderPlanning.Model
         truckAmbush =
             OrderPlanning.init
                 |> OrderPlanning.selectUnit context truckId
                 |> OrderPlanning.applyCommand context UnitCommand.Ambush
-                |> OrderPlanning.saveRotation context DirectionEnum.East
+                |> OrderPlanning.saveAmbush context DirectionEnum.East
 
         moving : OrderPlanning.Model
         moving =
@@ -471,14 +471,6 @@ planningChecks infantryId truckId passengerId =
                 |> OrderPlanning.revokeSelectedOrder context
                 |> OrderPlanning.selectUnit context truckId
                 |> OrderPlanning.revokeSelectedOrder context
-
-        rotated : OrderPlanning.Model
-        rotated =
-            OrderPlanning.init
-                |> OrderPlanning.selectUnit context infantryId
-                |> OrderPlanning.applyCommand context UnitCommand.Rotate
-                |> OrderPlanning.previewRotation DirectionEnum.West
-                |> OrderPlanning.saveRotation context DirectionEnum.West
 
         cargoContext : OrderPlanning.Context
         cargoContext =
@@ -1105,8 +1097,6 @@ planningChecks infantryId truckId passengerId =
             (OrderPlanning.commandMenuUnit context receiving == Nothing && OrderPlanning.selection receiving == Just (Inspecting (UnitInspection truckId)))
         , expect "revoking loading and receiver holds restores truck commands"
             (List.isEmpty (OrderPlanning.orders revoked) && OrderPlanning.commandMenuUnit context revoked == Just truck)
-        , expect "rotation becomes a revocable draft without moving"
-            (List.map .action (OrderPlanning.orders rotated) == [ PlannedOrder.Rotate { position = { x = 1, y = 1 }, direction = DirectionEnum.West } ])
         , expect "holding a loaded truck opens its stationary unload checklist"
             (OrderPlanning.unloadChoice checklist /= Nothing)
         , expect "each unload exit reserves its square for the next passenger"

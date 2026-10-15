@@ -6,7 +6,6 @@ module Camera exposing
     , transform
     )
 
-import Coordinate exposing (Coordinate)
 import Map exposing (Map)
 import Point exposing (Point)
 
@@ -61,7 +60,7 @@ transform camera =
 {-| Frame visible tiles without changing the saved camera. Container units keep
 the framing correct through viewport resizing, without measuring unit elements.
 -}
-focusTransform : Map -> List Coordinate -> Camera -> String
+focusTransform : Map -> List Point -> Camera -> String
 focusTransform map positions camera =
     case positions of
         [] ->
@@ -70,10 +69,10 @@ focusTransform map positions camera =
         first :: rest ->
             let
                 bounds :
-                    { left : Int
-                    , right : Int
-                    , top : Int
-                    , bottom : Int
+                    { left : Float
+                    , right : Float
+                    , top : Float
+                    , bottom : Float
                     }
                 bounds =
                     List.foldl extend
@@ -81,9 +80,9 @@ focusTransform map positions camera =
                         rest
 
                 extend :
-                    Coordinate
-                    -> { left : Int, right : Int, top : Int, bottom : Int }
-                    -> { left : Int, right : Int, top : Int, bottom : Int }
+                    Point
+                    -> { left : Float, right : Float, top : Float, bottom : Float }
+                    -> { left : Float, right : Float, top : Float, bottom : Float }
                 extend position current =
                     { left = min current.left position.x
                     , right = max current.right position.x
@@ -99,11 +98,9 @@ focusTransform map positions camera =
                 -- on each side. Both SVG axes use the board's rendered width.
                 span : Float
                 span =
-                    toFloat
-                        (max
-                            (bounds.right - bounds.left + 3)
-                            (bounds.bottom - bounds.top + 3)
-                        )
+                    max
+                        (bounds.right - bounds.left + 3)
+                        (bounds.bottom - bounds.top + 3)
 
                 zoom : Float
                 zoom =
@@ -112,9 +109,9 @@ focusTransform map positions camera =
                 center : Point
                 center =
                     { x =
-                        (toFloat (bounds.left + bounds.right + 1) - mapWidth) / (2 * mapWidth)
+                        ((bounds.left + bounds.right + 1) - mapWidth) / (2 * mapWidth)
                     , y =
-                        (toFloat (bounds.top + bounds.bottom + 1) - toFloat map.height) / (2 * mapWidth)
+                        ((bounds.top + bounds.bottom + 1) - toFloat map.height) / (2 * mapWidth)
                     }
 
                 axis : Float -> String

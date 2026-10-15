@@ -118,11 +118,11 @@ impl Fuel {
     fn for_kind(kind: UnitKind) -> Option<Self> {
         match kind {
             UnitKind::Tank | UnitKind::Truck => Some(Self {
-                current: 32,
-                maximum: 32,
+                current: 128,
+                maximum: 128,
                 movement_per_tile: match kind {
-                    UnitKind::Tank => 2,
-                    UnitKind::Truck => 1,
+                    UnitKind::Tank => 8,
+                    UnitKind::Truck => 4,
                     UnitKind::Infantry | UnitKind::FieldGun => 0,
                 },
             }),
@@ -163,21 +163,21 @@ impl Supplies {
 impl Supplies {
     fn for_kind(kind: UnitKind) -> Self {
         let movement_per_tile = match kind {
-            UnitKind::Infantry => 3,
-            UnitKind::FieldGun => 1,
+            UnitKind::Infantry => 12,
+            UnitKind::FieldGun => 4,
             UnitKind::Tank | UnitKind::Truck => 0,
         };
         let maximum = match kind {
-            UnitKind::Tank | UnitKind::Truck => 32,
-            UnitKind::Infantry => 48,
-            UnitKind::FieldGun => 64,
+            UnitKind::Tank | UnitKind::Truck => 128,
+            UnitKind::Infantry => 192,
+            UnitKind::FieldGun => 256,
         };
         Self {
             current: maximum,
             maximum,
-            upkeep_per_turn: 1,
+            upkeep_per_turn: 4,
             movement_per_tile,
-            rough_terrain_surcharge: if kind == UnitKind::Infantry { 1 } else { 0 },
+            rough_terrain_surcharge: if kind == UnitKind::Infantry { 4 } else { 0 },
         }
     }
 
@@ -673,7 +673,7 @@ mod tests {
 
     #[test]
     fn infantry_terrain_supply_costs_reserve_upkeep_and_charge_entered_tiles() -> TestResult<()> {
-        for (sketch, expected) in [("...", 6), (".%%", 8), (".##", 8), (".%#", 8)] {
+        for (sketch, expected) in [("...", 24), (".%%", 32), (".##", 32), (".%#", 32)] {
             let map = Map::from_ascii(sketch).fixture()?;
             let path = [
                 Coordinate::new(0, 0),
@@ -685,16 +685,16 @@ mod tests {
             unit.move_to(path[0]);
             unit.set_supplies_for_test(expected);
             assert!(!unit.supplies().can_afford_movement(&map, &path));
-            unit.set_supplies_for_test(expected + 1);
+            unit.set_supplies_for_test(expected + 4);
             assert!(unit.supplies().can_afford_movement(&map, &path));
-            unit.set_supplies_for_test(32);
+            unit.set_supplies_for_test(128);
             let initial = unit.clone();
             unit.follow_terrain_path(&map, &path);
-            assert_eq!(unit.supplies().current(), 32 - expected);
+            assert_eq!(unit.supplies().current(), 128 - expected);
             assert_eq!(unit.board_position(), Some(path[2]));
-            unit.spend_supplies(3);
+            unit.spend_supplies(12);
             unit.retract_movement(&path[..2], &map, &path[1..], &initial);
-            assert_eq!(unit.supplies().current(), 29 - expected / 2);
+            assert_eq!(unit.supplies().current(), 116 - expected / 2);
             assert_eq!(unit.board_position(), Some(path[1]));
         }
         Ok(())
@@ -931,7 +931,7 @@ mod tests {
             scenario
                 .units
                 .iter()
-                .all(|unit| unit.supplies.current == unit.supplies.maximum - 1)
+                .all(|unit| unit.supplies.current == unit.supplies.maximum - 4)
         );
         assert!(
             scenario
@@ -970,22 +970,22 @@ mod tests {
                 }
             );
             let (maximum, movement_per_tile) = match unit.kind {
-                UnitKind::Infantry => (48, 3),
-                UnitKind::FieldGun => (64, 1),
-                UnitKind::Tank | UnitKind::Truck => (32, 0),
+                UnitKind::Infantry => (192, 12),
+                UnitKind::FieldGun => (256, 4),
+                UnitKind::Tank | UnitKind::Truck => (128, 0),
             };
             assert_eq!(unit.supplies.current, maximum);
             assert_eq!(unit.supplies.maximum, maximum);
             assert_eq!(unit.supplies.movement_per_tile, movement_per_tile);
-            assert_eq!(unit.supplies.upkeep_per_turn, 1);
+            assert_eq!(unit.supplies.upkeep_per_turn, 4);
             match unit.kind {
                 UnitKind::Tank | UnitKind::Truck => {
                     assert_eq!(
                         unit.fuel(),
                         Some(Fuel {
-                            current: 32,
-                            maximum: 32,
-                            movement_per_tile: if unit.kind == UnitKind::Tank { 2 } else { 1 },
+                            current: 128,
+                            maximum: 128,
+                            movement_per_tile: if unit.kind == UnitKind::Tank { 8 } else { 4 },
                         })
                     );
                 }

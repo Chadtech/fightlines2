@@ -72,7 +72,10 @@ Saves validate before atomically replacing a known map file. In editor mode,
 `MapType::scenario` reads the latest source file at game creation; production
 uses compiled-in data. Existing games own independent scenarios.
 
-Hit points, supplies and vehicle fuel are authoritative. Directional ambush combat is authoritative; victory resolution remains future work.
+Hit points, supplies and vehicle fuel are authoritative. Fuel, provisions, freight stocks,
+and their consumption costs use integer quantities at four times the original scale
+for finer balance adjustments. HP, damage, tile ranges, movement points, and cargo
+berths retain their existing scale. Directional ambush combat is authoritative; victory resolution remains future work.
 Starting requires exactly two players and initializes the scenario once before
 consuming the lobby. The host is `Player1` and the second player is `Player2`. Player ownership is
 independent of map position; the current scenario and lobby still require two players. Repeated
@@ -253,11 +256,11 @@ synchronous resolvers for its in-memory operations.
 `UnitCommand` owns the command vocabulary and per-unit availability.
 `GamePage.OrderPlanning` owns editable unit/tile selection and saved drafts;
 `TurnLifecycle` retains inspection while orders are locked. `PlannedOrder` gives
-saved orders separate `Hold`, `Move`, `Unload` and `Rotate` actions. Moving truck
+saved orders separate `Hold`, `Move`, `Unload` and `Ambush` actions. Moving truck
 unloads belong to `Move`; stationary truck unloads belong to `Unload`.
-`Rotate` carries a stationary position and required direction.
+`Ambush` carries a stationary position and required direction.
 Its submission adapter converts these actions to the existing GraphQL input,
-using single-coordinate paths for holds and rotations. `PlannedOrderChecks`
+using single-coordinate paths for holds and ambushes. `PlannedOrderChecks`
 verifies that conversion, including unloading from stationary trucks.
 `TurnLifecycle.Phase` owns planning, submission, waiting and playback.
 `GamePage.OrderPlanning` owns the planning custom type and its transitions:
@@ -271,7 +274,7 @@ warning and unload checklist are rendered directly from these alternatives;
 `mapPlanning`; the planning module operates only on `OrderPlanning.Model`, without
 knowing about submission, waiting or playback. `OrderPlanning.Context` supplies
 read-only map, units, movement rules and player numbers. The module owns command
-selection, move tracing and confirmation, rotation drafts, reservations, loading
+selection, move tracing and confirmation, ambush drafts, reservations, loading
 partner holds, moving/stationary truck unload workflows, readiness and default
 submission holds. `UnitCommand.MenuOption` owns command choices independently of
 the view. Page helpers delegate edits through `TurnLifecycle.mapPlanning`, so
@@ -332,7 +335,7 @@ View-related messages and rendering remain in `GamePage`.
 command overlay outside that transform. The page reads
 its camera for command positioning and queries `active` and `suppressesClick`
 when handling previews and selection. `GamePage.keyCommands` retains keyboard
-priority across dialogs, command menus, movement, rotation and navigation.
+priority across dialogs, command menus, movement, ambush and navigation.
 The board appears beside a
 full-height right panel containing selection details and resolution information.
 `GamePage.turnPanel` overlays compact horizontal game controls at the battlefield's
@@ -365,7 +368,7 @@ commands to extend or retrace the preview from its current tip, and Enter saves
 the preview through the same destination validation as a click. Board Enter
 events confirm that preview when focus remains on the selected unit. Enter on
 another unit, depot, or reachable tile activates that focused destination.
-Outside command, movement, and rotation selection, arrow and WASD commands pan.
+Outside command, movement, and ambush selection, arrow and WASD commands pan.
 Plus/minus commands zoom without battlefield focus, and Escape clears selection, reachable
 squares, and the live path preview while preserving saved move drafts. The page
 derives its active dialog through `GamePage.dialog : Model -> Maybe (Dialog Msg)`;
@@ -384,9 +387,9 @@ two-second opacity pulse. Component-owned styles keep the markers steady for
 reduced-motion preferences. Markers do not receive pointer events or appear in
 status portraits. The impact tip extends beyond the tile; `tools/build-effect-sprites.cjs`
 exports the transparent arrow from `artwork/effects/illustrated/attack-marker/`.
-Side-profile artwork follows east/west `Direction`, including playback and rotation
+Side-profile artwork follows east/west `Direction`, including playback and ambush
 previews. A separate authoritative `SpriteFacing` retains the last east/west orientation
-through north/south movement or rotation, including snapshots and playback frames.
+through north/south movement or ambush, including snapshots and playback frames.
 It starts right for player 1 and left for player 2. Trucks also update `SpriteFacing`
 on horizontal movement while keeping `Direction` absent. The marker represents the full
 four-way direction.
@@ -523,7 +526,7 @@ retain the actual path rather than resetting the unit to its origin. Summary
 events retain stable interleaving independently of submission order; the frame
 timeline determines presentation. Loading and truck-planned unloading follow
 movement. Direct passenger unload paths participate in timed arrivals.
-Rotations and final resources are included in the final frame. The latest
+Ambush facings and final resources are included in the final frame. The latest
 `TurnResolution` is stored and the turn advances once. Pending enemy orders are
 never exposed. Ambush combat extends this authoritative timeline at the initial and arrival boundaries.
 
@@ -531,7 +534,7 @@ never exposed. Ambush combat extends this authoritative timeline at the initial 
 `Planning`, `Submitting`, `WaitingForOpponent` and `Playing`; order drafts belong
 to the first three variants, and playback data belongs only to `Playing`.
 Only planning accepts order edits or stores editable selection. Waiting,
-submission and playback cannot carry command menus, move previews or rotation
+submission and playback cannot carry command menus, move previews or ambush
 previews. Matching submission failures restore the saved drafts with inspection
 preserved and editing closed; request messages carry their originating turn number, so late
 responses cannot reopen an advanced turn. A poll confirming submission transitions
@@ -575,9 +578,9 @@ model as part of that experiment rather than copying the old engine.
 
 ## Vehicle fuel
 
-Rust units carry optional `Fuel` state: tanks and trucks start at 32/32;
-infantry and field guns have none. One traversed path edge consumes two fuel for
-tanks and one for trucks, independent of terrain movement points. Validation rejects paths exceeding
+Rust units carry optional `Fuel` state: tanks and trucks start at 128/128;
+infantry and field guns have none. One traversed path edge consumes eight fuel for
+tanks and four for trucks, independent of terrain movement points. Validation rejects paths exceeding
 available fuel before locking orders. Resolution consumes fuel only on
 successful movement. Fuel depots replenish living vehicles from finite stock at turn settlement. Interrupted routes pay only for
 traversed tiles; holds spend no fuel.
@@ -594,7 +597,7 @@ snapshot fuel values; it does not calculate resource outcomes.
 
 Every Rust unit carries `Supplies` with current and maximum quantities plus
 `upkeepPerTurn`, `movementPerTile`, and `roughTerrainSurcharge` rates. Infantry start at
-48/48; field guns start at 64/64; vehicles start at 32/32. All kinds have upkeep 1. Infantry spend 3 supplies per grass tile and 4 per hill or forest tile and field guns spend 1;
+192/192; field guns start at 256/256; vehicles start at 128/128. All kinds have upkeep 4. Infantry spend 12 supplies per grass tile and 16 per hill, forest, or mountain tile and field guns spend 4;
 tanks and trucks spend none for movement. These are unit provisions, separate
 from fuel and carried supply crates.
 
@@ -744,25 +747,12 @@ Exhausted units have zero health in their death presentation frame and are
 removed from the authoritative board. Ambush combat applies damage; healing remains future work.
 
 
-## Rotation orders
-
-`MoveOrderInput.direction` optionally turns a stationary on-map unit with a
-stored facing. Validation rejects rotation combined with movement, unloading,
-or receiving a load. Trucks and carried units cannot rotate. A rotation replaces
-the unit's move/hold order, spends only normal turn upkeep, and emits a `Rotate`
-event with initial facing and `rotationDirection`. Playback rewinds the initial
-facing and applies the chosen direction at the event's end without moving.
-`GamePage` stores direction selection in the selected unit's interaction state;
-`View.RotationChoices` overlays cardinal pointer sectors and labels on the board.
-Hover changes only the selection preview's sprite orientation;
-clicking or pressing an arrow key or WASD saves a revocable draft and counts toward readiness.
-
 ## Player numbering and sprite orientation
 
 `PlayerNumber` identifies the two player slots (`Player1` and `Player2`) in Rust,
 GraphQL, and Elm. Ownership fields use `player_number` in Rust and
 `playerNumber` in GraphQL, Elm, and map JSON.
-`Direction` is the cardinal orientation used for movement and rotation;
+`Direction` is the cardinal orientation used for movement and ambush;
 `SpriteFacing` retains the left/right artwork orientation through vertical turns.
 The view module `View.UnitFacing` renders the cardinal direction marker.
 
@@ -775,9 +765,7 @@ rules and coordinated SVG playback selectors also remain component-owned raw CSS
 
 ## Ambush orders and combat
 
-`PlannedOrder.Ambush` owns stationary position and facing. The shared direction
-interaction carries `FacingPurpose`, distinguishing ambush from ordinary rotation
-without a second direction-selection workflow. The input boundary emits
+`PlannedOrder.Ambush` owns stationary position and facing. The `ChoosingDirection` interaction owns the preview direction. The input boundary emits
 `MoveOrderInput.ambush` with `direction` and a single-coordinate path. Validation
 rejects absent facing, trucks, passengers, movement, unloading, receiving a load,
 and insufficient readiness supplies. `Unit.combatRules` provides authoritative
@@ -881,12 +869,15 @@ anticipation beat, up to four staggered casualties, and the automatic-close paus
 to finish. The clock sequences individual figure explosions and removal, without HP bars; Continue/Enter
 or the saved automatic-close preference advances the pair. SeeingMap hides the card completely and restores the board
 spotlight with repeating shine. Mouse release restores the card even outside the button.
-While SeeingMap is active, `GamePage` derives a temporary `Camera.focusTransform`
-from participant IDs present in the projected battlefield units. It centers their
-tile bounds and limits zoom to fit them with padding, using the board's CSS
-container dimensions. Concealed portrait positions do not affect framing.
-The navigation model remains untouched, so returning to CardVisible or leaving
-the encounter restores the saved camera without additional restoration state.
+`TurnPlayback.focusPositions` derives camera subjects from projected battlefield
+units during combat and casualty pauses, interpolated visible movement, and
+projected indirect impacts. Encounter-only portrait positions never contribute.
+`GamePage` applies `Camera.focusTransform` throughout playback to center those
+subjects and reduce zoom only as needed to fit them with padding, using the
+board's CSS container dimensions. Floating-point tile positions let the camera
+follow the same interpolation as unit sprites. The navigation model remains
+untouched, restoring the saved camera when playback finishes.
+
 
 ## Attack move
 
@@ -909,7 +900,7 @@ the target's remaining movement. Both participants stop their remaining routes.
 passage retracts movement, before direct shots or field-gun contact interceptions.
 Opposing attack movers fire simultaneously; other orders do not gain automatic
 return fire. Only successful edges spend movement
-resources. Attack move and ambush both spend 2 readiness supplies per turn,
+resources. Attack move and ambush both spend 8 readiness supplies per turn,
 even without an encounter. Planning reserves readiness, the shot cost, and
 upkeep; a route without an encounter spends no firing supplies. Combat events use the existing theater,
 with an `attack move` heading and the usual fog-safe encounter portraits.
@@ -1024,7 +1015,7 @@ turn state, and shows it on the introduction after playback, including on reload
 
 `DepotKind` distinguishes `Supply` and `Fuel` buildings through GraphQL and Elm.
 `ResourceStock` is the shared finite quantity for depots and supply crates.
-Fuel depots can be authored in map layouts with 256 starting stock; existing
+Fuel depots can be authored in map layouts with 1024 starting stock; existing
 layouts retain only their supply depots. Fuel recipients are living vehicles on the depot or one cardinally adjacent tile;
 refilling draws only the deficit, without a per-turn cap. Sources never refill
 each other. Supply crate validation and loading dialogs accept only supply

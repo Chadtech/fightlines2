@@ -162,7 +162,7 @@ playbackChecks first second =
 
         rotation : Turn.Event
         rotation =
-            { rotationDirection = Just Direction.West, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Rotate, initialSpriteFacing = SpriteFacing.Right, initialDirection = Just Direction.East, unitId = first, path = [ { x = 1, y = 0 } ] }
+            { rotationDirection = Just Direction.West, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Ambush, initialSpriteFacing = SpriteFacing.Right, initialDirection = Just Direction.East, unitId = first, path = [ { x = 1, y = 0 } ] }
 
         rotationSnapshot : Turn.Snapshot
         rotationSnapshot =
@@ -288,7 +288,13 @@ playbackChecks first second =
                 [ name ]
     in
     List.concat
-        [ expect "all simultaneous arrivals interpolate using server frame duration"
+        [ expect "camera follows simultaneous visible movement at interpolated positions"
+            (Maybe.map TurnPlayback.focusPositions timedHalfway == Just [ { x = 0.5, y = 0 }, { x = 1.5, y = 1 } ])
+        , expect "camera does not frame routes entering or leaving fog"
+            (Maybe.map TurnPlayback.focusPositions entering == Just [ { x = 0.5, y = 0 } ] && Maybe.map TurnPlayback.focusPositions leaving == Just [ { x = 0.5, y = 0 } ])
+        , expect "camera frames projected indirect impacts even without a hit"
+            (TurnPlayback.focusPositions { sharedPlayback | current = { firstFrame | indirectImpacts = [ { x = 8, y = 9 } ] }, remaining = [] } == [ { x = 8, y = 9 } ])
+        , expect "all simultaneous arrivals interpolate using server frame duration"
             (TurnPlayback.movingPositions timedHalfway == [ { unitId = first, position = { x = 0.5, y = 0 } }, { unitId = second, position = { x = 1.5, y = 1 } } ])
         , expect "only the first unit interpolates during its route"
             (TurnPlayback.movingPositions sharedHalfway == [ { unitId = first, position = { x = 0.5, y = 0 } } ])
@@ -301,7 +307,7 @@ playbackChecks first second =
         , expect "shared playback carries surplus frame time forward"
             (Maybe.map .elapsed surplus == Just 90 && surplusFrame.visibleTiles == middleFrame.visibleTiles && TurnPlayback.movingPositions surplus == [ { unitId = second, position = { x = 1.5, y = 1 } } ])
         , expect "rotation rewinds facing and stays still until its event completes" (rotationPending /= Nothing && rotationHalfway == rotationUnits && Turn.movingPosition rotationPending == Nothing)
-        , expect "rotation playback applies the chosen facing without moving" (rotationFinished == Nothing && List.map .direction rotatedUnits == [ Just Direction.West, Just Direction.West ] && List.map .location rotatedUnits == List.map .location units)
+        , expect "ambush playback applies the chosen facing without moving" (rotationFinished == Nothing && List.map .direction rotatedUnits == [ Just Direction.West, Just Direction.West ] && List.map .location rotatedUnits == List.map .location units)
         , expect "rewind restores the event origins" (List.map Unit.boardPosition rewound == [ Just { x = 0, y = 0 }, Just { x = 2, y = 1 } ])
         , expect "halfway position interpolates the first unit only" (Turn.movingPosition halfway == Just { unitId = first, position = { x = 0.5, y = 0 } })
         , expect "animation never mutates authoritative cell positions mid-edge" (List.map Unit.boardPosition halfwayUnits == List.map Unit.boardPosition rewound)
@@ -968,6 +974,13 @@ combatPlaybackChecks first second =
                         ( finalShot, _ ) =
                             TurnPlayback.start [ before, volley ] |> Maybe.map (TurnPlayback.tick 450) |> Maybe.withDefault ( Nothing, before )
 
+                        framesCombatKind : CombatKind.CombatKind -> Bool
+                        framesCombatKind kind =
+                            TurnPlayback.start [ before, { volley | shots = [ { shot | kind = kind } ] }, cleanup ]
+                                |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+                                |> Maybe.map TurnPlayback.focusPositions
+                                |> (==) (Just [ { x = 2, y = 2 }, { x = 3, y = 2 } ])
+
                         multipleChecks : List String
                         multipleChecks =
                             case UnitId.parse "3" of
@@ -1041,6 +1054,18 @@ combatPlaybackChecks first second =
                             (frozen == before && List.isEmpty (TurnPlayback.visibleShots focus) && List.isEmpty (TurnPlayback.movingPositions paused))
                         , expect "combat spotlights participants before opening the panels"
                             (Maybe.andThen TurnPlayback.spotlight almostSpotlit /= Nothing && Maybe.andThen TurnPlayback.panels almostSpotlit == Nothing && Maybe.andThen TurnPlayback.spotlight showing == Nothing && Maybe.andThen TurnPlayback.panels showing /= Nothing)
+                        , expect "camera frames combat during both spotlight and theater"
+                            (TurnPlayback.focusPositions focus == [ { x = 2, y = 2 }, { x = 3, y = 2 } ] && Maybe.map TurnPlayback.focusPositions showing == Just (TurnPlayback.focusPositions focus))
+                        , expect "camera never frames a concealed theater portrait"
+                            (TurnPlayback.start [ { before | units = [ target ] }, hidden, cleanup ]
+                                |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+                                |> Maybe.map TurnPlayback.focusPositions
+                                |> (==) (Just [ { x = 3, y = 2 } ])
+                            )
+                        , expect "camera frames every combat kind"
+                            (List.all framesCombatKind
+                                [ CombatKind.Ambush, CombatKind.AttackMove, CombatKind.IndirectFire ]
+                            )
                         , expect "combat retains visible participants without requiring enemy resources"
                             (Maybe.map (.attacker >> .id) (TurnPlayback.combat focus) == Just first && Maybe.map (.target >> .id) (TurnPlayback.combat focus) == Just second)
                         , expect "automatic closing waits for two impacts, camera settling, and a half-second pause"

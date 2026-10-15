@@ -4,7 +4,9 @@ A strategy game about supplies and logistics, built with Rust and Elm.
 
 The current prototype supports creating a lobby, joining through an invite link,
 and starting a game. The game page shows a free-floating animated SVG board with selectable units and depots.
-Both players can plan and submit turns, with shared movement playback.
+Both players can plan and submit turns, with shared movement playback. The camera
+follows visible movement and all combat, including indirect-fire impacts, and
+restores your saved view when playback finishes.
 Fuel, finite supply stocks, replenishment, and directional ambush combat are authoritative. Persistent
 server storage is not implemented yet. Browsers remember the last user name
 used to successfully create or join a lobby and prefill it next time.
@@ -54,7 +56,7 @@ and depots can also be selected with Tab and Enter/Space. Drag the battlefield
 with the primary mouse button to pan; scroll to zoom around the cursor. The right-side
 panel has selection details and unit actions; the bottom-left control panel has
 pan arrows, zoom and reset controls. Games open at 100%, centered on the whole-map overview.
-Reset restores this centered overview; zoom ranges from 35% to 300%. Arrow keys or WASD pan the map while the command popup is closed and no move or rotation is being chosen.
+Reset restores this centered overview; zoom ranges from 35% to 300%. Arrow keys or WASD pan the map while the command popup is closed and no move or ambush direction is being chosen.
 Plus/minus zoom without requiring battlefield focus; Home resets the view while the battlefield is focused. Dragging does not select a tile.
 The panel remains fixed while the board moves. Terrain uses detailed 80s anime
 illustrations, with a grass tile in every square, defined hill ridges and tree
@@ -67,16 +69,10 @@ Direction markers appear only while choosing or maintaining an ambush, including
 turn playback. Infantry, tanks and field guns use a small illustrated red striking arrow for the
 ambush's up/right/down/left facing. Other units have no facing marker.
 The arrow's ivory impact tip protrudes slightly beyond the tile edge.
-Choose **rotate** for infantry, tanks, or field guns, then select north, east,
-south, or west on the map. Point around the unit to preview its facing, then
-click to save it; an arrow key or WASD also saves the corresponding direction. Rotation is an in-place turn order that can be
-revoked before submission. It changes facing when the turn resolves, costs only
-normal supply upkeep, and counts toward turn readiness. Trucks and carried units
-cannot rotate.
 Movement turns units along each successfully traveled segment. Interrupted units
 face their last traveled segment; units stopped before moving retain their facing.
 Side-profile sprites flip for east/west facing and keep their last horizontal
-orientation through north/south movement and rotation, including after refresh.
+orientation through north/south movement and ambush, including after refresh.
 Markers overlay the artwork, brighten on selection, and pulse in unison over two seconds,
 fading completely out briefly before returning. Reduced-motion preferences keep them steady.
 The infantry, tanks, and trucks use four-frame rigid-part idle loops in light sky blue
@@ -106,8 +102,8 @@ planned destination while it has cargo room. Otherwise other units cannot choose
 it; changing or clearing the move frees that square. Routes
 can pass through reserved destinations. Depots are passable.
 The selection panel shows the selected unit's illustration, name, and player,
-with expandable unit and gauge explanations. Every unit starts with 16/16 hit points, supplied by the server. Combat damage uses weapon matchup, health, readiness, facing, cover, and ambush advantage; see [combat_factors.md](combat_factors.md). Healing and trench protection are not implemented yet. Tanks and trucks start with 32/32 fuel. Each
-successfully traversed tile costs tanks 2 fuel and trucks 1 fuel, independently of
+with expandable unit and gauge explanations. Every unit starts with 16/16 hit points, supplied by the server. Combat damage uses weapon matchup, health, readiness, facing, cover, and ambush advantage; see [combat_factors.md](combat_factors.md). Healing and trench protection are not implemented yet. Tanks and trucks start with 128/128 fuel. Each
+successfully traversed tile costs tanks 8 fuel and trucks 4 fuel, independently of
 terrain movement costs. Interrupted routes pay only for successfully traveled tiles; holds consume none.
 Neutral fuel depots refill living tanks and trucks at turn end from finite stocks. Movement previews and submitted paths must fit both remaining
 fuel and the per-turn movement budget.
@@ -174,12 +170,12 @@ scheduled arrivals. Sight refreshes at each arrival boundary. Enemies appear whe
 sight and disappear when they leave it, including brief sightings during a turn.
 Hidden positions and route segments are withheld from responses.
 
-Infantry start with 48/48 supplies; field guns start with 64/64; tanks and trucks
-start with 32/32. Every unit spends 1 supply per resolved turn, even when holding or stopped
-by an encounter. Infantry spend 3 supplies per grass tile and 4 per hill or forest tile;
-field guns spend 1; tanks and trucks use fuel
+Infantry start with 192/192 supplies; field guns start with 256/256; tanks and trucks
+start with 128/128. Every unit spends 4 supplies per resolved turn, even when holding or stopped
+by an encounter. Infantry spend 12 supplies per grass tile and 16 per hill, forest, or mountain tile;
+field guns spend 4; tanks and trucks use fuel
 for movement instead. Movement reserves the turn's upkeep before spending
-supplies. Infantry need at least 4 supplies for a grass tile or 5 for hills or forest; field guns need at least 2.
+supplies. Infantry need at least 16 supplies for a grass tile or 20 for hills, forest, or mountains; field guns need at least 8.
 Units below these thresholds can still hold.
 Units die immediately when supplies reach zero after turn upkeep. A dead truck
 also loses its passengers. During playback, a skull and crossbones appears for 0.6 seconds, blinks away
@@ -187,7 +183,7 @@ for 0.2 seconds, then returns for 0.6 seconds before dead units vanish; reduced-
 Other sprites and interface animations pause during death feedback, and later
 movement resumes after the death marker clears.
 
-Depots start with 256 finite supplies. Ground supply crates hold up to 64.
+Depots start with 1024 finite supplies. Ground supply crates hold up to 256.
 At the end of each turn, after movement, transport, and combat, depots and ground
 crates automatically replenish living units on their square or one cardinally
 adjacent square, regardless of player. Crates remain neutral when carried and supply either player,
@@ -207,7 +203,7 @@ a depot also offers this choice. Trucks collect a neutral ground crate automatic
 when ending on its square with a free cargo berth; either player can collect it,
 and its remaining stock is preserved. Full trucks leave the crate on the ground.
 Loading is always explicit and shares cargo capacity with passengers. Each
-crate takes up to 64 supplies from the depot; the last crate may be partially
+crate takes up to 256 supplies from the depot; the last crate may be partially
 filled. Moving or holding a loaded truck opens the shared **unload** checklist.
 Select passengers, crates, or both, then choose their adjacent squares on the map.
 Cargo choices are disabled when the selected cargo cannot all be placed. Passengers
@@ -260,7 +256,7 @@ move/direction selection, unload workflow, dialog, or pointer gesture is active.
 When the units-without-orders warning opens, Enter confirms **submit anyway**;
 Escape or **keep planning** returns to planning.
 
-Give units a move, rotation, ambush, or **hold position** order. **submit turn**
+Give units a move, ambush, or **hold position** order. **submit turn**
 becomes primary when all units are ready. Submitting with unassigned units opens
 a warning: choose **keep planning** or **submit anyway**, which makes those
 units hold position. Submission locks your orders, and that
@@ -320,8 +316,8 @@ Infantry and tanks cover the adjacent square directly ahead. Field guns cover
 all three squares straight ahead, plus the two squares beside the middle square,
 forming a five-square plus sign that rotates with the chosen direction.
 
-Ambush readiness costs 2 supplies in addition to normal turn upkeep. Firing costs
-3 supplies for infantry and field guns and 2 for tanks; infantry deal 4 damage, tanks 8, and field guns 12. These are
+Ambush readiness costs 8 supplies in addition to normal turn upkeep. Firing costs
+12 supplies for infantry and field guns and 8 for tanks; infantry deal 4 damage, tanks 8, and field guns 12. These are
 initial balance values. Readiness is charged even without a target, and upkeep
 is reserved before firing. Units without enough supplies for readiness cannot
 choose ambush; a unit can maintain readiness without enough supplies to fire.
@@ -360,9 +356,10 @@ removing a figure.
 Visible encounter health is shared for both players; enemy supplies and fuel remain concealed.
 Each pair stays open until the player selects **continue** or presses Enter. Hold
 **see map** to hide the card and spotlight the two shining combatants on the frozen
-battlefield. While held, the camera centers on the visible combatants and zooms
-out only when needed to fit them with a tile of padding. Release or leave the
-button to restore the card and your previous pan and zoom. Concealed enemies
+battlefield. The camera centers on the visible combatants throughout the exchange
+and zooms out only when needed to fit them with a tile of padding. Release or
+leave the button to restore the card. Your saved pan and zoom return when
+playback finishes. Concealed enemies
 remain absent from the battlefield and do not influence this camera framing.
 Reciprocal shots share one display; overlapping ambushes show successive health losses, carrying remaining health into the next pair;
 after each lethal pair, the card closes for its casualties’ skull pause, then
@@ -499,7 +496,7 @@ If allied traffic forces a participant back to a free square, direct fire occurs
 only if the participants are still cardinally adjacent after that adjustment.
 Opposing attack movers fire simultaneously; other orders do not gain automatic
 return fire. Only successful edges spend movement
-resources. Attack move and ambush both spend 2 readiness supplies per turn,
+resources. Attack move and ambush both spend 8 readiness supplies per turn,
 even without an encounter. Planning reserves readiness, the shot cost, and
 upkeep; a route without an encounter spends no firing supplies. Combat events use the existing theater,
 with an `attack move` heading and the usual fog-safe encounter portraits.
@@ -512,12 +509,12 @@ one **continue** action; unrelated losses have separate dialogs. The adjacent
 **skip this dialog** checkbox remembers your preference and preserves the brief
 timed skull feedback while skipping future dialogs.
 
-Fuel depots are available for manual map placement and start with 256 fuel.
+Fuel depots are available for manual map placement and start with 1024 fuel.
 They refill vehicles on their square or one cardinally adjacent square up to
 capacity, after movement and combat and before upkeep. Both players share the
 finite stock, using the same rotating distribution priority as supply depots.
 Fuel depots offer a **load fuel drums** dialog with the same 0/1/2 choices.
-Each drum stack occupies one berth and holds up to 64 fuel, drawn from depot
+Each drum stack occupies one berth and holds up to 256 fuel, drawn from depot
 stock. Ground and carried drums refill nearby vehicles before upkeep, retain
 remaining fuel when picked up or unloaded, and disappear when empty.
 Fuel depot inspectors and stock bars conceal
@@ -525,7 +522,7 @@ quantities outside sight and show low/empty warnings like supply depots.
 
 Choose **stand ground** for infantry, tanks, or field guns to stay in place with
 combat readiness when attacked. It keeps the current facing, never fires, and
-costs normal upkeep plus 2 readiness supplies each turn. It saves immediately,
+costs normal upkeep plus 8 readiness supplies each turn. It saves immediately,
 counts as an order, and can be revoked before submission. Trucks and passengers
 cannot stand ground.
 
@@ -551,8 +548,8 @@ including friendly units. Units that leave before impact escape, and units that
 arrive can be hit. An empty tile wastes the shot. Guns destroyed or loaded before
 impact cannot fire.
 
-This uses the existing supply-based ammunition model: normal upkeep plus 2
-readiness supplies and 3 firing supplies, including misses. Damage uses normal
+This uses the existing supply-based ammunition model: normal upkeep plus 8
+readiness supplies and 12 firing supplies, including misses. Damage uses normal
 field-gun power, health, matchup, defender readiness/facing, and target cover;
 the gun's initial facing does not reduce aim. Surviving guns fire simultaneously.
 Saved targets remain marked and can be revoked. Target tiles support Tab and

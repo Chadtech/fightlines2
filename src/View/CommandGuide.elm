@@ -103,9 +103,6 @@ description command =
         HoldPosition ->
             "stay on the current square and keep the current facing, paying normal supply upkeep without movement costs or combat readiness. a loaded truck can also choose cargo to unload beside its current square."
 
-        Rotate ->
-            "turn infantry, a tank, or a field gun to face north, east, south, or west without moving. choose a direction on the map or with an arrow key. the new facing takes effect when the turn resolves and costs only normal supply upkeep."
-
         Ambush ->
             "keep infantry, a tank, or a field gun in place and choose the direction it watches. the highlighted firing area shows where it can intercept enemies during movement. ambush costs readiness supplies in addition to normal upkeep, and each shot spends more supplies. facing, terrain, health, and the opposing unit affect combat."
 

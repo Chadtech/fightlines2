@@ -54,7 +54,6 @@ import GamePage.OrderPlanning as OrderPlanning exposing (UnloadChoice, UnloadPla
 import GamePage.Selection
     exposing
         ( DestinationFeedback(..)
-        , FacingPurpose(..)
         , Inspection(..)
         , MovePlanning
         , Selection(..)
@@ -907,11 +906,11 @@ choosingDirection model =
         |> Maybe.withDefault False
 
 
-saveRotation : Direction -> Model -> Model
-saveRotation direction model =
+saveAmbush : Direction -> Model -> Model
+saveAmbush direction model =
     model
         |> mapPlanning
-            (OrderPlanning.saveRotation (planningContext model) direction)
+            (OrderPlanning.saveAmbush (planningContext model) direction)
 
 
 rotationSelection : Model -> Maybe RotationSelection
@@ -919,7 +918,7 @@ rotationSelection model =
     case ( currentSelection model, selectedUnit model ) of
         ( Just (UnitSelection selection), Just unit ) ->
             case selection.interaction of
-                ChoosingDirection _ direction ->
+                ChoosingDirection direction ->
                     Unit.boardPosition unit
                         |> Maybe.map
                             (\position ->
@@ -942,14 +941,14 @@ rotationSelection model =
             Nothing
 
 
-previewRotation : Direction -> Model -> Model
-previewRotation direction model =
+previewAmbush : Direction -> Model -> Model
+previewAmbush direction model =
     if BattlefieldNavigation.active model.navigation then
         model
 
     else
         model
-            |> mapPlanning (OrderPlanning.previewRotation direction)
+            |> mapPlanning (OrderPlanning.previewAmbush direction)
 
 
 loadSnapshot : LobbyId -> Graphql.Http.Request Snapshot
@@ -1511,14 +1510,14 @@ update lobbyId msg model =
                 next =
                     case rotationMsg of
                         RotationChoices.MouseMovedOverDirection direction ->
-                            previewRotation direction model
+                            previewAmbush direction model
 
                         RotationChoices.ClickedDirection direction ->
                             if BattlefieldNavigation.suppressesClick model.navigation then
                                 model
 
                             else
-                                saveRotation direction model
+                                saveAmbush direction model
             in
             next
                 |> E.withOut
@@ -1685,7 +1684,7 @@ update lobbyId msg model =
 
         DirectionKeyPressed direction ->
             model
-                |> saveRotation direction
+                |> saveAmbush direction
                 |> E.withOut
 
         PathDirectionKeyPressed direction ->
@@ -2544,9 +2543,6 @@ unitOrderView model unit =
                                 PlannedOrder.Ambush ambush ->
                                     "ambush: " ++ Direction.label ambush.direction
 
-                                PlannedOrder.Rotate rotation ->
-                                    "rotate: " ++ Direction.label rotation.direction
-
                                 PlannedOrder.AttackMove move ->
                                     "attack move: ("
                                         ++ String.fromInt move.destination.x
@@ -2610,7 +2606,7 @@ choosingAmbush model =
     case currentSelection model of
         Just (UnitSelection { interaction }) ->
             case interaction of
-                ChoosingDirection AmbushFacing _ ->
+                ChoosingDirection _ ->
                     True
 
                 _ ->
@@ -3471,25 +3467,9 @@ battlefieldView model =
 
         cameraTransform : String
         cameraTransform =
-            case playback model |> Maybe.andThen TurnPlayback.panels of
-                Just panel ->
-                    case panel.mapView of
-                        TurnPlayback.SeeingMap ->
-                            let
-                                isCombatant : Unit -> Bool
-                                isCombatant unit =
-                                    unit.id == panel.exchange.attacker.id || unit.id == panel.exchange.target.id
-
-                                visiblePositions : List Coordinate
-                                visiblePositions =
-                                    model.units
-                                        |> List.filter isCombatant
-                                        |> List.filterMap Unit.boardPosition
-                            in
-                            Camera.focusTransform model.map visiblePositions camera
-
-                        TurnPlayback.CardVisible ->
-                            Camera.transform camera
+            case playback model of
+                Just playing ->
+                    Camera.focusTransform model.map (TurnPlayback.focusPositions playing) camera
 
                 Nothing ->
                     Camera.transform camera
@@ -3948,7 +3928,7 @@ boardSvg model =
                     case ( currentSelection model, selectedUnit model ) of
                         ( Just (UnitSelection { interaction }), Just unit ) ->
                             case interaction of
-                                ChoosingDirection AmbushFacing direction ->
+                                ChoosingDirection direction ->
                                     Unit.boardPosition unit
                                         |> Maybe.map (\position -> [ Ambush.coverage model.map position direction unit.combatRules ])
                                         |> Maybe.withDefault []
@@ -4002,11 +3982,7 @@ boardSvg model =
 
         directionChoices : Map -> Coordinate -> Direction -> Svg RotationChoices.Msg
         directionChoices =
-            if choosingAmbush model then
-                RotationChoices.ambushToSvg
-
-            else
-                RotationChoices.toSvg
+            RotationChoices.ambushToSvg
 
         selection : List (Svg Msg)
         selection =
@@ -4580,7 +4556,7 @@ keyCommands model =
                 case currentSelection model of
                     Just (UnitSelection { interaction }) ->
                         case interaction of
-                            ChoosingDirection _ _ ->
+                            ChoosingDirection _ ->
                                 [ leftKeys (DirectionKeyPressed DirectionEnum.West)
                                 , rightKeys (DirectionKeyPressed DirectionEnum.East)
                                 , upKeys (DirectionKeyPressed DirectionEnum.North)

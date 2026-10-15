@@ -563,7 +563,7 @@ mod tests {
         assert_eq!(report["unitsLost"], 0);
         assert_eq!(report["enemyUnitsDestroyed"], 0);
         assert_eq!(report["damageInflicted"], 0);
-        assert_eq!(report["suppliesConsumed"], 8);
+        assert_eq!(report["suppliesConsumed"], 32);
         let frames = resolved["data"]["submitTurn"]["lastResolution"]["frames"]
             .as_array()
             .fixture()?;
