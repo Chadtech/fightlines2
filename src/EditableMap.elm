@@ -65,12 +65,13 @@ type alias NamedMap =
 
 map : Definition -> Map
 map definition =
-    { width = definition.width
-    , height = definition.height
-    , theme = definition.theme
-    , baseTile = Terrain.GrassPlain
-    , features = definition.features
-    }
+    Map.fromFeatures
+        { width = definition.width
+        , height = definition.height
+        , theme = definition.theme
+        , baseTile = Terrain.GrassPlain
+        , features = definition.features
+        }
 
 
 namedSelection : SelectionSet NamedMap Api.Object.NamedMap

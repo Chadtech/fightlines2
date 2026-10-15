@@ -1,5 +1,6 @@
 module Map exposing
     ( Map
+    , fromFeatures
     , positions
     , selection
     , terrainAt
@@ -10,9 +11,9 @@ import Api.Enum.Terrain exposing (Terrain)
 import Api.Object
 import Api.Object.Map as MapApi
 import Coordinate exposing (Coordinate)
+import Dict exposing (Dict)
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import TerrainFeature exposing (TerrainFeature)
-import Util.List as ListUtil
 
 
 type alias Map =
@@ -20,7 +21,7 @@ type alias Map =
     , height : Int
     , baseTile : Terrain
     , theme : MapTheme
-    , features : List TerrainFeature
+    , features : Dict Coordinate.Key Terrain
     }
 
 
@@ -36,10 +37,39 @@ positions map =
 
 terrainAt : Map -> Coordinate -> Terrain
 terrainAt map position =
-    map.features
-        |> ListUtil.find (\feature -> feature.position == position)
-        |> Maybe.map .terrain
+    Dict.get (Coordinate.key position) map.features
         |> Maybe.withDefault map.baseTile
+
+
+{-| Index sparse terrain once when constructing a map. The first feature at a
+coordinate wins, matching the original list lookup; absent coordinates use baseTile.
+No bounds filtering is applied here, preserving lookup semantics outside the map.
+-}
+fromFeatures :
+    { width : Int
+    , height : Int
+    , baseTile : Terrain
+    , theme : MapTheme
+    , features : List TerrainFeature
+    }
+    -> Map
+fromFeatures source =
+    { width = source.width
+    , height = source.height
+    , baseTile = source.baseTile
+    , theme = source.theme
+    , features = indexFeatures source.features
+    }
+
+
+indexFeatures : List TerrainFeature -> Dict Coordinate.Key Terrain
+indexFeatures features =
+    let
+        insert : TerrainFeature -> Dict Coordinate.Key Terrain -> Dict Coordinate.Key Terrain
+        insert feature indexed =
+            Dict.insert (Coordinate.key feature.position) feature.terrain indexed
+    in
+    List.foldr insert Dict.empty features
 
 
 selection : SelectionSet Map Api.Object.Map
@@ -49,4 +79,4 @@ selection =
         |> SS.with MapApi.height
         |> SS.with MapApi.baseTile
         |> SS.with MapApi.theme
-        |> SS.with (MapApi.features TerrainFeature.selection)
+        |> SS.with (SS.map indexFeatures (MapApi.features TerrainFeature.selection))

@@ -4,6 +4,7 @@ import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Css
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
+import Html.Styled.Lazy as Lazy
 import Style as S
 import Svg.Styled as Svg
 import Svg.Styled.Attributes as SA
@@ -36,6 +37,11 @@ type Resource
 
 toHtml : String -> Unit -> Html msg
 toHtml playerName unit =
+    Lazy.lazy2 statusView playerName unit
+
+
+statusView : String -> Unit -> Html msg
+statusView playerName unit =
     let
         visibleResources : UnitResources -> List Resource
         visibleResources details =

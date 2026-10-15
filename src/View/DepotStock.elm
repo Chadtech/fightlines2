@@ -7,6 +7,7 @@ module View.DepotStock exposing
 import Css
 import Depot exposing (Depot)
 import Html.Styled as H exposing (Html)
+import Html.Styled.Lazy as Lazy
 import Style as S
 import Supply
 import Svg.Styled as Svg exposing (Svg)
@@ -59,6 +60,11 @@ provided by the page and remains present during the warning's hidden phase.
 -}
 toSvg : Supply.Stock -> Svg msg
 toSvg stock =
+    Lazy.lazy stockView stock
+
+
+stockView : Supply.Stock -> Svg msg
+stockView stock =
     let
         fraction : Float
         fraction =

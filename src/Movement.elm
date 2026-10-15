@@ -54,6 +54,11 @@ type alias Option =
     }
 
 
+type SearchGoal
+    = AllDestinations
+    | ToDestination Coordinate
+
+
 pointsLabel : Int -> String
 pointsLabel points =
     String.fromInt (points // 2)
@@ -72,10 +77,16 @@ options reserved rules map units unit =
 
 
 optionsAvoiding : List Coordinate -> List Rule -> Map -> List Unit -> Unit -> List Option
-optionsAvoiding blocked rules map units unit =
+optionsAvoiding =
+    affordableRoutes AllDestinations
+
+
+affordableRoutes : SearchGoal -> List Coordinate -> List Rule -> Map -> List Unit -> Unit -> List Option
+affordableRoutes goal blocked rules map units unit =
     case ( ListUtil.find (\rule -> rule.kind == unit.kind) rules, Unit.physicalPosition units unit ) of
         ( Just rule, Just origin ) ->
-            search (tileLimit unit)
+            search goal
+                (tileLimit unit)
                 unit
                 rule
                 map
@@ -170,7 +181,8 @@ Keeping costs for each path length and supply expenditure preserves affordable r
 Costs are stored in half movement points, independently of fuel.
 -}
 search :
-    Maybe Int
+    SearchGoal
+    -> Maybe Int
     -> Unit
     -> Rule
     -> Map
@@ -179,7 +191,7 @@ search :
     -> Dict ( ( Int, Int ), ( Int, Int ) ) Int
     -> List Option
     -> List Option
-search limit unit rule map blocked frontier costs reached =
+search goal limit unit rule map blocked frontier costs reached =
     case List.sortBy .cost frontier of
         [] ->
             List.reverse reached
@@ -187,6 +199,7 @@ search limit unit rule map blocked frontier costs reached =
         current :: remaining ->
             if Dict.get (searchKey limit map unit current) costs /= Just current.cost then
                 search
+                    goal
                     limit
                     unit
                     rule
@@ -195,6 +208,9 @@ search limit unit rule map blocked frontier costs reached =
                     remaining
                     costs
                     reached
+
+            else if targetCostSettled goal reached current then
+                List.reverse reached
 
             else
                 let
@@ -306,6 +322,7 @@ search limit unit rule map blocked frontier costs reached =
                         List.foldl visit ( remaining, costs ) (neighbors current.destination)
                 in
                 search
+                    goal
                     limit
                     unit
                     rule
@@ -313,7 +330,36 @@ search limit unit rule map blocked frontier costs reached =
                     blocked
                     next
                     nextCosts
-                    (current :: reached)
+                    (recordReached goal current reached)
+
+
+{-| Positive entry costs make the frontier's movement cost a lower bound.
+Finish the entire winning cost layer: another resource state may reach the
+same destination at equal cost with fewer tiles. Keeping the existing stable
+frontier order also preserves the first route when cost and length both tie.
+-}
+targetCostSettled : SearchGoal -> List Option -> Option -> Bool
+targetCostSettled goal reached current =
+    case ( goal, reached ) of
+        ( ToDestination _, best :: _ ) ->
+            current.cost > best.cost
+
+        _ ->
+            False
+
+
+recordReached : SearchGoal -> Option -> List Option -> List Option
+recordReached goal current reached =
+    case goal of
+        AllDestinations ->
+            current :: reached
+
+        ToDestination destination ->
+            if current.destination == destination then
+                current :: reached
+
+            else
+                reached
 
 
 start : Coordinate -> Option
@@ -376,7 +422,7 @@ trace rules map units unit current destination =
                 in
                 -- Fill mouse-event gaps from the current tip, keeping every traced
                 -- square. Never silently replace the prefix with a cheaper route.
-                optionsAvoiding current.path [ remainingRule ] map units remainingUnit
+                affordableRoutes (ToDestination destination) current.path [ remainingRule ] map units remainingUnit
                     |> ListUtil.find (\option -> option.destination == destination)
                     |> Maybe.map extendPath
                     |> Maybe.andThen (withinTileLimit unit)

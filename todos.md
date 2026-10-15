@@ -1,4 +1,3 @@
-- Supply Depots configured with different amounts of supplies
 - Field guns should consume a lot more supplies firing
 - 16 little infantry guys in combat theater for infantry
 - Attacking and destroying supply depots and supply crates
@@ -21,3 +20,4 @@
 - Hard to remember where you dropped supplies
 - If a field gun targets a square, and then an enemy unit gets jammed there, do they get hit?
 - move map to all combat
+- Remote Rotate

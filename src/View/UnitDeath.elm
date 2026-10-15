@@ -12,6 +12,7 @@ import Api.Enum.UnitKind as Kind
 import Coordinate exposing (Coordinate)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
+import Html.Styled.Lazy as Lazy
 import Map exposing (Map)
 import PlayerNumber
 import Style as S
@@ -75,7 +76,12 @@ Playback transitions own their lifetime rather than a separate marker timer.
 -}
 toSvg : Unit -> Svg msg
 toSvg unit =
-    if not (Unit.isDying unit) then
+    Lazy.lazy deathMarker (Unit.isDying unit)
+
+
+deathMarker : Bool -> Svg msg
+deathMarker dying =
+    if not dying then
         Svg.text ""
 
     else

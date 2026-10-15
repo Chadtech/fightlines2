@@ -7,6 +7,7 @@ module View.UnitCargo exposing
 import Api.Enum.DepotKind as Kind exposing (DepotKind)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
+import Html.Styled.Lazy as Lazy
 import Style as S
 import Supply
 import Svg.Styled as Svg exposing (Svg)
@@ -43,6 +44,11 @@ toSvg =
 
 badge : CargoKind -> Int -> Svg msg
 badge kind count =
+    Lazy.lazy2 badgeView kind count
+
+
+badgeView : CargoKind -> Int -> Svg msg
+badgeView kind count =
     if count <= 0 then
         Svg.text ""
 
@@ -172,6 +178,11 @@ badge kind count =
 -}
 freightToSvg : List Supply.CargoStock -> Svg msg
 freightToSvg cargo =
+    Lazy.lazy freightView cargo
+
+
+freightView : List Supply.CargoStock -> Svg msg
+freightView cargo =
     let
         count : DepotKind -> Int
         count kind =

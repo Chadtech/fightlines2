@@ -14,6 +14,7 @@ import Css
 import Css.Global
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
+import Html.Styled.Lazy as Lazy
 import Style as S
 import View.Aria as Aria
 import View.Button as Button
@@ -61,6 +62,11 @@ panel children =
 
 submit : Activity -> String -> Html Msg
 submit activity label =
+    Lazy.lazy2 submitView activity label
+
+
+submitView : Activity -> String -> Html Msg
+submitView activity label =
     let
         button : Button.Button Msg
         button =
@@ -174,6 +180,11 @@ navigation controls =
 
 playerRow : { name : String, playerNumber : PlayerNumber, status : String } -> Html msg
 playerRow player =
+    Lazy.lazy3 playerRowView player.name player.playerNumber player.status
+
+
+playerRowView : String -> PlayerNumber -> String -> Html msg
+playerRowView name playerNumber status =
     H.li
         [ A.css
             [ S.grid
@@ -190,14 +201,14 @@ playerRow player =
                 , S.minW0
                 ]
             ]
-            [ playerColor player.playerNumber
+            [ playerColor playerNumber
             , H.span
                 []
-                [ H.text player.name ]
+                [ H.text name ]
             ]
         , H.span
             []
-            [ H.text player.status ]
+            [ H.text status ]
         ]
 
 

@@ -4,10 +4,11 @@ module View.UnitSprite exposing
     , toSvg
     )
 
-import Api.Enum.PlayerNumber as PlayerNumber
+import Api.Enum.PlayerNumber as PlayerNumber exposing (PlayerNumber)
 import Api.Enum.SpriteFacing as SpriteFacingEnum
-import Api.Enum.UnitKind as Kind
+import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Css
+import Html.Styled.Lazy as Lazy
 import Svg.Styled as Svg exposing (Svg)
 import Svg.Styled.Attributes as SA
 import Unit exposing (Unit)
@@ -30,12 +31,17 @@ portraitWidth unit =
 
 portraitToSvg : Unit -> Svg msg
 portraitToSvg unit =
-    case unit.kind of
+    Lazy.lazy3 portraitView unit.kind unit.playerNumber (facesLeft unit)
+
+
+portraitView : UnitKind -> PlayerNumber -> Bool -> Svg msg
+portraitView kind playerNumber facingLeft =
+    case kind of
         Kind.FieldGun ->
             let
                 team : String
                 team =
-                    case unit.playerNumber of
+                    case playerNumber of
                         PlayerNumber.Player1 ->
                             "red"
 
@@ -44,7 +50,7 @@ portraitToSvg unit =
 
                 sideProfile : String
                 sideProfile =
-                    if facesLeft unit then
+                    if facingLeft then
                         "translate(40 0) scale(-1 1)"
 
                     else
@@ -63,15 +69,20 @@ portraitToSvg unit =
                 []
 
         _ ->
-            toSvg 0 unit
+            Lazy.lazy4 spriteView 0 kind playerNumber facingLeft
 
 
 toSvg : Int -> Unit -> Svg msg
 toSvg column unit =
+    Lazy.lazy4 spriteView column unit.kind unit.playerNumber (facesLeft unit)
+
+
+spriteView : Int -> UnitKind -> PlayerNumber -> Bool -> Svg msg
+spriteView column kind playerNumber facingLeft =
     let
         row : Int
         row =
-            (case unit.kind of
+            (case kind of
                 Kind.Infantry ->
                     0
 
@@ -84,7 +95,7 @@ toSvg column unit =
                 Kind.FieldGun ->
                     9
             )
-                + (case unit.playerNumber of
+                + (case playerNumber of
                     PlayerNumber.Player1 ->
                         0
 
@@ -94,7 +105,7 @@ toSvg column unit =
 
         sideProfile : String
         sideProfile =
-            if facesLeft unit then
+            if facingLeft then
                 "translate(16 0) scale(-1 1)"
 
             else

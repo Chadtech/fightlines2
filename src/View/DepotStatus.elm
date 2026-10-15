@@ -8,6 +8,7 @@ import Depot exposing (Depot)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
+import Html.Styled.Lazy as Lazy
 import Style as S
 import Supply
 import View.Aria as Aria
@@ -47,6 +48,11 @@ linkToHtml events depot =
 
 toHtml : Depot -> Html msg
 toHtml depot =
+    Lazy.lazy depotView depot
+
+
+depotView : Depot -> Html msg
+depotView depot =
     let
         stock : Html msg
         stock =

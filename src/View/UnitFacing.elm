@@ -6,6 +6,7 @@ module View.UnitFacing exposing
 import Api.Enum.Direction as Direction
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
+import Html.Styled.Lazy as Lazy
 import Svg.Styled as Svg exposing (Svg)
 import Svg.Styled.Attributes as SA
 import Unit exposing (Unit)
@@ -41,7 +42,7 @@ toSvg selected unit =
             Svg.g [] []
 
         Just direction ->
-            marker selected direction
+            Lazy.lazy2 marker selected direction
 
 
 marker : Bool -> Direction.Direction -> Svg msg

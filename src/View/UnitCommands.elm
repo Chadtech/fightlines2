@@ -10,8 +10,10 @@ import Css
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
+import Html.Styled.Lazy as Lazy
 import Json.Decode as Decode
 import Map exposing (Map)
+import Point exposing (Point)
 import Style as S
 import Unit exposing (Unit)
 import UnitCommand as Command exposing (Command, MenuOption(..))
@@ -31,7 +33,16 @@ type Msg
 
 toHtml : Map -> Camera -> Coordinate -> Unit -> Html Msg
 toHtml map camera position unit =
+    Lazy.lazy5 commandsView map camera.offset camera.zoom position unit
+
+
+commandsView : Map -> Point -> Float -> Coordinate -> Unit -> Html Msg
+commandsView map offset zoom position unit =
     let
+        camera : Camera
+        camera =
+            { offset = offset, zoom = zoom }
+
         opensLeft : Bool
         opensLeft =
             position.x >= map.width // 2

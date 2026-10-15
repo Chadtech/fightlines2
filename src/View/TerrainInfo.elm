@@ -3,6 +3,7 @@ module View.TerrainInfo exposing (toHtml)
 import Api.Enum.Terrain as Terrain exposing (Terrain)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
+import Html.Styled.Lazy as Lazy
 import Style as S
 import Terrain
 import View.Aria as Aria
@@ -11,6 +12,11 @@ import View.InfoMarker as InfoMarker
 
 toHtml : Terrain -> Html msg
 toHtml terrain =
+    Lazy.lazy terrainView terrain
+
+
+terrainView : Terrain -> Html msg
+terrainView terrain =
     H.details
         [ A.css
             [ S.textGray4

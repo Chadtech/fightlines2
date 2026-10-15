@@ -12,12 +12,14 @@ import Json.Decode as D
 import Map exposing (Map)
 import Movement
 import Platform
+import Set
 import TerrainFeature
 import Unit
 import Unit.Fuel exposing (Fuel)
 import Unit.Location as Location
 import Unit.Supplies exposing (Supplies)
 import UnitId
+import UnitResources
 import Util.List as ListUtil
 
 
@@ -162,7 +164,7 @@ check rules fixture =
 
                 map : Map
                 map =
-                    { width = rows |> List.head |> Maybe.map String.length |> Maybe.withDefault 0, height = List.length rows, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = features }
+                    Map.fromFeatures { width = rows |> List.head |> Maybe.map String.length |> Maybe.withDefault 0, height = List.length rows, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = features }
 
                 units : List Unit.Unit
                 units =
@@ -267,7 +269,7 @@ traceChecks rules =
 
                 map : Map
                 map =
-                    { width = 4, height = 4, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
+                    Map.fromFeatures { width = 4, height = 4, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
 
                 units : List Unit.Unit
                 units =
@@ -353,7 +355,7 @@ traceChecks rules =
                     (let
                         roughMap : Map
                         roughMap =
-                            { width = 4, height = 4, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [ { position = down, terrain = Terrain.Hills } ] }
+                            Map.fromFeatures { width = 4, height = 4, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [ { position = down, terrain = Terrain.Hills } ] }
                      in
                      Movement.trace rules roughMap units unit (Movement.start origin) down
                         |> Maybe.andThen
@@ -368,6 +370,183 @@ traceChecks rules =
                         |> Maybe.withDefault False
                     )
                 ]
+                ++ targetSearchChecks unit
+
+
+{-| Compare exact paths, including ties, with the full reachability search.
+The explicit cases exercise resource states that cannot be collapsed by position.
+-}
+targetSearchChecks : Unit.Unit -> List String
+targetSearchChecks unit =
+    let
+        origin : Coordinate
+        origin =
+            { x = 0, y = 0 }
+
+        destination : Coordinate
+        destination =
+            { x = 2, y = 0 }
+
+        forest : Coordinate
+        forest =
+            { x = 1, y = 0 }
+
+        map : Map
+        map =
+            Map.fromFeatures { width = 3, height = 2, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [ { position = forest, terrain = Terrain.Forest } ] }
+
+        rule : Movement.Rule
+        rule =
+            { kind = unit.kind
+            , budget = 12
+            , terrainCosts =
+                [ { terrain = Terrain.GrassPlain, cost = 2 }
+                , { terrain = Terrain.Forest, cost = 6 }
+                , { terrain = Terrain.Hills, cost = 3 }
+                , { terrain = Terrain.Mountains, cost = 0 }
+                ]
+            }
+
+        expensiveRule : Movement.Rule
+        expensiveRule =
+            { rule | terrainCosts = List.map expensiveForest rule.terrainCosts }
+
+        expensiveForest : Movement.TerrainCost -> Movement.TerrainCost
+        expensiveForest entry =
+            if entry.terrain == Terrain.Forest then
+                { entry | cost = 8 }
+
+            else
+                entry
+
+        -- The six-square target route settles before the four-square route,
+        -- both at cost 8. Stopping at the first settled target is incorrect.
+        lateShorterMap : Map
+        lateShorterMap =
+            Map.fromFeatures
+                { width = 4
+                , height = 3
+                , baseTile = map.baseTile
+                , theme = map.theme
+                , features = List.indexedMap tieFeature [ 5, 5, 2, 1, 2, 2, 1, 5, 5, 1, 2, 1 ]
+                }
+
+        tieFeature : Int -> Int -> TerrainFeature.TerrainFeature
+        tieFeature index cost =
+            { position = { x = modBy 4 index, y = index // 4 }
+            , terrain =
+                case cost of
+                    5 ->
+                        Terrain.Forest
+
+                    2 ->
+                        Terrain.Hills
+
+                    _ ->
+                        Terrain.GrassPlain
+            }
+
+        tieRule : Movement.Rule
+        tieRule =
+            { rule
+                | terrainCosts =
+                    [ { terrain = Terrain.GrassPlain, cost = 1 }
+                    , { terrain = Terrain.Hills, cost = 2 }
+                    , { terrain = Terrain.Forest, cost = 5 }
+                    ]
+            }
+
+        fuelLimited : Unit.Unit
+        fuelLimited =
+            { unit | resources = Maybe.map (\resources -> { resources | fuel = Just { current = 4, maximum = 64, movementPerTile = 2 } }) unit.resources }
+
+        supplyLimited : Unit.Unit
+        supplyLimited =
+            { unit | resources = Maybe.map limitedSupplies unit.resources }
+
+        limitedSupplies : UnitResources.UnitResources -> UnitResources.UnitResources
+        limitedSupplies resources =
+            let
+                supplies : Supplies
+                supplies =
+                    resources.supplies
+            in
+            { resources | supplies = { supplies | current = 5, roughTerrainSurcharge = 4 } }
+
+        route : Movement.Rule -> Unit.Unit -> Coordinate -> Maybe Movement.Option
+        route movementRule mover target =
+            Movement.trace [ movementRule ] map [ mover ] mover (Movement.start origin) target
+
+        expect : String -> Bool -> List String
+        expect name passed =
+            if passed then
+                []
+
+            else
+                [ name ]
+
+        compareAll : Movement.Rule -> Unit.Unit -> Map -> List String
+        compareAll movementRule mover board =
+            let
+                allRoutes : List Movement.Option
+                allRoutes =
+                    Movement.optionsAvoiding [ origin ] [ movementRule ] board [ mover ] mover
+
+                compareTarget : Coordinate -> List String
+                compareTarget target =
+                    if target == origin then
+                        []
+
+                    else
+                        expect ("target search differs from full search at " ++ String.fromInt target.x ++ "," ++ String.fromInt target.y)
+                            (Movement.trace [ movementRule ] board [ mover ] mover (Movement.start origin) target
+                                == ListUtil.find (\option -> option.destination == target) allRoutes
+                            )
+            in
+            List.concatMap compareTarget (Map.positions board ++ [ { x = -1, y = 0 }, { x = board.width, y = 0 } ])
+
+        withFeatures : List TerrainFeature.TerrainFeature -> Map
+        withFeatures features =
+            Map.fromFeatures
+                { width = map.width
+                , height = map.height
+                , baseTile = map.baseTile
+                , theme = map.theme
+                , features = features
+                }
+
+        variedMaps : List Map
+        variedMaps =
+            [ map
+            , withFeatures []
+            , withFeatures [ { position = forest, terrain = Terrain.Mountains }, { position = { x = 1, y = 1 }, terrain = Terrain.Mountains } ]
+            , withFeatures [ { position = forest, terrain = Terrain.Hills }, { position = destination, terrain = Terrain.Forest } ]
+            ]
+
+        compareMover : Unit.Unit -> List String
+        compareMover mover =
+            List.concatMap (compareAll rule mover) variedMaps
+                ++ List.concatMap (compareAll expensiveRule mover) variedMaps
+    in
+    List.concat
+        [ expect "equal movement cost prefers the shorter target route"
+            (route rule unit destination |> Maybe.map .path |> (==) (Just [ origin, forest, destination ]))
+        , expect "a cheaper weighted detour wins over the direct target route"
+            (route expensiveRule unit destination |> Maybe.map (\option -> option.cost == 8 && List.length option.path == 5) |> Maybe.withDefault False)
+        , expect "target search retains the expensive route when the cheaper detour exceeds fuel"
+            (route expensiveRule fuelLimited destination |> Maybe.map (\option -> option.cost == 10 && option.path == [ origin, forest, destination ]) |> Maybe.withDefault False)
+        , expect "target search retains the supply-affordable detour"
+            (route rule supplyLimited destination |> Maybe.map (\option -> option.cost == 8 && List.length option.path == 5) |> Maybe.withDefault False)
+        , expect "an equal cost and length tie keeps the established route"
+            (route rule unit { x = 1, y = 1 } |> Maybe.map .path |> (==) (Just [ origin, { x = 0, y = 1 }, { x = 1, y = 1 } ]))
+        , expect "a later settled target can win the equal-cost length tie"
+            (Movement.trace [ tieRule ] lateShorterMap [ unit ] unit (Movement.start origin) { x = 3, y = 0 }
+                |> Maybe.map (\option -> option.cost == 8 && option.path == [ origin, forest, destination, { x = 3, y = 0 } ])
+                |> Maybe.withDefault False
+            )
+        , compareAll tieRule unit lateShorterMap
+        , List.concatMap compareMover [ unit, fuelLimited, supplyLimited, { unit | resources = Nothing } ]
+        ]
 
 
 reservationChecks : List Movement.Rule -> List String
@@ -420,7 +599,7 @@ reservationChecks rules =
 
                 map : Map
                 map =
-                    { width = 3, height = 1, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
+                    Map.fromFeatures { width = 3, height = 1, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
 
                 units : List Unit.Unit
                 units =
@@ -518,7 +697,7 @@ fuelChecks rules =
 
                 map : Map
                 map =
-                    { width = 5, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [ { position = { x = 1, y = 0 }, terrain = Terrain.Forest } ] }
+                    Map.fromFeatures { width = 5, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [ { position = { x = 1, y = 0 }, terrain = Terrain.Forest } ] }
 
                 units : List Unit.Unit
                 units =
@@ -614,7 +793,7 @@ supplyChecks rules =
 
                 map : Map
                 map =
-                    { width = 5, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
+                    Map.fromFeatures { width = 5, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
 
                 units : List Unit.Unit
                 units =
@@ -672,6 +851,60 @@ supplyChecks rules =
                 ]
 
 
+lookupChecks : List String
+lookupChecks =
+    let
+        test : String -> Bool -> List String
+        test label passed =
+            if passed then
+                []
+
+            else
+                [ label ]
+
+        features : List TerrainFeature.TerrainFeature
+        features =
+            [ { position = { x = 1, y = 0 }, terrain = Terrain.Forest }
+            , { position = { x = 1, y = 0 }, terrain = Terrain.Hills }
+            , { position = { x = 0, y = 1 }, terrain = Terrain.Mountains }
+            , { position = { x = -1, y = 3 }, terrain = Terrain.Hills }
+            ]
+
+        map : Map
+        map =
+            Map.fromFeatures { width = 3, height = 4, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = features }
+
+        positions : List Coordinate
+        positions =
+            { x = -1, y = 3 } :: { x = 9, y = 9 } :: Map.positions map
+
+        originalTerrainAt : Coordinate -> Terrain.Terrain
+        originalTerrainAt position =
+            features
+                |> ListUtil.find (\feature -> feature.position == position)
+                |> Maybe.map .terrain
+                |> Maybe.withDefault map.baseTile
+
+        coordinates : List Coordinate
+        coordinates =
+            List.map .position features
+
+        indexed : Set.Set Coordinate.Key
+        indexed =
+            Set.fromList (List.map Coordinate.key coordinates)
+
+        sameMembership : Coordinate -> Bool
+        sameMembership position =
+            List.member position coordinates == Set.member (Coordinate.key position) indexed
+    in
+    List.concat
+        [ test "indexed terrain preserves first duplicate, base terrain, coordinate order and outside-map lookups"
+            (List.all (\position -> Map.terrainAt map position == originalTerrainAt position) positions)
+        , test "coordinate membership preserves duplicate and absent positions"
+            (List.all sameMembership positions)
+        ]
+
+
 main : Program D.Value () Never
 main =
     Platform.worker
@@ -692,6 +925,7 @@ main =
                                 ++ fuelChecks rules
                                 ++ supplyChecks rules
                                 ++ transportChecks rules
+                                ++ lookupChecks
                     )
                 )
         , update = \msg model -> never msg
@@ -766,7 +1000,7 @@ transportChecks rules =
 
                 map : Map
                 map =
-                    { width = 4, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
+                    Map.fromFeatures { width = 4, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
 
                 units : List Unit.Unit
                 units =

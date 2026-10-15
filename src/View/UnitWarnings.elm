@@ -5,6 +5,7 @@ module View.UnitWarnings exposing
     )
 
 import Html.Styled as H exposing (Html)
+import Html.Styled.Lazy as Lazy
 import Style as S
 import Svg.Styled as Svg exposing (Svg)
 import Svg.Styled.Attributes as SA
@@ -93,6 +94,11 @@ They sit above ordered-sprite dimming and leave the cargo corners free.
 -}
 toSvg : Unit -> Svg msg
 toSvg unit =
+    Lazy.lazy warningsView unit
+
+
+warningsView : Unit -> Svg msg
+warningsView unit =
     Svg.g
         [ SA.css
             [ S.animation "fightlines-unit-warning-blink 2s step-end infinite"

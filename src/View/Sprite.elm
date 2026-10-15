@@ -1,5 +1,6 @@
 module View.Sprite exposing (toSvg)
 
+import Html.Styled.Lazy as Lazy
 import Svg.Styled as Svg exposing (Svg)
 import Svg.Styled.Attributes as SA
 import View.Aria as Aria
@@ -18,6 +19,17 @@ toSvg :
     }
     -> Svg msg
 toSvg config =
+    Lazy.lazy5
+        spriteView
+        config.path
+        config.sheetWidth
+        config.sheetHeight
+        config.column
+        config.row
+
+
+spriteView : String -> Int -> Int -> Int -> Int -> Svg msg
+spriteView path sheetWidth sheetHeight column row =
     Svg.svg
         [ SA.width "16"
         , SA.height "16"
@@ -25,8 +37,8 @@ toSvg config =
             (String.join " "
                 (List.map
                     String.fromInt
-                    [ config.column * 16
-                    , config.row * 16
+                    [ column * 16
+                    , row * 16
                     , 16
                     , 16
                     ]
@@ -37,9 +49,9 @@ toSvg config =
         , Aria.hidden True
         ]
         [ Svg.image
-            [ SA.xlinkHref config.path
-            , SA.width (String.fromInt config.sheetWidth)
-            , SA.height (String.fromInt config.sheetHeight)
+            [ SA.xlinkHref path
+            , SA.width (String.fromInt sheetWidth)
+            , SA.height (String.fromInt sheetHeight)
             ]
             []
         ]

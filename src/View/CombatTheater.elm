@@ -9,6 +9,7 @@ import Css
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
+import Html.Styled.Lazy as Lazy
 import Map exposing (Map)
 import Style as S
 import Svg.Styled as Svg
@@ -107,6 +108,11 @@ automaticCloseDelayMs =
 
 toHtml : { automaticallyClose : Bool } -> Map -> Panel -> Html Msg
 toHtml config map panel =
+    Lazy.lazy3 theaterView config.automaticallyClose map panel
+
+
+theaterView : Bool -> Map -> Panel -> Html Msg
+theaterView automaticallyClose map panel =
     let
         attacker : Unit
         attacker =
@@ -261,7 +267,7 @@ toHtml config map panel =
                             ]
                         , Checkbox.toHtml
                             { label = "automatically close"
-                            , checked = config.automaticallyClose
+                            , checked = automaticallyClose
                             , onCheck = AutomaticallyCloseChanged
                             }
                             [ H.text "automatically close" ]

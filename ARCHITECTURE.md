@@ -82,7 +82,13 @@ while reconnecting members can rejoin a full lobby.
 The member-only `game` query returns `GameSnapshot`, including the scenario and
 players with `playerNumber` and `isYou`. Lobby snapshots stay small and never include the
 board. The frontend receives sparse terrain overrides and expands them for
-rendering; authoritative initial positions and bounds remain in Rust.
+rendering; authoritative initial positions and bounds remain in Rust. Elm `Map`
+indexes overrides once at construction in a dictionary keyed by `(x, y)` via
+`Coordinate.key`. The first duplicate override wins and missing entries use the
+base terrain. Editor definitions retain their serializable feature lists; board
+rendering derives one indexed map per draft render. `GamePage` derives visibility
+and reachable-coordinate sets once per rendered layer from projected data, inside
+lazy boundaries where applicable; the reachable list still owns highlight ordering.
 
 With the explicit `--dev-game` server flag, `Store::development` seeds one
 started game at ID `00000000000000000000000000000000`, using the current
@@ -466,7 +472,11 @@ or for compatible truck loading with a stationary receiver; depots do not block 
 one editable local draft per unit owned by the viewer, plus a separate live path
 preview. Hovering extends that preview from its tip without replacing its prefix;
 mouse-event gaps use the cheapest connector within the remaining budget, with
-earlier path cells blocked. Revisiting a path square trims the tail and refunds
+earlier path cells blocked. Connectors search only for the requested destination
+and stop after its lowest affordable movement-cost layer has settled. The whole
+layer is processed so equal-cost routes still prefer fewer tiles; exact ties keep
+the existing traversal order. Reachable-square highlighting still searches all
+affordable destinations. Revisiting a path square trims the tail and refunds
 its cost. If an extension fails, the preview falls back to a cheapest affordable route
 from the unit; unreachable squares leave it intact. Clicking saves the preview
 route and ends hover editing until the unit is selected again or its path is

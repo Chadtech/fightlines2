@@ -1,4 +1,4 @@
-module Coordinate exposing (Coordinate, selection)
+module Coordinate exposing (Coordinate, Key, key, selection)
 
 import Api.Object
 import Api.Object.Coordinate as CoordinateApi
@@ -9,6 +9,17 @@ type alias Coordinate =
     { x : Int
     , y : Int
     }
+
+
+{-| A board coordinate key in (x, y) order, independent of map dimensions.
+-}
+type alias Key =
+    ( Int, Int )
+
+
+key : Coordinate -> Key
+key position =
+    ( position.x, position.y )
 
 
 selection : SelectionSet Coordinate Api.Object.Coordinate

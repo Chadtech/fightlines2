@@ -3,6 +3,7 @@ module View.TerrainTile exposing (toSvg)
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
 import Api.Enum.Terrain as Terrain exposing (Terrain)
 import Html.Styled.Attributes as A
+import Html.Styled.Lazy as Lazy
 import Svg.Styled as Svg exposing (Svg)
 import Svg.Styled.Attributes as SA
 
@@ -52,29 +53,34 @@ image config =
 -}
 toSvg : { theme : MapTheme, terrain : Terrain } -> Svg msg
 toSvg config =
+    Lazy.lazy2 terrainView config.theme config.terrain
+
+
+terrainView : MapTheme -> Terrain -> Svg msg
+terrainView theme terrain =
     let
         art : Appearance
         art =
-            appearance config.theme
+            appearance theme
 
         featurePath : Maybe String
         featurePath =
-            case config.terrain of
+            case terrain of
                 Terrain.GrassPlain ->
                     Nothing
 
                 Terrain.Hills ->
-                    Just (hillPath config.theme)
+                    Just (hillPath theme)
 
                 Terrain.Forest ->
                     Just "/assets/terrain-forest-illustrated-v3.png"
 
                 Terrain.Mountains ->
-                    Just (mountainPath config.theme)
+                    Just (mountainPath theme)
 
         featureFilter : String
         featureFilter =
-            case config.terrain of
+            case terrain of
                 Terrain.Forest ->
                     art.featureFilter
 

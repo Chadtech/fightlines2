@@ -29,8 +29,9 @@ import Graphql.SelectionSet as SS
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
+import Html.Styled.Lazy as Lazy
 import Json.Decode as D
-import Map
+import Map exposing (Map)
 import MapType
 import Shared
 import Style as S
@@ -444,7 +445,16 @@ paintTile settings position draft =
     in
     case settings.brush of
         PaintTerrain terrain ->
-            if Map.terrainAt (EditableMap.map draft) position == terrain then
+            let
+                currentTerrain : Terrain
+                currentTerrain =
+                    draft.features
+                        |> List.filter (\feature -> feature.position == position)
+                        |> List.head
+                        |> Maybe.map .terrain
+                        |> Maybe.withDefault Terrain.GrassPlain
+            in
+            if currentTerrain == terrain then
                 draft
 
             else
@@ -936,7 +946,7 @@ workspace model =
                         , S.when (model.viewScale /= FitWorkspace) S.minWFitContent
                         ]
                     ]
-                    [ board model
+                    [ Lazy.lazy2 board model.viewScale model.current.draft
                     ]
                 ]
             ]
@@ -1297,43 +1307,47 @@ brushPreview model brush =
         artwork
 
 
-board : Model -> Html Msg
-board model =
+board : ViewScale -> Definition -> Html Msg
+board scale draft =
     let
-        draft : Definition
-        draft =
-            model.current.draft
-
-        tiles : List (Svg Msg)
+        tiles : Html Msg
         tiles =
-            Map.positions (EditableMap.map draft) |> List.map (tile model)
+            Lazy.lazy boardTiles draft
     in
     Svg.svg
-        [ SA.width (String.fromInt (draft.width * viewTileSize model.viewScale))
-        , SA.height (String.fromInt (draft.height * viewTileSize model.viewScale))
+        [ SA.width (String.fromInt (draft.width * viewTileSize scale))
+        , SA.height (String.fromInt (draft.height * viewTileSize scale))
         , SA.viewBox ("0 0 " ++ String.fromInt (draft.width * 16) ++ " " ++ String.fromInt (draft.height * 16))
         , A.attribute "aria-label" "editable battlefield"
         , A.css
             [ S.userSelectNone
             , S.block
             , S.shrink0
-            , S.when (model.viewScale == FitWorkspace)
+            , S.when (scale == FitWorkspace)
                 (S.fitWithinContainer { width = draft.width, height = draft.height })
             ]
         ]
-        tiles
+        [ tiles ]
 
 
-tile : Model -> Coordinate -> Svg Msg
-tile model position =
+boardTiles : Definition -> Svg Msg
+boardTiles draft =
     let
-        draft : Definition
-        draft =
-            model.current.draft
+        map : Map
+        map =
+            EditableMap.map draft
+    in
+    Svg.g
+        []
+        (Map.positions map |> List.map (tile draft map))
 
+
+tile : Definition -> Map -> Coordinate -> Svg Msg
+tile draft map position =
+    let
         terrain : Terrain
         terrain =
-            Map.terrainAt (EditableMap.map draft) position
+            Map.terrainAt map position
 
         objects : List (Svg Msg)
         objects =

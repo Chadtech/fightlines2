@@ -22,6 +22,7 @@ module GamePage.OrderPlanning exposing
     , focusCommand
     , focusedCommand
     , indirectTargets
+    , indirectTargetsInRange
     , init
     , isOwnUnit
     , loadingTarget
@@ -1132,18 +1133,23 @@ indirectTargets context model =
                     )
         of
             Just ( indirectRange, origin ) ->
-                let
-                    inRange : Coordinate -> Bool
-                    inRange target =
-                        ((target.x - origin.x) ^ 2 + (target.y - origin.y) ^ 2) <= (indirectRange ^ 2)
-                in
-                Map.positions context.map |> List.filter inRange
+                indirectTargetsInRange context.map origin indirectRange
 
             Nothing ->
                 []
 
     else
         []
+
+
+indirectTargetsInRange : Map -> Coordinate -> Int -> List Coordinate
+indirectTargetsInRange map origin indirectRange =
+    let
+        inRange : Coordinate -> Bool
+        inRange target =
+            ((target.x - origin.x) ^ 2 + (target.y - origin.y) ^ 2) <= (indirectRange ^ 2)
+    in
+    Map.positions map |> List.filter inRange
 
 
 choosingDirection : Model -> Bool

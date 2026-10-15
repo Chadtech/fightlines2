@@ -14,6 +14,7 @@ module GamePage exposing
 
 import AnimationFrame
 import Api.Enum.Direction as DirectionEnum exposing (Direction)
+import Api.Enum.MapTheme exposing (MapTheme)
 import Api.Enum.MapType
     exposing
         ( MapType
@@ -22,6 +23,8 @@ import Api.Enum.PlayerNumber
     exposing
         ( PlayerNumber
         )
+import Api.Enum.SpriteFacing exposing (SpriteFacing)
+import Api.Enum.Terrain exposing (Terrain)
 import Api.Enum.TurnEventKind as TurnEventKind
 import Api.Enum.UnitKind as UnitKind
 import Api.Mutation
@@ -60,6 +63,7 @@ import GamePage.Selection
 import Graphql.Http
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import Html.Attributes as HA
+import Html.Lazy as SvgLazy
 import Html.Styled as H
     exposing
         ( Html
@@ -67,6 +71,7 @@ import Html.Styled as H
 import Html.Styled.Attributes as A
 import Html.Styled.Events as HtmlEvents
 import Html.Styled.Keyed as Keyed
+import Html.Styled.Lazy as Lazy
 import Json.Decode as Decode
 import Json.Encode as Encode
 import KeyCmd exposing (KeyCmd)
@@ -84,6 +89,7 @@ import PlannedOrder
         )
 import Point exposing (Point)
 import Ports.Js.To as ToJs
+import Set exposing (Set)
 import Shared
 import Style as S
 import Supply
@@ -186,6 +192,12 @@ type alias UnloadRoute =
     { origin : Coordinate
     , direction : Direction
     }
+
+
+type BoardTargeting
+    = InspectingBoard
+    | ChoosingBoardDestination
+    | ChoosingIndirectTarget
 
 
 type alias RotationSelection =
@@ -2140,7 +2152,7 @@ view model =
                 ]
             ]
             [ selectionView model
-            , panelFooter model
+            , Lazy.lazy panelFooter (currentSelection model /= Nothing)
             ]
         ]
     , combatOverlay
@@ -2289,12 +2301,12 @@ depotLinkView model unit =
         |> Maybe.withDefault (H.text "")
 
 
-panelFooter : Model -> Html Msg
-panelFooter model =
+panelFooter : Bool -> Html Msg
+panelFooter hasSelection =
     let
         hint : String
         hint =
-            if currentSelection model == Nothing then
+            if not hasSelection then
                 "select a unit, depot or tile to inspect"
 
             else
@@ -2706,13 +2718,8 @@ loadingNotice model unit destination =
             []
 
 
-viewControls : Model -> Html Msg
-viewControls model =
-    let
-        camera : Camera
-        camera =
-            BattlefieldNavigation.camera model.navigation
-    in
+viewControls : Int -> Html Msg
+viewControls zoomPercent =
     H.section
         [ Aria.label "view controls"
         , A.css
@@ -2771,7 +2778,7 @@ viewControls model =
                     |> Button.toHtml
                 , H.span
                     []
-                    [ H.text (String.fromInt (round (camera.zoom * 100)) ++ "%") ]
+                    [ H.text (String.fromInt zoomPercent ++ "%") ]
                 , Button.secondary "+" ZoomInClicked
                     |> Button.accessibleLabel "zoom in"
                     |> Button.toHtml
@@ -3348,23 +3355,6 @@ turnPanel model =
                     else
                         "planning"
 
-        playerRow : Player -> Html Msg
-        playerRow player =
-            let
-                status : String
-                status =
-                    if player.isYou then
-                        ownStatus
-
-                    else
-                        opponentStatus
-            in
-            TurnControls.playerRow
-                { name = player.name
-                , playerNumber = player.playerNumber
-                , status = status
-                }
-
         submitLocked : Bool
         submitLocked =
             planningLocked model || isChoosingUnload model
@@ -3391,25 +3381,57 @@ turnPanel model =
                     else
                         TurnControls.Planning
 
-        submitButton : Html Msg
-        submitButton =
-            H.div
-                [ A.css
-                    [ S.col
-                    , S.g2
-                    , S.shrink0
-                    ]
-                ]
-                [ H.p
-                    []
-                    [ H.text ("turn " ++ String.fromInt model.currentTurn.number) ]
-                , TurnControls.submit activity submitLabel
-                    |> H.map TurnControlsMsg
-                ]
+        zoomPercent : Int
+        zoomPercent =
+            round ((BattlefieldNavigation.camera model.navigation).zoom * 100)
+    in
+    TurnControls.panel
+        [ Lazy.lazy3 turnSubmit model.currentTurn.number activity submitLabel
+        , Lazy.lazy4 turnFeedback model.players ownStatus opponentStatus model.currentTurn.error
+        , TurnControls.navigation (Lazy.lazy viewControls zoomPercent)
+        ]
+
+
+turnSubmit : Int -> TurnControls.Activity -> String -> Html Msg
+turnSubmit number activity submitLabel =
+    H.div
+        [ A.css
+            [ S.col
+            , S.g2
+            , S.shrink0
+            ]
+        ]
+        [ H.p
+            []
+            [ H.text ("turn " ++ String.fromInt number) ]
+        , TurnControls.submit activity submitLabel
+            |> H.map TurnControlsMsg
+        ]
+
+
+turnFeedback : List Player -> String -> String -> Maybe String -> Html Msg
+turnFeedback players ownStatus opponentStatus error =
+    let
+        playerRow : Player -> Html Msg
+        playerRow player =
+            let
+                status : String
+                status =
+                    if player.isYou then
+                        ownStatus
+
+                    else
+                        opponentStatus
+            in
+            TurnControls.playerRow
+                { name = player.name
+                , playerNumber = player.playerNumber
+                , status = status
+                }
 
         errorDetails : List (Html Msg)
         errorDetails =
-            case model.currentTurn.error of
+            case error of
                 Nothing ->
                     []
 
@@ -3429,7 +3451,7 @@ turnPanel model =
                         , S.g2
                         ]
                     ]
-                    (List.map playerRow model.players)
+                    (List.map playerRow players)
                 ]
             ]
 
@@ -3437,11 +3459,7 @@ turnPanel model =
         feedbackContent =
             content ++ errorDetails
     in
-    TurnControls.panel
-        [ submitButton
-        , TurnControls.feedback feedbackContent
-        , TurnControls.navigation (viewControls model)
-        ]
+    TurnControls.feedback feedbackContent
 
 
 battlefieldView : Model -> Html Msg
@@ -3551,13 +3569,54 @@ boardSvg model =
         visibleTiles =
             model.visibleTiles
 
+        visiblePositions : Set Coordinate.Key
+        visiblePositions =
+            Set.fromList (List.map Coordinate.key visibleTiles)
+
         choosingDestination : Bool
         choosingDestination =
             pathPreview model /= Nothing || isChoosingUnload model || choosingIndirectFire model
 
+        targeting : BoardTargeting
+        targeting =
+            if choosingIndirectFire model then
+                ChoosingIndirectTarget
+
+            else if choosingDestination then
+                ChoosingBoardDestination
+
+            else
+                InspectingBoard
+
+        options : List Movement.Option
+        options =
+            moveOptions model
+
+        indirectRange : Int
+        indirectRange =
+            if choosingIndirectFire model then
+                selectedUnit model
+                    |> Maybe.map (.combatRules >> .indirectRange)
+                    |> Maybe.withDefault 0
+
+            else
+                0
+
+        indirectOrigin : Coordinate
+        indirectOrigin =
+            if choosingIndirectFire model then
+                selectedPosition model |> Maybe.withDefault inactiveTargetOrigin
+
+            else
+                inactiveTargetOrigin
+
         reachable : List Coordinate
         reachable =
-            List.map .destination (moveOptions model) ++ indirectTargets model
+            List.map .destination options ++ indirectTargets model
+
+        reachablePositions : Set Coordinate.Key
+        reachablePositions =
+            Set.fromList (List.map Coordinate.key reachable)
 
         paths : List PlannedOrder
         paths =
@@ -3612,84 +3671,42 @@ boardSvg model =
         selected =
             selectedPosition model
 
-        tileTarget : Coordinate -> Svg Msg
-        tileTarget position =
+        terrain : Svg Msg
+        terrain =
             let
-                baseAttributes : List (Svg.Attribute Msg)
-                baseAttributes =
-                    [ SA.width "16"
-                    , SA.height "16"
-                    , SA.fill "transparent"
-                    , SA.stroke S.nightwood2Str
-                    , SA.strokeOpacity "0.22"
-                    , SA.strokeWidth "0.25"
-                    , Ev.onMouseOver (MouseOverTile position)
-                    , onClickWithDetail (ClickedTile position)
-                    ]
-
-                movementAttributes : List (Svg.Attribute Msg)
-                movementAttributes =
-                    if List.member position reachable then
-                        [ HA.attribute "tabindex" "0"
-                        , Aria.svgRole Aria.Button
-                        , Aria.svgLabel
-                            (destinationAction
-                                ++ " ("
-                                ++ String.fromInt position.x
-                                ++ ", "
-                                ++ String.fromInt position.y
-                                ++ ")"
-                            )
-                        , onBoardActivationKeyDown
-                            { pressedEnter = PressedEnterOnTile position
-                            , pressedSpace = PressedSpaceOnTile position
-                            }
-                        ]
+                destinationSelection : Maybe Coordinate
+                destinationSelection =
+                    if choosingDestination then
+                        selected
 
                     else
-                        []
+                        Nothing
             in
-            at position
-                [ Svg.rect
-                    (baseAttributes ++ movementAttributes)
-                    []
-                ]
+            -- Unwrap Maybe before lazy: its wrapper may be fresh, while the
+            -- coordinate stored in selection or unit location is persistent.
+            case destinationSelection of
+                Just position ->
+                    SvgLazy.lazy7 selectedTerrainLayer
+                        model.map
+                        visibleTiles
+                        options
+                        indirectOrigin
+                        indirectRange
+                        targeting
+                        position
+
+                Nothing ->
+                    SvgLazy.lazy6 unselectedTerrainLayer
+                        model.map
+                        visibleTiles
+                        options
+                        indirectOrigin
+                        indirectRange
+                        targeting
 
         terrainFilter : Coordinate -> String
-        terrainFilter position =
-            let
-                visibilityFilters : List String
-                visibilityFilters =
-                    if List.member position visibleTiles then
-                        []
-
-                    else
-                        [ "saturate(0.18) brightness(0.58)" ]
-
-                unavailable : Bool
-                unavailable =
-                    choosingDestination
-                        && not (List.member position reachable)
-                        && selected
-                        /= Just position
-
-                destinationFilters : List String
-                destinationFilters =
-                    if unavailable then
-                        [ "brightness(0.6)" ]
-
-                    else
-                        []
-
-                filters : List String
-                filters =
-                    visibilityFilters ++ destinationFilters
-            in
-            if List.isEmpty filters then
-                "none"
-
-            else
-                String.join " " filters
+        terrainFilter =
+            boardTileFilter visiblePositions choosingDestination reachablePositions selected
 
         targetOutline : Coordinate -> Svg Msg
         targetOutline destination =
@@ -3709,59 +3726,9 @@ boardSvg model =
                     []
                 ]
 
-        crateView : Supply.GroundCrate -> Svg Msg
-        crateView crate =
-            at crate.position
-                [ SupplyCrate.toSvg crate.stock.kind
-                , Svg.rect
-                    [ SA.width "16"
-                    , SA.height "16"
-                    , SA.fill "transparent"
-                    , HA.attribute "tabindex" "0"
-                    , Aria.svgRole Aria.Button
-                    , Aria.svgLabel (Supply.cargoLabel crate.stock.kind)
-                    , onClickWithDetail (ClickedTile crate.position)
-                    , onBoardActivationKeyDown
-                        { pressedEnter = PressedEnterOnTile crate.position
-                        , pressedSpace = PressedSpaceOnTile crate.position
-                        }
-                    ]
-                    []
-                ]
-
         depotView : Depot -> Svg Msg
         depotView depot =
-            at depot.position
-                [ Svg.image
-                    [ SA.width "16"
-                    , SA.height "16"
-                    , SA.xlinkHref (Depot.image depot)
-                    , HA.style "filter" (terrainFilter depot.position)
-                    , HA.style "image-rendering" "auto"
-                    , SA.pointerEvents "none"
-                    , Aria.svgHidden True
-                    ]
-                    []
-                , Svg.rect
-                    [ SA.width "16"
-                    , SA.height "16"
-                    , SA.fill "transparent"
-                    , HA.attribute "tabindex" "0"
-                    , Aria.svgRole Aria.Button
-                    , Aria.svgLabel (Depot.label depot)
-                    , Ev.onMouseOver (MouseOverDepot depot.position)
-                    , onClickWithDetail (ClickedDepot depot.position)
-                    , onBoardActivationKeyDown
-                        { pressedEnter = PressedEnterOnDepot depot.position
-                        , pressedSpace = PressedSpaceOnDepot depot.position
-                        }
-                    ]
-                    [ Svg.title
-                        []
-                        [ Svg.text (Depot.label depot)
-                        ]
-                    ]
-                ]
+            SvgLazy.lazy2 boardDepot (terrainFilter depot.position) depot
 
         depotStockView : Depot -> Maybe (Svg Msg)
         depotStockView depot =
@@ -3906,165 +3873,14 @@ boardSvg model =
 
                     else
                         0
-
-                crateCount : Int
-                crateCount =
-                    if unit.kind == UnitKind.Truck then
-                        Unit.crateCount unit
-
-                    else
-                        0
-
-                cargoCount : Int
-                cargoCount =
-                    passengerCount + crateCount
-
-                freight : List Supply.CargoStock
-                freight =
-                    unit.resources
-                        |> Maybe.map .supplyCargo
-                        |> Maybe.withDefault []
-
-                cargoLabel : String
-                cargoLabel =
-                    if cargoCount > 0 then
-                        Unit.label unit
-                            ++ ", cargo: "
-                            ++ String.fromInt cargoCount
-                            ++ " / "
-                            ++ String.fromInt unit.cargoCapacity
-                            ++ ", passengers: "
-                            ++ String.fromInt passengerCount
-                            ++ ", freight: "
-                            ++ String.fromInt crateCount
-
-                    else
-                        Unit.label unit
-
-                warningLabel : String
-                warningLabel =
-                    UnitWarnings.label unit
-
-                accessibleLabel : String
-                accessibleLabel =
-                    if String.isEmpty warningLabel then
-                        cargoLabel
-
-                    else
-                        cargoLabel ++ ", " ++ warningLabel
-
-                spriteFilter : String
-                spriteFilter =
-                    if List.member unit.id orderedUnits then
-                        "brightness(0.6)"
-
-                    else
-                        "none"
-
-                previewUnit : Unit
-                previewUnit =
-                    previewedUnit unit
-
-                transform : String
-                transform =
-                    unitTransform unit position
             in
-            Svg.g
-                [ SA.transform transform
-                ]
-                [ Svg.g
-                    [ HA.style "filter" spriteFilter
-                    ]
-                    [ previewUnit
-                        |> UnitSprite.toSvg
-                            (AnimationFrame.unitColumn model.frame unit.id)
-                        |> StyledSvg.toUnstyled
-                    ]
-                , UnitCargo.toSvg passengerCount
-                    |> StyledSvg.toUnstyled
-                , UnitCargo.freightToSvg freight
-                    |> StyledSvg.toUnstyled
-                , UnitWarnings.toSvg unit
-                    |> StyledSvg.toUnstyled
-                , UnitDeath.toSvg unit
-                    |> StyledSvg.toUnstyled
-                , Svg.rect
-                    [ SA.width "16"
-                    , SA.height "16"
-                    , SA.fill "transparent"
-                    , HA.attribute "tabindex" "0"
-                    , Aria.svgRole Aria.Button
-                    , Aria.svgLabel accessibleLabel
-                    , Ev.onMouseOver (MouseOverUnit unit.id)
-                    , onClickWithDetail (ClickedUnit unit.id)
-                    , onBoardActivationKeyDown
-                        { pressedEnter = PressedEnterOnUnit unit.id
-                        , pressedSpace = PressedSpaceOnUnit unit.id
-                        }
-                    ]
-                    [ Svg.title
-                        []
-                        [ Svg.text accessibleLabel
-                        ]
-                    ]
-                ]
-
-        positions : List Coordinate
-        positions =
-            Map.positions model.map
-
-        terrainTile : Coordinate -> Svg Msg
-        terrainTile position =
-            let
-                fogAttributes : List (Svg.Attribute Msg)
-                fogAttributes =
-                    if List.member position visibleTiles then
-                        []
-
-                    else
-                        [ HA.attribute "data-fog" "unseen"
-                        ]
-
-                appearanceAttributes : List (Svg.Attribute Msg)
-                appearanceAttributes =
-                    [ HA.style "filter" (terrainFilter position)
-                    , SA.pointerEvents "none"
-                    ]
-            in
-            Svg.g
-                (appearanceAttributes ++ fogAttributes)
-                [ at position
-                    [ TerrainTile.toSvg
-                        { theme = model.map.theme
-                        , terrain = Map.terrainAt model.map position
-                        }
-                        |> StyledSvg.toUnstyled
-                    ]
-                ]
-
-        terrain : Svg Msg
-        terrain =
-            Svg.g
-                [ HA.style "image-rendering" "auto"
-                ]
-                (List.map terrainTile positions)
-
-        reachableTile : Coordinate -> Svg Msg
-        reachableTile position =
-            at position
-                [ Svg.rect
-                    [ SA.x "1"
-                    , SA.y "1"
-                    , SA.width "14"
-                    , SA.height "14"
-                    , SA.fill S.yellow5Str
-                    , SA.fillOpacity "0.12"
-                    , SA.stroke S.yellow5Str
-                    , SA.strokeOpacity "0.65"
-                    , SA.strokeWidth "0.5"
-                    ]
-                    []
-                ]
+            SvgLazy.lazy6 boardUnit
+                unit
+                (previewedUnit unit).spriteFacing
+                (unitTransform unit position)
+                (List.member unit.id orderedUnits)
+                passengerCount
+                (AnimationFrame.unitColumn model.frame unit.id)
 
         pathPoint : Coordinate -> String
         pathPoint position =
@@ -4077,40 +3893,6 @@ boardSvg model =
             path
                 |> List.map pathPoint
                 |> String.join " "
-
-        plannedPath : PlannedOrder -> List (Svg Msg)
-        plannedPath order =
-            let
-                purpose : MovementRoute.Purpose
-                purpose =
-                    if PlannedOrder.isAttackMove order then
-                        MovementRoute.Attack
-
-                    else
-                        MovementRoute.Travel
-            in
-            MovementRoute.planned purpose (PlannedOrder.path order)
-
-        movementOverlay : Svg Msg
-        movementOverlay =
-            let
-                reachableTiles : List (Svg Msg)
-                reachableTiles =
-                    List.map reachableTile reachable
-
-                plannedPaths : List (Svg Msg)
-                plannedPaths =
-                    List.concatMap plannedPath paths
-
-                preview : List (Svg Msg)
-                preview =
-                    MovementRoute.preview previewPurpose previewedPath
-            in
-            Svg.g
-                [ SA.pointerEvents "none"
-                , Aria.svgHidden True
-                ]
-                (reachableTiles ++ plannedPaths ++ preview)
 
         unloadRoute : UnloadRoute -> Svg Msg
         unloadRoute route =
@@ -4246,10 +4028,27 @@ boardSvg model =
         , Aria.svgLabel "battlefield"
         ]
         (List.concat
-            [ [ terrain, movementOverlay ]
-            , List.map tileTarget positions
+            [ [ terrain
+              , SvgLazy.lazy8 movementLayer
+                    model.map
+                    options
+                    indirectOrigin
+                    indirectRange
+                    targeting
+                    paths
+                    previewPurpose
+                    previewedPath
+              ]
+            , [ SvgLazy.lazy6 tileTargets
+                    model.map
+                    options
+                    indirectOrigin
+                    indirectRange
+                    targeting
+                    destinationAction
+              ]
             , List.map depotView model.depots
-            , List.map crateView model.supplyCrates
+            , List.map (SvgLazy.lazy boardCrate) model.supplyCrates
             , List.concatMap (PlannedOrder.crateUnloads >> List.map (.destination >> targetOutline)) (plannedOrders model)
             , List.filterMap
                 (\unit ->
@@ -4267,6 +4066,446 @@ boardSvg model =
             , lossOverlay
             ]
         )
+
+
+{-| Map.positions allocates coordinates each view; compare their components at lazy boundaries.
+-}
+boardTileTarget : String -> Bool -> Int -> Int -> Svg Msg
+boardTileTarget destinationAction reachable x y =
+    let
+        position : Coordinate
+        position =
+            { x = x, y = y }
+
+        baseAttributes : List (Svg.Attribute Msg)
+        baseAttributes =
+            [ SA.width "16"
+            , SA.height "16"
+            , SA.fill "transparent"
+            , SA.stroke S.nightwood2Str
+            , SA.strokeOpacity "0.22"
+            , SA.strokeWidth "0.25"
+            , Ev.onMouseOver (MouseOverTile position)
+            , onClickWithDetail (ClickedTile position)
+            ]
+
+        movementAttributes : List (Svg.Attribute Msg)
+        movementAttributes =
+            if reachable then
+                [ HA.attribute "tabindex" "0"
+                , Aria.svgRole Aria.Button
+                , Aria.svgLabel
+                    (destinationAction
+                        ++ " ("
+                        ++ String.fromInt position.x
+                        ++ ", "
+                        ++ String.fromInt position.y
+                        ++ ")"
+                    )
+                , onBoardActivationKeyDown
+                    { pressedEnter = PressedEnterOnTile position
+                    , pressedSpace = PressedSpaceOnTile position
+                    }
+                ]
+
+            else
+                []
+    in
+    at position
+        [ Svg.rect
+            (baseAttributes ++ movementAttributes)
+            []
+        ]
+
+
+boardCrate : Supply.GroundCrate -> Svg Msg
+boardCrate crate =
+    at crate.position
+        [ SupplyCrate.toSvg crate.stock.kind
+        , Svg.rect
+            [ SA.width "16"
+            , SA.height "16"
+            , SA.fill "transparent"
+            , HA.attribute "tabindex" "0"
+            , Aria.svgRole Aria.Button
+            , Aria.svgLabel (Supply.cargoLabel crate.stock.kind)
+            , onClickWithDetail (ClickedTile crate.position)
+            , onBoardActivationKeyDown
+                { pressedEnter = PressedEnterOnTile crate.position
+                , pressedSpace = PressedSpaceOnTile crate.position
+                }
+            ]
+            []
+        ]
+
+
+boardDepot : String -> Depot -> Svg Msg
+boardDepot filter depot =
+    at depot.position
+        [ Svg.image
+            [ SA.width "16"
+            , SA.height "16"
+            , SA.xlinkHref (Depot.image depot)
+            , HA.style "filter" filter
+            , HA.style "image-rendering" "auto"
+            , SA.pointerEvents "none"
+            , Aria.svgHidden True
+            ]
+            []
+        , Svg.rect
+            [ SA.width "16"
+            , SA.height "16"
+            , SA.fill "transparent"
+            , HA.attribute "tabindex" "0"
+            , Aria.svgRole Aria.Button
+            , Aria.svgLabel (Depot.label depot)
+            , Ev.onMouseOver (MouseOverDepot depot.position)
+            , onClickWithDetail (ClickedDepot depot.position)
+            , onBoardActivationKeyDown
+                { pressedEnter = PressedEnterOnDepot depot.position
+                , pressedSpace = PressedSpaceOnDepot depot.position
+                }
+            ]
+            [ Svg.title
+                []
+                [ Svg.text (Depot.label depot)
+                ]
+            ]
+        ]
+
+
+boardUnit : Unit -> SpriteFacing -> String -> Bool -> Int -> Int -> Svg Msg
+boardUnit unit facing transform ordered passengerCount column =
+    let
+        crateCount : Int
+        crateCount =
+            if unit.kind == UnitKind.Truck then
+                Unit.crateCount unit
+
+            else
+                0
+
+        cargoCount : Int
+        cargoCount =
+            passengerCount + crateCount
+
+        freight : List Supply.CargoStock
+        freight =
+            unit.resources
+                |> Maybe.map .supplyCargo
+                |> Maybe.withDefault []
+
+        cargoLabel : String
+        cargoLabel =
+            if cargoCount > 0 then
+                Unit.label unit
+                    ++ ", cargo: "
+                    ++ String.fromInt cargoCount
+                    ++ " / "
+                    ++ String.fromInt unit.cargoCapacity
+                    ++ ", passengers: "
+                    ++ String.fromInt passengerCount
+                    ++ ", freight: "
+                    ++ String.fromInt crateCount
+
+            else
+                Unit.label unit
+
+        warningLabel : String
+        warningLabel =
+            UnitWarnings.label unit
+
+        accessibleLabel : String
+        accessibleLabel =
+            if String.isEmpty warningLabel then
+                cargoLabel
+
+            else
+                cargoLabel ++ ", " ++ warningLabel
+
+        spriteFilter : String
+        spriteFilter =
+            if ordered then
+                "brightness(0.6)"
+
+            else
+                "none"
+    in
+    Svg.g
+        [ SA.transform transform
+        ]
+        [ Svg.g
+            [ HA.style "filter" spriteFilter
+            ]
+            [ { unit | spriteFacing = facing }
+                |> UnitSprite.toSvg
+                    column
+                |> StyledSvg.toUnstyled
+            ]
+        , UnitCargo.toSvg passengerCount
+            |> StyledSvg.toUnstyled
+        , UnitCargo.freightToSvg freight
+            |> StyledSvg.toUnstyled
+        , UnitWarnings.toSvg unit
+            |> StyledSvg.toUnstyled
+        , UnitDeath.toSvg unit
+            |> StyledSvg.toUnstyled
+        , Svg.rect
+            [ SA.width "16"
+            , SA.height "16"
+            , SA.fill "transparent"
+            , HA.attribute "tabindex" "0"
+            , Aria.svgRole Aria.Button
+            , Aria.svgLabel accessibleLabel
+            , Ev.onMouseOver (MouseOverUnit unit.id)
+            , onClickWithDetail (ClickedUnit unit.id)
+            , onBoardActivationKeyDown
+                { pressedEnter = PressedEnterOnUnit unit.id
+                , pressedSpace = PressedSpaceOnUnit unit.id
+                }
+            ]
+            [ Svg.title
+                []
+                [ Svg.text accessibleLabel
+                ]
+            ]
+        ]
+
+
+boardTerrainTile : Map -> String -> Bool -> Int -> Int -> Svg Msg
+boardTerrainTile map filter visible x y =
+    let
+        position : Coordinate
+        position =
+            { x = x, y = y }
+
+        fogAttributes : List (Svg.Attribute Msg)
+        fogAttributes =
+            if visible then
+                []
+
+            else
+                [ HA.attribute "data-fog" "unseen"
+                ]
+
+        appearanceAttributes : List (Svg.Attribute Msg)
+        appearanceAttributes =
+            [ HA.style "filter" filter
+            , SA.pointerEvents "none"
+            ]
+    in
+    Svg.g
+        (appearanceAttributes ++ fogAttributes)
+        [ at position
+            [ SvgLazy.lazy2 terrainArtwork map.theme (Map.terrainAt map position)
+            ]
+        ]
+
+
+{-| A shared origin keeps the inactive targeting argument stable as well.
+Its coordinates are ignored unless indirect targeting is enabled.
+-}
+inactiveTargetOrigin : Coordinate
+inactiveTargetOrigin =
+    { x = 0, y = 0 }
+
+
+boardIndirectTargets : Map -> Coordinate -> Int -> BoardTargeting -> List Coordinate
+boardIndirectTargets map origin range targeting =
+    if targeting == ChoosingIndirectTarget then
+        OrderPlanning.indirectTargetsInRange map origin range
+
+    else
+        []
+
+
+boardTileFilter : Set Coordinate.Key -> Bool -> Set Coordinate.Key -> Maybe Coordinate -> Coordinate -> String
+boardTileFilter visiblePositions choosingDestination reachablePositions selected position =
+    let
+        visibilityFilters : List String
+        visibilityFilters =
+            if Set.member (Coordinate.key position) visiblePositions then
+                []
+
+            else
+                [ "saturate(0.18) brightness(0.58)" ]
+
+        unavailable : Bool
+        unavailable =
+            choosingDestination
+                && not (Set.member (Coordinate.key position) reachablePositions)
+                && selected
+                /= Just position
+
+        destinationFilters : List String
+        destinationFilters =
+            if unavailable then
+                [ "brightness(0.6)" ]
+
+            else
+                []
+
+        filters : List String
+        filters =
+            visibilityFilters ++ destinationFilters
+    in
+    if List.isEmpty filters then
+        "none"
+
+    else
+        String.join " " filters
+
+
+{-| Keep only persistent inputs at lazy boundaries. In particular, mapping options
+into reachable coordinates here avoids allocating a new list on every idle tick
+or camera update. Playback clocks and sprite frames never invalidate terrain.
+-}
+selectedTerrainLayer : Map -> List Coordinate -> List Movement.Option -> Coordinate -> Int -> BoardTargeting -> Coordinate -> Svg Msg
+selectedTerrainLayer map visibleTiles options origin range targeting selected =
+    terrainLayer map visibleTiles options (boardIndirectTargets map origin range targeting) (targeting /= InspectingBoard) (Just selected)
+
+
+unselectedTerrainLayer : Map -> List Coordinate -> List Movement.Option -> Coordinate -> Int -> BoardTargeting -> Svg Msg
+unselectedTerrainLayer map visibleTiles options origin range targeting =
+    terrainLayer map visibleTiles options (boardIndirectTargets map origin range targeting) (targeting /= InspectingBoard) Nothing
+
+
+terrainLayer : Map -> List Coordinate -> List Movement.Option -> List Coordinate -> Bool -> Maybe Coordinate -> Svg Msg
+terrainLayer map visibleTiles options indirect choosingDestination selected =
+    let
+        reachable : List Coordinate
+        reachable =
+            List.map .destination options ++ indirect
+
+        visiblePositions : Set Coordinate.Key
+        visiblePositions =
+            Set.fromList (List.map Coordinate.key visibleTiles)
+
+        reachablePositions : Set Coordinate.Key
+        reachablePositions =
+            Set.fromList (List.map Coordinate.key reachable)
+
+        terrainFilter : Coordinate -> String
+        terrainFilter =
+            boardTileFilter visiblePositions choosingDestination reachablePositions selected
+
+        terrainTile : Coordinate -> Svg Msg
+        terrainTile position =
+            SvgLazy.lazy5 boardTerrainTile map (terrainFilter position) (Set.member (Coordinate.key position) visiblePositions) position.x position.y
+    in
+    Svg.g
+        [ HA.style "image-rendering" "auto"
+        ]
+        (List.map terrainTile (Map.positions map))
+
+
+{-| Fog and destination changes only rebuild tile treatment; the underlying
+artwork depends on the two terrain enums, which compare by reference as well.
+-}
+terrainArtwork : MapTheme -> Terrain -> Svg Msg
+terrainArtwork theme terrain =
+    TerrainTile.toSvg
+        { theme = theme
+        , terrain = terrain
+        }
+        |> StyledSvg.toUnstyled
+
+
+tileTargets :
+    Map
+    -> List Movement.Option
+    -> Coordinate
+    -> Int
+    -> BoardTargeting
+    -> String
+    -> Svg Msg
+tileTargets map options origin range targeting destinationAction =
+    let
+        reachable : List Coordinate
+        reachable =
+            List.map .destination options ++ boardIndirectTargets map origin range targeting
+
+        reachablePositions : Set Coordinate.Key
+        reachablePositions =
+            Set.fromList (List.map Coordinate.key reachable)
+
+        tileTarget : Coordinate -> Svg Msg
+        tileTarget position =
+            SvgLazy.lazy4 boardTileTarget destinationAction (Set.member (Coordinate.key position) reachablePositions) position.x position.y
+    in
+    Svg.g
+        []
+        (List.map tileTarget (Map.positions map))
+
+
+movementLayer :
+    Map
+    -> List Movement.Option
+    -> Coordinate
+    -> Int
+    -> BoardTargeting
+    -> List PlannedOrder
+    -> MovementRoute.Purpose
+    -> List Coordinate
+    -> Svg Msg
+movementLayer map options origin range targeting paths previewPurpose previewedPath =
+    let
+        reachable : List Coordinate
+        reachable =
+            List.map .destination options ++ boardIndirectTargets map origin range targeting
+
+        reachableTile : Coordinate -> Svg Msg
+        reachableTile position =
+            at position
+                [ Svg.rect
+                    [ SA.x "1"
+                    , SA.y "1"
+                    , SA.width "14"
+                    , SA.height "14"
+                    , SA.fill S.yellow5Str
+                    , SA.fillOpacity "0.12"
+                    , SA.stroke S.yellow5Str
+                    , SA.strokeOpacity "0.65"
+                    , SA.strokeWidth "0.5"
+                    ]
+                    []
+                ]
+
+        plannedPath : PlannedOrder -> List (Svg Msg)
+        plannedPath order =
+            let
+                purpose : MovementRoute.Purpose
+                purpose =
+                    if PlannedOrder.isAttackMove order then
+                        MovementRoute.Attack
+
+                    else
+                        MovementRoute.Travel
+            in
+            MovementRoute.planned purpose (PlannedOrder.path order)
+
+        overlay : Svg Msg
+        overlay =
+            let
+                reachableTiles : List (Svg Msg)
+                reachableTiles =
+                    List.map reachableTile reachable
+
+                plannedPaths : List (Svg Msg)
+                plannedPaths =
+                    List.concatMap plannedPath paths
+
+                preview : List (Svg Msg)
+                preview =
+                    MovementRoute.preview previewPurpose previewedPath
+            in
+            Svg.g
+                [ SA.pointerEvents "none"
+                , Aria.svgHidden True
+                ]
+                (reachableTiles ++ plannedPaths ++ preview)
+    in
+    overlay
 
 
 {-| Enter and Space activate a focused board object. Reserve Meta/Ctrl chords

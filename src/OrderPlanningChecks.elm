@@ -157,12 +157,13 @@ planningChecks infantryId truckId passengerId =
 
         rangeMap : Map
         rangeMap =
-            { width = 20
-            , height = 3
-            , baseTile = Terrain.GrassPlain
-            , theme = Theme.GreenForest
-            , features = []
-            }
+            Map.fromFeatures
+                { width = 20
+                , height = 3
+                , baseTile = Terrain.GrassPlain
+                , theme = Theme.GreenForest
+                , features = []
+                }
 
         outOfRangeContext : OrderPlanning.Context
         outOfRangeContext =
@@ -766,7 +767,7 @@ planningChecks infantryId truckId passengerId =
         narrowContext : OrderPlanning.Context
         narrowContext =
             { cargoContext
-                | map = { width = 4, height = 1, baseTile = cargoContext.map.baseTile, features = [], theme = cargoContext.map.theme }
+                | map = Map.fromFeatures { width = 4, height = 1, baseTile = cargoContext.map.baseTile, features = [], theme = cargoContext.map.theme }
                 , units =
                     List.map putTruckAtCorner
                         cargoContext.units
@@ -793,7 +794,7 @@ planningChecks infantryId truckId passengerId =
         scarceCrateContext : OrderPlanning.Context
         scarceCrateContext =
             { mixedContext
-                | map = { width = 4, height = 2, baseTile = mixedContext.map.baseTile, theme = mixedContext.map.theme, features = [] }
+                | map = Map.fromFeatures { width = 4, height = 2, baseTile = mixedContext.map.baseTile, theme = mixedContext.map.theme, features = [] }
                 , supplyCrates = [ { position = { x = 3, y = 0 }, stock = { kind = DepotKind.Supply, current = 64, maximum = 64 } } ]
             }
 
@@ -1200,7 +1201,7 @@ planningChecks infantryId truckId passengerId =
 
 board : List Unit -> OrderPlanning.Context
 board units =
-    { map = { width = 7, height = 7, baseTile = Terrain.GrassPlain, theme = Theme.GreenForest, features = [] }
+    { map = Map.fromFeatures { width = 7, height = 7, baseTile = Terrain.GrassPlain, theme = Theme.GreenForest, features = [] }
     , units = units
     , movementRules = List.map movementRule [ Kind.Infantry, Kind.Truck, Kind.FieldGun ]
     , depots = []
