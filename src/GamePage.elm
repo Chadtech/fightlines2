@@ -234,6 +234,7 @@ type Msg
     | PathEnterPressed
     | NextUnorderedUnitKeyPressed
     | ClearMoveClicked
+    | BackToCommandsClicked
     | CargoUnitClicked UnitId
     | LoadCratesClicked UnitId Int
     | UnloadCrateToggled Int Bool
@@ -1697,6 +1698,11 @@ update lobbyId msg model =
                 |> confirmPath
                 |> E.withOut
 
+        BackToCommandsClicked ->
+            model
+                |> mapPlanning (OrderPlanning.restoreCommands (planningContext model))
+                |> E.withOut
+
         ClearMoveClicked ->
             model
                 |> revokeSelectedOrder
@@ -2366,7 +2372,7 @@ movementView model =
                             []
                             [ H.text ("choose an adjacent square to unload " ++ unloadingCargoLabel)
                             ]
-                        , Button.secondary "skip remaining cargo" UnloadSkipped
+                        , Button.primary "skip remaining cargo" UnloadSkipped
                             |> Button.toHtml
                         ]
 
@@ -2478,7 +2484,7 @@ unitOrderView model unit =
 
                 controls : List (Html Msg)
                 controls =
-                    [ Button.secondary "back to commands" ClearMoveClicked
+                    [ Button.primary "back to commands" BackToCommandsClicked
                         |> Button.toHtml
                     ]
             in
@@ -2567,7 +2573,7 @@ unitOrderView model unit =
                                             |> String.concat
                     in
                     [ H.h3 [] [ H.text chosenOrderText ]
-                    , Button.secondary "revoke order" ClearMoveClicked
+                    , Button.primary "revoke order" ClearMoveClicked
                         |> Button.toHtml
                     ]
 

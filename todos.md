@@ -17,8 +17,7 @@
 - infantry that attack from a forest during a turn should remain visible next turn
 - Hard to remember where you dropped supplies
 - If a field gun targets a square, and then an enemy unit gets jammed there, do they get hit?
-- Any right panel buttons should be primary
-- Revoking command should not re-open command menu
 
-- move map to all combat
-- Remote Rotate
+
+
+

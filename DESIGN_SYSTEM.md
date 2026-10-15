@@ -107,6 +107,8 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   battlefield. Keep the panel present when selection clears: leave its main area
   blank and place a quiet inspection hint against the lower edge. With a selection,
   the footer says esc to clear selection. Omit the roster and other floating cards.
+  Use gold primary buttons for every action button in this panel, including
+  back to commands, revoke order, and skip remaining cargo.
 - The bottom-left control panel is flush with the screen's bottom and left edges,
   overlaying the battlefield without reducing its height. It is a short horizontal
   strip up to 64rem wide, capped by the battlefield width, with a bevel on its top
@@ -152,6 +154,8 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   focus has no enclosing outline; keyboard focus underlines the terrain row. Keep it tied to
   the selected object (or a passenger's carrier), and clear it with selection.
 - Unit, supply, fuel, and terrain info markers expand keyboard-accessible
+  explanations using the shared `View.InfoMarker`: a centered `i` inside a
+  circular outline, also used in the command menu and depot details. Show
   explanations on padded yellow2 backgrounds with gray5 text. Hit points have
   no info marker or expandable help. The flat unit help section spans
   the panel width, without a heading or bevel. Resource gauges show the
@@ -160,7 +164,11 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   popup beside it on the battlefield. Anchor passenger commands beside their
   truck. Keep the popup at a fixed display size as the board zooms, constrain it
   inside the battlefield edges, and scroll its contents when the viewport is
-  shorter than the menu. Put move and hold position first. Carried units have no command popup.
+  shorter than the menu. The title bar reads `command`, with a dark circular info
+  icon on a transparent button followed by a gray beveled close (×) button at the
+  right. Info has subtle text-color hover feedback and a visible keyboard focus
+  outline. Close clears selection
+  while preserving saved orders. Put move and hold position first. Carried units have no command popup.
   Rows are flat at rest; hover and keyboard focus add an outset bevel, and
   pressing reverses it. Unimplemented commands are disabled. Tab enters the
   list; up/down arrows or W/S cycle enabled commands whenever the popup is open, including
@@ -168,8 +176,9 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   Escape clear selection while preserving saved orders.
   Move closes the popup and shows a destination prompt, preview cost/budget,
   and back to commands. Saving a destination or choosing hold position replaces
-  the popup with the chosen order and revoke order in the side panel. Revoking restores commands;
-  do not show commands and a saved order simultaneously. Locked orders cannot
+  the popup with the chosen order and revoke order in the side panel. Revoking
+  keeps the unit inspected with the popup closed. Clicking it again reopens
+  commands when eligible. Do not show commands and a saved order simultaneously. Locked orders cannot
   be revoked. Keep resource explanations in the expandable gauge help.
 - Primary-button dragging pans after a 6px threshold. A drag never selects a tile;
   a click still inspects units, depots and terrain. Scroll zooms around the cursor,

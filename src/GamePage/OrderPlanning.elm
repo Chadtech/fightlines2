@@ -35,6 +35,7 @@ module GamePage.OrderPlanning exposing
     , previewAmbush
     , previewTile
     , receivingLoad
+    , restoreCommands
     , revokeSelectedOrder
     , saveAmbush
     , saveUnloadDestination
@@ -816,7 +817,7 @@ revokeSelectedOrder context state =
                         [ unit.id ]
                         (orders state)
                     )
-                |> restoreCommands context
+                |> inspectSelectedUnit context
 
         Nothing ->
             state
@@ -952,6 +953,15 @@ selectUnit context id state =
                 choosingOccupiedDestination : Bool
                 choosingOccupiedDestination =
                     choosingIndirectFire state || choosingTransportDestination
+
+                nextSelection : Selection
+                nextSelection =
+                    unitSelection context unit state
+
+                reopeningCommands : Bool
+                reopeningCommands =
+                    (selection state == Just (Inspecting (UnitInspection id)))
+                        && (nextSelection /= Inspecting (UnitInspection id))
             in
             if choosingOccupiedDestination then
                 Unit.boardPosition unit
@@ -959,11 +969,11 @@ selectUnit context id state =
                         (\position -> selectTile context position state)
                     |> Maybe.withDefault state
 
-            else if Maybe.map .id (selectedUnit context state) == Just id then
+            else if (Maybe.map .id (selectedUnit context state) == Just id) && not reopeningCommands then
                 setSelection Nothing state
 
             else
-                setSelection (Just (unitSelection context unit state)) state
+                setSelection (Just nextSelection) state
 
 
 selectNextUnorderedUnit : Context -> Model -> Model

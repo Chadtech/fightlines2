@@ -288,8 +288,9 @@ storing another selection. Submission, waiting and playback store only
 `Inspection`, which identifies a unit or tile. Locking orders drops interaction
 data while retaining the selected object. Inspection may change during locked
 phases and survives submission failure or playback completion. A new turn starts
-without selection. Saving an order returns to inspection; revoking it restores
-commands when eligible.
+without selection. Saving or revoking an order returns to inspection. Clicking
+an inspected unit without an order reopens commands when eligible; otherwise
+clicking the selected unit clears selection.
 `UnitInteraction` distinguishes `CommandMenu`, `ChoosingMove MovePlanning` and
 `ChoosingDirection`. `MovePlanning` owns a required path preview and reachable
 options; neither can exist outside movement selection. `ChoosingExits` owns the

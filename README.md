@@ -90,7 +90,8 @@ the line to shorten it. Skipped squares connect from the current path tip within
 the remaining budget. If the traced route exceeds the budget, an affordable
 route from the unit is chosen when one exists. Saving stops hover previews and hides reachable-square highlights.
 Select the unit and choose **revoke order** to remove the saved plan and
-return to the commands. Choose **move** to trace a new route. Arrow keys or WASD extend or retrace the previewed route; Enter saves it without panning the map. Reachable squares support Tab and Enter/Space.
+keep the unit selected with its command popup closed. Click the unit again to
+reopen commands, then choose **move** to trace a new route. Arrow keys or WASD extend or retrace the previewed route; Enter saves it without panning the map. Reachable squares support Tab and Enter/Space.
 Press Escape or click the selected unit to leave movement selection. Paths remain visible when
 switching units. Unsubmitted plans are local drafts and disappear on refresh.
 Routes can pass through allied units or enemy starting positions; enemies encountered

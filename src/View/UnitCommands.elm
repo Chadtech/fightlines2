@@ -123,9 +123,20 @@ commandsView map offset zoom position unit =
                 ]
             ]
             [ H.h3
-                []
-                [ H.text "commands" ]
-            , infoButton
+                [ A.css
+                    [ S.textGray0 ]
+                ]
+                [ H.text "command" ]
+            , H.div
+                [ A.css
+                    [ S.row
+                    , S.itemsCenter
+                    , S.g1
+                    ]
+                ]
+                [ infoButton
+                , closeButton
+                ]
             ]
         , H.div
             [ Aria.role Aria.Group
@@ -149,17 +160,56 @@ infoButton =
         , A.attribute "aria-haspopup" "dialog"
         , Ev.onClick InfoClicked
         , A.css
-            [ S.p1
-            , S.pointerCursor
+            [ S.batch headerButtonStyles
+            , S.bgTransparent
             , S.textGray0
             , S.hover
-                [ S.textGray5 ]
-            , S.focusVisible
-                [ S.outlineCurrent
-                ]
+                [ S.textGray1 ]
             ]
         ]
         [ InfoMarker.toHtml ]
+
+
+closeButton : Html Msg
+closeButton =
+    H.button
+        [ A.type_ "button"
+        , Aria.label "close command menu"
+        , A.title "close command menu"
+        , Ev.onClick CancelClicked
+        , A.css
+            [ S.batch headerButtonStyles
+            , S.bgGray1
+            , S.textGray4
+            , S.outdentStrong
+            , S.hover
+                [ S.bgGray2
+                , S.textGray5
+                ]
+            , S.active
+                [ S.indentStrong ]
+            ]
+        ]
+        [ H.span
+            [ Aria.hidden True ]
+            [ H.text "×" ]
+        ]
+
+
+headerButtonStyles : List Css.Style
+headerButtonStyles =
+    [ S.row
+    , S.itemsCenter
+    , S.justifyCenter
+    , S.shrink0
+    , S.w6
+    , S.h6
+    , S.p0
+    , S.borderTransparent
+    , S.pointerCursor
+    , S.focusVisible
+        [ S.outlineCurrent ]
+    ]
 
 
 commandHtmlId : Command -> String

@@ -81,6 +81,14 @@ planningChecks infantryId truckId passengerId =
         attackSaved =
             OrderPlanning.confirmPath attackContext attacking
 
+        attackRevoked : OrderPlanning.Model
+        attackRevoked =
+            OrderPlanning.revokeSelectedOrder attackContext attackSaved
+
+        reopenedCommands : OrderPlanning.Model
+        reopenedCommands =
+            OrderPlanning.selectUnit attackContext infantryId attackRevoked
+
         lowSupplyInfantry : Unit
         lowSupplyInfantry =
             { infantry | resources = Maybe.map (\resources -> { resources | supplies = { current = 6, maximum = 64, upkeepPerTurn = 1, roughTerrainSurcharge = 0, movementPerTile = 1 } }) infantry.resources }
@@ -1014,8 +1022,33 @@ planningChecks infantryId truckId passengerId =
             (not (UnitCommand.canUse { lowSupplyInfantry | resources = Maybe.map (\resources -> { resources | supplies = { current = 5, maximum = 64, upkeepPerTurn = 1, roughTerrainSurcharge = 0, movementPerTile = 1 } }) lowSupplyInfantry.resources } UnitCommand.AttackMove))
         , expect "attack move cannot board an allied truck"
             (List.isEmpty (OrderPlanning.orders attackLoading) && OrderPlanning.destinationFeedback attackLoading == DestinationUnavailable)
-        , expect "attack move revocation restores commands"
-            (OrderPlanning.commandMenuUnit attackContext (OrderPlanning.revokeSelectedOrder attackContext attackSaved) == Just infantry)
+        , expect "revoking retains inspection without commands or movement previews"
+            (List.isEmpty (OrderPlanning.orders attackRevoked)
+                && OrderPlanning.selection attackRevoked
+                == Just (Inspecting (UnitInspection infantryId))
+                && OrderPlanning.commandMenuUnit attackContext attackRevoked
+                == Nothing
+                && OrderPlanning.pathPreview attackRevoked
+                == Nothing
+            )
+        , expect "back to commands drops movement previews and reopens the menu"
+            (OrderPlanning.commandMenuUnit attackContext (OrderPlanning.restoreCommands attackContext attacking)
+                == Just infantry
+                && OrderPlanning.pathPreview (OrderPlanning.restoreCommands attackContext attacking)
+                == Nothing
+            )
+        , expect "clicking the revoked unit reopens commands and clicking again deselects"
+            (OrderPlanning.commandMenuUnit attackContext reopenedCommands
+                == Just infantry
+                && OrderPlanning.selection (OrderPlanning.selectUnit attackContext infantryId reopenedCommands)
+                == Nothing
+            )
+        , expect "clicking a selected unit with a saved order still deselects without revoking"
+            (OrderPlanning.selection (OrderPlanning.selectUnit attackContext infantryId attackSaved)
+                == Nothing
+                && OrderPlanning.orders (OrderPlanning.selectUnit attackContext infantryId attackSaved)
+                == OrderPlanning.orders attackSaved
+            )
         , expect "indirect fire chooses tiles without movement or occupancy restrictions"
             (OrderPlanning.choosingIndirectFire aiming
                 && List.member { x = 3, y = 3 } (OrderPlanning.indirectTargets indirectContext aiming)
@@ -1095,8 +1128,13 @@ planningChecks infantryId truckId passengerId =
             (List.length (OrderPlanning.orders loading) == 2 && OrderPlanning.receivingLoad context truck (OrderPlanning.orders loading))
         , expect "a receiving truck is inspection only"
             (OrderPlanning.commandMenuUnit context receiving == Nothing && OrderPlanning.selection receiving == Just (Inspecting (UnitInspection truckId)))
-        , expect "revoking loading and receiver holds restores truck commands"
-            (List.isEmpty (OrderPlanning.orders revoked) && OrderPlanning.commandMenuUnit context revoked == Just truck)
+        , expect "revoking loading and receiver holds keeps the truck inspected without commands"
+            (List.isEmpty (OrderPlanning.orders revoked)
+                && OrderPlanning.commandMenuUnit context revoked
+                == Nothing
+                && OrderPlanning.selection revoked
+                == Just (Inspecting (UnitInspection truckId))
+            )
         , expect "holding a loaded truck opens its stationary unload checklist"
             (OrderPlanning.unloadChoice checklist /= Nothing)
         , expect "each unload exit reserves its square for the next passenger"
