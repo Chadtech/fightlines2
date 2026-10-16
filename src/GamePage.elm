@@ -57,6 +57,7 @@ import GamePage.Selection
         , Inspection(..)
         , MovePlanning
         , Selection(..)
+        , StationaryPurpose(..)
         , UnitInteraction(..)
         )
 import Graphql.Http
@@ -95,6 +96,7 @@ import Supply
 import Svg exposing (Svg)
 import Svg.Attributes as SA
 import Svg.Events as Ev
+import Svg.Keyed as SvgKeyed
 import Svg.Styled as StyledSvg
 import Time
 import Turn
@@ -121,6 +123,7 @@ import View.Dialog as Dialog exposing (Dialog)
 import View.MovementRoute as MovementRoute
 import View.RotationChoices as RotationChoices
 import View.SupplyCrate as SupplyCrate
+import View.TargetSight as TargetSight
 import View.TerrainInfo as TerrainInfo
 import View.TerrainTile as TerrainTile
 import View.TurnControls as TurnControls
@@ -263,10 +266,12 @@ type Msg
     | ClickedDepotStock Coordinate { detail : Int }
     | PressedEnterOnDepotStock Coordinate
     | PressedSpaceOnDepotStock Coordinate
-    | ClickedDepotLink Coordinate
     | ClickedTile Coordinate { detail : Int }
     | PressedEnterOnTile Coordinate
     | PressedSpaceOnTile Coordinate
+    | FocusedBoardUnit UnitId
+    | FocusedBoardTile Coordinate
+    | TargetPreviewLeft
     | MouseOverTile Coordinate
     | MousePressed Point
     | WheelScrolled Point Float
@@ -908,11 +913,11 @@ choosingDirection model =
         |> Maybe.withDefault False
 
 
-saveAmbush : Direction -> Model -> Model
-saveAmbush direction model =
+saveDirection : Direction -> Model -> Model
+saveDirection direction model =
     model
         |> mapPlanning
-            (OrderPlanning.saveAmbush (planningContext model) direction)
+            (OrderPlanning.saveDirection (planningContext model) direction)
 
 
 rotationSelection : Model -> Maybe RotationSelection
@@ -920,7 +925,7 @@ rotationSelection model =
     case ( currentSelection model, selectedUnit model ) of
         ( Just (UnitSelection selection), Just unit ) ->
             case selection.interaction of
-                ChoosingDirection direction ->
+                ChoosingDirection _ direction ->
                     Unit.boardPosition unit
                         |> Maybe.map
                             (\position ->
@@ -930,10 +935,13 @@ rotationSelection model =
                                 }
                             )
 
+                ChoosingAttackDirection move direction ->
+                    Just { unitId = unit.id, position = move.destination, direction = direction }
+
                 CommandMenu _ ->
                     Nothing
 
-                ChoosingIndirectFire ->
+                ChoosingIndirectFire _ ->
                     Nothing
 
                 ChoosingMove _ ->
@@ -943,14 +951,14 @@ rotationSelection model =
             Nothing
 
 
-previewAmbush : Direction -> Model -> Model
-previewAmbush direction model =
+previewDirection : Direction -> Model -> Model
+previewDirection direction model =
     if BattlefieldNavigation.active model.navigation then
         model
 
     else
         model
-            |> mapPlanning (OrderPlanning.previewAmbush direction)
+            |> mapPlanning (OrderPlanning.previewDirection direction)
 
 
 loadSnapshot : LobbyId -> Graphql.Http.Request Snapshot
@@ -1057,6 +1065,19 @@ inspectDepot position model =
 
     else
         setSelection (Just (Inspecting (TileInspection position))) model
+
+
+previewUnit : UnitId -> Model -> Model
+previewUnit id model =
+    if planningLocked model then
+        model
+
+    else
+        model.units
+            |> ListUtil.find (\unit -> unit.id == id)
+            |> Maybe.andThen Unit.boardPosition
+            |> Maybe.map (\position -> previewTile position model)
+            |> Maybe.withDefault model
 
 
 previewTile : Coordinate -> Model -> Model
@@ -1512,14 +1533,14 @@ update lobbyId msg model =
                 next =
                     case rotationMsg of
                         RotationChoices.MouseMovedOverDirection direction ->
-                            previewAmbush direction model
+                            previewDirection direction model
 
                         RotationChoices.ClickedDirection direction ->
                             if BattlefieldNavigation.suppressesClick model.navigation then
                                 model
 
                             else
-                                saveAmbush direction model
+                                saveDirection direction model
             in
             next
                 |> E.withOut
@@ -1562,21 +1583,14 @@ update lobbyId msg model =
                 |> E.withOut
 
         MouseOverUnit id ->
-            let
-                next : Model
-                next =
-                    if planningLocked model then
-                        model
+            previewUnit id model |> E.withOut
 
-                    else
-                        model.units
-                            |> ListUtil.find (\unit -> unit.id == id)
-                            |> Maybe.andThen Unit.boardPosition
-                            |> Maybe.map (\position -> previewTile position model)
-                            |> Maybe.withDefault model
-            in
-            next
-                |> E.withOut
+        FocusedBoardUnit id ->
+            if choosingIndirectFire model then
+                previewUnit id model |> E.withOut
+
+            else
+                model |> E.withOut
 
         ClickedDepot position click ->
             let
@@ -1619,9 +1633,6 @@ update lobbyId msg model =
         PressedSpaceOnDepotStock position ->
             inspectDepot position model |> E.withOut
 
-        ClickedDepotLink position ->
-            inspectDepot position model |> E.withOut
-
         MouseOverDepot position ->
             let
                 next : Model
@@ -1658,6 +1669,16 @@ update lobbyId msg model =
                 |> selectTile position
                 |> E.withOut
 
+        FocusedBoardTile position ->
+            if choosingIndirectFire model then
+                previewTile position model |> E.withOut
+
+            else
+                model |> E.withOut
+
+        TargetPreviewLeft ->
+            mapPlanning OrderPlanning.clearTargetPreview model |> E.withOut
+
         MouseOverTile position ->
             let
                 next : Model
@@ -1686,7 +1707,7 @@ update lobbyId msg model =
 
         DirectionKeyPressed direction ->
             model
-                |> saveAmbush direction
+                |> saveDirection direction
                 |> E.withOut
 
         PathDirectionKeyPressed direction ->
@@ -2197,89 +2218,109 @@ commandMenu model =
 selectionView : Model -> Html Msg
 selectionView model =
     let
-        content : List (Html Msg)
-        content =
+        inspectedUnit : Maybe Unit
+        inspectedUnit =
             case selectedUnit model of
+                Just unit ->
+                    Just unit
+
+                Nothing ->
+                    inspectionPosition model
+                        |> Maybe.andThen (\coordinate -> ListUtil.find (\unit -> Unit.boardPosition unit == Just coordinate) model.units)
+
+        position : Maybe Coordinate
+        position =
+            case inspectedUnit of
+                Just unit ->
+                    Unit.physicalPosition model.units unit
+
+                Nothing ->
+                    inspectionPosition model
+
+        unitRows : List ( String, Html Msg )
+        unitRows =
+            case inspectedUnit of
                 Just unit ->
                     let
                         unitPlayerName : String
                         unitPlayerName =
-                            let
-                                ownsUnit : Player -> Bool
-                                ownsUnit player =
-                                    player.playerNumber == unit.playerNumber
-                            in
                             model.players
-                                |> List.filter ownsUnit
-                                |> List.head
+                                |> ListUtil.find (\player -> player.playerNumber == unit.playerNumber)
                                 |> Maybe.map .name
                                 |> Maybe.withDefault ""
+
+                        actions : List (Html Msg)
+                        actions =
+                            if Maybe.map .id (selectedUnit model) == Just unit.id then
+                                [ movementView model ]
+
+                            else
+                                []
+
+                        contents : List (Html Msg)
+                        contents =
+                            [ UnitStatus.toHtml unitPlayerName unit
+                            , cargoView model unit
+                            , supplyControls model unit
+                            ]
+                                ++ actions
                     in
-                    -- Changing units resets native details disclosures in the inspector.
-                    [ Keyed.node "div"
-                        []
-                        [ ( UnitId.toString unit.id
-                          , H.div
-                                [ A.css
-                                    [ S.col
-                                    , S.g3
-                                    ]
-                                ]
-                                [ UnitStatus.toHtml unitPlayerName unit
-                                , depotLinkView model unit
-                                , cargoView model unit
-                                , supplyControls model unit
-                                , movementView model
-                                , terrainView model
-                                ]
-                          )
-                        ]
-                    ]
+                    [ ( UnitId.toString unit.id, inspectionRow (Unit.label unit) contents ) ]
 
                 Nothing ->
-                    case inspectionPosition model of
-                        Just position ->
-                            let
-                                supplyDetails : List (Html Msg)
-                                supplyDetails =
-                                    case ListUtil.find (\depot -> depot.position == position) model.depots of
-                                        Just depot ->
-                                            [ DepotStatus.toHtml depot ]
+                    []
 
-                                        Nothing ->
-                                            supplyCrateDetails model position
+        tileRows : List ( String, Html Msg )
+        tileRows =
+            case position of
+                Just coordinate ->
+                    let
+                        coordinateKey : String
+                        coordinateKey =
+                            String.fromInt coordinate.x ++ "," ++ String.fromInt coordinate.y
 
-                                terrainDetails : List (Html Msg)
-                                terrainDetails =
-                                    [ terrainView model
-                                    ]
+                        depotRows : List ( String, Html Msg )
+                        depotRows =
+                            model.depots
+                                |> List.filter (\depot -> depot.position == coordinate)
+                                |> List.map depotRow
 
-                                tileContent : List (Html Msg)
-                                tileContent =
-                                    supplyDetails ++ terrainDetails
+                        depotRow : Depot -> ( String, Html Msg )
+                        depotRow depot =
+                            ( "depot:" ++ coordinateKey
+                            , inspectionRow (Depot.label depot) [ DepotStatus.toHtml depot ]
+                            )
 
-                                inspectionKey : String
-                                inspectionKey =
-                                    "tile:" ++ String.fromInt position.x ++ "," ++ String.fromInt position.y
-                            in
-                            [ Keyed.node "div"
-                                []
-                                [ ( inspectionKey
-                                  , H.div
-                                        [ A.css
-                                            [ S.col
-                                            , S.g3
-                                            ]
-                                        ]
-                                        tileContent
-                                  )
-                                ]
+                        crateRows : List ( String, Html Msg )
+                        crateRows =
+                            model.supplyCrates
+                                |> List.filter (\crate -> crate.position == coordinate)
+                                |> List.indexedMap crateRow
+
+                        crateRow : Int -> Supply.GroundCrate -> ( String, Html Msg )
+                        crateRow index crate =
+                            ( "crate:" ++ coordinateKey ++ ":" ++ Supply.cargoLabel crate.stock.kind ++ ":" ++ String.fromInt index
+                            , inspectionRow (Supply.cargoLabel crate.stock.kind)
+                                [ SupplyCrate.toHtml { lastSeen = not (List.member coordinate model.visibleTiles) } crate.stock ]
+                            )
+
+                        terrainRows : List ( String, Html Msg )
+                        terrainRows =
+                            [ ( "terrain:" ++ coordinateKey
+                              , inspectionRow "terrain" [ terrainView model ]
+                              )
                             ]
+                    in
+                    depotRows ++ crateRows ++ terrainRows
 
-                        Nothing ->
-                            []
+                Nothing ->
+                    []
+
+        rows : List ( String, Html Msg )
+        rows =
+            unitRows ++ tileRows
     in
-    H.section
+    Keyed.node "section"
         [ Aria.label "selection"
         , A.css
             [ S.col
@@ -2287,24 +2328,23 @@ selectionView model =
             , S.shrink0
             ]
         ]
-        content
+        rows
 
 
-depotLinkView : Model -> Unit -> Html Msg
-depotLinkView model unit =
-    let
-        depotAtUnit : Coordinate -> Maybe Depot
-        depotAtUnit position =
-            ListUtil.find (\depot -> depot.position == position) model.depots
-
-        depotLink : Depot -> Html Msg
-        depotLink depot =
-            DepotStatus.linkToHtml { clicked = ClickedDepotLink depot.position } depot
-    in
-    Unit.boardPosition unit
-        |> Maybe.andThen depotAtUnit
-        |> Maybe.map depotLink
-        |> Maybe.withDefault (H.text "")
+inspectionRow : String -> List (Html Msg) -> Html Msg
+inspectionRow label contents =
+    H.section
+        [ Aria.label label
+        , A.css
+            [ S.col
+            , S.g3
+            , S.shrink0
+            , S.borderB
+            , S.borderGray2
+            , S.pb2
+            ]
+        ]
+        contents
 
 
 panelFooter : Bool -> Html Msg
@@ -2398,8 +2438,17 @@ movementView model =
                     else if choosingAmbush model then
                         ambushDetails unit
 
+                    else if choosingStandGround model then
+                        [ H.p [] [ H.text "choose a stand ground direction on the map, or press an arrow key / wasd" ]
+                        , H.p [] [ H.text "combat ready when attacked; does not fire" ]
+                        , Button.primary "back to commands" BackToCommandsClicked
+                            |> Button.toHtml
+                        ]
+
                     else if choosingDirection model then
-                        [ H.p [] [ H.text "point around the unit to preview its facing. click to save, or press an arrow key or wasd." ]
+                        [ H.p [] [ H.text "choose final attack direction around the destination. click to save, or press an arrow key or wasd." ]
+                        , Button.primary "back to commands" BackToCommandsClicked
+                            |> Button.toHtml
                         ]
 
                     else
@@ -2538,8 +2587,8 @@ unitOrderView model unit =
                                 PlannedOrder.IndirectFire fire ->
                                     "indirect fire: (" ++ String.fromInt fire.target.x ++ ", " ++ String.fromInt fire.target.y ++ ")"
 
-                                PlannedOrder.StandGround _ ->
-                                    "stand ground"
+                                PlannedOrder.StandGround facing ->
+                                    "stand ground: " ++ Direction.label facing.direction
 
                                 PlannedOrder.Hold _ ->
                                     "hold position"
@@ -2550,13 +2599,15 @@ unitOrderView model unit =
                                 PlannedOrder.Ambush ambush ->
                                     "ambush: " ++ Direction.label ambush.direction
 
-                                PlannedOrder.AttackMove move ->
+                                PlannedOrder.AttackMove attack ->
                                     "attack move: ("
-                                        ++ String.fromInt move.destination.x
+                                        ++ String.fromInt attack.move.destination.x
                                         ++ ", "
-                                        ++ String.fromInt move.destination.y
-                                        ++ ") · movement: "
-                                        ++ Movement.pointsLabel move.cost
+                                        ++ String.fromInt attack.move.destination.y
+                                        ++ ") · facing: "
+                                        ++ Direction.label attack.direction
+                                        ++ " · movement: "
+                                        ++ Movement.pointsLabel attack.move.cost
 
                                 PlannedOrder.Move movePlan ->
                                     if List.length movePlan.move.path <= 1 then
@@ -2593,12 +2644,15 @@ unitOrderView model unit =
             []
 
 
-plannedAmbushFacing : Model -> Unit -> Unit
-plannedAmbushFacing model unit =
+plannedStationaryFacing : Model -> Unit -> Unit
+plannedStationaryFacing model unit =
     case ListUtil.find (\order -> order.unitId == unit.id) (plannedOrders model) of
         Just order ->
             case order.action of
                 PlannedOrder.Ambush facing ->
+                    Unit.faceDirection (Just facing.direction) unit
+
+                PlannedOrder.StandGround facing ->
                     Unit.faceDirection (Just facing.direction) unit
 
                 _ ->
@@ -2613,7 +2667,22 @@ choosingAmbush model =
     case currentSelection model of
         Just (UnitSelection { interaction }) ->
             case interaction of
-                ChoosingDirection _ ->
+                ChoosingDirection AmbushPurpose _ ->
+                    True
+
+                _ ->
+                    False
+
+        _ ->
+            False
+
+
+choosingStandGround : Model -> Bool
+choosingStandGround model =
+    case currentSelection model of
+        Just (UnitSelection { interaction }) ->
+            case interaction of
+                ChoosingDirection StandGroundPurpose _ ->
                     True
 
                 _ ->
@@ -2816,7 +2885,7 @@ terrainView model =
             Keyed.node "div"
                 []
                 [ ( String.fromInt coordinate.x ++ "," ++ String.fromInt coordinate.y
-                  , TerrainInfo.toHtml (Map.terrainAt model.map coordinate)
+                  , TerrainInfo.toHtml model.map.theme (Map.terrainAt model.map coordinate)
                   )
                 ]
 
@@ -2909,57 +2978,6 @@ supplyControls model unit =
 
     else
         H.text ""
-
-
-supplyCrateDetails : Model -> Coordinate -> List (Html Msg)
-supplyCrateDetails model position =
-    let
-        stockText : Supply.CargoStock -> String
-        stockText stock =
-            Supply.resourceLabel stock.kind
-                ++ ": "
-                ++ String.fromInt stock.current
-                ++ "/"
-                ++ String.fromInt stock.maximum
-
-        observationLabel : String
-        observationLabel =
-            if List.member position model.visibleTiles then
-                ""
-
-            else
-                "last seen · "
-
-        crates : List (Html Msg)
-        crates =
-            model.supplyCrates
-                |> List.filter (\crate -> crate.position == position)
-                |> List.map crateDetails
-
-        crateDetails : Supply.GroundCrate -> Html Msg
-        crateDetails crate =
-            H.p
-                []
-                [ H.text (Supply.cargoLabel crate.stock.kind ++ " · " ++ observationLabel ++ stockText crate.stock)
-                ]
-
-        hasSupplySource : Bool
-        hasSupplySource =
-            not (List.isEmpty crates)
-
-        rules : List (Html Msg)
-        rules =
-            if hasSupplySource then
-                [ H.p
-                    []
-                    [ H.text "refills the matching resource on or beside this square before upkeep, while stock lasts"
-                    ]
-                ]
-
-            else
-                []
-    in
-    crates ++ rules
 
 
 cargoView : Model -> Unit -> Html Msg
@@ -3368,7 +3386,7 @@ turnPanel model =
 
         submitLocked : Bool
         submitLocked =
-            planningLocked model || isChoosingUnload model
+            planningLocked model || isChoosingUnload model || choosingDirection model
 
         activity : TurnControls.Activity
         activity =
@@ -3493,6 +3511,9 @@ battlefieldView model =
         cursorStyle =
             if BattlefieldNavigation.active model.navigation then
                 S.grabbingCursor
+
+            else if choosingIndirectFire model then
+                S.crosshairCursor
 
             else
                 S.grabCursor
@@ -3640,11 +3661,21 @@ boardSvg model =
 
         previewPurpose : MovementRoute.Purpose
         previewPurpose =
-            if attacking then
-                MovementRoute.Attack
+            case currentSelection model of
+                Just (UnitSelection { interaction }) ->
+                    case interaction of
+                        ChoosingAttackDirection _ direction ->
+                            MovementRoute.DirectedAttack direction
 
-            else
-                MovementRoute.Travel
+                        _ ->
+                            if attacking then
+                                MovementRoute.Attack
+
+                            else
+                                MovementRoute.Travel
+
+                _ ->
+                    MovementRoute.Travel
 
         orderedUnits : List UnitId
         orderedUnits =
@@ -3656,7 +3687,17 @@ boardSvg model =
 
         previewedPath : List Coordinate
         previewedPath =
-            pathPreview model |> Maybe.map .path |> Maybe.withDefault []
+            case currentSelection model of
+                Just (UnitSelection { interaction }) ->
+                    case interaction of
+                        ChoosingAttackDirection move _ ->
+                            move.path
+
+                        _ ->
+                            pathPreview model |> Maybe.map .path |> Maybe.withDefault []
+
+                _ ->
+                    []
 
         movingPositions : List { unitId : UnitId, position : Point }
         movingPositions =
@@ -3750,6 +3791,9 @@ boardSvg model =
                             , HA.attribute "tabindex" "0"
                             , Aria.svgRole Aria.Button
                             , Aria.svgLabel (DepotStock.label depot stock)
+                            , Ev.onMouseOver (MouseOverDepot depot.position)
+                            , Ev.on "focus" (Decode.succeed (FocusedBoardTile depot.position))
+                            , Ev.on "blur" (Decode.succeed TargetPreviewLeft)
                             , onClickWithDetail (ClickedDepotStock depot.position)
                             , onBoardActivationKeyDown
                                 { pressedEnter = PressedEnterOnDepotStock depot.position
@@ -3770,10 +3814,10 @@ boardSvg model =
                         Unit.faceDirection (Just rotation.direction) unit
 
                     else
-                        plannedAmbushFacing model unit
+                        plannedStationaryFacing model unit
 
                 Nothing ->
-                    plannedAmbushFacing model unit
+                    plannedStationaryFacing model unit
 
         unitTransform : Unit -> Coordinate -> String
         unitTransform unit position =
@@ -3954,7 +3998,7 @@ boardSvg model =
                     case ( currentSelection model, selectedUnit model ) of
                         ( Just (UnitSelection { interaction }), Just unit ) ->
                             case interaction of
-                                ChoosingDirection direction ->
+                                ChoosingDirection AmbushPurpose direction ->
                                     Unit.boardPosition unit
                                         |> Maybe.map (\position -> [ Ambush.coverage model.map position direction unit.combatRules ])
                                         |> Maybe.withDefault []
@@ -3967,20 +4011,40 @@ boardSvg model =
             in
             List.filterMap saved (plannedOrders model) ++ preview
 
+        targetPreview : List (Svg Msg)
+        targetPreview =
+            TurnLifecycle.planning model.currentTurn.phase
+                |> Maybe.andThen OrderPlanning.indirectTargetPreview
+                |> Maybe.map (\position -> [ at position [ TargetSight.toSvg TargetSight.Preview ] ])
+                |> Maybe.withDefault []
+
         indirectFireOverlay : Svg Msg
         indirectFireOverlay =
             let
-                targetMarker : PlannedOrder -> Maybe (Svg Msg)
+                targetMarker : PlannedOrder -> Maybe ( String, Svg Msg )
                 targetMarker order =
                     case order.action of
                         PlannedOrder.IndirectFire fire ->
-                            Just (targetOutline fire.target)
+                            let
+                                sightState : TargetSight.State
+                                sightState =
+                                    if Maybe.map .id (selectedUnit model) == Just order.unitId then
+                                        TargetSight.Saved
+
+                                    else
+                                        TargetSight.SavedInactive
+                            in
+                            Just
+                                ( UnitId.toString order.unitId ++ ":" ++ String.fromInt fire.target.x ++ "," ++ String.fromInt fire.target.y
+                                , at fire.target [ TargetSight.toSvg sightState ]
+                                )
 
                         _ ->
                             Nothing
             in
-            Svg.g
+            SvgKeyed.node "g"
                 [ Aria.svgHidden True
+                , SA.pointerEvents "none"
                 ]
                 (List.filterMap targetMarker paths)
 
@@ -4029,6 +4093,7 @@ boardSvg model =
         , HA.style "display" "block"
         , Aria.svgRole Aria.Group
         , Aria.svgLabel "battlefield"
+        , Ev.on "mouseleave" (Decode.succeed TargetPreviewLeft)
         ]
         (List.concat
             [ [ terrain
@@ -4060,11 +4125,13 @@ boardSvg model =
                 )
                 model.units
             , ambushCoverage
-            , [ unloadOverlay, indirectFireOverlay, shotOverlay ]
+            , [ unloadOverlay, shotOverlay ]
             , selection
             , rotationOverlay
             , facingOverlay
             , List.filterMap depotStockView model.depots
+            , [ indirectFireOverlay ]
+            , targetPreview
             , spotlightOverlay
             , lossOverlay
             ]
@@ -4089,6 +4156,8 @@ boardTileTarget destinationAction reachable x y =
             , SA.strokeOpacity "0.22"
             , SA.strokeWidth "0.25"
             , Ev.onMouseOver (MouseOverTile position)
+            , Ev.on "focus" (Decode.succeed (FocusedBoardTile position))
+            , Ev.on "blur" (Decode.succeed TargetPreviewLeft)
             , onClickWithDetail (ClickedTile position)
             ]
 
@@ -4143,6 +4212,9 @@ boardCrate filter visible crate =
             , HA.attribute "tabindex" "0"
             , Aria.svgRole Aria.Button
             , Aria.svgLabel label
+            , Ev.onMouseOver (MouseOverTile crate.position)
+            , Ev.on "focus" (Decode.succeed (FocusedBoardTile crate.position))
+            , Ev.on "blur" (Decode.succeed TargetPreviewLeft)
             , onClickWithDetail (ClickedTile crate.position)
             , onBoardActivationKeyDown
                 { pressedEnter = PressedEnterOnTile crate.position
@@ -4174,6 +4246,8 @@ boardDepot filter depot =
             , Aria.svgRole Aria.Button
             , Aria.svgLabel (Depot.label depot)
             , Ev.onMouseOver (MouseOverDepot depot.position)
+            , Ev.on "focus" (Decode.succeed (FocusedBoardTile depot.position))
+            , Ev.on "blur" (Decode.succeed TargetPreviewLeft)
             , onClickWithDetail (ClickedDepot depot.position)
             , onBoardActivationKeyDown
                 { pressedEnter = PressedEnterOnDepot depot.position
@@ -4272,6 +4346,8 @@ boardUnit unit facing transform ordered passengerCount column =
             , Aria.svgRole Aria.Button
             , Aria.svgLabel accessibleLabel
             , Ev.onMouseOver (MouseOverUnit unit.id)
+            , Ev.on "focus" (Decode.succeed (FocusedBoardUnit unit.id))
+            , Ev.on "blur" (Decode.succeed TargetPreviewLeft)
             , onClickWithDetail (ClickedUnit unit.id)
             , onBoardActivationKeyDown
                 { pressedEnter = PressedEnterOnUnit unit.id
@@ -4490,11 +4566,12 @@ movementLayer map options origin range targeting paths previewPurpose previewedP
             let
                 purpose : MovementRoute.Purpose
                 purpose =
-                    if PlannedOrder.isAttackMove order then
-                        MovementRoute.Attack
+                    case order.action of
+                        PlannedOrder.AttackMove attack ->
+                            MovementRoute.DirectedAttack attack.direction
 
-                    else
-                        MovementRoute.Travel
+                        _ ->
+                            MovementRoute.Travel
             in
             MovementRoute.planned purpose (PlannedOrder.path order)
 
@@ -4594,7 +4671,14 @@ keyCommands model =
                 case currentSelection model of
                     Just (UnitSelection { interaction }) ->
                         case interaction of
-                            ChoosingDirection _ ->
+                            ChoosingDirection _ _ ->
+                                [ leftKeys (DirectionKeyPressed DirectionEnum.West)
+                                , rightKeys (DirectionKeyPressed DirectionEnum.East)
+                                , upKeys (DirectionKeyPressed DirectionEnum.North)
+                                , downKeys (DirectionKeyPressed DirectionEnum.South)
+                                ]
+
+                            ChoosingAttackDirection _ _ ->
                                 [ leftKeys (DirectionKeyPressed DirectionEnum.West)
                                 , rightKeys (DirectionKeyPressed DirectionEnum.East)
                                 , upKeys (DirectionKeyPressed DirectionEnum.North)
@@ -4609,7 +4693,7 @@ keyCommands model =
                                 , KeyCmd.enter PathEnterPressed
                                 ]
 
-                            ChoosingIndirectFire ->
+                            ChoosingIndirectFire _ ->
                                 []
 
                             CommandMenu _ ->

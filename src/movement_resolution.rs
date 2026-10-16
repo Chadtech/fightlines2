@@ -4,7 +4,7 @@ use crate::{
     map::Coordinate,
     movement,
     scenario::{PlayerNumber, Scenario, Unit, UnitId},
-    turns::{self, MoveOrder, PlannedLoad, TurnFrame},
+    turns::{self, FacingOrder, MoveOrder, PlannedLoad, TurnFrame},
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -389,7 +389,7 @@ fn resolve_arrivals(
                     && !blocked.contains(&order.unit_id)
                     && !stop_after_arrival.contains(&order.unit_id)
             })
-            .map(|order| order.unit_id)
+            .map(|order| (order.unit_id, order.facing))
             .collect();
         for (id, destination) in intents {
             if !blocked.contains(&id) {
@@ -411,23 +411,27 @@ fn resolve_arrivals(
         result.stopped.extend(stop_after_arrival);
         // Check the final facing after every simultaneous arrival has been applied.
         // Adjacent contact is physical, just like attempting to enter an enemy tile.
-        for id in completing_attack_moves {
+        for (id, facing) in completing_attack_moves {
             let mover = board
                 .units
-                .iter()
+                .iter_mut()
                 .find(|unit| unit.unit_id() == id)
                 .ok_or(ResolutionError::MissingUnit)?;
+            if let FacingOrder::AfterMove(direction) = facing {
+                mover.rotate(direction);
+            }
             let origin = mover.board_position().ok_or(ResolutionError::MissingUnit)?;
+            let direction = mover.direction();
+            let player = mover.player_number();
             let target = board
                 .units
                 .iter()
-                .filter(|unit| unit.is_alive() && unit.player_number() != mover.player_number())
+                .filter(|unit| unit.is_alive() && unit.player_number() != player)
                 .filter(|unit| {
                     unit.board_position().is_some_and(|destination| {
                         (destination.x() - origin.x()).abs() + (destination.y() - origin.y()).abs()
                             == 1
-                            && crate::scenario::Direction::between(origin, destination)
-                                == mover.direction()
+                            && crate::scenario::Direction::between(origin, destination) == direction
                     })
                 })
                 .min_by_key(|unit| unit.unit_id());
@@ -781,7 +785,7 @@ mod tests {
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, crate::combat::CombatKind::AttackMove);
         assert_eq!(shots[0].destination, Coordinate::new(2, 0));
-        assert_eq!(shots[0].target_health.after.current(), 10);
+        assert_eq!(shots[0].target_health.after.current(), 5);
         let units = &result.frames.last().ok_or("missing frame")?.units;
         assert_eq!(
             units
@@ -875,7 +879,7 @@ mod tests {
                 assert_eq!(shot.kind, crate::combat::CombatKind::AttackMove);
                 assert_eq!(shot.origin, Coordinate::new(destination.0, destination.1));
                 assert_eq!(shot.destination, Coordinate::new(enemy.0, enemy.1));
-                let damage = if attacker == "11" { 16 } else { 6 };
+                let damage = if attacker == "11" { 16 } else { 11 };
                 assert_eq!(shot.target_health.after.current(), 16 - damage);
                 let unit = result
                     .frames
@@ -885,10 +889,91 @@ mod tests {
                     .iter()
                     .find(|unit| unit.id() == attacker)
                     .ok_or("missing attacker")?;
-                let supplies = if attacker == "11" { 112 } else { 160 };
+                let supplies = if attacker == "11" { 92 } else { 160 };
                 assert_eq!(unit.supplies().current(), supplies);
                 assert_eq!(result.stopped.len(), 2);
             }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn completed_attack_moves_turn_and_fire_in_the_chosen_direction()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use crate::scenario::Direction;
+        for attacker in ["1", "11"] {
+            for (direction, enemy) in [
+                (Direction::North, (4, 2)),
+                (Direction::South, (4, 4)),
+                (Direction::West, (3, 3)),
+            ] {
+                let (scenario, mut orders) =
+                    setup(&[(attacker, &[(3, 3), (4, 3)]), ("6", &[enemy])])?;
+                orders[0].travel = turns::TravelMode::AttackMove;
+                orders[0].facing = FacingOrder::AfterMove(direction);
+                let result = resolve(&scenario, &orders, 1)?;
+                let shots: Vec<_> = result
+                    .frames
+                    .iter()
+                    .flat_map(|frame| &frame.shots)
+                    .collect();
+                assert_eq!(shots.len(), 1);
+                assert_eq!(
+                    shots
+                        .first()
+                        .ok_or("missing chosen-direction shot")?
+                        .destination,
+                    Coordinate::new(enemy.0, enemy.1)
+                );
+                let arrived = result
+                    .frames
+                    .last()
+                    .ok_or("missing final frame")?
+                    .units
+                    .iter()
+                    .find(|unit| unit.id() == attacker)
+                    .ok_or("missing attacker")?;
+                assert_eq!(arrived.direction(), Some(direction));
+                assert_eq!(path(&result, attacker)?, orders[0].path);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn final_facing_applies_without_a_target_but_not_after_early_contact()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use crate::scenario::Direction;
+        for (enemy, interrupted) in [((8, 8), false), ((5, 3), false), ((4, 3), true)] {
+            let (scenario, mut orders) =
+                setup(&[("1", &[(2, 3), (3, 3), (4, 3)]), ("6", &[enemy])])?;
+            orders[0].travel = turns::TravelMode::AttackMove;
+            orders[0].facing = FacingOrder::AfterMove(Direction::North);
+            let result = resolve(&scenario, &orders, 1)?;
+            let arrived = result
+                .frames
+                .last()
+                .ok_or("missing final frame")?
+                .units
+                .iter()
+                .find(|unit| unit.id() == "1")
+                .ok_or("missing attacker")?;
+            assert_eq!(
+                arrived.direction(),
+                Some(if interrupted {
+                    Direction::East
+                } else {
+                    Direction::North
+                })
+            );
+            assert_eq!(
+                arrived.board_position(),
+                Some(Coordinate::new(if interrupted { 3 } else { 4 }, 3))
+            );
+            assert_eq!(
+                result.frames.iter().flat_map(|frame| &frame.shots).count(),
+                usize::from(interrupted)
+            );
         }
         Ok(())
     }
@@ -954,8 +1039,8 @@ mod tests {
                 volley
                     .shots
                     .iter()
-                    .all(|shot| shot.attacker_health.after.current() == 12
-                        && shot.target_health.after.current() == 12)
+                    .all(|shot| shot.attacker_health.after.current() == 9
+                        && shot.target_health.after.current() == 9)
             );
             orders.reverse();
             let reversed = resolve(&scenario, &orders, turn)?;
@@ -1021,8 +1106,8 @@ mod tests {
                 assert!(
                     shots
                         .iter()
-                        .all(|shot| shot.target_health.after.current() == 12
-                            && shot.attacker_health.after.current() == 12)
+                        .all(|shot| shot.target_health.after.current() == 9
+                            && shot.attacker_health.after.current() == 9)
                 );
                 assert_eq!(result.stopped.len(), 2);
                 orders.reverse();

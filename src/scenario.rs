@@ -164,13 +164,14 @@ impl Supplies {
     fn for_kind(kind: UnitKind) -> Self {
         let movement_per_tile = match kind {
             UnitKind::Infantry => 12,
-            UnitKind::FieldGun => 4,
-            UnitKind::Tank | UnitKind::Truck => 0,
+            UnitKind::FieldGun => 8,
+            UnitKind::Tank => 12,
+            UnitKind::Truck => 0,
         };
         let maximum = match kind {
             UnitKind::Tank | UnitKind::Truck => 128,
             UnitKind::Infantry => 192,
-            UnitKind::FieldGun => 256,
+            UnitKind::FieldGun => 196,
         };
         Self {
             current: maximum,
@@ -971,8 +972,9 @@ mod tests {
             );
             let (maximum, movement_per_tile) = match unit.kind {
                 UnitKind::Infantry => (192, 12),
-                UnitKind::FieldGun => (256, 4),
-                UnitKind::Tank | UnitKind::Truck => (128, 0),
+                UnitKind::FieldGun => (196, 8),
+                UnitKind::Tank => (128, 12),
+                UnitKind::Truck => (128, 0),
             };
             assert_eq!(unit.supplies.current, maximum);
             assert_eq!(unit.supplies.maximum, maximum);

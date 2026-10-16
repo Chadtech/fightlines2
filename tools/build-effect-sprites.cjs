@@ -28,6 +28,18 @@ async function main() {
     .png()
     .toFile(path.join(root, "public/assets/attack-marker-illustrated-v1.png"));
   console.log("Exported illustrated attack marker with a compact transparent footprint.");
+
+  const sightSource = path.join(root, "artwork/effects/illustrated/target-sight/target-sight-v1.png");
+  const sightMetadata = await sharp(sightSource).metadata();
+  const sightStats = await sharp(sightSource).stats();
+  assert(sightMetadata.hasAlpha && !sightStats.isOpaque, "target sight needs a transparent center and edges");
+  await sharp(sightSource)
+    .trim({ background: "#00000000", threshold: 1 })
+    .resize(232, 232, { fit: "contain", kernel: "lanczos3", background: "#00000000" })
+    .extend({ top: 12, bottom: 12, left: 12, right: 12, background: "#00000000" })
+    .png()
+    .toFile(path.join(root, "public/assets/target-sight-illustrated-v1.png"));
+  console.log("Exported illustrated targeting sight in a transparent 256px square cell.");
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });

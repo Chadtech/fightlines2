@@ -77,9 +77,15 @@ planningChecks infantryId truckId passengerId =
                 |> OrderPlanning.extendPath attackContext DirectionEnum.East
                 |> OrderPlanning.extendPath attackContext DirectionEnum.East
 
+        attackAiming : OrderPlanning.Model
+        attackAiming =
+            OrderPlanning.confirmPath attackContext attacking
+
         attackSaved : OrderPlanning.Model
         attackSaved =
-            OrderPlanning.confirmPath attackContext attacking
+            attackAiming
+                |> OrderPlanning.previewDirection DirectionEnum.West
+                |> OrderPlanning.saveDirection attackContext DirectionEnum.North
 
         attackRevoked : OrderPlanning.Model
         attackRevoked =
@@ -185,11 +191,17 @@ planningChecks infantryId truckId passengerId =
                 |> OrderPlanning.selectUnit outOfRangeContext infantryId
                 |> OrderPlanning.applyCommand outOfRangeContext UnitCommand.IndirectFire
 
-        standingGround : OrderPlanning.Model
-        standingGround =
+        choosingStandGround : OrderPlanning.Model
+        choosingStandGround =
             OrderPlanning.init
                 |> OrderPlanning.selectUnit context infantryId
                 |> OrderPlanning.applyCommand context UnitCommand.StandGround
+
+        standingGround : OrderPlanning.Model
+        standingGround =
+            choosingStandGround
+                |> OrderPlanning.previewDirection DirectionEnum.West
+                |> OrderPlanning.saveDirection context DirectionEnum.West
 
         insufficientReadiness : Unit
         insufficientReadiness =
@@ -200,15 +212,15 @@ planningChecks infantryId truckId passengerId =
             OrderPlanning.init
                 |> OrderPlanning.selectUnit context infantryId
                 |> OrderPlanning.applyCommand context UnitCommand.Ambush
-                |> OrderPlanning.previewAmbush DirectionEnum.East
-                |> OrderPlanning.saveAmbush context DirectionEnum.East
+                |> OrderPlanning.previewDirection DirectionEnum.East
+                |> OrderPlanning.saveDirection context DirectionEnum.East
 
         truckAmbush : OrderPlanning.Model
         truckAmbush =
             OrderPlanning.init
                 |> OrderPlanning.selectUnit context truckId
                 |> OrderPlanning.applyCommand context UnitCommand.Ambush
-                |> OrderPlanning.saveAmbush context DirectionEnum.East
+                |> OrderPlanning.saveDirection context DirectionEnum.East
 
         moving : OrderPlanning.Model
         moving =
@@ -1016,6 +1028,12 @@ planningChecks infantryId truckId passengerId =
             )
         , expect "attack move traces and saves an occupied enemy destination without creating loading holds"
             (List.map PlannedOrder.path (OrderPlanning.orders attackSaved) == [ [ { x = 1, y = 1 }, { x = 2, y = 1 }, { x = 3, y = 1 } ] ] && List.all PlannedOrder.isAttackMove (OrderPlanning.orders attackSaved) && OrderPlanning.pathPreview attackSaved == Nothing)
+        , expect "attack route awaits direction and blocks submission before saving"
+            (OrderPlanning.choosingDirection attackAiming
+                && List.isEmpty (OrderPlanning.orders attackAiming)
+                && OrderPlanning.submissionDrafts attackAiming
+                == Nothing
+            )
         , expect "attack move previews reserve readiness and firing supplies"
             (OrderPlanning.pathPreview lowSupplyAttack |> Maybe.map (\option -> option.path == [ { x = 1, y = 1 }, { x = 2, y = 1 } ]) |> Maybe.withDefault False)
         , expect "attack move command requires readiness supplies before walking"
@@ -1058,6 +1076,19 @@ planningChecks infantryId truckId passengerId =
                 == [ [ { x = 1, y = 1 } ] ]
                 && List.isEmpty (OrderPlanning.orders (OrderPlanning.revokeSelectedOrder indirectContext bombardment))
             )
+        , expect "target previews are legal, transient, and do not save orders"
+            (OrderPlanning.indirectTargetPreview aiming
+                == Nothing
+                && OrderPlanning.indirectTargetPreview (OrderPlanning.previewTile indirectContext { x = 3, y = 3 } aiming)
+                == Just { x = 3, y = 3 }
+                && List.isEmpty (OrderPlanning.orders (OrderPlanning.previewTile indirectContext { x = 3, y = 3 } aiming))
+                && OrderPlanning.indirectTargetPreview (OrderPlanning.clearTargetPreview (OrderPlanning.previewTile indirectContext { x = 3, y = 3 } aiming))
+                == Nothing
+                && OrderPlanning.indirectTargetPreview (OrderPlanning.previewTile outOfRangeContext { x = 14, y = 1 } (OrderPlanning.previewTile outOfRangeContext { x = 13, y = 1 } edgeAim))
+                == Nothing
+                && OrderPlanning.indirectTargetPreview bombardment
+                == Nothing
+            )
         , expect "indirect fire on occupied tiles retains the firing gun"
             (OrderPlanning.orders (OrderPlanning.selectUnit indirectContext truckId aiming)
                 == [ aimedOrder { x = 3, y = 1 } ]
@@ -1076,9 +1107,11 @@ planningChecks infantryId truckId passengerId =
                 && not (UnitCommand.canUse { fieldGun | location = Location.Aboard truckId } UnitCommand.IndirectFire)
                 && not (UnitCommand.canUse { insufficientReadiness | kind = Kind.FieldGun } UnitCommand.IndirectFire)
             )
-        , expect "stand ground saves immediately and can be revoked"
-            (OrderPlanning.orders standingGround
-                == [ { unitId = infantryId, action = PlannedOrder.StandGround { x = 1, y = 1 } } ]
+        , expect "stand ground chooses direction before saving and can be revoked"
+            (OrderPlanning.choosingDirection choosingStandGround
+                && List.isEmpty (OrderPlanning.orders choosingStandGround)
+                && OrderPlanning.orders standingGround
+                == [ { unitId = infantryId, action = PlannedOrder.StandGround { position = { x = 1, y = 1 }, direction = DirectionEnum.West } } ]
                 && List.isEmpty (OrderPlanning.orders (OrderPlanning.revokeSelectedOrder context standingGround))
             )
         , expect "stand ground requires readiness supplies and excludes trucks and passengers"

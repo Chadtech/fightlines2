@@ -174,12 +174,12 @@ sight. When a visible enemy moves into fog, it moves toward the edge of its last
 visible square and fades out; its hidden destination and remaining route stay concealed.
 Hidden positions and route segments are withheld from responses.
 
-Infantry start with 192/192 supplies; field guns start with 256/256; tanks and trucks
+Infantry start with 192/192 supplies; field guns start with 196/196; tanks and trucks
 start with 128/128. Every unit spends 4 supplies per resolved turn, even when holding or stopped
 by an encounter. Infantry spend 12 supplies per grass tile and 16 per hill, forest, or mountain tile;
-field guns spend 4; tanks and trucks use fuel
-for movement instead. Movement reserves the turn's upkeep before spending
-supplies. Infantry need at least 16 supplies for a grass tile or 20 for hills, forest, or mountains; field guns need at least 8.
+field guns spend 8 and tanks spend 12 supplies per tile. Tanks and trucks also use fuel
+for movement; trucks spend no movement supplies. Movement reserves the turn's upkeep before spending
+supplies. Infantry need at least 16 supplies for a grass tile or 20 for hills, forest, or mountains; field guns need at least 12 and tanks need at least 16, plus enough fuel.
 Units below these thresholds can still hold.
 Units die immediately when supplies reach zero after turn upkeep. A dead truck
 also loses its passengers. During playback, a skull and crossbones appears for 0.6 seconds, blinks away
@@ -317,12 +317,13 @@ Infantry, tanks, and field guns can choose **ambush**, then point around the
 unit and click a direction, or press an arrow key / WASD. This saves a stationary,
 revocable order with its chosen facing; no separate rotation order is needed.
 Red dotted squares preview the firing area and remain visible for saved orders.
-Infantry and tanks cover the adjacent square directly ahead. Field guns cover
+Infantry cover the adjacent square directly ahead. Tanks cover the two squares
+straight ahead, requiring their own or allied sight of the target. Field guns cover
 all three squares straight ahead, plus the two squares beside the middle square,
 forming a five-square plus sign that rotates with the chosen direction.
 
 Ambush readiness costs 8 supplies in addition to normal turn upkeep. Firing costs
-12 supplies for infantry and field guns and 8 for tanks; infantry deal 4 damage, tanks 8, and field guns 12. These are
+12 supplies for infantry, 20 for field guns, and 16 for tanks; infantry deal 4 damage, tanks 8, and field guns 12. These are
 initial balance values. Readiness is charged even without a target, and upkeep
 is reserved before firing. Units without enough supplies for readiness cannot
 choose ambush; a unit can maintain readiness without enough supplies to fire.
@@ -483,9 +484,11 @@ Depots and units are placed separately.
 ## Attack move
 
 Infantry and tanks can choose **attack move** and trace a route with the same
-pointer and keyboard controls as move. Dragging traces without panning and saves
-on release; hovering and clicking or arrows and Enter also work. Preview paths are solid red; saved paths
-are dashed red. Both end in a pointed arrow aligned with the final segment.
+pointer and keyboard controls as move. First choose the route by releasing a drag,
+clicking a destination, or pressing Enter. Then choose final facing around the
+destination: point to preview, and click or press an arrow/WASD key to save.
+Preview paths are solid red; saved paths are dashed red. The endpoint arrow shows
+the chosen final facing. Interrupted routes keep their last traveled facing.
 Allies remain passable, but attack move cannot load or unload passengers.
 Enemy squares may be chosen as destinations.
 
@@ -494,7 +497,7 @@ opposing swaps, and simultaneous destination claims. The unit stops at the first
 encounter and fires once using its normal damage and shot cost. A resident enemy
 keeps its square; the attacker stops on the preceding square. Completing an
 attack-move route also triggers an attack against an enemy on the adjacent square
-directly ahead, using the facing of the final traveled segment. This contact is
+directly ahead, using the final facing chosen after the route. This contact is
 checked after simultaneous arrivals, includes concealed enemies, and interrupts
 the target's remaining movement. Both participants stop their remaining routes.
 If allied traffic forces a participant back to a free square, direct fire occurs
@@ -525,11 +528,13 @@ remaining fuel when picked up or unloaded, and disappear when empty.
 Fuel depot inspectors and stock bars conceal
 quantities outside sight and show low/empty warnings like supply depots.
 
-Choose **stand ground** for infantry, tanks, or field guns to stay in place with
-combat readiness when attacked. It keeps the current facing, never fires, and
-costs normal upkeep plus 8 readiness supplies each turn. It saves immediately,
-counts as an order, and can be revoked before submission. Trucks and passengers
-cannot stand ground.
+Choose **stand ground** for infantry, tanks, or field guns to stay in place.
+Infantry and tanks gain defensive readiness; exposed field-gun crews gain no
+damage reduction from preparation. Choose its direction on the map or with an
+arrow key / WASD, just like ambush. It never fires and costs normal upkeep plus
+8 readiness supplies each turn. Choosing a direction saves the order, which
+counts toward turn readiness and can be revoked before submission. Trucks and
+passengers cannot stand ground.
 
 ## Mountains
 
@@ -554,7 +559,7 @@ arrive can be hit. An empty tile wastes the shot. Guns destroyed or loaded befor
 impact cannot fire.
 
 This uses the existing supply-based ammunition model: normal upkeep plus 8
-readiness supplies and 12 firing supplies, including misses. Damage uses normal
+readiness supplies and 20 firing supplies, including misses. Damage uses normal
 field-gun power, health, matchup, defender readiness/facing, and target cover;
 the gun's initial facing does not reduce aim. Surviving guns fire simultaneously.
 Saved targets remain marked and can be revoked. Target tiles support Tab and

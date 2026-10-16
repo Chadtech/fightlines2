@@ -6,6 +6,7 @@ module GamePage.Selection exposing
     , MovePurpose(..)
     , SelectedUnit
     , Selection(..)
+    , StationaryPurpose(..)
     , UnitInteraction(..)
     , toInspection
     )
@@ -42,8 +43,14 @@ type alias SelectedUnit =
 type UnitInteraction
     = CommandMenu CommandMenuState
     | ChoosingMove MovePlanning
-    | ChoosingDirection Direction
-    | ChoosingIndirectFire
+    | ChoosingDirection StationaryPurpose Direction
+    | ChoosingAttackDirection Movement.Option Direction
+    | ChoosingIndirectFire (Maybe Coordinate)
+
+
+type StationaryPurpose
+    = AmbushPurpose
+    | StandGroundPurpose
 
 
 type CommandMenuState

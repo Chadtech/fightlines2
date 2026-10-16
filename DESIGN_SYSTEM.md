@@ -147,9 +147,12 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   authoritative hit points (out of 16), supplies (out of 192 for infantry, 256 for field guns, 128 for vehicles), and fuel (out
   of 128) (for tanks and trucks) as horizontal gauges with `current / maximum` labels. Use red1 below 25%, yellow4 from
   25–75%, and green1 (`#4BBF63`) above 75%; retain the numeric labels alongside color.
-- Terrain appears as a muted `terrain: forest [i]` row beneath selection details,
-  without a card or heading. Selecting an empty tile shows only this row; depots
-  retain their title. The outlined info marker and row expand inline help with
+- Stack complete inspection rows for the selected tile: unit and its actions,
+  depot, ground freight, then terrain. Separate rows with quiet rules and let the
+  full-height panel scroll without compressing portraits or gauges. Freight shows
+  its illustration, resource gauge, inline explanation, and `last seen` when remembered.
+  Terrain uses a muted `terrain: forest [i]` row with a themed tile portrait below it.
+  Selecting an empty tile shows the terrain inspection. The outlined info marker and row expand inline help with
   terrain visibility descriptions, with no per-unit movement-cost list. Mouse
   focus has no enclosing outline; keyboard focus underlines the terrain row. Keep it tied to
   the selected object (or a passenger's carrier), and clear it with selection.
@@ -487,9 +490,12 @@ motion. The automatic-close option uses the same animation timing with reduced m
 ## Attack move
 
 Infantry and tanks reuse movement tracing for attack move. Render a solid red
-preview and a dashed red saved path, ending in a pointed arrow aligned with the
-last segment. Dragging traces without panning and saves on release; hovering
-and clicking or arrows and Enter also work. Keep orders revocable and preserve
+preview and a dashed red saved path. Choosing the destination by drag release,
+click, or Enter opens the cardinal direction picker centered on that destination.
+Pointing previews final facing in the endpoint arrow; clicking or an arrow/WASD
+key saves the attack move. The inspector explains the direction step and offers
+a return to commands. The saved arrow shows final facing independently of the
+last route segment. Keep orders revocable and preserve
 selection after saving. Enemy squares are legal destinations; allies remain
 passable, and attack move offers no loading or unloading choices.
 
@@ -531,7 +537,7 @@ artwork. Known stock uses green while healthy, yellow with a two-second blink at
 click target present throughout blinking; reduced motion shows a steady bar.
 Clicking the bar or activating it with Enter/Space opens the depot inspector,
 even on occupied tiles. A selected on-board unit standing on a depot also shows
-a clickable `supply depot · current / maximum` row. Unknown stock has no map bar
+the complete depot inspection beneath its own row. Unknown stock has no map bar
 or numeric value; the inspector row says `stock outside sight`.
 
 ## Turn introduction
@@ -563,8 +569,8 @@ lower-left badges and shares the same capacity and unloading rules.
 
 ## Stand ground
 
-Stand ground saves immediately from the combat unit command popup, preserving
-facing. Show the saved order, revoke action, defensive readiness explanation, and
+Stand ground opens the same cardinal direction picker as ambush. Pointer hover
+previews facing; a click or arrow/WASD key saves the chosen direction. Show the saved order, revoke action, defensive readiness explanation, and
 normal upkeep plus readiness supply cost in the inspector. Disable it when
 readiness plus upkeep is unaffordable. It has no firing-area or ambush marker.
 
@@ -599,8 +605,16 @@ and reflects horizontal facing.
 Field guns enable the existing indirect-fire command. Choosing it highlights all
 in-range tiles, including fog, with the existing quiet gold tile outlines. Tile
 buttons say `fire indirectly at (x, y)` and support Tab and Enter/Space. Saving
-keeps the gun selected, shows target coordinates and revoke, and leaves a gold
-dotted target outline on the board. The inspector explains final-occupancy
+keeps the gun selected, shows target coordinates and revoke, and leaves the
+illustrated targeting sight on the board.
+Hovering or focusing a legal tile previews the same open-center ivory and crimson
+gunsight above units and depots; leaving the board or aiming outside range clears
+the preview. Saving briefly contracts the sight with a red flash, then holds it
+steady until revocation or the turn leaves planning. Saved sights use 50% opacity
+when their firing unit is no longer selected, returning to full opacity when that
+unit is selected again. Reduced motion removes the
+lock animation. The pointer uses a crosshair while selecting a target. The
+inspector explains final-occupancy
 resolution, friendly fire, uncertain fog hits, the 12-tile radius, and readiness
 and shot costs. Projected tile landings reuse the combat burst even on empty or
 fogged squares. Confirmed hits use the theater and unit-loss dialog headed or

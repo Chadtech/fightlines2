@@ -39,7 +39,7 @@ orderChecks unitId passengerId =
 
         standingGround : PlannedOrder
         standingGround =
-            { unitId = unitId, action = StandGround { x = 1, y = 1 } }
+            { unitId = unitId, action = StandGround { position = { x = 1, y = 1 }, direction = Direction.West } }
 
         ambush : PlannedOrder
         ambush =
@@ -63,7 +63,7 @@ orderChecks unitId passengerId =
 
         attackMove : PlannedOrder
         attackMove =
-            { unitId = unitId, action = AttackMove { path = [ { x = 1, y = 1 }, { x = 2, y = 1 } ], destination = { x = 2, y = 1 }, cost = 2 } }
+            { unitId = unitId, action = AttackMove { move = { path = [ { x = 1, y = 1 }, { x = 2, y = 1 } ], destination = { x = 2, y = 1 }, cost = 2 }, direction = Direction.North } }
 
         stationaryUnload : PlannedOrder
         stationaryUnload =
@@ -174,7 +174,7 @@ orderChecks unitId passengerId =
                 && (indirectInput.direction == Absent)
                 && (indirectInput.ambush == Present False)
             )
-        , expect "attack move preserves its route and sends the attack flag without unloading or facing"
+        , expect "attack move preserves its route and sends its chosen final facing without unloading"
             (PlannedOrder.toInput attackMove
                 == { loadCrates = Present 0
                    , crateUnloads = Present []
@@ -191,19 +191,19 @@ orderChecks unitId passengerId =
                           }
                         ]
                    , indirectFire = Absent
-                   , direction = Absent
+                   , direction = Present Direction.North
                    , unloads = Present []
                    }
                 && PlannedOrder.isMoving attackMove
                 && PlannedOrder.unloads attackMove
                 == []
             )
-        , expect "stand ground submits defensive readiness without facing, combat, movement, or cargo"
+        , expect "stand ground submits chosen facing and defensive readiness without combat, movement, or cargo"
             (PlannedOrder.toInput standingGround
                 == { unitId = UnitId.toString unitId
                    , path = [ { x = 1, y = 1 } ]
                    , indirectFire = Absent
-                   , direction = Absent
+                   , direction = Present Direction.West
                    , standGround = Present True
                    , ambush = Present False
                    , attackMove = Present False

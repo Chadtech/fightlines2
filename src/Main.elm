@@ -51,6 +51,7 @@ import View.CombatTheater as CombatTheater
 import View.DepotStock as DepotStock
 import View.Dialog as Dialog exposing (Dialog)
 import View.LoadingBar as LoadingBar
+import View.TargetSight as TargetSight
 import View.TurnControls as TurnControls
 import View.TurnIntroduction as TurnIntroduction
 import View.UnitCargo as UnitCargo
@@ -641,6 +642,7 @@ shell page =
         shellContent =
             [ globalStyles
             , LoadingBar.styles
+            , TargetSight.styles
             , UnitFacing.styles
             , UnitCargo.styles
             , UnitWarnings.styles

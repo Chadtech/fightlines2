@@ -22,7 +22,7 @@ pub struct MoveOrderInput {
     unit_id: String,
     /// Includes the starting square. A single square is an explicit hold order.
     path: Vec<CoordinateInput>,
-    /// Facing for an in-place rotation order.
+    /// Ambush facing or final facing after completing an attack-move route.
     direction: Option<Direction>,
     /// Stationary combat readiness, with direction selecting the firing line.
     ambush: Option<bool>,
@@ -54,12 +54,13 @@ pub enum TravelMode {
     AttackMove,
 }
 
-/// Validated stationary action. Ambush owns a direction; indirect fire owns a tile.
+/// Validated facing/action. Arrival facing applies only after a completed route.
 #[derive(Clone, Copy, Debug)]
 pub enum FacingOrder {
     Unchanged,
+    AfterMove(Direction),
     Ambush(Direction),
-    StandGround,
+    StandGround(Direction),
     IndirectFire(Coordinate),
 }
 
@@ -67,28 +68,30 @@ impl FacingOrder {
     pub fn indirect_target(self) -> Option<Coordinate> {
         match self {
             Self::IndirectFire(target) => Some(target),
-            Self::Unchanged | Self::Ambush(_) | Self::StandGround => None,
+            Self::Unchanged | Self::AfterMove(_) | Self::Ambush(_) | Self::StandGround(_) => None,
         }
     }
 
     pub fn direction(self) -> Option<Direction> {
         match self {
-            Self::Unchanged | Self::StandGround | Self::IndirectFire(_) => None,
-            Self::Ambush(direction) => Some(direction),
+            Self::Unchanged | Self::AfterMove(_) | Self::IndirectFire(_) => None,
+            Self::Ambush(direction) | Self::StandGround(direction) => Some(direction),
         }
     }
 
     pub fn is_standing_ground(self) -> bool {
         match self {
-            Self::StandGround => true,
-            Self::Unchanged | Self::Ambush(_) | Self::IndirectFire(_) => false,
+            Self::StandGround(_) => true,
+            Self::Unchanged | Self::AfterMove(_) | Self::Ambush(_) | Self::IndirectFire(_) => false,
         }
     }
 
     pub fn is_ambush(self) -> bool {
         match self {
             Self::Ambush(_) => true,
-            Self::Unchanged | Self::StandGround | Self::IndirectFire(_) => false,
+            Self::Unchanged | Self::AfterMove(_) | Self::StandGround(_) | Self::IndirectFire(_) => {
+                false
+            }
         }
     }
 }
@@ -303,8 +306,9 @@ pub(crate) fn planned_loads(scenario: &Scenario, orders: &[MoveOrder]) -> Vec<Pl
         order.travel == TravelMode::Normal
             && match order.facing {
                 FacingOrder::Unchanged => true,
-                FacingOrder::Ambush(_)
-                | FacingOrder::StandGround
+                FacingOrder::AfterMove(_)
+                | FacingOrder::Ambush(_)
+                | FacingOrder::StandGround(_)
                 | FacingOrder::IndirectFire(_) => false,
             }
     };
@@ -449,8 +453,10 @@ pub fn validate(
             if unit.direction().is_none() || unit.carrier_id().is_some() {
                 return Err("only on-map combat units can stand ground.");
             }
+            if input.direction.is_none() {
+                return Err("stand ground requires a facing direction.");
+            }
             if path.len() != 1
-                || input.direction.is_some()
                 || input.ambush == Some(true)
                 || input.attack_move == Some(true)
                 || !input.unloads.as_ref().is_none_or(Vec::is_empty)
@@ -473,11 +479,10 @@ pub fn validate(
                 return Err("only on-map infantry and tanks can attack move.");
             }
             if path.len() < 2
-                || input.direction.is_some()
                 || input.ambush == Some(true)
                 || !input.unloads.as_ref().is_none_or(Vec::is_empty)
             {
-                return Err("attack move requires a route without rotation, ambush, or unloading.");
+                return Err("attack move requires a route without ambush or unloading.");
             }
             let required = unit.supplies().upkeep_per_turn()
                 + unit.supplies().movement_cost(&scenario.map, &path)
@@ -498,7 +503,7 @@ pub fn validate(
                 return Err("not enough supplies to maintain ambush readiness.");
             }
         }
-        if input.direction.is_some() {
+        if input.direction.is_some() && !attack_move && !stand_ground {
             if !ambush {
                 return Err("a facing direction requires an ambush order.");
             }
@@ -682,7 +687,17 @@ pub fn validate(
             facing: if let Some(target) = indirect_fire {
                 FacingOrder::IndirectFire(target)
             } else if stand_ground {
-                FacingOrder::StandGround
+                FacingOrder::StandGround(
+                    input
+                        .direction
+                        .ok_or("stand ground requires a facing direction.")?,
+                )
+            } else if attack_move {
+                // Older clients omit direction and retain the route's final facing.
+                match input.direction {
+                    Some(direction) => FacingOrder::AfterMove(direction),
+                    None => FacingOrder::Unchanged,
+                }
             } else {
                 match (ambush, input.direction) {
                     (true, Some(direction)) => FacingOrder::Ambush(direction),
@@ -1463,7 +1478,7 @@ mod tests {
                 assert_eq!(report.units_lost, 0);
                 assert_eq!(report.enemy_units_destroyed, 1);
                 assert_eq!(report.damage_inflicted, 1);
-                assert_eq!(report.supplies_consumed, 20);
+                assert_eq!(report.supplies_consumed, 28);
             } else {
                 assert_eq!(report.units_lost, 2);
                 assert_eq!(report.enemy_units_destroyed, 0);
@@ -1476,7 +1491,7 @@ mod tests {
 
     #[test]
     fn attack_move_charges_readiness_each_turn_without_an_encounter() -> TestResult<()> {
-        for (attacker_id, movement_cost) in [("1", 3), ("11", 0)] {
+        for (attacker_id, movement_cost) in [("1", 3), ("11", 3)] {
             let mut scenario = Scenario::supply_point().fixture()?;
             scenario.map = Map::from_ascii(".....").fixture()?;
             scenario.depots.clear();
@@ -1575,8 +1590,12 @@ mod tests {
             TravelMode::AttackMove
         );
         let mut invalid = attack(&scenario)?;
-        invalid[0].direction = Some(Direction::East);
-        assert!(validate(&scenario, PlayerNumber::Player1, invalid).is_err());
+        invalid[0].direction = Some(Direction::North);
+        let directed = validate(&scenario, PlayerNumber::Player1, invalid)?;
+        match directed.first().fixture()?.facing {
+            FacingOrder::AfterMove(direction) => assert_eq!(direction, Direction::North),
+            _ => return Err("attack move lost its final facing".into()),
+        }
         let mut invalid = attack(&scenario)?;
         invalid[0].path.truncate(1);
         assert!(validate(&scenario, PlayerNumber::Player1, invalid).is_err());
@@ -1625,7 +1644,7 @@ mod tests {
                 .fixture()?;
             assert_eq!(attacker.board_position(), Some(Coordinate::new(1, 0)));
             assert_eq!(attacker.supplies().current(), 156);
-            assert_eq!(target.hit_points().current(), 10);
+            assert_eq!(target.hit_points().current(), 5);
             assert_eq!(target.supplies().current(), 188);
             assert_eq!(
                 turns
@@ -1934,7 +1953,7 @@ mod tests {
             }
             assert_eq!(turns.number, 2);
             assert_eq!(scenario.units[0].hit_points().current(), 16);
-            assert_eq!(scenario.units[1].hit_points().current(), 10);
+            assert_eq!(scenario.units[1].hit_points().current(), 5);
             assert_eq!(scenario.units[0].supplies().current(), 168);
             assert_eq!(scenario.units[1].supplies().current(), 188);
             assert_eq!(scenario.units[0].direction(), Some(Direction::East));
@@ -2129,7 +2148,7 @@ mod tests {
             .find(|unit| unit.id() == "12")
             .fixture()?;
         assert_eq!(gun.hit_points().current(), 12);
-        assert_eq!(gun.supplies().current(), 232);
+        assert_eq!(gun.supplies().current(), 164);
         let resolution = turns.last_resolution.fixture()?;
         let unload_frame = resolution
             .frames
@@ -2163,9 +2182,11 @@ mod tests {
         let mut scenario = Scenario::supply_point().fixture()?;
         scenario.depots.clear();
         let original = scenario.units[0].clone();
+        scenario.units[0].rotate(Direction::South);
         let mut turns = Turns::default();
         let mut inputs = holds(&scenario, PlayerNumber::Player1)?;
         inputs[0].stand_ground = Some(true);
+        inputs[0].direction = Some(Direction::North);
         turns.submit(&mut scenario, PlayerNumber::Player1, 1, inputs)?;
         let other = holds(&scenario, PlayerNumber::Player2)?;
         turns.submit(&mut scenario, PlayerNumber::Player2, 1, other)?;
@@ -2173,13 +2194,25 @@ mod tests {
             scenario.units[0].board_position(),
             original.board_position()
         );
-        assert_eq!(scenario.units[0].direction(), original.direction());
+        assert_eq!(scenario.units[0].direction(), Some(Direction::North));
         assert_eq!(
             scenario.units[0].supplies().current(),
             original.supplies().current() - 12
         );
         let resolution = turns.last_resolution.as_ref().fixture()?;
         assert!(resolution.frames.iter().all(|frame| frame.shots.is_empty()));
+        assert_eq!(
+            resolution
+                .frames
+                .last()
+                .fixture()?
+                .units
+                .iter()
+                .find(|unit| unit.unit_id() == original.unit_id())
+                .fixture()?
+                .direction(),
+            Some(Direction::North)
+        );
         assert_eq!(
             resolution
                 .events
@@ -2198,14 +2231,17 @@ mod tests {
         for other in 0..6 {
             let mut inputs = holds(&scenario, PlayerNumber::Player1)?;
             inputs[0].stand_ground = Some(true);
+            inputs[0].direction = Some(Direction::North);
             match other {
                 0 => inputs[0].path.push(CoordinateInput { x: 4, y: 7 }),
-                1 => inputs[0].direction = Some(Direction::East),
+                1 => inputs[0].direction = None,
                 2 => inputs[0].ambush = Some(true),
                 3 => inputs[0].attack_move = Some(true),
                 4 => inputs[0].load_crates = Some(1),
                 _ => {
                     inputs[0].stand_ground = None;
+                    inputs[0].direction = None;
+                    inputs[3].direction = Some(Direction::North);
                     inputs[3].stand_ground = Some(true);
                 }
             }
@@ -2216,10 +2252,12 @@ mod tests {
         aboard.units[0].board(carrier_id);
         let mut inputs = holds(&aboard, PlayerNumber::Player1)?;
         inputs[0].stand_ground = Some(true);
+        inputs[0].direction = Some(Direction::North);
         assert!(validate(&aboard, PlayerNumber::Player1, inputs).is_err());
         scenario.units[0].spend_supplies(184);
         let mut inputs = holds(&scenario, PlayerNumber::Player1)?;
         inputs[0].stand_ground = Some(true);
+        inputs[0].direction = Some(Direction::North);
         let mut turns = Turns::default();
         assert!(
             turns
@@ -2737,7 +2775,7 @@ mod tests {
             vehicle(&mut scenario, "12")?.carrier_id(),
             UnitId::parse("4")
         );
-        assert_eq!(vehicle(&mut scenario, "12")?.supplies().current(), 252);
+        assert_eq!(vehicle(&mut scenario, "12")?.supplies().current(), 192);
         let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
         set_path(&mut player1, "4", &[(4, 7), (3, 7)])?;
         resolve_orders(&mut scenario, &mut turns, player1)?;
@@ -2815,6 +2853,8 @@ mod tests {
         for unit in &mut scenario.units {
             let supplies = if unit.kind() == UnitKind::Infantry {
                 28
+            } else if unit.kind() == UnitKind::Tank {
+                20
             } else {
                 12
             };
@@ -2835,6 +2875,8 @@ mod tests {
         assert!(scenario.units.iter().all(|unit| unit.supplies().current()
             == if unit.kind() == UnitKind::Infantry {
                 28
+            } else if unit.kind() == UnitKind::Tank {
+                20
             } else {
                 12
             }));
@@ -2880,10 +2922,10 @@ mod tests {
         for id in ["2", "6"] {
             assert_eq!(vehicle(&mut scenario, id)?.supplies().current(), 24);
         }
-        assert_eq!(vehicle(&mut scenario, "13")?.supplies().current(), 4);
-        for id in ["4", "11"] {
-            assert_eq!(vehicle(&mut scenario, id)?.supplies().current(), 8);
-        }
+        // The gun spends 8 walking supplies and 4 upkeep, exhausting its 12.
+        assert!(!scenario.units.iter().any(|unit| unit.id() == "13"));
+        assert_eq!(vehicle(&mut scenario, "4")?.supplies().current(), 8);
+        assert_eq!(vehicle(&mut scenario, "11")?.supplies().current(), 4);
         assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 124);
         assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 120);
 
@@ -3204,6 +3246,8 @@ mod tests {
             ]);
         }
         assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 16);
+        // Keep fuel as the limiting resource after the fixture's earlier travel.
+        vehicle(&mut scenario, "11")?.set_supplies_for_test(128);
         let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
         set_path(&mut player1, "11", &[(4, 8), (5, 8), (6, 8), (7, 8)])?;
         assert_eq!(
@@ -4319,7 +4363,7 @@ mod tests {
             }
             assert_eq!(
                 scenario.units.first().fixture()?.supplies().current(),
-                initial.current() - initial.upkeep_per_turn() - 8 - 12
+                initial.current() - initial.upkeep_per_turn() - 8 - 20
             );
         }
         Ok(())
@@ -4430,7 +4474,11 @@ mod tests {
             assert!(validate(&scenario, PlayerNumber::Player1, first).is_err());
         }
         let mut depleted = scenario.clone();
-        depleted.units.first_mut().fixture()?.spend_supplies(240);
+        depleted
+            .units
+            .first_mut()
+            .fixture()?
+            .set_supplies_for_test(31);
         let mut first = holds(&depleted, PlayerNumber::Player1)?;
         first.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 9, y: 1 });
         assert!(validate(&depleted, PlayerNumber::Player1, first).is_err());

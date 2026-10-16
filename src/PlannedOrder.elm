@@ -1,5 +1,6 @@
 module PlannedOrder exposing
     ( Action(..)
+    , AttackPlan
     , CrateUnload
     , MovePlan
     , PlannedOrder
@@ -36,12 +37,18 @@ type alias PlannedOrder =
 type Action
     = Hold Coordinate
     | Move MovePlan
-    | AttackMove Movement.Option
+    | AttackMove AttackPlan
     | Ambush Rotation
-    | StandGround Coordinate
+    | StandGround Rotation
     | IndirectFire Bombardment
     | Unload StationaryUnload
     | SupplyTransfer SupplyPlan
+
+
+type alias AttackPlan =
+    { move : Movement.Option
+    , direction : Direction
+    }
 
 
 type alias Bombardment =
@@ -102,14 +109,14 @@ destination order =
         IndirectFire fire ->
             fire.position
 
-        StandGround position ->
-            position
+        StandGround facing ->
+            facing.position
 
         Hold position ->
             position
 
-        AttackMove move ->
-            move.destination
+        AttackMove attack ->
+            attack.move.destination
 
         Move plan ->
             plan.move.destination
@@ -130,14 +137,14 @@ path order =
         IndirectFire fire ->
             [ fire.position ]
 
-        StandGround position ->
-            [ position ]
+        StandGround facing ->
+            [ facing.position ]
 
         Hold position ->
             [ position ]
 
-        AttackMove move ->
-            move.path
+        AttackMove attack ->
+            attack.move.path
 
         Move plan ->
             plan.move.path
@@ -186,8 +193,8 @@ isMoving order =
         Move plan ->
             List.length plan.move.path > 1
 
-        AttackMove move ->
-            List.length move.path > 1
+        AttackMove attack ->
+            List.length attack.move.path > 1
 
         Hold _ ->
             False
@@ -206,7 +213,8 @@ isMoving order =
 
 
 {-| Convert a saved order to the existing wire contract at submission time.
-Moving and stationary trucks can carry unloads; ambush has a required facing.
+Moving and stationary trucks can carry unloads; ambush and stand ground have a
+required facing.
 -}
 toInput : PlannedOrder -> Api.InputObject.MoveOrderInput
 toInput order =
@@ -238,14 +246,14 @@ toInput order =
                 IndirectFire _ ->
                     OptionalArgument.Absent
 
-                StandGround _ ->
-                    OptionalArgument.Absent
+                StandGround facing ->
+                    OptionalArgument.Present facing.direction
 
                 Hold _ ->
                     OptionalArgument.Absent
 
-                AttackMove _ ->
-                    OptionalArgument.Absent
+                AttackMove attack ->
+                    OptionalArgument.Present attack.direction
 
                 Move _ ->
                     OptionalArgument.Absent

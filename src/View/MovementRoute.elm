@@ -1,6 +1,8 @@
 module View.MovementRoute exposing (Purpose(..), planned, preview)
 
+import Api.Enum.Direction exposing (Direction)
 import Coordinate exposing (Coordinate)
+import Direction
 import Style as S
 import Svg exposing (Svg)
 import Svg.Attributes as A
@@ -9,6 +11,7 @@ import Svg.Attributes as A
 type Purpose
     = Travel
     | Attack
+    | DirectedAttack Direction
 
 
 planned : Purpose -> List Coordinate -> List (Svg msg)
@@ -28,6 +31,9 @@ color purpose =
             S.yellow5Str
 
         Attack ->
+            S.red1Str
+
+        DirectedAttack _ ->
             S.red1Str
 
 
@@ -55,7 +61,22 @@ route purpose lineAttributes path =
             endpoint =
                 case List.reverse path of
                     destination :: previous :: _ ->
-                        [ marker purpose previous destination ]
+                        let
+                            arrivalFrom : Coordinate
+                            arrivalFrom =
+                                case purpose of
+                                    DirectedAttack direction ->
+                                        let
+                                            ahead : Coordinate
+                                            ahead =
+                                                Direction.step destination direction
+                                        in
+                                        { x = 2 * destination.x - ahead.x, y = 2 * destination.y - ahead.y }
+
+                                    _ ->
+                                        previous
+                        in
+                        [ marker purpose arrivalFrom destination ]
 
                     _ ->
                         []
@@ -100,7 +121,7 @@ marker purpose previous destination =
                         ]
                         []
 
-                Attack ->
+                _ ->
                     Svg.polygon
                         [ A.points "3.5,0 -2.5,-3 -1.2,0 -2.5,3"
                         , A.fill (color purpose)

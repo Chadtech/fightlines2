@@ -11,6 +11,7 @@ module GamePage.OrderPlanning exposing
     , chooseUnloadSquare
     , choosingDirection
     , choosingIndirectFire
+    , clearTargetPreview
     , commandGuideOpen
     , commandMenuUnit
     , confirmPassengers
@@ -21,6 +22,7 @@ module GamePage.OrderPlanning exposing
     , extendPath
     , focusCommand
     , focusedCommand
+    , indirectTargetPreview
     , indirectTargets
     , indirectTargetsInRange
     , init
@@ -32,12 +34,12 @@ module GamePage.OrderPlanning exposing
     , openCommandGuide
     , orders
     , pathPreview
-    , previewAmbush
+    , previewDirection
     , previewTile
     , receivingLoad
     , restoreCommands
     , revokeSelectedOrder
-    , saveAmbush
+    , saveDirection
     , saveUnloadDestination
     , selectNextUnorderedUnit
     , selectTile
@@ -75,11 +77,12 @@ import GamePage.Selection as Selection
         , MovePlanning
         , MovePurpose(..)
         , Selection(..)
+        , StationaryPurpose(..)
         , UnitInteraction(..)
         )
 import Map exposing (Map)
 import Movement
-import PlannedOrder exposing (MovePlan, PlannedOrder, StationaryUnload)
+import PlannedOrder exposing (AttackPlan, MovePlan, PlannedOrder, StationaryUnload)
 import Supply
 import Unit exposing (Unit)
 import Unit.Supplies
@@ -251,7 +254,7 @@ submissionDrafts : Model -> Maybe Drafts
 submissionDrafts state =
     case state of
         OrdinaryPlanning drafts ->
-            if commandGuideOpen state then
+            if commandGuideOpen state || choosingDirection state then
                 Nothing
 
             else
@@ -510,7 +513,7 @@ showSubmissionWarning : Model -> Model
 showSubmissionWarning state =
     case state of
         OrdinaryPlanning drafts ->
-            if commandGuideOpen state then
+            if commandGuideOpen state || choosingDirection state then
                 state
 
             else
@@ -582,7 +585,7 @@ applyCommand context command model =
             if canApply then
                 case command of
                     UnitCommand.IndirectFire ->
-                        setUnitInteraction unit.id ChoosingIndirectFire model
+                        setUnitInteraction unit.id (ChoosingIndirectFire Nothing) model
 
                     UnitCommand.Move ->
                         beginMovement NormalMove context unit model
@@ -594,7 +597,7 @@ applyCommand context command model =
                         model
                             |> setUnitInteraction
                                 unit.id
-                                (ChoosingDirection
+                                (ChoosingDirection AmbushPurpose
                                     (Maybe.withDefault
                                         DirectionEnum.North
                                         unit.direction
@@ -602,27 +605,9 @@ applyCommand context command model =
                                 )
 
                     UnitCommand.StandGround ->
-                        case Unit.boardPosition unit of
-                            Just position ->
-                                let
-                                    newOrder : PlannedOrder
-                                    newOrder =
-                                        { unitId = unit.id
-                                        , action =
-                                            PlannedOrder.StandGround position
-                                        }
-                                in
-                                model
-                                    |> setOrders
-                                        (newOrder
-                                            :: List.filter
-                                                (\plan -> plan.unitId /= unit.id)
-                                                (orders model)
-                                        )
-                                    |> inspectSelectedUnit context
-
-                            Nothing ->
-                                model
+                        setUnitInteraction unit.id
+                            (ChoosingDirection StandGroundPurpose (Maybe.withDefault DirectionEnum.North unit.direction))
+                            model
 
                     UnitCommand.HoldPosition ->
                         holdPosition context unit model
@@ -893,8 +878,45 @@ revokeDependentOrders context revokedIds drafts =
         revokeDependentOrders context dependentIds retained
 
 
-saveAmbush : Context -> Direction -> Model -> Model
-saveAmbush context direction state =
+saveDirection : Context -> Direction -> Model -> Model
+saveDirection context direction state =
+    case selection state of
+        Just (UnitSelection { id, interaction }) ->
+            case interaction of
+                ChoosingAttackDirection move _ ->
+                    let
+                        attackPlan : AttackPlan
+                        attackPlan =
+                            { move = move
+                            , direction = direction
+                            }
+
+                        plannedOrder : PlannedOrder
+                        plannedOrder =
+                            { unitId = id
+                            , action =
+                                PlannedOrder.AttackMove attackPlan
+                            }
+                    in
+                    state
+                        |> setOrders
+                            (plannedOrder
+                                :: List.filter (\order -> order.unitId /= id) (orders state)
+                            )
+                        |> inspectSelectedUnit context
+
+                ChoosingDirection purpose _ ->
+                    saveStationaryDirection purpose context direction state
+
+                _ ->
+                    state
+
+        _ ->
+            state
+
+
+saveStationaryDirection : StationaryPurpose -> Context -> Direction -> Model -> Model
+saveStationaryDirection purpose context direction state =
     case selectedUnit context state of
         Just unit ->
             let
@@ -908,18 +930,20 @@ saveAmbush context direction state =
                 case Unit.boardPosition unit of
                     Just position ->
                         let
-                            ambush : PlannedOrder
-                            ambush =
+                            order : PlannedOrder
+                            order =
                                 { unitId = unit.id
                                 , action =
-                                    PlannedOrder.Ambush
-                                        { position = position
-                                        , direction = direction
-                                        }
+                                    case purpose of
+                                        AmbushPurpose ->
+                                            PlannedOrder.Ambush { position = position, direction = direction }
+
+                                        StandGroundPurpose ->
+                                            PlannedOrder.StandGround { position = position, direction = direction }
                                 }
                         in
                         setOrders
-                            (ambush
+                            (order
                                 :: List.filter
                                     (\plan -> plan.unitId /= unit.id)
                                     (orders state)
@@ -1061,6 +1085,16 @@ previewTile context position state =
                         Nothing ->
                             state
 
+                ChoosingIndirectFire _ ->
+                    if List.member position (indirectTargets context state) then
+                        setUnitInteraction
+                            selected.id
+                            (ChoosingIndirectFire (Just position))
+                            state
+
+                    else
+                        clearTargetPreview state
+
                 _ ->
                     state
 
@@ -1092,10 +1126,45 @@ choosingIndirectFire : Model -> Bool
 choosingIndirectFire state =
     case selection state of
         Just (UnitSelection { interaction }) ->
-            interaction == ChoosingIndirectFire
+            case interaction of
+                ChoosingIndirectFire _ ->
+                    True
+
+                _ ->
+                    False
 
         _ ->
             False
+
+
+indirectTargetPreview : Model -> Maybe Coordinate
+indirectTargetPreview state =
+    case selection state of
+        Just (UnitSelection { interaction }) ->
+            case interaction of
+                ChoosingIndirectFire target ->
+                    target
+
+                _ ->
+                    Nothing
+
+        _ ->
+            Nothing
+
+
+clearTargetPreview : Model -> Model
+clearTargetPreview state =
+    case selection state of
+        Just (UnitSelection selected) ->
+            case selected.interaction of
+                ChoosingIndirectFire _ ->
+                    setUnitInteraction selected.id (ChoosingIndirectFire Nothing) state
+
+                _ ->
+                    state
+
+        _ ->
+            state
 
 
 indirectTargets : Context -> Model -> List Coordinate
@@ -1137,13 +1206,16 @@ choosingDirection state =
     case selection state of
         Just (UnitSelection selected) ->
             case selected.interaction of
-                ChoosingDirection _ ->
+                ChoosingDirection _ _ ->
+                    True
+
+                ChoosingAttackDirection _ _ ->
                     True
 
                 CommandMenu _ ->
                     False
 
-                ChoosingIndirectFire ->
+                ChoosingIndirectFire _ ->
                     False
 
                 ChoosingMove _ ->
@@ -1156,15 +1228,18 @@ choosingDirection state =
 previewFacing : UnitInteraction -> Direction -> UnitInteraction
 previewFacing interaction direction =
     case interaction of
-        ChoosingDirection _ ->
-            ChoosingDirection direction
+        ChoosingDirection purpose _ ->
+            ChoosingDirection purpose direction
+
+        ChoosingAttackDirection move _ ->
+            ChoosingAttackDirection move direction
 
         _ ->
             interaction
 
 
-previewAmbush : Direction -> Model -> Model
-previewAmbush direction state =
+previewDirection : Direction -> Model -> Model
+previewDirection direction state =
     case selection state of
         Just (UnitSelection selected) ->
             let
@@ -1301,13 +1376,16 @@ focusedCommand state =
                 CommandMenu (ReadingGuide focused) ->
                     focused
 
-                ChoosingIndirectFire ->
+                ChoosingIndirectFire _ ->
                     Nothing
 
                 ChoosingMove _ ->
                     Nothing
 
-                ChoosingDirection _ ->
+                ChoosingDirection _ _ ->
+                    Nothing
+
+                ChoosingAttackDirection _ _ ->
                     Nothing
 
         _ ->
@@ -1850,19 +1928,7 @@ saveMove context unit move state =
     let
         receiver : Maybe Unit
         receiver =
-            if movePurpose state == AttackMove then
-                Nothing
-
-            else
-                moveReceiver context unit move state
-
-        action : PlannedOrder.Action
-        action =
-            if movePurpose state == AttackMove then
-                PlannedOrder.AttackMove move
-
-            else
-                PlannedOrder.Move { move = move, unloads = [] }
+            moveReceiver context unit move state
 
         retained : List PlannedOrder
         retained =
@@ -1899,7 +1965,7 @@ saveMove context unit move state =
                 |> Maybe.withDefault []
     in
     { unitId = unit.id
-    , action = action
+    , action = PlannedOrder.Move { move = move, unloads = [] }
     }
         :: (receiverHold ++ retained)
 
@@ -1988,22 +2054,24 @@ selectMovementTile context position model =
                         let
                             offerReceiverLoading : Model -> Model
                             offerReceiverLoading =
-                                if movePurpose model == AttackMove then
-                                    identity
+                                case moveReceiver context unit move model of
+                                    Just receiver ->
+                                        offerTruckLoading context receiver
 
-                                else
-                                    case moveReceiver context unit move model of
-                                        Just receiver ->
-                                            offerTruckLoading context receiver
-
-                                        Nothing ->
-                                            identity
+                                    Nothing ->
+                                        identity
                         in
-                        model
-                            |> setOrders (saveMove context unit move model)
-                            |> inspectSelectedUnit context
-                            |> openUnloadPrompt context unit move
-                            |> offerReceiverLoading
+                        if movePurpose model == AttackMove then
+                            setUnitInteraction unit.id
+                                (ChoosingAttackDirection move (Direction.alongPath move.path unit.direction |> Maybe.withDefault DirectionEnum.North))
+                                model
+
+                        else
+                            model
+                                |> setOrders (saveMove context unit move model)
+                                |> inspectSelectedUnit context
+                                |> openUnloadPrompt context unit move
+                                |> offerReceiverLoading
 
                     Nothing ->
                         setMoveDestinationFeedback DestinationUnavailable model

@@ -1,4 +1,5 @@
 - Trucks should be extremely vulnerable and always take severe damage
+- field-gun crews remain exposed regardless of firing readiness; infantry have a ×3 damage multiplier against them
 - field guns should obliterate most things, including tanks, except infantry dug into trenches, which they should do very little damage to
 - tanks should devastate field guns at direct contact unless the tank is in the firing area of a ready gun that can still fire
 - infantry should take little damage when dug in, except from tanks, who will obliterate them
@@ -24,9 +25,9 @@ chosen to express the expectations above rather than a fixed outcome table.
 | Factor | Value |
 | --- | --- |
 | Base power | infantry 4, tank 8, field gun 12 |
-| Matchup | against trucks ×3.5; infantry against unready tanks ×2, ready tanks ×0.25; tanks against infantry ×2.5 or field guns ×2; field guns against other combat units ×1.5; otherwise ×1 |
-| Unready defender | ×1.5 incoming damage |
-| Ready defender facing | front ×1; flank ×1.25; rear ×1.5; unready defenders always ×1 |
+| Matchup | against trucks ×3.5; infantry against infantry ×1.75, field guns ×3, unready tanks ×2, ready tanks ×0.25; tanks against infantry ×2.5 or field guns ×2; field guns against other combat units ×1.5; otherwise ×1 |
+| Exposed defender | ×1.5 incoming damage for unready units and all field guns |
+| Ready defender facing | infantry/tanks: front ×1; flank ×1.25; rear ×1.5; unready units and field guns always ×1 |
 | Attacker aim | front ×1; flank ×0.85; rear ×0.7 |
 | Hills or forest cover | ×0.85 incoming damage |
 | Ambush firing on an attack mover | ×1.125 |
@@ -36,9 +37,13 @@ supplies to fire while preserving upkeep. An attack mover that already fired
 retains its defensive readiness for the turn. Ordinary holds, moves, and rotations
 are unready. Stand ground costs the same readiness supplies as ambush but never fires.
 Readiness does not grant automatic return fire or change targeting.
+Field-gun readiness prepares the weapon to fire but gives its exposed crew no
+defensive protection. Guns always take the ×1.5 exposed-defender multiplier,
+regardless of order or approach direction. Their firing direction, coverage,
+and tank interception still apply normally.
 Facing uses 90-degree front and rear sectors, including diagonal boundaries;
 other bearings are flank hits. Defensive facing applies only to battle-ready
-units. An unready tank takes the same damage from every approach direction;
+infantry and tanks. An unready tank takes the same damage from every approach direction;
 its stored sprite/facing direction does not create combat flanks. Units without
 facing also use neutral facing factors.
 Cover does not override forest concealment or firing-line visibility rules.
@@ -61,8 +66,12 @@ use ambush shots. Readiness does not grant return fire by itself.
 | Infantry | Ready tank hit from behind | 2 | 14 |
 | Infantry | Unready tank on a hill | 10 | 6 |
 | Infantry | Ready tank on a hill | 1 | 15 |
-| Infantry | Unready infantry | 6 | 10 |
-| Infantry | Ready infantry | 4 | 12 |
+| Infantry | Unready infantry | 11 | 5 |
+| Infantry | Unready infantry on a hill | 9 | 7 |
+| Infantry | Ready infantry | 7 | 9 |
+| Infantry | Ready infantry on a hill | 6 | 10 |
+| Infantry | Ready field gun | 16 | 0 |
+| Infantry | Ready field gun on a hill | 15 | 1 |
 | Tank | Unready infantry | 16 | 0 |
 | Tank | Ready infantry on open ground | 16 | 0 |
 | Tank | Ready infantry on a hill | 16 | 0 |
@@ -92,6 +101,7 @@ Wounded attackers lose power much faster than their health percentage:
 | Infantry, 8/16 HP | Unready tank | 3 | 13 |
 | Infantry, 4/16 HP | Unready tank | 1 | 15 |
 | Infantry, 8/16 HP | Unready truck | 5 | 11 |
+| Infantry, 8/16 HP | Ready field gun | 5 | 11 |
 | Tank, 12/16 HP | Ready tank | 5 | 11 |
 | Tank, 8/16 HP | Ready tank | 2 | 14 |
 | Tank, 4/16 HP | Ready tank | 1 | 15 |
@@ -105,7 +115,7 @@ smooth. Some complete head-on exchanges on open ground:
 - Two half-health tanks ambushing one another each deal 2 damage; both finish at 6 HP.
 - A full-health infantry unit and tank ambushing one another deal 1 and 16 damage respectively; the infantry is destroyed and the tank finishes at 15 HP.
 - Full-health infantry attack-moving into a ready tank's firing line deal 1 damage. The tank fires back for 16, destroying the infantry and finishing at 15 HP, even if the infantry are on a hill.
-- A half-health ready field gun intercepting a full-health attack-moving tank deals 5 first. The tank survives at 11 HP and returns an 8-damage hit, destroying the gun.
+- A half-health ready field gun intercepting a full-health attack-moving tank deals 5 first. The tank survives at 11 HP and returns an 11-damage hit, destroying the gun.
 
 Reciprocal shots use pre-volley strength; the field-gun interception is a separate
 volley, so the tank's return shot uses its reduced health.

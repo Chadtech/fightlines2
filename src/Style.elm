@@ -65,6 +65,7 @@ module Style exposing
     , containerInlineSize
     , containerSize
     , contentEmpty
+    , crosshairCursor
     , cursorPointer
     , d1
     , defaultCursor
@@ -1052,6 +1053,11 @@ pointerCursor =
 zoomInCursor : Css.Style
 zoomInCursor =
     Css.cursor Css.zoomIn
+
+
+crosshairCursor : Css.Style
+crosshairCursor =
+    Css.cursor Css.crosshair
 
 
 defaultCursor : Css.Style

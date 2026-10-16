@@ -1,18 +1,58 @@
 module View.TerrainInfo exposing (toHtml)
 
+import Api.Enum.MapTheme exposing (MapTheme)
 import Api.Enum.Terrain as Terrain exposing (Terrain)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Lazy as Lazy
 import Style as S
+import Svg.Styled as Svg
+import Svg.Styled.Attributes as SA
 import Terrain
 import View.Aria as Aria
 import View.InfoMarker as InfoMarker
+import View.TerrainTile as TerrainTile
 
 
-toHtml : Terrain -> Html msg
-toHtml terrain =
-    Lazy.lazy terrainView terrain
+toHtml : MapTheme -> Terrain -> Html msg
+toHtml theme terrain =
+    Lazy.lazy2 inspectionView theme terrain
+
+
+inspectionView : MapTheme -> Terrain -> Html msg
+inspectionView theme terrain =
+    H.div
+        [ A.css
+            [ S.col
+            , S.g3
+            ]
+        ]
+        [ terrainView terrain
+        , H.div
+            [ A.css
+                [ S.bgNightwood3
+                , S.indentStrong
+                , S.p3
+                , S.row
+                , S.justifyCenter
+                ]
+            ]
+            [ Svg.svg
+                [ SA.viewBox "0 0 16 16"
+                , Aria.role Aria.Image
+                , Aria.label (Terrain.label terrain)
+                , A.css
+                    [ S.block
+                    , S.w128px
+                    , S.h128px
+                    , S.maxWFull
+                    ]
+                ]
+                [ TerrainTile.toSvg { theme = theme, terrain = terrain } ]
+                |> Svg.toUnstyled
+                |> H.fromUnstyled
+            ]
+        ]
 
 
 terrainView : Terrain -> Html msg

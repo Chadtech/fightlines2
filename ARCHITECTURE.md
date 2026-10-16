@@ -598,8 +598,9 @@ snapshot fuel values; it does not calculate resource outcomes.
 
 Every Rust unit carries `Supplies` with current and maximum quantities plus
 `upkeepPerTurn`, `movementPerTile`, and `roughTerrainSurcharge` rates. Infantry start at
-192/192; field guns start at 256/256; vehicles start at 128/128. All kinds have upkeep 4. Infantry spend 12 supplies per grass tile and 16 per hill, forest, or mountain tile and field guns spend 4;
-tanks and trucks spend none for movement. These are unit provisions, separate
+192/192; field guns start at 196/196; vehicles start at 128/128. All kinds have upkeep 4. Infantry spend 12 supplies per grass tile and 16 per hill, forest, or mountain tile and field guns spend 8;
+tanks spend 12 supplies per tile alongside their fuel cost, while trucks spend no
+movement supplies. These are unit provisions, separate
 from fuel and carried supply crates.
 
 Validation reserves upkeep before allowing movement expenditure. Resolution
@@ -781,8 +782,8 @@ rules and coordinated SVG playback selectors also remain component-owned raw CSS
 rejects absent facing, trucks, passengers, movement, unloading, receiving a load,
 and insufficient readiness supplies. `Unit.combatRules` provides authoritative
 range, ambush shape, damage, readiness cost, and shot cost for planning and status copy.
-Field guns use a five-square cross centered two squares ahead; other combat units
-use a one-square forward line. Elm renders coverage from these server-provided rules.
+Field guns use a five-square cross centered two squares ahead; tanks use a
+two-square forward line and infantry a one-square forward line. Elm renders coverage from these server-provided rules.
 
 `combat.rs` owns the readiness set, once-per-turn firing set, target selection,
 and simultaneous damage. Ready ambushers and attack-move contacts can fire;
@@ -806,7 +807,9 @@ Final resource cleanup removes dead units and returns their death presentation.
 Damage is calculated in `Combat::damage` from weapon matchup, squared attacker
 health fraction, defender readiness, both participants' facing, terrain cover,
 and an ambush advantage against attack movers. Defensive facing only applies
-to ready units; unready defenders have no combat flanks. Infantry have very low
+to ready infantry and tanks; unready defenders have no combat flanks. Field guns
+always use exposed-defender damage and neutral defensive facing: preparing their
+weapon grants firing capability without protecting the crew. Infantry have very low
 weapon effectiveness against ready tanks, while remaining dangerous to unready
 tanks. `CombatRules.damage` is base
 weapon power; `Shot.damage` is the calculated hit. All shots in a volley use the
@@ -897,9 +900,12 @@ untouched, restoring the saved camera when playback finishes.
 ## Attack move
 
 Infantry and tanks can choose **attack move** and trace a route with the same
-pointer and keyboard controls as move. Dragging traces without panning and saves
-on release; hovering and clicking or arrows and Enter also work. Preview paths are solid red; saved paths
-are dashed red. Both end in a pointed arrow aligned with the final segment.
+pointer and keyboard controls as move. Dragging traces without panning; releasing,
+clicking a destination, or pressing Enter fixes the route and opens a direction
+picker centered on its destination. Point to preview final facing, then click or
+press an arrow/WASD key to save. Unfinished direction selection blocks submission.
+Preview paths are solid red; saved paths are dashed red. Their endpoint arrow
+shows the chosen final facing.
 Allies remain passable, but attack move cannot load or unload passengers.
 Enemy squares may be chosen as destinations.
 
@@ -908,7 +914,9 @@ opposing swaps, and simultaneous destination claims. The unit stops at the first
 encounter and fires once using its normal damage and shot cost. A resident enemy
 keeps its square; the attacker stops on the preceding square. Completing an
 attack-move route also triggers an attack against an enemy on the adjacent square
-directly ahead, using the facing of the final traveled segment. This contact is
+directly ahead, using `FacingOrder::AfterMove` to apply the chosen final facing
+before checking contact. Interrupted routes keep their last traveled facing.
+Older clients omitting direction retain the final-segment behavior. This contact is
 checked after simultaneous arrivals, includes concealed enemies, and interrupts
 the target's remaining movement. Both participants stop their remaining routes.
 `Combat.engage_contacts` rechecks cardinal adjacency after interrupted allied
@@ -944,9 +952,10 @@ are presentation data only: order validation and Elm placement previews use only
 currently visible crates. The existing `visibleTiles` mask distinguishes remembered
 freight without adding a second wire representation.
 `View.DepotStatus` renders the depot portrait and optional stock gauge without
-inventing resource values outside sight. `GamePage` supplies the selected depot
-and terrain row; coordinate-keyed inspection content resets native disclosures
-when the inspected tile changes.
+inventing resource values outside sight. `GamePage` derives stacked unit, depot, ground freight, and terrain inspection
+rows from the selected physical tile. `View.StockGauge` shares depot and freight
+stock presentation. Identity-keyed rows reset native disclosures when the inspected
+object changes; freight uses only projected current or remembered stock.
 
 `MoveOrderInput.loadCrates` requests a count and `crateUnloads` identifies original
 cargo slots and destinations. Validation checks truck ownership, shared passenger
@@ -1046,12 +1055,13 @@ each other. Supply crate validation and loading dialogs accept only supply
 depots. Depot kind and location remain public; stock follows the existing fog
 projection gate in snapshots and playback frames.
 
-`FacingOrder::StandGround` preserves facing and grants defensive readiness only.
+`FacingOrder::StandGround(Direction)` sets the chosen facing and grants defensive
+readiness only.
 Validation requires an on-map combat unit, an in-place route, no other actions,
 and enough supplies for readiness plus upkeep. `Combat.standing_ground` is separate
 from ambush shooters, so defensive readiness cannot trigger targeting, return fire,
-or field-gun interceptions. Elm saves `PlannedOrder.StandGround` directly from the
-command menu and submits the generated `standGround` input; resolution emits a
+or field-gun interceptions. Elm reuses the stationary direction picker for `PlannedOrder.StandGround` and
+submits the chosen `direction` with the generated `standGround` input; resolution emits a
 `StandGround` event.
 
 Mountain terrain flows through the generated GraphQL `Terrain` enum. Rust movement

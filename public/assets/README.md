@@ -132,3 +132,12 @@ overlays for green, snow and desert themes. Built-in imagegen created the approv
 green master and biome variants. Local masters and prompts are in
 `artwork/terrain/illustrated/mountains-v1/`; `tools/build-terrain-sprites.cjs`
 exports them alongside the other terrain.
+
+## Illustrated targeting sight
+
+`target-sight-illustrated-v1.png` is a transparent 256px square cell with an
+open-center ivory, amber, and crimson gunsight in the detailed 1980s illustrated
+anime style. It previews the hovered or focused indirect-fire square and marks
+saved targets above board artwork. Built-in imagegen produced the approved
+master in `artwork/effects/illustrated/target-sight/target-sight-v1.png`.
+`node tools/build-effect-sprites.cjs` exports it with 12px transparent margins.
