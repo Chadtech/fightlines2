@@ -370,7 +370,7 @@ supplyConsumption kind =
             "trucks consume a small amount of supplies each turn. when supplies reach 0, this unit perishes."
 
         Kind.Tank ->
-            "tanks consume supplies each turn, for every tile moved, and for combat readiness and firing. when supplies reach 0, this unit perishes."
+            "tanks consume supplies each turn and for combat readiness and firing. movement uses fuel without spending supplies. when supplies reach 0, this unit perishes."
 
         Kind.Infantry ->
             "infantry consume supplies each turn, while walking, for attack move, stand ground or ambush readiness, and when firing. hills, forests, and mountains cost additional walking supplies. when supplies reach 0, this unit perishes."

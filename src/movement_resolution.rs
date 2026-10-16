@@ -521,7 +521,7 @@ mod tests {
         paths: &[(&str, &[(u16, u16)])],
     ) -> Result<(Scenario, Vec<MoveOrder>), Box<dyn std::error::Error>> {
         let mut scenario = Scenario::supply_point().map_err(|error| format!("{error:?}"))?;
-        scenario.map = Map::new(17, 17, Terrain::GrassPlain, BTreeMap::new())
+        scenario.map = Map::new(17, 17, Terrain::Plain, BTreeMap::new())
             .map_err(|error| format!("{error:?}"))?;
         scenario
             .units
@@ -889,7 +889,7 @@ mod tests {
                     .iter()
                     .find(|unit| unit.id() == attacker)
                     .ok_or("missing attacker")?;
-                let supplies = if attacker == "11" { 92 } else { 160 };
+                let supplies = if attacker == "11" { 104 } else { 160 };
                 assert_eq!(unit.supplies().current(), supplies);
                 assert_eq!(result.stopped.len(), 2);
             }

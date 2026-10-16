@@ -36,13 +36,15 @@ save leaves the lobby open and shows the error.
 `map.rs` stores width/height, a base terrain tile, and a `BTreeMap` of coordinate
 terrain overrides. Lookup returns no tile outside the map; missing in-bounds
 coordinates fall back to the base tile. There is no stored dense grid. `Map::from_ascii` parses rectangular sketches
-with `#` for forests, `%` for hills, and spaces or `.` for grass. Spaces are
+with `#` for forests, `%` for hills, and spaces or `.` for plain. Spaces are
 preserved; malformed rows and unknown symbols return explicit errors.
 The six built-in scenarios are authored in `maps/*.json`, with dimensions,
 typed themes, sparse terrain placements, separate supply/fuel depot placements,
 and explicit starting units (stable IDs, player, kind, position, and facing).
 Map JSON enums use Rust variant spelling, such as `GreenForest`, `FieldGun`, and
 `Player1`; GraphQL keeps its independently generated uppercase enum names.
+Unlisted terrain tiles are implicitly `Plain`; explicit plain placements use
+`Plain` in map JSON and `PLAIN` in GraphQL.
 `map_definition.rs` validates dimensions, bounds, unique terrain and depot
 positions, unit IDs and occupancy, mountain passability, facing, and a force for
 each player. `Scenario::from_definition` initializes resources using ordinary
@@ -304,7 +306,7 @@ gating; locked lifecycle phases convert the selection to inspection and discard
 the guide. `GamePage` derives the native dialog from that interaction and opens
 it through the existing dialog-change effect.
 
-`View.UnitCommands` renders the board-anchored command popup and emits command choices
+`View.CommandMenu` renders the board-anchored command popup and emits command choices
 and arrow-key events. `GamePage.update` chooses the adjacent enabled command,
 wrapping at the ends, and `Effect.focus` uses Elm's DOM API to focus its HTML ID. Selection tracks the focused command. While the popup is open, page-level
 up/down arrow and W/S commands navigate its enabled options instead of panning, including
@@ -464,7 +466,7 @@ requirements.
 
 `movement.rs` owns the movement table exposed as `GameSnapshot.movementRules`.
 Budgets and terrain entry costs use integer half-points (2 means one displayed
-point). Infantry has budget 2 with grass/hills/forest costs 1/1/1; tanks have
+point). Infantry has budget 2 with plain/hills/forest costs 1/1/1; tanks have
 budget 6 with costs 1/2/3; trucks have budget 7 with costs 1/3/4. Field guns have
 budget 1 and cost 1 on every current terrain, allowing exactly one adjacent
 square. Future impassable terrain can omit its cost entry.
@@ -598,9 +600,8 @@ snapshot fuel values; it does not calculate resource outcomes.
 
 Every Rust unit carries `Supplies` with current and maximum quantities plus
 `upkeepPerTurn`, `movementPerTile`, and `roughTerrainSurcharge` rates. Infantry start at
-192/192; field guns start at 196/196; vehicles start at 128/128. All kinds have upkeep 4. Infantry spend 12 supplies per grass tile and 16 per hill, forest, or mountain tile and field guns spend 8;
-tanks spend 12 supplies per tile alongside their fuel cost, while trucks spend no
-movement supplies. These are unit provisions, separate
+192/192; field guns start at 196/196; vehicles start at 128/128. All kinds have upkeep 4. Infantry spend 12 supplies per plain tile and 16 per hill, forest, or mountain tile and field guns spend 8;
+tanks and trucks spend fuel but no movement supplies. These are unit provisions, separate
 from fuel and carried supply crates.
 
 Validation reserves upkeep before allowing movement expenditure. Resolution
@@ -638,9 +639,11 @@ uses each authoritative frame's resource quantities, including the death snapsho
 
 `visibility.rs` owns per-kind sight ranges and the player's union of observable
 tiles. Circular distance uses ranges 3/3/1/1 for infantry/field guns/trucks/tanks;
-an observer on hills gains one tile and sees over intervening hills and forests.
-For observers off hills, a center-to-center ray treats intervening
-hills and forests as blockers only when it crosses their tile interior; terrain
+an observer on hills gains one tile and sees over intervening hills and forests,
+but mountains still block its sight. Mountain observers gain two tiles and see
+over all intervening terrain. For ground-level observers, a center-to-center ray
+treats intervening hills, mountains, and forests as blockers only when it crosses
+their tile interior; terrain
 touched only at a corner does not obstruct open diagonals. Forest tiles also
 conceal their contents. Own occupied squares remain known, while
 enemies in forests remain concealed even on a known occupied square.
@@ -675,7 +678,8 @@ direction from a sighting immediately before it moves into fog. Projection check
 one adjacent movement edge; observer movement, boarding, and death do not invent
 exits. Hidden destination coordinates and later route edges remain withheld. Elm
 interpolates exits only halfway to the adjacent tile, fading the unit out at the
-edge of its last visible square. The camera follows that same clipped movement.
+edge of its last visible square. The camera frames only the departure's observed
+origin and holds still during the exit.
 
 ## Unit transport
 
@@ -846,7 +850,8 @@ as one ambush card with inward-facing formations and a brief CSS expansion.
 `View.CombatTheater` receives the immutable map and chooses each participant's backdrop
 from its on-board position, terrain, and map theme. `View.CombatFormation` maps
 authoritative before/after health to staggered figures for every unit kind and
-represents each four-HP quarter with one figure, then sequences individual
+represents every two HP with one smaller infantry figure (up to eight), and
+every four HP with one figure for other kinds, then sequences individual
 casualty explosions and disappearance after a one-second anticipation beat.
 `View.CombatExplosion` selects six illustrated horizontal impact frames from that
 same clock, with a 100ms duration and figure removal beneath the blast at 50ms.
@@ -882,18 +887,20 @@ Projected `Shot.attackerHealth` and `Shot.targetHealth` carry authoritative befo
 and after hit points for each pair, including concealed enemies. Rust sequences health losses across pairs within a simultaneous volley; reciprocal shots share a single transition. This presentation sequence does not change simultaneous resolution. This permits enemy health inside the
 encounter card without exposing enemy supplies or fuel through `Unit.resources`.
 Panel state owns its capped presentation clock and `CardVisible | SeeingMap`
-mode. Its 2500ms capped clock allows the 200ms opening expansion, a one-second
-anticipation beat, up to four staggered casualties, and the automatic-close pause
+mode. Its 3000ms capped clock allows the 200ms opening expansion, a one-second
+anticipation beat, up to eight staggered infantry casualties, and the automatic-close pause
 to finish. The clock sequences individual figure explosions and removal, without HP bars; Continue/Enter
 or the saved automatic-close preference advances the pair. SeeingMap hides the card completely and restores the board
 spotlight with repeating shine. Mouse release restores the card even outside the button.
 `TurnPlayback.focusPositions` derives camera subjects from projected battlefield
-units during combat and casualty pauses, interpolated visible movement, and
+units during combat and casualty pauses, held movement origins, and
 projected indirect impacts. Encounter-only portrait positions never contribute.
 `GamePage` applies `Camera.focusTransform` throughout playback to center those
 subjects and reduce zoom only as needed to fit them with padding, using the
-board's CSS container dimensions. Floating-point tile positions let the camera
-follow the same interpolation as unit sprites. The navigation model remains
+board's CSS container dimensions. `TurnPlayback.movementFocus` captures the
+projected origins when a newly moving unit appears and retains that framing
+across tile boundaries, arrivals, and idle frames. Simultaneous movers share
+one framing; concealed routes never contribute. The navigation model remains
 untouched, restoring the saved camera when playback finishes.
 
 

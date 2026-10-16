@@ -4420,6 +4420,20 @@
         "x": 17,
         "y": 26
       },
+      "kind": "Fuel"
+    },
+    {
+      "position": {
+        "x": 17,
+        "y": 20
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 15,
+        "y": 20
+      },
       "kind": "Supply"
     },
     {

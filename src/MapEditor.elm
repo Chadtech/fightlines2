@@ -452,7 +452,7 @@ paintTile settings position draft =
                         |> List.filter (\feature -> feature.position == position)
                         |> List.head
                         |> Maybe.map .terrain
-                        |> Maybe.withDefault Terrain.GrassPlain
+                        |> Maybe.withDefault Terrain.Plain
             in
             if currentTerrain == terrain then
                 draft
@@ -465,7 +465,7 @@ paintTile settings position draft =
 
                     nextFeatures : List { position : Coordinate, terrain : Terrain }
                     nextFeatures =
-                        if terrain == Terrain.GrassPlain then
+                        if terrain == Terrain.Plain then
                             features
 
                         else

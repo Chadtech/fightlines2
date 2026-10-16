@@ -58,8 +58,8 @@ impl MapDefinition {
                 return Err(invalid("duplicate terrain position"));
             }
         }
-        let map = Map::new(self.width, self.height, Terrain::GrassPlain, features)?
-            .with_theme(self.theme);
+        let map =
+            Map::new(self.width, self.height, Terrain::Plain, features)?.with_theme(self.theme);
         let mut depot_positions = BTreeSet::new();
         for depot in &self.depots {
             if !map.contains(depot.position) {

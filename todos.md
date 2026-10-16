@@ -1,20 +1,22 @@
-- 16 little infantry guys in combat theater for infantry
 - Attacking and destroying supply depots and supply crates
 - Possible to initiate combat theater with 0 enemies in animation
-- After field gun fires it should be visible immediately in the turn animation, rather than right now it only becomes visible next turn
-- When I click "see map" in combat theater, I need a way to move the map in case the combatants are not on screen
-- Make sure stand ground has a direction setting step
-- Inquire about the separation of UnitCommand and View.UnitCommand
-- Being on a hill should not permit you to see past mountains
+- Win condition check
+- Dig in
+- Possible for unit to move onto trucks destination to load up, but not possible for truck to go to units destination to load up
+- Make camera movements more gradual on animation
+- Dont pan camera if units are already sufficiently in view
+- If the user bails out of the unload step for a truck, the truck move should not be committed
+- Direction at end of attack move should be the position like when ambushing or stand ground. Not just the arrow flipping around.
+- cancel button in pick up dialog
+- in pick up dialog "0" should say "none"
+- Trucks should be able to load up with less than one full crate/drum
+- Review last turn step by step view
+- Pick up crates/drums already on the ground
+- Truck movement cost more when loaded
+- Health indicator should pop up much sooner in HP losses
+- Attack moving units cannot set their facing direction opposite of their last travel
+- Infantry should be able to rapidly dismount and attack
+
 - Hide map editor UI in Elm code if flag is not set
-- Fuel Drum right panel view
 
 
-- Field guns should consume a lot more supplies firing
-- Crosshairs and confirm when selecting indirect fire
-- stand ground needs direction
-- If a field gun targets a square, and then an enemy unit gets jammed there, do they get hit?
-- infantry need to do more damage to field guns
-- infantry in a forest that expose themselves should become vulnerable to ambushes
-- Hard to remember where you dropped supplies
-- infantry that attack from a forest during a turn should remain visible next turn

@@ -27,7 +27,7 @@ impl Coordinate {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
 pub enum Terrain {
-    GrassPlain,
+    Plain,
     Hills,
     Forest,
     Mountains,
@@ -132,7 +132,7 @@ impl Map {
         Ok(map)
     }
 
-    /// Parse a rectangular terrain sketch: space or `.` is grass, `#` forest,
+    /// Parse a rectangular terrain sketch: space or `.` is plain, `#` forest,
     /// `%` hills, and `^` mountains. Spaces are cells, so leading/trailing spaces are preserved.
     /// A final newline is optional; blank rows and unknown symbols are errors.
     #[cfg(test)]
@@ -166,7 +166,7 @@ impl Map {
                 features.insert(position, terrain);
             }
         }
-        Self::new(map_width, map_height, Terrain::GrassPlain, features)
+        Self::new(map_width, map_height, Terrain::Plain, features)
     }
 
     pub fn with_theme(mut self, theme: MapTheme) -> Self {
@@ -255,14 +255,8 @@ mod tests {
             assert_eq!((map.width, map.height), (4, 2));
             assert_eq!(map.tile_at(Coordinate::new(1, 0)), Some(Terrain::Forest));
             assert_eq!(map.tile_at(Coordinate::new(3, 0)), Some(Terrain::Hills));
-            assert_eq!(
-                map.tile_at(Coordinate::new(0, 1)),
-                Some(Terrain::GrassPlain)
-            );
-            assert_eq!(
-                map.tile_at(Coordinate::new(3, 1)),
-                Some(Terrain::GrassPlain)
-            );
+            assert_eq!(map.tile_at(Coordinate::new(0, 1)), Some(Terrain::Plain));
+            assert_eq!(map.tile_at(Coordinate::new(3, 1)), Some(Terrain::Plain));
             assert_eq!(map.features.len(), 2);
         }
 
@@ -317,15 +311,12 @@ mod tests {
         let map = Map::new(
             3,
             2,
-            Terrain::GrassPlain,
+            Terrain::Plain,
             BTreeMap::from([(forest, Terrain::Forest)]),
         )
         .fixture()?;
         assert_eq!(map.tile_at(forest), Some(Terrain::Forest));
-        assert_eq!(
-            map.tile_at(Coordinate::new(2, 1)),
-            Some(Terrain::GrassPlain)
-        );
+        assert_eq!(map.tile_at(Coordinate::new(2, 1)), Some(Terrain::Plain));
         assert_eq!(map.tile_at(Coordinate::new(3, 1)), None);
         assert_eq!(map.tile_at(Coordinate::new(1, 2)), None);
         assert_eq!(map.features.len(), 1);
@@ -336,11 +327,11 @@ mod tests {
     #[test]
     fn rejects_empty_maps_and_out_of_bounds_overrides() -> TestResult<()> {
         assert_eq!(
-            Map::new(0, 2, Terrain::GrassPlain, BTreeMap::new()),
+            Map::new(0, 2, Terrain::Plain, BTreeMap::new()),
             Err(MapError::EmptyDimensions)
         );
         assert_eq!(
-            Map::new(2, 0, Terrain::GrassPlain, BTreeMap::new()),
+            Map::new(2, 0, Terrain::Plain, BTreeMap::new()),
             Err(MapError::EmptyDimensions)
         );
         let position = Coordinate::new(2, 0);
@@ -348,7 +339,7 @@ mod tests {
             Map::new(
                 2,
                 2,
-                Terrain::GrassPlain,
+                Terrain::Plain,
                 BTreeMap::from([(position, Terrain::Hills)])
             ),
             Err(MapError::PositionOutOfBounds(position))

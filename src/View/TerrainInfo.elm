@@ -101,7 +101,7 @@ terrainView terrain =
 visibilityText : Terrain -> String
 visibilityText terrain =
     case terrain of
-        Terrain.GrassPlain ->
+        Terrain.Plain ->
             "open ground, units can easily traverse it, but are also easily spotted by enemies."
 
         Terrain.Hills ->

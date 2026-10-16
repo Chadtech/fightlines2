@@ -82,6 +82,13 @@ type alias Playback =
     , elapsed : Float
     , presentation : Presentation
     , acknowledgedLosses : List UnitId
+    , movementFocus : MovementFocus
+    }
+
+
+type alias MovementFocus =
+    { unitIds : List UnitId
+    , positions : List Point
     }
 
 
@@ -441,8 +448,8 @@ encounters frame =
            )
 
 
-beginFrame : FrameTransition -> List Frame -> Playback
-beginFrame transition pending =
+beginFrame : MovementFocus -> FrameTransition -> List Frame -> Playback
+beginFrame previousFocus transition pending =
     let
         ( next, remaining ) =
             combineReturnFire transition.next pending
@@ -474,7 +481,9 @@ beginFrame transition pending =
     , elapsed = 0
     , presentation = presentation
     , acknowledgedLosses = []
+    , movementFocus = previousFocus
     }
+        |> holdMovementFocus
 
 
 {-| A stationary head-on exchange can span two authoritative volleys. Present
@@ -622,7 +631,21 @@ start : List Frame -> Maybe Playback
 start frames =
     case clearPresentedDeaths [] frames of
         current :: next :: remaining ->
-            Just (beginFrame { current = current, next = current } (next :: remaining))
+            let
+                startingFocus : MovementFocus
+                startingFocus =
+                    { unitIds = []
+                    , positions = []
+                    }
+            in
+            Just
+                (beginFrame
+                    startingFocus
+                    { current = current
+                    , next = current
+                    }
+                    (next :: remaining)
+                )
 
         _ ->
             Nothing
@@ -737,7 +760,7 @@ tickPresentation lossPolicy delta playback =
                 )
 
         Battlefield ->
-            tickBattlefield lossPolicy delta playback
+            tickBattlefield lossPolicy delta (holdMovementFocus playback)
 
 
 tickCombat : Float -> CombatFocus -> Playback -> ( Maybe Playback, Frame )
@@ -755,7 +778,7 @@ tickCombat delta focus playback =
 
                 ShowingPanels panel ->
                     -- Four staggered impacts, camera settling, and the automatic-close delay fit within this clock.
-                    ShowingPanels { panel | elapsed = min 2500 (panel.elapsed + delta) }
+                    ShowingPanels { panel | elapsed = min 3000 (panel.elapsed + delta) }
     in
     ( Just { playback | presentation = Combat { focus | stage = stage } }
     , focus.before
@@ -909,7 +932,7 @@ tickBattlefield lossPolicy delta playback =
                 let
                     advanced : Playback
                     advanced =
-                        beginFrame { current = playback.current, next = next } remaining
+                        beginFrame playback.movementFocus { current = playback.current, next = next } remaining
                 in
                 case advanced.presentation of
                     Combat focus ->
@@ -1115,9 +1138,39 @@ encounterPositions frame encounter =
             [ position ]
 
 
-{-| Follow only projected battlefield sightings. Theater portraits can contain
+{-| Pan when a newly moving sighting appears, then hold the opening positions
+across tile boundaries and arrivals. Hidden routes never contribute. Keep the
+last framing during idle frames instead of snapping back to the saved view.
+-}
+holdMovementFocus : Playback -> Playback
+holdMovementFocus playback =
+    let
+        movers : List { unitId : UnitId, position : Point }
+        movers =
+            movingPositions (Just { playback | elapsed = 0 })
+
+        unitIds : List UnitId
+        unitIds =
+            List.map .unitId movers
+
+        newlyMoving : UnitId -> Bool
+        newlyMoving id =
+            not (List.member id playback.movementFocus.unitIds)
+
+        positions : List Point
+        positions =
+            if List.any newlyMoving unitIds then
+                List.map .position movers
+
+            else
+                playback.movementFocus.positions
+    in
+    { playback | movementFocus = { unitIds = unitIds, positions = positions } }
+
+
+{-| Frame only projected battlefield sightings. Theater portraits can contain
 concealed positions, so resolve participant IDs against the held frame instead.
-Movement uses the same fog-safe interpolation as the unit sprites.
+Movement keeps its opening framing while the sprites travel.
 -}
 focusPositions : Playback -> List Point
 focusPositions playback =
@@ -1158,7 +1211,11 @@ focusPositions playback =
                         ++ List.map point playback.current.indirectImpacts
                         ++ casualtyPositions
             in
-            feedback ++ (movingPositions (Just playback) |> List.map .position)
+            if List.isEmpty feedback then
+                playback.movementFocus.positions
+
+            else
+                feedback
 
 
 visibleIndirectImpacts : Playback -> List Coordinate

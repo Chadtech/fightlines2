@@ -69,7 +69,7 @@ map definition =
         { width = definition.width
         , height = definition.height
         , theme = definition.theme
-        , baseTile = Terrain.GrassPlain
+        , baseTile = Terrain.Plain
         , features = definition.features
         }
 

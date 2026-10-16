@@ -110,7 +110,7 @@ description command =
             "keep infantry, a tank, or a field gun in place with combat readiness when attacked. choose its facing on the map or with an arrow key / wasd. it gains the same defensive readiness as an ambush, but does not fire or intercept enemies. this order costs normal supply upkeep plus readiness supplies."
 
         AttackMove ->
-            "send infantry or a tank along a route prepared to fight enemies it encounters. choose the route first, then choose the final facing at its destination. on arrival, attack an enemy one square ahead in that direction. the red arrow shows the chosen facing, and enemy squares can be destinations. combat can interrupt the route. movement, readiness, firing, and normal upkeep spend supplies, and tanks also spend fuel. attack move does not load or unload cargo."
+            "send infantry or a tank along a route prepared to fight enemies it encounters. choose the route first, then choose the final facing at its destination. on arrival, attack an enemy one square ahead in that direction. the red arrow shows the chosen facing, and enemy squares can be destinations. combat can interrupt the route. readiness, firing, and normal upkeep spend supplies. infantry movement spends supplies; tank movement spends fuel. attack move does not load or unload cargo."
 
         IndirectFire ->
             "keep a field gun stationary and select any tile within its indirect range, including fog. one shell lands after movement and unloading, hitting whoever occupies that tile, including allies. terrain does not block the shot. empty tiles waste ammunition; unseen hits stay unconfirmed. readiness, firing, and normal upkeep spend supplies."

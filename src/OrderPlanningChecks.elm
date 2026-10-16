@@ -174,7 +174,7 @@ planningChecks infantryId truckId passengerId =
             Map.fromFeatures
                 { width = 20
                 , height = 3
-                , baseTile = Terrain.GrassPlain
+                , baseTile = Terrain.Plain
                 , theme = Theme.GreenForest
                 , features = []
                 }
@@ -1262,7 +1262,7 @@ planningChecks infantryId truckId passengerId =
 
 board : List Unit -> OrderPlanning.Context
 board units =
-    { map = Map.fromFeatures { width = 7, height = 7, baseTile = Terrain.GrassPlain, theme = Theme.GreenForest, features = [] }
+    { map = Map.fromFeatures { width = 7, height = 7, baseTile = Terrain.Plain, theme = Theme.GreenForest, features = [] }
     , units = units
     , movementRules = List.map movementRule [ Kind.Infantry, Kind.Truck, Kind.FieldGun ]
     , depots = []
@@ -1273,7 +1273,7 @@ board units =
 
 movementRule : UnitKind -> Movement.Rule
 movementRule kind =
-    { kind = kind, budget = 12, terrainCosts = [ { terrain = Terrain.GrassPlain, cost = 2 } ] }
+    { kind = kind, budget = 12, terrainCosts = [ { terrain = Terrain.Plain, cost = 2 } ] }
 
 
 unit : UnitId -> UnitKind -> Location -> Unit

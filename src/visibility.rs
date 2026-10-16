@@ -113,14 +113,13 @@ pub fn visible_tiles(scenario: &Scenario, player_number: PlayerNumber) -> BTreeS
 /// does not enter the adjacent cells, so their terrain does not block sight.
 /// Target hills and mountains remain visible; forests conceal their contents.
 /// Intervening hills, mountains and forests block ground-level observers.
-/// Hill and mountain observers see over
-/// intervening terrain; forests still conceal their contents.
+/// Hill observers see over hills and forests, but mountains still block them.
+/// Mountain observers see over all terrain; forests still conceal their contents.
 pub(crate) fn clear_line(map: &Map, origin: Coordinate, target: Coordinate) -> bool {
-    if matches!(
-        map.tile_at(origin),
-        Some(Terrain::Hills | Terrain::Mountains)
-    ) {
-        return true;
+    let origin_terrain = map.tile_at(origin);
+    match origin_terrain {
+        Some(Terrain::Mountains) => return true,
+        Some(Terrain::Hills | Terrain::Forest | Terrain::Plain) | None => {}
     }
     let dx = target.x() - origin.x();
     let dy = target.y() - origin.y();
@@ -133,8 +132,9 @@ pub(crate) fn clear_line(map: &Map, origin: Coordinate, target: Coordinate) -> b
     let blocks = |x: i32, y: i32| {
         let position = Coordinate::new(x as u16, y as u16);
         let blocking_terrain = match map.tile_at(position) {
-            Some(Terrain::Hills | Terrain::Forest | Terrain::Mountains) => true,
-            Some(Terrain::GrassPlain) | None => false,
+            Some(Terrain::Mountains) => true,
+            Some(Terrain::Hills | Terrain::Forest) => origin_terrain != Some(Terrain::Hills),
+            Some(Terrain::Plain) | None => false,
         };
         position != origin && position != target && blocking_terrain
     };
@@ -838,7 +838,7 @@ mod tests {
                     board.map = Map::new(
                         13,
                         13,
-                        Terrain::GrassPlain,
+                        Terrain::Plain,
                         std::collections::BTreeMap::from([(
                             origin,
                             if bonus == 2 {
@@ -885,6 +885,37 @@ mod tests {
     }
 
     #[test]
+    fn mountains_block_hill_sight_for_every_kind() -> TestResult<()> {
+        for kind in [
+            UnitKind::Infantry,
+            UnitKind::FieldGun,
+            UnitKind::Truck,
+            UnitKind::Tank,
+        ] {
+            for sketch in ["%^...", "%\n^\n.\n.\n."] {
+                let board = scenario(kind, sketch)?;
+                let visible = visible_tiles(&board, PlayerNumber::Player1);
+                let mountain = if sketch.contains('\n') {
+                    Coordinate::new(0, 1)
+                } else {
+                    Coordinate::new(1, 0)
+                };
+                let beyond = Coordinate::new((mountain.x() * 2) as u16, (mountain.y() * 2) as u16);
+                assert!(visible.contains(&mountain));
+                assert!(!visible.contains(&beyond));
+            }
+        }
+        let diagonal = scenario(UnitKind::Infantry, "%...\n.^..\n....\n....")?;
+        let visible = visible_tiles(&diagonal, PlayerNumber::Player1);
+        assert!(visible.contains(&Coordinate::new(1, 1)));
+        assert!(!visible.contains(&Coordinate::new(2, 2)));
+        // A mountain touching only the ray's corner does not block sight.
+        let corner = scenario(UnitKind::Infantry, "%^.\n...\n...")?;
+        assert!(visible_tiles(&corner, PlayerNumber::Player1).contains(&Coordinate::new(2, 2)));
+        Ok(())
+    }
+
+    #[test]
     fn forests_cast_horizontal_vertical_and_diagonal_shadows() -> TestResult<()> {
         for sketch in [
             ".#...\n.....\n.....\n.....\n.....",
@@ -923,7 +954,7 @@ mod tests {
                     board.map = Map::new(
                         8,
                         8,
-                        Terrain::GrassPlain,
+                        Terrain::Plain,
                         std::collections::BTreeMap::from([(blocker, terrain)]),
                     )
                     .fixture()?;
@@ -933,7 +964,7 @@ mod tests {
                     board.map = Map::new(
                         8,
                         8,
-                        Terrain::GrassPlain,
+                        Terrain::Plain,
                         std::collections::BTreeMap::from([
                             (origin, Terrain::Hills),
                             (blocker, terrain),
@@ -1005,7 +1036,7 @@ mod tests {
                         board.map = Map::new(
                             7,
                             7,
-                            Terrain::GrassPlain,
+                            Terrain::Plain,
                             blockers
                                 .into_iter()
                                 .map(|position| (position, terrain))
@@ -1035,7 +1066,7 @@ mod tests {
             let map = Map::new(
                 5,
                 5,
-                Terrain::GrassPlain,
+                Terrain::Plain,
                 std::collections::BTreeMap::from([(Coordinate::new(1, 1), terrain)]),
             )
             .fixture()?;

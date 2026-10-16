@@ -5,7 +5,7 @@
       "budget": 4,
       "terrainCosts": [
         {
-          "terrain": "GRASS_PLAIN",
+          "terrain": "PLAIN",
           "cost": 2
         },
         {
@@ -27,7 +27,7 @@
       "budget": 12,
       "terrainCosts": [
         {
-          "terrain": "GRASS_PLAIN",
+          "terrain": "PLAIN",
           "cost": 2
         },
         {
@@ -49,7 +49,7 @@
       "budget": 2,
       "terrainCosts": [
         {
-          "terrain": "GRASS_PLAIN",
+          "terrain": "PLAIN",
           "cost": 2
         },
         {
@@ -71,7 +71,7 @@
       "budget": 14,
       "terrainCosts": [
         {
-          "terrain": "GRASS_PLAIN",
+          "terrain": "PLAIN",
           "cost": 2
         },
         {
@@ -378,7 +378,7 @@
       ]
     },
     {
-      "name": "infantry two grass squares only",
+      "name": "infantry two plain squares only",
       "kind": "INFANTRY",
       "sketch": ".....",
       "origin": [
@@ -424,7 +424,7 @@
       ]
     },
     {
-      "name": "truck seven grass squares",
+      "name": "truck seven plain squares",
       "kind": "TRUCK",
       "sketch": ".........",
       "origin": [
@@ -526,7 +526,7 @@
       "expected": []
     },
     {
-      "name": "infantry cannot enter mountain after grass",
+      "name": "infantry cannot enter mountain after plain",
       "kind": "INFANTRY",
       "sketch": "..^",
       "origin": [

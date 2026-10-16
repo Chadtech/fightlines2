@@ -17,6 +17,12 @@ async function main() {
     }
     await fs.copyFile(source, path.join(root, "public/assets", `terrain-${kind}-illustrated-${revision}.png`));
   }
+  const snowSource = path.join(root, "artwork/terrain/illustrated/snow-v1/plains.png");
+  const snowMetadata = await sharp(snowSource).metadata();
+  const snowStats = await sharp(snowSource).stats();
+  assert.equal(snowMetadata.width, snowMetadata.height, "snow plains source must be square");
+  assert(snowStats.isOpaque, "snow plains must cover the ground");
+  await fs.copyFile(snowSource, path.join(root, "public/assets/terrain-snow-plains-illustrated-v1.png"));
   for (const [sourceName, exportName] of [
     ["hills", "terrain-hills-illustrated-v7.png"],
     ["snowy-hills", "terrain-hills-snow-illustrated-v7.png"],
@@ -41,7 +47,7 @@ async function main() {
     assert(metadata.hasAlpha && !stats.isOpaque, `${sourceName} needs transparent edges`);
     await fs.copyFile(source, path.join(root, "public/assets", exportName));
   }
-  console.log("Exported illustrated grass, hills, forest and mountain terrain.");
+  console.log("Exported illustrated grass, snow plains, hills, forest and mountain terrain.");
 }
 
 main().catch((error) => {

@@ -165,7 +165,7 @@ impl Supplies {
         let movement_per_tile = match kind {
             UnitKind::Infantry => 12,
             UnitKind::FieldGun => 8,
-            UnitKind::Tank => 12,
+            UnitKind::Tank => 0,
             UnitKind::Truck => 0,
         };
         let maximum = match kind {
@@ -758,9 +758,7 @@ mod tests {
                         continue;
                     }
                     let neighbor = Coordinate::new(x as u16, y as u16);
-                    if map.tile_at(neighbor) == Some(Terrain::GrassPlain)
-                        && visited.insert(neighbor)
-                    {
+                    if map.tile_at(neighbor) == Some(Terrain::Plain) && visited.insert(neighbor) {
                         frontier.push_back((neighbor, distance + 1));
                     }
                 }
@@ -775,7 +773,7 @@ mod tests {
         for x in 8..=14 {
             assert_eq!(
                 scenario.map.tile_at(Coordinate::new(x, 6)),
-                Some(Terrain::GrassPlain)
+                Some(Terrain::Plain)
             );
         }
         assert_eq!(
@@ -799,7 +797,7 @@ mod tests {
         ] {
             assert_eq!(
                 scenario.map.tile_at(Coordinate::new(x, y)),
-                Some(Terrain::GrassPlain)
+                Some(Terrain::Plain)
             );
         }
         for y in 9..=11 {
@@ -973,7 +971,7 @@ mod tests {
             let (maximum, movement_per_tile) = match unit.kind {
                 UnitKind::Infantry => (192, 12),
                 UnitKind::FieldGun => (196, 8),
-                UnitKind::Tank => (128, 12),
+                UnitKind::Tank => (128, 0),
                 UnitKind::Truck => (128, 0),
             };
             assert_eq!(unit.supplies.current, maximum);
@@ -1161,7 +1159,7 @@ mod tests {
         for unit in &scenario.units {
             assert_eq!(
                 scenario.map.tile_at(unit.board_position().fixture()?),
-                Some(Terrain::GrassPlain)
+                Some(Terrain::Plain)
             );
             assert!(
                 !scenario
@@ -1213,10 +1211,7 @@ mod tests {
         assert_eq!(scenario.depots.len(), 3);
         assert_eq!(scenario.depots[1].position, Coordinate::new(8, 8));
         for depot in &scenario.depots {
-            assert_eq!(
-                scenario.map.tile_at(depot.position),
-                Some(Terrain::GrassPlain)
-            );
+            assert_eq!(scenario.map.tile_at(depot.position), Some(Terrain::Plain));
         }
         assert_eq!(scenario, Scenario::supply_point().fixture()?);
 

@@ -8,7 +8,7 @@ import Json.Decode as Decode exposing (Decoder)
 
 
 type Terrain
-    = GrassPlain
+    = Plain
     | Hills
     | Forest
     | Mountains
@@ -16,7 +16,7 @@ type Terrain
 
 list : List Terrain
 list =
-    [ GrassPlain, Hills, Forest, Mountains ]
+    [ Plain, Hills, Forest, Mountains ]
 
 
 decoder : Decoder Terrain
@@ -25,8 +25,8 @@ decoder =
         |> Decode.andThen
             (\string ->
                 case string of
-                    "GRASS_PLAIN" ->
-                        Decode.succeed GrassPlain
+                    "PLAIN" ->
+                        Decode.succeed Plain
 
                     "HILLS" ->
                         Decode.succeed Hills
@@ -47,8 +47,8 @@ decoder =
 toString : Terrain -> String
 toString enum____ =
     case enum____ of
-        GrassPlain ->
-            "GRASS_PLAIN"
+        Plain ->
+            "PLAIN"
 
         Hills ->
             "HILLS"
@@ -74,8 +74,8 @@ This can be useful for generating Strings to use for <select> menus to check whi
 fromString : String -> Maybe Terrain
 fromString enumString____ =
     case enumString____ of
-        "GRASS_PLAIN" ->
-            Just GrassPlain
+        "PLAIN" ->
+            Just Plain
 
         "HILLS" ->
             Just Hills

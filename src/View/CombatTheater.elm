@@ -108,8 +108,8 @@ impactStarts : Panel -> List Float
 impactStarts panel =
     case panel.encounter of
         Exchange exchange ->
-            [ exchange.attackerHealth, exchange.targetHealth ]
-                |> List.concatMap CombatFormation.impactStarts
+            CombatFormation.impactStarts exchange.attacker.kind exchange.attackerHealth
+                ++ CombatFormation.impactStarts exchange.target.kind exchange.targetHealth
 
         Impact _ ->
             [ 1200, 1330, 1460, 1590 ]
@@ -355,13 +355,13 @@ backdropPath theme terrain =
                 ( MapTheme.Desert, Terrain.Mountains ) ->
                     "desert-mountains"
 
-                ( MapTheme.GreenForest, Terrain.GrassPlain ) ->
+                ( MapTheme.GreenForest, Terrain.Plain ) ->
                     "plains"
 
-                ( MapTheme.Snow, Terrain.GrassPlain ) ->
+                ( MapTheme.Snow, Terrain.Plain ) ->
                     "tundra-plains"
 
-                ( MapTheme.Desert, Terrain.GrassPlain ) ->
+                ( MapTheme.Desert, Terrain.Plain ) ->
                     "desert-plains"
     in
     "/assets/combat-backdrops-anime-v1/" ++ name ++ ".png"
@@ -470,9 +470,9 @@ portrait map panel health unit =
         description =
             Unit.label unit
                 ++ ": "
-                ++ String.fromInt (CombatFormation.figureCount health.before.current)
+                ++ String.fromInt (CombatFormation.figureCount unit.kind health.before.current)
                 ++ " before combat, "
-                ++ String.fromInt (CombatFormation.figureCount health.after.current)
+                ++ String.fromInt (CombatFormation.figureCount unit.kind health.after.current)
                 ++ " remaining"
     in
     scene

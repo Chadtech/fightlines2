@@ -213,7 +213,7 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   and desaturated, brighter forests. Hill sprites use no extra theme filters. Fog applies
   after theme styling. BloodGulch uses GreenForest, including ordinary forest
   artwork for its hiding spots. Arabia and ElAlamein use Desert. Tile inspection and
-  movement costs continue to use the underlying grass, hills, and forest rules.
+  movement costs continue to use the underlying plain, hills, and forest rules.
 - Unseen terrain and known depots use 18% saturation and 58% brightness,
   preserving the artwork's internal shading instead of covering it with an opaque
   tint. Keep visibility boundaries crisp at tile edges.
@@ -443,12 +443,12 @@ shows inward-facing formations on the illustrated backdrop matching each
 combatant's terrain and map theme. Omit
 visible unit/player labels. The western participant appears left, facing right; the eastern participant appears right, facing left. For a vertical encounter, the northern participant appears left.
 The card opens with a 200ms expansion and slight overshoot. Every unit kind
-uses four staggered figures at 13–16 HP, three at 9–12, two at 5–8, one at
-1–4, and none at zero. Each figure represents four HP; partially intact
-quarters remain visible.
-Field-gun formations use uneven spacing and varied scale, with smaller guns
-farther back and larger guns in the foreground. Keep their placements stable
-through impacts and paint from back to front.
+uses staggered figures. Infantry has eight smaller figures at full health, each
+representing two HP. Other kinds have four figures at 13–16 HP, three at 9–12,
+two at 5–8, one at 1–4, and none at zero. Partially intact figures remain visible.
+Field-gun formations use one full-size gun centered in the foreground and three
+smaller guns scattered horizontally behind it, with shallow vertical variation.
+Keep their placements stable through impacts and paint from back to front.
 Hold the scene for one second after the opening animation finishes before combat
 begins. Use the server's per-pair before/after health, including
 observable enemies, without theater HP bars. Lost figures play a six-frame illustrated horizontal projectile impact over 100ms,
@@ -474,8 +474,10 @@ whose shine repeats while held; mouse release or leaving the button restores it.
 While held, center the battlefield camera on the visible combatants and reduce
 zoom only as needed to fit their tiles with one tile of padding on each side.
 Keep this framing throughout combat, including its spotlight, card, and casualty
-pause. Playback also centers on interpolated visible movers, fitting simultaneous
-movement together, and on projected indirect-fire impacts. Restore the saved pan
+pause. Playback pans to visible movers when movement begins, fitting simultaneous
+movers together at their starting positions. Hold that framing as they travel
+across tiles and finish; reframe when another visible unit starts moving.
+Playback also centers on projected indirect-fire impacts. Restore the saved pan
 and zoom when playback finishes. Concealed
 combatants remain absent from the battlefield and do not affect camera framing.
 Combine reciprocal shots into one display. After continuing each theater, show

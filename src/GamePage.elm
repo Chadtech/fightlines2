@@ -117,6 +117,7 @@ import View.Checkbox as Checkbox
 import View.CombatEffects as CombatEffects
 import View.CombatTheater as CombatTheater
 import View.CommandGuide as CommandGuide
+import View.CommandMenu as CommandMenu
 import View.DepotStatus as DepotStatus
 import View.DepotStock as DepotStock
 import View.Dialog as Dialog exposing (Dialog)
@@ -129,7 +130,6 @@ import View.TerrainTile as TerrainTile
 import View.TurnControls as TurnControls
 import View.TurnIntroduction as TurnIntroduction
 import View.UnitCargo as UnitCargo
-import View.UnitCommands as UnitCommands
 import View.UnitDeath as UnitDeath
 import View.UnitFacing as UnitFacing
 import View.UnitSprite as UnitSprite
@@ -211,7 +211,7 @@ type alias RotationSelection =
 
 type Msg
     = BattlefieldNavigationMsg BattlefieldNavigation.Msg
-    | UnitCommandsMsg UnitCommands.Msg
+    | CommandMenuMsg CommandMenu.Msg
     | PreviousCommandPressed
     | NextCommandPressed
     | CommandFocusCompleted
@@ -1146,7 +1146,7 @@ focusAdjacentCommand orderCommands current model =
             case adjacent of
                 Just command ->
                     E.focus
-                        { htmlId = UnitCommands.optionHtmlId command }
+                        { htmlId = CommandMenu.optionHtmlId command }
                         CommandFocusCompleted
 
                 Nothing ->
@@ -1692,7 +1692,7 @@ update lobbyId msg model =
             next
                 |> E.withOut
 
-        UnitCommandsMsg commandMsg ->
+        CommandMenuMsg commandMsg ->
             model
                 |> handleCommandMsg commandMsg
 
@@ -2038,13 +2038,13 @@ applyPlaybackFrame next model =
     }
 
 
-handleCommandMsg : UnitCommands.Msg -> Model -> ( Model, Eff Msg )
+handleCommandMsg : CommandMenu.Msg -> Model -> ( Model, Eff Msg )
 handleCommandMsg commandMsg model =
     case commandMsg of
-        UnitCommands.MenuPressed ->
+        CommandMenu.MenuPressed ->
             model |> E.withOut
 
-        UnitCommands.InfoClicked ->
+        CommandMenu.InfoClicked ->
             if hasDialog model then
                 model |> E.withOut
 
@@ -2053,27 +2053,27 @@ handleCommandMsg commandMsg model =
                     |> mapPlanning (OrderPlanning.openCommandGuide (planningContext model))
                     |> E.withOut
 
-        UnitCommands.CancelClicked ->
+        CommandMenu.CancelClicked ->
             model
                 |> clearSelection
                 |> E.withOut
 
-        UnitCommands.CommandFocused command ->
+        CommandMenu.CommandFocused command ->
             model
                 |> focusCommand command
                 |> E.withOut
 
-        UnitCommands.CommandPicked command ->
+        CommandMenu.CommandPicked command ->
             model
                 |> applyCommand command
                 |> E.withOut
 
-        UnitCommands.ArrowedUpCommandMenu current ->
+        CommandMenu.ArrowedUpCommandMenu current ->
             ( model
             , focusAdjacentCommand List.reverse (Just current) model
             )
 
-        UnitCommands.ArrowedDownCommandMenu current ->
+        CommandMenu.ArrowedDownCommandMenu current ->
             ( model
             , focusAdjacentCommand identity (Just current) model
             )
@@ -2201,12 +2201,12 @@ commandMenu model =
         Just unit ->
             case Unit.physicalPosition model.units unit of
                 Just position ->
-                    UnitCommands.toHtml
+                    CommandMenu.toHtml
                         model.map
                         (BattlefieldNavigation.camera model.navigation)
                         position
                         unit
-                        |> H.map UnitCommandsMsg
+                        |> H.map CommandMenuMsg
 
                 Nothing ->
                     H.text ""
@@ -3548,7 +3548,7 @@ battlefieldView model =
                 , S.transform
                     cameraTransform
                 , Css.Global.descendants
-                    [ Css.Global.selector "rect[role=button]"
+                    [ Css.Global.selector "rect"
                         [ S.outlineNone
                         , S.focusVisible
                             [ S.outlineYellow5HalfPixel

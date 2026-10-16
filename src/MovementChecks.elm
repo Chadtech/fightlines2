@@ -156,7 +156,7 @@ check rules fixture =
                                                     Terrain.Mountains
 
                                                 else
-                                                    Terrain.GrassPlain
+                                                    Terrain.Plain
                                             }
                                         )
                             )
@@ -164,7 +164,7 @@ check rules fixture =
 
                 map : Map
                 map =
-                    Map.fromFeatures { width = rows |> List.head |> Maybe.map String.length |> Maybe.withDefault 0, height = List.length rows, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = features }
+                    Map.fromFeatures { width = rows |> List.head |> Maybe.map String.length |> Maybe.withDefault 0, height = List.length rows, baseTile = Terrain.Plain, theme = MapTheme.GreenForest, features = features }
 
                 units : List Unit.Unit
                 units =
@@ -269,7 +269,7 @@ traceChecks rules =
 
                 map : Map
                 map =
-                    Map.fromFeatures { width = 4, height = 4, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
+                    Map.fromFeatures { width = 4, height = 4, baseTile = Terrain.Plain, theme = MapTheme.GreenForest, features = [] }
 
                 units : List Unit.Unit
                 units =
@@ -355,7 +355,7 @@ traceChecks rules =
                     (let
                         roughMap : Map
                         roughMap =
-                            Map.fromFeatures { width = 4, height = 4, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [ { position = down, terrain = Terrain.Hills } ] }
+                            Map.fromFeatures { width = 4, height = 4, baseTile = Terrain.Plain, theme = MapTheme.GreenForest, features = [ { position = down, terrain = Terrain.Hills } ] }
                      in
                      Movement.trace rules roughMap units unit (Movement.start origin) down
                         |> Maybe.andThen
@@ -393,14 +393,14 @@ targetSearchChecks unit =
 
         map : Map
         map =
-            Map.fromFeatures { width = 3, height = 2, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [ { position = forest, terrain = Terrain.Forest } ] }
+            Map.fromFeatures { width = 3, height = 2, baseTile = Terrain.Plain, theme = MapTheme.GreenForest, features = [ { position = forest, terrain = Terrain.Forest } ] }
 
         rule : Movement.Rule
         rule =
             { kind = unit.kind
             , budget = 12
             , terrainCosts =
-                [ { terrain = Terrain.GrassPlain, cost = 2 }
+                [ { terrain = Terrain.Plain, cost = 2 }
                 , { terrain = Terrain.Forest, cost = 6 }
                 , { terrain = Terrain.Hills, cost = 3 }
                 , { terrain = Terrain.Mountains, cost = 0 }
@@ -443,14 +443,14 @@ targetSearchChecks unit =
                         Terrain.Hills
 
                     _ ->
-                        Terrain.GrassPlain
+                        Terrain.Plain
             }
 
         tieRule : Movement.Rule
         tieRule =
             { rule
                 | terrainCosts =
-                    [ { terrain = Terrain.GrassPlain, cost = 1 }
+                    [ { terrain = Terrain.Plain, cost = 1 }
                     , { terrain = Terrain.Hills, cost = 2 }
                     , { terrain = Terrain.Forest, cost = 5 }
                     ]
@@ -599,7 +599,7 @@ reservationChecks rules =
 
                 map : Map
                 map =
-                    Map.fromFeatures { width = 3, height = 1, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
+                    Map.fromFeatures { width = 3, height = 1, baseTile = Terrain.Plain, theme = MapTheme.GreenForest, features = [] }
 
                 units : List Unit.Unit
                 units =
@@ -697,7 +697,7 @@ fuelChecks rules =
 
                 map : Map
                 map =
-                    Map.fromFeatures { width = 5, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [ { position = { x = 1, y = 0 }, terrain = Terrain.Forest } ] }
+                    Map.fromFeatures { width = 5, height = 3, baseTile = Terrain.Plain, theme = MapTheme.GreenForest, features = [ { position = { x = 1, y = 0 }, terrain = Terrain.Forest } ] }
 
                 units : List Unit.Unit
                 units =
@@ -793,7 +793,7 @@ supplyChecks rules =
 
                 map : Map
                 map =
-                    Map.fromFeatures { width = 5, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
+                    Map.fromFeatures { width = 5, height = 3, baseTile = Terrain.Plain, theme = MapTheme.GreenForest, features = [] }
 
                 units : List Unit.Unit
                 units =
@@ -872,7 +872,7 @@ lookupChecks =
 
         map : Map
         map =
-            Map.fromFeatures { width = 3, height = 4, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = features }
+            Map.fromFeatures { width = 3, height = 4, baseTile = Terrain.Plain, theme = MapTheme.GreenForest, features = features }
 
         positions : List Coordinate
         positions =
@@ -1000,7 +1000,7 @@ transportChecks rules =
 
                 map : Map
                 map =
-                    Map.fromFeatures { width = 4, height = 3, baseTile = Terrain.GrassPlain, theme = MapTheme.GreenForest, features = [] }
+                    Map.fromFeatures { width = 4, height = 3, baseTile = Terrain.Plain, theme = MapTheme.GreenForest, features = [] }
 
                 units : List Unit.Unit
                 units =

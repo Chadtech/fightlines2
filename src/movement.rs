@@ -28,7 +28,7 @@ pub fn rules() -> Vec<MovementRule> {
         kind,
         budget,
         terrain_costs: [
-            Terrain::GrassPlain,
+            Terrain::Plain,
             Terrain::Hills,
             Terrain::Forest,
             Terrain::Mountains,
@@ -88,7 +88,7 @@ mod tests {
             {
                 assert_eq!(entry.cost, expected["cost"].as_i64().fixture()? as i32);
                 let terrain = match expected["terrain"].as_str().fixture()? {
-                    "GRASS_PLAIN" => Terrain::GrassPlain,
+                    "PLAIN" => Terrain::Plain,
                     "HILLS" => Terrain::Hills,
                     "FOREST" => Terrain::Forest,
                     "MOUNTAINS" => Terrain::Mountains,

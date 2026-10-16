@@ -18,11 +18,22 @@ import View.UnitSprite as UnitSprite
 
 
 {-| Theater figures summarize health; they do not change authoritative damage.
-Each figure represents four HP; a partially intact quarter stays visible.
+Infantry figures represent two HP; other figures represent four HP.
+A partially intact figure stays visible.
 -}
-figureCount : Int -> Int
-figureCount hitPoints =
-    clamp 0 4 ((max 0 hitPoints + 3) // 4)
+figureCount : UnitKind -> Int -> Int
+figureCount kind hitPoints =
+    let
+        hitPointsPerFigure : Int
+        hitPointsPerFigure =
+            case kind of
+                Kind.Infantry ->
+                    2
+
+                _ ->
+                    4
+    in
+    clamp 0 (16 // hitPointsPerFigure) ((max 0 hitPoints + hitPointsPerFigure - 1) // hitPointsPerFigure)
 
 
 lossStartsAt : { surviving : Int, index : Int } -> Float
@@ -37,16 +48,16 @@ impactStartsAt =
     1200
 
 
-impactStarts : CombatHealth -> List Float
-impactStarts health =
+impactStarts : UnitKind -> CombatHealth -> List Float
+impactStarts kind health =
     let
         beforeCount : Int
         beforeCount =
-            figureCount health.before.current
+            figureCount kind health.before.current
 
         afterCount : Int
         afterCount =
-            figureCount health.after.current
+            figureCount kind health.after.current
 
         damaged : Bool
         damaged =
@@ -81,24 +92,59 @@ type Layer
 placements : UnitKind -> List Placement
 placements kind =
     case kind of
+        Kind.Infantry ->
+            [ { x = 7
+              , y = 29
+              , size = 17
+              }
+            , { x = 31
+              , y = 30
+              , size = 17
+              }
+            , { x = 56
+              , y = 28
+              , size = 17
+              }
+            , { x = 19
+              , y = 36
+              , size = 18
+              }
+            , { x = 45
+              , y = 35
+              , size = 18
+              }
+            , { x = 69
+              , y = 37
+              , size = 18
+              }
+            , { x = 8
+              , y = 43
+              , size = 20
+              }
+            , { x = 39
+              , y = 44
+              , size = 20
+              }
+            ]
+
         Kind.FieldGun ->
-            -- Irregular depth and spacing stay fixed through hits and rerenders.
-            -- Paint distant guns first so the larger foreground guns sit ahead.
-            [ { x = 8
-              , y = 32
+            -- Three small background guns spread across a shallow ground band.
+            -- Paint the full-size centered foreground gun last, keeping positions fixed.
+            [ { x = 3
+              , y = 35
+              , size = 25
+              }
+            , { x = 36
+              , y = 34
               , size = 24
               }
-            , { x = 55
+            , { x = 65
               , y = 36
-              , size = 32
+              , size = 28
               }
-            , { x = 3
-              , y = 43
-              , size = 38
-              }
-            , { x = 48
-              , y = 45
-              , size = 47
+            , { x = 18
+              , y = 39
+              , size = 60
               }
             ]
 
@@ -127,11 +173,11 @@ toSvg elapsed health unit =
     let
         beforeCount : Int
         beforeCount =
-            figureCount health.before.current
+            figureCount unit.kind health.before.current
 
         afterCount : Int
         afterCount =
-            figureCount health.after.current
+            figureCount unit.kind health.after.current
 
         figure : Layer -> Int -> Placement -> Svg msg
         figure layer index placement =

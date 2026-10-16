@@ -325,7 +325,7 @@ impl Combat {
             .and_then(|position| board.map.tile_at(position))
         {
             Some(Terrain::Hills | Terrain::Forest) => 0.85,
-            Some(Terrain::GrassPlain | Terrain::Mountains) | None => 1.0,
+            Some(Terrain::Plain | Terrain::Mountains) | None => 1.0,
         };
         let ambush = if kind == CombatKind::Ambush && self.attack_movers.contains(&target.unit_id())
         {
@@ -795,7 +795,7 @@ mod tests {
             .cloned()
             .fixture()?;
         scenario.units = vec![shooter, target];
-        scenario.map = Map::new(9, 9, Terrain::GrassPlain, BTreeMap::new()).fixture()?;
+        scenario.map = Map::new(9, 9, Terrain::Plain, BTreeMap::new()).fixture()?;
         scenario.units[0].move_to(Coordinate::new(3, 3));
         scenario.units[1].move_to(enemy);
         let orders = scenario
@@ -846,7 +846,7 @@ mod tests {
 
     #[test]
     fn full_strength_ready_tanks_destroy_ready_infantry_with_negligible_losses() -> TestResult<()> {
-        for terrain in [Terrain::GrassPlain, Terrain::Hills] {
+        for terrain in [Terrain::Plain, Terrain::Hills] {
             for attack_move in [false, true] {
                 let (mut board, mut orders) =
                     fixture(UnitKind::Tank, UnitKind::Infantry, Coordinate::new(4, 3))?;
@@ -882,11 +882,11 @@ mod tests {
     #[test]
     fn infantry_matchup_rewards_attacks_on_unready_infantry() -> TestResult<()> {
         for (terrain, defense, health, expected) in [
-            (Terrain::GrassPlain, FacingOrder::Unchanged, 16, 11),
+            (Terrain::Plain, FacingOrder::Unchanged, 16, 11),
             (Terrain::Hills, FacingOrder::Unchanged, 16, 9),
             (Terrain::Forest, FacingOrder::Unchanged, 16, 9),
             (
-                Terrain::GrassPlain,
+                Terrain::Plain,
                 FacingOrder::StandGround(Direction::West),
                 16,
                 7,
@@ -903,9 +903,9 @@ mod tests {
                 16,
                 6,
             ),
-            (Terrain::GrassPlain, FacingOrder::Unchanged, 8, 3),
+            (Terrain::Plain, FacingOrder::Unchanged, 8, 3),
             (
-                Terrain::GrassPlain,
+                Terrain::Plain,
                 FacingOrder::StandGround(Direction::West),
                 8,
                 2,
@@ -976,7 +976,7 @@ mod tests {
             ),
             10
         );
-        board.map = Map::new(9, 9, Terrain::GrassPlain, BTreeMap::new()).fixture()?;
+        board.map = Map::new(9, 9, Terrain::Plain, BTreeMap::new()).fixture()?;
         for (loss, expected) in [(4, 7), (4, 3), (4, 1)] {
             board.units.first_mut().fixture()?.take_damage(loss);
             assert_eq!(
@@ -1015,7 +1015,7 @@ mod tests {
             ),
             16
         );
-        board.map = Map::new(9, 9, Terrain::GrassPlain, BTreeMap::new()).fixture()?;
+        board.map = Map::new(9, 9, Terrain::Plain, BTreeMap::new()).fixture()?;
         board.units.first_mut().fixture()?.take_damage(8);
         assert_eq!(
             combat.damage(
@@ -1179,7 +1179,7 @@ mod tests {
 
     #[test]
     fn infantry_contact_damage_against_field_guns_ignores_defensive_readiness() -> TestResult<()> {
-        for terrain in [Terrain::GrassPlain, Terrain::Hills, Terrain::Forest] {
+        for terrain in [Terrain::Plain, Terrain::Hills, Terrain::Forest] {
             for defense in [
                 FacingOrder::Unchanged,
                 FacingOrder::StandGround(Direction::West),
@@ -1211,11 +1211,7 @@ mod tests {
                     .flat_map(|frame| &frame.shots)
                     .find(|shot| shot.attacker.unit_id() == infantry_id)
                     .fixture()?;
-                let expected = if terrain == Terrain::GrassPlain {
-                    16
-                } else {
-                    15
-                };
+                let expected = if terrain == Terrain::Plain { 16 } else { 15 };
                 assert_eq!(hit.damage, expected);
                 assert_eq!(hit.target_health.after.current(), 16 - expected);
                 assert_eq!(board.units.get(1).fixture()?.is_alive(), expected < 16);
@@ -1278,7 +1274,7 @@ mod tests {
             (1, 1, 1),
         ] {
             for (terrain, expected) in [
-                (Terrain::GrassPlain, open_damage),
+                (Terrain::Plain, open_damage),
                 (Terrain::Hills, covered_damage),
                 (Terrain::Forest, covered_damage),
             ] {
@@ -1449,7 +1445,7 @@ mod tests {
             board.map = Map::new(
                 9,
                 9,
-                Terrain::GrassPlain,
+                Terrain::Plain,
                 BTreeMap::from([(Coordinate::new(4, 3), terrain)]),
             )
             .fixture()?;
@@ -1771,9 +1767,7 @@ mod tests {
             );
             assert_eq!(
                 target.supplies().current(),
-                scenario.units[1].supplies().current()
-                    - rules(target.kind()).readiness_cost
-                    - (expected_path.len() - 1) as i32 * 12
+                scenario.units[1].supplies().current() - rules(target.kind()).readiness_cost
             );
             assert_eq!(shots(&result).len(), 1);
             assert_eq!(shots(&result)[0].kind, CombatKind::Ambush);
@@ -1818,7 +1812,7 @@ mod tests {
         assert_eq!(shots[1].target_health.after.current(), 15);
         assert!(result.stopped.contains(&orders[1].unit_id));
         let mover = result.frames.last().fixture()?.units.get(1).fixture()?;
-        assert_eq!(mover.supplies().current(), 80);
+        assert_eq!(mover.supplies().current(), 104);
         assert_eq!(mover.fuel().fixture()?.current, 112);
         Ok(())
     }
@@ -1852,7 +1846,7 @@ mod tests {
         assert_eq!(units[0].supplies().current(), 104);
         assert_eq!(
             units[1].supplies().current(),
-            scenario.units[1].supplies().current() - 12
+            scenario.units[1].supplies().current()
         );
         assert_eq!(units[1].direction(), Some(Direction::South));
         assert_eq!(units[1].fuel().fixture()?.current, 120);
@@ -2109,7 +2103,7 @@ mod tests {
         scenario.map = Map::new(
             9,
             9,
-            Terrain::GrassPlain,
+            Terrain::Plain,
             BTreeMap::from([(Coordinate::new(3, 3), Terrain::Forest)]),
         )
         .fixture()?;
@@ -2273,7 +2267,7 @@ mod tests {
             scenario.map = Map::new(
                 9,
                 9,
-                Terrain::GrassPlain,
+                Terrain::Plain,
                 BTreeMap::from([(Coordinate::new(5, 3), terrain)]),
             )
             .fixture()?;
@@ -2296,7 +2290,7 @@ mod tests {
             scenario.map = Map::new(
                 9,
                 9,
-                Terrain::GrassPlain,
+                Terrain::Plain,
                 BTreeMap::from([(Coordinate::new(5, 3), terrain)]),
             )
             .fixture()?;
@@ -2308,7 +2302,7 @@ mod tests {
         scenario.map = Map::new(
             9,
             9,
-            Terrain::GrassPlain,
+            Terrain::Plain,
             BTreeMap::from([(Coordinate::new(4, 3), Terrain::Forest)]),
         )
         .fixture()?;

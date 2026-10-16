@@ -27,11 +27,11 @@ import Util.List as ListUtil
 {-| The cost to enter a terrain square, as supplied by Rust's movement rules.
 A movement point is a unit of the unit's travel budget: entering a square spends
 that terrain's cost. For example, infantry has a budget of 2 movement points;
-grass, hills, and forest each cost 1; mountains cost 2. Nonpositive entry costs
+plain, hills, and forest each cost 1; mountains cost 2. Nonpositive entry costs
 mean that terrain cannot be crossed.
 
 The integers store twice the displayed value so half-point costs stay exact:
-a grass cost of 1 is stored as 2, and a hill cost of 1.5 is stored as 3.
+a plain cost of 1 is stored as 2, and a hill cost of 1.5 is stored as 3.
 
 -}
 type alias TerrainCost =
@@ -434,7 +434,7 @@ supplyCost map supplies path =
         entryCost : Coordinate -> Int
         entryCost position =
             case Map.terrainAt map position of
-                Terrain.GrassPlain ->
+                Terrain.Plain ->
                     supplies.movementPerTile
 
                 _ ->

@@ -256,6 +256,7 @@ playbackChecks first second =
         sharedPlayback =
             { current = firstFrame
             , remaining = [ middleFrame, lastFrame ]
+            , movementFocus = { unitIds = [], positions = [] }
             , acknowledgedLosses = []
             , presentation = TurnPlayback.Battlefield
             , elapsed = 0
@@ -290,6 +291,30 @@ playbackChecks first second =
         ( timedHalfway, _ ) =
             TurnPlayback.tick 210 { sharedPlayback | remaining = [ { lastFrame | durationMs = 420 } ] }
 
+        continueFirstUnit : Unit -> Unit
+        continueFirstUnit unit =
+            if unit.id == first then
+                Unit.setOnMap { x = 1, y = 1 } unit
+
+            else
+                unit
+
+        continuingFrame : TurnPlayback.Frame
+        continuingFrame =
+            { middleFrame | units = List.map continueFirstUnit middleFrame.units }
+
+        longRoute : Maybe TurnPlayback.Playback
+        longRoute =
+            TurnPlayback.start [ firstFrame, middleFrame, continuingFrame, { continuingFrame | durationMs = 180 } ]
+
+        afterBoundary : Maybe TurnPlayback.Playback
+        afterBoundary =
+            longRoute |> Maybe.andThen (TurnPlayback.tick 270 >> Tuple.first)
+
+        afterMovement : Maybe TurnPlayback.Playback
+        afterMovement =
+            longRoute |> Maybe.andThen (TurnPlayback.tick 400 >> Tuple.first)
+
         expect : String -> Bool -> List String
         expect name passed =
             if passed then
@@ -299,10 +324,24 @@ playbackChecks first second =
                 [ name ]
     in
     List.concat
-        [ expect "camera follows simultaneous visible movement at interpolated positions"
-            (Maybe.map TurnPlayback.focusPositions timedHalfway == Just [ { x = 0.5, y = 0 }, { x = 1.5, y = 1 } ])
+        [ expect "camera holds simultaneous movement at its opening positions"
+            (Maybe.map TurnPlayback.focusPositions timedHalfway == Just [ { x = 0, y = 0 }, { x = 2, y = 1 } ])
         , expect "camera does not frame routes entering or leaving fog"
-            (Maybe.map TurnPlayback.focusPositions entering == Just [ { x = 0.5, y = 0 } ] && Maybe.map TurnPlayback.focusPositions leaving == Just [ { x = 0.5, y = 0 } ])
+            (Maybe.map TurnPlayback.focusPositions entering == Just [ { x = 0, y = 0 } ] && Maybe.map TurnPlayback.focusPositions leaving == Just [ { x = 0, y = 0 } ])
+        , expect "camera holds its opening position across movement tile boundaries"
+            (Maybe.map TurnPlayback.focusPositions longRoute
+                == Just [ { x = 0, y = 0 } ]
+                && Maybe.map TurnPlayback.focusPositions afterBoundary
+                == Just [ { x = 0, y = 0 } ]
+                && (TurnPlayback.movingPositions afterBoundary |> List.map .position)
+                == [ { x = 1, y = 0.5 } ]
+            )
+        , expect "camera holds after movement instead of snapping back during an idle frame"
+            (Maybe.map TurnPlayback.focusPositions afterMovement == Just [ { x = 0, y = 0 } ])
+        , expect "camera pans again when a different unit starts moving"
+            (Maybe.map TurnPlayback.focusPositions surplus == Just [ { x = 2, y = 1 } ])
+        , expect "camera frames a fog departure at its last observed origin"
+            (Maybe.map TurnPlayback.focusPositions departing == Just [ { x = 2, y = 1 } ])
         , expect "camera frames projected indirect impacts even without a hit"
             (TurnPlayback.focusPositions { sharedPlayback | current = { firstFrame | indirectImpacts = [ { x = 8, y = 9 } ] }, remaining = [] } == [ { x = 8, y = 9 } ])
         , expect "all simultaneous arrivals interpolate using server frame duration"
@@ -580,6 +619,7 @@ transportPlaybackChecks passengerId truckId =
                       , visibleTiles = []
                       }
                     ]
+                , movementFocus = { unitIds = [], positions = [] }
                 , acknowledgedLosses = []
                 , presentation = TurnPlayback.Battlefield
                 , elapsed = 0
@@ -683,7 +723,7 @@ spriteFacingChecks id =
 
         playback : TurnPlayback.Playback
         playback =
-            { current = frame tank, remaining = [ frame west, frame north, frame south ], elapsed = 0, acknowledgedLosses = [], presentation = TurnPlayback.Battlefield }
+            { current = frame tank, remaining = [ frame west, frame north, frame south ], elapsed = 0, movementFocus = { unitIds = [], positions = [] }, acknowledgedLosses = [], presentation = TurnPlayback.Battlefield }
 
         ( _, westFrame ) =
             TurnPlayback.tick 90 playback
@@ -857,8 +897,8 @@ combatPlaybackChecks first second =
                     |> Maybe.andThen TurnPlayback.spotlight
             }
 
-        readyAt : Float -> TurnPlayback.MapView -> Int -> Bool
-        readyAt elapsed mapView remainingHealth =
+        readyAt : Kind.UnitKind -> Float -> TurnPlayback.MapView -> Int -> Bool
+        readyAt kind elapsed mapView remainingHealth =
             let
                 panel : TurnPlayback.Panel
                 panel =
@@ -880,7 +920,8 @@ combatPlaybackChecks first second =
                     , encounter =
                         TurnPlayback.Exchange
                             { exchange
-                                | targetHealth =
+                                | target = { target | kind = kind }
+                                , targetHealth =
                                     { before = { current = 16, maximum = 16 }
                                     , after = { current = remainingHealth, maximum = 16 }
                                     }
@@ -1030,7 +1071,7 @@ combatPlaybackChecks first second =
                         == Nothing
                     )
                 ++ expect "both players of a combined exchange begin their impacts together"
-                    (Maybe.map (\pair -> List.head (CombatFormation.impactStarts pair.attackerHealth) == Just 1200 && List.head (CombatFormation.impactStarts pair.targetHealth) == Just 1200) exchange == Just True)
+                    (Maybe.map (\pair -> List.head (CombatFormation.impactStarts pair.attacker.kind pair.attackerHealth) == Just 1200 && List.head (CombatFormation.impactStarts pair.target.kind pair.targetHealth) == Just 1200) exchange == Just True)
                 ++ expect "movement between shots keeps separate encounters"
                     (separate { waiting | units = [ attacker, Unit.setOnMap { x = 4, y = 2 } target ] })
                 ++ expect "sight changes between shots keep separate encounters"
@@ -1183,11 +1224,15 @@ combatPlaybackChecks first second =
                         , expect "combat retains visible participants without requiring enemy resources"
                             (Maybe.map (.attacker >> .id) (TurnPlayback.combat focus) == Just first && Maybe.map (.target >> .id) (TurnPlayback.combat focus) == Just second)
                         , expect "automatic closing waits for two impacts, camera settling, and a half-second pause"
-                            (not (readyAt 1999 TurnPlayback.CardVisible 8) && readyAt 2000 TurnPlayback.CardVisible 8)
+                            (not (readyAt Kind.Tank 1999 TurnPlayback.CardVisible 8) && readyAt Kind.Tank 2000 TurnPlayback.CardVisible 8)
                         , expect "automatic closing lets all four casualty animations finish"
-                            (not (readyAt 2239 TurnPlayback.CardVisible 0) && readyAt 2240 TurnPlayback.CardVisible 0)
+                            (not (readyAt Kind.Tank 2239 TurnPlayback.CardVisible 0) && readyAt Kind.Tank 2240 TurnPlayback.CardVisible 0)
+                        , expect "automatic closing waits for all eight infantry casualties and their shake"
+                            (not (readyAt Kind.Infantry 2719 TurnPlayback.CardVisible 0)
+                                && readyAt Kind.Infantry 2720 TurnPlayback.CardVisible 0
+                            )
                         , expect "automatic closing waits while seeing the map"
-                            (not (readyAt 2500 TurnPlayback.SeeingMap 0))
+                            (not (readyAt Kind.Tank 2500 TurnPlayback.SeeingMap 0))
                         , expect "the panel clock can reach the automatic-close threshold"
                             (Maybe.andThen TurnPlayback.panels holding |> Maybe.map CombatTheater.readyToAutomaticallyClose |> (==) (Just True))
                         , expect "combat panels remain open indefinitely without revealing casualties"
@@ -1459,7 +1504,7 @@ deathPlaybackChecks id =
 
         animation : TurnPlayback.Playback
         animation =
-            { current = dying, remaining = [ gone ], elapsed = 0, acknowledgedLosses = [], presentation = TurnPlayback.Battlefield }
+            { current = dying, remaining = [ gone ], elapsed = 0, movementFocus = { unitIds = [], positions = [] }, acknowledgedLosses = [], presentation = TurnPlayback.Battlefield }
 
         ( pending, beforeRemoval ) =
             TurnPlayback.tick 1399 animation
@@ -1602,7 +1647,7 @@ combatTheaterChecks =
 
         counts : List Int
         counts =
-            List.map CombatFormation.figureCount (List.range 0 16)
+            List.map (CombatFormation.figureCount Kind.Tank) (List.range 0 16)
 
         themes : List MapTheme.MapTheme
         themes =
@@ -1610,7 +1655,7 @@ combatTheaterChecks =
 
         paths : MapTheme.MapTheme -> List String
         paths theme =
-            List.map (CombatTheater.backdropPath theme) [ Terrain.Forest, Terrain.Hills, Terrain.GrassPlain ]
+            List.map (CombatTheater.backdropPath theme) [ Terrain.Forest, Terrain.Hills, Terrain.Plain ]
 
         names : List String
         names =
@@ -1623,14 +1668,29 @@ combatTheaterChecks =
     List.concat
         [ expect "theater figures each represent a quarter of health, including partially intact quarters"
             (counts == [ 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4 ])
+        , expect "infantry has eight two-HP figures, retaining partially intact figures"
+            (List.map (CombatFormation.figureCount Kind.Infantry) (List.range 0 16)
+                == [ 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8 ]
+            )
+        , expect "infantry loses one figure per two HP and staggers all eight lethal impacts"
+            (CombatFormation.impactStarts Kind.Infantry (health 16 14)
+                == [ 1200 ]
+                && CombatFormation.impactStarts Kind.Infantry (health 16 0)
+                == [ 1200, 1320, 1440, 1560, 1680, 1800, 1920, 2040 ]
+                && CombatFormation.impactStarts Kind.Infantry (health 16 15)
+                == [ 1200 ]
+                && List.isEmpty (CombatFormation.impactStarts Kind.Infantry (health 16 16))
+            )
+        , expect "eight infantry losses, shake, and automatic-close delay fit the panel clock"
+            (CombatFormation.lossStartsAt { surviving = 0, index = 7 } + 20 + 160 + 500 <= 3000)
         , expect "an 8-damage hit on a full unit destroys two figures"
-            (CombatFormation.figureCount 16 - CombatFormation.figureCount 8 == 2)
+            (CombatFormation.figureCount Kind.Tank 16 - CombatFormation.figureCount Kind.Tank 8 == 2)
         , expect "casualties wait until the card opens and the viewer has a one-second beat"
             (CombatFormation.lossStartsAt { surviving = 2, index = 2 } == 1200)
         , expect "the casualty disappears beneath the impact before the shockwave clears"
             (CombatExplosion.spriteOpacity 20 == 1 && CombatExplosion.spriteOpacity CombatExplosion.spriteDisappearsAt == 0 && CombatExplosion.durationMs > CombatExplosion.spriteDisappearsAt)
         , expect "rumble follows staggered casualties and nonlethal hits, never undamaged figures"
-            (CombatFormation.impactStarts (health 16 8) == [ 1200, 1320 ] && CombatFormation.impactStarts (health 16 14) == [ 1200 ] && List.isEmpty (CombatFormation.impactStarts (health 16 16)))
+            (CombatFormation.impactStarts Kind.Tank (health 16 8) == [ 1200, 1320 ] && CombatFormation.impactStarts Kind.Tank (health 16 14) == [ 1200 ] && List.isEmpty (CombatFormation.impactStarts Kind.Tank (health 16 16)))
         , expect "all nine theater backdrops follow terrain and visual theme"
             (List.concatMap paths themes == expectedPaths)
         , expect "a full formation's four losses finish before the panel clock caps at 2000ms"
@@ -1797,7 +1857,7 @@ carrierLossEventChecks first second =
 
                 animation : TurnPlayback.Playback
                 animation =
-                    { current = frame, remaining = [ { frame | units = [] } ], elapsed = 0, presentation = TurnPlayback.Battlefield, acknowledgedLosses = [] }
+                    { current = frame, remaining = [ { frame | units = [] } ], elapsed = 0, presentation = TurnPlayback.Battlefield, movementFocus = { unitIds = [], positions = [] }, acknowledgedLosses = [] }
 
                 shot : Shot
                 shot =

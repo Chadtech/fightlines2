@@ -1,4 +1,4 @@
-module View.UnitCommands exposing
+module View.CommandMenu exposing
     ( Msg(..)
     , optionHtmlId
     , toHtml
@@ -11,7 +11,7 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Html.Styled.Lazy as Lazy
-import Json.Decode as Decode
+import Json.Decode as Decode exposing (Decoder)
 import Map exposing (Map)
 import Point exposing (Point)
 import Style as S
@@ -300,28 +300,38 @@ commandButton unit command =
         ]
 
 
-navigationDecoder : MenuOption -> Decode.Decoder { message : Msg, stopPropagation : Bool, preventDefault : Bool }
+navigationDecoder : MenuOption -> Decoder { message : Msg, stopPropagation : Bool, preventDefault : Bool }
 navigationDecoder current =
     let
-        fromKey : String -> Decode.Decoder { message : Msg, stopPropagation : Bool, preventDefault : Bool }
+        fromKey : String -> Decoder { message : Msg, stopPropagation : Bool, preventDefault : Bool }
         fromKey key =
+            let
+                stopAll : Msg -> Decoder { message : Msg, stopPropagation : Bool, preventDefault : Bool }
+                stopAll msg =
+                    Decode.succeed
+                        { message = msg
+                        , stopPropagation = True
+                        , preventDefault = True
+                        }
+            in
             case key of
                 "ArrowDown" ->
-                    Decode.succeed { message = ArrowedDownCommandMenu current, stopPropagation = True, preventDefault = True }
+                    stopAll <| ArrowedDownCommandMenu current
 
                 "ArrowRight" ->
-                    Decode.succeed { message = ArrowedDownCommandMenu current, stopPropagation = True, preventDefault = True }
+                    stopAll <| ArrowedDownCommandMenu current
 
                 "ArrowLeft" ->
-                    Decode.succeed { message = ArrowedUpCommandMenu current, stopPropagation = True, preventDefault = True }
+                    stopAll <| ArrowedUpCommandMenu current
 
                 "ArrowUp" ->
-                    Decode.succeed { message = ArrowedUpCommandMenu current, stopPropagation = True, preventDefault = True }
+                    stopAll <| ArrowedUpCommandMenu current
 
                 _ ->
                     Decode.fail "not command navigation"
     in
-    Decode.field "key" Decode.string |> Decode.andThen fromKey
+    Decode.field "key" Decode.string
+        |> Decode.andThen fromKey
 
 
 commandRowStyles : List Css.Style

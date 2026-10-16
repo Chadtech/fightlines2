@@ -5,7 +5,8 @@ A strategy game about supplies and logistics, built with Rust and Elm.
 The current prototype supports creating a lobby, joining through an invite link,
 and starting a game. The game page shows a free-floating animated SVG board with selectable units and depots.
 Both players can plan and submit turns, with shared movement playback. The camera
-follows visible movement and all combat, including indirect-fire impacts, and
+pans to visible units when they start moving, holds still as they travel, and
+frames all combat, including indirect-fire impacts. It
 restores your saved view when playback finishes.
 Fuel, finite supply stocks, replenishment, and directional ambush combat are authoritative. Persistent
 server storage is not implemented yet. Browsers remember the last user name
@@ -48,7 +49,7 @@ join and lobby headers.
 
 The initial map type is **supply point**. Joined players see the selected map;
 only the host can change it before starting. The game retains that selection.
-The scenario is a 17 x 17 grass map with mirrored starting forces, 60 forest tiles, and 42 hill tiles,
+The scenario is a 17 x 17 plain map with mirrored starting forces, 60 forest tiles, and 42 hill tiles,
 three neutral supply depots (one near each starting area and one at the exact center), and three infantry,
 one tank, two field guns, and two trucks per player. The host is player 1 with red units; the second
 player is player 2 with blue units. Click a unit or depot to inspect it; units
@@ -155,7 +156,8 @@ blinks and remains steady with reduced motion enabled. Empty trucks have no badg
 Sight is shared by all your units. Infantry see 3 tiles, field guns 3,
 trucks 1, and tanks 1, using a circular radius measured between tile
 centers. Standing on a hill grants +1 sight and lets units see over intervening
-hills and forests. For units off hills, intervening hills and forests block
+hills and forests, but mountains still block their view. For units on ground
+terrain, intervening hills, mountains, and forests block
 sight beyond them when the sight line crosses their tile. Merely touching a
 corner does not block sight, so open diagonal tiles remain visible; the blocking
 hill itself remains visible. Forests
@@ -176,10 +178,10 @@ Hidden positions and route segments are withheld from responses.
 
 Infantry start with 192/192 supplies; field guns start with 196/196; tanks and trucks
 start with 128/128. Every unit spends 4 supplies per resolved turn, even when holding or stopped
-by an encounter. Infantry spend 12 supplies per grass tile and 16 per hill, forest, or mountain tile;
-field guns spend 8 and tanks spend 12 supplies per tile. Tanks and trucks also use fuel
-for movement; trucks spend no movement supplies. Movement reserves the turn's upkeep before spending
-supplies. Infantry need at least 16 supplies for a grass tile or 20 for hills, forest, or mountains; field guns need at least 12 and tanks need at least 16, plus enough fuel.
+by an encounter. Infantry spend 12 supplies per plain tile and 16 per hill, forest, or mountain tile;
+field guns spend 8 supplies per tile. Tanks and trucks use fuel
+for movement and spend no movement supplies. Movement reserves the turn's upkeep before spending
+supplies. Infantry need at least 16 supplies for a plain tile or 20 for hills, forest, or mountains; field guns need at least 12. Tank movement needs enough fuel but no additional supplies beyond upkeep.
 Units below these thresholds can still hold.
 Units die immediately when supplies reach zero after turn upkeep. A dead truck
 also loses its passengers. During playback, a skull and crossbones appears for 0.6 seconds, blinks away
@@ -350,9 +352,10 @@ is concealed on the battlefield. Before the exchange, playback freezes the battl
 animations. The two participants are spotlighted for 300ms while every other tile
 darkens, then one ambush card pops open with enlarged sprites facing each other.
 Each participant stands on the backdrop matching its occupied terrain and the map's theme.
-Theater health uses staggered formations for every unit kind: four figures at
-13–16 HP, three at 9–12, two at 5–8, one at 1–4, and none at zero.
-Each figure represents a quarter of the unit's 16 HP. The scene holds for
+Infantry uses eight smaller, staggered figures at full health, with one figure
+removed for every two HP lost. Partially intact figures remain visible. Other
+unit kinds use four figures at 13–16 HP, three at 9–12, two at 5–8, one at
+1–4, and none at zero; each represents four HP. The scene holds for
 one second after the card's opening animation before impacts begin.
 There are no theater HP bars. Lost figures receive a horizontal projectile strike and violent illustrated
 shockwave over 100ms, disappearing beneath the impact. Each strike kicks both
@@ -438,8 +441,8 @@ three infantry across its front, and two guns behind them. Depot squares stay cl
 Map themes (green forest, desert, and snow) change the appearance of ground,
 hills, and forests without changing terrain types, movement costs, or sight.
 Arabia and El Alamein use the desert theme; Supply Point and Blood Gulch use
-green forest, as does Black Forest. Sidewinder uses snow, including the brightened,
-desaturated forest and hill artwork. Ridges use the
+green forest, as does Black Forest. Sidewinder uses dedicated textured snow ground
+and snowy hill artwork, with brightened, desaturated forests. Ridges use the
 existing traversable hill rules. All depots provide finite provision stocks for automatic
 replenishment and explicit crate loading.
 
@@ -476,7 +479,7 @@ The export scripts remain in `tools/`. Back up source artwork separately.
 - [Deployment](DEPLOYMENT.md): configuration, access from other devices, and hosting.
 
 To edit terrain, change the ASCII sketch in `src/scenario.rs`: `#` is forest,
-`%` is hills, `^` is mountains, and spaces or `.` are grass. Keep rows the same width; spaces
+`%` is hills, `^` is mountains, and spaces or `.` are plain. Keep rows the same width; spaces
 count as cells. Restart `make dev` and refresh the test game URL, or start a new
 normal game, to see the layout.
 Depots and units are placed separately.
@@ -539,7 +542,8 @@ passengers cannot stand ground.
 ## Mountains
 
 Mountains grant +2 sight radius and elevated sight over intervening terrain,
-while forests still conceal their contents. They block ground-level sight like hills.
+while forests still conceal their contents. They block sight from hills as well
+as ground-level sight.
 Infantry spend 2 movement points per mountain square (1 extra), so entering one
 uses their full turn movement budget. Tanks, trucks, and wheeled field guns cannot
 enter or pass through mountains, including passenger unloading. Mountains use the

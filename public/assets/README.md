@@ -9,6 +9,11 @@ directory is available. A fresh clone does not include that directory.
 - `misc_sheet.png`: 16 x 464 legacy atlas, with 16px cells. Selection corners
   use row 2. Copied from the original FightLines sprite sheet.
 - `terrain-grass-illustrated-v2.png`: opaque grass tile, rendered in each grass-map cell.
+- `terrain-snow-plains-illustrated-v1.png`: opaque painted snow ground with cool
+  blue-gray wind ripples, shallow drifts, and sparse exposed dormant grass and
+  stones. Shared by snowy board tiles, editor previews, and terrain inspection,
+  without a brightness filter. Built-in imagegen produced the master and exact
+  prompt in `artwork/terrain/illustrated/snow-v1/`; the terrain exporter copies it.
 - `terrain-desert.svg`: editable sandy floor used under every desert-themed cell,
   including Arabia and El Alamein.
 - `terrain-hills-illustrated-v7.png`, `terrain-hills-snow-illustrated-v7.png`, and

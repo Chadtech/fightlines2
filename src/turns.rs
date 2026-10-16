@@ -1206,7 +1206,7 @@ mod tests {
     use super::*;
     use crate::{
         combat::CombatKind,
-        map::{Map, Terrain},
+        map::{self, Map, Terrain},
         scenario::DepotKind,
         test_support::{FixtureValue, TestResult},
         visibility,
@@ -1491,7 +1491,7 @@ mod tests {
 
     #[test]
     fn attack_move_charges_readiness_each_turn_without_an_encounter() -> TestResult<()> {
-        for (attacker_id, movement_cost) in [("1", 3), ("11", 3)] {
+        for (attacker_id, movement_cost) in [("1", 3), ("11", 0)] {
             let mut scenario = Scenario::supply_point().fixture()?;
             scenario.map = Map::from_ascii(".....").fixture()?;
             scenario.depots.clear();
@@ -2012,8 +2012,7 @@ mod tests {
                     .units
                     .retain(|unit| unit.id() == "12" || unit.id() == "6");
                 scenario.map =
-                    crate::map::Map::new(17, 17, crate::map::Terrain::GrassPlain, BTreeMap::new())
-                        .fixture()?;
+                    map::Map::new(17, 17, map::Terrain::Plain, BTreeMap::new()).fixture()?;
                 for unit in &mut scenario.units {
                     unit.move_to(if unit.player_number() == PlayerNumber::Player1 {
                         Coordinate::new(7, 8)
@@ -2096,11 +2095,11 @@ mod tests {
         scenario
             .units
             .retain(|unit| ["6", "9", "12"].contains(&unit.id().as_str()));
-        scenario.map = crate::map::Map::new(
+        scenario.map = map::Map::new(
             17,
             17,
-            crate::map::Terrain::GrassPlain,
-            BTreeMap::from([(Coordinate::new(9, 8), crate::map::Terrain::Forest)]),
+            map::Terrain::Plain,
+            BTreeMap::from([(Coordinate::new(9, 8), map::Terrain::Forest)]),
         )
         .fixture()?;
         let truck_id = UnitId::parse("9").fixture()?;
@@ -2925,9 +2924,33 @@ mod tests {
         // The gun spends 8 walking supplies and 4 upkeep, exhausting its 12.
         assert!(!scenario.units.iter().any(|unit| unit.id() == "13"));
         assert_eq!(vehicle(&mut scenario, "4")?.supplies().current(), 8);
-        assert_eq!(vehicle(&mut scenario, "11")?.supplies().current(), 4);
+        assert_eq!(vehicle(&mut scenario, "11")?.supplies().current(), 16);
         assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 124);
         assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 120);
+
+        Ok(())
+    }
+
+    #[test]
+    fn tank_movement_spends_fuel_without_movement_supplies() -> TestResult<()> {
+        let mut scenario = Scenario::supply_point().fixture()?;
+        scenario.depots.clear();
+        vehicle(&mut scenario, "11")?.set_supplies_for_test(5);
+        let mut turns = Turns::default();
+        let number = turns.number;
+        let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
+        set_path(&mut player1, "11", &[(4, 8), (5, 8)])?;
+        let player2 = holds(&scenario, PlayerNumber::Player2)?;
+        turns
+            .submit(&mut scenario, PlayerNumber::Player1, number, player1)
+            .fixture()?;
+        turns
+            .submit(&mut scenario, PlayerNumber::Player2, number, player2)
+            .fixture()?;
+        let tank = vehicle(&mut scenario, "11")?;
+        assert_eq!(tank.board_position(), Some(Coordinate::new(5, 8)));
+        assert_eq!(tank.supplies().current(), 1);
+        assert_eq!(tank.fuel().fixture()?.current, 120);
 
         Ok(())
     }
@@ -3043,9 +3066,7 @@ mod tests {
     #[test]
     fn tank_chase_resolves_identically_in_either_submission_order() -> TestResult<()> {
         let mut initial = Scenario::supply_point().fixture()?;
-        initial.map =
-            crate::map::Map::new(17, 17, crate::map::Terrain::GrassPlain, BTreeMap::new())
-                .fixture()?;
+        initial.map = map::Map::new(17, 17, map::Terrain::Plain, BTreeMap::new()).fixture()?;
         initial
             .units
             .retain(|unit| ["11", "6"].contains(&unit.id().as_str()));
@@ -3827,13 +3848,8 @@ mod tests {
             for unloading_player_number in [PlayerNumber::Player1, PlayerNumber::Player2] {
                 for first_player_number in [PlayerNumber::Player1, PlayerNumber::Player2] {
                     let mut scenario = Scenario::supply_point().fixture()?;
-                    scenario.map = crate::map::Map::new(
-                        17,
-                        17,
-                        crate::map::Terrain::GrassPlain,
-                        BTreeMap::new(),
-                    )
-                    .fixture()?;
+                    scenario.map =
+                        map::Map::new(17, 17, map::Terrain::Plain, BTreeMap::new()).fixture()?;
                     scenario
                         .units
                         .retain(|unit| ["1", "4", "6", "9"].contains(&unit.id().as_str()));
@@ -4312,7 +4328,7 @@ mod tests {
             .cloned()
             .fixture()?;
         scenario.units = vec![gun, target];
-        scenario.map = Map::new(20, 3, Terrain::GrassPlain, BTreeMap::new()).fixture()?;
+        scenario.map = Map::new(20, 3, Terrain::Plain, BTreeMap::new()).fixture()?;
         scenario.depots.clear();
         scenario.supply_crates.clear();
         scenario
@@ -4371,7 +4387,7 @@ mod tests {
 
     #[test]
     fn indirect_fire_confirms_hits_on_previously_revealed_units() -> TestResult<()> {
-        for terrain in [Terrain::GrassPlain, Terrain::Forest] {
+        for terrain in [Terrain::Plain, Terrain::Forest] {
             let mut scenario = bombardment_fixture()?;
             scenario.map = Map::new(20, 3, terrain, BTreeMap::new()).fixture()?;
             scenario
@@ -4598,7 +4614,7 @@ mod tests {
             );
         }
         scenario.units = selected;
-        scenario.map = Map::new(20, 3, Terrain::GrassPlain, BTreeMap::new()).fixture()?;
+        scenario.map = Map::new(20, 3, Terrain::Plain, BTreeMap::new()).fixture()?;
         scenario.depots.clear();
         scenario
             .units

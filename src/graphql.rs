@@ -441,7 +441,7 @@ mod tests {
         let scenario = &member["data"]["game"]["scenario"];
         assert_eq!(scenario["map"]["width"], 17);
         assert_eq!(scenario["map"]["height"], 17);
-        assert_eq!(scenario["map"]["baseTile"], "GRASS_PLAIN");
+        assert_eq!(scenario["map"]["baseTile"], "PLAIN");
         assert_eq!(scenario["map"]["theme"], "GREEN_FOREST");
         assert_eq!(scenario["map"]["features"].as_array().fixture()?.len(), 102);
         assert_eq!(scenario["depots"].as_array().fixture()?.len(), 3);

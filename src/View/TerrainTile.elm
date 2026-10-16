@@ -31,8 +31,8 @@ appearance theme =
             }
 
         MapTheme.Snow ->
-            { groundPath = "/assets/terrain-grass-illustrated-v2.png"
-            , groundFilter = "grayscale(1) brightness(2.6)"
+            { groundPath = "/assets/terrain-snow-plains-illustrated-v1.png"
+            , groundFilter = "none"
             , featureFilter = "saturate(0.15) brightness(1.8)"
             }
 
@@ -66,7 +66,7 @@ terrainView theme terrain =
         featurePath : Maybe String
         featurePath =
             case terrain of
-                Terrain.GrassPlain ->
+                Terrain.Plain ->
                     Nothing
 
                 Terrain.Hills ->
