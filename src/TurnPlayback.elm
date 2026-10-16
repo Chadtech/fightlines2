@@ -1,5 +1,6 @@
 module TurnPlayback exposing
-    ( Exchange
+    ( CombatExchange
+    , Encounter(..)
     , Frame
     , Loss
     , LossCause(..)
@@ -9,6 +10,7 @@ module TurnPlayback exposing
     , Playback
     , Presentation(..)
     , acknowledgeLoss
+    , activeEncounter
     , combat
     , continueCombat
     , focusPositions
@@ -23,6 +25,7 @@ module TurnPlayback exposing
     , start
     , tick
     , tickUntilLoss
+    , unitOpacity
     , visibleIndirectImpacts
     , visibleShots
     )
@@ -34,6 +37,7 @@ import Api.Object.GameSnapshot as GameApi
 import Api.Object.IndirectImpact as IndirectImpactApi
 import Api.Object.TurnFrame as FrameApi
 import Api.Object.TurnResolution as ResolutionApi
+import Api.Object.UnitDeparture as DepartureApi
 import CombatHealth exposing (CombatHealth)
 import Coordinate exposing (Coordinate)
 import Depot exposing (Depot)
@@ -52,12 +56,24 @@ import Util.List as ListUtil
 type alias Frame =
     { durationMs : Int
     , units : List Unit
+    , departures : List Departure
     , indirectImpacts : List Coordinate
     , shots : List Shot
     , visibleTiles : List Coordinate
     , depots : List Depot
     , supplyCrates : List Supply.GroundCrate
     }
+
+
+type alias Departure =
+    { unitId : UnitId
+    , direction : Direction
+    }
+
+
+type Encounter
+    = Exchange CombatExchange
+    | Impact Coordinate
 
 
 type alias Playback =
@@ -76,8 +92,8 @@ type Presentation
 
 
 type alias CombatFocus =
-    { exchange : Exchange
-    , remaining : List Exchange
+    { encounter : Encounter
+    , remaining : List Encounter
     , before : Frame
     , stage : CombatStage
     }
@@ -94,13 +110,13 @@ type MapView
 
 
 type alias Panel =
-    { exchange : Exchange
+    { encounter : Encounter
     , elapsed : Float
     , mapView : MapView
     }
 
 
-type alias Exchange =
+type alias CombatExchange =
     { kind : CombatKind
     , attacker : Unit
     , target : Unit
@@ -262,11 +278,21 @@ tickUntilLoss =
     tickWithLossPause AwaitAcknowledgment
 
 
-combat : Playback -> Maybe Exchange
+combat : Playback -> Maybe CombatExchange
 combat playback =
+    case activeEncounter playback of
+        Just (Exchange exchange) ->
+            Just exchange
+
+        _ ->
+            Nothing
+
+
+activeEncounter : Playback -> Maybe Encounter
+activeEncounter playback =
     case playback.presentation of
         Combat focus ->
-            Just focus.exchange
+            Just focus.encounter
 
         Deaths _ ->
             Nothing
@@ -275,18 +301,18 @@ combat playback =
             Nothing
 
 
-spotlight : Playback -> Maybe Exchange
+spotlight : Playback -> Maybe (List Coordinate)
 spotlight playback =
     case playback.presentation of
-        Combat { exchange, stage } ->
+        Combat { encounter, before, stage } ->
             case stage of
                 Spotlighting _ ->
-                    Just exchange
+                    Just (encounterPositions before encounter)
 
                 ShowingPanels panel ->
                     case panel.mapView of
                         SeeingMap ->
-                            Just exchange
+                            Just (encounterPositions before encounter)
 
                         CardVisible ->
                             Nothing
@@ -301,10 +327,14 @@ spotlight playback =
 panels : Playback -> Maybe Panel
 panels playback =
     case playback.presentation of
-        Combat { exchange, stage } ->
+        Combat { encounter, stage } ->
             case stage of
                 ShowingPanels panel ->
-                    Just { exchange = exchange, elapsed = panel.elapsed, mapView = panel.mapView }
+                    Just
+                        { encounter = encounter
+                        , elapsed = panel.elapsed
+                        , mapView = panel.mapView
+                        }
 
                 Spotlighting _ ->
                     Nothing
@@ -332,10 +362,10 @@ visibleShots playback =
 {-| Encounter participants remain available even when concealed on the board.
 Reciprocal shots share one display; casualties clear after their own encounter.
 -}
-exchanges : Frame -> List Exchange
+exchanges : Frame -> List CombatExchange
 exchanges frame =
     let
-        collect : List Shot -> List Exchange
+        collect : List Shot -> List CombatExchange
         collect shots =
             case shots of
                 [] ->
@@ -356,13 +386,16 @@ exchanges frame =
 
                         kind : CombatKind
                         kind =
-                            if List.any includesAttackMove (shot :: rest) then
+                            if shot.kind == CombatKind.IndirectFire then
+                                CombatKind.IndirectFire
+
+                            else if List.any includesAttackMove (shot :: rest) then
                                 CombatKind.AttackMove
 
                             else
                                 CombatKind.Ambush
 
-                        remaining : List Exchange
+                        remaining : List CombatExchange
                         remaining =
                             collect (List.filter differentPair rest)
                     in
@@ -375,6 +408,37 @@ exchanges frame =
                         :: remaining
     in
     collect frame.shots
+
+
+{-| Impact-only scenes contain no invented participants or hit confirmation.
+Confirmed indirect shots already have their own exchange at the same landing.
+-}
+encounters : Frame -> List Encounter
+encounters frame =
+    let
+        unconfirmed : Coordinate -> Bool
+        unconfirmed position =
+            let
+                confirmsLanding : Shot -> Bool
+                confirmsLanding shot =
+                    (shot.kind == CombatKind.IndirectFire) && (shot.destination == position)
+            in
+            not (List.any confirmsLanding frame.shots)
+
+        unique : Coordinate -> List Coordinate -> List Coordinate
+        unique position positions =
+            if List.member position positions then
+                positions
+
+            else
+                positions ++ [ position ]
+    in
+    List.map Exchange (exchanges frame)
+        ++ (frame.indirectImpacts
+                |> List.filter unconfirmed
+                |> List.foldl unique []
+                |> List.map Impact
+           )
 
 
 beginFrame : FrameTransition -> List Frame -> Playback
@@ -393,10 +457,10 @@ beginFrame transition pending =
 
         presentation : Presentation
         presentation =
-            case exchanges frames.next of
-                exchange :: rest ->
+            case encounters frames.next of
+                encounter :: rest ->
                     Combat
-                        { exchange = exchange
+                        { encounter = encounter
                         , remaining = rest
                         , before = { before | shots = [] }
                         , stage = Spotlighting 0
@@ -429,6 +493,8 @@ combineReturnFire opening pending =
         stationary : Frame -> Bool
         stationary frame =
             (List.map unitLocation frame.units == List.map unitLocation opening.units)
+                && List.isEmpty frame.indirectImpacts
+                && List.isEmpty opening.indirectImpacts
                 && (frame.visibleTiles == opening.visibleTiles)
                 && (frame.depots == opening.depots)
                 && (frame.supplyCrates == opening.supplyCrates)
@@ -516,6 +582,7 @@ type alias FrameTransition =
 type alias MovementEdge =
     { origin : Coordinate
     , destination : Coordinate
+    , portion : Float -- One tile between sightings; half a tile to the fog boundary.
     }
 
 
@@ -529,6 +596,13 @@ selection unit coordinate =
             (SS.succeed Frame
                 |> SS.with FrameApi.durationMs
                 |> SS.with (FrameApi.units unit)
+                |> SS.with
+                    (FrameApi.departures
+                        (SS.succeed Departure
+                            |> SS.with (DepartureApi.unitId |> SS.mapOrFail UnitId.parse)
+                            |> SS.with DepartureApi.direction
+                        )
+                    )
                 |> SS.with (FrameApi.indirectImpacts (IndirectImpactApi.destination coordinate))
                 |> SS.with (FrameApi.shots Shot.selection)
                 |> SS.with (FrameApi.visibleTiles coordinate)
@@ -757,11 +831,16 @@ exchangeDeathFrame projected focus =
     let
         casualties : List UnitId
         casualties =
-            [ ( focus.exchange.attacker.id, focus.exchange.attackerHealth.after.current )
-            , ( focus.exchange.target.id, focus.exchange.targetHealth.after.current )
-            ]
-                |> List.filter (\( _, health ) -> health == 0)
-                |> List.map Tuple.first
+            case focus.encounter of
+                Exchange exchange ->
+                    [ ( exchange.attacker.id, exchange.attackerHealth.after.current )
+                    , ( exchange.target.id, exchange.targetHealth.after.current )
+                    ]
+                        |> List.filter (\( _, health ) -> health == 0)
+                        |> List.map Tuple.first
+
+                Impact _ ->
+                    []
 
         before : Frame
         before =
@@ -794,10 +873,16 @@ exchangeDeathFrame projected focus =
 advanceCombat : CombatFocus -> Playback -> { animation : Playback, frame : Frame }
 advanceCombat focus playback =
     case focus.remaining of
-        exchange :: rest ->
+        encounter :: rest ->
             { animation =
                 { playback
-                    | presentation = Combat { focus | exchange = exchange, remaining = rest, stage = Spotlighting 0 }
+                    | presentation =
+                        Combat
+                            { focus
+                                | encounter = encounter
+                                , remaining = rest
+                                , stage = Spotlighting 0
+                            }
                 }
             , frame = focus.before
             }
@@ -876,7 +961,8 @@ presentationFrame playing next =
                 Nothing ->
                     unit
     in
-    { indirectImpacts = playing.current.indirectImpacts
+    { departures = playing.current.departures
+    , indirectImpacts = playing.current.indirectImpacts
     , depots = playing.current.depots
     , supplyCrates = playing.current.supplyCrates
     , shots = playing.current.shots
@@ -913,17 +999,30 @@ observedMovement frames unit =
                 Just
                     { origin = from
                     , destination = to
+                    , portion = 1
                     }
 
             else
                 Nothing
 
+        ( Just from, Nothing ) ->
+            let
+                exit : Departure -> MovementEdge
+                exit departure =
+                    { origin = from
+                    , destination = Direction.step from departure.direction
+                    , portion = 0.5
+                    }
+            in
+            ListUtil.find (\departure -> departure.unitId == unit.id) frames.current.departures
+                |> Maybe.map exit
+
         _ ->
             Nothing
 
 
-{-| Interpolate only sightings present at both ends of an edge. Entering or
-leaving sight changes the unit list at the boundary, without revealing fog paths.
+{-| Interpolate shared sightings and server-projected exits. Exits stop at the
+edge of the last visible square; hidden destinations and routes are never sent.
 -}
 movingPositions : Maybe Playback -> List { unitId : UnitId, position : Point }
 movingPositions playback =
@@ -946,8 +1045,18 @@ movingPositions playback =
                                     Just
                                         { unitId = unit.id
                                         , position =
-                                            { x = toFloat edge.origin.x + toFloat (edge.destination.x - edge.origin.x) * playing.elapsed / toFloat next.durationMs
-                                            , y = toFloat edge.origin.y + toFloat (edge.destination.y - edge.origin.y) * playing.elapsed / toFloat next.durationMs
+                                            { x =
+                                                toFloat edge.origin.x
+                                                    + toFloat (edge.destination.x - edge.origin.x)
+                                                    * edge.portion
+                                                    * playing.elapsed
+                                                    / toFloat next.durationMs
+                                            , y =
+                                                toFloat edge.origin.y
+                                                    + toFloat (edge.destination.y - edge.origin.y)
+                                                    * edge.portion
+                                                    * playing.elapsed
+                                                    / toFloat next.durationMs
                                             }
                                         }
 
@@ -960,6 +1069,50 @@ movingPositions playback =
                     []
     in
     Maybe.map positions playback |> Maybe.withDefault []
+
+
+unitOpacity : Maybe Playback -> UnitId -> Float
+unitOpacity playback unitId =
+    case playback of
+        Just playing ->
+            case ( playing.presentation, playing.remaining ) of
+                ( Battlefield, next :: _ ) ->
+                    let
+                        departing : Bool
+                        departing =
+                            List.any (\departure -> departure.unitId == unitId) playing.current.departures
+                    in
+                    if departing then
+                        1 - clamp 0 1 (playing.elapsed / toFloat next.durationMs)
+
+                    else
+                        1
+
+                _ ->
+                    1
+
+        Nothing ->
+            1
+
+
+{-| Resolve encounter subjects from battlefield sightings, never portrait locations.
+Impact-only scenes may highlight the projected landing even in fog.
+-}
+encounterPositions : Frame -> Encounter -> List Coordinate
+encounterPositions frame encounter =
+    case encounter of
+        Exchange exchange ->
+            let
+                participant : Unit -> Bool
+                participant unit =
+                    (unit.id == exchange.attacker.id) || (unit.id == exchange.target.id)
+            in
+            frame.units
+                |> List.filter participant
+                |> List.filterMap (Unit.physicalPosition frame.units)
+
+        Impact position ->
+            [ position ]
 
 
 {-| Follow only projected battlefield sightings. Theater portraits can contain
@@ -979,17 +1132,13 @@ focusPositions playback =
                 |> List.filter (\unit -> List.member unit.id ids)
                 |> List.filterMap (Unit.physicalPosition frame.units)
                 |> List.map point
-
-        exchangePositions : CombatFocus -> List Point
-        exchangePositions focus =
-            participants focus.before [ focus.exchange.attacker.id, focus.exchange.target.id ]
     in
     case playback.presentation of
         Combat focus ->
-            exchangePositions focus
+            encounterPositions focus.before focus.encounter |> List.map point
 
         Deaths { focus } ->
-            exchangePositions focus
+            encounterPositions focus.before focus.encounter |> List.map point
 
         Battlefield ->
             let

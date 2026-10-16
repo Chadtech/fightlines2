@@ -361,7 +361,7 @@ impl Combat {
             || !target.is_alive()
             || shooter.player_number() == target.player_number()
             || !(in_line || in_cross_arm)
-            || !visibility::observable(&board.map, &visible, destination)
+            || !visibility::unit_observable(&board.map, &visible, target)
             || !visibility::clear_line(&board.map, origin, destination)
         {
             return None;
@@ -445,6 +445,7 @@ impl Combat {
             }
         }
         frames.push(TurnFrame {
+            departures: Vec::new(),
             indirect_impacts: Vec::new(),
             depots: board.depots.clone(),
             supply_crates: board.supply_crates.clone(),
@@ -459,6 +460,7 @@ impl Combat {
         let casualty_pause = !dead_carriers.is_empty() || has_bombardment;
         // Clear shots while preserving enough time to read the exchange and death marker.
         frames.push(TurnFrame {
+            departures: Vec::new(),
             indirect_impacts: Vec::new(),
             depots: board.depots.clone(),
             supply_crates: board.supply_crates.clone(),
@@ -728,6 +730,7 @@ impl Combat {
         self.volley(board, &engagements, frames);
         if engagements.is_empty() && !misses.is_empty() {
             frames.push(TurnFrame {
+                departures: Vec::new(),
                 indirect_impacts: Vec::new(),
                 depots: board.depots.clone(),
                 supply_crates: board.supply_crates.clone(),
@@ -737,6 +740,7 @@ impl Combat {
                 shots: Vec::new(),
             });
             frames.push(TurnFrame {
+                departures: Vec::new(),
                 indirect_impacts: Vec::new(),
                 depots: board.depots.clone(),
                 supply_crates: board.supply_crates.clone(),
@@ -1952,6 +1956,111 @@ mod tests {
         combat.engage(&mut scenario, &mut stopped, &mut frames);
         assert_eq!(frames.iter().flat_map(|frame| &frame.shots).count(), 1);
         assert_eq!(scenario.units[0].supplies().current(), 236);
+        Ok(())
+    }
+
+    #[test]
+    fn ambushes_hit_revealed_forest_targets_that_stay_in_the_area() -> TestResult<()> {
+        for kind in [UnitKind::Infantry, UnitKind::Tank, UnitKind::FieldGun] {
+            for revealed in [false, true] {
+                for attack_move in [false, true] {
+                    let (mut scenario, mut orders) =
+                        fixture(kind, UnitKind::Infantry, Coordinate::new(4, 3))?;
+                    scenario.map = Map::new(9, 9, Terrain::Forest, BTreeMap::new()).fixture()?;
+                    scenario
+                        .units
+                        .get_mut(1)
+                        .fixture()?
+                        .finish_firing_reveal(revealed);
+                    if attack_move {
+                        let infantry = orders.get_mut(1).fixture()?;
+                        infantry.travel = TravelMode::AttackMove;
+                        infantry.path.push(Coordinate::new(3, 3));
+                    }
+                    let result = resolve_completed_movement(&scenario, &orders, 1)?;
+                    let shooter_id = scenario.units.first().fixture()?.unit_id();
+                    let hits: Vec<_> = shots(&result)
+                        .into_iter()
+                        .filter(|shot| shot.attacker.unit_id() == shooter_id)
+                        .collect();
+                    assert_eq!(hits.len(), usize::from(revealed));
+                    if revealed {
+                        let hit = hits.first().fixture()?;
+                        assert_eq!(hit.kind, CombatKind::Ambush);
+                        assert_eq!(hit.destination, Coordinate::new(4, 3));
+                        assert!(
+                            hit.target_health.after.current() < hit.target_health.before.current()
+                        );
+                    }
+                    // Enemy contact stops the attack move on its original square.
+                    let infantry_id = scenario.units.get(1).fixture()?.unit_id();
+                    assert_eq!(
+                        result.paths.get(&infantry_id).fixture()?,
+                        &vec![Coordinate::new(4, 3)]
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn revealed_forest_targets_can_escape_an_initial_ambush_area() -> TestResult<()> {
+        let (mut scenario, mut orders) = fixture(
+            UnitKind::FieldGun,
+            UnitKind::Infantry,
+            Coordinate::new(4, 3),
+        )?;
+        scenario.map = Map::new(9, 9, Terrain::Forest, BTreeMap::new()).fixture()?;
+        scenario
+            .units
+            .get_mut(1)
+            .fixture()?
+            .finish_firing_reveal(true);
+        orders
+            .get_mut(1)
+            .fixture()?
+            .path
+            .push(Coordinate::new(4, 4));
+        let result = resolve_completed_movement(&scenario, &orders, 1)?;
+        assert!(shots(&result).is_empty());
+        assert_eq!(
+            result
+                .frames
+                .last()
+                .fixture()?
+                .units
+                .get(1)
+                .fixture()?
+                .board_position(),
+            Some(Coordinate::new(4, 4))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn firing_reveals_do_not_bypass_obstructed_ambush_lines() -> TestResult<()> {
+        for terrain in [Terrain::Forest, Terrain::Hills] {
+            let (mut scenario, orders) = fixture(
+                UnitKind::FieldGun,
+                UnitKind::Infantry,
+                Coordinate::new(6, 3),
+            )?;
+            scenario.map = Map::new(
+                9,
+                9,
+                Terrain::GrassPlain,
+                BTreeMap::from([(Coordinate::new(5, 3), terrain)]),
+            )
+            .fixture()?;
+            scenario
+                .units
+                .get_mut(1)
+                .fixture()?
+                .finish_firing_reveal(true);
+            let result = resolve_completed_movement(&scenario, &orders, 1)?;
+            assert!(shots(&result).is_empty());
+        }
         Ok(())
     }
 

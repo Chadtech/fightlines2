@@ -643,11 +643,15 @@ hills and forests as blockers only when it crosses their tile interior; terrain
 touched only at a corner does not obstruct open diagonals. Forest tiles also
 conceal their contents. Own occupied squares remain known, while
 enemies in forests remain concealed even on a known occupied square.
-Field guns retain an internal firing reveal flag for the next turn. After all
-combat resolves, `Turns` renews it only for guns that actually fired. Visibility
-includes each revealed gun and its occupied tile regardless of sight or forest
+Units retain an internal firing reveal flag for the next turn. After all
+combat resolves, `Turns` renews it only for units that actually fired, including
+attack moves, ambushes, return fire, and indirect fire. Visibility
+includes each revealed unit and its occupied tile regardless of sight or forest
 cover, without granting surrounding sight or exposing resources or cargo. The
 previous reveal remains in playback frames until the final turn boundary.
+`visibility::unit_observable` shares unit sightings between projection and ambush
+targeting, including firing reveals in forests. Ambush range and clear firing
+lines still apply; initial targets may escape before the final combat check.
 
 `game_view` projects the authoritative scenario for the requesting player,
 including the development preview. `GameSnapshot.visibleTiles` supplies the
@@ -665,6 +669,12 @@ and refreshes it at each playback tile boundary; `GamePage` darkens and desatura
 terrain and known depots
 with the same image filter, preserving artwork detail and crisp tile boundaries.
 Both players receive the same timeline timing with their own projected visibility.
+Projected `TurnFrame.departures` contains only an enemy unit ID and cardinal exit
+direction from a sighting immediately before it moves into fog. Projection checks
+one adjacent movement edge; observer movement, boarding, and death do not invent
+exits. Hidden destination coordinates and later route edges remain withheld. Elm
+interpolates exits only halfway to the adjacent tile, fading the unit out at the
+edge of its last visible square. The camera follows that same clipped movement.
 
 ## Unit transport
 
@@ -849,6 +859,10 @@ impact overlays together; backdrop overscan prevents exposed edges. Reduced
 motion disables the shake.
 Reduced motion substitutes a steady peak-impact frame. `View.CombatEffects`
 owns the board spotlight, shine, firing flashes, and target explosions.
+Spotlight coordinates and camera subjects resolve encounter IDs against projected
+battlefield units; map flashes and explosions also require a projected participant.
+Encounter-only portraits never create map effects at concealed positions. Projected
+indirect-fire landings retain their tile feedback even without a known target.
 Continuing a lethal pair enters a `Deaths` presentation stage using that pair’s
 authoritative after-health. Only its visible casualties and carrier passengers
 receive skull feedback; concealed portraits stay off the board. The server’s
@@ -919,7 +933,16 @@ occupies one shared berth. Depot loading derives the freight kind from the actua
 destination depot. `SupplyRules` supplies authoritative capacities
 to Elm. `Unit.resources.supplyCargo` follows the existing whole-resource fog gate.
 Depot stock is nullable outside sight; known depot positions remain available.
-Ground crates are projected by visible tile, independently of unit concealment.
+Ground crates are observed by visible tile, independently of unit concealment.
+`Game` retains a `visibility::PlayerObservation` for each player, initialized from
+starting sight and advanced through every projected resolution frame. Seeing a tile
+replaces its remembered freight, including clearing it when empty. Outside sight,
+position, kind, and stock remain at their last observed values. Per-player projected
+resolutions retain those observations at each boundary, so reloads and polling do
+not erase sightings or reveal future freight changes during playback. These memories
+are presentation data only: order validation and Elm placement previews use only
+currently visible crates. The existing `visibleTiles` mask distinguishes remembered
+freight without adding a second wire representation.
 `View.DepotStatus` renders the depot portrait and optional stock gauge without
 inventing resource values outside sight. `GamePage` supplies the selected depot
 and terrain row; coordinate-keyed inspection content resets native disclosures
@@ -1059,5 +1082,9 @@ reveal includes misses as well as hits.
 Elm's `ChoosingIndirectFire` lives inside unit selection. `OrderPlanning` computes
 range from the selected unit's server rule without consulting fog or occupancy,
 and saves `PlannedOrder.IndirectFire` with distinct stationary and target positions.
-The board offers tile buttons for pointer and keyboard targeting, preserves a
-saved target outline, and plays projected shell impacts even without a theater.
+The board offers tile buttons for pointer and keyboard targeting and preserves a
+saved target outline. `TurnPlayback.Encounter` distinguishes confirmed exchanges
+from impact-only scenes. Projected indirect landings without a matching confirmed
+shot open a terrain-only combat theater with no participants or hit/miss claims.
+Theater controls, map peeks, spotlighting, and automatic closing share one playback
+clock; confirmed hits do not also open an impact-only scene.

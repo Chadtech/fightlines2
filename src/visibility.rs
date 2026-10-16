@@ -2,9 +2,58 @@ use crate::{
     combat::CombatKind,
     map::{Coordinate, Map, Terrain},
     scenario::{Direction, PlayerNumber, Scenario, Unit, UnitKind},
-    turns::{TurnEventKind, TurnFrame, TurnResolution},
+    supplies::GroundSupplyCrate,
+    turns::{TurnEventKind, TurnFrame, TurnResolution, UnitDeparture},
 };
 use std::collections::BTreeSet;
+
+/// Per-player freight observations, advanced at resolution rather than on polling.
+/// Remembered freight is presentation data only; validation uses observed_scenario.
+pub struct PlayerObservation {
+    pub supply_crates: Vec<GroundSupplyCrate>,
+    pub last_resolution: Option<TurnResolution>,
+}
+
+impl PlayerObservation {
+    pub fn new(scenario: &Scenario, player: PlayerNumber) -> Self {
+        let visible = visible_tiles(scenario, player);
+        let mut observation = Self {
+            supply_crates: Vec::new(),
+            last_resolution: None,
+        };
+        observation.refresh_crates(&scenario.supply_crates, &visible);
+        observation
+    }
+
+    pub fn resolve(
+        &mut self,
+        scenario: &Scenario,
+        player: PlayerNumber,
+        resolution: &TurnResolution,
+    ) {
+        let visible = visible_tiles(scenario, player);
+        let mut projected = observed_resolution(scenario, player, &visible, resolution);
+        for frame in &mut projected.frames {
+            let sight = frame.visible_tiles.iter().copied().collect();
+            self.refresh_crates(&frame.supply_crates, &sight);
+            frame.supply_crates = self.supply_crates.clone();
+        }
+        self.refresh_crates(&scenario.supply_crates, &visible);
+        self.last_resolution = Some(projected);
+    }
+
+    fn refresh_crates(&mut self, crates: &[GroundSupplyCrate], visible: &BTreeSet<Coordinate>) {
+        // Seeing a square replaces its previous observation, including with absence.
+        self.supply_crates
+            .retain(|freight| !visible.contains(&freight.position));
+        self.supply_crates.extend(
+            crates
+                .iter()
+                .filter(|freight| visible.contains(&freight.position))
+                .cloned(),
+        );
+    }
+}
 
 /// Sight is a circular radius measured between tile centers.
 pub fn sight_range(kind: UnitKind) -> i32 {
@@ -49,7 +98,7 @@ pub fn visible_tiles(scenario: &Scenario, player_number: PlayerNumber) -> BTreeS
             }
         }
     }
-    // Firing reveals only the gun's occupied tile, without granting it sight.
+    // Firing reveals only the unit's occupied tile, without granting it sight.
     visible.extend(
         scenario
             .units
@@ -115,6 +164,13 @@ pub(crate) fn observable(map: &Map, visible: &BTreeSet<Coordinate>, position: Co
     visible.contains(&position) && map.tile_at(position) != Some(Terrain::Forest)
 }
 
+/// Unit sightings include firing reveals, even when forest terrain conceals the tile's contents.
+pub(crate) fn unit_observable(map: &Map, visible: &BTreeSet<Coordinate>, unit: &Unit) -> bool {
+    unit.board_position().is_some_and(|position| {
+        unit.firing_position_revealed() || observable(map, visible, position)
+    })
+}
+
 pub fn observed_scenario(
     scenario: &Scenario,
     player_number: PlayerNumber,
@@ -122,10 +178,7 @@ pub fn observed_scenario(
 ) -> Scenario {
     let mut observed = scenario.clone();
     observed.units.retain(|unit| {
-        unit.player_number() == player_number
-            || unit.board_position().is_some_and(|position| {
-                unit.firing_position_revealed() || observable(&scenario.map, visible, position)
-            })
+        unit.player_number() == player_number || unit_observable(&scenario.map, visible, unit)
     });
     for unit in &mut observed.units {
         if unit.player_number() != player_number {
@@ -257,7 +310,7 @@ fn observed_frames(
         let mut previous_shots = false;
         let mut casualties = BTreeSet::new();
         let mut concealed_casualties = BTreeSet::new();
-        return resolution
+        let mut frames: Vec<TurnFrame> = resolution
             .frames
             .iter()
             .map(|frame| {
@@ -275,8 +328,9 @@ fn observed_frames(
                 let known_endpoint = |position| {
                     observable(&board.map, &visible, position)
                         || board.units.iter().any(|unit| {
-                            unit.player_number() == player_number
-                                && unit.board_position() == Some(position)
+                            unit.board_position() == Some(position)
+                                && (unit.player_number() == player_number
+                                    || unit_observable(&board.map, &visible, unit))
                         })
                 };
                 let mut observed = observed_scenario(&board, player_number, &visible);
@@ -298,6 +352,7 @@ fn observed_frames(
                     .units
                     .retain(|unit| !concealed_casualties.contains(&unit.unit_id()));
                 TurnFrame {
+                    departures: Vec::new(),
                     indirect_impacts: frame
                         .indirect_impacts
                         .iter()
@@ -330,12 +385,57 @@ fn observed_frames(
                 }
             })
             .collect();
+        let departures: Vec<Vec<UnitDeparture>> = resolution
+            .frames
+            .iter()
+            .skip(1)
+            .zip(frames.iter().zip(frames.iter().skip(1)))
+            .map(|(after, (before, next))| {
+                // An exit is disclosed only from a current sighting and one adjacent
+                // movement edge. Losing an observer, boarding, and death are not exits.
+                before
+                    .units
+                    .iter()
+                    .filter_map(|unit| {
+                        if unit.player_number() == player_number
+                            || !unit.is_alive()
+                            || next
+                                .units
+                                .iter()
+                                .any(|seen| seen.unit_id() == unit.unit_id())
+                        {
+                            return None;
+                        }
+                        let target = after.units.iter().find(|target| {
+                            target.unit_id() == unit.unit_id() && target.is_alive()
+                        })?;
+                        let origin = unit.board_position()?;
+                        let destination = target.board_position()?;
+                        if (origin.x() - destination.x()).abs()
+                            + (origin.y() - destination.y()).abs()
+                            != 1
+                        {
+                            return None;
+                        }
+                        Some(UnitDeparture {
+                            unit_id: unit.unit_id(),
+                            direction: Direction::between(origin, destination)?,
+                        })
+                    })
+                    .collect()
+            })
+            .collect();
+        for (frame, exits) in frames.iter_mut().zip(departures) {
+            frame.departures = exits;
+        }
+        return frames;
     }
     let mut board = initial_scenario(scenario, resolution);
     let project = |board: &Scenario| {
         let visible = visible_tiles(board, player_number);
         let observed = observed_scenario(board, player_number, &visible);
         TurnFrame {
+            departures: Vec::new(),
             indirect_impacts: Vec::new(),
             depots: observed.depots,
             supply_crates: observed.supply_crates,
@@ -407,6 +507,91 @@ mod tests {
     }
 
     #[test]
+    fn freight_memory_refreshes_only_in_sight_for_each_player() -> TestResult<()> {
+        for kind in [DepotKind::Supply, DepotKind::Fuel] {
+            let mut board = scenario(UnitKind::Truck, "........")?;
+            let origin = Coordinate::new(0, 0);
+            let unseen = Coordinate::new(7, 0);
+            let freight = GroundSupplyCrate {
+                position: origin,
+                stock: CargoStock::new(kind, 200),
+            };
+            board.supply_crates = vec![
+                freight.clone(),
+                GroundSupplyCrate {
+                    position: unseen,
+                    stock: CargoStock::new(kind, 100),
+                },
+            ];
+            let mut observation = PlayerObservation::new(&board, PlayerNumber::Player1);
+            let enemy = PlayerObservation::new(&board, PlayerNumber::Player2);
+            assert_eq!(observation.supply_crates, vec![freight.clone()]);
+            assert!(enemy.supply_crates.is_empty());
+            let frame = |board: &Scenario| TurnFrame {
+                departures: Vec::new(),
+                units: board.units.clone(),
+                depots: board.depots.clone(),
+                supply_crates: board.supply_crates.clone(),
+                visible_tiles: Vec::new(),
+                shots: Vec::new(),
+                indirect_impacts: Vec::new(),
+                duration_ms: 180,
+            };
+            let resolve = |observation: &mut PlayerObservation, board: &Scenario, frames| {
+                observation.resolve(
+                    board,
+                    PlayerNumber::Player1,
+                    &TurnResolution {
+                        turn_number: 1,
+                        events: Vec::new(),
+                        reports: Vec::new(),
+                        frames,
+                    },
+                );
+            };
+            let opening = frame(&board);
+            board
+                .units
+                .first_mut()
+                .fixture()?
+                .move_to(Coordinate::new(4, 0));
+            // Hidden consumption preserves the old amount throughout playback.
+            board.supply_crates.first_mut().fixture()?.stock.current = 50;
+            resolve(&mut observation, &board, vec![opening, frame(&board)]);
+            assert_eq!(observation.supply_crates, vec![freight.clone()]);
+            assert!(
+                observation
+                    .last_resolution
+                    .as_ref()
+                    .fixture()?
+                    .frames
+                    .iter()
+                    .all(|frame| frame.supply_crates == vec![freight.clone()])
+            );
+            // A later hidden pickup must not erase the remembered freight.
+            board.supply_crates.clear();
+            resolve(&mut observation, &board, vec![frame(&board)]);
+            assert_eq!(observation.supply_crates, vec![freight.clone()]);
+            // Revisit: the opening still remembers it, then visible absence clears it.
+            let opening = frame(&board);
+            board.units.first_mut().fixture()?.move_to(origin);
+            resolve(&mut observation, &board, vec![opening, frame(&board)]);
+            assert!(observation.supply_crates.is_empty());
+            let frames = &observation.last_resolution.as_ref().fixture()?.frames;
+            assert_eq!(frames.first().fixture()?.supply_crates, vec![freight]);
+            assert!(frames.last().fixture()?.supply_crates.is_empty());
+            // A newly observed replacement carries its new kind and stock.
+            board.supply_crates.push(GroundSupplyCrate {
+                position: origin,
+                stock: CargoStock::new(DepotKind::Fuel, 40),
+            });
+            resolve(&mut observation, &board, vec![frame(&board)]);
+            assert_eq!(observation.supply_crates, board.supply_crates);
+        }
+        Ok(())
+    }
+
+    #[test]
     fn hidden_casualties_stay_hidden_after_sight_or_firing_reveal() -> TestResult<()> {
         for firing_reveal in [false, true] {
             let mut board = scenario(UnitKind::Infantry, "........")?;
@@ -423,6 +608,7 @@ mod tests {
             let enemy_id = enemy.unit_id();
             board.units.push(enemy);
             let frame = |board: &Scenario| TurnFrame {
+                departures: Vec::new(),
                 indirect_impacts: Vec::new(),
                 units: board.units.clone(),
                 depots: board.depots.clone(),
@@ -523,6 +709,7 @@ mod tests {
             turn_number: 1,
             events: vec![],
             frames: vec![TurnFrame {
+                departures: Vec::new(),
                 indirect_impacts: Vec::new(),
                 depots: board.depots.clone(),
                 supply_crates: board.supply_crates.clone(),
@@ -928,6 +1115,111 @@ mod tests {
         board.units.push(ally);
         assert!(visible_tiles(&board, PlayerNumber::Player1).contains(&Coordinate::new(2, 2)));
 
+        Ok(())
+    }
+
+    #[test]
+    fn departing_enemies_expose_only_the_exit_from_the_last_visible_square() -> TestResult<()> {
+        let mut board = scenario(UnitKind::Truck, ".......")?;
+        let mut enemy = Scenario::supply_point()
+            .fixture()?
+            .units
+            .into_iter()
+            .find(|unit| {
+                unit.player_number() == PlayerNumber::Player2 && unit.kind() == UnitKind::Infantry
+            })
+            .fixture()?;
+        enemy.move_to(Coordinate::new(1, 0));
+        let enemy_id = enemy.unit_id();
+        board.units.push(enemy);
+        let frame = |board: &Scenario| TurnFrame {
+            departures: Vec::new(),
+            indirect_impacts: Vec::new(),
+            shots: Vec::new(),
+            depots: board.depots.clone(),
+            supply_crates: Vec::new(),
+            units: board.units.clone(),
+            visible_tiles: Vec::new(),
+            duration_ms: 180,
+        };
+        let opening = frame(&board);
+        let mut frames = vec![opening.clone()];
+        for x in [2, 3, 4] {
+            board
+                .units
+                .get_mut(1)
+                .fixture()?
+                .move_to(Coordinate::new(x, 0));
+            frames.push(frame(&board));
+        }
+        let project = |board: &Scenario, frames| {
+            observed_resolution(
+                board,
+                PlayerNumber::Player1,
+                &visible_tiles(board, PlayerNumber::Player1),
+                &TurnResolution {
+                    reports: Vec::new(),
+                    events: Vec::new(),
+                    turn_number: 1,
+                    frames,
+                },
+            )
+        };
+        let projected = project(&board, frames);
+        let exits = &projected.frames.first().fixture()?.departures;
+        assert_eq!(exits.len(), 1);
+        assert_eq!(exits.first().fixture()?.unit_id, enemy_id);
+        assert_eq!(exits.first().fixture()?.direction, Direction::East);
+        assert!(projected.frames.iter().skip(1).all(|frame| {
+            frame.departures.is_empty() && frame.units.iter().all(|unit| unit.unit_id() != enemy_id)
+        }));
+        // A stationary enemy disappears because our observer moves: no departure.
+        board.units = opening.units.clone();
+        board
+            .units
+            .first_mut()
+            .fixture()?
+            .move_to(Coordinate::new(1, 0));
+        board
+            .units
+            .get_mut(1)
+            .fixture()?
+            .move_to(Coordinate::new(2, 0));
+        let before = frame(&board);
+        board
+            .units
+            .first_mut()
+            .fixture()?
+            .move_to(Coordinate::new(0, 0));
+        let lost_sight = project(&board, vec![before, frame(&board)]);
+        assert!(
+            lost_sight
+                .frames
+                .iter()
+                .all(|frame| frame.departures.is_empty())
+        );
+        // A hidden casualty or loading transition must not become a movement exit.
+        for destroyed in [false, true] {
+            board.units = opening.units.clone();
+            if destroyed {
+                board.units.get_mut(1).fixture()?.take_damage(16);
+                board
+                    .units
+                    .get_mut(1)
+                    .fixture()?
+                    .move_to(Coordinate::new(2, 0));
+            } else {
+                let carrier = board.units.first().fixture()?.unit_id();
+                board.units.get_mut(1).fixture()?.board(carrier);
+            }
+            let projected = project(&board, vec![opening.clone(), frame(&board)]);
+            assert!(
+                projected
+                    .frames
+                    .iter()
+                    .all(|frame| frame.departures.is_empty())
+            );
+        }
         Ok(())
     }
 

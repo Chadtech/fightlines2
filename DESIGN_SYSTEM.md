@@ -356,7 +356,10 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
 
 Turn playback follows the server's shared arrival timeline. Multiple units can
 advance at one boundary; interpolation uses each frame's supplied duration.
-Fog and selection occupancy change at boundaries. The right panel omits turn
+Fog and selection occupancy change at boundaries. A departing enemy moves only
+to the edge of its last visible square while fading out. Hidden destinations and
+remaining paths stay concealed; loss of sight alone does not imply movement.
+The right panel omits turn
 summaries. Saved planning paths describe intent;
 playback and final positions reflect only the route actually traveled.
 
@@ -516,7 +519,11 @@ with room aboard. Save the route first, then add unloading. These controls
 are absent in locked phases. A saved supply run shows its destination and load/unload
 counts alongside revoke. Planned crate exits use quiet gold dotted outlines.
 Ground crates use the illustrated neutral supply-box asset and support pointer and
-keyboard inspection through their tile. Empty crates disappear on replenishment.
+keyboard inspection through their tile. Previously seen crates and fuel drums remain
+in fog using the terrain's darkened, desaturated treatment. Their accessible label
+and inspector mark them `last seen`; stock remains the last observed amount. Seeing
+the square again refreshes the freight or removes it if absent. Empty crates disappear
+on replenishment only when observable.
 
 Depot tiles show a thin stock bar along their bottom edge, above units and route
 artwork. Known stock uses green while healthy, yellow with a two-second blink at
@@ -597,4 +604,6 @@ dotted target outline on the board. The inspector explains final-occupancy
 resolution, friendly fire, uncertain fog hits, the 12-tile radius, and readiness
 and shot costs. Projected tile landings reuse the combat burst even on empty or
 fogged squares. Confirmed hits use the theater and unit-loss dialog headed or
-labeled `indirect fire`.
+labeled `indirect fire`. Landings without a confirmed target open a single terrain
+scene headed `indirect fire impact`, with the existing explosion animation and
+theater controls. Show no combatants, health, or hit/miss claim in that scene.

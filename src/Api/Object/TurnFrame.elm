@@ -19,6 +19,15 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+{-| Observed exits toward fog; never contains a hidden destination or route.
+-}
+departures :
+    SelectionSet decodesTo Api.Object.UnitDeparture
+    -> SelectionSet (List decodesTo) Api.Object.TurnFrame
+departures object____ =
+    Object.selectionForCompositeField "departures" [] object____ (Basics.identity >> Decode.list)
+
+
 indirectImpacts :
     SelectionSet decodesTo Api.Object.IndirectImpact
     -> SelectionSet (List decodesTo) Api.Object.TurnFrame

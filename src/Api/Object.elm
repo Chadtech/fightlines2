@@ -141,6 +141,10 @@ type Unit
     = Unit
 
 
+type UnitDeparture
+    = UnitDeparture
+
+
 type UnitPlacement
     = UnitPlacement
 

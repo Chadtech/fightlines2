@@ -367,9 +367,9 @@ impl Unit {
         self.firing_position_revealed
     }
 
-    /// A field gun's shot reveals its position for the following turn.
+    /// Firing reveals a unit's position for the following turn.
     pub(crate) fn finish_firing_reveal(&mut self, fired: bool) {
-        self.firing_position_revealed = self.kind == UnitKind::FieldGun && fired;
+        self.firing_position_revealed = fired;
     }
 
     #[cfg(test)]

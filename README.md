@@ -163,12 +163,15 @@ conceal all enemy units inside, even adjacent to an observer or an allied unit
 in the same forest. Your own units and their occupied tiles are always visible. Unseen tiles are darker and desaturated, preserving terrain detail;
 the terrain and fixed depot locations remain known. Hidden enemies and their
 paths are withheld from game responses.
-Field guns that fire reveal their occupied tile to the enemy for the following
+Any unit that fires reveals its occupied tile to the enemy for the following
 turn, even in forests or beyond normal sight. Firing again renews the reveal;
-otherwise it expires at the next turn boundary. Enemy resources stay concealed.
+otherwise it expires at the next turn boundary. Ambushes can hit revealed units
+in forests if they remain in the firing area and the firing line is clear.
+Enemy resources stay concealed.
 Both players share a movement timeline, with units advancing together at their
 scheduled arrivals. Sight refreshes at each arrival boundary. Enemies appear when they enter
-sight and disappear when they leave it, including brief sightings during a turn.
+sight. When a visible enemy moves into fog, it moves toward the edge of its last
+visible square and fades out; its hidden destination and remaining route stay concealed.
 Hidden positions and route segments are withheld from responses.
 
 Infantry start with 192/192 supplies; field guns start with 256/256; tanks and trucks
@@ -219,7 +222,8 @@ when depot stock runs out. Passing a depot never automatically loads cargo.
 Click a depot to see its illustration, supply stock gauge, and terrain in the
 right panel, with depot and stock explanations behind info markers. Ground crates
 show their stock and delivery timing. Depot positions remain known,
-but stock is concealed outside sight. Ground crates appear only within sight;
+but stock is concealed outside sight. Previously seen ground crates and fuel drums
+remain darkened in fog, showing last-seen stock until the tile is visible again;
 enemy truck cargo stays concealed. Supplies do not restore hit points.
 
 The full-height right panel stays in place when selection clears. Its main area
@@ -556,4 +560,6 @@ the gun's initial facing does not reduce aim. Surviving guns fire simultaneously
 Saved targets remain marked and can be revoked. Target tiles support Tab and
 Enter/Space. Every fired shell shows a tile impact, including shots into fog;
 unseen enemy hits, casualties, and damage reports remain unconfirmed. Hidden
-hits and empty shots use the same playback timing.
+hits and empty shots use the same playback timing. Landings without a confirmed
+target open a terrain-only combat theater labeled **indirect fire impact**, with
+the same continue, see-map, and automatic-close controls as confirmed combat.

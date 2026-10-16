@@ -106,6 +106,7 @@ struct Lobby {
 /// resolvable for polling players and repeated start requests.
 struct Game {
     turns: Turns,
+    observations: [visibility::PlayerObservation; 2],
     access: GameAccess,
     scenario: Scenario,
     source_lobby: LobbyId,
@@ -123,6 +124,8 @@ enum GameAccess {
 impl Game {
     fn from_lobby(lobby: Lobby, scenario: Scenario) -> Self {
         Self {
+            observations: [PlayerNumber::Player1, PlayerNumber::Player2]
+                .map(|player| visibility::PlayerObservation::new(&scenario, player)),
             turns: Turns::default(),
             access: GameAccess::Members,
             scenario,
@@ -261,13 +264,13 @@ fn game_view(game: &Game, session: &SessionToken) -> GameSnapshot {
         PlayerNumber::Player2
     };
     let visible = visibility::visible_tiles(&game.scenario, player_number);
+    let mut scenario = visibility::observed_scenario(&game.scenario, player_number, &visible);
+    scenario.supply_crates = game.observations[index].supply_crates.clone();
     GameSnapshot {
         turn_number: game.turns.number,
         submitted: game.turns.orders[index].is_some(),
         opponent_submitted: game.turns.orders[1 - index].is_some(),
-        last_resolution: game.turns.last_resolution.as_ref().map(|resolution| {
-            visibility::observed_resolution(&game.scenario, player_number, &visible, resolution)
-        }),
+        last_resolution: game.observations[index].last_resolution.clone(),
         id: game.source_lobby.to_string(),
         name: game.name.to_string(),
         map_type: game.map_type,
@@ -285,7 +288,7 @@ fn game_view(game: &Game, session: &SessionToken) -> GameSnapshot {
         is_host: session == &game.host,
         is_member: true,
         game_url: Some(format!("/game/{}", game.source_lobby)),
-        scenario: visibility::observed_scenario(&game.scenario, player_number, &visible),
+        scenario,
         visible_tiles: visible.into_iter().collect(),
         movement_rules: crate::movement::rules(),
     }
@@ -524,6 +527,17 @@ pub fn submit_turn(
     game.turns
         .submit(&mut game.scenario, player_number, turn_number, orders)
         .map_err(|message| FieldError::new(message, juniper::Value::null()))?;
+    if game.turns.number != turn_number
+        && let Some(resolution) = &game.turns.last_resolution
+    {
+        for (observation, player) in game
+            .observations
+            .iter_mut()
+            .zip([PlayerNumber::Player1, PlayerNumber::Player2])
+        {
+            observation.resolve(&game.scenario, player, resolution);
+        }
+    }
     Ok(game_view(game, &identity))
 }
 

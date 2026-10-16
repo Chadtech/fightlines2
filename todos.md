@@ -14,10 +14,11 @@
 - stand ground needs direction
 - infantry need to do more damage to field guns
 - infantry in a forest that expose themselves should become vulnerable to ambushes
-- infantry that attack from a forest during a turn should remain visible next turn
-- Hard to remember where you dropped supplies
+
 - If a field gun targets a square, and then an enemy unit gets jammed there, do they get hit?
 
 
 
 
+- Hard to remember where you dropped supplies
+- infantry that attack from a forest during a turn should remain visible next turn

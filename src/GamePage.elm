@@ -522,7 +522,7 @@ planningContext model =
     { map = model.map
     , units = model.units
     , movementRules = model.movementRules
-    , supplyCrates = model.supplyCrates
+    , supplyCrates = List.filter (\crate -> List.member crate.position model.visibleTiles) model.supplyCrates
     , depots = model.depots
     , playerNumbers = List.filter .isYou model.players |> List.map .playerNumber
     }
@@ -661,9 +661,9 @@ playbackDialogHtmlId model =
             cargoDialogHtmlId model.currentTurn.phase
 
 
-combatExchange : Model -> Maybe TurnPlayback.Exchange
-combatExchange model =
-    playback model |> Maybe.andThen TurnPlayback.combat
+combatEncounter : Model -> Maybe TurnPlayback.Encounter
+combatEncounter model =
+    playback model |> Maybe.andThen TurnPlayback.activeEncounter
 
 
 deathInFocus : Model -> Bool
@@ -827,7 +827,8 @@ applyTurnSnapshot snapshot currentTurn model =
             frame : TurnPlayback.Frame
             frame =
                 TurnPlayback.initial snapshot.playbackFrames
-                    { indirectImpacts = []
+                    { departures = []
+                    , indirectImpacts = []
                     , shots = []
                     , durationMs = 180
                     , units = snapshot.units
@@ -1782,7 +1783,7 @@ update lobbyId msg model =
                         |> E.withOut
 
         AnimationTimerElapsed _ ->
-            if deathInFocus model || combatExchange model /= Nothing then
+            if deathInFocus model || combatEncounter model /= Nothing then
                 model |> E.withOut
 
             else
@@ -2070,20 +2071,20 @@ view model =
         hasUnitLoss =
             unitLoss model /= Nothing
 
-        hasCombatExchange : Bool
-        hasCombatExchange =
-            combatExchange model /= Nothing
+        hasCombatEncounter : Bool
+        hasCombatEncounter =
+            combatEncounter model /= Nothing
 
         interactionBlocked : Bool
         interactionBlocked =
-            hasCombatExchange || hasUnitLoss
+            hasCombatEncounter || hasUnitLoss
 
         animationClass : String
         animationClass =
             if hasUnitLoss then
                 "fightlines-death-focus fightlines-loss-focus"
 
-            else if hasCombatExchange then
+            else if hasCombatEncounter then
                 "fightlines-combat-focus"
 
             else if deathInFocus model then
@@ -2921,6 +2922,14 @@ supplyCrateDetails model position =
                 ++ "/"
                 ++ String.fromInt stock.maximum
 
+        observationLabel : String
+        observationLabel =
+            if List.member position model.visibleTiles then
+                ""
+
+            else
+                "last seen · "
+
         crates : List (Html Msg)
         crates =
             model.supplyCrates
@@ -2931,7 +2940,7 @@ supplyCrateDetails model position =
         crateDetails crate =
             H.p
                 []
-                [ H.text (Supply.cargoLabel crate.stock.kind ++ " · " ++ stockText crate.stock)
+                [ H.text (Supply.cargoLabel crate.stock.kind ++ " · " ++ observationLabel ++ stockText crate.stock)
                 ]
 
         hasSupplySource : Bool
@@ -3712,6 +3721,13 @@ boardSvg model =
                     []
                 ]
 
+        crateView : Supply.GroundCrate -> Svg Msg
+        crateView crate =
+            SvgLazy.lazy3 boardCrate
+                (terrainFilter crate.position)
+                (Set.member (Coordinate.key crate.position) visiblePositions)
+                crate
+
         depotView : Depot -> Svg Msg
         depotView depot =
             SvgLazy.lazy2 boardDepot (terrainFilter depot.position) depot
@@ -3795,6 +3811,7 @@ boardSvg model =
                 markerAt position =
                     Svg.g
                         [ SA.transform (unitTransform unit position)
+                        , SA.opacity (String.fromFloat (TurnPlayback.unitOpacity (playback model) unit.id))
                         , SA.class facingClass
                         , SA.pointerEvents "none"
                         ]
@@ -3819,8 +3836,8 @@ boardSvg model =
                 |> Maybe.map (spotlightView >> List.singleton)
                 |> Maybe.withDefault []
 
-        spotlightView : TurnPlayback.Exchange -> Svg Msg
-        spotlightView exchange =
+        spotlightView : List Coordinate -> Svg Msg
+        spotlightView positions =
             if
                 (playback model
                     |> Maybe.andThen TurnPlayback.panels
@@ -3828,10 +3845,10 @@ boardSvg model =
                 )
                     == Just TurnPlayback.SeeingMap
             then
-                CombatEffects.mapPeek model.map exchange
+                CombatEffects.mapPeek model.map positions
 
             else
-                CombatEffects.spotlight model.map exchange
+                CombatEffects.spotlight model.map positions
 
         lossSpotlight : TurnPlayback.Loss -> List (Svg Msg)
         lossSpotlight loss =
@@ -3860,13 +3877,16 @@ boardSvg model =
                     else
                         0
             in
-            SvgLazy.lazy6 boardUnit
-                unit
-                (previewedUnit unit).spriteFacing
-                (unitTransform unit position)
-                (List.member unit.id orderedUnits)
-                passengerCount
-                (AnimationFrame.unitColumn model.frame unit.id)
+            Svg.g
+                [ SA.opacity (String.fromFloat (TurnPlayback.unitOpacity (playback model) unit.id)) ]
+                [ SvgLazy.lazy6 boardUnit
+                    unit
+                    (previewedUnit unit).spriteFacing
+                    (unitTransform unit position)
+                    (List.member unit.id orderedUnits)
+                    passengerCount
+                    (AnimationFrame.unitColumn model.frame unit.id)
+                ]
 
         pathPoint : Coordinate -> String
         pathPoint position =
@@ -3970,6 +3990,7 @@ boardSvg model =
                 TurnLifecycle.Playing playing ->
                     CombatEffects.impacts
                         (TurnPlayback.visibleIndirectImpacts playing.animation)
+                        model.units
                         (TurnPlayback.visibleShots playing.animation)
 
                 _ ->
@@ -4030,7 +4051,7 @@ boardSvg model =
                     destinationAction
               ]
             , List.map depotView model.depots
-            , List.map (SvgLazy.lazy boardCrate) model.supplyCrates
+            , List.map crateView model.supplyCrates
             , List.concatMap (PlannedOrder.crateUnloads >> List.map (.destination >> targetOutline)) (plannedOrders model)
             , List.filterMap
                 (\unit ->
@@ -4100,17 +4121,28 @@ boardTileTarget destinationAction reachable x y =
         ]
 
 
-boardCrate : Supply.GroundCrate -> Svg Msg
-boardCrate crate =
+boardCrate : String -> Bool -> Supply.GroundCrate -> Svg Msg
+boardCrate filter visible crate =
+    let
+        label : String
+        label =
+            if visible then
+                Supply.cargoLabel crate.stock.kind
+
+            else
+                Supply.cargoLabel crate.stock.kind ++ " · last seen"
+    in
     at crate.position
-        [ SupplyCrate.toSvg crate.stock.kind
+        [ Svg.g
+            [ HA.style "filter" filter ]
+            [ SupplyCrate.toSvg crate.stock.kind ]
         , Svg.rect
             [ SA.width "16"
             , SA.height "16"
             , SA.fill "transparent"
             , HA.attribute "tabindex" "0"
             , Aria.svgRole Aria.Button
-            , Aria.svgLabel (Supply.cargoLabel crate.stock.kind)
+            , Aria.svgLabel label
             , onClickWithDetail (ClickedTile crate.position)
             , onBoardActivationKeyDown
                 { pressedEnter = PressedEnterOnTile crate.position
@@ -4614,7 +4646,7 @@ keyCommands model =
             else
                 KeyCmd.period NextUnorderedUnitKeyPressed
     in
-    if hasDialog model || combatExchange model /= Nothing then
+    if hasDialog model || combatEncounter model /= Nothing then
         KeyCmd.none
 
     else

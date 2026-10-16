@@ -164,8 +164,26 @@ impl TurnEvent {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct UnitDeparture {
+    pub unit_id: UnitId,
+    pub direction: Direction,
+}
+
+#[graphql_object]
+impl UnitDeparture {
+    fn unit_id(&self) -> String {
+        self.unit_id.to_string()
+    }
+    fn direction(&self) -> Direction {
+        self.direction
+    }
+}
+
 #[derive(Clone, Debug, GraphQLObject)]
 pub struct TurnFrame {
+    /// Observed exits toward fog; never contains a hidden destination or route.
+    pub departures: Vec<UnitDeparture>,
     pub indirect_impacts: Vec<IndirectImpact>,
     pub shots: Vec<Shot>,
     pub depots: Vec<Depot>,
@@ -997,6 +1015,7 @@ impl Turns {
                 });
                 unit.board(truck);
                 frames.push(TurnFrame {
+                    departures: Vec::new(),
                     indirect_impacts: Vec::new(),
                     depots: scenario.depots.clone(),
                     supply_crates: scenario.supply_crates.clone(),
@@ -1054,6 +1073,7 @@ impl Turns {
                         .follow_terrain_path(&scenario.map, &event.path);
                     events.push(event);
                     frames.push(TurnFrame {
+                        departures: Vec::new(),
                         indirect_impacts: Vec::new(),
                         depots: scenario.depots.clone(),
                         supply_crates: scenario.supply_crates.clone(),
@@ -1101,6 +1121,7 @@ impl Turns {
                     .any(|frame| !frame.indirect_impacts.is_empty());
             if settlement_pause {
                 frames.push(TurnFrame {
+                    departures: Vec::new(),
                     indirect_impacts: Vec::new(),
                     depots: scenario.depots.clone(),
                     supply_crates: scenario.supply_crates.clone(),
@@ -1111,6 +1132,7 @@ impl Turns {
                 });
             }
             frames.push(TurnFrame {
+                departures: Vec::new(),
                 indirect_impacts: Vec::new(),
                 depots: scenario.depots.clone(),
                 supply_crates: scenario.supply_crates.clone(),
@@ -1616,6 +1638,143 @@ mod tests {
                     .count(),
                 1
             );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn attack_moves_reveal_firing_units_in_forests_for_one_turn() -> TestResult<()> {
+        for kind in [UnitKind::Infantry, UnitKind::Tank] {
+            for player in [PlayerNumber::Player1, PlayerNumber::Player2] {
+                let enemy = if player == PlayerNumber::Player1 {
+                    PlayerNumber::Player2
+                } else {
+                    PlayerNumber::Player1
+                };
+                let mut scenario = Scenario::supply_point().fixture()?;
+                scenario.map = Map::from_ascii("####").fixture()?;
+                scenario.depots.clear();
+                let mut attacker = scenario
+                    .units
+                    .iter()
+                    .find(|unit| unit.player_number() == player && unit.kind() == kind)
+                    .fixture()?
+                    .clone();
+                attacker.move_to(Coordinate::new(0, 0));
+                attacker.take_damage(8);
+                let attacker_id = attacker.unit_id();
+                let mut target = scenario
+                    .units
+                    .iter()
+                    .find(|unit| unit.player_number() == enemy && unit.kind() == UnitKind::FieldGun)
+                    .fixture()?
+                    .clone();
+                target.move_to(Coordinate::new(2, 0));
+                let target_id = target.unit_id();
+                scenario.units = vec![attacker, target];
+                let project = |board: &Scenario| {
+                    let visible = visibility::visible_tiles(board, enemy);
+                    visibility::observed_scenario(board, enemy, &visible)
+                };
+                assert!(
+                    !project(&scenario)
+                        .units
+                        .iter()
+                        .any(|unit| unit.unit_id() == attacker_id)
+                );
+                let mut inputs = holds(&scenario, player)?;
+                let attack = inputs.first_mut().fixture()?;
+                attack.attack_move = Some(true);
+                attack.path.push(CoordinateInput { x: 1, y: 0 });
+                let enemy_inputs = holds(&scenario, enemy)?;
+                let mut turns = Turns::default();
+                turns.submit(&mut scenario, player, 1, inputs)?;
+                turns.submit(&mut scenario, enemy, 1, enemy_inputs)?;
+                let observed = project(&scenario);
+                let revealed = observed
+                    .units
+                    .iter()
+                    .find(|unit| unit.unit_id() == attacker_id)
+                    .fixture()?;
+                assert_eq!(revealed.board_position(), Some(Coordinate::new(1, 0)));
+                assert!(revealed.resources().is_none());
+                // Being attacked does not reveal a defender that never fires.
+                assert!(
+                    !scenario
+                        .units
+                        .iter()
+                        .find(|unit| unit.unit_id() == target_id)
+                        .fixture()?
+                        .firing_position_revealed()
+                );
+                let visible = visibility::visible_tiles(&scenario, enemy);
+                assert!(visible.contains(&Coordinate::new(1, 0)));
+                assert!(!visible.contains(&Coordinate::new(0, 0)));
+                assert!(!visible.contains(&Coordinate::new(3, 0)));
+                let resolution = visibility::observed_resolution(
+                    &scenario,
+                    enemy,
+                    &visible,
+                    turns.last_resolution.as_ref().fixture()?,
+                );
+                assert!(
+                    !resolution
+                        .frames
+                        .first()
+                        .fixture()?
+                        .units
+                        .iter()
+                        .any(|unit| unit.unit_id() == attacker_id)
+                );
+                assert!(
+                    resolution
+                        .frames
+                        .last()
+                        .fixture()?
+                        .units
+                        .iter()
+                        .any(|unit| unit.unit_id() == attacker_id)
+                );
+                assert!(
+                    resolution
+                        .frames
+                        .iter()
+                        .flat_map(|frame| &frame.shots)
+                        .any(|shot| shot.attacker.unit_id() == attacker_id)
+                );
+                resolve_holds(&mut scenario, &mut turns)?;
+                assert!(
+                    !project(&scenario)
+                        .units
+                        .iter()
+                        .any(|unit| unit.unit_id() == attacker_id)
+                );
+                let visible = visibility::visible_tiles(&scenario, enemy);
+                let resolution = visibility::observed_resolution(
+                    &scenario,
+                    enemy,
+                    &visible,
+                    turns.last_resolution.as_ref().fixture()?,
+                );
+                assert!(
+                    resolution
+                        .frames
+                        .first()
+                        .fixture()?
+                        .units
+                        .iter()
+                        .any(|unit| unit.unit_id() == attacker_id)
+                );
+                assert!(
+                    !resolution
+                        .frames
+                        .last()
+                        .fixture()?
+                        .units
+                        .iter()
+                        .any(|unit| unit.unit_id() == attacker_id)
+                );
+            }
         }
         Ok(())
     }
@@ -4162,6 +4321,43 @@ mod tests {
                 scenario.units.first().fixture()?.supplies().current(),
                 initial.current() - initial.upkeep_per_turn() - 8 - 12
             );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn indirect_fire_confirms_hits_on_previously_revealed_units() -> TestResult<()> {
+        for terrain in [Terrain::GrassPlain, Terrain::Forest] {
+            let mut scenario = bombardment_fixture()?;
+            scenario.map = Map::new(20, 3, terrain, BTreeMap::new()).fixture()?;
+            scenario
+                .units
+                .get_mut(1)
+                .fixture()?
+                .finish_firing_reveal(true);
+            let mut first = holds(&scenario, PlayerNumber::Player1)?;
+            first.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 9, y: 1 });
+            let second = holds(&scenario, PlayerNumber::Player2)?;
+            let mut turns = Turns::default();
+            turns.submit(&mut scenario, PlayerNumber::Player1, 1, first)?;
+            turns.submit(&mut scenario, PlayerNumber::Player2, 1, second)?;
+            let visible = visibility::visible_tiles(&scenario, PlayerNumber::Player1);
+            let projected = visibility::observed_resolution(
+                &scenario,
+                PlayerNumber::Player1,
+                &visible,
+                turns.last_resolution.as_ref().fixture()?,
+            );
+            let shots: Vec<_> = projected
+                .frames
+                .iter()
+                .flat_map(|frame| &frame.shots)
+                .collect();
+            assert_eq!(shots.len(), 1);
+            let hit = shots.first().fixture()?;
+            assert_eq!(hit.kind, CombatKind::IndirectFire);
+            assert!(hit.target.resources().is_none());
+            assert!(projected.reports.first().fixture()?.damage_inflicted > 0);
         }
         Ok(())
     }

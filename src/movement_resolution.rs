@@ -54,6 +54,7 @@ pub struct MovementResolution {
 
 fn frame(board: &Scenario, duration_ms: i32) -> TurnFrame {
     TurnFrame {
+        departures: Vec::new(),
         indirect_impacts: Vec::new(),
         depots: board.depots.clone(),
         supply_crates: board.supply_crates.clone(),

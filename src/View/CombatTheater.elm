@@ -1,10 +1,18 @@
-module View.CombatTheater exposing (Msg(..), attackerOnLeft, backdropPath, readyToAutomaticallyClose, styles, toHtml)
+module View.CombatTheater exposing
+    ( Msg(..)
+    , attackerOnLeft
+    , backdropPath
+    , readyToAutomaticallyClose
+    , styles
+    , toHtml
+    )
 
 import Api.Enum.CombatKind as CombatKind
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
-import Api.Enum.SpriteFacing as SpriteFacing
+import Api.Enum.SpriteFacing as SpriteFacing exposing (SpriteFacing)
 import Api.Enum.Terrain as Terrain exposing (Terrain)
 import CombatHealth exposing (CombatHealth)
+import Coordinate exposing (Coordinate)
 import Css
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
@@ -14,7 +22,12 @@ import Map exposing (Map)
 import Style as S
 import Svg.Styled as Svg
 import Svg.Styled.Attributes as SA
-import TurnPlayback exposing (MapView(..), Panel)
+import TurnPlayback
+    exposing
+        ( Encounter(..)
+        , MapView(..)
+        , Panel
+        )
 import Unit exposing (Unit)
 import Util.Html.Event as HtmlEvent
 import View.Aria as Aria
@@ -58,16 +71,17 @@ styles =
 -}
 attackerOnLeft : Panel -> Bool
 attackerOnLeft panel =
-    case
-        ( Unit.boardPosition panel.exchange.attacker
-        , Unit.boardPosition panel.exchange.target
-        )
-    of
-        ( Just attacker, Just target ) ->
-            (attacker.x < target.x)
-                || ((attacker.x == target.x) && (attacker.y <= target.y))
+    case panel.encounter of
+        Exchange exchange ->
+            case ( Unit.boardPosition exchange.attacker, Unit.boardPosition exchange.target ) of
+                ( Just attacker, Just target ) ->
+                    (attacker.x < target.x)
+                        || ((attacker.x == target.x) && (attacker.y <= target.y))
 
-        _ ->
+                _ ->
+                    True
+
+        Impact _ ->
             True
 
 
@@ -79,8 +93,7 @@ readyToAutomaticallyClose panel =
     let
         lastImpact : Float
         lastImpact =
-            [ panel.exchange.attackerHealth, panel.exchange.targetHealth ]
-                |> List.concatMap CombatFormation.impactStarts
+            impactStarts panel
                 |> List.maximum
                 |> Maybe.withDefault 1200
 
@@ -88,7 +101,18 @@ readyToAutomaticallyClose panel =
         animationEndsAt =
             lastImpact + impactContactDelayMs + rumbleDurationMs
     in
-    panel.mapView == CardVisible && panel.elapsed >= animationEndsAt + automaticCloseDelayMs
+    (panel.mapView == CardVisible) && (panel.elapsed >= animationEndsAt + automaticCloseDelayMs)
+
+
+impactStarts : Panel -> List Float
+impactStarts panel =
+    case panel.encounter of
+        Exchange exchange ->
+            [ exchange.attackerHealth, exchange.targetHealth ]
+                |> List.concatMap CombatFormation.impactStarts
+
+        Impact _ ->
+            [ 1200, 1330, 1460, 1590 ]
 
 
 impactContactDelayMs : Float
@@ -114,53 +138,73 @@ toHtml config map panel =
 theaterView : Bool -> Map -> Panel -> Html Msg
 theaterView automaticallyClose map panel =
     let
-        attacker : Unit
-        attacker =
-            panel.exchange.attacker
-
-        target : Unit
-        target =
-            panel.exchange.target
-
         portraits : List (Html Msg)
         portraits =
-            if attackerOnLeft panel then
-                [ portrait
-                    map
-                    panel
-                    panel.exchange.attackerHealth
-                    { attacker | spriteFacing = SpriteFacing.Right }
-                , portrait
-                    map
-                    panel
-                    panel.exchange.targetHealth
-                    { target | spriteFacing = SpriteFacing.Left }
-                ]
+            case panel.encounter of
+                Exchange exchange ->
+                    let
+                        attacker : Unit
+                        attacker =
+                            exchange.attacker
 
-            else
-                [ portrait
-                    map
-                    panel
-                    panel.exchange.targetHealth
-                    { target | spriteFacing = SpriteFacing.Right }
-                , portrait
-                    map
-                    panel
-                    panel.exchange.attackerHealth
-                    { attacker | spriteFacing = SpriteFacing.Left }
-                ]
+                        target : Unit
+                        target =
+                            exchange.target
+
+                        attackerView : SpriteFacing -> Html Msg
+                        attackerView facing =
+                            portrait
+                                map
+                                panel
+                                exchange.attackerHealth
+                                { attacker | spriteFacing = facing }
+
+                        targetView : SpriteFacing -> Html Msg
+                        targetView facing =
+                            portrait
+                                map
+                                panel
+                                exchange.targetHealth
+                                { target | spriteFacing = facing }
+                    in
+                    if attackerOnLeft panel then
+                        [ attackerView SpriteFacing.Right
+                        , targetView SpriteFacing.Left
+                        ]
+
+                    else
+                        [ targetView SpriteFacing.Right
+                        , attackerView SpriteFacing.Left
+                        ]
+
+                Impact position ->
+                    [ impactScene map panel position ]
 
         title : String
         title =
-            case panel.exchange.kind of
-                CombatKind.IndirectFire ->
-                    "indirect fire"
+            case panel.encounter of
+                Impact _ ->
+                    "indirect fire impact"
 
-                CombatKind.Ambush ->
-                    "ambush"
+                Exchange exchange ->
+                    case exchange.kind of
+                        CombatKind.IndirectFire ->
+                            "indirect fire"
 
-                CombatKind.AttackMove ->
-                    "attack move"
+                        CombatKind.Ambush ->
+                            "ambush"
+
+                        CombatKind.AttackMove ->
+                            "attack move"
+
+        sceneColumns : Css.Style
+        sceneColumns =
+            case panel.encounter of
+                Impact _ ->
+                    S.gridCols1
+
+                Exchange _ ->
+                    S.gridCols2
 
         card : Card.Card
         card =
@@ -240,7 +284,7 @@ theaterView automaticallyClose map panel =
                         [ A.css
                             [ S.grid
                             , S.g3
-                            , S.gridCols2
+                            , sceneColumns
                             ]
                         ]
                         portraits
@@ -331,8 +375,7 @@ rumbleTransform panel =
     let
         contactStarts : List Float
         contactStarts =
-            [ panel.exchange.attackerHealth, panel.exchange.targetHealth ]
-                |> List.concatMap CombatFormation.impactStarts
+            impactStarts panel
                 |> List.map ((+) impactContactDelayMs)
                 |> List.filter (\startsAt -> startsAt <= panel.elapsed)
 
@@ -373,6 +416,47 @@ rumbleTransform panel =
         |> Maybe.withDefault "none"
 
 
+impactScene : Map -> Panel -> Coordinate -> Html Msg
+impactScene map panel position =
+    let
+        burst : Int -> Float -> Maybe (Svg.Svg Msg)
+        burst index startsAt =
+            let
+                age : Float
+                age =
+                    panel.elapsed - startsAt
+            in
+            if (age >= 0) && (age <= CombatExplosion.durationMs) then
+                Just
+                    (Svg.g
+                        [ SA.transform
+                            ("translate("
+                                ++ String.fromInt (24 + index * 16)
+                                ++ " "
+                                ++ String.fromInt (40 + modBy 2 index * 8)
+                                ++ ")"
+                            )
+                        ]
+                        [ CombatExplosion.toSvg SpriteFacing.Left age ]
+                    )
+
+            else
+                Nothing
+
+        explosions : List (Svg.Svg Msg)
+        explosions =
+            impactStarts panel
+                |> List.indexedMap burst
+                |> List.filterMap identity
+    in
+    scene
+        map
+        panel
+        (Map.terrainAt map position)
+        "indirect fire impact; no confirmed target"
+        explosions
+
+
 portrait : Map -> Panel -> CombatHealth -> Unit -> Html Msg
 portrait map panel health unit =
     let
@@ -382,6 +466,26 @@ portrait map panel health unit =
                 |> Maybe.map (Map.terrainAt map)
                 |> Maybe.withDefault map.baseTile
 
+        description : String
+        description =
+            Unit.label unit
+                ++ ": "
+                ++ String.fromInt (CombatFormation.figureCount health.before.current)
+                ++ " before combat, "
+                ++ String.fromInt (CombatFormation.figureCount health.after.current)
+                ++ " remaining"
+    in
+    scene
+        map
+        panel
+        terrain
+        description
+        (CombatFormation.toSvg panel.elapsed health unit)
+
+
+scene : Map -> Panel -> Terrain -> String -> List (Svg.Svg Msg) -> Html Msg
+scene map panel terrain description figures =
+    let
         path : String
         path =
             backdropPath map.theme terrain
@@ -399,22 +503,9 @@ portrait map panel health unit =
                 ]
                 []
 
-        figures : List (Svg.Svg Msg)
-        figures =
-            CombatFormation.toSvg panel.elapsed health unit
-
         content : List (Svg.Svg Msg)
         content =
             background :: figures
-
-        description : String
-        description =
-            Unit.label unit
-                ++ ": "
-                ++ String.fromInt (CombatFormation.figureCount health.before.current)
-                ++ " before combat, "
-                ++ String.fromInt (CombatFormation.figureCount health.after.current)
-                ++ " remaining"
     in
     Svg.svg
         [ SA.viewBox "0 0 96 64"

@@ -10,6 +10,7 @@ import Api.Enum.Terrain as Terrain
 import Api.Enum.TurnEventKind as EventKind
 import Api.Enum.UnitKind as Kind
 import CombatHealth exposing (CombatHealth)
+import Coordinate exposing (Coordinate)
 import Direction
 import Platform
 import Shot exposing (Shot)
@@ -202,6 +203,7 @@ playbackChecks first second =
         firstFrame =
             { depots = []
             , supplyCrates = []
+            , departures = []
             , indirectImpacts = []
             , shots = []
             , durationMs = 180
@@ -217,6 +219,7 @@ playbackChecks first second =
         lastFrame =
             { depots = []
             , supplyCrates = []
+            , departures = []
             , indirectImpacts = []
             , shots = []
             , durationMs = 180
@@ -240,6 +243,7 @@ playbackChecks first second =
         middleFrame =
             { depots = []
             , supplyCrates = []
+            , departures = []
             , indirectImpacts = []
             , shots = []
             , durationMs = 180
@@ -273,6 +277,13 @@ playbackChecks first second =
         ( leaving, _ ) =
             TurnPlayback.tick 90 { sharedPlayback | remaining = [ { middleFrame | units = List.filter (\unit -> unit.id == first) lastFrame.units } ] }
 
+        exitFrame : TurnPlayback.Frame
+        exitFrame =
+            { firstFrame | departures = [ { unitId = second, direction = Direction.East } ] }
+
+        ( departing, departingFrame ) =
+            TurnPlayback.tick 90 { sharedPlayback | current = exitFrame, remaining = [ hiddenFrame ] }
+
         ( surplus, surplusFrame ) =
             TurnPlayback.tick 270 sharedPlayback
 
@@ -304,6 +315,16 @@ playbackChecks first second =
             (sharedFrame.visibleTiles == firstFrame.visibleTiles && sharedFinal == lastFrame && sharedFinished == Nothing)
         , expect "entering and leaving sight never interpolate a hidden route"
             (List.map .unitId (TurnPlayback.movingPositions entering) == [ first ] && List.map .unitId (TurnPlayback.movingPositions leaving) == [ first ])
+        , expect "departures animate only to the visible square edge and fade without a hidden destination"
+            (TurnPlayback.movingPositions departing
+                == [ { unitId = second, position = { x = 2.25, y = 1 } } ]
+                && TurnPlayback.unitOpacity departing second
+                == 0.5
+                && TurnPlayback.unitOpacity departing first
+                == 1
+                && List.map .id departingFrame.units
+                == List.map .id firstFrame.units
+            )
         , expect "shared playback carries surplus frame time forward"
             (Maybe.map .elapsed surplus == Just 90 && surplusFrame.visibleTiles == middleFrame.visibleTiles && TurnPlayback.movingPositions surplus == [ { unitId = second, position = { x = 1.5, y = 1 } } ])
         , expect "rotation rewinds facing and stays still until its event completes" (rotationPending /= Nothing && rotationHalfway == rotationUnits && Turn.movingPosition rotationPending == Nothing)
@@ -541,6 +562,7 @@ transportPlaybackChecks passengerId truckId =
                 { current =
                     { depots = []
                     , supplyCrates = []
+                    , departures = []
                     , indirectImpacts = []
                     , shots = []
                     , durationMs = 180
@@ -550,6 +572,7 @@ transportPlaybackChecks passengerId truckId =
                 , remaining =
                     [ { depots = []
                       , supplyCrates = []
+                      , departures = []
                       , indirectImpacts = []
                       , shots = []
                       , durationMs = 180
@@ -650,6 +673,7 @@ spriteFacingChecks id =
         frame unit =
             { depots = []
             , supplyCrates = []
+            , departures = []
             , indirectImpacts = []
             , shots = []
             , durationMs = 180
@@ -773,6 +797,7 @@ combatPlaybackChecks first second =
         before =
             { depots = []
             , supplyCrates = []
+            , departures = []
             , indirectImpacts = []
             , shots = []
             , durationMs = 180
@@ -809,15 +834,27 @@ combatPlaybackChecks first second =
 
         panelAt : { x : Int, y : Int } -> { x : Int, y : Int } -> TurnPlayback.Panel
         panelAt origin destination =
-            { exchange =
-                { kind = shot.kind
-                , attacker = { attacker | location = Location.OnMap origin }
-                , target = { target | location = Location.OnMap destination }
-                , attackerHealth = shot.attackerHealth
-                , targetHealth = shot.targetHealth
-                }
+            { encounter =
+                TurnPlayback.Exchange
+                    { kind = shot.kind
+                    , attacker = { attacker | location = Location.OnMap origin }
+                    , target = { target | location = Location.OnMap destination }
+                    , attackerHealth = shot.attackerHealth
+                    , targetHealth = shot.targetHealth
+                    }
             , elapsed = 0
             , mapView = TurnPlayback.CardVisible
+            }
+
+        concealedSpotlights : TurnPlayback.Playback -> { spotlight : Maybe (List Coordinate), mapPeek : Maybe (List Coordinate) }
+        concealedSpotlights playing =
+            { spotlight = TurnPlayback.spotlight playing
+            , mapPeek =
+                playing
+                    |> TurnPlayback.tick 300
+                    |> Tuple.first
+                    |> Maybe.map (TurnPlayback.setMapView TurnPlayback.SeeingMap)
+                    |> Maybe.andThen TurnPlayback.spotlight
             }
 
         readyAt : Float -> TurnPlayback.MapView -> Int -> Bool
@@ -827,21 +864,27 @@ combatPlaybackChecks first second =
                 panel =
                     panelAt shot.origin shot.destination
 
-                exchange : TurnPlayback.Exchange
+                exchange : TurnPlayback.CombatExchange
                 exchange =
-                    panel.exchange
+                    { kind = shot.kind
+                    , attacker = attacker
+                    , target = target
+                    , attackerHealth = shot.attackerHealth
+                    , targetHealth = shot.targetHealth
+                    }
             in
             CombatTheater.readyToAutomaticallyClose
                 { panel
                     | elapsed = elapsed
                     , mapView = mapView
-                    , exchange =
-                        { exchange
-                            | targetHealth =
-                                { before = { current = 16, maximum = 16 }
-                                , after = { current = remainingHealth, maximum = 16 }
-                                }
-                        }
+                    , encounter =
+                        TurnPlayback.Exchange
+                            { exchange
+                                | targetHealth =
+                                    { before = { current = 16, maximum = 16 }
+                                    , after = { current = remainingHealth, maximum = 16 }
+                                    }
+                            }
                 }
 
         expect : String -> Bool -> List String
@@ -851,6 +894,70 @@ combatPlaybackChecks first second =
 
             else
                 [ label ]
+
+        impactChecks : List String
+        impactChecks =
+            let
+                landing : TurnPlayback.Frame
+                landing =
+                    { before | units = [ attacker ], indirectImpacts = [ shot.destination, shot.destination ] }
+
+                focus : Maybe TurnPlayback.Playback
+                focus =
+                    TurnPlayback.start [ before, landing ] |> Maybe.andThen (TurnPlayback.tick 180 >> Tuple.first)
+
+                shown : Maybe TurnPlayback.Playback
+                shown =
+                    focus |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+
+                continued : Maybe TurnPlayback.Playback
+                continued =
+                    shown |> Maybe.andThen TurnPlayback.continueCombat |> Maybe.map .animation
+
+                confirmed : TurnPlayback.Frame
+                confirmed =
+                    { landing | shots = [ { shot | kind = CombatKind.IndirectFire } ] }
+
+                hit : Maybe TurnPlayback.Playback
+                hit =
+                    TurnPlayback.start [ before, confirmed ]
+                        |> Maybe.andThen (TurnPlayback.tick 180 >> Tuple.first)
+                        |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+
+                afterHit : Maybe TurnPlayback.Playback
+                afterHit =
+                    hit |> Maybe.andThen TurnPlayback.continueCombat |> Maybe.map .animation
+
+                ready : Float -> Bool
+                ready elapsed =
+                    CombatTheater.readyToAutomaticallyClose
+                        { encounter = TurnPlayback.Impact shot.destination
+                        , elapsed = elapsed
+                        , mapView = TurnPlayback.CardVisible
+                        }
+            in
+            expect "unconfirmed indirect impacts open a theater without invented combatants"
+                (Maybe.andThen TurnPlayback.activeEncounter shown
+                    == Just (TurnPlayback.Impact shot.destination)
+                    && Maybe.andThen TurnPlayback.combat shown
+                    == Nothing
+                    && Maybe.andThen TurnPlayback.panels shown
+                    /= Nothing
+                )
+                ++ expect "impact spotlight and camera frame only the landing"
+                    (Maybe.andThen TurnPlayback.spotlight focus
+                        == Just [ shot.destination ]
+                        && Maybe.map TurnPlayback.focusPositions shown
+                        == Just [ { x = 3, y = 2 } ]
+                    )
+                ++ expect "duplicate impacts on one tile open only one theater"
+                    (Maybe.andThen TurnPlayback.activeEncounter continued == Nothing)
+                ++ expect "confirmed indirect hits retain their kind and do not open duplicate impact theaters"
+                    (Maybe.andThen TurnPlayback.combat hit |> Maybe.map .kind |> (==) (Just CombatKind.IndirectFire))
+                ++ expect "confirmed impact theater closes after its exchange"
+                    (Maybe.andThen TurnPlayback.activeEncounter afterHit == Nothing)
+                ++ expect "impact theaters wait for explosions and the automatic-close delay"
+                    (not (ready 2200) && ready 2270)
 
         returnFireChecks : List String
         returnFireChecks =
@@ -888,7 +995,7 @@ combatPlaybackChecks first second =
                 combined =
                     focused [ before, opening, waiting, { waiting | durationMs = 180 }, returning, waiting ]
 
-                exchange : Maybe TurnPlayback.Exchange
+                exchange : Maybe TurnPlayback.CombatExchange
                 exchange =
                     Maybe.andThen TurnPlayback.combat combined
 
@@ -1050,12 +1157,19 @@ combatPlaybackChecks first second =
                                 && not (CombatTheater.attackerOnLeft (panelAt { x = 2, y = 3 } { x = 2, y = 2 }))
                             )
                         , returnFireChecks
+                        , impactChecks
                         , expect "combat holds the pre-hit board and hides shots and movement"
                             (frozen == before && List.isEmpty (TurnPlayback.visibleShots focus) && List.isEmpty (TurnPlayback.movingPositions paused))
                         , expect "combat spotlights participants before opening the panels"
                             (Maybe.andThen TurnPlayback.spotlight almostSpotlit /= Nothing && Maybe.andThen TurnPlayback.panels almostSpotlit == Nothing && Maybe.andThen TurnPlayback.spotlight showing == Nothing && Maybe.andThen TurnPlayback.panels showing /= Nothing)
                         , expect "camera frames combat during both spotlight and theater"
                             (TurnPlayback.focusPositions focus == [ { x = 2, y = 2 }, { x = 3, y = 2 } ] && Maybe.map TurnPlayback.focusPositions showing == Just (TurnPlayback.focusPositions focus))
+                        , expect "spotlight and map peek never highlight a concealed theater portrait"
+                            (TurnPlayback.start [ { before | units = [ target ] }, hidden, cleanup ]
+                                |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+                                |> Maybe.map concealedSpotlights
+                                |> (==) (Just { spotlight = Just [ { x = 3, y = 2 } ], mapPeek = Just [ { x = 3, y = 2 } ] })
+                            )
                         , expect "camera never frames a concealed theater portrait"
                             (TurnPlayback.start [ { before | units = [ target ] }, hidden, cleanup ]
                                 |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
@@ -1077,7 +1191,7 @@ combatPlaybackChecks first second =
                         , expect "the panel clock can reach the automatic-close threshold"
                             (Maybe.andThen TurnPlayback.panels holding |> Maybe.map CombatTheater.readyToAutomaticallyClose |> (==) (Just True))
                         , expect "combat panels remain open indefinitely without revealing casualties"
-                            (heldFrame == before && Maybe.map .exchange (Maybe.andThen TurnPlayback.panels holding) == Maybe.map .exchange (Maybe.andThen TurnPlayback.panels showing))
+                            (heldFrame == before && Maybe.map .encounter (Maybe.andThen TurnPlayback.panels holding) == Maybe.map .encounter (Maybe.andThen TurnPlayback.panels showing))
                         , expect "map peek only belongs to an open combat card and clears on continuation"
                             (TurnPlayback.setMapView TurnPlayback.SeeingMap focus
                                 == focus
@@ -1143,6 +1257,7 @@ combatDeathChecks first second =
                 before : TurnPlayback.Frame
                 before =
                     { units = [ attacker, target, other ]
+                    , departures = []
                     , indirectImpacts = []
                     , shots = []
                     , durationMs = 0
@@ -1253,7 +1368,7 @@ combatDeathChecks first second =
                 , expect "per-pair skull holds for the server pause without movement or early continuation"
                     (Maybe.map dyingIds firstHeld == Just [ second ] && Maybe.map (.animation >> Just >> TurnPlayback.movingPositions) firstDeath == Just [] && Maybe.andThen (.animation >> TurnPlayback.continueCombat) firstDeath == Nothing)
                 , expect "long ticks remove the first casualty and stop at the next theater"
-                    (Maybe.map (Tuple.second >> .units >> List.map .id) nextPair == Just [ first, third ] && (nextPair |> Maybe.andThen Tuple.first |> Maybe.andThen TurnPlayback.spotlight |> Maybe.map (.target >> .id)) == Just third)
+                    (Maybe.map (Tuple.second >> .units >> List.map .id) nextPair == Just [ first, third ] && (nextPair |> Maybe.andThen Tuple.first |> Maybe.andThen TurnPlayback.combat |> Maybe.map (.target >> .id)) == Just third)
                 , expect "second theater reveals its own skull without resurrecting the first casualty"
                     (Maybe.map (.frame >> dyingIds) secondDeath == Just [ third ] && Maybe.map (.frame >> .units >> List.map .id) secondDeath == Just [ first, third ])
                 , expect "finished pair deaths never reappear in the shared volley"
@@ -1318,6 +1433,7 @@ deathPlaybackChecks id =
         dying =
             { depots = []
             , supplyCrates = []
+            , departures = []
             , indirectImpacts = []
             , shots = []
             , durationMs = 180
@@ -1333,6 +1449,7 @@ deathPlaybackChecks id =
         gone =
             { depots = []
             , supplyCrates = []
+            , departures = []
             , indirectImpacts = []
             , shots = []
             , durationMs = 1400
@@ -1410,6 +1527,7 @@ deathFocusChecks first second =
         dying =
             { depots = []
             , supplyCrates = []
+            , departures = []
             , indirectImpacts = []
             , shots = []
             , durationMs = 450
@@ -1669,6 +1787,7 @@ carrierLossEventChecks first second =
                 frame =
                     { units = [ passenger, independent, truck, otherPassenger ]
                     , durationMs = 1400
+                    , departures = []
                     , indirectImpacts = []
                     , shots = []
                     , visibleTiles = [ { x = 2, y = 2 }, { x = 3, y = 2 } ]

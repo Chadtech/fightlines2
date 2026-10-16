@@ -13,8 +13,7 @@ import Shot exposing (Shot)
 import Style as S
 import Svg exposing (Svg)
 import Svg.Attributes as SA
-import TurnPlayback exposing (Exchange)
-import Unit
+import Unit exposing (Unit)
 import View.Aria as Aria
 
 
@@ -54,26 +53,19 @@ styles =
         ]
 
 
-spotlight : Map -> Exchange -> Svg msg
+spotlight : Map -> List Coordinate -> Svg msg
 spotlight =
     spotlightView ""
 
 
-mapPeek : Map -> Exchange -> Svg msg
+mapPeek : Map -> List Coordinate -> Svg msg
 mapPeek =
     spotlightView "fightlines-combat-map-peek"
 
 
-spotlightView : String -> Map -> Exchange -> Svg msg
-spotlightView className map exchange =
+spotlightView : String -> Map -> List Coordinate -> Svg msg
+spotlightView className map positions =
     let
-        positions : List Coordinate
-        positions =
-            List.filterMap Unit.boardPosition
-                [ exchange.attacker
-                , exchange.target
-                ]
-
         shade : Coordinate -> Svg msg
         shade position =
             Svg.rect
@@ -184,8 +176,8 @@ spotlightView className map exchange =
         content
 
 
-impacts : List Coordinate -> List Shot -> Svg msg
-impacts landings shots =
+impacts : List Coordinate -> List Unit -> List Shot -> Svg msg
+impacts landings units shots =
     let
         unique : Coordinate -> List Coordinate -> List Coordinate
         unique position positions =
@@ -197,13 +189,27 @@ impacts landings shots =
                     ++ [ position
                        ]
 
+        observed : Unit -> Bool
+        observed participant =
+            List.any (\unit -> unit.id == participant.id) units
+
         targets : List Coordinate
         targets =
-            (landings ++ List.map .destination shots) |> List.foldl unique []
+            (landings
+                ++ (shots
+                        |> List.filter (.target >> observed)
+                        |> List.map .destination
+                   )
+            )
+                |> List.foldl unique []
 
         shooters : List Coordinate
         shooters =
-            List.map .origin shots |> List.foldl unique [] |> List.filter (\position -> not (List.member position targets))
+            shots
+                |> List.filter (.attacker >> observed)
+                |> List.map .origin
+                |> List.foldl unique []
+                |> List.filter (\position -> not (List.member position targets))
 
         burst : Float -> Coordinate -> Svg msg
         burst size position =
