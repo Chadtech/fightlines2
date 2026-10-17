@@ -77,7 +77,17 @@ uses compiled-in data. Existing games own independent scenarios.
 Hit points, supplies and vehicle fuel are authoritative. Fuel, provisions, freight stocks,
 and their consumption costs use integer quantities at four times the original scale
 for finer balance adjustments. HP, damage, tile ranges, movement points, and cargo
-berths retain their existing scale. Directional ambush combat is authoritative; victory resolution remains future work.
+berths retain their existing scale. Directional ambush combat is authoritative.
+`Turns` checks victory on the authoritative final board after resource settlement.
+Its optional `GameOutcome` (`Victory(PlayerNumber)` or `Draw`) is public in each
+game snapshot and permanently blocks further submissions. Living infantry,
+tanks, and field guns count regardless of location; trucks do not.
+Simultaneous elimination is a draw. GraphQL exposes a
+nullable outcome object whose nullable `winner` distinguishes victory from a draw;
+an absent outcome means play continues. Elm decodes this into `Victory PlayerNumber`
+or `Draw` and retains the result through playback, then uses the turn announcement
+dialog to present it, including
+on refresh and when ordinary introductions are skipped.
 Starting requires exactly two players and initializes the scenario once before
 consuming the lobby. The host is `Player1` and the second player is `Player2`. Player ownership is
 independent of map position; the current scenario and lobby still require two players. Repeated
@@ -463,6 +473,18 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for seed configuration and hosting
 requirements.
 
 ## Movement planning
+
+Planning actions return `InvariantCheck InvariantViolation Model` when their
+existing lookups can encounter a broken assumption. A missing command unit,
+required position, unload passenger, or truck loading order records a violation
+at that failure branch while retaining its existing fallback value. There is no
+general invariant scan, automatic cancellation, or rollback. `InvariantCheck.andThen`
+continues with the retained value and preserves the first diagnostic in a chain.
+`GamePage.mapCheckedPlanning` supplies the checked action to
+`CurrentTurn.mapPlanning`, which runs it only during editable planning, then records
+its violation as `Error.OrderPlanningInvariantViolated` in `Shared.Model.errors`.
+Pure transitions use `GamePage.mapPlanning`. Inspections, view queries, unavailable
+commands, unreachable destinations, and out-of-phase events remain silent.
 
 `movement.rs` owns the movement table exposed as `GameSnapshot.movementRules`.
 Budgets and terrain entry costs use integer half-points (2 means one displayed

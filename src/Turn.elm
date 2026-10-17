@@ -22,6 +22,7 @@ import Api.Object.TurnReport as ReportApi
 import Api.Object.TurnResolution as ResolutionApi
 import Coordinate exposing (Coordinate)
 import Direction
+import GameOutcome exposing (GameOutcome)
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import Point exposing (Point)
 import SpriteFacing
@@ -33,6 +34,7 @@ import Util.List as ListUtil
 
 type alias Snapshot =
     { number : Int
+    , outcome : Maybe GameOutcome
     , submitted : Bool
     , opponentSubmitted : Bool
     , resolution : Maybe Resolution
@@ -93,6 +95,7 @@ selection =
     in
     SS.succeed Snapshot
         |> SS.with GameApi.turnNumber
+        |> SS.with (GameApi.outcome GameOutcome.selection)
         |> SS.with GameApi.submitted
         |> SS.with GameApi.opponentSubmitted
         |> SS.with

@@ -394,7 +394,12 @@ Hidden participants never appear in the panels.
 Destroyed units are removed before the next planning turn;
 destroyed trucks also lose their passengers. Hidden shooters and targets are
 withheld from combat effects, and enemy resource gauges outside the combat card remain concealed.
-Digging in and victory remain future work.
+Victory is checked after each resolved turn, including combat, replenishment, and
+supply upkeep. A player loses when no living infantry, tanks, or field guns remain;
+embarked passengers count, but trucks alone do not. If both armies lose their last
+combat units in the same turn, the game is a draw. A large result card appears after
+playback, even when turn introductions are skipped. The finished battlefield stays
+available to inspect, and no further turns can be submitted. Digging in remains future work.
 
 ## Maps
 

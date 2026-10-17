@@ -20,10 +20,7 @@ import Api.Enum.MapType
     exposing
         ( MapType
         )
-import Api.Enum.PlayerNumber
-    exposing
-        ( PlayerNumber
-        )
+import Api.Enum.PlayerNumber as PlayerNumberEnum exposing (PlayerNumber)
 import Api.Enum.SpriteFacing exposing (SpriteFacing)
 import Api.Enum.Terrain exposing (Terrain)
 import Api.Enum.TurnEventKind as TurnEventKind
@@ -49,6 +46,7 @@ import Effect as E
         ( Eff
         )
 import Error exposing (Error)
+import GameOutcome
 import GamePage.BattlefieldNavigation as BattlefieldNavigation
 import GamePage.CurrentTurn as CurrentTurn
 import GamePage.OrderPlanning as OrderPlanning exposing (UnloadChoice, UnloadPlanning)
@@ -73,6 +71,7 @@ import Html.Styled.Attributes as A
 import Html.Styled.Events as HtmlEvents
 import Html.Styled.Keyed as Keyed
 import Html.Styled.Lazy as Lazy
+import InvariantCheck as IC exposing (InvariantCheck)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import KeyCmd exposing (KeyCmd)
@@ -88,6 +87,7 @@ import PlannedOrder
         ( PlannedOrder
         , UnloadOrder
         )
+import PlayerNumber
 import Point exposing (Point)
 import Ports.Js.To as ToJs
 import Set exposing (Set)
@@ -410,7 +410,7 @@ turnIntroductionPreferenceKey =
 
 showTurnIntroduction : Model -> Bool
 showTurnIntroduction model =
-    not model.skipTurnIntroduction
+    (model.currentTurn.outcome /= Nothing || not model.skipTurnIntroduction)
         && CurrentTurn.introductionPending model.currentTurn
 
 
@@ -431,7 +431,7 @@ combatTheaterPreferenceKey =
 
 {-| Save the chosen load count on an existing truck order, retaining its route and passenger exits.
 -}
-saveCrateLoading : UnitId -> Int -> OrderPlanning.Model -> OrderPlanning.Model
+saveCrateLoading : UnitId -> Int -> OrderPlanning.Model -> InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
 saveCrateLoading id count state =
     let
         retainsOrder : PlannedOrder -> Bool
@@ -458,12 +458,13 @@ saveCrateLoading id count state =
                         { orders = loadingOrder order :: List.filter retainsOrder drafts.orders
                         , selection = Just (Inspecting (UnitInspection id))
                         }
+                        |> IC.happy
 
                 Nothing ->
-                    state
+                    IC.violated (OrderPlanning.LoadingOrderNotFound id) state
 
         _ ->
-            state
+            IC.happy state
 
 
 depotLoadingRoom : Model -> Unit -> Int
@@ -535,10 +536,21 @@ planningContext model =
 
 
 mapPlanning : (OrderPlanning.Model -> OrderPlanning.Model) -> Model -> Model
-mapPlanning transition model =
-    { model
-        | currentTurn =
+mapPlanning transition =
+    mapCheckedPlanning (transition >> IC.happy)
+
+
+mapCheckedPlanning : (OrderPlanning.Model -> InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model) -> Model -> Model
+mapCheckedPlanning transition model =
+    let
+        checked : InvariantCheck Error CurrentTurn.Model
+        checked =
             CurrentTurn.mapPlanning transition model.currentTurn
+                |> IC.mapError Error.OrderPlanningInvariantViolated
+    in
+    { model
+        | currentTurn = IC.value checked
+        , shared = Shared.addError (IC.error checked) model.shared
     }
 
 
@@ -685,7 +697,7 @@ deathInFocus model =
 
 planningLocked : Model -> Bool
 planningLocked model =
-    TurnLifecycle.planningLocked model.currentTurn.phase
+    model.currentTurn.outcome /= Nothing || TurnLifecycle.planningLocked model.currentTurn.phase
 
 
 unitsWithoutOrders : Model -> List Unit
@@ -763,7 +775,7 @@ isOwnUnit model unit =
 applyCommand : UnitCommand.Command -> Model -> Model
 applyCommand command model =
     model
-        |> mapPlanning
+        |> mapCheckedPlanning
             (OrderPlanning.applyCommand (planningContext model) command)
 
 
@@ -912,7 +924,7 @@ focusCommand command model =
 revokeSelectedOrder : Model -> Model
 revokeSelectedOrder model =
     model
-        |> mapPlanning
+        |> mapCheckedPlanning
             (OrderPlanning.revokeSelectedOrder (planningContext model))
 
 
@@ -926,7 +938,7 @@ choosingDirection model =
 saveDirection : Direction -> Model -> Model
 saveDirection direction model =
     model
-        |> mapPlanning
+        |> mapCheckedPlanning
             (OrderPlanning.saveDirection (planningContext model) direction)
 
 
@@ -1055,7 +1067,7 @@ selectUnit id model =
                 model
 
     else
-        model |> mapPlanning (OrderPlanning.selectUnit (planningContext model) id)
+        model |> mapCheckedPlanning (OrderPlanning.selectUnit (planningContext model) id)
 
 
 selectTile : Coordinate -> Model -> Model
@@ -1065,7 +1077,7 @@ selectTile position model =
 
     else
         model
-            |> mapPlanning (OrderPlanning.selectTile (planningContext model) position)
+            |> mapCheckedPlanning (OrderPlanning.selectTile (planningContext model) position)
 
 
 inspectDepot : Coordinate -> Model -> Model
@@ -1113,7 +1125,7 @@ extendPath direction model =
 confirmPath : Model -> Model
 confirmPath model =
     model
-        |> mapPlanning (OrderPlanning.confirmPath (planningContext model))
+        |> mapCheckedPlanning (OrderPlanning.confirmPath (planningContext model))
 
 
 focusAdjacentCommand :
@@ -1489,7 +1501,7 @@ update lobbyId msg model =
 
         UnloadChoicesConfirmed ->
             model
-                |> mapPlanning (OrderPlanning.confirmPassengers (planningContext model))
+                |> mapCheckedPlanning (OrderPlanning.confirmPassengers (planningContext model))
                 |> E.withOut
 
         UnloadSkipped ->
@@ -1505,10 +1517,10 @@ update lobbyId msg model =
             of
                 Just _ ->
                     model
-                        |> mapPlanning
+                        |> mapCheckedPlanning
                             (OrderPlanning.dismissDialog
                                 >> saveCrateLoading id count
-                                >> OrderPlanning.promptDismountedCommands (planningContext model)
+                                >> IC.map (OrderPlanning.promptDismountedCommands (planningContext model))
                             )
                         |> E.withOut
 
@@ -1739,7 +1751,7 @@ update lobbyId msg model =
 
         BackToCommandsClicked ->
             model
-                |> mapPlanning (OrderPlanning.restoreCommands (planningContext model))
+                |> mapCheckedPlanning (OrderPlanning.restoreCommands (planningContext model))
                 |> E.withOut
 
         ClearMoveClicked ->
@@ -1831,6 +1843,9 @@ update lobbyId msg model =
         TurnIntroductionMsg introMsg ->
             case introMsg of
                 TurnIntroduction.BeginClicked ->
+                    { model | currentTurn = CurrentTurn.acknowledgeIntroduction model.currentTurn } |> E.withOut
+
+                TurnIntroduction.BattlefieldViewClicked ->
                     { model | currentTurn = CurrentTurn.acknowledgeIntroduction model.currentTurn } |> E.withOut
 
                 TurnIntroduction.SkipDialogsChanged skip ->
@@ -1955,7 +1970,7 @@ handleCurrentTurnMsg lobbyId msg model =
     in
     case msg of
         CurrentTurn.PollTimerElapsed ->
-            if currentTurn.refreshing || not (TurnLifecycle.canPoll currentTurn.phase) then
+            if currentTurn.outcome /= Nothing || currentTurn.refreshing || not (TurnLifecycle.canPoll currentTurn.phase) then
                 model |> E.withOut
 
             else
@@ -2415,6 +2430,13 @@ movementView model =
                 Just unit ->
                     if not (isOwnUnit model unit) then
                         []
+
+                    else if model.currentTurn.outcome /= Nothing then
+                        [ H.p
+                            []
+                            [ H.text "the game is over. the battlefield is available to inspect."
+                            ]
+                        ]
 
                     else if planningLocked model then
                         [ H.p
@@ -3515,12 +3537,50 @@ commandGuideDialog model _ =
 introductionDialog : Model -> () -> Maybe (Dialog Msg)
 introductionDialog model _ =
     if showTurnIntroduction model then
-        TurnIntroduction.dialog { turnNumber = model.currentTurn.number, skipDialogs = model.skipTurnIntroduction, previousTurn = model.currentTurn.resolution }
+        turnAnnouncement model
             |> Dialog.map TurnIntroductionMsg
             |> Just
 
     else
         Nothing
+
+
+turnAnnouncement : Model -> Dialog TurnIntroduction.Msg
+turnAnnouncement model =
+    let
+        victory : PlayerNumber -> Dialog TurnIntroduction.Msg
+        victory winner =
+            let
+                winnerName : String
+                winnerName =
+                    model.players
+                        |> ListUtil.find (\player -> player.playerNumber == winner)
+                        |> Maybe.map .name
+                        |> Maybe.withDefault (PlayerNumber.label winner)
+            in
+            TurnIntroduction.conclusion
+                { headline = winnerName ++ " wins"
+                , caption = "the opposing army has no surviving combat units"
+                , previousTurn = model.currentTurn.resolution
+                }
+    in
+    case model.currentTurn.outcome of
+        Just (GameOutcome.Victory winner) ->
+            victory winner
+
+        Just GameOutcome.Draw ->
+            TurnIntroduction.conclusion
+                { headline = "draw"
+                , caption = "neither army has surviving combat units"
+                , previousTurn = model.currentTurn.resolution
+                }
+
+        Nothing ->
+            TurnIntroduction.dialog
+                { turnNumber = model.currentTurn.number
+                , skipDialogs = model.skipTurnIntroduction
+                , previousTurn = model.currentTurn.resolution
+                }
 
 
 lossDialog : Model -> () -> Maybe (Dialog Msg)
@@ -3612,6 +3672,14 @@ turnPanel model =
     let
         ownStatus : String
         ownStatus =
+            if model.currentTurn.outcome /= Nothing then
+                "game over"
+
+            else
+                activeOwnStatus
+
+        activeOwnStatus : String
+        activeOwnStatus =
             case model.currentTurn.phase of
                 TurnLifecycle.Playing _ ->
                     "submitted plan"
@@ -3624,10 +3692,22 @@ turnPanel model =
 
         submitLabel : String
         submitLabel =
-            TurnLifecycle.toLabel model.currentTurn.phase
+            if model.currentTurn.outcome /= Nothing then
+                "game over"
+
+            else
+                TurnLifecycle.toLabel model.currentTurn.phase
 
         opponentStatus : String
         opponentStatus =
+            if model.currentTurn.outcome /= Nothing then
+                "game over"
+
+            else
+                activeOpponentStatus
+
+        activeOpponentStatus : String
+        activeOpponentStatus =
             case model.currentTurn.phase of
                 TurnLifecycle.Playing _ ->
                     "submitted plan"
@@ -3665,12 +3745,20 @@ turnPanel model =
                     else
                         TurnControls.Planning
 
+        displayedTurnNumber : Int
+        displayedTurnNumber =
+            if model.currentTurn.outcome /= Nothing then
+                model.currentTurn.number - 1
+
+            else
+                model.currentTurn.number
+
         zoomPercent : Int
         zoomPercent =
             round ((BattlefieldNavigation.camera model.navigation).zoom * 100)
     in
     TurnControls.panel
-        [ Lazy.lazy3 turnSubmit model.currentTurn.number activity submitLabel
+        [ Lazy.lazy3 turnSubmit displayedTurnNumber activity submitLabel
         , Lazy.lazy4 turnFeedback model.players ownStatus opponentStatus model.currentTurn.error
         , TurnControls.navigation (Lazy.lazy viewControls zoomPercent)
         ]

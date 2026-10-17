@@ -37,6 +37,10 @@ type Fuel
     = Fuel
 
 
+type GameOutcome
+    = GameOutcome
+
+
 type GamePlayerView
     = GamePlayerView
 

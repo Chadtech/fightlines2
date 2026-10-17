@@ -1,17 +1,17 @@
 # Todo
 ## doing now
-
+- Win condition check
 
 ## Bugs
 
 
 ## Immediately
-
+- OrderPlanning is big
+- OrderPlanning has `Context` record which might pass too much data too deep
 
 ## Soon
 - Dig in
 - Attacking and destroying supply depots and supply crates
-- Win condition check
 - Pick up crates/drums already on the ground
 
 ## Later

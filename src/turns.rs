@@ -269,9 +269,52 @@ pub struct TurnResolution {
     pub frames: Vec<TurnFrame>,
 }
 
+/// Terminal result; absence means multiple players still have combat forces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GameOutcome {
+    Victory(PlayerNumber),
+    Draw,
+}
+
+impl GameOutcome {
+    fn from_scenario(scenario: &Scenario) -> Option<Self> {
+        // Location intentionally does not matter: embarked troops still count.
+        let mut forces = scenario.units.iter().filter(|unit| {
+            let combat_unit = match unit.kind() {
+                UnitKind::Infantry | UnitKind::Tank | UnitKind::FieldGun => true,
+                UnitKind::Truck => false,
+            };
+            unit.is_alive() && combat_unit
+        });
+        match forces.next() {
+            Some(unit) => {
+                let winner = unit.player_number();
+                if forces.any(|unit| unit.player_number() != winner) {
+                    None
+                } else {
+                    Some(Self::Victory(winner))
+                }
+            }
+            None => Some(Self::Draw),
+        }
+    }
+}
+
+#[graphql_object]
+impl GameOutcome {
+    /// The victorious player, or null when the game ended in a draw.
+    fn winner(&self) -> Option<PlayerNumber> {
+        match self {
+            Self::Victory(player) => Some(*player),
+            Self::Draw => None,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Turns {
     pub number: i32,
+    pub outcome: Option<GameOutcome>,
     pub orders: [Option<Vec<MoveOrder>>; 2],
     pub last_resolution: Option<TurnResolution>,
 }
@@ -280,6 +323,7 @@ impl Default for Turns {
     fn default() -> Self {
         Self {
             number: 1,
+            outcome: None,
             orders: [None, None],
             last_resolution: None,
         }
@@ -1002,6 +1046,9 @@ impl Turns {
         number: i32,
         inputs: Vec<MoveOrderInput>,
     ) -> Result<(), &'static str> {
+        if self.outcome.is_some() {
+            return Err("the game has ended.");
+        }
         if number != self.number {
             return Err("the turn has changed. refresh before submitting.");
         }
@@ -1372,6 +1419,7 @@ impl Turns {
                 events,
                 frames,
             });
+            self.outcome = GameOutcome::from_scenario(scenario);
             self.number += 1;
         }
         Ok(())
@@ -1421,6 +1469,171 @@ mod tests {
         test_support::{FixtureValue, TestResult},
         visibility,
     };
+
+    #[test]
+    fn game_outcome_graphql_preserves_winner_draw_and_ongoing_game() -> TestResult<()> {
+        #[derive(GraphQLObject)]
+        struct OutcomeQuery {
+            outcome: Option<GameOutcome>,
+        }
+
+        for (outcome, expected) in [
+            (None, serde_json::Value::Null),
+            (
+                Some(GameOutcome::Victory(PlayerNumber::Player1)),
+                serde_json::json!({ "winner": "PLAYER1" }),
+            ),
+            (
+                Some(GameOutcome::Victory(PlayerNumber::Player2)),
+                serde_json::json!({ "winner": "PLAYER2" }),
+            ),
+            (
+                Some(GameOutcome::Draw),
+                serde_json::json!({ "winner": null }),
+            ),
+        ] {
+            let schema = juniper::RootNode::new(
+                OutcomeQuery { outcome },
+                juniper::EmptyMutation::<()>::new(),
+                juniper::EmptySubscription::<()>::new(),
+            );
+            let (data, errors) = juniper::execute_sync(
+                "{ outcome { winner } }",
+                None,
+                &schema,
+                &juniper::Variables::new(),
+                &(),
+            )?;
+            assert!(errors.is_empty(), "{errors:?}");
+            assert_eq!(serde_json::to_value(data)?["outcome"], expected);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn victory_counts_each_combat_kind_and_embarked_passengers() -> TestResult<()> {
+        for player in [PlayerNumber::Player1, PlayerNumber::Player2] {
+            for kind in [UnitKind::Infantry, UnitKind::Tank, UnitKind::FieldGun] {
+                let mut scenario = Scenario::supply_point().fixture()?;
+                scenario.units.retain(|unit| {
+                    unit.player_number() != player
+                        || unit.kind() == UnitKind::Truck
+                        || unit.kind() == kind
+                });
+                assert_eq!(GameOutcome::from_scenario(&scenario), None);
+                if kind != UnitKind::Tank {
+                    let truck = scenario
+                        .units
+                        .iter()
+                        .find(|unit| {
+                            unit.player_number() == player && unit.kind() == UnitKind::Truck
+                        })
+                        .fixture()?
+                        .unit_id();
+                    for unit in &mut scenario.units {
+                        if unit.player_number() == player && unit.kind() == kind {
+                            unit.board(truck);
+                        }
+                    }
+                    assert_eq!(GameOutcome::from_scenario(&scenario), None);
+                }
+                for unit in &mut scenario.units {
+                    if unit.player_number() == player && unit.kind() != UnitKind::Truck {
+                        unit.take_damage(16);
+                    }
+                }
+                let winner = match player {
+                    PlayerNumber::Player1 => GameOutcome::Victory(PlayerNumber::Player2),
+                    PlayerNumber::Player2 => GameOutcome::Victory(PlayerNumber::Player1),
+                };
+                assert_eq!(GameOutcome::from_scenario(&scenario), Some(winner));
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn last_passenger_keeps_stranded_army_alive_until_carrier_is_lost() -> TestResult<()> {
+        for passenger_id in ["1", "12"] {
+            let mut scenario = Scenario::supply_point().fixture()?;
+            scenario.depots.clear();
+            scenario.units.retain(|unit| {
+                unit.player_number() == PlayerNumber::Player2
+                    || unit.id() == "4"
+                    || unit.id() == passenger_id
+            });
+            vehicle(&mut scenario, passenger_id)?.board(UnitId::parse("4").fixture()?);
+            vehicle(&mut scenario, "4")?.set_fuel_for_test(0);
+            let mut turns = Turns::default();
+            resolve_holds(&mut scenario, &mut turns)?;
+            assert_eq!(turns.outcome, None);
+            vehicle(&mut scenario, "4")?.set_supplies_for_test(4);
+            resolve_holds(&mut scenario, &mut turns)?;
+            assert_eq!(
+                turns.outcome,
+                Some(GameOutcome::Victory(PlayerNumber::Player2))
+            );
+            assert!(
+                scenario
+                    .units
+                    .iter()
+                    .all(|unit| unit.player_number() == PlayerNumber::Player2)
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn final_upkeep_ends_game_and_rejects_further_orders_atomically() -> TestResult<()> {
+        for exhausted in [
+            vec![PlayerNumber::Player1],
+            vec![PlayerNumber::Player2],
+            vec![PlayerNumber::Player1, PlayerNumber::Player2],
+        ] {
+            let mut scenario = Scenario::supply_point().fixture()?;
+            scenario.depots.clear();
+            for unit in &mut scenario.units {
+                if exhausted.contains(&unit.player_number()) && unit.kind() != UnitKind::Truck {
+                    unit.set_supplies_for_test(4);
+                }
+            }
+            let mut turns = Turns::default();
+            resolve_holds(&mut scenario, &mut turns)?;
+            let expected = if exhausted.len() == 2 {
+                GameOutcome::Draw
+            } else if exhausted.contains(&PlayerNumber::Player1) {
+                GameOutcome::Victory(PlayerNumber::Player2)
+            } else {
+                GameOutcome::Victory(PlayerNumber::Player1)
+            };
+            assert_eq!(turns.outcome, Some(expected));
+            assert!(
+                scenario
+                    .units
+                    .iter()
+                    .any(|unit| unit.kind() == UnitKind::Truck)
+            );
+            let units = scenario.units.clone();
+            assert_eq!(
+                turns.submit(
+                    &mut scenario,
+                    PlayerNumber::Player1,
+                    turns.number,
+                    Vec::new()
+                ),
+                Err("the game has ended.")
+            );
+            assert_eq!(turns.number, 2);
+            assert!(turns.orders.iter().all(Option::is_none));
+            assert_eq!(scenario.units.len(), units.len());
+            for (actual, before) in scenario.units.iter().zip(units) {
+                assert_eq!(actual.unit_id(), before.unit_id());
+                assert_eq!(actual.supplies(), before.supplies());
+                assert_eq!(actual.hit_points(), before.hit_points());
+            }
+        }
+        Ok(())
+    }
 
     fn playback_fixture(scenario: &Scenario, counts: [usize; 2]) -> TestResult<Vec<TurnEvent>> {
         Ok({
@@ -2066,7 +2279,17 @@ mod tests {
                     .fixture()?
                     .clone();
                 target.move_to(Coordinate::new(5, 0));
-                scenario.units = vec![gun, target];
+                let mut reserve = scenario
+                    .units
+                    .iter()
+                    .find(|unit| {
+                        unit.player_number() == enemy_player_number
+                            && unit.kind() == UnitKind::Infantry
+                    })
+                    .fixture()?
+                    .clone();
+                reserve.move_to(Coordinate::new(11, 0));
+                scenario.units = vec![gun, target, reserve];
                 let projected = |board: &Scenario| {
                     let visible = crate::visibility::visible_tiles(board, enemy_player_number);
                     crate::visibility::observed_scenario(board, enemy_player_number, &visible)
@@ -2078,7 +2301,7 @@ mod tests {
                         .any(|unit| unit.unit_id() == gun_id)
                 );
                 let mut turns = Turns::default();
-                // A second shot renews the reveal, even when it kills the last observer.
+                // A second shot renews the reveal, even when it kills the nearby observer.
                 for number in [1, 2] {
                     let mut inputs = holds(&scenario, gun_player_number)?;
                     inputs[0].ambush = Some(true);
@@ -3517,7 +3740,7 @@ mod tests {
             assert_eq!(vehicle(&mut scenario, id)?.supplies().current(), 4);
         }
         resolve_holds(&mut scenario, &mut turns)?;
-        resolve_holds(&mut scenario, &mut turns)?;
+        assert_eq!(turns.outcome, Some(GameOutcome::Draw));
         assert!(scenario.units.is_empty());
         assert!(
             turns
@@ -4639,9 +4862,9 @@ mod tests {
     #[test]
     fn truck_explicitly_loads_moves_and_unloads_a_finite_supply_crate() -> TestResult<()> {
         let mut scenario = Scenario::supply_point().fixture()?;
-        scenario
-            .units
-            .retain(|unit| unit.id() == "4" || unit.player_number() == PlayerNumber::Player2);
+        scenario.units.retain(|unit| {
+            unit.id() == "4" || unit.id() == "2" || unit.player_number() == PlayerNumber::Player2
+        });
         let mut turns = Turns::default();
         vehicle(&mut scenario, "4")?.move_to(Coordinate::new(2, 8));
         let mut first = holds(&scenario, PlayerNumber::Player1)?;

@@ -1,6 +1,8 @@
 port module TurnLifecycleChecks exposing (main)
 
+import Api.Enum.PlayerNumber as PlayerNumber
 import Coordinate
+import GameOutcome exposing (GameOutcome)
 import GamePage.CurrentTurn as CurrentTurn
 import GamePage.OrderPlanning as OrderPlanning exposing (Model(..))
 import GamePage.Selection
@@ -10,6 +12,11 @@ import GamePage.Selection
         , Selection(..)
         , UnitInteraction(..)
         )
+import Graphql.Document
+import Graphql.SelectionSet as SS
+import InvariantCheck as IC exposing (InvariantCheck)
+import Json.Decode as JD
+import Json.Encode as JE
 import Movement
 import PlannedOrder
 import Platform
@@ -25,7 +32,7 @@ port results : List String -> Cmd msg
 main : Program () () Never
 main =
     Platform.worker
-        { init = \_ -> ( (), results (checks ++ unloadChecks ++ currentTurnChecks) )
+        { init = \_ -> ( (), results (checks ++ unloadChecks ++ currentTurnChecks ++ outcomeChecks) )
         , update = \_ model -> ( model, Cmd.none )
         , subscriptions = \_ -> Sub.none
         }
@@ -285,7 +292,7 @@ unloadChecks =
                         |> TurnLifecycle.mapPlanning (OrderPlanning.toggleUnloadPassenger first True)
                         |> TurnLifecycle.mapPlanning (OrderPlanning.toggleUnloadPassenger second True)
 
-                exitOptions : OrderPlanning.Model -> OrderPlanning.Cargo -> List Movement.Option
+                exitOptions : OrderPlanning.Model -> OrderPlanning.Cargo -> InvariantCheck OrderPlanning.InvariantViolation (List Movement.Option)
                 exitOptions state _ =
                     let
                         reserved : List Coordinate.Coordinate
@@ -299,26 +306,27 @@ unloadChecks =
                     [ { x = 2, y = 2 }, { x = 3, y = 1 } ]
                         |> List.filter (\position -> not (List.member position reserved))
                         |> List.map option
+                        |> IC.happy
 
                 firstPassenger : Phase
                 firstPassenger =
-                    TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] exitOptions) checked
+                    TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] exitOptions >> IC.value) checked
 
                 rejectedFirstExit : Phase
                 rejectedFirstExit =
-                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] exitOptions { x = 9, y = 9 }) firstPassenger
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] exitOptions { x = 9, y = 9 } >> IC.value) firstPassenger
 
                 secondPassenger : Phase
                 secondPassenger =
-                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] exitOptions { x = 2, y = 2 }) rejectedFirstExit
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] exitOptions { x = 2, y = 2 } >> IC.value) rejectedFirstExit
 
                 rejectedExit : Phase
                 rejectedExit =
-                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] exitOptions { x = 2, y = 2 }) secondPassenger
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] exitOptions { x = 2, y = 2 } >> IC.value) secondPassenger
 
                 complete : Phase
                 complete =
-                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] exitOptions { x = 3, y = 1 }) rejectedExit
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] exitOptions { x = 3, y = 1 } >> IC.value) rejectedExit
 
                 completedOrder : PlannedOrder.PlannedOrder
                 completedOrder =
@@ -338,7 +346,7 @@ unloadChecks =
                 stationaryHold =
                     { unitId = truck, action = PlannedOrder.Hold stationaryPosition }
 
-                stationaryOptions : OrderPlanning.Model -> OrderPlanning.Cargo -> List Movement.Option
+                stationaryOptions : OrderPlanning.Model -> OrderPlanning.Cargo -> InvariantCheck OrderPlanning.InvariantViolation (List Movement.Option)
                 stationaryOptions state _ =
                     let
                         reserved : List Coordinate.Coordinate
@@ -352,21 +360,22 @@ unloadChecks =
                     [ { x = 0, y = 1 }, { x = 1, y = 2 } ]
                         |> List.filter (\position -> not (List.member position reserved))
                         |> List.map option
+                        |> IC.happy
 
                 stationaryFirst : Phase
                 stationaryFirst =
                     stationaryChecklist
                         |> TurnLifecycle.mapPlanning (OrderPlanning.toggleUnloadPassenger first True)
                         |> TurnLifecycle.mapPlanning (OrderPlanning.toggleUnloadPassenger second True)
-                        |> TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] stationaryOptions)
+                        |> TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] stationaryOptions >> IC.value)
 
                 stationarySecond : Phase
                 stationarySecond =
-                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] stationaryOptions { x = 0, y = 1 }) stationaryFirst
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] stationaryOptions { x = 0, y = 1 } >> IC.value) stationaryFirst
 
                 stationaryComplete : Phase
                 stationaryComplete =
-                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] stationaryOptions { x = 1, y = 2 }) stationarySecond
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] stationaryOptions { x = 1, y = 2 } >> IC.value) stationarySecond
 
                 stationaryOrder : PlannedOrder.PlannedOrder
                 stationaryOrder =
@@ -411,7 +420,7 @@ unloadChecks =
                 , expect "canceling stationary unloading discards the hold while proceeding keeps it"
                     (TurnLifecycle.orders (TurnLifecycle.mapPlanning OrderPlanning.dismissDialog stationaryChecklist)
                         == []
-                        && TurnLifecycle.orders (TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] stationaryOptions) stationaryChecklist)
+                        && TurnLifecycle.orders (TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] stationaryOptions >> IC.value) stationaryChecklist)
                         == [ stationaryHold ]
                     )
                 , expect "stationary unloading reserves each exit before choosing the next passenger"
@@ -437,7 +446,7 @@ unloadChecks =
                         == Planning (OrdinaryPlanning { orders = [], selection = Just (Inspecting (UnitInspection truck)) })
                     )
                 , expect "proceeding without passengers retains the move"
-                    (TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] exitOptions) checklist == ordinary)
+                    (TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] exitOptions >> IC.value) checklist == ordinary)
                 , expect "the next passenger cannot reuse an exit already saved"
                     reservesFirstExit
                 , expect "an unavailable exit cannot advance the workflow"
@@ -503,16 +512,50 @@ expect message condition =
         [ message ]
 
 
+outcomeChecks : List String
+outcomeChecks =
+    let
+        decodeOutcome : JE.Value -> Result JD.Error (Maybe GameOutcome)
+        decodeOutcome outcome =
+            JE.object
+                [ ( "data"
+                  , JE.object
+                        [ ( "turnNumber", JE.int 2 )
+                        , ( "outcome", outcome )
+                        , ( "submitted", JE.bool False )
+                        , ( "opponentSubmitted", JE.bool False )
+                        , ( "lastResolution", JE.null )
+                        ]
+                  )
+                ]
+                |> JD.decodeValue (Graphql.Document.decoder (SS.map .outcome Turn.selection))
+    in
+    List.concat
+        [ expect "ongoing game outcomes decode as absent"
+            (decodeOutcome JE.null == Ok Nothing)
+        , expect "draw outcomes decode distinctly from an ongoing game"
+            (decodeOutcome (JE.object [ ( "winner", JE.null ) ]) == Ok (Just GameOutcome.Draw))
+        , expect "victory outcomes retain player 1 as the winner"
+            (decodeOutcome (JE.object [ ( "winner", JE.string "PLAYER1" ) ])
+                == Ok (Just (GameOutcome.Victory PlayerNumber.Player1))
+            )
+        , expect "victory outcomes retain player 2 as the winner"
+            (decodeOutcome (JE.object [ ( "winner", JE.string "PLAYER2" ) ])
+                == Ok (Just (GameOutcome.Victory PlayerNumber.Player2))
+            )
+        ]
+
+
 currentTurnChecks : List String
 currentTurnChecks =
     let
         initial : CurrentTurn.Model
         initial =
-            CurrentTurn.init { number = 1, submitted = False, opponentSubmitted = False, resolution = Nothing }
+            CurrentTurn.init { number = 1, submitted = False, opponentSubmitted = False, outcome = Nothing, resolution = Nothing }
 
         observation : CurrentTurn.Observation
         observation =
-            { turn = { number = 1, submitted = True, opponentSubmitted = True, resolution = Nothing }
+            { turn = { number = 1, submitted = True, opponentSubmitted = True, outcome = Nothing, resolution = Nothing }
             , playbackFrames = []
             }
 
@@ -571,9 +614,29 @@ currentTurnChecks =
         monotonic : CurrentTurn.Model
         monotonic =
             CurrentTurn.pollSucceeded { observation | turn = { turn | submitted = False, opponentSubmitted = False } } waiting
+
+        finished : CurrentTurn.Model
+        finished =
+            CurrentTurn.pollSucceeded
+                { observation | turn = { turn | number = 2, submitted = False, outcome = Just (GameOutcome.Victory PlayerNumber.Player1) }, playbackFrames = [] }
+                waiting
+
+        finishedOnRefresh : CurrentTurn.Model
+        finishedOnRefresh =
+            CurrentTurn.init { turn | outcome = Just (GameOutcome.Victory PlayerNumber.Player1), submitted = False }
     in
     List.concat
-        [ expect "planning starts with a turn introduction"
+        [ expect "the final result waits for playback before opening"
+            (not (CurrentTurn.introductionPending { advanced | outcome = Just (GameOutcome.Victory PlayerNumber.Player1) }))
+        , expect "finished games retain the authoritative winner and announce it"
+            (finished.outcome == Just (GameOutcome.Victory PlayerNumber.Player1) && CurrentTurn.introductionPending finished)
+        , expect "finished games cannot start another submission"
+            (CurrentTurn.startSubmission finished == Nothing)
+        , expect "refresh announces a finished game without replaying combat"
+            (CurrentTurn.introductionPending finishedOnRefresh && TurnLifecycle.playback finishedOnRefresh.phase == Nothing)
+        , expect "dismissed result stays dismissed during polling"
+            (not (CurrentTurn.introductionPending (CurrentTurn.pollSucceeded { observation | turn = { turn | number = 2, submitted = False, outcome = Just (GameOutcome.Victory PlayerNumber.Player1) } } (CurrentTurn.acknowledgeIntroduction finished))))
+        , expect "planning starts with a turn introduction"
             (CurrentTurn.introductionPending initial)
         , expect "acknowledgment survives same-turn polling"
             (not (CurrentTurn.introductionPending (CurrentTurn.pollSucceeded { observation | turn = { turn | submitted = False, opponentSubmitted = False } } (CurrentTurn.acknowledgeIntroduction initial))))

@@ -1,5 +1,6 @@
 module View.TurnIntroduction exposing
     ( Msg(..)
+    , conclusion
     , dialog
     , dialogHtmlId
     , styles
@@ -18,6 +19,7 @@ import View.Dialog as Dialog exposing (Dialog)
 
 type Msg
     = BeginClicked
+    | BattlefieldViewClicked
     | SkipDialogsChanged Bool
 
 
@@ -68,6 +70,56 @@ dialog config =
                 , onCheck = SkipDialogsChanged
                 }
                 [ H.text "skip this dialog" ]
+            ]
+        ]
+        |> Dialog.announcement
+
+
+conclusion : { headline : String, caption : String, previousTurn : Maybe Turn.Resolution } -> Dialog Msg
+conclusion config =
+    let
+        finalReport : Html Msg
+        finalReport =
+            if hasReport config.previousTurn then
+                reportView config.previousTurn
+
+            else
+                H.text ""
+    in
+    Dialog.make dialogHtmlId
+        "game over"
+        BattlefieldViewClicked
+        [ H.div
+            [ A.css (emblemStyles config.previousTurn) ]
+            [ H.div
+                [ A.css
+                    [ S.letterSpacingEm 0.16
+                    , S.textAlignCenter
+                    ]
+                ]
+                [ H.text "the battle is over" ]
+            , H.div
+                [ A.css
+                    [ S.fontSizeValue "clamp(2rem, 7vw, 4rem)"
+                    , S.lineHeight1
+                    , S.textAlignCenter
+                    ]
+                ]
+                [ H.text config.headline ]
+            , H.div
+                [ A.css
+                    [ S.textGray4
+                    , S.textAlignCenter
+                    ]
+                ]
+                [ H.text config.caption ]
+            , finalReport
+            ]
+        , H.form
+            [ A.attribute "method" "dialog" ]
+            [ Button.primary "view battlefield" BattlefieldViewClicked
+                |> Button.large
+                |> Button.toHtml
             ]
         ]
         |> Dialog.announcement

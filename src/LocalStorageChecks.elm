@@ -67,6 +67,9 @@ checks =
                 UnitOwnerNotFound _ ->
                     "unexpected unit owner error while reading the user name"
 
+                OrderPlanningInvariantViolated _ ->
+                    "unexpected order planning error while reading the user name"
+
         invalidNamePreservesError : Bool
         invalidNamePreservesError =
             case JD.decodeString JD.string "42" of

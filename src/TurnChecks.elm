@@ -133,6 +133,7 @@ playbackChecks first second =
             { number = 2
             , submitted = False
             , opponentSubmitted = False
+            , outcome = Nothing
             , resolution =
                 Just
                     { number = 1
@@ -441,6 +442,7 @@ truckPlaybackChecks unitId =
             { number = 2
             , submitted = False
             , opponentSubmitted = False
+            , outcome = Nothing
             , resolution = Just { number = 1, report = Nothing, events = [ { rotationDirection = Nothing, initialCarrier = Nothing, carrierId = Nothing, kind = EventKind.Move, initialSpriteFacing = SpriteFacing.Right, initialDirection = Nothing, unitId = unitId, path = [ { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 1, y = 1 } ] } ] }
             }
 
@@ -551,6 +553,7 @@ transportPlaybackChecks passengerId truckId =
             { number = 2
             , submitted = False
             , opponentSubmitted = False
+            , outcome = Nothing
             , resolution =
                 Just
                     { number = 1
@@ -770,6 +773,7 @@ spriteFacingChecks id =
             { number = 2
             , submitted = False
             , opponentSubmitted = False
+            , outcome = Nothing
             , resolution =
                 Just
                     { number = 1

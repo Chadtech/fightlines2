@@ -16,8 +16,10 @@ module GamePage.CurrentTurn exposing
     )
 
 import Browser.Events
+import GameOutcome exposing (GameOutcome)
 import GamePage.OrderPlanning as OrderPlanning
 import GamePage.Selection exposing (Selection)
+import InvariantCheck as IC exposing (InvariantCheck)
 import Json.Decode as Decode
 import Time
 import Turn
@@ -34,6 +36,7 @@ import Util.Html.Event as HtmlEvent
 
 type alias Model =
     { number : Int
+    , outcome : Maybe GameOutcome
     , opponentSubmitted : Bool
     , resolution : Maybe Turn.Resolution
     , phase : Phase
@@ -70,6 +73,7 @@ type alias Observation =
 init : Turn.Snapshot -> Model
 init turn =
     { number = turn.number
+    , outcome = turn.outcome
     , opponentSubmitted = turn.opponentSubmitted
     , resolution = turn.resolution
     , phase = TurnLifecycle.observeSubmission turn.submitted (TurnLifecycle.Planning OrderPlanning.init)
@@ -95,9 +99,26 @@ acknowledgeIntroduction model =
     { model | introduction = IntroductionAcknowledged }
 
 
-mapPlanning : (OrderPlanning.Model -> OrderPlanning.Model) -> Model -> Model
+{-| Apply a checked transition only while the turn permits planning edits.
+The caller supplies the planning rules and diagnostic type.
+-}
+mapPlanning :
+    (OrderPlanning.Model -> InvariantCheck error OrderPlanning.Model)
+    -> Model
+    -> InvariantCheck error Model
 mapPlanning transition model =
-    { model | phase = TurnLifecycle.mapPlanning transition model.phase }
+    let
+        withPlanning : OrderPlanning.Model -> Model
+        withPlanning state =
+            { model | phase = TurnLifecycle.Planning state }
+    in
+    case ( model.outcome, model.phase ) of
+        ( Nothing, TurnLifecycle.Planning state ) ->
+            transition state
+                |> IC.map withPlanning
+
+        _ ->
+            IC.happy model
 
 
 setSelection : Maybe Selection -> Model -> Model
@@ -112,8 +133,8 @@ startSubmission model =
         phase =
             TurnLifecycle.startSubmission model.number model.phase
     in
-    case ( model.phase, phase ) of
-        ( TurnLifecycle.Planning _, TurnLifecycle.Submitting _ ) ->
+    case ( model.outcome, model.phase, phase ) of
+        ( Nothing, TurnLifecycle.Planning _, TurnLifecycle.Submitting _ ) ->
             Just { model | phase = phase, error = Nothing }
 
         _ ->
@@ -195,7 +216,8 @@ receive observation model =
                     phase
         in
         { model
-            | opponentSubmitted = model.opponentSubmitted || observation.turn.opponentSubmitted
+            | outcome = observation.turn.outcome
+            , opponentSubmitted = model.opponentSubmitted || observation.turn.opponentSubmitted
             , resolution = observation.turn.resolution
             , phase = reconciledPhase
         }
@@ -203,6 +225,7 @@ receive observation model =
     else
         { model
             | number = observation.turn.number
+            , outcome = observation.turn.outcome
             , opponentSubmitted = observation.turn.opponentSubmitted
             , resolution = observation.turn.resolution
             , phase = TurnLifecycle.startTurn observation.turn.submitted observation.playbackFrames

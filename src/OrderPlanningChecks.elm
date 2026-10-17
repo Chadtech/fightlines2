@@ -10,8 +10,11 @@ import Api.Enum.Terrain as Terrain
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Coordinate exposing (Coordinate)
 import Direction
+import Error
+import GamePage.CurrentTurn as CurrentTurn
 import GamePage.OrderPlanning as OrderPlanning
-import GamePage.Selection exposing (DestinationFeedback(..), Inspection(..), Selection(..))
+import GamePage.Selection exposing (CommandMenuState(..), DestinationFeedback(..), Inspection(..), Selection(..), UnitInteraction(..))
+import InvariantCheck as IC exposing (InvariantCheck)
 import Map exposing (Map)
 import Movement
 import PlannedOrder
@@ -74,28 +77,28 @@ planningChecks infantryId truckId passengerId =
         attacking : OrderPlanning.Model
         attacking =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit attackContext infantryId
-                |> OrderPlanning.applyCommand attackContext UnitCommand.AttackMove
+                |> (OrderPlanning.selectUnit attackContext infantryId >> IC.value)
+                |> (OrderPlanning.applyCommand attackContext UnitCommand.AttackMove >> IC.value)
                 |> OrderPlanning.extendPath attackContext DirectionEnum.East
                 |> OrderPlanning.extendPath attackContext DirectionEnum.East
 
         attackAiming : OrderPlanning.Model
         attackAiming =
-            OrderPlanning.confirmPath attackContext attacking
+            (OrderPlanning.confirmPath attackContext >> IC.value) attacking
 
         attackSaved : OrderPlanning.Model
         attackSaved =
             attackAiming
                 |> OrderPlanning.previewDirection DirectionEnum.West
-                |> OrderPlanning.saveDirection attackContext DirectionEnum.North
+                |> (OrderPlanning.saveDirection attackContext DirectionEnum.North >> IC.value)
 
         attackRevoked : OrderPlanning.Model
         attackRevoked =
-            OrderPlanning.revokeSelectedOrder attackContext attackSaved
+            (OrderPlanning.revokeSelectedOrder attackContext >> IC.value) attackSaved
 
         reopenedCommands : OrderPlanning.Model
         reopenedCommands =
-            OrderPlanning.selectUnit attackContext infantryId attackRevoked
+            (OrderPlanning.selectUnit attackContext infantryId >> IC.value) attackRevoked
 
         lowSupplyInfantry : Unit
         lowSupplyInfantry =
@@ -108,17 +111,17 @@ planningChecks infantryId truckId passengerId =
         lowSupplyAttack : OrderPlanning.Model
         lowSupplyAttack =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit lowSupplyContext infantryId
-                |> OrderPlanning.applyCommand lowSupplyContext UnitCommand.AttackMove
+                |> (OrderPlanning.selectUnit lowSupplyContext infantryId >> IC.value)
+                |> (OrderPlanning.applyCommand lowSupplyContext UnitCommand.AttackMove >> IC.value)
                 |> OrderPlanning.extendPath lowSupplyContext DirectionEnum.East
                 |> OrderPlanning.extendPath lowSupplyContext DirectionEnum.East
 
         attackLoading : OrderPlanning.Model
         attackLoading =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit context infantryId
-                |> OrderPlanning.applyCommand context UnitCommand.AttackMove
-                |> OrderPlanning.selectTile context { x = 3, y = 1 }
+                |> (OrderPlanning.selectUnit context infantryId >> IC.value)
+                |> (OrderPlanning.applyCommand context UnitCommand.AttackMove >> IC.value)
+                |> (OrderPlanning.selectTile context { x = 3, y = 1 } >> IC.value)
 
         fieldGun : Unit
         fieldGun =
@@ -143,16 +146,18 @@ planningChecks infantryId truckId passengerId =
         aiming : OrderPlanning.Model
         aiming =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit indirectContext infantryId
-                |> OrderPlanning.applyCommand indirectContext UnitCommand.IndirectFire
+                |> (OrderPlanning.selectUnit indirectContext infantryId >> IC.value)
+                |> (OrderPlanning.applyCommand indirectContext UnitCommand.IndirectFire >> IC.value)
 
         bombardment : OrderPlanning.Model
         bombardment =
             aiming
-                |> OrderPlanning.selectTile indirectContext
-                    { x = 3
-                    , y = 3
-                    }
+                |> (OrderPlanning.selectTile indirectContext
+                        { x = 3
+                        , y = 3
+                        }
+                        >> IC.value
+                   )
 
         aimedOrder : Coordinate -> PlannedOrder.PlannedOrder
         aimedOrder target =
@@ -169,7 +174,7 @@ planningChecks infantryId truckId passengerId =
 
         selfBombardment : OrderPlanning.Model
         selfBombardment =
-            aiming |> OrderPlanning.selectUnit indirectContext infantryId
+            aiming |> (OrderPlanning.selectUnit indirectContext infantryId >> IC.value)
 
         rangeMap : Map
         rangeMap =
@@ -190,20 +195,20 @@ planningChecks infantryId truckId passengerId =
         edgeAim : OrderPlanning.Model
         edgeAim =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit outOfRangeContext infantryId
-                |> OrderPlanning.applyCommand outOfRangeContext UnitCommand.IndirectFire
+                |> (OrderPlanning.selectUnit outOfRangeContext infantryId >> IC.value)
+                |> (OrderPlanning.applyCommand outOfRangeContext UnitCommand.IndirectFire >> IC.value)
 
         choosingStandGround : OrderPlanning.Model
         choosingStandGround =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit context infantryId
-                |> OrderPlanning.applyCommand context UnitCommand.StandGround
+                |> (OrderPlanning.selectUnit context infantryId >> IC.value)
+                |> (OrderPlanning.applyCommand context UnitCommand.StandGround >> IC.value)
 
         standingGround : OrderPlanning.Model
         standingGround =
             choosingStandGround
                 |> OrderPlanning.previewDirection DirectionEnum.West
-                |> OrderPlanning.saveDirection context DirectionEnum.West
+                |> (OrderPlanning.saveDirection context DirectionEnum.West >> IC.value)
 
         insufficientReadiness : Unit
         insufficientReadiness =
@@ -212,33 +217,33 @@ planningChecks infantryId truckId passengerId =
         ambushing : OrderPlanning.Model
         ambushing =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit context infantryId
-                |> OrderPlanning.applyCommand context UnitCommand.Ambush
+                |> (OrderPlanning.selectUnit context infantryId >> IC.value)
+                |> (OrderPlanning.applyCommand context UnitCommand.Ambush >> IC.value)
                 |> OrderPlanning.previewDirection DirectionEnum.East
-                |> OrderPlanning.saveDirection context DirectionEnum.East
+                |> (OrderPlanning.saveDirection context DirectionEnum.East >> IC.value)
 
         truckAmbush : OrderPlanning.Model
         truckAmbush =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit context truckId
-                |> OrderPlanning.applyCommand context UnitCommand.Ambush
-                |> OrderPlanning.saveDirection context DirectionEnum.East
+                |> (OrderPlanning.selectUnit context truckId >> IC.value)
+                |> (OrderPlanning.applyCommand context UnitCommand.Ambush >> IC.value)
+                |> (OrderPlanning.saveDirection context DirectionEnum.East >> IC.value)
 
         moving : OrderPlanning.Model
         moving =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit context infantryId
-                |> OrderPlanning.applyCommand context UnitCommand.Move
+                |> (OrderPlanning.selectUnit context infantryId >> IC.value)
+                |> (OrderPlanning.applyCommand context UnitCommand.Move >> IC.value)
                 |> OrderPlanning.extendPath context DirectionEnum.South
 
         saved : OrderPlanning.Model
         saved =
-            OrderPlanning.confirmPath context moving
+            (OrderPlanning.confirmPath context >> IC.value) moving
 
         revocationBlocked : OrderPlanning.Context -> UnitId -> OrderPlanning.Model -> Bool
         revocationBlocked planningContext unitId state =
             not (OrderPlanning.canRevokeOrder planningContext unitId state)
-                && (OrderPlanning.revokeSelectedOrder planningContext state == state)
+                && ((OrderPlanning.revokeSelectedOrder planningContext >> IC.value) state == state)
 
         previewRevocationBlocked : OrderPlanning.Model -> Bool
         previewRevocationBlocked state =
@@ -261,36 +266,36 @@ planningChecks infantryId truckId passengerId =
         reserved : OrderPlanning.Model
         reserved =
             saved
-                |> OrderPlanning.selectUnit context truckId
-                |> OrderPlanning.applyCommand context UnitCommand.Move
-                |> OrderPlanning.selectTile context { x = 1, y = 2 }
+                |> (OrderPlanning.selectUnit context truckId >> IC.value)
+                |> (OrderPlanning.applyCommand context UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile context { x = 1, y = 2 } >> IC.value)
 
         enteringVacated : OrderPlanning.Model
         enteringVacated =
             saved
-                |> OrderPlanning.selectUnit context truckId
-                |> OrderPlanning.applyCommand context UnitCommand.Move
-                |> OrderPlanning.selectTile context { x = 1, y = 1 }
+                |> (OrderPlanning.selectUnit context truckId >> IC.value)
+                |> (OrderPlanning.applyCommand context UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile context { x = 1, y = 1 } >> IC.value)
 
         revokeDeparture : OrderPlanning.Model
         revokeDeparture =
             enteringVacated
-                |> OrderPlanning.selectUnit context infantryId
-                |> OrderPlanning.revokeSelectedOrder context
+                |> (OrderPlanning.selectUnit context infantryId >> IC.value)
+                |> (OrderPlanning.revokeSelectedOrder context >> IC.value)
 
         truckDeparting : OrderPlanning.Model
         truckDeparting =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit context truckId
-                |> OrderPlanning.applyCommand context UnitCommand.Move
-                |> OrderPlanning.selectTile context { x = 3, y = 2 }
+                |> (OrderPlanning.selectUnit context truckId >> IC.value)
+                |> (OrderPlanning.applyCommand context UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile context { x = 3, y = 2 } >> IC.value)
 
         enteringTruckOrigin : OrderPlanning.Model
         enteringTruckOrigin =
             truckDeparting
-                |> OrderPlanning.selectUnit context infantryId
-                |> OrderPlanning.applyCommand context UnitCommand.Move
-                |> OrderPlanning.selectTile context { x = 3, y = 1 }
+                |> (OrderPlanning.selectUnit context infantryId >> IC.value)
+                |> (OrderPlanning.applyCommand context UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile context { x = 3, y = 1 } >> IC.value)
 
         fullFreight : PlannedOrder.PlannedOrder
         fullFreight =
@@ -334,23 +339,27 @@ planningChecks infantryId truckId passengerId =
         boardingWithFreight =
             OrderPlanning.init
                 |> OrderPlanning.setOrders [ mixedFreight ]
-                |> OrderPlanning.selectUnit context infantryId
-                |> OrderPlanning.applyCommand context UnitCommand.Move
-                |> OrderPlanning.selectTile context
-                    { x = 3
-                    , y = 1
-                    }
+                |> (OrderPlanning.selectUnit context infantryId >> IC.value)
+                |> (OrderPlanning.applyCommand context UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile context
+                        { x = 3
+                        , y = 1
+                        }
+                        >> IC.value
+                   )
 
         tryingFullTruck : OrderPlanning.Model
         tryingFullTruck =
             OrderPlanning.init
                 |> OrderPlanning.setOrders [ fullFreight ]
-                |> OrderPlanning.selectUnit context infantryId
-                |> OrderPlanning.applyCommand context UnitCommand.Move
-                |> OrderPlanning.selectTile context
-                    { x = 3
-                    , y = 1
-                    }
+                |> (OrderPlanning.selectUnit context infantryId >> IC.value)
+                |> (OrderPlanning.applyCommand context UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile context
+                        { x = 3
+                        , y = 1
+                        }
+                        >> IC.value
+                   )
 
         cacheFreight : PlannedOrder.PlannedOrder
         cacheFreight =
@@ -383,12 +392,14 @@ planningChecks infantryId truckId passengerId =
         tryingCrateExit =
             OrderPlanning.init
                 |> OrderPlanning.setOrders [ cacheFreight ]
-                |> OrderPlanning.selectUnit context infantryId
-                |> OrderPlanning.applyCommand context UnitCommand.Move
-                |> OrderPlanning.selectTile context
-                    { x = 2
-                    , y = 1
-                    }
+                |> (OrderPlanning.selectUnit context infantryId >> IC.value)
+                |> (OrderPlanning.applyCommand context UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile context
+                        { x = 2
+                        , y = 1
+                        }
+                        >> IC.value
+                   )
 
         chainContext : OrderPlanning.Context
         chainContext =
@@ -397,21 +408,21 @@ planningChecks infantryId truckId passengerId =
         chain : OrderPlanning.Model
         chain =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit chainContext truckId
-                |> OrderPlanning.applyCommand chainContext UnitCommand.Move
-                |> OrderPlanning.selectTile chainContext { x = 3, y = 2 }
-                |> OrderPlanning.selectUnit chainContext passengerId
-                |> OrderPlanning.applyCommand chainContext UnitCommand.Move
-                |> OrderPlanning.selectTile chainContext { x = 3, y = 1 }
-                |> OrderPlanning.selectUnit chainContext infantryId
-                |> OrderPlanning.applyCommand chainContext UnitCommand.Move
-                |> OrderPlanning.selectTile chainContext { x = 2, y = 1 }
+                |> (OrderPlanning.selectUnit chainContext truckId >> IC.value)
+                |> (OrderPlanning.applyCommand chainContext UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile chainContext { x = 3, y = 2 } >> IC.value)
+                |> (OrderPlanning.selectUnit chainContext passengerId >> IC.value)
+                |> (OrderPlanning.applyCommand chainContext UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile chainContext { x = 3, y = 1 } >> IC.value)
+                |> (OrderPlanning.selectUnit chainContext infantryId >> IC.value)
+                |> (OrderPlanning.applyCommand chainContext UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile chainContext { x = 2, y = 1 } >> IC.value)
 
         revokedChain : OrderPlanning.Model
         revokedChain =
             chain
-                |> OrderPlanning.selectUnit chainContext truckId
-                |> OrderPlanning.revokeSelectedOrder chainContext
+                |> (OrderPlanning.selectUnit chainContext truckId >> IC.value)
+                |> (OrderPlanning.revokeSelectedOrder chainContext >> IC.value)
 
         rendezvousContext : OrderPlanning.Context
         rendezvousContext =
@@ -420,25 +431,25 @@ planningChecks infantryId truckId passengerId =
         rendezvous : OrderPlanning.Model
         rendezvous =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit rendezvousContext truckId
-                |> OrderPlanning.applyCommand rendezvousContext UnitCommand.Move
-                |> OrderPlanning.selectTile rendezvousContext { x = 2, y = 2 }
-                |> OrderPlanning.selectUnit rendezvousContext infantryId
-                |> OrderPlanning.applyCommand rendezvousContext UnitCommand.Move
-                |> OrderPlanning.selectTile rendezvousContext { x = 2, y = 2 }
-                |> OrderPlanning.selectUnit rendezvousContext passengerId
-                |> OrderPlanning.applyCommand rendezvousContext UnitCommand.Move
-                |> OrderPlanning.selectTile rendezvousContext { x = 2, y = 2 }
+                |> (OrderPlanning.selectUnit rendezvousContext truckId >> IC.value)
+                |> (OrderPlanning.applyCommand rendezvousContext UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile rendezvousContext { x = 2, y = 2 } >> IC.value)
+                |> (OrderPlanning.selectUnit rendezvousContext infantryId >> IC.value)
+                |> (OrderPlanning.applyCommand rendezvousContext UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile rendezvousContext { x = 2, y = 2 } >> IC.value)
+                |> (OrderPlanning.selectUnit rendezvousContext passengerId >> IC.value)
+                |> (OrderPlanning.applyCommand rendezvousContext UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile rendezvousContext { x = 2, y = 2 } >> IC.value)
 
         pickupRendezvous : OrderPlanning.Model
         pickupRendezvous =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit rendezvousContext truckId
-                |> OrderPlanning.applyCommand rendezvousContext UnitCommand.Move
-                |> OrderPlanning.selectTile rendezvousContext { x = 2, y = 1 }
-                |> OrderPlanning.selectUnit rendezvousContext infantryId
-                |> OrderPlanning.applyCommand rendezvousContext UnitCommand.Move
-                |> OrderPlanning.selectTile rendezvousContext { x = 2, y = 1 }
+                |> (OrderPlanning.selectUnit rendezvousContext truckId >> IC.value)
+                |> (OrderPlanning.applyCommand rendezvousContext UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile rendezvousContext { x = 2, y = 1 } >> IC.value)
+                |> (OrderPlanning.selectUnit rendezvousContext infantryId >> IC.value)
+                |> (OrderPlanning.applyCommand rendezvousContext UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile rendezvousContext { x = 2, y = 1 } >> IC.value)
 
         freightRendezvousContext : OrderPlanning.Context
         freightRendezvousContext =
@@ -467,44 +478,44 @@ planningChecks infantryId truckId passengerId =
         freightRendezvous : OrderPlanning.Model
         freightRendezvous =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit freightRendezvousContext truckId
-                |> OrderPlanning.applyCommand freightRendezvousContext UnitCommand.Move
-                |> OrderPlanning.selectTile freightRendezvousContext { x = 2, y = 2 }
+                |> (OrderPlanning.selectUnit freightRendezvousContext truckId >> IC.value)
+                |> (OrderPlanning.applyCommand freightRendezvousContext UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile freightRendezvousContext { x = 2, y = 2 } >> IC.value)
                 |> OrderPlanning.skipUnloading freightRendezvousContext
-                |> OrderPlanning.selectUnit freightRendezvousContext infantryId
-                |> OrderPlanning.applyCommand freightRendezvousContext UnitCommand.Move
-                |> OrderPlanning.selectTile freightRendezvousContext { x = 2, y = 2 }
+                |> (OrderPlanning.selectUnit freightRendezvousContext infantryId >> IC.value)
+                |> (OrderPlanning.applyCommand freightRendezvousContext UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile freightRendezvousContext { x = 2, y = 2 } >> IC.value)
 
         overfullRendezvous : OrderPlanning.Model
         overfullRendezvous =
             freightRendezvous
-                |> OrderPlanning.selectUnit freightRendezvousContext passengerId
-                |> OrderPlanning.applyCommand freightRendezvousContext UnitCommand.Move
-                |> OrderPlanning.selectTile freightRendezvousContext { x = 2, y = 2 }
+                |> (OrderPlanning.selectUnit freightRendezvousContext passengerId >> IC.value)
+                |> (OrderPlanning.applyCommand freightRendezvousContext UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile freightRendezvousContext { x = 2, y = 2 } >> IC.value)
 
         revokedRendezvous : OrderPlanning.Model
         revokedRendezvous =
             rendezvous
-                |> OrderPlanning.selectUnit rendezvousContext truckId
-                |> OrderPlanning.revokeSelectedOrder rendezvousContext
+                |> (OrderPlanning.selectUnit rendezvousContext truckId >> IC.value)
+                |> (OrderPlanning.revokeSelectedOrder rendezvousContext >> IC.value)
 
         loading : OrderPlanning.Model
         loading =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit context infantryId
-                |> OrderPlanning.applyCommand context UnitCommand.Move
-                |> OrderPlanning.selectTile context { x = 3, y = 1 }
+                |> (OrderPlanning.selectUnit context infantryId >> IC.value)
+                |> (OrderPlanning.applyCommand context UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile context { x = 3, y = 1 } >> IC.value)
 
         receiving : OrderPlanning.Model
         receiving =
-            OrderPlanning.selectUnit context truckId loading
+            (OrderPlanning.selectUnit context truckId >> IC.value) loading
 
         revoked : OrderPlanning.Model
         revoked =
             loading
-                |> OrderPlanning.revokeSelectedOrder context
-                |> OrderPlanning.selectUnit context truckId
-                |> OrderPlanning.revokeSelectedOrder context
+                |> (OrderPlanning.revokeSelectedOrder context >> IC.value)
+                |> (OrderPlanning.selectUnit context truckId >> IC.value)
+                |> (OrderPlanning.revokeSelectedOrder context >> IC.value)
 
         cargoContext : OrderPlanning.Context
         cargoContext =
@@ -517,37 +528,37 @@ planningChecks infantryId truckId passengerId =
         checklist : OrderPlanning.Model
         checklist =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit cargoContext truckId
-                |> OrderPlanning.applyCommand cargoContext UnitCommand.HoldPosition
+                |> (OrderPlanning.selectUnit cargoContext truckId >> IC.value)
+                |> (OrderPlanning.applyCommand cargoContext UnitCommand.HoldPosition >> IC.value)
 
         exits : OrderPlanning.Model
         exits =
             checklist
                 |> OrderPlanning.toggleUnloadPassenger infantryId True
                 |> OrderPlanning.toggleUnloadPassenger passengerId True
-                |> OrderPlanning.confirmPassengers cargoContext
+                |> (OrderPlanning.confirmPassengers cargoContext >> IC.value)
 
         firstExit : OrderPlanning.Model
         firstExit =
-            OrderPlanning.chooseUnloadSquare cargoContext { x = 3, y = 2 } exits
+            (OrderPlanning.chooseUnloadSquare cargoContext { x = 3, y = 2 } >> IC.value) exits
 
         rejectedExit : OrderPlanning.Model
         rejectedExit =
-            OrderPlanning.chooseUnloadSquare cargoContext { x = 3, y = 2 } firstExit
+            (OrderPlanning.chooseUnloadSquare cargoContext { x = 3, y = 2 } >> IC.value) firstExit
 
         completed : OrderPlanning.Model
         completed =
-            OrderPlanning.chooseUnloadSquare cargoContext { x = 4, y = 1 } rejectedExit
+            (OrderPlanning.chooseUnloadSquare cargoContext { x = 4, y = 1 } >> IC.value) rejectedExit
 
         truckMove : OrderPlanning.Model
         truckMove =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit cargoContext truckId
-                |> OrderPlanning.applyCommand cargoContext UnitCommand.Move
-                |> OrderPlanning.selectTile cargoContext { x = 4, y = 1 }
+                |> (OrderPlanning.selectUnit cargoContext truckId >> IC.value)
+                |> (OrderPlanning.applyCommand cargoContext UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile cargoContext { x = 4, y = 1 } >> IC.value)
                 |> OrderPlanning.toggleUnloadPassenger infantryId True
-                |> OrderPlanning.confirmPassengers cargoContext
-                |> OrderPlanning.chooseUnloadSquare cargoContext { x = 5, y = 1 }
+                |> (OrderPlanning.confirmPassengers cargoContext >> IC.value)
+                |> (OrderPlanning.chooseUnloadSquare cargoContext { x = 5, y = 1 } >> IC.value)
 
         twoInfantryContext : OrderPlanning.Context
         twoInfantryContext =
@@ -560,42 +571,42 @@ planningChecks infantryId truckId passengerId =
         twoInfantryReady : OrderPlanning.Model
         twoInfantryReady =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit twoInfantryContext truckId
-                |> OrderPlanning.applyCommand twoInfantryContext UnitCommand.HoldPosition
+                |> (OrderPlanning.selectUnit twoInfantryContext truckId >> IC.value)
+                |> (OrderPlanning.applyCommand twoInfantryContext UnitCommand.HoldPosition >> IC.value)
                 |> OrderPlanning.toggleUnloadPassenger infantryId True
                 |> OrderPlanning.toggleUnloadPassenger passengerId True
-                |> OrderPlanning.confirmPassengers twoInfantryContext
-                |> OrderPlanning.chooseUnloadSquare twoInfantryContext { x = 3, y = 2 }
-                |> OrderPlanning.chooseUnloadSquare twoInfantryContext { x = 4, y = 1 }
+                |> (OrderPlanning.confirmPassengers twoInfantryContext >> IC.value)
+                |> (OrderPlanning.chooseUnloadSquare twoInfantryContext { x = 3, y = 2 } >> IC.value)
+                |> (OrderPlanning.chooseUnloadSquare twoInfantryContext { x = 4, y = 1 } >> IC.value)
 
         secondInfantryCommand : OrderPlanning.Model
         secondInfantryCommand =
             twoInfantryReady
-                |> OrderPlanning.applyCommand twoInfantryContext UnitCommand.HoldPosition
+                |> (OrderPlanning.applyCommand twoInfantryContext UnitCommand.HoldPosition >> IC.value)
 
         bothInfantryCommanded : OrderPlanning.Model
         bothInfantryCommanded =
             secondInfantryCommand
-                |> OrderPlanning.applyCommand twoInfantryContext UnitCommand.StandGround
-                |> OrderPlanning.saveDirection twoInfantryContext DirectionEnum.East
+                |> (OrderPlanning.applyCommand twoInfantryContext UnitCommand.StandGround >> IC.value)
+                |> (OrderPlanning.saveDirection twoInfantryContext DirectionEnum.East >> IC.value)
 
         dismountAttack : OrderPlanning.Model
         dismountAttack =
             completed
-                |> OrderPlanning.applyCommand cargoContext UnitCommand.AttackMove
+                |> (OrderPlanning.applyCommand cargoContext UnitCommand.AttackMove >> IC.value)
                 |> OrderPlanning.extendPath cargoContext DirectionEnum.South
-                |> OrderPlanning.confirmPath cargoContext
-                |> OrderPlanning.saveDirection cargoContext DirectionEnum.East
+                |> (OrderPlanning.confirmPath cargoContext >> IC.value)
+                |> (OrderPlanning.saveDirection cargoContext DirectionEnum.East >> IC.value)
 
         dismountHold : OrderPlanning.Model
         dismountHold =
-            completed |> OrderPlanning.applyCommand cargoContext UnitCommand.HoldPosition
+            completed |> (OrderPlanning.applyCommand cargoContext UnitCommand.HoldPosition >> IC.value)
 
         revokedDismount : OrderPlanning.Model
         revokedDismount =
             dismountHold
-                |> OrderPlanning.selectUnit cargoContext truckId
-                |> OrderPlanning.revokeSelectedOrder cargoContext
+                |> (OrderPlanning.selectUnit cargoContext truckId >> IC.value)
+                |> (OrderPlanning.revokeSelectedOrder cargoContext >> IC.value)
 
         freightTruck : Unit
         freightTruck =
@@ -622,30 +633,34 @@ planningChecks infantryId truckId passengerId =
         mixedChecklist : OrderPlanning.Model
         mixedChecklist =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit mixedContext truckId
-                |> OrderPlanning.applyCommand mixedContext UnitCommand.HoldPosition
+                |> (OrderPlanning.selectUnit mixedContext truckId >> IC.value)
+                |> (OrderPlanning.applyCommand mixedContext UnitCommand.HoldPosition >> IC.value)
 
         mixedExits : OrderPlanning.Model
         mixedExits =
             mixedChecklist
                 |> OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate 0) True
                 |> OrderPlanning.toggleUnloadPassenger infantryId True
-                |> OrderPlanning.confirmPassengers mixedContext
+                |> (OrderPlanning.confirmPassengers mixedContext >> IC.value)
 
         crateExit : OrderPlanning.Model
         crateExit =
-            OrderPlanning.chooseUnloadSquare mixedContext
+            (OrderPlanning.chooseUnloadSquare mixedContext
                 { x = 3
                 , y = 2
                 }
+                >> IC.value
+            )
                 mixedExits
 
         mixedComplete : OrderPlanning.Model
         mixedComplete =
-            OrderPlanning.chooseUnloadSquare mixedContext
+            (OrderPlanning.chooseUnloadSquare mixedContext
                 { x = 4
                 , y = 1
                 }
+                >> IC.value
+            )
                 crateExit
 
         passengerFirst : OrderPlanning.Model
@@ -653,11 +668,13 @@ planningChecks infantryId truckId passengerId =
             mixedChecklist
                 |> OrderPlanning.toggleUnloadPassenger infantryId True
                 |> OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate 0) True
-                |> OrderPlanning.confirmPassengers mixedContext
-                |> OrderPlanning.chooseUnloadSquare mixedContext
-                    { x = 3
-                    , y = 2
-                    }
+                |> (OrderPlanning.confirmPassengers mixedContext >> IC.value)
+                |> (OrderPlanning.chooseUnloadSquare mixedContext
+                        { x = 3
+                        , y = 2
+                        }
+                        >> IC.value
+                   )
 
         crateOnlyContext : OrderPlanning.Context
         crateOnlyContext =
@@ -666,12 +683,14 @@ planningChecks infantryId truckId passengerId =
         crateOnlyMove : OrderPlanning.Model
         crateOnlyMove =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit crateOnlyContext truckId
-                |> OrderPlanning.applyCommand crateOnlyContext UnitCommand.Move
-                |> OrderPlanning.selectTile crateOnlyContext
-                    { x = 4
-                    , y = 1
-                    }
+                |> (OrderPlanning.selectUnit crateOnlyContext truckId >> IC.value)
+                |> (OrderPlanning.applyCommand crateOnlyContext UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile crateOnlyContext
+                        { x = 4
+                        , y = 1
+                        }
+                        >> IC.value
+                   )
 
         twoCrateTruck : Unit
         twoCrateTruck =
@@ -702,16 +721,18 @@ planningChecks infantryId truckId passengerId =
         selectedSecondCrate : OrderPlanning.Model
         selectedSecondCrate =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit twoCrateContext truckId
-                |> OrderPlanning.applyCommand twoCrateContext UnitCommand.HoldPosition
+                |> (OrderPlanning.selectUnit twoCrateContext truckId >> IC.value)
+                |> (OrderPlanning.applyCommand twoCrateContext UnitCommand.HoldPosition >> IC.value)
                 |> OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate 0) True
                 |> OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate 1) True
                 |> OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate 0) False
-                |> OrderPlanning.confirmPassengers twoCrateContext
-                |> OrderPlanning.chooseUnloadSquare twoCrateContext
-                    { x = 3
-                    , y = 2
-                    }
+                |> (OrderPlanning.confirmPassengers twoCrateContext >> IC.value)
+                |> (OrderPlanning.chooseUnloadSquare twoCrateContext
+                        { x = 3
+                        , y = 2
+                        }
+                        >> IC.value
+                   )
 
         blockedCrateContext : OrderPlanning.Context
         blockedCrateContext =
@@ -746,38 +767,38 @@ planningChecks infantryId truckId passengerId =
         fuelMove : OrderPlanning.Model
         fuelMove =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit fuelContext truckId
-                |> OrderPlanning.applyCommand fuelContext UnitCommand.Move
+                |> (OrderPlanning.selectUnit fuelContext truckId >> IC.value)
+                |> (OrderPlanning.applyCommand fuelContext UnitCommand.Move >> IC.value)
                 |> OrderPlanning.extendPath fuelContext DirectionEnum.East
-                |> OrderPlanning.selectTile fuelContext { x = 4, y = 1 }
+                |> (OrderPlanning.selectTile fuelContext { x = 4, y = 1 } >> IC.value)
 
         depotMovePreview : OrderPlanning.Model
         depotMovePreview =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit depotContext truckId
-                |> OrderPlanning.applyCommand depotContext UnitCommand.Move
+                |> (OrderPlanning.selectUnit depotContext truckId >> IC.value)
+                |> (OrderPlanning.applyCommand depotContext UnitCommand.Move >> IC.value)
                 |> OrderPlanning.extendPath depotContext DirectionEnum.East
 
         depotMove : OrderPlanning.Model
         depotMove =
-            OrderPlanning.selectTile depotContext { x = 4, y = 1 } depotMovePreview
+            (OrderPlanning.selectTile depotContext { x = 4, y = 1 } >> IC.value) depotMovePreview
 
         depotKeyboardMove : OrderPlanning.Model
         depotKeyboardMove =
-            OrderPlanning.confirmPath depotContext depotMovePreview
+            (OrderPlanning.confirmPath depotContext >> IC.value) depotMovePreview
 
         depotBoarding : OrderPlanning.Model
         depotBoarding =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit depotContext infantryId
-                |> OrderPlanning.applyCommand depotContext UnitCommand.Move
-                |> OrderPlanning.selectTile depotContext { x = 3, y = 1 }
+                |> (OrderPlanning.selectUnit depotContext infantryId >> IC.value)
+                |> (OrderPlanning.applyCommand depotContext UnitCommand.Move >> IC.value)
+                |> (OrderPlanning.selectTile depotContext { x = 3, y = 1 } >> IC.value)
 
         depotHold : OrderPlanning.Model
         depotHold =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit depotContext truckId
-                |> OrderPlanning.applyCommand depotContext UnitCommand.HoldPosition
+                |> (OrderPlanning.selectUnit depotContext truckId >> IC.value)
+                |> (OrderPlanning.applyCommand depotContext UnitCommand.HoldPosition >> IC.value)
 
         dismissedDepot : OrderPlanning.Model
         dismissedDepot =
@@ -790,23 +811,23 @@ planningChecks infantryId truckId passengerId =
         depotChecklist : OrderPlanning.Model
         depotChecklist =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit depotCargoContext truckId
-                |> OrderPlanning.applyCommand depotCargoContext UnitCommand.HoldPosition
+                |> (OrderPlanning.selectUnit depotCargoContext truckId >> IC.value)
+                |> (OrderPlanning.applyCommand depotCargoContext UnitCommand.HoldPosition >> IC.value)
 
         depotExits : OrderPlanning.Model
         depotExits =
             depotChecklist
                 |> OrderPlanning.toggleUnloadPassenger infantryId True
                 |> OrderPlanning.toggleUnloadPassenger passengerId True
-                |> OrderPlanning.confirmPassengers depotCargoContext
+                |> (OrderPlanning.confirmPassengers depotCargoContext >> IC.value)
 
         depotFirstExit : OrderPlanning.Model
         depotFirstExit =
-            OrderPlanning.chooseUnloadSquare depotCargoContext { x = 3, y = 2 } depotExits
+            (OrderPlanning.chooseUnloadSquare depotCargoContext { x = 3, y = 2 } >> IC.value) depotExits
 
         depotCompleted : OrderPlanning.Model
         depotCompleted =
-            OrderPlanning.chooseUnloadSquare depotCargoContext { x = 4, y = 1 } depotFirstExit
+            (OrderPlanning.chooseUnloadSquare depotCargoContext { x = 4, y = 1 } >> IC.value) depotFirstExit
 
         depotMixedContext : OrderPlanning.Context
         depotMixedContext =
@@ -815,11 +836,11 @@ planningChecks infantryId truckId passengerId =
         depotCrateUnloaded : OrderPlanning.Model
         depotCrateUnloaded =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit depotMixedContext truckId
-                |> OrderPlanning.applyCommand depotMixedContext UnitCommand.HoldPosition
+                |> (OrderPlanning.selectUnit depotMixedContext truckId >> IC.value)
+                |> (OrderPlanning.applyCommand depotMixedContext UnitCommand.HoldPosition >> IC.value)
                 |> OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate 0) True
-                |> OrderPlanning.confirmPassengers depotMixedContext
-                |> OrderPlanning.chooseUnloadSquare depotMixedContext { x = 3, y = 2 }
+                |> (OrderPlanning.confirmPassengers depotMixedContext >> IC.value)
+                |> (OrderPlanning.chooseUnloadSquare depotMixedContext { x = 3, y = 2 } >> IC.value)
 
         choosingCrates : OrderPlanning.Model -> Bool
         choosingCrates state =
@@ -851,8 +872,8 @@ planningChecks infantryId truckId passengerId =
         narrowChecklist : OrderPlanning.Model
         narrowChecklist =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit narrowContext truckId
-                |> OrderPlanning.applyCommand narrowContext UnitCommand.HoldPosition
+                |> (OrderPlanning.selectUnit narrowContext truckId >> IC.value)
+                |> (OrderPlanning.applyCommand narrowContext UnitCommand.HoldPosition >> IC.value)
                 |> OrderPlanning.toggleAvailableUnloadCargo narrowContext (OrderPlanning.Passenger infantryId) True
 
         narrowCrateContext : OrderPlanning.Context
@@ -862,8 +883,8 @@ planningChecks infantryId truckId passengerId =
         narrowCrateChecklist : OrderPlanning.Model
         narrowCrateChecklist =
             OrderPlanning.init
-                |> OrderPlanning.selectUnit narrowCrateContext truckId
-                |> OrderPlanning.applyCommand narrowCrateContext UnitCommand.HoldPosition
+                |> (OrderPlanning.selectUnit narrowCrateContext truckId >> IC.value)
+                |> (OrderPlanning.applyCommand narrowCrateContext UnitCommand.HoldPosition >> IC.value)
                 |> OrderPlanning.toggleAvailableUnloadCargo narrowCrateContext (OrderPlanning.Crate 0) True
 
         scarceCrateContext : OrderPlanning.Context
@@ -878,7 +899,7 @@ planningChecks infantryId truckId passengerId =
             mixedChecklist
                 |> OrderPlanning.toggleUnloadPassenger infantryId True
                 |> OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate 0) True
-                |> OrderPlanning.confirmPassengers scarceCrateContext
+                |> (OrderPlanning.confirmPassengers scarceCrateContext >> IC.value)
 
         exhaustedContext : OrderPlanning.Context
         exhaustedContext =
@@ -942,9 +963,163 @@ planningChecks infantryId truckId passengerId =
         guideLocked : TurnLifecycle.Phase
         guideLocked =
             TurnLifecycle.observeSubmission True (TurnLifecycle.Planning readingGuide)
+
+        missingContext : OrderPlanning.Context
+        missingContext =
+            board [ truck ]
+
+        missingCommand : OrderPlanning.Model
+        missingCommand =
+            OrderPlanning.init
+                |> OrderPlanning.setOrders [ { unitId = truckId, action = PlannedOrder.Hold { x = 3, y = 1 } } ]
+                |> OrderPlanning.setSelection
+                    (Just (UnitSelection { id = infantryId, interaction = CommandMenu (ChoosingCommand Nothing) }))
+
+        missingCommandCheck : InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
+        missingCommandCheck =
+            OrderPlanning.applyCommand missingContext UnitCommand.Move missingCommand
+
+        missingNextPassenger : InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
+        missingNextPassenger =
+            OrderPlanning.chooseUnloadSquare
+                (board [ truck, unit infantryId Kind.Infantry (Location.Aboard truckId) ])
+                { x = 3, y = 2 }
+                exits
+
+        savedAttackWithMissingUnit : InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
+        savedAttackWithMissingUnit =
+            OrderPlanning.saveDirection missingContext DirectionEnum.North attackAiming
+
+        initialTurn : CurrentTurn.Model
+        initialTurn =
+            CurrentTurn.init { number = 1, submitted = False, opponentSubmitted = False, outcome = Nothing, resolution = Nothing }
+
+        brokenTurn : CurrentTurn.Model
+        brokenTurn =
+            { initialTurn | phase = TurnLifecycle.Planning missingCommand }
+
+        checkedTurn : InvariantCheck Error.Error CurrentTurn.Model
+        checkedTurn =
+            CurrentTurn.mapPlanning (OrderPlanning.applyCommand missingContext UnitCommand.Move) brokenTurn
+                |> IC.mapError Error.OrderPlanningInvariantViolated
+
+        silentNoOp : (OrderPlanning.Model -> InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model) -> Bool
+        silentNoOp transition =
+            transition OrderPlanning.init == IC.happy OrderPlanning.init
     in
     List.concat
-        [ expect "command guide preserves orders and returns to the focused command menu"
+        [ expect "a failed command lookup reports the missing unit without changing selection or drafts"
+            (missingCommandCheck == IC.violated (OrderPlanning.PlanningUnitNotFound infantryId) missingCommand)
+        , expect "a checked transition does not inspect unrelated broken state"
+            (CurrentTurn.mapPlanning (OrderPlanning.previewDirection DirectionEnum.North >> IC.happy) brokenTurn
+                == IC.happy brokenTurn
+            )
+        , expect "planning diagnostics propagate through the turn to the shared error type"
+            (IC.error checkedTurn
+                == Just (Error.OrderPlanningInvariantViolated (OrderPlanning.PlanningUnitNotFound infantryId))
+                && (IC.value checkedTurn).phase
+                == brokenTurn.phase
+            )
+        , expect "failed direction lookup keeps its existing state"
+            (OrderPlanning.saveDirection missingContext DirectionEnum.North choosingStandGround
+                == IC.violated (OrderPlanning.PlanningUnitNotFound infantryId) choosingStandGround
+            )
+        , expect "missing required board positions are reported at the direction save"
+            (OrderPlanning.saveDirection cargoContext DirectionEnum.North choosingStandGround
+                == IC.violated (OrderPlanning.CommandUnitNotOnBoard infantryId) choosingStandGround
+            )
+        , expect "failed movement lookup retains the original tile-inspection fallback"
+            (OrderPlanning.confirmPath missingContext moving
+                == IC.violated (OrderPlanning.PlanningUnitNotFound infantryId)
+                    (OrderPlanning.setSelection (Just (Inspecting (TileInspection { x = 1, y = 2 }))) moving)
+            )
+        , expect "a failure after saving an attack order does not roll the order back"
+            (IC.error savedAttackWithMissingUnit
+                == Just (OrderPlanning.PlanningUnitNotFound infantryId)
+                && List.map .unitId (OrderPlanning.orders (IC.value savedAttackWithMissingUnit))
+                == [ infantryId ]
+                && OrderPlanning.selection (IC.value savedAttackWithMissingUnit)
+                == OrderPlanning.selection attackAiming
+            )
+        , expect "missing unload passengers report the failed option lookup without canceling the checklist"
+            (let
+                selected : OrderPlanning.Model
+                selected =
+                    OrderPlanning.toggleUnloadPassenger infantryId True checklist
+             in
+             OrderPlanning.confirmPassengers missingContext selected
+                == IC.violated (OrderPlanning.PlanningUnitNotFound infantryId) selected
+            )
+        , expect "confirmation retains diagnostics encountered while checking later passenger exits"
+            (let
+                selected : OrderPlanning.Model
+                selected =
+                    checklist
+                        |> OrderPlanning.toggleUnloadPassenger infantryId True
+                        |> OrderPlanning.toggleUnloadPassenger passengerId True
+
+                checked : InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
+                checked =
+                    OrderPlanning.confirmPassengers
+                        (board [ truck, unit infantryId Kind.Infantry (Location.Aboard truckId) ])
+                        selected
+             in
+             checked == IC.violated (OrderPlanning.PlanningUnitNotFound passengerId) selected
+            )
+        , expect "a missing next passenger retains the exit already saved and the next empty picker"
+            (IC.error missingNextPassenger
+                == Just (OrderPlanning.PlanningUnitNotFound passengerId)
+                && List.concatMap PlannedOrder.unloads (OrderPlanning.orders (IC.value missingNextPassenger))
+                == [ { unitId = infantryId, destination = { x = 3, y = 2 } } ]
+                && Maybe.map .cargo (OrderPlanning.unloadPlanning (IC.value missingNextPassenger))
+                == Just (OrderPlanning.Passenger passengerId)
+                && List.isEmpty (OrderPlanning.moveOptions (IC.value missingNextPassenger))
+            )
+        , expect "checked composition continues with the fallback value while retaining its diagnostic"
+            (missingCommandCheck
+                |> IC.andThen (OrderPlanning.selectUnit context truckId)
+                |> IC.value
+                |> OrderPlanning.selection
+                |> (==) (Just (Inspecting (UnitInspection truckId)))
+            )
+        , expect "checked composition retains the first diagnostic"
+            (missingCommandCheck
+                |> IC.andThen (OrderPlanning.selectUnit context truckId)
+                |> IC.error
+                |> (==) (Just (OrderPlanning.PlanningUnitNotFound infantryId))
+            )
+        , expect "no selection, stale clicks, absent previews and out-of-phase actions remain silent"
+            (List.all silentNoOp
+                [ OrderPlanning.applyCommand context UnitCommand.Move
+                , OrderPlanning.confirmPath context
+                , OrderPlanning.saveDirection context DirectionEnum.North
+                , OrderPlanning.confirmPassengers context
+                , OrderPlanning.revokeSelectedOrder context
+                , OrderPlanning.selectUnit context passengerId
+                ]
+            )
+        , expect "unreachable destinations and reverse attack facing remain ordinary validation"
+            (IC.error (OrderPlanning.selectTile context { x = -1, y = -1 } moving)
+                == Nothing
+                && OrderPlanning.saveDirection attackContext DirectionEnum.West attackAiming
+                == IC.happy attackAiming
+            )
+        , expect "unavailable commands remain silent"
+            (OrderPlanning.applyCommand context
+                UnitCommand.Ambush
+                (IC.value (OrderPlanning.selectUnit context truckId OrderPlanning.init))
+                |> IC.error
+                |> (==) Nothing
+            )
+        , expect "stale inspections remain silent"
+            (let
+                stale : OrderPlanning.Model
+                stale =
+                    OrderPlanning.setSelection (Just (Inspecting (UnitInspection passengerId))) OrderPlanning.init
+             in
+             OrderPlanning.restoreCommands context stale == IC.happy stale
+            )
+        , expect "command guide preserves orders and returns to the focused command menu"
             (OrderPlanning.commandGuideOpen readingGuide
                 && OrderPlanning.orders readingGuide
                 == OrderPlanning.orders guideMenu
@@ -964,7 +1139,7 @@ planningChecks infantryId truckId passengerId =
                 == OrderPlanning.showSubmissionWarning guideMenu
             )
         , expect "command guide blocks command edits, unit cycling and submission"
-            (OrderPlanning.applyCommand context UnitCommand.HoldPosition readingGuide
+            ((OrderPlanning.applyCommand context UnitCommand.HoldPosition >> IC.value) readingGuide
                 == readingGuide
                 && OrderPlanning.focusCommand context UnitCommand.CancelOption readingGuide
                 == readingGuide
@@ -989,8 +1164,8 @@ planningChecks infantryId truckId passengerId =
                 complete : OrderPlanning.Model
                 complete =
                     scarceCrateExits
-                        |> OrderPlanning.chooseUnloadSquare scarceCrateContext { x = 2, y = 1 }
-                        |> OrderPlanning.chooseUnloadSquare scarceCrateContext { x = 2, y = 1 }
+                        |> (OrderPlanning.chooseUnloadSquare scarceCrateContext { x = 2, y = 1 } >> IC.value)
+                        |> (OrderPlanning.chooseUnloadSquare scarceCrateContext { x = 2, y = 1 } >> IC.value)
              in
              OrderPlanning.unloadPlanning complete
                 == Nothing
@@ -1005,7 +1180,7 @@ planningChecks infantryId truckId passengerId =
                 invalidSelection =
                     narrowChecklist |> OrderPlanning.toggleUnloadPassenger passengerId True
              in
-             OrderPlanning.confirmPassengers narrowContext invalidSelection == invalidSelection
+             (OrderPlanning.confirmPassengers narrowContext >> IC.value) invalidSelection == invalidSelection
             )
         , expect "one passenger exit disables the second passenger and rejects its toggle"
             (not (OrderPlanning.canSelectUnloadCargo narrowContext (OrderPlanning.Passenger passengerId) narrowChecklist)
@@ -1029,13 +1204,13 @@ planningChecks infantryId truckId passengerId =
                 selectionWithFreight : OrderPlanning.Model
                 selectionWithFreight =
                     OrderPlanning.init
-                        |> OrderPlanning.selectUnit contextWithFreight truckId
-                        |> OrderPlanning.applyCommand contextWithFreight UnitCommand.HoldPosition
+                        |> (OrderPlanning.selectUnit contextWithFreight truckId >> IC.value)
+                        |> (OrderPlanning.applyCommand contextWithFreight UnitCommand.HoldPosition >> IC.value)
                         |> OrderPlanning.toggleAvailableUnloadCargo contextWithFreight (OrderPlanning.Passenger infantryId) True
                         |> OrderPlanning.toggleAvailableUnloadCargo contextWithFreight (OrderPlanning.Crate 0) True
-                        |> OrderPlanning.confirmPassengers contextWithFreight
-                        |> OrderPlanning.chooseUnloadSquare contextWithFreight { x = 2, y = 0 }
-                        |> OrderPlanning.chooseUnloadSquare contextWithFreight { x = 2, y = 0 }
+                        |> (OrderPlanning.confirmPassengers contextWithFreight >> IC.value)
+                        |> (OrderPlanning.chooseUnloadSquare contextWithFreight { x = 2, y = 0 } >> IC.value)
+                        |> (OrderPlanning.chooseUnloadSquare contextWithFreight { x = 2, y = 0 } >> IC.value)
              in
              List.length (List.concatMap PlannedOrder.unloads (OrderPlanning.orders selectionWithFreight))
                 == 1
@@ -1053,14 +1228,14 @@ planningChecks infantryId truckId passengerId =
         , expect "hovering, selecting, and dismissing preserve drafts without reopening loading"
             (not (choosingCrates depotMovePreview)
                 && not (choosingCrates (OrderPlanning.previewTile depotContext { x = 4, y = 1 } dismissedDepot))
-                && not (choosingCrates (OrderPlanning.selectUnit depotContext truckId dismissedDepot))
+                && not (choosingCrates ((OrderPlanning.selectUnit depotContext truckId >> IC.value) dismissedDepot))
                 && OrderPlanning.orders dismissedDepot
                 == OrderPlanning.orders depotMove
             )
         , expect "loaded trucks offer unloading before depot loading"
             (OrderPlanning.unloadChoice depotChecklist /= Nothing)
         , expect "confirming no unloads and skipping unloading offer depot loading"
-            (choosingCrates (OrderPlanning.confirmPassengers depotCargoContext depotChecklist)
+            (choosingCrates ((OrderPlanning.confirmPassengers depotCargoContext >> IC.value) depotChecklist)
                 && choosingCrates (OrderPlanning.skipUnloading depotCargoContext depotChecklist)
             )
         , expect "canceling stationary unloading discards the hold without offering depot loading"
@@ -1086,9 +1261,9 @@ planningChecks infantryId truckId passengerId =
                 movingChecklist =
                     OrderPlanning.init
                         |> OrderPlanning.setOrders [ unrelatedOrder ]
-                        |> OrderPlanning.selectUnit moveContext truckId
-                        |> OrderPlanning.applyCommand moveContext UnitCommand.Move
-                        |> OrderPlanning.selectTile moveContext { x = 4, y = 1 }
+                        |> (OrderPlanning.selectUnit moveContext truckId >> IC.value)
+                        |> (OrderPlanning.applyCommand moveContext UnitCommand.Move >> IC.value)
+                        |> (OrderPlanning.selectTile moveContext { x = 4, y = 1 } >> IC.value)
                         |> OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate 0) True
 
                 canceled : OrderPlanning.Model
@@ -1146,7 +1321,7 @@ planningChecks infantryId truckId passengerId =
         , expect "attack move cannot preview or save a facing back along its final segment"
             (OrderPlanning.previewDirection DirectionEnum.West attackAiming
                 == attackAiming
-                && OrderPlanning.saveDirection attackContext DirectionEnum.West attackAiming
+                && (OrderPlanning.saveDirection attackContext DirectionEnum.West >> IC.value) attackAiming
                 == attackAiming
             )
         , expect "attack facing restriction follows the last segment of a turning route"
@@ -1161,7 +1336,7 @@ planningChecks infantryId truckId passengerId =
             (List.isEmpty (OrderPlanning.orders attackLoading) && OrderPlanning.destinationFeedback attackLoading == DestinationUnavailable)
         , expect "saved orders can be revoked from inspection or a command menu"
             (OrderPlanning.canRevokeOrder context infantryId saved
-                && OrderPlanning.canRevokeOrder context infantryId (OrderPlanning.restoreCommands context saved)
+                && OrderPlanning.canRevokeOrder context infantryId ((OrderPlanning.restoreCommands context >> IC.value) saved)
                 && not (OrderPlanning.canRevokeOrder context truckId saved)
                 && revocationBlocked context infantryId attackRevoked
             )
@@ -1172,7 +1347,7 @@ planningChecks infantryId truckId passengerId =
                 , attackAiming
                 , aiming
                 , choosingStandGround
-                , OrderPlanning.applyCommand context UnitCommand.Ambush reopenedCommands
+                , (OrderPlanning.applyCommand context UnitCommand.Ambush >> IC.value) reopenedCommands
                 ]
             )
         , expect "dialogs and unfinished unloading cannot be revoked through a stale event"
@@ -1195,21 +1370,21 @@ planningChecks infantryId truckId passengerId =
                 == Nothing
             )
         , expect "back to commands drops movement previews and reopens the menu"
-            (OrderPlanning.commandMenuUnit attackContext (OrderPlanning.restoreCommands attackContext attacking)
+            (OrderPlanning.commandMenuUnit attackContext ((OrderPlanning.restoreCommands attackContext >> IC.value) attacking)
                 == Just infantry
-                && OrderPlanning.pathPreview (OrderPlanning.restoreCommands attackContext attacking)
+                && OrderPlanning.pathPreview ((OrderPlanning.restoreCommands attackContext >> IC.value) attacking)
                 == Nothing
             )
         , expect "clicking the revoked unit reopens commands and clicking again deselects"
             (OrderPlanning.commandMenuUnit attackContext reopenedCommands
                 == Just infantry
-                && OrderPlanning.selection (OrderPlanning.selectUnit attackContext infantryId reopenedCommands)
+                && OrderPlanning.selection ((OrderPlanning.selectUnit attackContext infantryId >> IC.value) reopenedCommands)
                 == Nothing
             )
         , expect "clicking a selected unit with a saved order still deselects without revoking"
-            (OrderPlanning.selection (OrderPlanning.selectUnit attackContext infantryId attackSaved)
+            (OrderPlanning.selection ((OrderPlanning.selectUnit attackContext infantryId >> IC.value) attackSaved)
                 == Nothing
-                && OrderPlanning.orders (OrderPlanning.selectUnit attackContext infantryId attackSaved)
+                && OrderPlanning.orders ((OrderPlanning.selectUnit attackContext infantryId >> IC.value) attackSaved)
                 == OrderPlanning.orders attackSaved
             )
         , expect "indirect fire chooses tiles without movement or occupancy restrictions"
@@ -1219,7 +1394,7 @@ planningChecks infantryId truckId passengerId =
                 == [ aimedOrder { x = 3, y = 3 } ]
                 && List.map PlannedOrder.path (OrderPlanning.orders bombardment)
                 == [ [ { x = 1, y = 1 } ] ]
-                && List.isEmpty (OrderPlanning.orders (OrderPlanning.revokeSelectedOrder indirectContext bombardment))
+                && List.isEmpty (OrderPlanning.orders ((OrderPlanning.revokeSelectedOrder indirectContext >> IC.value) bombardment))
             )
         , expect "target previews are legal, transient, and do not save orders"
             (OrderPlanning.indirectTargetPreview aiming
@@ -1235,13 +1410,13 @@ planningChecks infantryId truckId passengerId =
                 == Nothing
             )
         , expect "indirect fire on occupied tiles retains the firing gun"
-            (OrderPlanning.orders (OrderPlanning.selectUnit indirectContext truckId aiming)
+            (OrderPlanning.orders ((OrderPlanning.selectUnit indirectContext truckId >> IC.value) aiming)
                 == [ aimedOrder { x = 3, y = 1 } ]
             )
         , expect "indirect fire accepts the firing gun's own tile"
             (OrderPlanning.orders selfBombardment == [ aimedOrder { x = 1, y = 1 } ])
         , expect "indirect fire rejects out-of-range tiles without leaving targeting"
-            (OrderPlanning.selectTile outOfRangeContext { x = 14, y = 1 } edgeAim == edgeAim)
+            ((OrderPlanning.selectTile outOfRangeContext { x = 14, y = 1 } >> IC.value) edgeAim == edgeAim)
         , expect "indirect fire includes the circular range boundary"
             (List.member { x = 13, y = 1 } (OrderPlanning.indirectTargets outOfRangeContext edgeAim)
                 && not (List.member { x = 13, y = 2 } (OrderPlanning.indirectTargets outOfRangeContext edgeAim))
@@ -1257,7 +1432,7 @@ planningChecks infantryId truckId passengerId =
                 && List.isEmpty (OrderPlanning.orders choosingStandGround)
                 && OrderPlanning.orders standingGround
                 == [ { unitId = infantryId, action = PlannedOrder.StandGround { position = { x = 1, y = 1 }, direction = DirectionEnum.West } } ]
-                && List.isEmpty (OrderPlanning.orders (OrderPlanning.revokeSelectedOrder context standingGround))
+                && List.isEmpty (OrderPlanning.orders ((OrderPlanning.revokeSelectedOrder context >> IC.value) standingGround))
             )
         , expect "stand ground requires readiness supplies and excludes trucks and passengers"
             (not (UnitCommand.canUse insufficientReadiness UnitCommand.StandGround)
@@ -1267,7 +1442,7 @@ planningChecks infantryId truckId passengerId =
         , expect "ambush direction preview saves a stationary ambush instead of rotation"
             (OrderPlanning.orders ambushing == [ { unitId = infantryId, action = PlannedOrder.Ambush { position = { x = 1, y = 1 }, direction = DirectionEnum.East } } ])
         , expect "ambush can be revoked and trucks cannot ambush"
-            (List.isEmpty (OrderPlanning.orders (OrderPlanning.revokeSelectedOrder context ambushing)) && List.isEmpty (OrderPlanning.orders truckAmbush))
+            (List.isEmpty (OrderPlanning.orders ((OrderPlanning.revokeSelectedOrder context >> IC.value) ambushing)) && List.isEmpty (OrderPlanning.orders truckAmbush))
         , expect "unordered selection cycles through eligible units and wraps"
             (OrderPlanning.commandMenuUnit context firstUnordered == Just infantry && OrderPlanning.commandMenuUnit context secondUnordered == Just truck && OrderPlanning.commandMenuUnit context wrappedUnordered == Just infantry)
         , expect "unordered selection leaves a preview without saving a move"
@@ -1392,7 +1567,7 @@ planningChecks infantryId truckId passengerId =
                     }
                     (List.map .destination
                         (OrderPlanning.moveOptions
-                            (OrderPlanning.confirmPassengers blockedCrateContext
+                            ((OrderPlanning.confirmPassengers blockedCrateContext >> IC.value)
                                 (mixedChecklist
                                     |> OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate 0) True
                                 )
@@ -1414,7 +1589,7 @@ planningChecks infantryId truckId passengerId =
                 == Nothing
             )
         , expect "declining mixed unloading preserves an ordinary hold"
-            (List.map .action (OrderPlanning.orders (OrderPlanning.confirmPassengers mixedContext mixedChecklist))
+            (List.map .action (OrderPlanning.orders ((OrderPlanning.confirmPassengers mixedContext >> IC.value) mixedChecklist))
                 == [ PlannedOrder.Hold
                         { x = 3
                         , y = 1
@@ -1422,7 +1597,7 @@ planningChecks infantryId truckId passengerId =
                    ]
             )
         , expect "lifecycle gating prevents editing submitted drafts"
-            (TurnLifecycle.mapPlanning (OrderPlanning.selectTile context { x = 2, y = 2 }) submitted == submitted)
+            (TurnLifecycle.mapPlanning (OrderPlanning.selectTile context { x = 2, y = 2 } >> IC.value) submitted == submitted)
         ]
 
 

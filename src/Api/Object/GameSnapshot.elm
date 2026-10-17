@@ -25,6 +25,13 @@ turnNumber =
     Object.selectionForField "Int" "turnNumber" [] Decode.int
 
 
+outcome :
+    SelectionSet decodesTo Api.Object.GameOutcome
+    -> SelectionSet (Maybe decodesTo) Api.Object.GameSnapshot
+outcome object____ =
+    Object.selectionForCompositeField "outcome" [] object____ (Basics.identity >> Decode.nullable)
+
+
 submitted : SelectionSet Bool Api.Object.GameSnapshot
 submitted =
     Object.selectionForField "Bool" "submitted" [] Decode.bool

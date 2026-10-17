@@ -8,7 +8,7 @@ use crate::{
     scenario::{PlayerNumber, Scenario},
     seed::{self, Seed},
     session_token::SessionToken,
-    turns::{MoveOrderInput, TurnResolution, Turns},
+    turns::{GameOutcome, MoveOrderInput, TurnResolution, Turns},
     visibility,
 };
 use juniper::{FieldError, FieldResult, GraphQLObject};
@@ -165,6 +165,7 @@ struct PlayerView {
 #[derive(GraphQLObject)]
 pub struct GameSnapshot {
     turn_number: i32,
+    outcome: Option<GameOutcome>,
     submitted: bool,
     opponent_submitted: bool,
     last_resolution: Option<TurnResolution>,
@@ -268,6 +269,7 @@ fn game_view(game: &Game, session: &SessionToken) -> GameSnapshot {
     scenario.supply_crates = game.observations[index].supply_crates.clone();
     GameSnapshot {
         turn_number: game.turns.number,
+        outcome: game.turns.outcome,
         submitted: game.turns.orders[index].is_some(),
         opponent_submitted: game.turns.orders[1 - index].is_some(),
         last_resolution: game.observations[index].last_resolution.clone(),
