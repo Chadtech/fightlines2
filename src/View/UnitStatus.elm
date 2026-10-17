@@ -15,6 +15,7 @@ import Unit.Supplies exposing (Supplies)
 import UnitResources exposing (UnitResources)
 import Util.UnitKind as UnitKindUtil
 import View.Aria as Aria
+import View.Button as Button
 import View.InfoMarker as InfoMarker
 import View.UnitSprite as UnitSprite
 
@@ -35,13 +36,52 @@ type Resource
     | Fuel Fuel
 
 
-toHtml : String -> Unit -> Html msg
-toHtml playerName unit =
-    Lazy.lazy2 statusView playerName unit
+toHtml : String -> Unit -> { canRevoke : Bool, onRevoke : msg } -> Html msg
+toHtml playerName unit actions =
+    Lazy.lazy4 statusView playerName unit actions.canRevoke actions.onRevoke
 
 
-statusView : String -> Unit -> Html msg
-statusView playerName unit =
+statusView : String -> Unit -> Bool -> msg -> Html msg
+statusView playerName unit canRevoke onRevoke =
+    let
+        identityContent : List (Html msg)
+        identityContent =
+            [ unitHelp playerName unit
+            , portrait playerName unit
+            ]
+
+        portraitActions : List (Html msg)
+        portraitActions =
+            if canRevoke then
+                [ Button.primary "revoke order" onRevoke
+                    |> Button.fullWidth
+                    |> Button.toHtml
+                ]
+
+            else
+                []
+
+        resourceContent : List (Html msg)
+        resourceContent =
+            [ resourcesView unit.kind unit.resources
+            ]
+
+        content : List (Html msg)
+        content =
+            identityContent ++ portraitActions ++ resourceContent
+    in
+    H.div
+        [ A.css
+            [ S.col
+            , S.g3
+            , S.textGray5
+            ]
+        ]
+        content
+
+
+resourcesView : UnitKind -> Maybe UnitResources -> Html msg
+resourcesView kind maybeResources =
     let
         visibleResources : UnitResources -> List Resource
         visibleResources details =
@@ -54,25 +94,17 @@ statusView playerName unit =
 
         resources : List Resource
         resources =
-            unit.resources |> Maybe.map visibleResources |> Maybe.withDefault []
+            maybeResources
+                |> Maybe.map visibleResources
+                |> Maybe.withDefault []
     in
     H.div
         [ A.css
             [ S.col
             , S.g3
-            , S.textGray5
             ]
         ]
-        [ unitHelp playerName unit
-        , portrait playerName unit
-        , H.div
-            [ A.css
-                [ S.col
-                , S.g3
-                ]
-            ]
-            (List.map (gauge unit.kind) resources)
-        ]
+        (List.map (gauge kind) resources)
 
 
 portrait : String -> Unit -> Html msg

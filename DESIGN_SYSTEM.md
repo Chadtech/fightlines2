@@ -109,6 +109,8 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   the footer says esc to clear selection. Omit the roster and other floating cards.
   Use gold primary buttons for every action button in this panel, including
   back to commands, revoke order, and skip remaining cargo.
+  Place revoke order directly below the unit portrait, spanning the available
+  panel content width, before resource gauges.
 - The bottom-left control panel is flush with the screen's bottom and left edges,
   overlaying the battlefield without reducing its height. It is a short horizontal
   strip up to 64rem wide, capped by the battlefield width, with a bevel on its top
@@ -324,8 +326,11 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   nightwood checkbox, light gray checked fill with a dark checkmark, and visible
   keyboard focus. A single action
   says `proceed without unloading` when nothing is checked and becomes the gold
-  `choose unload squares` action when cargo is checked. Checked passengers and
-  crates choose adjacent squares around the truck's planned destination one at a
+  `choose unload squares` action when cargo is checked. Canceling the checklist or
+  leaving unload-square selection discards the truck plan and chosen exits;
+  proceeding without unloading or skipping remaining cargo explicitly keeps them.
+  Checked passengers and crates choose adjacent squares around the truck's
+  planned destination one at a
   time. Passengers require distinct free squares; crates may share with allies
   and passenger exits, but not enemies or other crates. Disable unchecked cargo
   when adding it would prevent a complete placement, and explain unavailable
@@ -371,8 +376,9 @@ playback and final positions reflect only the route actually traveled.
 
 ## Low resource indicators
 
-On-board living units with visible resources show square warning badges when a
-resource reaches 25% of its maximum or below. Pack only active badges horizontally
+On-board living units with visible resources show a square health warning badge
+below 75% of maximum health. Supplies and fuel show warning badges at 25% of
+their maximum or below. Pack only active badges horizontally
 from the tile's upper-left corner, in health, supplies, fuel order. Each square
 is 3.2 logical pixels wide (20% of a tile), inset 0.64 pixels with 0.24-pixel gaps.
 Use a red (`red1`) heart on light gray (`gray5`), a dark brown (`yellow1`)
@@ -524,8 +530,15 @@ and delivery timing.
 Truck cargo counts include passengers and crates. The selected truck inspector
 shows each carried crate's stock and saved unloading destination.
 Saving a truck destination on a depot opens a modal titled `load supply crates`
-asking how many crates to load, with `0`, `1`, and `2` actions. Disable counts
-that exceed stock or shared cargo room. Dismissal keeps the move without loading.
+asking `how many crates would you like to load?`, with compact `none`, `1`, and
+`2` buttons in a horizontal row. Omit counts that exceed stock or shared cargo
+room. Put depot stock above the question, then quantities and two quiet gold
+cargo fill bars below each numbered button. Partial cargo fills only part of
+its bar; omit separate full/partial explanations. Empty depots and full trucks
+show a short explanation. Unknown stock reads `stock outside sight`, shows `?`
+for quantities, and omits cargo fill bars. Give buttons descriptive accessible
+labels with their count and known quantity.
+Dismissal keeps the move without loading.
 Ground crates are neutral and trucks collect them by ending on their square
 with room aboard. Save the route first, then add unloading. These controls
 are absent in locked phases. A saved supply run shows its destination and load/unload
@@ -568,8 +581,9 @@ for the report. Keep these figures viewer-specific and retain zero totals.
 Fuel depots use the illustrated fuel-storage tank sprite, the same selection
 behavior, inspector, stock bars, low/empty warnings, and fog treatment as supply
 depots. Their copy names fuel and describes automatic vehicle refilling.
-Fuel depots open the same 0/1/2 loading dialog titled `load fuel drums`. Fuel
-freight uses the red three-drum stack in ground rendering and cargo choices,
+Fuel depots open the same available-load dialog titled `load fuel drums`,
+asking `how many drum loads should this truck take?`, with fuel quantities
+below the numbered buttons. Fuel freight uses the red three-drum stack in ground rendering and cargo choices,
 with a red drum badge on trucks. Mixed supply/fuel freight uses separate
 lower-left badges and shares the same capacity and unloading rules.
 

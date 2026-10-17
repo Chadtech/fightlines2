@@ -736,8 +736,10 @@ assembles the complete planning orders, exposed through `TurnLifecycle.orders`
 for paths, readiness, reservations and submission. Planning transitions finish
 or cancel the workflow without page-level order transfers.
 Each exit is reserved before calculating options for the next passenger. Leaving
-the checklist or square selection keeps the plan and exits already chosen;
-advancing the turn discards the workflow. Choosing hold position on a loaded truck
+the checklist or square selection cancels the truck plan and exits already chosen,
+preserving other units' orders. Explicitly proceeding without unloading or skipping
+remaining cargo keeps the plan and chosen exits; advancing the turn discards the
+workflow. Choosing hold position on a loaded truck
 opens the same checklist at its current square without requiring fuel or a legal move. With no exits, it remains an ordinary
 `Hold`; saved stationary exits form an `Unload` order with a single-coordinate path.
 Unload choices belong to the truck's `Move` or `Unload` order and disappear when it is revoked. Elm projects the truck at its planned

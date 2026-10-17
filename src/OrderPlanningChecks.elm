@@ -235,16 +235,28 @@ planningChecks infantryId truckId passengerId =
         saved =
             OrderPlanning.confirmPath context moving
 
+        revocationBlocked : OrderPlanning.Context -> UnitId -> OrderPlanning.Model -> Bool
+        revocationBlocked planningContext unitId state =
+            not (OrderPlanning.canRevokeOrder planningContext unitId state)
+                && (OrderPlanning.revokeSelectedOrder planningContext state == state)
+
+        previewRevocationBlocked : OrderPlanning.Model -> Bool
+        previewRevocationBlocked state =
+            state
+                |> OrderPlanning.setOrders (OrderPlanning.orders saved)
+                |> revocationBlocked context infantryId
+
         crateChoice : OrderPlanning.Model
         crateChoice =
             OrderPlanning.ChoosingCrates truckId
+                { kind = DepotKind.Supply, position = { x = 3, y = 1 }, stock = Nothing }
                 { orders = OrderPlanning.orders saved
                 , selection = Just (Inspecting (UnitInspection truckId))
                 }
 
         dismissedCrates : OrderPlanning.Model
         dismissedCrates =
-            OrderPlanning.dismissDialog [] crateChoice
+            OrderPlanning.dismissDialog crateChoice
 
         reserved : OrderPlanning.Model
         reserved =
@@ -769,7 +781,7 @@ planningChecks infantryId truckId passengerId =
 
         dismissedDepot : OrderPlanning.Model
         dismissedDepot =
-            OrderPlanning.dismissDialog depotContext.depots depotMove
+            OrderPlanning.dismissDialog depotMove
 
         depotCargoContext : OrderPlanning.Context
         depotCargoContext =
@@ -812,8 +824,9 @@ planningChecks infantryId truckId passengerId =
         choosingCrates : OrderPlanning.Model -> Bool
         choosingCrates state =
             case state of
-                OrderPlanning.ChoosingCrates id _ ->
-                    id == truckId
+                OrderPlanning.ChoosingCrates id depot _ ->
+                    (id == truckId)
+                        && List.member depot (depotContext.depots ++ fuelContext.depots)
 
                 _ ->
                     False
@@ -937,7 +950,7 @@ planningChecks infantryId truckId passengerId =
                 == OrderPlanning.orders guideMenu
                 && OrderPlanning.focusedCommand readingGuide
                 == Just (UnitCommand.CommandOption UnitCommand.Move)
-                && OrderPlanning.dismissDialog [] readingGuide
+                && OrderPlanning.dismissDialog readingGuide
                 == guideMenu
             )
         , expect "command guide only opens from an ordinary command menu"
@@ -1046,10 +1059,56 @@ planningChecks infantryId truckId passengerId =
             )
         , expect "loaded trucks offer unloading before depot loading"
             (OrderPlanning.unloadChoice depotChecklist /= Nothing)
-        , expect "confirming no unloads, skipping, and dismissing unloading offer depot loading"
+        , expect "confirming no unloads and skipping unloading offer depot loading"
             (choosingCrates (OrderPlanning.confirmPassengers depotCargoContext depotChecklist)
                 && choosingCrates (OrderPlanning.skipUnloading depotCargoContext depotChecklist)
-                && choosingCrates (OrderPlanning.dismissDialog depotCargoContext.depots depotChecklist)
+            )
+        , expect "canceling stationary unloading discards the hold without offering depot loading"
+            (OrderPlanning.orders (OrderPlanning.dismissDialog depotChecklist)
+                == []
+                && not (choosingCrates (OrderPlanning.dismissDialog depotChecklist))
+                && OrderPlanning.unloadChoice (OrderPlanning.dismissDialog depotChecklist)
+                == Nothing
+            )
+        , expect "canceling a truck move's unload checklist preserves unrelated orders"
+            (let
+                unrelatedOrder : PlannedOrder.PlannedOrder
+                unrelatedOrder =
+                    { unitId = passengerId
+                    , action = PlannedOrder.Hold { x = 0, y = 0 }
+                    }
+
+                moveContext : OrderPlanning.Context
+                moveContext =
+                    { mixedContext | units = unit passengerId Kind.Infantry (Location.OnMap { x = 0, y = 0 }) :: mixedContext.units }
+
+                movingChecklist : OrderPlanning.Model
+                movingChecklist =
+                    OrderPlanning.init
+                        |> OrderPlanning.setOrders [ unrelatedOrder ]
+                        |> OrderPlanning.selectUnit moveContext truckId
+                        |> OrderPlanning.applyCommand moveContext UnitCommand.Move
+                        |> OrderPlanning.selectTile moveContext { x = 4, y = 1 }
+                        |> OrderPlanning.toggleUnloadCargo (OrderPlanning.Crate 0) True
+
+                canceled : OrderPlanning.Model
+                canceled =
+                    OrderPlanning.dismissDialog movingChecklist
+             in
+             OrderPlanning.unloadChoice movingChecklist
+                /= Nothing
+                && OrderPlanning.orders canceled
+                == [ unrelatedOrder ]
+                && OrderPlanning.selection canceled
+                == Just (Inspecting (UnitInspection truckId))
+                && OrderPlanning.submissionDrafts canceled
+                /= Nothing
+            )
+        , expect "leaving unload square selection discards the truck plan and partial exits"
+            (List.isEmpty (OrderPlanning.orders (OrderPlanning.setSelection Nothing depotFirstExit))
+                && OrderPlanning.unloadPlanning (OrderPlanning.setSelection Nothing depotFirstExit)
+                == Nothing
+                && List.isEmpty (OrderPlanning.orders (OrderPlanning.setSelection Nothing exits))
             )
         , expect "finishing or skipping remaining passenger exits preserves them before depot loading"
             (choosingCrates depotCompleted
@@ -1100,6 +1159,32 @@ planningChecks infantryId truckId passengerId =
             (not (UnitCommand.canUse { lowSupplyInfantry | resources = Maybe.map (\resources -> { resources | supplies = { current = 5, maximum = 64, upkeepPerTurn = 1, roughTerrainSurcharge = 0, movementPerTile = 1 } }) lowSupplyInfantry.resources } UnitCommand.AttackMove))
         , expect "attack move cannot board an allied truck"
             (List.isEmpty (OrderPlanning.orders attackLoading) && OrderPlanning.destinationFeedback attackLoading == DestinationUnavailable)
+        , expect "saved orders can be revoked from inspection or a command menu"
+            (OrderPlanning.canRevokeOrder context infantryId saved
+                && OrderPlanning.canRevokeOrder context infantryId (OrderPlanning.restoreCommands context saved)
+                && not (OrderPlanning.canRevokeOrder context truckId saved)
+                && revocationBlocked context infantryId attackRevoked
+            )
+        , expect "unfinished action selection blocks both revoke controls and revoke events"
+            (List.all previewRevocationBlocked
+                [ moving
+                , attacking
+                , attackAiming
+                , aiming
+                , choosingStandGround
+                , OrderPlanning.applyCommand context UnitCommand.Ambush reopenedCommands
+                ]
+            )
+        , expect "dialogs and unfinished unloading cannot be revoked through a stale event"
+            (revocationBlocked context infantryId (OrderPlanning.showSubmissionWarning saved)
+                && revocationBlocked context truckId crateChoice
+                && revocationBlocked cargoContext truckId checklist
+                && revocationBlocked cargoContext infantryId exits
+            )
+        , expect "enemy units and aboard passengers cannot revoke saved orders"
+            (revocationBlocked { context | playerNumbers = [ PlayerNumber.Player2 ] } infantryId saved
+                && revocationBlocked cargoContext infantryId saved
+            )
         , expect "revoking retains inspection without commands or movement previews"
             (List.isEmpty (OrderPlanning.orders attackRevoked)
                 && OrderPlanning.selection attackRevoked

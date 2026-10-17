@@ -51,9 +51,14 @@ resourceWarnings resources =
         isLow resource =
             resource.maximum > 0 && resource.current * 4 <= resource.maximum
 
+        lowHitPoints : Bool
+        lowHitPoints =
+            (resources.hitPoints.maximum > 0)
+                && (resources.hitPoints.current * 4 < resources.hitPoints.maximum * 3)
+
         candidates : List ( Warning, Bool )
         candidates =
-            [ ( LowHitPoints, isLow resources.hitPoints )
+            [ ( LowHitPoints, lowHitPoints )
             , ( LowSupplies, isLow resources.supplies )
             , ( LowFuel, resources.fuel |> Maybe.map isLow |> Maybe.withDefault False )
             ]

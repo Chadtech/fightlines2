@@ -90,7 +90,8 @@ squares. Click a highlighted square to save a move. Hover across squares to prev
 the line to shorten it. Skipped squares connect from the current path tip within
 the remaining budget. If the traced route exceeds the budget, an affordable
 route from the unit is chosen when one exists. Saving stops hover previews and hides reachable-square highlights.
-Select the unit and choose **revoke order** to remove the saved plan and
+Select the unit and choose the full-width **revoke order** button beneath its
+portrait to remove the saved plan and
 keep the unit selected with its command popup closed. Click the unit again to
 reopen commands, then choose **move** to trace a new route. Arrow keys or WASD extend or retrace the previewed route; Enter saves it without panning the map. Reachable squares support Tab and Enter/Space.
 Press Escape or click the selected unit to leave movement selection. Paths remain visible when
@@ -129,7 +130,9 @@ no separate hold order. Select a truck to see its cargo count and select a
 passenger from its inset cargo list for inspection. Choose **hold position** on a
 loaded truck to unload beside its current square, even when it has no fuel.
 After choosing the truck's move destination, an **unload** checklist offers its
-passengers, carried supply crates or fuel drums, and **proceed without unloading**. Select cargo
+passengers, carried supply crates or fuel drums, and **proceed without unloading**.
+Canceling the checklist or leaving unload-square selection cancels the whole truck
+move and any chosen exits. Proceeding without unloading keeps the move. Select cargo
 that can all be placed, then choose adjacent squares around the truck's planned
 destination. Passengers require free squares; crates may share with allied units. The truck moves first; unloading uses
 the passenger's normal terrain and supply costs. Both passengers may unload
@@ -148,9 +151,9 @@ still only dismount. Revoking the truck order also revokes its infantry commands
 Enemy resources and passengers are concealed outside combat. Combat
 encounters involving your units appear even when the enemy is concealed and reveal
 both participants’ before/after health; supplies and fuel stay hidden. Crate cargo is separate from the truck's own provisions.
-Living units with visible resources show square warnings at 25% or below: a red
-heart on light gray for health, a dark `ø` on amber with a black border for
-supplies, and a red `E` on black for fuel. Active warnings pack horizontally from
+Living units with visible resources show a red heart on light gray below 75%
+health. At 25% or below, supplies show a dark `ø` on amber with a black border,
+and fuel shows a red `E` on black. Active warnings pack horizontally from
 the tile's upper-left corner,
 blink together every two seconds, remain bright after orders are saved, and leave
 the lower corners for cargo. Reduced-motion preferences keep them steady.
@@ -211,8 +214,11 @@ Combat deaths cannot be rescued. Supply sources never refill one another;
 empty crates disappear and free their cargo berths. Supply sources do not restore vehicle fuel; fuel depots do.
 
 Move a truck onto a depot. Saving its destination opens a **load supply crates**
-dialog with **0**, **1**, and **2** choices; unavailable counts are disabled.
-Choosing 0 or dismissing the dialog keeps the move without loading. Holding on
+dialog asking how many crates to load, with compact **none**, **1**, and **2**
+buttons for the available loads. The depot stock appears above the choices;
+quantities and two cargo fill bars sit below each numbered button. Partial
+loads fill only part of a bar. Unavailable counts are omitted.
+Choosing none or dismissing the dialog keeps the move without loading. Holding on
 a depot also offers this choice. Trucks collect a neutral ground crate automatically
 when ending on its square with a free cargo berth; either player can collect it,
 and its remaining stock is preserved. Full trucks leave the crate on the ground.
@@ -533,7 +539,8 @@ Fuel depots are available for manual map placement and start with 1024 fuel.
 They refill vehicles on their square or one cardinally adjacent square up to
 capacity, after movement and combat and before upkeep. Both players share the
 finite stock, using the same rotating distribution priority as supply depots.
-Fuel depots offer a **load fuel drums** dialog with the same 0/1/2 choices.
+Fuel depots offer a **load fuel drums** dialog with the same available-load
+choices and fuel quantities.
 Each drum stack occupies one berth and holds up to 256 fuel, drawn from depot
 stock. Ground and carried drums refill nearby vehicles before upkeep, retain
 remaining fuel when picked up or unloaded, and disappear when empty.

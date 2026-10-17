@@ -7,6 +7,7 @@ module GamePage.OrderPlanning exposing
     , UnloadPlanning
     , applyCommand
     , boardingPassengers
+    , canRevokeOrder
     , canSelectUnloadCargo
     , chooseUnloadSquare
     , choosingDirection
@@ -120,7 +121,7 @@ only other units' orders; dialogs and board inspection are derived from the stag
 type Model
     = OrdinaryPlanning Drafts
     | ConfirmingSubmission Drafts
-    | ChoosingCrates UnitId Drafts
+    | ChoosingCrates UnitId Depot Drafts
     | ChoosingPassengers UnloadChoice
     | ChoosingExits UnloadPlanning
 
@@ -201,7 +202,7 @@ orders state =
         ConfirmingSubmission drafts ->
             drafts.orders
 
-        ChoosingCrates _ drafts ->
+        ChoosingCrates _ _ drafts ->
             drafts.orders
 
         ChoosingPassengers choice ->
@@ -230,7 +231,7 @@ selection state =
         ConfirmingSubmission drafts ->
             drafts.selection
 
-        ChoosingCrates id _ ->
+        ChoosingCrates id _ _ ->
             Just (Inspecting (Selection.UnitInspection id))
 
         ChoosingPassengers choice ->
@@ -245,9 +246,25 @@ selection state =
                     Just (Inspecting (Selection.UnitInspection unloading.truck.truckId))
 
 
+{-| Return to ordinary planning with this selection. Leaving passenger or exit
+selection cancels the pending truck order and unload choices, keeping other orders.
+-}
 setSelection : Maybe Selection -> Model -> Model
 setSelection selected state =
-    OrdinaryPlanning { orders = orders state, selection = selected }
+    let
+        retainedOrders : List PlannedOrder
+        retainedOrders =
+            case state of
+                ChoosingPassengers choice ->
+                    choice.otherOrders
+
+                ChoosingExits unloading ->
+                    unloading.otherOrders
+
+                _ ->
+                    orders state
+    in
+    OrdinaryPlanning { orders = retainedOrders, selection = selected }
 
 
 {-| Unfinished unloading cannot become a submission. The lifecycle consumes
@@ -536,9 +553,9 @@ submissionWarningOpen state =
             False
 
 
-dismissDialog : List Depot -> Model -> Model
-dismissDialog depots state =
-    case state of
+dismissDialog : Model -> Model
+dismissDialog model =
+    case model of
         OrdinaryPlanning drafts ->
             case drafts.selection of
                 Just (UnitSelection selected) ->
@@ -546,25 +563,25 @@ dismissDialog depots state =
                         CommandMenu (ReadingGuide focused) ->
                             setSelection
                                 (Just (UnitSelection { selected | interaction = CommandMenu (ChoosingCommand focused) }))
-                                state
+                                model
 
                         _ ->
-                            state
+                            model
 
                 _ ->
-                    state
+                    model
 
         ConfirmingSubmission drafts ->
             OrdinaryPlanning drafts
 
-        ChoosingCrates _ drafts ->
+        ChoosingCrates _ _ drafts ->
             OrdinaryPlanning drafts
 
-        ChoosingPassengers choice ->
-            finishUnloading depots choice.truck choice.otherOrders (selection state)
+        ChoosingPassengers _ ->
+            setSelection (selection model) model
 
         _ ->
-            state
+            model
 
 
 chooseUnloadSquare : Context -> Coordinate -> Model -> Model
@@ -665,8 +682,8 @@ promptDismountedCommands context original =
                 OrdinaryPlanning drafts ->
                     OrdinaryPlanning { drafts | orders = clearPassengerHold drafts.orders }
 
-                ChoosingCrates id drafts ->
-                    ChoosingCrates id { drafts | orders = clearPassengerHold drafts.orders }
+                ChoosingCrates id depot drafts ->
+                    ChoosingCrates id depot { drafts | orders = clearPassengerHold drafts.orders }
 
                 _ ->
                     original
@@ -912,18 +929,54 @@ focusCommand context command state =
             state
 
 
+canRevokeOrder : Context -> UnitId -> Model -> Bool
+canRevokeOrder context unitId model =
+    case ( model, selectedUnit context model ) of
+        ( OrdinaryPlanning drafts, Just unit ) ->
+            let
+                selectionAllowsRevoking : Bool
+                selectionAllowsRevoking =
+                    case drafts.selection of
+                        Just (Inspecting (UnitInspection _)) ->
+                            True
+
+                        Just (UnitSelection { interaction }) ->
+                            case interaction of
+                                CommandMenu _ ->
+                                    True
+
+                                _ ->
+                                    False
+
+                        _ ->
+                            False
+            in
+            selectionAllowsRevoking
+                && (unit.id == unitId)
+                && isOwnUnit context unit
+                && (Unit.carrierId unit == Nothing)
+                && List.any (\order -> order.unitId == unitId) drafts.orders
+
+        _ ->
+            False
+
+
 revokeSelectedOrder : Context -> Model -> Model
 revokeSelectedOrder context state =
     case selectedUnit context state of
         Just unit ->
-            state
-                |> setOrders
-                    (revokeDependentOrders
-                        context
-                        [ unit.id ]
-                        (orders state)
-                    )
-                |> inspectSelectedUnit context
+            if canRevokeOrder context unit.id state then
+                state
+                    |> setOrders
+                        (revokeDependentOrders
+                            context
+                            [ unit.id ]
+                            (orders state)
+                        )
+                    |> inspectSelectedUnit context
+
+            else
+                state
 
         Nothing ->
             state
@@ -1629,20 +1682,21 @@ offerCrateLoading depots order drafts =
         atDestination depot =
             depot.position == PlannedOrder.destination order
 
-        endsAtDepot : Bool
-        endsAtDepot =
-            List.any atDestination depots
+        destinationDepot : Maybe Depot
+        destinationDepot =
+            ListUtil.find atDestination depots
     in
     case order.action of
         PlannedOrder.SupplyTransfer _ ->
             OrdinaryPlanning drafts
 
         _ ->
-            if endsAtDepot then
-                ChoosingCrates order.unitId drafts
+            case destinationDepot of
+                Just depot ->
+                    ChoosingCrates order.unitId depot drafts
 
-            else
-                OrdinaryPlanning drafts
+                Nothing ->
+                    OrdinaryPlanning drafts
 
 
 offerTruckLoading : Context -> Unit -> Model -> Model
@@ -2275,7 +2329,7 @@ setMoveDestinationFeedback feedback state =
 hasDialog : Model -> Bool
 hasDialog state =
     case state of
-        ChoosingCrates _ _ ->
+        ChoosingCrates _ _ _ ->
             True
 
         _ ->

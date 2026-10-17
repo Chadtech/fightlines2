@@ -3,6 +3,7 @@ module View.Button exposing
     , accessibleLabel
     , choice
     , disabled
+    , fullWidth
     , large
     , onClick
     , primary
@@ -38,6 +39,7 @@ type alias Button msg =
     , size : Size
     , icon : Maybe (Html msg)
     , feedback : Maybe String
+    , fullWidth : Bool
     }
 
 
@@ -68,6 +70,7 @@ fromLabelAndVariant label variant =
     , size = Regular
     , icon = Nothing
     , feedback = Nothing
+    , fullWidth = False
     }
 
 
@@ -127,6 +130,11 @@ disabled label =
 large : Button msg -> Button msg
 large button =
     { button | size = Large }
+
+
+fullWidth : Button msg -> Button msg
+fullWidth button =
+    { button | fullWidth = True }
 
 
 toHtml : Button msg -> Html msg
@@ -290,6 +298,7 @@ toHtml button =
                 [ S.batch sizeStyles
                 , S.batch iconStyles
                 , Css.alignSelf Css.flexStart
+                , S.when button.fullWidth S.wFull
                 , Css.maxWidth (Css.pct 100)
                 , S.pointerCursor
                 , S.batch variantStyles

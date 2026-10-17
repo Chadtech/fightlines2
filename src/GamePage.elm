@@ -13,6 +13,7 @@ module GamePage exposing
     )
 
 import AnimationFrame
+import Api.Enum.DepotKind as DepotKind
 import Api.Enum.Direction as DirectionEnum exposing (Direction)
 import Api.Enum.MapTheme exposing (MapTheme)
 import Api.Enum.MapType
@@ -565,7 +566,7 @@ dismissDialog model =
     else
         model
             |> mapPlanning
-                (OrderPlanning.dismissDialog model.depots
+                (OrderPlanning.dismissDialog
                     >> OrderPlanning.promptDismountedCommands (planningContext model)
                 )
 
@@ -1173,7 +1174,7 @@ mapNavigation change model =
 cargoDialogHtmlId : TurnLifecycle.Phase -> Maybe String
 cargoDialogHtmlId phase =
     case phase of
-        TurnLifecycle.Planning (OrderPlanning.ChoosingCrates _ _) ->
+        TurnLifecycle.Planning (OrderPlanning.ChoosingCrates _ _ _) ->
             Just loadCratesDialogHtmlId
 
         TurnLifecycle.Planning (OrderPlanning.ChoosingPassengers _) ->
@@ -1505,7 +1506,7 @@ update lobbyId msg model =
                 Just _ ->
                     model
                         |> mapPlanning
-                            (OrderPlanning.dismissDialog model.depots
+                            (OrderPlanning.dismissDialog
                                 >> saveCrateLoading id count
                                 >> OrderPlanning.promptDismountedCommands (planningContext model)
                             )
@@ -2281,7 +2282,12 @@ selectionView model =
 
                         contents : List (Html Msg)
                         contents =
-                            [ UnitStatus.toHtml unitPlayerName authoritativeUnit
+                            [ UnitStatus.toHtml
+                                unitPlayerName
+                                authoritativeUnit
+                                { canRevoke = canRevokeOrder model unit
+                                , onRevoke = ClearMoveClicked
+                                }
                             , cargoView model unit
                             , supplyControls model unit
                             ]
@@ -2520,6 +2526,13 @@ movementView model =
         content
 
 
+canRevokeOrder : Model -> Unit -> Bool
+canRevokeOrder model unit =
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.map (OrderPlanning.canRevokeOrder (planningContext model) unit.id)
+        |> Maybe.withDefault False
+
+
 unitOrderView : Model -> Unit -> List (Html Msg)
 unitOrderView model unit =
     let
@@ -2664,8 +2677,6 @@ unitOrderView model unit =
                                             |> String.concat
                     in
                     [ H.h3 [] [ H.text chosenOrderText ]
-                    , Button.primary "revoke order" ClearMoveClicked
-                        |> Button.toHtml
                     ]
 
                 loadingDetails : List (Html Msg)
@@ -3222,8 +3233,8 @@ unloadChecklist model choice =
     Dialog.make unloadDialogHtmlId "unload" DialogDismissed content
 
 
-depotLoadingDialog : Model -> UnitId -> Dialog Msg
-depotLoadingDialog model id =
+depotLoadingDialog : Model -> UnitId -> Depot -> Dialog Msg
+depotLoadingDialog model id depot =
     let
         truck : Maybe Unit
         truck =
@@ -3237,19 +3248,198 @@ depotLoadingDialog model id =
 
         cargoLabel : String
         cargoLabel =
-            plannedDepot model id
-                |> Maybe.map (.kind >> Supply.cargoPlural)
-                |> Maybe.withDefault "cargo"
+            Supply.cargoPlural depot.kind
+
+        question : String
+        question =
+            case depot.kind of
+                DepotKind.Supply ->
+                    "how many crates would you like to load?"
+
+                DepotKind.Fuel ->
+                    "how many drum loads should this truck take?"
+
+        stock : Maybe Supply.Stock
+        stock =
+            depot.stock
+
+        resourceLabel : String
+        resourceLabel =
+            Depot.resourceLabel depot
+
+        stockLabel : String
+        stockLabel =
+            case stock of
+                Just known ->
+                    String.fromInt known.current ++ " " ++ resourceLabel
+
+                Nothing ->
+                    "stock outside sight"
+
+        loadAmount : Int -> Maybe Int
+        loadAmount count =
+            stock
+                |> Maybe.map
+                    (\known ->
+                        min known.current (count * model.supplyRules.crateCapacity)
+                    )
 
         choice : Int -> Html Msg
         choice count =
-            if count > room then
-                Button.disabled (String.fromInt count)
+            let
+                buttonLabel : String
+                buttonLabel =
+                    if count == 0 then
+                        "none"
+
+                    else
+                        String.fromInt count
+
+                quantity : String
+                quantity =
+                    if count == 0 then
+                        "—"
+
+                    else
+                        loadAmount count
+                            |> Maybe.map String.fromInt
+                            |> Maybe.withDefault "?"
+
+                cargoName : String
+                cargoName =
+                    case depot.kind of
+                        DepotKind.Supply ->
+                            if count == 1 then
+                                "supply crate"
+
+                            else
+                                "supply crates"
+
+                        DepotKind.Fuel ->
+                            if count == 1 then
+                                "fuel drum"
+
+                            else
+                                "fuel drums"
+
+                quantityLabel : String
+                quantityLabel =
+                    case loadAmount count of
+                        Just amount ->
+                            String.fromInt amount ++ " " ++ resourceLabel
+
+                        Nothing ->
+                            "stock outside sight"
+
+                accessibleLabel : String
+                accessibleLabel =
+                    if count == 0 then
+                        "load none"
+
+                    else
+                        "load "
+                            ++ String.fromInt count
+                            ++ " "
+                            ++ cargoName
+                            ++ ", "
+                            ++ quantityLabel
+
+                berthFill : Int -> Html Msg
+                berthFill index =
+                    let
+                        amount : Int
+                        amount =
+                            loadAmount count
+                                |> Maybe.withDefault 0
+                                |> (\total -> clamp 0 model.supplyRules.crateCapacity (total - index * model.supplyRules.crateCapacity))
+
+                        percentage : Float
+                        percentage =
+                            100 * toFloat amount / toFloat model.supplyRules.crateCapacity
+                    in
+                    H.div
+                        [ A.css
+                            [ S.flex1_1_0pct
+                            , S.bgNightwood3
+                            , S.h2
+                            ]
+                        ]
+                        [ H.div
+                            [ A.css
+                                [ S.bgYellow4
+                                , S.hFull
+                                , S.widthPct percentage
+                                ]
+                            ]
+                            []
+                        ]
+
+                berthFills : List (Html Msg)
+                berthFills =
+                    if (count > 0) && (stock /= Nothing) then
+                        List.map berthFill [ 0, 1 ]
+
+                    else
+                        []
+            in
+            H.div
+                [ A.css
+                    [ S.col
+                    , S.itemsCenter
+                    , S.flex1_1_0pct
+                    , S.minW0
+                    , S.g3
+                    ]
+                ]
+                [ Button.secondary buttonLabel (LoadCratesClicked id count)
+                    |> Button.accessibleLabel accessibleLabel
+                    |> Button.fullWidth
                     |> Button.toHtml
+                , H.span
+                    [ A.css
+                        [ S.textGray5
+                        , S.tabularNums
+                        ]
+                    ]
+                    [ H.text quantity
+                    ]
+                , H.div
+                    [ Aria.hidden True
+                    , A.css
+                        [ S.row
+                        , S.g1
+                        , S.wFull
+                        , S.h2
+                        ]
+                    ]
+                    berthFills
+                ]
+
+        stockDetails : List (Html Msg)
+        stockDetails =
+            if room == 0 then
+                let
+                    explanation : String
+                    explanation =
+                        case stock of
+                            Just known ->
+                                if known.current == 0 then
+                                    "depot empty"
+
+                                else
+                                    "no cargo room"
+
+                            Nothing ->
+                                "no cargo room"
+                in
+                [ H.p
+                    []
+                    [ H.text explanation
+                    ]
+                ]
 
             else
-                Button.secondary (String.fromInt count) (LoadCratesClicked id count)
-                    |> Button.toHtml
+                []
 
         actions : Html Msg
         actions =
@@ -3257,22 +3447,48 @@ depotLoadingDialog model id =
                 [ A.attribute "method" "dialog"
                 , A.css
                     [ S.row
+                    , S.g3
+                    ]
+                ]
+                (List.range 0 room
+                    |> List.map choice
+                )
+
+        content : List (Html Msg)
+        content =
+            [ H.div
+                [ A.css
+                    [ S.row
+                    , S.justifySpaceBetween
+                    , S.flexWrap
                     , S.g2
                     ]
                 ]
-                (List.range 0 2
-                    |> List.map choice
-                )
+                [ H.span
+                    []
+                    [ H.text "depot"
+                    ]
+                , H.span
+                    [ A.css
+                        [ S.textGray5
+                        , S.tabularNums
+                        ]
+                    ]
+                    [ H.text stockLabel
+                    ]
+                ]
+            , H.p
+                []
+                [ H.text question
+                ]
+            , actions
+            ]
+                ++ stockDetails
     in
     Dialog.make loadCratesDialogHtmlId
         ("load " ++ cargoLabel)
         DialogDismissed
-        [ H.p
-            []
-            [ H.text "how many loads should the truck take from this depot?"
-            ]
-        , actions
-        ]
+        content
 
 
 {-| Dialogs derive from the command guide, turn introduction, playback loss, or the active planning workflow.
@@ -3338,8 +3554,8 @@ planningDialog model _ =
         TurnLifecycle.Planning (OrderPlanning.ChoosingPassengers choice) ->
             Just (unloadChecklist model choice)
 
-        TurnLifecycle.Planning (OrderPlanning.ChoosingCrates id _) ->
-            Just (depotLoadingDialog model id)
+        TurnLifecycle.Planning (OrderPlanning.ChoosingCrates id depot _) ->
+            Just (depotLoadingDialog model id depot)
 
         _ ->
             Nothing

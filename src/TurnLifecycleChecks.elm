@@ -408,9 +408,9 @@ unloadChecks =
             List.concat
                 [ expect "stationary unloading replaces the truck move with one hold at its origin"
                     (TurnLifecycle.orders stationaryChecklist == [ stationaryHold ])
-                , expect "canceling or declining stationary unloading leaves a plain hold"
-                    (TurnLifecycle.orders (TurnLifecycle.mapPlanning (OrderPlanning.dismissDialog []) stationaryChecklist)
-                        == [ stationaryHold ]
+                , expect "canceling stationary unloading discards the hold while proceeding keeps it"
+                    (TurnLifecycle.orders (TurnLifecycle.mapPlanning OrderPlanning.dismissDialog stationaryChecklist)
+                        == []
                         && TurnLifecycle.orders (TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] stationaryOptions) stationaryChecklist)
                         == [ stationaryHold ]
                     )
@@ -432,8 +432,10 @@ unloadChecks =
                     )
                 , expect "the passenger checklist owns one truck move and derives its inspection"
                     (hasOneOwner && TurnLifecycle.orders checklist == [ order ] && TurnLifecycle.selection checklist == Just (Inspecting (UnitInspection truck)))
-                , expect "canceling the checklist retains the move and returns to ordinary planning"
-                    (TurnLifecycle.mapPlanning (OrderPlanning.dismissDialog []) checked == ordinary)
+                , expect "canceling the checklist discards the move and returns to ordinary planning"
+                    (TurnLifecycle.mapPlanning OrderPlanning.dismissDialog checked
+                        == Planning (OrdinaryPlanning { orders = [], selection = Just (Inspecting (UnitInspection truck)) })
+                    )
                 , expect "proceeding without passengers retains the move"
                     (TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] exitOptions) checklist == ordinary)
                 , expect "the next passenger cannot reuse an exit already saved"
@@ -448,16 +450,16 @@ unloadChecks =
                     )
                 , expect "a new passenger starts without the previous passenger destination feedback"
                     (Maybe.map .destinationFeedback (planningExits secondPassenger) == Just NoDestinationFeedback)
-                , expect "leaving an invalid unload choice drops its feedback and preserves saved orders"
+                , expect "leaving an invalid unload choice drops its feedback and the truck plan"
                     (planningExits (TurnLifecycle.setSelection Nothing rejectedExit)
                         == Nothing
                         && TurnLifecycle.orders (TurnLifecycle.setSelection Nothing rejectedExit)
-                        == TurnLifecycle.orders rejectedExit
+                        == []
                     )
                 , expect "both passenger exits and the truck route survive workflow completion"
                     (TurnLifecycle.orders complete == [ completedOrder ] && planningExits complete == Nothing)
-                , expect "leaving exit selection keeps exits already chosen"
-                    (List.concatMap PlannedOrder.unloads (TurnLifecycle.orders (TurnLifecycle.setSelection Nothing secondPassenger)) == [ { unitId = first, destination = { x = 2, y = 2 } } ])
+                , expect "leaving exit selection discards the move and exits already chosen"
+                    (TurnLifecycle.orders (TurnLifecycle.setSelection Nothing secondPassenger) == [])
                 , expect "ordinary order edits cannot replace or duplicate an active unload move"
                     (TurnLifecycle.setOrders [] checklist == checklist && TurnLifecycle.setOrders [] secondPassenger == secondPassenger)
                 , expect "submission warnings and unload stages are mutually exclusive"
@@ -473,7 +475,7 @@ unloadChecks =
                 , expect "completed unload orders can be revoked normally"
                     (TurnLifecycle.orders (TurnLifecycle.setOrders [] complete) == [])
                 , expect "submission warning dismissal preserves selection and drafts"
-                    (TurnLifecycle.mapPlanning (OrderPlanning.dismissDialog []) (TurnLifecycle.mapPlanning OrderPlanning.showSubmissionWarning ordinary) == ordinary)
+                    (TurnLifecycle.mapPlanning OrderPlanning.dismissDialog (TurnLifecycle.mapPlanning OrderPlanning.showSubmissionWarning ordinary) == ordinary)
                 , expect "confirming submission accepts the warning state's drafts"
                     (TurnLifecycle.startSubmission 1 (TurnLifecycle.mapPlanning OrderPlanning.showSubmissionWarning ordinary) == TurnLifecycle.startSubmission 1 ordinary)
                 ]
