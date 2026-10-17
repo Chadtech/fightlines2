@@ -3,6 +3,7 @@ module Direction exposing
     , alongPath
     , between
     , label
+    , reversesPath
     , step
     )
 
@@ -50,6 +51,18 @@ alongPath path initial =
 
         _ ->
             initial
+
+
+{-| Whether facing points back along the final segment of a route.
+-}
+reversesPath : List Coordinate -> Direction -> Bool
+reversesPath path direction =
+    case List.reverse path of
+        destination :: previous :: _ ->
+            between destination previous == Just direction
+
+        _ ->
+            False
 
 
 label : Direction -> String

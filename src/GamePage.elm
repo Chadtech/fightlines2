@@ -563,7 +563,11 @@ dismissDialog model =
         { model | currentTurn = CurrentTurn.acknowledgeIntroduction model.currentTurn }
 
     else
-        model |> mapPlanning (OrderPlanning.dismissDialog model.depots)
+        model
+            |> mapPlanning
+                (OrderPlanning.dismissDialog model.depots
+                    >> OrderPlanning.promptDismountedCommands (planningContext model)
+                )
 
 
 partialOrdersDialogHtmlId : String
@@ -717,6 +721,11 @@ selectedUnit model =
     OrderPlanning.selectedUnitFromSelection
         (planningContext model)
         (currentSelection model)
+        |> Maybe.map
+            (OrderPlanning.planningUnit
+                (planningContext model)
+                (plannedOrders model)
+            )
 
 
 selectedPosition : Model -> Maybe Coordinate
@@ -1498,6 +1507,7 @@ update lobbyId msg model =
                         |> mapPlanning
                             (OrderPlanning.dismissDialog model.depots
                                 >> saveCrateLoading id count
+                                >> OrderPlanning.promptDismountedCommands (planningContext model)
                             )
                         |> E.withOut
 
@@ -1534,6 +1544,12 @@ update lobbyId msg model =
                     case rotationMsg of
                         RotationChoices.MouseMovedOverDirection direction ->
                             previewDirection direction model
+
+                        RotationChoices.FocusedDirection direction ->
+                            previewDirection direction model
+
+                        RotationChoices.DirectionActivationKeyPressed direction ->
+                            saveDirection direction model
 
                         RotationChoices.ClickedDirection direction ->
                             if BattlefieldNavigation.suppressesClick model.navigation then
@@ -2257,9 +2273,15 @@ selectionView model =
                             else
                                 []
 
+                        authoritativeUnit : Unit
+                        authoritativeUnit =
+                            model.units
+                                |> ListUtil.find (\original -> original.id == unit.id)
+                                |> Maybe.withDefault unit
+
                         contents : List (Html Msg)
                         contents =
-                            [ UnitStatus.toHtml unitPlayerName unit
+                            [ UnitStatus.toHtml unitPlayerName authoritativeUnit
                             , cargoView model unit
                             , supplyControls model unit
                             ]
@@ -2468,9 +2490,26 @@ movementView model =
             else
                 []
 
+        dismountDetails : List (Html Msg)
+        dismountDetails =
+            case selectedUnit model of
+                Just unit ->
+                    if OrderPlanning.isDismounting (planningContext model) unit then
+                        [ H.p
+                            []
+                            [ H.text "this infantry acts after unloading, with a fresh movement allowance. unloading and movement both consume supplies."
+                            ]
+                        ]
+
+                    else
+                        []
+
+                Nothing ->
+                    []
+
         content : List (Html Msg)
         content =
-            details ++ feedback
+            dismountDetails ++ details ++ feedback
     in
     H.div
         [ A.css
@@ -3980,8 +4019,8 @@ boardSvg model =
                 ]
                 (List.map unloadRoute unloads)
 
-        ambushCoverage : List (Svg Msg)
-        ambushCoverage =
+        facingCoverage : List (Svg Msg)
+        facingCoverage =
             let
                 saved : PlannedOrder -> Maybe (Svg Msg)
                 saved order =
@@ -3989,6 +4028,9 @@ boardSvg model =
                         PlannedOrder.Ambush facing ->
                             ListUtil.find (\unit -> unit.id == order.unitId) model.units
                                 |> Maybe.map (\unit -> Ambush.coverage model.map facing.position facing.direction unit.combatRules)
+
+                        PlannedOrder.AttackMove attack ->
+                            Just (RotationChoices.attackFacing attack.move.destination attack.direction)
 
                         _ ->
                             Nothing
@@ -4073,7 +4115,17 @@ boardSvg model =
 
         directionChoices : Map -> Coordinate -> Direction -> Svg RotationChoices.Msg
         directionChoices =
-            RotationChoices.ambushToSvg
+            case currentSelection model of
+                Just (UnitSelection { interaction }) ->
+                    case interaction of
+                        ChoosingAttackDirection move _ ->
+                            RotationChoices.attackToSvg move.path
+
+                        _ ->
+                            RotationChoices.ambushToSvg
+
+                _ ->
+                    RotationChoices.ambushToSvg
 
         selection : List (Svg Msg)
         selection =
@@ -4124,7 +4176,7 @@ boardSvg model =
                         |> Maybe.map (unitView unit)
                 )
                 model.units
-            , ambushCoverage
+            , facingCoverage
             , [ unloadOverlay, shotOverlay ]
             , selection
             , rotationOverlay

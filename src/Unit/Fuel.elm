@@ -12,6 +12,7 @@ type alias Fuel =
     { current : Int
     , maximum : Int
     , movementPerTile : Int
+    , movementPerCargoSlot : Int
     }
 
 
@@ -21,3 +22,4 @@ selection =
         |> SS.with FuelApi.current
         |> SS.with FuelApi.maximum
         |> SS.with FuelApi.movementPerTile
+        |> SS.with FuelApi.movementPerCargoSlot

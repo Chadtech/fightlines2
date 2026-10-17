@@ -192,6 +192,7 @@ struct ShellLaunch {
     destination: Coordinate,
 }
 
+#[derive(Clone)]
 pub struct Combat {
     indirect_targets: BTreeMap<UnitId, Coordinate>,
     ambushers: BTreeSet<UnitId>,
@@ -260,6 +261,15 @@ impl Combat {
             combat.deferred_targets.insert(shooter.unit_id(), targets);
         }
         combat
+    }
+
+    /// Activate a dismounted unit without resetting anyone's spent shots or targets.
+    pub fn activate(&mut self, board: &mut Scenario, orders: &[MoveOrder]) {
+        let additional = Self::prepare(board, orders);
+        self.ambushers.extend(additional.ambushers);
+        self.standing_ground.extend(additional.standing_ground);
+        self.attack_movers.extend(additional.attack_movers);
+        self.indirect_targets.extend(additional.indirect_targets);
     }
 
     pub fn has_fired(&self, id: UnitId) -> bool {

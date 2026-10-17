@@ -583,12 +583,15 @@ model as part of that experiment rather than copying the old engine.
 
 Rust units carry optional `Fuel` state: tanks and trucks start at 128/128;
 infantry and field guns have none. One traversed path edge consumes eight fuel for
-tanks and four for trucks, independent of terrain movement points. Validation rejects paths exceeding
+tanks. Trucks spend two fuel plus two per occupied cargo slot at departure, counting
+passengers, supply crates, and fuel drums. Loading and unloading happen after travel,
+so they affect the next route. Fuel is independent of terrain movement points. Validation rejects paths exceeding
 available fuel before locking orders. Resolution consumes fuel only on
 successful movement. Fuel depots replenish living vehicles from finite stock at turn settlement. Interrupted routes pay only for
 traversed tiles; holds spend no fuel.
 
-Snapshots expose current and maximum fuel and consumption per tile through
+Snapshots expose current and maximum fuel, base consumption per tile, and the
+surcharge per occupied cargo slot through
 GraphQL. Elm selects it into
 `Unit`, displays the authoritative gauge and bounds both reachable paths and
 traced extensions by remaining fuel. Search tracks both terrain cost and path
@@ -911,6 +914,8 @@ pointer and keyboard controls as move. Dragging traces without panning; releasin
 clicking a destination, or pressing Enter fixes the route and opens a direction
 picker centered on its destination. Point to preview final facing, then click or
 press an arrow/WASD key to save. Unfinished direction selection blocks submission.
+The picker omits the direction back along the final route segment. Elm rejects
+that direction for preview and saving; Rust rejects it during order validation.
 Preview paths are solid red; saved paths are dashed red. Their endpoint arrow
 shows the chosen final facing.
 Allies remain passable, but attack move cannot load or unload passengers.
@@ -1105,3 +1110,27 @@ from impact-only scenes. Projected indirect landings without a matching confirme
 shot open a terrain-only combat theater with no participants or hit/miss claims.
 Theater controls, map peeks, spotlighting, and automatic closing share one playback
 clock; confirmed hits do not also open an impact-only scene.
+
+## Infantry commands after dismounting
+
+A truck's passenger exits remain in `MoveOrder.unloads`. An infantry order whose
+path starts at its assigned exit is a dependent command after dismounting; the
+wire contract reuses the existing move/action fields. Validation projects that
+infantry onto its exit and reserves unloading supplies before checking the command.
+Legacy passenger holds at the carrier remain plain unloading orders.
+
+Resolution substitutes aboard holds during the initial movement phase. Successful
+unloading activates the infantry's readiness in the existing `Combat`, then a
+second shared movement phase resolves surviving infantry commands before indirect
+fire. `movement_resolution::resolve_dismounts` preserves spent shots, readiness,
+and pending targets across phases and movement retries. Boarding exceptions apply
+only during transport; dismount movement retreats from occupied truck squares.
+Playback frames remain the authority for timing; dependent action events follow
+transport events.
+
+`OrderPlanning.planningUnit` projects dismounted infantry only for command selection,
+route previews, and submission. Inspector resource gauges retain authoritative
+values; reserved unloading supplies affect command affordability only. Physical
+board and cargo data stay unchanged until playback. Finishing exit choices opens the first infantry command menu; saving a
+command advances to the next unloaded infantry without an order. Missing commands
+use the existing submission warning and explicit hold fallback at the exit.

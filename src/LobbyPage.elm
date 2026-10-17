@@ -87,19 +87,12 @@ type alias Model =
     , isMember : Bool
     , gameUrl : Maybe String
     , selectedMapType : MapType
-    , mapStatus : MapStatus
     , busy : Bool
     , refreshing : Bool
     , error : Maybe String
     , actionError : Maybe String
     , copyStatus : CopyStatus
     }
-
-
-type MapStatus
-    = MapIdle
-    | MapSaving
-    | MapSaved
 
 
 type CopyStatus
@@ -155,7 +148,6 @@ init shared flags =
       , name = flags.name
       , mapType = flags.mapType
       , selectedMapType = flags.mapType
-      , mapStatus = MapIdle
       , players = flags.players
       , isHost = flags.isHost
       , isMember = flags.isMember
@@ -235,7 +227,6 @@ update msg model =
                             | selectedMapType = mapType
                             , busy = True
                             , actionError = Nothing
-                            , mapStatus = MapSaving
                         }
                 in
                 ( updatedModel
@@ -248,7 +239,6 @@ update msg model =
                     { model
                         | busy = False
                         , actionError = Nothing
-                        , mapStatus = MapSaved
                     }
                         |> receive flags
 
@@ -256,7 +246,6 @@ update msg model =
                     ( { model
                         | busy = False
                         , actionError = Just (ApiRequest.errorMessage error)
-                        , mapStatus = MapIdle
                       }
                     , E.none
                     )
@@ -289,7 +278,6 @@ update msg model =
                 Ok flags ->
                     ( { model
                         | mapType = flags.mapType
-                        , mapStatus = MapSaved
                       }
                     , E.request ActionResponseReceived (start model.id)
                     )
@@ -479,6 +467,29 @@ view model =
 
 inviteView : Model -> Html Msg
 inviteView model =
+    let
+        copyFeedback : Maybe String
+        copyFeedback =
+            case model.copyStatus of
+                Copied ->
+                    Just "copied"
+
+                _ ->
+                    Nothing
+
+        copyError : Html Msg
+        copyError =
+            case model.copyStatus of
+                CopyFailed ->
+                    H.p
+                        [ Aria.role Aria.Alert
+                        ]
+                        [ H.text "could not copy. select the link and copy it manually."
+                        ]
+
+                _ ->
+                    H.text ""
+    in
     H.div
         [ A.css [ S.col, S.g1 ]
         ]
@@ -509,23 +520,11 @@ inviteView model =
                 , A.css [ S.border0, S.shrink0 ]
                 ]
                 [ Button.secondary "copy link" CopyLinkButtonClicked
+                    |> Button.withFeedback copyFeedback
                     |> Button.toHtml
                 ]
             ]
-        , H.p
-            [ Aria.role Aria.Status ]
-            [ H.text
-                (case model.copyStatus of
-                    Copied ->
-                        "copied"
-
-                    CopyFailed ->
-                        "could not copy. select the link and copy it manually."
-
-                    _ ->
-                        ""
-                )
-            ]
+        , copyError
         ]
 
 
@@ -565,21 +564,6 @@ mapView model =
                     , decoder = Api.Enum.MapType.decoder
                     , onChange = MapInputChanged
                     }
-                ]
-            , H.p
-                [ Aria.role Aria.Status
-                ]
-                [ H.text
-                    (case model.mapStatus of
-                        MapIdle ->
-                            ""
-
-                        MapSaving ->
-                            "saving map…"
-
-                        MapSaved ->
-                            "map saved"
-                    )
                 ]
             ]
 

@@ -32,3 +32,8 @@ maximum =
 movementPerTile : SelectionSet Int Api.Object.Fuel
 movementPerTile =
     Object.selectionForField "Int" "movementPerTile" [] Decode.int
+
+
+movementPerCargoSlot : SelectionSet Int Api.Object.Fuel
+movementPerCargoSlot =
+    Object.selectionForField "Int" "movementPerCargoSlot" [] Decode.int

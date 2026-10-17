@@ -1,7 +1,7 @@
 use crate::{
     combat::{self, IndirectImpact, Shot},
     map::Coordinate,
-    movement,
+    movement, movement_resolution,
     scenario::{
         Depot, Direction, PlayerNumber, ResourceSettlement, Scenario, SpriteFacing, Unit, UnitId,
         UnitKind,
@@ -344,11 +344,61 @@ pub(crate) fn planned_loads(scenario: &Scenario, orders: &[MoveOrder]) -> Vec<Pl
     loads
 }
 
+/// Infantry orders starting at a truck-planned exit run only after dismounting.
+fn dismount_orders(scenario: &Scenario, orders: &[MoveOrder]) -> Vec<MoveOrder> {
+    orders
+        .iter()
+        .filter(|order| {
+            scenario.units.iter().any(|unit| {
+                unit.unit_id() == order.unit_id
+                    && unit.kind() == UnitKind::Infantry
+                    && unit.carrier_id().is_some_and(|carrier| {
+                        orders.iter().any(|truck| {
+                            truck.unit_id == carrier
+                                && truck.unloads.iter().any(|exit| {
+                                    exit.unit_id == order.unit_id
+                                        && order.path.first() == Some(&exit.destination)
+                                })
+                        })
+                    })
+            })
+        })
+        .cloned()
+        .collect()
+}
+
 pub fn validate(
     scenario: &Scenario,
     player_number: PlayerNumber,
     inputs: Vec<MoveOrderInput>,
 ) -> Result<Vec<MoveOrder>, &'static str> {
+    // Read dependencies before validating individual orders so submission order
+    // cannot decide whether an infantry command starts aboard or at its exit.
+    let mut infantry_exits = BTreeMap::new();
+    for truck in &inputs {
+        let carrier = UnitId::parse(&truck.unit_id).ok_or("invalid unit id.")?;
+        for exit in truck.unloads.iter().flatten() {
+            let id = UnitId::parse(&exit.unit_id).ok_or("invalid passenger id.")?;
+            let passenger = scenario
+                .units
+                .iter()
+                .find(|unit| {
+                    unit.unit_id() == id
+                        && unit.player_number() == player_number
+                        && unit.carrier_id() == Some(carrier)
+                })
+                .ok_or("only passengers aboard this truck can be unloaded.")?;
+            if passenger.kind() == UnitKind::Infantry {
+                let x = u16::try_from(exit.destination.x)
+                    .map_err(|_| "unloading is outside the map.")?;
+                let y = u16::try_from(exit.destination.y)
+                    .map_err(|_| "unloading is outside the map.")?;
+                if infantry_exits.insert(id, Coordinate::new(x, y)).is_some() {
+                    return Err("each passenger may only be unloaded once.");
+                }
+            }
+        }
+    }
     let visible = crate::visibility::visible_tiles(scenario, player_number);
     // Occupancy may reject a draft only when it is known to its owner. Resolution
     // still checks the complete board, including concealed enemies at unload exits.
@@ -383,6 +433,19 @@ pub fn validate(
             .iter()
             .find(|unit| unit.unit_id() == unit_id && unit.player_number() == player_number)
             .ok_or("you can only submit orders for your own units.")?;
+        let mut dismounted = unit.clone();
+        let starts_at_exit = infantry_exits.get(&unit_id).filter(|exit| {
+            input
+                .path
+                .first()
+                .is_some_and(|start| start.x == exit.x() && start.y == exit.y())
+        });
+        let unit = if let Some(exit) = starts_at_exit {
+            dismounted.follow_terrain_path(&scenario.map, &[*exit, *exit], 0);
+            &dismounted
+        } else {
+            unit
+        };
         if !unit_ids.insert(unit_id) {
             return Err("each unit must have exactly one order.");
         }
@@ -407,7 +470,11 @@ pub fn validate(
                 Ok(coordinate)
             })
             .collect::<Result<_, &str>>()?;
-        if Some(path[0]) != scenario.physical_position(unit) {
+        if Some(path[0])
+            != unit
+                .board_position()
+                .or_else(|| scenario.physical_position(unit))
+        {
             return Err("movement must start at the unit's current position.");
         }
         let indirect_fire = if let Some(target) = input.indirect_fire {
@@ -537,7 +604,9 @@ pub fn validate(
             return Err("movement exceeds the unit's budget.");
         }
         if let Some(fuel) = unit.fuel()
-            && (path.len() - 1) * fuel.movement_per_tile as usize > fuel.current as usize
+            && (path.len() - 1)
+                * unit.fuel_movement_per_tile(scenario.passenger_count(unit.unit_id())) as usize
+                > fuel.current as usize
         {
             return Err("movement exceeds the unit's available fuel.");
         }
@@ -570,7 +639,7 @@ pub fn validate(
         {
             return Err("occupied squares cannot be destinations.");
         }
-        if path.len() > 1 {
+        if path.len() > 1 && starts_at_exit.is_none() {
             destinations.insert(destination);
         }
         let mut unloads: Vec<UnloadOrder> = Vec::new();
@@ -695,7 +764,16 @@ pub fn validate(
             } else if attack_move {
                 // Older clients omit direction and retain the route's final facing.
                 match input.direction {
-                    Some(direction) => FacingOrder::AfterMove(direction),
+                    Some(direction) => {
+                        if let [.., previous, destination] = path.as_slice()
+                            && Direction::between(*destination, *previous) == Some(direction)
+                        {
+                            return Err(
+                                "attack move cannot face back along its final route segment.",
+                            );
+                        }
+                        FacingOrder::AfterMove(direction)
+                    }
                     None => FacingOrder::Unchanged,
                 }
             } else {
@@ -711,14 +789,36 @@ pub fn validate(
             unloads,
         });
     }
+    let dismounts = dismount_orders(scenario, &orders);
     for order in &orders {
         for unload in &order.unloads {
-            if !orders
-                .iter()
-                .any(|other| other.unit_id == unload.unit_id && other.path.len() == 1)
-            {
+            if !orders.iter().any(|other| {
+                other.unit_id == unload.unit_id
+                    && (other.path.len() == 1
+                        || dismounts.iter().any(|plan| plan.unit_id == other.unit_id))
+            }) {
                 return Err("passengers unloading with a truck must have hold orders.");
             }
+        }
+    }
+    for order in &dismounts {
+        let destination = *order
+            .path
+            .last()
+            .ok_or("movement requires a starting position.")?;
+        if order.path.first() != Some(&destination) && !destinations.insert(destination) {
+            return Err("units must have different destinations.");
+        }
+        if orders.iter().any(|other| {
+            other.unit_id != order.unit_id
+                && other.path.last() == Some(&destination)
+                && !dismounts.iter().any(|plan| plan.unit_id == other.unit_id)
+                && scenario
+                    .units
+                    .iter()
+                    .any(|unit| unit.unit_id() == other.unit_id && unit.carrier_id().is_none())
+        }) {
+            return Err("units must have different destinations.");
         }
     }
     let loads = planned_loads(scenario, &orders);
@@ -730,6 +830,9 @@ pub fn validate(
             .find(|unit| unit.unit_id() == order.unit_id)
             .ok_or("the order references a missing unit.")?;
         if let Some(carrier) = unit.carrier_id() {
+            if dismounts.iter().any(|plan| plan.unit_id == order.unit_id) {
+                continue;
+            }
             if order.path.len() > 1 {
                 if orders
                     .iter()
@@ -920,7 +1023,25 @@ impl Turns {
             // Stable unit order, independent of which player's request arrives first.
             orders.sort_by_key(|order| order.unit_id);
             let initial_units = scenario.units.clone();
-            let movement = crate::movement_resolution::resolve(scenario, &orders, self.number)
+            let dismounts = dismount_orders(scenario, &orders);
+            let mut transport_orders = orders.clone();
+            for order in &mut transport_orders {
+                if dismounts.iter().any(|plan| plan.unit_id == order.unit_id) {
+                    let unit = scenario
+                        .units
+                        .iter()
+                        .find(|unit| unit.unit_id() == order.unit_id)
+                        .ok_or("the order references a missing unit.")?;
+                    order.path = vec![
+                        scenario
+                            .physical_position(unit)
+                            .ok_or("the passenger has no physical position.")?,
+                    ];
+                    order.travel = TravelMode::Normal;
+                    order.facing = FacingOrder::Unchanged;
+                }
+            }
+            let movement = movement_resolution::resolve(scenario, &transport_orders, self.number)
                 .map_err(|error| error.message())?;
             let combat_units = movement
                 .frames
@@ -933,8 +1054,8 @@ impl Turns {
             let mut combat = movement.combat;
             let mut combat_stopped = BTreeSet::new();
             let mut events = Vec::new();
-            let loads = planned_loads(scenario, &orders);
-            for order in &orders {
+            let loads = planned_loads(scenario, &transport_orders);
+            for order in &transport_orders {
                 let unit = scenario
                     .units
                     .iter()
@@ -971,12 +1092,13 @@ impl Turns {
                 });
             }
             for event in &events {
+                let passenger_count = scenario.passenger_count(event.unit_id);
                 let unit = scenario
                     .units
                     .iter_mut()
                     .find(|unit| unit.unit_id() == event.unit_id)
                     .ok_or("the order references a missing unit.")?;
-                unit.follow_terrain_path(&scenario.map, &event.path);
+                unit.follow_terrain_path(&scenario.map, &event.path, passenger_count);
                 let combat_unit = combat_units
                     .iter()
                     .find(|other| other.unit_id() == unit.unit_id())
@@ -1085,8 +1207,13 @@ impl Turns {
                         .iter_mut()
                         .find(|unit| unit.unit_id() == unload.unit_id)
                         .ok_or("the order references a missing unit.")?
-                        .follow_terrain_path(&scenario.map, &event.path);
+                        .follow_terrain_path(&scenario.map, &event.path, 0);
                     events.push(event);
+                    if let Some(command) =
+                        dismounts.iter().find(|plan| plan.unit_id == unload.unit_id)
+                    {
+                        combat.activate(scenario, std::slice::from_ref(command));
+                    }
                     frames.push(TurnFrame {
                         departures: Vec::new(),
                         indirect_impacts: Vec::new(),
@@ -1101,11 +1228,94 @@ impl Turns {
                 }
             }
 
+            let mut dismount_events = Vec::new();
+            let active_dismounts: Vec<_> = dismounts
+                .into_iter()
+                .filter(|order| {
+                    scenario.units.iter().any(|unit| {
+                        unit.unit_id() == order.unit_id
+                            && unit.is_alive()
+                            && unit.board_position().as_ref() == order.path.first()
+                            && !combat_stopped.contains(&unit.unit_id())
+                    })
+                })
+                .collect();
+            if !active_dismounts.is_empty() {
+                // Collision rollback needs a resident path for every unit, even
+                // though only the successfully dismounted infantry may travel.
+                let mut action_orders = active_dismounts.clone();
+                for unit in &scenario.units {
+                    if !active_dismounts
+                        .iter()
+                        .any(|order| order.unit_id == unit.unit_id())
+                    {
+                        action_orders.push(MoveOrder {
+                            unit_id: unit.unit_id(),
+                            path: vec![
+                                scenario
+                                    .physical_position(unit)
+                                    .ok_or("the unit has no physical position.")?,
+                            ],
+                            travel: TravelMode::Normal,
+                            facing: FacingOrder::Unchanged,
+                            unloads: Vec::new(),
+                            supply: SupplyOrder::None,
+                        });
+                    }
+                }
+                let action = movement_resolution::resolve_dismounts(
+                    scenario,
+                    &action_orders,
+                    self.number,
+                    &combat,
+                )
+                .map_err(|error| error.message())?;
+                for order in &active_dismounts {
+                    let unit = scenario
+                        .units
+                        .iter()
+                        .find(|unit| unit.unit_id() == order.unit_id)
+                        .ok_or("the order references a missing unit.")?;
+                    dismount_events.push(TurnEvent {
+                        rotation_direction: order.facing.direction(),
+                        initial_direction: unit.direction(),
+                        initial_sprite_facing: unit.sprite_facing(),
+                        initial_carrier: None,
+                        carrier_id: None,
+                        kind: if action.stopped.contains(&order.unit_id) {
+                            TurnEventKind::MovementStopped
+                        } else if order.facing.is_ambush() {
+                            TurnEventKind::Ambush
+                        } else if order.facing.is_standing_ground() {
+                            TurnEventKind::StandGround
+                        } else if order.path.len() > 1 {
+                            TurnEventKind::Move
+                        } else {
+                            TurnEventKind::Hold
+                        },
+                        unit_id: order.unit_id,
+                        path: action
+                            .paths
+                            .get(&order.unit_id)
+                            .ok_or("the unit has no resolved movement path.")?
+                            .clone(),
+                    });
+                }
+                scenario.units = action
+                    .frames
+                    .last()
+                    .ok_or("missing movement frame")?
+                    .units
+                    .clone();
+                combat = action.combat;
+                frames.extend(action.frames);
+            }
             combat.finish(scenario, &mut combat_stopped, &mut frames);
             for unit in &mut scenario.units {
                 unit.finish_firing_reveal(combat.has_fired(unit.unit_id()));
             }
-            let events = playback_order(scenario, self.number, events)?;
+            let mut events = playback_order(scenario, self.number, events)?;
+            events.extend(dismount_events);
             let supply_orders: Vec<_> = orders
                 .iter()
                 .filter(|order| {
@@ -1595,6 +1805,32 @@ mod tests {
         match directed.first().fixture()?.facing {
             FacingOrder::AfterMove(direction) => assert_eq!(direction, Direction::North),
             _ => return Err("attack move lost its final facing".into()),
+        }
+        let mut invalid = attack(&scenario)?;
+        invalid[0].direction = Some(Direction::West);
+        assert_eq!(
+            validate(&scenario, PlayerNumber::Player1, invalid).err(),
+            Some("attack move cannot face back along its final route segment.")
+        );
+        let mut turning_scenario = scenario.clone();
+        turning_scenario.map = Map::from_ascii("...\n...\n...").fixture()?;
+        for direction in [
+            Direction::North,
+            Direction::East,
+            Direction::South,
+            Direction::West,
+        ] {
+            let mut inputs = attack(&turning_scenario)?;
+            inputs[0].path = vec![
+                CoordinateInput { x: 0, y: 0 },
+                CoordinateInput { x: 1, y: 0 },
+                CoordinateInput { x: 1, y: 1 },
+            ];
+            inputs[0].direction = Some(direction);
+            assert_eq!(
+                validate(&turning_scenario, PlayerNumber::Player1, inputs).is_ok(),
+                direction != Direction::North
+            );
         }
         let mut invalid = attack(&scenario)?;
         invalid[0].path.truncate(1);
@@ -2464,7 +2700,7 @@ mod tests {
             );
         }
         assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 172);
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 120);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 116);
         let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
         set_path(&mut player1, "1", &[(1, 8), (0, 8)])?;
         set_path(&mut player1, "2", &[(1, 8), (1, 7)])?;
@@ -2497,6 +2733,311 @@ mod tests {
         );
         assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 156);
 
+        Ok(())
+    }
+
+    #[test]
+    fn dismounted_infantry_gets_a_fresh_command_after_truck_movement() -> TestResult<()> {
+        for action in ["move", "attack", "ambush", "stand", "hold"] {
+            let mut scenario = Scenario::supply_point().fixture()?;
+            let truck = UnitId::parse("4").fixture()?;
+            let infantry_id = UnitId::parse("1").fixture()?;
+            vehicle(&mut scenario, "1")?.board(truck);
+            let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+            set_path(&mut orders, "4", &[(2, 7), (2, 8), (1, 8)])?;
+            orders
+                .iter_mut()
+                .find(|order| order.unit_id == "4")
+                .fixture()?
+                .unloads = Some(vec![UnloadOrderInput {
+                unit_id: "1".into(),
+                destination: CoordinateInput { x: 0, y: 8 },
+            }]);
+            let moving = action == "move" || action == "attack";
+            set_path(
+                &mut orders,
+                "1",
+                if moving {
+                    &[(0, 8), (0, 9), (0, 10)]
+                } else {
+                    &[(0, 8)]
+                },
+            )?;
+            let passenger = orders
+                .iter_mut()
+                .find(|order| order.unit_id == "1")
+                .fixture()?;
+            if action == "attack" {
+                passenger.attack_move = Some(true);
+                passenger.direction = Some(Direction::South);
+                vehicle(&mut scenario, "6")?.move_to(Coordinate::new(0, 11));
+            } else if action == "ambush" || action == "stand" {
+                passenger.direction = Some(Direction::South);
+                passenger.ambush = Some(action == "ambush");
+                passenger.stand_ground = Some(action == "stand");
+            }
+            // Reversing the wire order must not change validation dependencies.
+            orders.reverse();
+            let mut turns = Turns::default();
+            resolve_orders(&mut scenario, &mut turns, orders)?;
+            let infantry = vehicle(&mut scenario, "1")?;
+            assert_eq!(
+                infantry.board_position(),
+                Some(Coordinate::new(0, if moving { 10 } else { 8 }))
+            );
+            assert_eq!(infantry.carrier_id(), None);
+            let expected = 192
+                - 12
+                - 4
+                - if moving { 24 } else { 0 }
+                - if action == "hold" || action == "move" {
+                    0
+                } else {
+                    8
+                }
+                - if action == "attack" { 12 } else { 0 };
+            assert_eq!(infantry.supplies().current(), expected, "{action}");
+            let resolution = turns.last_resolution.as_ref().fixture()?;
+            let unload = resolution
+                .events
+                .iter()
+                .position(|event| {
+                    event.unit_id == infantry_id && event.kind == TurnEventKind::Unload
+                })
+                .fixture()?;
+            assert!(
+                resolution
+                    .events
+                    .iter()
+                    .skip(unload + 1)
+                    .any(|event| event.unit_id == infantry_id)
+            );
+            if action == "attack" {
+                assert!(
+                    resolution
+                        .frames
+                        .iter()
+                        .flat_map(|frame| &frame.shots)
+                        .any(|shot| shot.attacker.unit_id() == infantry_id)
+                );
+            }
+        }
+        Ok(())
+    }
+
+    fn infantry_dismount_fixture() -> TestResult<Scenario> {
+        let mut scenario = Scenario::supply_point().fixture()?;
+        scenario.map = Map::new(17, 17, Terrain::Plain, BTreeMap::new()).fixture()?;
+        scenario.depots.clear();
+        let truck = UnitId::parse("4").fixture()?;
+        vehicle(&mut scenario, "1")?.board(truck);
+        Ok(scenario)
+    }
+
+    fn infantry_dismount_inputs(scenario: &Scenario) -> TestResult<Vec<MoveOrderInput>> {
+        let mut orders = holds(scenario, PlayerNumber::Player1)?;
+        set_path(&mut orders, "4", &[(2, 7), (2, 8), (1, 8)])?;
+        orders
+            .iter_mut()
+            .find(|order| order.unit_id == "4")
+            .fixture()?
+            .unloads = Some(vec![UnloadOrderInput {
+            unit_id: "1".into(),
+            destination: CoordinateInput { x: 0, y: 8 },
+        }]);
+        set_path(&mut orders, "1", &[(0, 8), (0, 9)])?;
+        Ok(orders)
+    }
+
+    #[test]
+    fn dismount_commands_reserve_unloading_cost_and_require_the_assigned_exit() -> TestResult<()> {
+        let mut scenario = infantry_dismount_fixture()?;
+        let infantry = vehicle(&mut scenario, "1")?;
+        infantry.spend_supplies(infantry.supplies().current() - 39);
+        let mut orders = infantry_dismount_inputs(&scenario)?;
+        let order = orders
+            .iter_mut()
+            .find(|order| order.unit_id == "1")
+            .fixture()?;
+        order.attack_move = Some(true);
+        order.direction = Some(Direction::South);
+        assert_eq!(
+            validate(&scenario, PlayerNumber::Player1, orders).err(),
+            Some("not enough supplies to attack after moving.")
+        );
+        vehicle(&mut scenario, "1")?.receive_supplies(9);
+        let mut orders = infantry_dismount_inputs(&scenario)?;
+        let order = orders
+            .iter_mut()
+            .find(|order| order.unit_id == "1")
+            .fixture()?;
+        order.attack_move = Some(true);
+        order.direction = Some(Direction::South);
+        validate(&scenario, PlayerNumber::Player1, orders)?;
+        let mut orders = infantry_dismount_inputs(&scenario)?;
+        set_path(&mut orders, "1", &[(0, 9), (0, 10)])?;
+        assert!(validate(&scenario, PlayerNumber::Player1, orders).is_err());
+        let mut orders = infantry_dismount_inputs(&scenario)?;
+        orders
+            .iter_mut()
+            .find(|order| order.unit_id == "4")
+            .fixture()?
+            .unloads = None;
+        assert!(validate(&scenario, PlayerNumber::Player1, orders).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn blocked_transport_or_concealed_exit_cancels_the_dismount_command() -> TestResult<()> {
+        for blocked_truck in [true, false] {
+            let mut scenario = infantry_dismount_fixture()?;
+            let blocked = if blocked_truck {
+                Coordinate::new(2, 8)
+            } else {
+                Coordinate::new(0, 8)
+            };
+            scenario.map = Map::new(
+                17,
+                17,
+                Terrain::Plain,
+                BTreeMap::from([(blocked, Terrain::Forest)]),
+            )
+            .fixture()?;
+            vehicle(&mut scenario, "6")?.move_to(blocked);
+            let orders = infantry_dismount_inputs(&scenario)?;
+            let mut turns = Turns::default();
+            resolve_orders(&mut scenario, &mut turns, orders)?;
+            let infantry = vehicle(&mut scenario, "1")?;
+            assert_eq!(infantry.carrier_id(), UnitId::parse("4"));
+            assert_eq!(infantry.supplies().current(), 188);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn unloading_ambush_preserves_spent_shots_and_surviving_attack_commands() -> TestResult<()> {
+        for attacker in ["6", "14"] {
+            let mut scenario = infantry_dismount_fixture()?;
+            vehicle(&mut scenario, attacker)?.move_to(Coordinate::new(0, 9));
+            let mut own = infantry_dismount_inputs(&scenario)?;
+            let infantry = own
+                .iter_mut()
+                .find(|order| order.unit_id == "1")
+                .fixture()?;
+            infantry.attack_move = Some(true);
+            infantry.direction = Some(Direction::South);
+            let mut enemy = holds(&scenario, PlayerNumber::Player2)?;
+            let ambusher = enemy
+                .iter_mut()
+                .find(|order| order.unit_id == attacker)
+                .fixture()?;
+            ambusher.ambush = Some(true);
+            ambusher.direction = Some(Direction::North);
+            let mut turns = Turns::default();
+            turns.submit(&mut scenario, PlayerNumber::Player1, 1, own)?;
+            turns.submit(&mut scenario, PlayerNumber::Player2, 1, enemy)?;
+            let resolution = turns.last_resolution.as_ref().fixture()?;
+            let shots: Vec<_> = resolution
+                .frames
+                .iter()
+                .flat_map(|frame| &frame.shots)
+                .collect();
+            assert_eq!(
+                shots
+                    .iter()
+                    .filter(|shot| shot.attacker.id() == attacker)
+                    .count(),
+                1
+            );
+            assert_eq!(
+                shots
+                    .iter()
+                    .filter(|shot| shot.attacker.id() == "1")
+                    .count(),
+                usize::from(attacker == "6")
+            );
+            if attacker == "14" {
+                assert!(!scenario.units.iter().any(|unit| unit.id() == "1"));
+            } else {
+                assert_eq!(
+                    vehicle(&mut scenario, "1")?.board_position(),
+                    Some(Coordinate::new(0, 8))
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn dismount_movement_retracts_interrupted_allied_passage() -> TestResult<()> {
+        let mut scenario = infantry_dismount_fixture()?;
+        vehicle(&mut scenario, "2")?.move_to(Coordinate::new(0, 9));
+        vehicle(&mut scenario, "6")?.move_to(Coordinate::new(0, 10));
+        scenario.map = Map::new(
+            17,
+            17,
+            Terrain::Plain,
+            BTreeMap::from([(Coordinate::new(0, 10), Terrain::Forest)]),
+        )
+        .fixture()?;
+        let mut orders = infantry_dismount_inputs(&scenario)?;
+        set_path(&mut orders, "1", &[(0, 8), (0, 9), (0, 10)])?;
+        let mut turns = Turns::default();
+        resolve_orders(&mut scenario, &mut turns, orders)?;
+        assert_eq!(
+            vehicle(&mut scenario, "1")?.board_position(),
+            Some(Coordinate::new(0, 8))
+        );
+        assert_eq!(
+            vehicle(&mut scenario, "2")?.board_position(),
+            Some(Coordinate::new(0, 9))
+        );
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 176);
+        Ok(())
+    }
+
+    #[test]
+    fn dismount_movement_retracts_before_an_interrupted_truck() -> TestResult<()> {
+        for freight in 0..=2 {
+            let mut scenario = infantry_dismount_fixture()?;
+            scenario.map = Map::new(
+                17,
+                17,
+                Terrain::Plain,
+                BTreeMap::from([(Coordinate::new(0, 11), Terrain::Forest)]),
+            )
+            .fixture()?;
+            let truck = vehicle(&mut scenario, "5")?;
+            truck.move_to(Coordinate::new(0, 9));
+            truck.supply_cargo = vec![supplies::CargoStock::new(DepotKind::Fuel, 256); freight];
+            vehicle(&mut scenario, "6")?.move_to(Coordinate::new(0, 11));
+            let mut orders = infantry_dismount_inputs(&scenario)?;
+            set_path(&mut orders, "5", &[(0, 9), (0, 10), (0, 11)])?;
+            set_path(&mut orders, "1", &[(0, 8), (0, 9), (0, 10)])?;
+            let mut turns = Turns::default();
+            resolve_orders(&mut scenario, &mut turns, orders)?;
+            let infantry = vehicle(&mut scenario, "1")?;
+            let infantry_id = infantry.unit_id();
+            assert_eq!(infantry.board_position(), Some(Coordinate::new(0, 9)));
+            assert_eq!(infantry.carrier_id(), None);
+            assert_eq!(infantry.supplies().current(), 164);
+            assert_eq!(
+                vehicle(&mut scenario, "5")?.board_position(),
+                Some(Coordinate::new(0, 10))
+            );
+            let resolution = turns.last_resolution.as_ref().fixture()?;
+            let movement = resolution
+                .events
+                .iter()
+                .find(|event| {
+                    event.unit_id == infantry_id && event.kind == TurnEventKind::MovementStopped
+                })
+                .fixture()?;
+            assert_eq!(
+                movement.path,
+                vec![Coordinate::new(0, 8), Coordinate::new(0, 9)]
+            );
+        }
         Ok(())
     }
 
@@ -2925,7 +3466,7 @@ mod tests {
         assert!(!scenario.units.iter().any(|unit| unit.id() == "13"));
         assert_eq!(vehicle(&mut scenario, "4")?.supplies().current(), 8);
         assert_eq!(vehicle(&mut scenario, "11")?.supplies().current(), 16);
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 124);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 126);
         assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 120);
 
         Ok(())
@@ -3198,6 +3739,58 @@ mod tests {
     }
 
     #[test]
+    fn truck_fuel_counts_passengers_and_both_freight_kinds_at_departure() -> TestResult<()> {
+        for passengers in 0..=2 {
+            for freight in 0..=(2 - passengers) {
+                for kind in [DepotKind::Supply, DepotKind::Fuel] {
+                    let mut scenario = Scenario::supply_point().fixture()?;
+                    scenario.depots.clear();
+                    let carrier = UnitId::parse("4").fixture()?;
+                    for id in ["1", "2"].into_iter().take(passengers) {
+                        vehicle(&mut scenario, id)?.board(carrier);
+                    }
+                    vehicle(&mut scenario, "4")?.supply_cargo =
+                        vec![supplies::CargoStock::new(kind, 256); freight];
+                    let per_tile = 2 + 2 * (passengers + freight) as i32;
+                    vehicle(&mut scenario, "4")?.set_fuel_for_test(per_tile * 2 - 1);
+                    let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+                    set_path(&mut orders, "4", &[(2, 7), (2, 6), (3, 6)])?;
+                    let mut turns = Turns::default();
+                    assert_eq!(
+                        turns.submit(&mut scenario, PlayerNumber::Player1, 1, orders),
+                        Err("movement exceeds the unit's available fuel.")
+                    );
+                    assert!(turns.orders[0].is_none());
+                    vehicle(&mut scenario, "4")?.set_fuel_for_test(per_tile * 2);
+                    let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+                    set_path(&mut orders, "4", &[(2, 7), (2, 6), (3, 6)])?;
+                    resolve_orders(&mut scenario, &mut turns, orders)?;
+                    // Carried fuel drums can refill at settlement; movement frames
+                    // retain the exact pre-replenishment expenditure.
+                    let resolution = turns.last_resolution.as_ref().fixture()?;
+                    let arrival = resolution
+                        .frames
+                        .iter()
+                        .find(|frame| {
+                            frame.units.iter().any(|unit| {
+                                unit.unit_id() == carrier
+                                    && unit.board_position() == Some(Coordinate::new(3, 6))
+                            })
+                        })
+                        .fixture()?;
+                    let truck = arrival
+                        .units
+                        .iter()
+                        .find(|unit| unit.unit_id() == carrier)
+                        .fixture()?;
+                    assert_eq!(truck.fuel().fixture()?.current, 0);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn fuel_is_vehicle_only_and_successful_tiles_consume_it_once() -> TestResult<()> {
         let mut scenario = Scenario::supply_point().fixture()?;
         assert!(vehicle(&mut scenario, "1")?.fuel().is_none());
@@ -3217,10 +3810,10 @@ mod tests {
         turns
             .submit(&mut scenario, PlayerNumber::Player2, 1, player2)
             .fixture()?;
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 120);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 124);
         assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 128);
         resolve_holds(&mut scenario, &mut turns)?;
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 120);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 124);
 
         Ok(())
     }
@@ -3231,12 +3824,15 @@ mod tests {
         scenario
             .depots
             .retain(|depot| depot.kind == DepotKind::Supply);
-        for _ in 0..16 {
-            vehicle(&mut scenario, "4")?.follow_path(&[
-                Coordinate::new(2, 7),
-                Coordinate::new(2, 6),
-                Coordinate::new(2, 7),
-            ]);
+        for _ in 0..32 {
+            vehicle(&mut scenario, "4")?.follow_path(
+                &[
+                    Coordinate::new(2, 7),
+                    Coordinate::new(2, 6),
+                    Coordinate::new(2, 7),
+                ],
+                0,
+            );
         }
         let mut turns = Turns::default();
         let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
@@ -3260,11 +3856,14 @@ mod tests {
     fn tank_paths_must_fit_remaining_fuel_even_with_movement_points_left() -> TestResult<()> {
         let mut scenario = Scenario::supply_point().fixture()?;
         for _ in 0..7 {
-            vehicle(&mut scenario, "11")?.follow_path(&[
-                Coordinate::new(4, 8),
-                Coordinate::new(5, 8),
-                Coordinate::new(4, 8),
-            ]);
+            vehicle(&mut scenario, "11")?.follow_path(
+                &[
+                    Coordinate::new(4, 8),
+                    Coordinate::new(5, 8),
+                    Coordinate::new(4, 8),
+                ],
+                0,
+            );
         }
         assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 16);
         // Keep fuel as the limiting resource after the fixture's earlier travel.
@@ -3331,7 +3930,7 @@ mod tests {
                 .fixture()?
                 .stock
                 .current,
-            1020
+            1022
         );
         vehicle(&mut scenario, "4")?.set_fuel_for_test(0);
         resolve_holds(&mut scenario, &mut turns)?;
@@ -3345,7 +3944,7 @@ mod tests {
                 .fixture()?
                 .stock
                 .current,
-            892
+            894
         );
         Ok(())
     }
@@ -3366,23 +3965,29 @@ mod tests {
         turns
             .submit(&mut scenario, PlayerNumber::Player2, 1, player2)
             .fixture()?;
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 124);
-        vehicle(&mut scenario, "4")?.follow_path(&[Coordinate::new(2, 8), Coordinate::new(2, 8)]);
-        vehicle(&mut scenario, "5")?.follow_path(&[Coordinate::new(2, 9), Coordinate::new(8, 8)]);
-        vehicle(&mut scenario, "9")?.follow_path(&[Coordinate::new(14, 7), Coordinate::new(2, 8)]);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 126);
+        vehicle(&mut scenario, "4")?
+            .follow_path(&[Coordinate::new(2, 8), Coordinate::new(2, 8)], 0);
+        vehicle(&mut scenario, "5")?
+            .follow_path(&[Coordinate::new(2, 9), Coordinate::new(8, 8)], 0);
+        vehicle(&mut scenario, "9")?
+            .follow_path(&[Coordinate::new(14, 7), Coordinate::new(2, 8)], 0);
         // Holding on the center or either starting depot preserves spent fuel.
         vehicle(&mut scenario, "4")?.move_to(Coordinate::new(14, 8));
         resolve_holds(&mut scenario, &mut turns)?;
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 120);
-        assert_eq!(vehicle(&mut scenario, "5")?.fuel().fixture()?.current, 124);
-        assert_eq!(vehicle(&mut scenario, "9")?.fuel().fixture()?.current, 124);
-        vehicle(&mut scenario, "9")?.follow_path(&[Coordinate::new(2, 8), Coordinate::new(8, 8)]);
-        vehicle(&mut scenario, "4")?.follow_path(&[Coordinate::new(14, 8), Coordinate::new(2, 8)]);
-        vehicle(&mut scenario, "5")?.follow_path(&[Coordinate::new(8, 8), Coordinate::new(8, 7)]);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 124);
+        assert_eq!(vehicle(&mut scenario, "5")?.fuel().fixture()?.current, 126);
+        assert_eq!(vehicle(&mut scenario, "9")?.fuel().fixture()?.current, 126);
+        vehicle(&mut scenario, "9")?
+            .follow_path(&[Coordinate::new(2, 8), Coordinate::new(8, 8)], 0);
+        vehicle(&mut scenario, "4")?
+            .follow_path(&[Coordinate::new(14, 8), Coordinate::new(2, 8)], 0);
+        vehicle(&mut scenario, "5")?
+            .follow_path(&[Coordinate::new(8, 8), Coordinate::new(8, 7)], 0);
         resolve_holds(&mut scenario, &mut turns)?;
-        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 116);
-        assert_eq!(vehicle(&mut scenario, "9")?.fuel().fixture()?.current, 120);
-        assert_eq!(vehicle(&mut scenario, "5")?.fuel().fixture()?.current, 120);
+        assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 122);
+        assert_eq!(vehicle(&mut scenario, "9")?.fuel().fixture()?.current, 124);
+        assert_eq!(vehicle(&mut scenario, "5")?.fuel().fixture()?.current, 124);
 
         Ok(())
     }
@@ -3405,7 +4010,7 @@ mod tests {
         for (id, position) in [("4", Coordinate::new(2, 6)), ("9", Coordinate::new(3, 6))] {
             let unit = vehicle(&mut scenario, id)?;
             assert_eq!(unit.board_position(), Some(position));
-            assert_eq!(unit.fuel().fixture()?.current, 124);
+            assert_eq!(unit.fuel().fixture()?.current, 126);
             assert_eq!(unit.supplies().current(), 124);
         }
 
@@ -3529,7 +4134,7 @@ mod tests {
                 vehicle(&mut scenario, "4")?.board_position(),
                 Some(Coordinate::new(2, 0))
             );
-            assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 116);
+            assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 122);
             assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 164);
             assert_eq!(vehicle(&mut scenario, "2")?.supplies().current(), 176);
             assert_eq!(

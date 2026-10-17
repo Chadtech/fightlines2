@@ -8,6 +8,7 @@ module View.Button exposing
     , primary
     , secondary
     , toHtml
+    , withFeedback
     , withIcon
     )
 
@@ -36,6 +37,7 @@ type alias Button msg =
     , variant : Variant
     , size : Size
     , icon : Maybe (Html msg)
+    , feedback : Maybe String
     }
 
 
@@ -65,6 +67,7 @@ fromLabelAndVariant label variant =
     , variant = variant
     , size = Regular
     , icon = Nothing
+    , feedback = Nothing
     }
 
 
@@ -95,6 +98,13 @@ choice label selected msg =
 withIcon : Html msg -> Button msg -> Button msg
 withIcon icon button =
     { button | icon = Just icon }
+
+
+{-| Replace the label with feedback while reserving the space for both labels.
+-}
+withFeedback : Maybe String -> Button msg -> Button msg
+withFeedback feedback button =
+    { button | feedback = feedback }
 
 
 onClick : msg -> Button msg -> Button msg
@@ -153,7 +163,30 @@ toHtml button =
         content =
             List.filterMap identity
                 [ button.icon
-                , Just (H.text button.label)
+                , Just
+                    (H.span
+                        [ A.css
+                            [ Css.property "display" "inline-grid"
+                            ]
+                        ]
+                        [ H.span
+                            [ A.css
+                                [ Css.property "grid-area" "1 / 1"
+                                , S.when (button.feedback /= Nothing) (Css.visibility Css.hidden)
+                                ]
+                            ]
+                            [ H.text button.label
+                            ]
+                        , H.span
+                            [ A.attribute "aria-live" "polite"
+                            , A.css
+                                [ Css.property "grid-area" "1 / 1"
+                                ]
+                            ]
+                            [ H.text (Maybe.withDefault "" button.feedback)
+                            ]
+                        ]
+                    )
                 ]
 
         iconStyles : List Css.Style

@@ -1,6 +1,7 @@
 port module MovementChecks exposing (main)
 
 import Api.Enum.AmbushShape as AmbushShape
+import Api.Enum.DepotKind as DepotKind
 import Api.Enum.Direction as Direction
 import Api.Enum.MapTheme as MapTheme
 import Api.Enum.PlayerNumber as PlayerNumber
@@ -74,10 +75,20 @@ check rules fixture =
                 fuel =
                     case fixture.kind of
                         UnitKind.Tank ->
-                            Just { current = 64, maximum = 64, movementPerTile = 2 }
+                            Just
+                                { current = 64
+                                , maximum = 64
+                                , movementPerTile = 2
+                                , movementPerCargoSlot = 0
+                                }
 
                         UnitKind.Truck ->
-                            Just { current = 64, maximum = 64, movementPerTile = 1 }
+                            Just
+                                { current = 64
+                                , maximum = 64
+                                , movementPerTile = 1
+                                , movementPerCargoSlot = 0
+                                }
 
                         _ ->
                             Nothing
@@ -458,7 +469,22 @@ targetSearchChecks unit =
 
         fuelLimited : Unit.Unit
         fuelLimited =
-            { unit | resources = Maybe.map (\resources -> { resources | fuel = Just { current = 4, maximum = 64, movementPerTile = 2 } }) unit.resources }
+            { unit
+                | resources =
+                    Maybe.map
+                        (\resources ->
+                            { resources
+                                | fuel =
+                                    Just
+                                        { current = 4
+                                        , maximum = 64
+                                        , movementPerTile = 2
+                                        , movementPerCargoSlot = 0
+                                        }
+                            }
+                        )
+                        unit.resources
+            }
 
         supplyLimited : Unit.Unit
         supplyLimited =
@@ -691,6 +717,7 @@ fuelChecks rules =
                                     { current = 20
                                     , maximum = 128
                                     , movementPerTile = 8
+                                    , movementPerCargoSlot = 0
                                     }
                             }
                     }
@@ -709,12 +736,33 @@ fuelChecks rules =
 
                 emptyUnit : Unit.Unit
                 emptyUnit =
-                    { unit | resources = Maybe.map (\resources -> { resources | fuel = Just { current = 0, maximum = 128, movementPerTile = 8 } }) unit.resources }
+                    { unit | resources = Maybe.map (\resources -> { resources | fuel = Just { current = 0, maximum = 128, movementPerTile = 8, movementPerCargoSlot = 0 } }) unit.resources }
 
                 traced : Maybe Movement.Option
                 traced =
                     Movement.trace rules map units unit (Movement.start { x = 0, y = 0 }) { x = 0, y = 1 }
                         |> Maybe.andThen (\path -> Movement.trace rules map units unit path { x = 1, y = 1 })
+
+                truck : Unit.Unit
+                truck =
+                    { unit | kind = UnitKind.Truck, cargoCapacity = 2, resources = Maybe.map (\resources -> { resources | fuel = Just { current = 12, maximum = 128, movementPerTile = 2, movementPerCargoSlot = 2 } }) unit.resources }
+
+                passenger : Unit.Unit
+                passenger =
+                    { unit | location = Location.Aboard id }
+
+                loadedTruck : Unit.Unit
+                loadedTruck =
+                    { truck | resources = Maybe.map (\resources -> { resources | supplyCargo = [ { kind = DepotKind.Supply, current = 256, maximum = 256 } ] }) truck.resources }
+
+                fullCargo : List Unit.Unit
+                fullCargo =
+                    [ loadedTruck, passenger ]
+
+                cargoTrace : Maybe Movement.Option
+                cargoTrace =
+                    Movement.trace rules map fullCargo loadedTruck (Movement.start { x = 0, y = 0 }) { x = 0, y = 1 }
+                        |> Maybe.andThen (\path -> Movement.trace rules map fullCargo loadedTruck path { x = 1, y = 1 })
 
                 test : String -> Bool -> List String
                 test name passed =
@@ -725,7 +773,12 @@ fuelChecks rules =
                         [ name ]
             in
             List.concat
-                [ test "empty vehicles have no movement choices" (List.isEmpty (Movement.options [] rules map units emptyUnit))
+                [ test "empty trucks spend two fuel per tile" (Movement.tileLimit [ truck ] truck == Just 6)
+                , test "passengers add two fuel per tile" (Movement.tileLimit [ truck, passenger ] truck == Just 3)
+                , test "freight adds two fuel per tile" (Movement.tileLimit [ loadedTruck ] loadedTruck == Just 3)
+                , test "mixed full cargo spends six fuel per tile" (Movement.tileLimit fullCargo loadedTruck == Just 2)
+                , test "loaded tracing accounts for fuel already spent" (cargoTrace |> Maybe.andThen (\path -> Movement.trace rules map fullCargo loadedTruck path { x = 2, y = 1 }) |> (==) Nothing)
+                , test "empty vehicles have no movement choices" (List.isEmpty (Movement.options [] rules map units emptyUnit))
                 , test "fuel bounds every returned path" (List.all (\option -> List.length option.path <= 3) reachable)
                 , test "short expensive routes remain reachable when cheaper detours exceed fuel"
                     (List.any (\option -> option.destination == { x = 2, y = 0 } && option.cost == 8 && List.length option.path == 3) reachable)
@@ -741,7 +794,7 @@ fuelChecks rules =
                 , test "fuel-limited previews reroute to an affordable path"
                     (traced |> Maybe.andThen (\path -> Movement.preview rules map units unit path { x = 1, y = 0 }) |> Maybe.map (\path -> List.length path.path == 2) |> Maybe.withDefault False)
                 , test "full fuel does not override the movement budget"
-                    (Movement.options [] rules map units { unit | resources = Maybe.map (\resources -> { resources | fuel = Just { current = 128, maximum = 128, movementPerTile = 8 } }) unit.resources } |> List.all (\option -> option.cost <= 12))
+                    (Movement.options [] rules map units { unit | resources = Maybe.map (\resources -> { resources | fuel = Just { current = 128, maximum = 128, movementPerTile = 8, movementPerCargoSlot = 0 } }) unit.resources } |> List.all (\option -> option.cost <= 12))
                 ]
 
 
@@ -814,7 +867,7 @@ supplyChecks rules =
 
                 vehicle : Unit.Unit
                 vehicle =
-                    { unit | kind = UnitKind.Tank, resources = Maybe.map (\resources -> { resources | fuel = Just { current = 2, maximum = 64, movementPerTile = 2 }, supplies = { supplies | current = 0, roughTerrainSurcharge = 0, movementPerTile = 0 } }) unit.resources }
+                    { unit | kind = UnitKind.Tank, resources = Maybe.map (\resources -> { resources | fuel = Just { current = 2, maximum = 64, movementPerTile = 2, movementPerCargoSlot = 0 }, supplies = { supplies | current = 0, roughTerrainSurcharge = 0, movementPerTile = 0 } }) unit.resources }
 
                 roughMap : Map
                 roughMap =
@@ -837,13 +890,13 @@ supplyChecks rules =
                         [ name ]
             in
             List.concat
-                [ test "upkeep is reserved before walking" (Movement.tileLimit exhausted == Just 0 && List.isEmpty (Movement.options [] rules map units exhausted))
+                [ test "upkeep is reserved before walking" (Movement.tileLimit units exhausted == Just 0 && List.isEmpty (Movement.options [] rules map units exhausted))
                 , test "field guns also need supplies after upkeep" (List.isEmpty (Movement.options [] rules map units fieldGun))
                 , test "tracing reserves upkeep only once" (traced |> Maybe.map (\path -> List.length path.path == 3) |> Maybe.withDefault False)
                 , test "extending a trace cannot overspend supplies" (traced |> Maybe.andThen (\path -> Movement.trace rules map units unit path { x = 2, y = 1 }) |> (==) Nothing)
                 , test "backtracking refunds movement supplies" (traced |> Maybe.andThen (\path -> Movement.trace rules map units unit path { x = 0, y = 1 }) |> Maybe.andThen (\path -> Movement.trace rules map units unit path { x = 0, y = 2 }) |> Maybe.map (\path -> List.length path.path == 3) |> Maybe.withDefault False)
-                , test "vehicles use fuel rather than supplies for movement" (Movement.tileLimit vehicle == Just 1 && not (List.isEmpty (Movement.options [] rules map units vehicle)))
-                , test "empty supplies do not underflow the walking limit" (Movement.tileLimit { unit | resources = Maybe.map (\resources -> { resources | supplies = { supplies | current = 0 } }) unit.resources } == Just 0)
+                , test "vehicles use fuel rather than supplies for movement" (Movement.tileLimit units vehicle == Just 1 && not (List.isEmpty (Movement.options [] rules map units vehicle)))
+                , test "empty supplies do not underflow the walking limit" (Movement.tileLimit units { unit | resources = Maybe.map (\resources -> { resources | supplies = { supplies | current = 0 } }) unit.resources } == Just 0)
                 , test "two forest squares retain infantry mobility" (Movement.options [] rules roughMap [ unit ] { infantry | resources = Maybe.map (\resources -> { resources | supplies = { supplies | current = 9, movementPerTile = 3, roughTerrainSurcharge = 1 } }) infantry.resources } |> List.any (\option -> option.destination == { x = 2, y = 0 } && option.cost == 4))
                 , test "terrain supplies restrict otherwise reachable routes" (Movement.options [] rules roughMap [ infantry ] infantry |> List.all (\option -> List.length option.path <= 2))
                 , test "terrain supply cost is paid on entered squares" (Movement.supplyCost roughMap { supplies | movementPerTile = 3, roughTerrainSurcharge = 1 } [ { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 2, y = 0 } ] == 8)
@@ -995,7 +1048,7 @@ transportChecks rules =
                         , cargoCapacity = 2
                         , direction = Nothing
                         , location = Location.OnMap { x = 1, y = 0 }
-                        , resources = Maybe.map (\resources -> { resources | fuel = Just { current = 64, maximum = 64, movementPerTile = 1 } }) passenger.resources
+                        , resources = Maybe.map (\resources -> { resources | fuel = Just { current = 64, maximum = 64, movementPerTile = 1, movementPerCargoSlot = 0 } }) passenger.resources
                     }
 
                 map : Map
@@ -1020,7 +1073,7 @@ transportChecks rules =
 
                 fuelEmptyTruck : Unit.Unit
                 fuelEmptyTruck =
-                    { truck | resources = Maybe.map (\resources -> { resources | fuel = Just { current = 0, maximum = 64, movementPerTile = 1 } }) truck.resources }
+                    { truck | resources = Maybe.map (\resources -> { resources | fuel = Just { current = 0, maximum = 64, movementPerTile = 1, movementPerCargoSlot = 0 } }) truck.resources }
 
                 strandedUnits : List Unit.Unit
                 strandedUnits =

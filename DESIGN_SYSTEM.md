@@ -494,9 +494,13 @@ motion. The automatic-close option uses the same animation timing with reduced m
 Infantry and tanks reuse movement tracing for attack move. Render a solid red
 preview and a dashed red saved path. Choosing the destination by drag release,
 click, or Enter opens the cardinal direction picker centered on that destination.
-Pointing previews final facing in the endpoint arrow; clicking or an arrow/WASD
-key saves the attack move. The inspector explains the direction step and offers
-a return to commands. The saved arrow shows final facing independently of the
+Three dotted squares highlight the allowed cardinal directions around the destination.
+Omit the direction pointing back along the route's final segment; pointer and
+keyboard input cannot select it.
+Pointing or focusing a square turns it red and previews final facing in the endpoint
+arrow; clicking, Enter/Space on a square, or an arrow/WASD key saves the attack move.
+The chosen red square remains beside the saved destination. The inspector explains
+the direction step and offers a return to commands. The saved arrow shows final facing independently of the
 last route segment. Keep orders revocable and preserve
 selection after saving. Enemy squares are legal destinations; allies remain
 passable, and attack move offers no loading or unloading choices.

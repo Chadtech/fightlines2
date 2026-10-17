@@ -112,6 +112,7 @@ pub struct Fuel {
     pub(crate) current: i32,
     pub(crate) maximum: i32,
     pub(crate) movement_per_tile: i32,
+    pub(crate) movement_per_cargo_slot: i32,
 }
 
 impl Fuel {
@@ -122,9 +123,10 @@ impl Fuel {
                 maximum: 128,
                 movement_per_tile: match kind {
                     UnitKind::Tank => 8,
-                    UnitKind::Truck => 4,
+                    UnitKind::Truck => 2,
                     UnitKind::Infantry | UnitKind::FieldGun => 0,
                 },
+                movement_per_cargo_slot: if kind == UnitKind::Truck { 2 } else { 0 },
             }),
             UnitKind::Infantry | UnitKind::FieldGun => None,
         }
@@ -452,14 +454,23 @@ impl Unit {
         }
     }
 
-    pub fn follow_terrain_path(&mut self, map: &Map, path: &[Coordinate]) {
+    /// Passengers are stored separately from their carrier; freight lives on the unit.
+    pub fn fuel_movement_per_tile(&self, passenger_count: usize) -> i32 {
+        self.fuel.map_or(0, |fuel| {
+            fuel.movement_per_tile
+                + (passenger_count + self.supply_cargo.len()) as i32 * fuel.movement_per_cargo_slot
+        })
+    }
+
+    pub fn follow_terrain_path(&mut self, map: &Map, path: &[Coordinate], passenger_count: usize) {
         let surcharge = self.supplies.movement_cost(map, path)
             - path.len().saturating_sub(1) as i32 * self.supplies.movement_per_tile;
-        self.follow_path(path);
+        self.follow_path(path, passenger_count);
         self.supplies.current -= surcharge;
     }
 
-    pub fn follow_path(&mut self, path: &[Coordinate]) {
+    pub fn follow_path(&mut self, path: &[Coordinate], passenger_count: usize) {
+        let fuel_per_tile = self.fuel_movement_per_tile(passenger_count);
         for step in path.windows(2) {
             if let Some(direction) = Direction::between(step[0], step[1]) {
                 if self.direction.is_some() {
@@ -469,7 +480,7 @@ impl Unit {
             }
         }
         if let Some(fuel) = &mut self.fuel {
-            fuel.current -= path.len().saturating_sub(1) as i32 * fuel.movement_per_tile;
+            fuel.current -= path.len().saturating_sub(1) as i32 * fuel_per_tile;
         }
         self.supplies.current -=
             path.len().saturating_sub(1) as i32 * self.supplies.movement_per_tile;
@@ -488,11 +499,13 @@ impl Unit {
         map: &Map,
         discarded_path: &[Coordinate],
         initial: &Unit,
+        passenger_count: usize,
     ) {
         let removed_tiles = discarded_path.len().saturating_sub(1);
         self.supplies.current += self.supplies.movement_cost(map, discarded_path);
+        let fuel_per_tile = initial.fuel_movement_per_tile(passenger_count);
         if let Some(fuel) = &mut self.fuel {
-            fuel.current += removed_tiles as i32 * fuel.movement_per_tile;
+            fuel.current += removed_tiles as i32 * fuel_per_tile;
         }
         self.direction = initial.direction;
         self.sprite_facing = initial.sprite_facing;
@@ -512,6 +525,13 @@ impl Unit {
 }
 
 impl Scenario {
+    pub fn passenger_count(&self, carrier: UnitId) -> usize {
+        self.units
+            .iter()
+            .filter(|unit| unit.carrier_id() == Some(carrier))
+            .count()
+    }
+
     pub(crate) fn from_definition(definition: &MapDefinition) -> Result<Self, MapError> {
         let map = definition.terrain_map()?;
         let units = definition
@@ -690,11 +710,11 @@ mod tests {
             assert!(unit.supplies().can_afford_movement(&map, &path));
             unit.set_supplies_for_test(128);
             let initial = unit.clone();
-            unit.follow_terrain_path(&map, &path);
+            unit.follow_terrain_path(&map, &path, 0);
             assert_eq!(unit.supplies().current(), 128 - expected);
             assert_eq!(unit.board_position(), Some(path[2]));
             unit.spend_supplies(12);
-            unit.retract_movement(&path[..2], &map, &path[1..], &initial);
+            unit.retract_movement(&path[..2], &map, &path[1..], &initial, 0);
             assert_eq!(unit.supplies().current(), 116 - expected / 2);
             assert_eq!(unit.board_position(), Some(path[1]));
         }
@@ -985,14 +1005,19 @@ mod tests {
                         Some(Fuel {
                             current: 128,
                             maximum: 128,
-                            movement_per_tile: if unit.kind == UnitKind::Tank { 8 } else { 4 },
+                            movement_per_tile: if unit.kind == UnitKind::Tank { 8 } else { 2 },
+                            movement_per_cargo_slot: if unit.kind == UnitKind::Truck {
+                                2
+                            } else {
+                                0
+                            },
                         })
                     );
                 }
                 UnitKind::Infantry | UnitKind::FieldGun => assert_eq!(unit.fuel(), None),
             }
         }
-        scenario.units[0].follow_path(&[Coordinate::new(3, 7), Coordinate::new(3, 6)]);
+        scenario.units[0].follow_path(&[Coordinate::new(3, 7), Coordinate::new(3, 6)], 0);
         scenario.finish_turn_resources(1);
         assert!(
             scenario
@@ -1013,21 +1038,27 @@ mod tests {
             ((4, 6), (4, 7), Direction::South),
             ((4, 7), (3, 7), Direction::West),
         ] {
-            unit.follow_path(&[Coordinate::new(from.0, from.1), Coordinate::new(to.0, to.1)]);
+            unit.follow_path(
+                &[Coordinate::new(from.0, from.1), Coordinate::new(to.0, to.1)],
+                0,
+            );
             assert_eq!(unit.direction(), Some(expected));
             assert_eq!(
                 unit.board_position().fixture()?,
                 Coordinate::new(to.0, to.1)
             );
         }
-        unit.follow_path(&[unit.board_position().fixture()?]);
+        unit.follow_path(&[unit.board_position().fixture()?], 0);
         assert_eq!(unit.direction(), Some(Direction::West));
-        unit.follow_path(&[
-            Coordinate::new(3, 7),
-            Coordinate::new(4, 7),
-            Coordinate::new(5, 7),
-            Coordinate::new(5, 8),
-        ]);
+        unit.follow_path(
+            &[
+                Coordinate::new(3, 7),
+                Coordinate::new(4, 7),
+                Coordinate::new(5, 7),
+                Coordinate::new(5, 8),
+            ],
+            0,
+        );
         assert_eq!(unit.direction(), Some(Direction::South));
 
         Ok(())
@@ -1043,22 +1074,25 @@ mod tests {
                     .into_iter()
                     .find(|unit| unit.kind == kind && unit.player_number == player_number)
                     .fixture()?;
-                unit.follow_path(&[
-                    Coordinate::new(4, 8),
-                    Coordinate::new(3, 8),
-                    Coordinate::new(3, 7),
-                ]);
+                unit.follow_path(
+                    &[
+                        Coordinate::new(4, 8),
+                        Coordinate::new(3, 8),
+                        Coordinate::new(3, 7),
+                    ],
+                    0,
+                );
                 assert_eq!(unit.direction(), Some(Direction::North));
                 assert_eq!(unit.sprite_facing(), SpriteFacing::Left);
-                unit.follow_path(&[Coordinate::new(3, 7), Coordinate::new(3, 8)]);
+                unit.follow_path(&[Coordinate::new(3, 7), Coordinate::new(3, 8)], 0);
                 assert_eq!(unit.sprite_facing(), SpriteFacing::Left);
                 unit.rotate(Direction::South);
                 assert_eq!(unit.sprite_facing(), SpriteFacing::Left);
                 unit.rotate(Direction::East);
-                unit.follow_path(&[Coordinate::new(3, 8), Coordinate::new(3, 7)]);
+                unit.follow_path(&[Coordinate::new(3, 8), Coordinate::new(3, 7)], 0);
                 assert_eq!(unit.direction(), Some(Direction::North));
                 assert_eq!(unit.sprite_facing(), SpriteFacing::Right);
-                unit.follow_path(&[Coordinate::new(3, 7)]);
+                unit.follow_path(&[Coordinate::new(3, 7)], 0);
                 assert_eq!(unit.sprite_facing(), SpriteFacing::Right);
             }
         }
@@ -1075,14 +1109,17 @@ mod tests {
             .find(|unit| unit.kind == UnitKind::Truck)
             .fixture()?;
         assert_eq!(unit.direction(), None);
-        unit.follow_path(&[
-            unit.board_position().fixture()?,
-            Coordinate::new(3, 7),
-            Coordinate::new(3, 8),
-        ]);
+        unit.follow_path(
+            &[
+                unit.board_position().fixture()?,
+                Coordinate::new(3, 7),
+                Coordinate::new(3, 8),
+            ],
+            0,
+        );
         assert_eq!(unit.board_position().fixture()?, Coordinate::new(3, 8));
         assert_eq!(unit.direction(), None);
-        unit.follow_path(&[unit.board_position().fixture()?]);
+        unit.follow_path(&[unit.board_position().fixture()?], 0);
         assert_eq!(unit.direction(), None);
 
         Ok(())
@@ -1104,11 +1141,14 @@ mod tests {
                 ((3, 8), (4, 8), SpriteFacing::Right),
                 ((4, 8), (4, 7), SpriteFacing::Right),
             ] {
-                unit.follow_path(&[Coordinate::new(from.0, from.1), Coordinate::new(to.0, to.1)]);
+                unit.follow_path(
+                    &[Coordinate::new(from.0, from.1), Coordinate::new(to.0, to.1)],
+                    0,
+                );
                 assert_eq!(unit.direction(), None);
                 assert_eq!(unit.sprite_facing(), facing);
             }
-            unit.follow_path(&[Coordinate::new(4, 7)]);
+            unit.follow_path(&[Coordinate::new(4, 7)], 0);
             unit.rotate(Direction::West);
             assert_eq!(unit.direction(), None);
             assert_eq!(unit.sprite_facing(), SpriteFacing::Right);

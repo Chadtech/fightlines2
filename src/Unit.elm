@@ -4,6 +4,7 @@ module Unit exposing
     , carrierId
     , crateCount
     , faceDirection
+    , fuelMovementPerTile
     , isDying
     , label
     , loadingTarget
@@ -86,6 +87,25 @@ supplyMovementLimit supplies =
 
     else
         Nothing
+
+
+{-| Use the physical cargo at departure, before destination loading or unloading.
+-}
+fuelMovementPerTile : List Unit -> Unit -> Int
+fuelMovementPerTile units unit =
+    let
+        passengers : Int
+        passengers =
+            units |> List.filter (\passenger -> carrierId passenger == Just unit.id) |> List.length
+
+        occupiedSlots : Int
+        occupiedSlots =
+            passengers + crateCount unit
+    in
+    unit.resources
+        |> Maybe.andThen .fuel
+        |> Maybe.map (\fuel -> fuel.movementPerTile + occupiedSlots * fuel.movementPerCargoSlot)
+        |> Maybe.withDefault 0
 
 
 onBoard : Unit -> Bool

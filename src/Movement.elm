@@ -86,13 +86,13 @@ affordableRoutes goal blocked rules map units unit =
     case ( ListUtil.find (\rule -> rule.kind == unit.kind) rules, Unit.physicalPosition units unit ) of
         ( Just rule, Just origin ) ->
             search goal
-                (tileLimit unit)
+                (tileLimit units unit)
                 unit
                 rule
                 map
                 blocked
                 [ start origin ]
-                (Dict.singleton (searchKey (tileLimit unit) map unit (start origin)) 0)
+                (Dict.singleton (searchKey (tileLimit units unit) map unit (start origin)) 0)
                 []
                 |> List.filter (\option -> option.destination /= origin)
                 |> List.foldl cheapestDestination Dict.empty
@@ -105,16 +105,19 @@ affordableRoutes goal blocked rules map units unit =
 {-| Reserve upkeep once; only walking units spend supplies per tile.
 Fuel and supplies bound tile count independently of terrain movement costs.
 -}
-tileLimit : Unit -> Maybe Int
-tileLimit unit =
+tileLimit : List Unit -> Unit -> Maybe Int
+tileLimit units unit =
     let
         supplyLimit : Maybe Int
         supplyLimit =
-            unit.resources |> Maybe.andThen (.supplies >> Unit.supplyMovementLimit)
+            unit.resources
+                |> Maybe.andThen (.supplies >> Unit.supplyMovementLimit)
 
         fuelLimit : Maybe Int
         fuelLimit =
-            unit.resources |> Maybe.andThen .fuel |> Maybe.map (\fuel -> fuel.current // fuel.movementPerTile)
+            unit.resources
+                |> Maybe.andThen .fuel
+                |> Maybe.map (\fuel -> fuel.current // Unit.fuelMovementPerTile units unit)
     in
     if Unit.carrierId unit /= Nothing then
         Just (min 1 (Maybe.withDefault 1 supplyLimit))
@@ -409,7 +412,7 @@ trace rules map units unit current destination =
                     remainingUnit : Unit
                     remainingUnit =
                         { unit
-                            | resources = Maybe.map (remainingResources map current) unit.resources
+                            | resources = Maybe.map (remainingResources (Unit.fuelMovementPerTile units unit) map current) unit.resources
                         }
                             |> Unit.setOnMap current.destination
 
@@ -425,7 +428,7 @@ trace rules map units unit current destination =
                 affordableRoutes (ToDestination destination) current.path [ remainingRule ] map units remainingUnit
                     |> ListUtil.find (\option -> option.destination == destination)
                     |> Maybe.map extendPath
-                    |> Maybe.andThen (withinTileLimit unit)
+                    |> Maybe.andThen (withinTileLimit units unit)
 
 
 supplyCost : Map -> Supplies -> List Coordinate -> Int
@@ -446,8 +449,8 @@ supplyCost map supplies path =
         |> List.sum
 
 
-remainingResources : Map -> Option -> UnitResources -> UnitResources
-remainingResources map current resources =
+remainingResources : Int -> Map -> Option -> UnitResources -> UnitResources
+remainingResources fuelPerTile map current resources =
     let
         tiles : Int
         tiles =
@@ -458,8 +461,12 @@ remainingResources map current resources =
             resources.supplies
     in
     { resources
-        | supplies = { supplies | current = supplies.current - supplyCost map supplies current.path }
-        , fuel = Maybe.map (\fuel -> { fuel | current = fuel.current - tiles * fuel.movementPerTile }) resources.fuel
+        | supplies =
+            { supplies | current = supplies.current - supplyCost map supplies current.path }
+        , fuel =
+            Maybe.map
+                (\fuel -> { fuel | current = fuel.current - tiles * fuelPerTile })
+                resources.fuel
     }
 
 
@@ -506,12 +513,12 @@ preview rules map units unit current destination =
                 |> Maybe.andThen (\origin -> trace rules map units unit (start origin) destination)
 
 
-withinTileLimit : Unit -> Option -> Maybe Option
-withinTileLimit unit option =
+withinTileLimit : List Unit -> Unit -> Option -> Maybe Option
+withinTileLimit units unit option =
     let
         exceedsLimit : Bool
         exceedsLimit =
-            tileLimit unit |> Maybe.map (\limit -> List.length option.path - 1 > limit) |> Maybe.withDefault False
+            tileLimit units unit |> Maybe.map (\limit -> List.length option.path - 1 > limit) |> Maybe.withDefault False
     in
     if exceedsLimit then
         Nothing

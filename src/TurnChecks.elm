@@ -430,6 +430,7 @@ truckPlaybackChecks unitId =
                                 { current = 15
                                 , maximum = 64
                                 , movementPerTile = 1
+                                , movementPerCargoSlot = 0
                                 }
                         }
               }
@@ -512,6 +513,7 @@ transportPlaybackChecks passengerId truckId =
                             { current = 63
                             , maximum = 64
                             , movementPerTile = 1
+                            , movementPerCargoSlot = 0
                             }
                     }
             }
@@ -693,6 +695,7 @@ spriteFacingChecks id =
                             { current = 64
                             , maximum = 64
                             , movementPerTile = 2
+                            , movementPerCargoSlot = 0
                             }
                     }
             }

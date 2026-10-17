@@ -26,6 +26,7 @@ module GamePage.OrderPlanning exposing
     , indirectTargets
     , indirectTargetsInRange
     , init
+    , isDismounting
     , isOwnUnit
     , loadingTarget
     , missingOrders
@@ -34,8 +35,10 @@ module GamePage.OrderPlanning exposing
     , openCommandGuide
     , orders
     , pathPreview
+    , planningUnit
     , previewDirection
     , previewTile
+    , promptDismountedCommands
     , receivingLoad
     , restoreCommands
     , revokeSelectedOrder
@@ -568,6 +571,124 @@ chooseUnloadSquare : Context -> Coordinate -> Model -> Model
 chooseUnloadSquare context destination state =
     state
         |> saveUnloadDestination context.depots (availableUnloadOptions context) destination
+        |> promptDismountedCommands context
+
+
+{-| Project an infantry's planned dismount for local command planning. The board and cargo
+remain authoritative until playback; previews reserve the actual unloading cost.
+-}
+planningUnit : Context -> List PlannedOrder -> Unit -> Unit
+planningUnit context drafts unit =
+    let
+        exit : Maybe PlannedOrder.UnloadOrder
+        exit =
+            drafts
+                |> List.concatMap PlannedOrder.unloads
+                |> ListUtil.find (\unload -> unload.unitId == unit.id)
+
+        dismount : PlannedOrder.UnloadOrder -> Unit
+        dismount unload =
+            let
+                spendUnloading : UnitResources.UnitResources -> UnitResources.UnitResources
+                spendUnloading resources =
+                    let
+                        supplies : Unit.Supplies.Supplies
+                        supplies =
+                            resources.supplies
+
+                        cost : Int
+                        cost =
+                            Movement.supplyCost
+                                context.map
+                                supplies
+                                [ unload.destination, unload.destination ]
+                    in
+                    { resources
+                        | supplies = { supplies | current = supplies.current - cost }
+                    }
+            in
+            Unit.setOnMap
+                unload.destination
+                { unit | resources = Maybe.map spendUnloading unit.resources }
+    in
+    if (unit.kind == Kind.Infantry) && (Unit.carrierId unit /= Nothing) then
+        exit
+            |> Maybe.map dismount
+            |> Maybe.withDefault unit
+
+    else
+        unit
+
+
+{-| A projected infantry is on the map while its physical unit is still aboard.
+-}
+isDismounting : Context -> Unit -> Bool
+isDismounting context unit =
+    let
+        wasAboard : Bool
+        wasAboard =
+            context.units
+                |> ListUtil.find (\original -> original.id == unit.id)
+                |> Maybe.andThen Unit.carrierId
+                |> (/=) Nothing
+    in
+    (unit.kind == Kind.Infantry) && Unit.onBoard unit && wasAboard
+
+
+promptDismountedCommands : Context -> Model -> Model
+promptDismountedCommands context original =
+    let
+        clearPassengerHold : List PlannedOrder -> List PlannedOrder
+        clearPassengerHold drafts =
+            let
+                staleHold : PlannedOrder -> Bool
+                staleHold order =
+                    case ListUtil.find (\unit -> unit.id == order.unitId) context.units of
+                        Just unit ->
+                            let
+                                planned : Unit
+                                planned =
+                                    planningUnit context drafts unit
+                            in
+                            (Unit.carrierId unit /= Nothing)
+                                && Unit.onBoard planned
+                                && (List.head (PlannedOrder.path order) /= Unit.boardPosition planned)
+
+                        Nothing ->
+                            False
+            in
+            List.filter (not << staleHold) drafts
+
+        state : Model
+        state =
+            case original of
+                OrdinaryPlanning drafts ->
+                    OrdinaryPlanning { drafts | orders = clearPassengerHold drafts.orders }
+
+                ChoosingCrates id drafts ->
+                    ChoosingCrates id { drafts | orders = clearPassengerHold drafts.orders }
+
+                _ ->
+                    original
+    in
+    case state of
+        OrdinaryPlanning _ ->
+            let
+                needsCommand : Unit -> Bool
+                needsCommand unit =
+                    (Unit.carrierId unit /= Nothing)
+                        && Unit.onBoard (planningUnit context (orders state) unit)
+                        && not (List.any (\order -> order.unitId == unit.id) (orders state))
+            in
+            case ListUtil.find needsCommand context.units of
+                Just unit ->
+                    setUnitInteraction unit.id (CommandMenu (ChoosingCommand Nothing)) state
+
+                Nothing ->
+                    state
+
+        _ ->
+            state
 
 
 applyCommand : Context -> UnitCommand.Command -> Model -> Model
@@ -863,9 +984,21 @@ revokeDependentOrders context revokedIds drafts =
 
                 needsCrateExit : Bool
                 needsCrateExit =
-                    List.any (\unload -> List.member unload.destination occupiedAgain) (PlannedOrder.crateUnloads plan)
+                    List.any
+                        (\unload -> List.member unload.destination occupiedAgain)
+                        (PlannedOrder.crateUnloads plan)
+
+                needsDismount : Bool
+                needsDismount =
+                    removed
+                        |> List.concatMap PlannedOrder.unloads
+                        |> List.any (\exit -> exit.unitId == plan.unitId)
             in
-            needsDestination || needsPassengerExit || needsCrateExit || needsTruck
+            needsDestination
+                || needsPassengerExit
+                || needsCrateExit
+                || needsTruck
+                || needsDismount
 
         dependentIds : List UnitId
         dependentIds =
@@ -898,12 +1031,16 @@ saveDirection context direction state =
                                 PlannedOrder.AttackMove attackPlan
                             }
                     in
-                    state
-                        |> setOrders
-                            (plannedOrder
-                                :: List.filter (\order -> order.unitId /= id) (orders state)
-                            )
-                        |> inspectSelectedUnit context
+                    if Direction.reversesPath move.path direction then
+                        state
+
+                    else
+                        state
+                            |> setOrders
+                                (plannedOrder
+                                    :: List.filter (\order -> order.unitId /= id) (orders state)
+                                )
+                            |> finishUnitCommand context
 
                 ChoosingDirection purpose _ ->
                     saveStationaryDirection purpose context direction state
@@ -949,7 +1086,7 @@ saveStationaryDirection purpose context direction state =
                                     (orders state)
                             )
                             state
-                            |> inspectSelectedUnit context
+                            |> finishUnitCommand context
 
                     Nothing ->
                         state
@@ -1232,7 +1369,11 @@ previewFacing interaction direction =
             ChoosingDirection purpose direction
 
         ChoosingAttackDirection move _ ->
-            ChoosingAttackDirection move direction
+            if Direction.reversesPath move.path direction then
+                interaction
+
+            else
+                ChoosingAttackDirection move direction
 
         _ ->
             interaction
@@ -1334,7 +1475,9 @@ missingOrders context drafts =
         missing unit =
             isOwnUnit context unit && Unit.onBoard unit && not (List.any (\order -> order.unitId == unit.id) drafts)
     in
-    List.filter missing context.units
+    context.units
+        |> List.map (planningUnit context drafts)
+        |> List.filter missing
 
 
 submissionOrders : Context -> List PlannedOrder -> List PlannedOrder
@@ -1350,6 +1493,7 @@ submissionOrders context drafts =
         holds : List PlannedOrder
         holds =
             context.units
+                |> List.map (planningUnit context drafts)
                 |> List.filter missing
                 |> List.filterMap (holdOrder context.units)
     in
@@ -1426,7 +1570,7 @@ saveIndirectFire context target state =
             if List.member target (indirectTargets context state) then
                 state
                     |> setOrders (order :: List.filter otherUnitOrder (orders state))
-                    |> inspectSelectedUnit context
+                    |> finishUnitCommand context
 
             else
                 state
@@ -1535,9 +1679,11 @@ skipUnloading context state =
     case state of
         ChoosingPassengers choice ->
             finishUnloading context.depots choice.truck choice.otherOrders Nothing
+                |> promptDismountedCommands context
 
         ChoosingExits unloading ->
             finishUnloading context.depots unloading.truck unloading.otherOrders Nothing
+                |> promptDismountedCommands context
 
         _ ->
             state
@@ -1629,7 +1775,7 @@ holdPosition context unit state =
                                 (orders state)
                         )
                         state
-                        |> inspectSelectedUnit context
+                        |> finishUnitCommand context
             in
             if hasCargo context unit then
                 next
@@ -1751,6 +1897,7 @@ crateExitOptions context planning plans =
 selectedUnit : Context -> Model -> Maybe Unit
 selectedUnit context state =
     selectedUnitFromSelection context (selection state)
+        |> Maybe.map (planningUnit context (orders state))
 
 
 traceTo : Context -> Coordinate -> Model -> Maybe Movement.Option
@@ -1916,9 +2063,15 @@ reservedDestinations context unit state =
         destinations =
             List.map PlannedOrder.destination (List.filter reserves (orders state))
 
+        otherPassengerExits : PlannedOrder -> List Coordinate
+        otherPassengerExits order =
+            PlannedOrder.unloads order
+                |> List.filter (\exit -> exit.unitId /= unit.id)
+                |> List.map .destination
+
         passengerExits : List Coordinate
         passengerExits =
-            List.concatMap (PlannedOrder.unloads >> List.map .destination) (orders state)
+            List.concatMap otherPassengerExits (orders state)
     in
     savedDestinations ++ unavailableReceivers
 
@@ -1996,6 +2149,12 @@ inspectSelectedUnit context state =
             state
 
 
+finishUnitCommand : Context -> Model -> Model
+finishUnitCommand context state =
+    inspectSelectedUnit context state
+        |> promptDismountedCommands context
+
+
 restoreCommands : Context -> Model -> Model
 restoreCommands context state =
     case selectedUnit context state of
@@ -2007,8 +2166,12 @@ restoreCommands context state =
 
 
 unitSelection : Context -> Unit -> Model -> Selection
-unitSelection context unit state =
+unitSelection context original state =
     let
+        unit : Unit
+        unit =
+            planningUnit context (orders state) original
+
         hasOrder : Bool
         hasOrder =
             List.any (\order -> order.unitId == unit.id) (orders state)
@@ -2069,7 +2232,7 @@ selectMovementTile context position model =
                         else
                             model
                                 |> setOrders (saveMove context unit move model)
-                                |> inspectSelectedUnit context
+                                |> finishUnitCommand context
                                 |> openUnloadPrompt context unit move
                                 |> offerReceiverLoading
 
@@ -2169,11 +2332,22 @@ canStop : MovePurpose -> Context -> Unit -> Model -> Movement.Option -> Bool
 canStop purpose context unit state option =
     case purpose of
         NormalMove ->
-            Movement.canStop
-                (reservedDestinations context unit state)
-                (destinationUnits context (orders state))
-                unit
-                option
+            let
+                endsOnTruck : Bool
+                endsOnTruck =
+                    destinationUnits context (orders state)
+                        |> List.any
+                            (\other ->
+                                (other.kind == Kind.Truck)
+                                    && (Unit.boardPosition other == Just option.destination)
+                            )
+            in
+            not (isDismounting context unit && endsOnTruck)
+                && Movement.canStop
+                    (reservedDestinations context unit state)
+                    (destinationUnits context (orders state))
+                    unit
+                    option
 
         AttackMove ->
             let

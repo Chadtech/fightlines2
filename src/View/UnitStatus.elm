@@ -257,7 +257,7 @@ gauge kind resource =
                     Just (supplyExplanation kind)
 
                 Fuel fuel ->
-                    Just ("each traversed tile uses " ++ String.fromInt fuel.movementPerTile ++ " fuel. holds and canceled moves use none. nearby fuel depots and ground or carried fuel drums refill vehicle tanks at turn end.")
+                    Just (fuelExplanation fuel)
 
         labelChildren : List (Html msg)
         labelChildren =
@@ -409,3 +409,23 @@ roleText kind =
 
         Kind.FieldGun ->
             "a ground unit with a crew-operated gun."
+
+
+fuelExplanation : Fuel -> String
+fuelExplanation fuel =
+    let
+        cargoCost : String
+        cargoCost =
+            if fuel.movementPerCargoSlot > 0 then
+                ", plus "
+                    ++ String.fromInt fuel.movementPerCargoSlot
+                    ++ " for each occupied cargo slot (passenger, supply crate, or fuel drum) at departure"
+
+            else
+                ""
+    in
+    "each traversed tile uses "
+        ++ String.fromInt fuel.movementPerTile
+        ++ " fuel"
+        ++ cargoCost
+        ++ ". loading and unloading happen after movement. holds and canceled moves use none. nearby fuel depots and ground or carried fuel drums refill vehicle tanks at turn end."

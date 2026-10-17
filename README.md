@@ -105,7 +105,8 @@ it; changing or clearing the move frees that square. Routes
 can pass through reserved destinations. Depots are passable.
 The selection panel shows the selected unit's illustration, name, and player,
 with expandable unit and gauge explanations. Every unit starts with 16/16 hit points, supplied by the server. Combat damage uses weapon matchup, health, readiness, facing, cover, and ambush advantage; see [combat_factors.md](combat_factors.md). Healing and trench protection are not implemented yet. Tanks and trucks start with 128/128 fuel. Each
-successfully traversed tile costs tanks 8 fuel and trucks 4 fuel, independently of
+successfully traversed tile costs tanks 8 fuel. Trucks spend 2 fuel plus 2 per occupied
+cargo slot (passenger, supply crate, or fuel drum) at departure, independently of
 terrain movement costs. Interrupted routes pay only for successfully traveled tiles; holds consume none.
 Neutral fuel depots refill living tanks and trucks at turn end from finite stocks. Movement previews and submitted paths must fit both remaining
 fuel and the per-turn movement budget.
@@ -137,6 +138,13 @@ leave the affected passengers aboard. An exit occupied by a concealed enemy can
 be submitted; if the enemy remains there at resolution, the passenger stays aboard
 and spends no unloading supplies. Revoking the truck's order also removes
 its unload choices.
+After choosing cargo exits, unloading infantry receive their normal command menu.
+Plan a move, attack move, ambush, stand ground, or hold from the unload square.
+They receive a fresh movement allowance after dismounting, but pay both unloading
+and action supply costs, with upkeep charged once. Commands resolve after transport
+and before indirect fire. Prepared ambushes can fire during unloading; a blocked
+exit, stopped truck, or dead passenger prevents the follow-up action. Field guns
+still only dismount. Revoking the truck order also revokes its infantry commands.
 Enemy resources and passengers are concealed outside combat. Combat
 encounters involving your units appear even when the enemy is concealed and reveal
 both participants’ before/after health; supplies and fuel stay hidden. Crate cargo is separate from the truck's own provisions.
@@ -490,6 +498,7 @@ Infantry and tanks can choose **attack move** and trace a route with the same
 pointer and keyboard controls as move. First choose the route by releasing a drag,
 clicking a destination, or pressing Enter. Then choose final facing around the
 destination: point to preview, and click or press an arrow/WASD key to save.
+The direction back along the final route segment is unavailable.
 Preview paths are solid red; saved paths are dashed red. The endpoint arrow shows
 the chosen final facing. Interrupted routes keep their last traveled facing.
 Allies remain passable, but attack move cannot load or unload passengers.

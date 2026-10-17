@@ -9,6 +9,7 @@ import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.Terrain as Terrain
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Coordinate exposing (Coordinate)
+import Direction
 import GamePage.OrderPlanning as OrderPlanning
 import GamePage.Selection exposing (DestinationFeedback(..), Inspection(..), Selection(..))
 import Map exposing (Map)
@@ -17,6 +18,7 @@ import PlannedOrder
 import Platform
 import TurnLifecycle
 import Unit exposing (Unit)
+import Unit.Fuel as Fuel
 import Unit.Location as Location exposing (Location)
 import Unit.Supplies
 import UnitCommand
@@ -535,6 +537,54 @@ planningChecks infantryId truckId passengerId =
                 |> OrderPlanning.confirmPassengers cargoContext
                 |> OrderPlanning.chooseUnloadSquare cargoContext { x = 5, y = 1 }
 
+        twoInfantryContext : OrderPlanning.Context
+        twoInfantryContext =
+            board
+                [ truck
+                , unit infantryId Kind.Infantry (Location.Aboard truckId)
+                , unit passengerId Kind.Infantry (Location.Aboard truckId)
+                ]
+
+        twoInfantryReady : OrderPlanning.Model
+        twoInfantryReady =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit twoInfantryContext truckId
+                |> OrderPlanning.applyCommand twoInfantryContext UnitCommand.HoldPosition
+                |> OrderPlanning.toggleUnloadPassenger infantryId True
+                |> OrderPlanning.toggleUnloadPassenger passengerId True
+                |> OrderPlanning.confirmPassengers twoInfantryContext
+                |> OrderPlanning.chooseUnloadSquare twoInfantryContext { x = 3, y = 2 }
+                |> OrderPlanning.chooseUnloadSquare twoInfantryContext { x = 4, y = 1 }
+
+        secondInfantryCommand : OrderPlanning.Model
+        secondInfantryCommand =
+            twoInfantryReady
+                |> OrderPlanning.applyCommand twoInfantryContext UnitCommand.HoldPosition
+
+        bothInfantryCommanded : OrderPlanning.Model
+        bothInfantryCommanded =
+            secondInfantryCommand
+                |> OrderPlanning.applyCommand twoInfantryContext UnitCommand.StandGround
+                |> OrderPlanning.saveDirection twoInfantryContext DirectionEnum.East
+
+        dismountAttack : OrderPlanning.Model
+        dismountAttack =
+            completed
+                |> OrderPlanning.applyCommand cargoContext UnitCommand.AttackMove
+                |> OrderPlanning.extendPath cargoContext DirectionEnum.South
+                |> OrderPlanning.confirmPath cargoContext
+                |> OrderPlanning.saveDirection cargoContext DirectionEnum.East
+
+        dismountHold : OrderPlanning.Model
+        dismountHold =
+            completed |> OrderPlanning.applyCommand cargoContext UnitCommand.HoldPosition
+
+        revokedDismount : OrderPlanning.Model
+        revokedDismount =
+            dismountHold
+                |> OrderPlanning.selectUnit cargoContext truckId
+                |> OrderPlanning.revokeSelectedOrder cargoContext
+
         freightTruck : Unit
         freightTruck =
             { truck
@@ -1034,6 +1084,16 @@ planningChecks infantryId truckId passengerId =
                 && OrderPlanning.submissionDrafts attackAiming
                 == Nothing
             )
+        , expect "attack move cannot preview or save a facing back along its final segment"
+            (OrderPlanning.previewDirection DirectionEnum.West attackAiming
+                == attackAiming
+                && OrderPlanning.saveDirection attackContext DirectionEnum.West attackAiming
+                == attackAiming
+            )
+        , expect "attack facing restriction follows the last segment of a turning route"
+            (Direction.reversesPath [ { x = 1, y = 1 }, { x = 2, y = 1 }, { x = 2, y = 2 } ] DirectionEnum.North
+                && not (Direction.reversesPath [ { x = 1, y = 1 }, { x = 2, y = 1 }, { x = 2, y = 2 } ] DirectionEnum.West)
+            )
         , expect "attack move previews reserve readiness and firing supplies"
             (OrderPlanning.pathPreview lowSupplyAttack |> Maybe.map (\option -> option.path == [ { x = 1, y = 1 }, { x = 2, y = 1 } ]) |> Maybe.withDefault False)
         , expect "attack move command requires readiness supplies before walking"
@@ -1176,8 +1236,29 @@ planningChecks infantryId truckId passengerId =
             (List.concatMap PlannedOrder.unloads (OrderPlanning.orders completed) == [ { unitId = infantryId, destination = { x = 3, y = 2 } }, { unitId = passengerId, destination = { x = 4, y = 1 } } ] && OrderPlanning.unloadPlanning completed == Nothing)
         , expect "moving truck exits use the planned truck destination"
             (List.concatMap PlannedOrder.unloads (OrderPlanning.orders truckMove) == [ { unitId = infantryId, destination = { x = 5, y = 1 } } ])
-        , expect "cargo needs no explicit ready order but receives holds for submission"
-            (List.isEmpty (OrderPlanning.missingOrders cargoContext (OrderPlanning.orders completed)) && List.length ordersForSubmission == 3)
+        , expect "dismounted infantry needs a command while other cargo receives holds for submission"
+            (List.map .id (OrderPlanning.missingOrders cargoContext (OrderPlanning.orders completed)) == [ infantryId ] && List.length ordersForSubmission == 3)
+        , expect "saving the first infantry command opens commands for the second dismount"
+            (OrderPlanning.commandMenuUnit twoInfantryContext secondInfantryCommand |> Maybe.map .id |> (==) (Just passengerId))
+        , expect "both dismounted infantry can save independent commands"
+            (List.isEmpty (OrderPlanning.missingOrders twoInfantryContext (OrderPlanning.orders bothInfantryCommanded))
+                && OrderPlanning.commandMenuUnit twoInfantryContext bothInfantryCommanded
+                == Nothing
+                && List.length (OrderPlanning.orders bothInfantryCommanded)
+                == 3
+            )
+        , expect "completing exits opens the dismounted infantry command menu"
+            (OrderPlanning.commandMenuUnit cargoContext completed |> Maybe.map .id |> (==) (Just infantryId))
+        , expect "dismounted attack tracing begins at the exit and saves normally"
+            (OrderPlanning.orders dismountAttack
+                |> List.any (\order -> order.unitId == infantryId && PlannedOrder.isAttackMove order && List.head (PlannedOrder.path order) == Just { x = 3, y = 2 })
+            )
+        , expect "dismounted hold uses the exit and clears the missing command"
+            (List.isEmpty (OrderPlanning.missingOrders cargoContext (OrderPlanning.orders dismountHold))
+                && List.any (\order -> order.unitId == infantryId && PlannedOrder.path order == [ { x = 3, y = 2 } ]) (OrderPlanning.orders dismountHold)
+            )
+        , expect "revoking transport also revokes its dismounted infantry command"
+            (not (List.any (\order -> order.unitId == infantryId) (OrderPlanning.orders revokedDismount)))
         , expect "explicit crate loading reserves the truck berths against later boarding drafts"
             (List.map .unitId (OrderPlanning.orders tryingFullTruck) == [ truckId ])
         , expect "boarding into a spare berth preserves an explicit crate-loading order"
@@ -1291,10 +1372,10 @@ unit id kind location =
             else
                 Just DirectionEnum.North
 
-        fuel : Maybe { current : Int, maximum : Int, movementPerTile : Int }
+        fuel : Maybe Fuel.Fuel
         fuel =
             if vehicle then
-                Just { current = 64, maximum = 64, movementPerTile = 1 }
+                Just { current = 64, maximum = 64, movementPerTile = 1, movementPerCargoSlot = 0 }
 
             else
                 Nothing

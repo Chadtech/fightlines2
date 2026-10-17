@@ -1,6 +1,7 @@
 //! Shared arrivals use accumulated terrain cost / full movement allowance.
 //! Integer ticks are the least common multiple of allowances, never float comparisons.
 use crate::{
+    combat::Combat,
     map::Coordinate,
     movement,
     scenario::{PlayerNumber, Scenario, Unit, UnitId},
@@ -46,7 +47,7 @@ impl ResolutionError {
 }
 
 pub struct MovementResolution {
-    pub combat: crate::combat::Combat,
+    pub combat: Combat,
     pub paths: BTreeMap<UnitId, Vec<Coordinate>>,
     pub stopped: BTreeSet<UnitId>,
     pub frames: Vec<TurnFrame>,
@@ -115,10 +116,30 @@ pub fn resolve(
     turn: i32,
 ) -> Result<MovementResolution, ResolutionError> {
     let loads = turns::planned_loads(scenario, orders);
+    resolve_prepared(scenario, orders, turn, None, &loads)
+}
+
+/// Transport has finished; dismounted infantry cannot start another boarding.
+pub fn resolve_dismounts(
+    scenario: &Scenario,
+    orders: &[MoveOrder],
+    turn: i32,
+    combat: &Combat,
+) -> Result<MovementResolution, ResolutionError> {
+    resolve_prepared(scenario, orders, turn, Some(combat), &[])
+}
+
+fn resolve_prepared(
+    scenario: &Scenario,
+    orders: &[MoveOrder],
+    turn: i32,
+    combat: Option<&Combat>,
+    loads: &[PlannedLoad],
+) -> Result<MovementResolution, ResolutionError> {
     let mut routes = orders.to_vec();
     let mut stopped = BTreeSet::new();
     loop {
-        let mut result = resolve_arrivals(scenario, &routes, turn)?;
+        let mut result = resolve_arrivals(scenario, &routes, turn, combat)?;
         stopped.extend(&result.stopped);
         result.stopped = stopped.clone();
         let mut occupied: BTreeMap<Coordinate, Vec<_>> = BTreeMap::new();
@@ -206,6 +227,7 @@ fn resolve_arrivals(
     scenario: &Scenario,
     orders: &[MoveOrder],
     turn: i32,
+    combat: Option<&Combat>,
 ) -> Result<MovementResolution, ResolutionError> {
     let rules = movement::rules();
     fn gcd(a: i32, b: i32) -> i32 {
@@ -259,7 +281,10 @@ fn resolve_arrivals(
             .ok_or(ResolutionError::MissingTerrain)?;
     }
     let initial_frame = frame(&board, 0);
-    let combat = crate::combat::Combat::prepare(&mut board, orders);
+    let combat = match combat {
+        Some(combat) => combat.clone(),
+        None => Combat::prepare(&mut board, orders),
+    };
     let mut result = MovementResolution {
         combat,
         paths,
@@ -393,6 +418,7 @@ fn resolve_arrivals(
             .collect();
         for (id, destination) in intents {
             if !blocked.contains(&id) {
+                let passenger_count = scenario.passenger_count(id);
                 let unit = board
                     .units
                     .iter_mut()
@@ -403,7 +429,7 @@ fn resolve_arrivals(
                     .get_mut(&id)
                     .ok_or(ResolutionError::MissingPath)?;
                 let origin = *path.last().ok_or(ResolutionError::EmptyPath)?;
-                unit.follow_terrain_path(&board.map, &[origin, destination]);
+                unit.follow_terrain_path(&board.map, &[origin, destination], passenger_count);
                 path.push(destination);
             }
         }
@@ -484,12 +510,13 @@ fn resolve_arrivals(
                     .iter()
                     .find(|unit| unit.unit_id() == id)
                     .ok_or(ResolutionError::MissingUnit)?;
+                let passenger_count = scenario.passenger_count(id);
                 let unit = board
                     .units
                     .iter_mut()
                     .find(|unit| unit.unit_id() == id)
                     .ok_or(ResolutionError::MissingUnit)?;
-                unit.retract_movement(path, &board.map, &discarded_path, initial);
+                unit.retract_movement(path, &board.map, &discarded_path, initial, passenger_count);
             }
         }
         // Retain waiting time even after a route ends; timing is independent of its length.
@@ -512,6 +539,7 @@ fn resolve_arrivals(
 mod tests {
     use super::*;
     use crate::{
+        combat::CombatKind,
         map::{Map, Terrain},
         scenario::UnitKind,
         turns::MoveOrder,
@@ -783,7 +811,7 @@ mod tests {
             .flat_map(|frame| &frame.shots)
             .collect();
         assert_eq!(shots.len(), 1);
-        assert_eq!(shots[0].kind, crate::combat::CombatKind::AttackMove);
+        assert_eq!(shots[0].kind, CombatKind::AttackMove);
         assert_eq!(shots[0].destination, Coordinate::new(2, 0));
         assert_eq!(shots[0].target_health.after.current(), 5);
         let units = &result.frames.last().ok_or("missing frame")?.units;
@@ -876,7 +904,7 @@ mod tests {
                     .collect();
                 assert_eq!(shots.len(), 1);
                 let shot = shots.first().ok_or("missing final contact")?;
-                assert_eq!(shot.kind, crate::combat::CombatKind::AttackMove);
+                assert_eq!(shot.kind, CombatKind::AttackMove);
                 assert_eq!(shot.origin, Coordinate::new(destination.0, destination.1));
                 assert_eq!(shot.destination, Coordinate::new(enemy.0, enemy.1));
                 let damage = if attacker == "11" { 16 } else { 11 };
