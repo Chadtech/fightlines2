@@ -38,6 +38,7 @@ type alias PlannedOrder =
 
 type Action
     = Hold Coordinate
+    | DigIn Coordinate
     | Move MovePlan
     | AttackMove AttackPlan
     | Ambush Rotation
@@ -128,6 +129,9 @@ destination order =
         StandGround facing ->
             facing.position
 
+        DigIn position ->
+            position
+
         Hold position ->
             position
 
@@ -155,6 +159,9 @@ path order =
 
         StandGround facing ->
             [ facing.position ]
+
+        DigIn position ->
+            [ position ]
 
         Hold position ->
             [ position ]
@@ -187,6 +194,9 @@ unloads order =
         AttackMove _ ->
             []
 
+        DigIn _ ->
+            []
+
         Hold _ ->
             []
 
@@ -211,6 +221,9 @@ isMoving order =
 
         AttackMove attack ->
             List.length attack.move.path > 1
+
+        DigIn _ ->
+            False
 
         Hold _ ->
             False
@@ -265,6 +278,9 @@ toInput order =
                 StandGround facing ->
                     OptionalArgument.Present facing.direction
 
+                DigIn _ ->
+                    OptionalArgument.Absent
+
                 Hold _ ->
                     OptionalArgument.Absent
 
@@ -286,6 +302,7 @@ toInput order =
                 | unloads = OptionalArgument.Present (List.map unloadInput (unloads order))
                 , direction = direction
                 , indirectFire = indirectTarget order
+                , digIn = OptionalArgument.Present (isDiggingIn order)
                 , standGround = OptionalArgument.Present (isStandingGround order)
                 , ambush = OptionalArgument.Present (isAmbush order)
                 , attackMove = OptionalArgument.Present (isAttackMove order)
@@ -380,3 +397,13 @@ indirectTarget order =
 
         _ ->
             OptionalArgument.Absent
+
+
+isDiggingIn : PlannedOrder -> Bool
+isDiggingIn order =
+    case order.action of
+        DigIn _ ->
+            True
+
+        _ ->
+            False

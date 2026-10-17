@@ -10,8 +10,10 @@ module UnitCommand exposing
     , label
     )
 
+import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.UnitKind as Kind
 import Unit exposing (Unit)
+import Unit.Location as Location
 import UnitResources exposing (UnitResources)
 
 
@@ -64,7 +66,7 @@ available unit =
                 [ Move, HoldPosition ]
 
             Kind.FieldGun ->
-                [ Move, HoldPosition, Ambush, StandGround, IndirectFire, DigIn ]
+                [ Move, HoldPosition, Ambush, StandGround, IndirectFire ]
 
 
 isImplemented : Command -> Bool
@@ -88,8 +90,8 @@ isImplemented command =
         HoldPosition ->
             True
 
-        _ ->
-            False
+        DigIn ->
+            True
 
 
 label : Command -> String
@@ -144,7 +146,25 @@ assetName command =
 
 canUse : Unit -> Command -> Bool
 canUse unit command =
-    if command == IndirectFire then
+    if command == DigIn then
+        let
+            affordable : Bool
+            affordable =
+                unit.resources
+                    |> Maybe.map (\resources -> resources.supplies.current >= resources.supplies.upkeepPerTurn + unit.combatRules.digInCost)
+                    |> Maybe.withDefault False
+        in
+        case unit.location of
+            Location.OnMap _ ->
+                (unit.kind == Kind.Infantry) && (unit.entrenchment == Entrenchment.Exposed) && affordable
+
+            Location.Aboard _ ->
+                False
+
+            Location.Dismounting _ ->
+                False
+
+    else if command == IndirectFire then
         let
             canAffordShell : UnitResources -> Bool
             canAffordShell resources =

@@ -15,7 +15,7 @@
 
 Damage is deterministic and calculated in Rust for both ambushes and attack moves:
 
-`round(base power × (attacker HP / maximum HP)² × matchup × readiness × defender facing × attacker aim × cover × ambush advantage)`
+`round(base power × (attacker HP / maximum HP)² × matchup × readiness × defender facing × attacker aim × cover × ambush advantage × entrenchment)`
 
 Round only once at the end; living armed shooters deal at least 1 HP, with damage
 capped at the target's maximum HP (currently 16). Damage may exceed remaining HP;
@@ -31,6 +31,7 @@ chosen to express the expectations above rather than a fixed outcome table.
 | Attacker aim | front ×1; flank ×0.85; rear ×0.7 |
 | Hills or forest cover | ×0.85 incoming damage |
 | Ambush firing on an attack mover | ×1.125 |
+| Entrenched infantry | incoming infantry damage ×0.15; incoming field-gun damage ×0.06 (direct and indirect); tank damage unchanged |
 
 Battle readiness means an ambush or stand-ground order, or an attack-move order with enough
 supplies to fire while preserving upkeep. An attack mover that already fired
@@ -88,8 +89,7 @@ use ambush shots. Readiness does not grant return fire by itself.
 Hills and forests use the same damage reduction. Forest examples require an
 otherwise legal encounter: forest concealment still prevents ordinary ambush
 shots at hidden targets, while attack-move contact can engage concealed enemies.
-Trench protection is not active yet, so ready infantry remain exposed to heavy
-weapons even when ambushing. Ready tanks resist infantry fire particularly
+Infantry without entrenchment remain exposed to heavy weapons even when ambushing. Ready tanks resist infantry fire particularly
 strongly; infantry readiness does not make them effective against prepared armor.
 The 12-damage infantry hit against an unready tank applies from every direction.
 
@@ -135,6 +135,21 @@ Every shot in one volley uses health and facing from before that volley. Later
 volleys use the surviving units' updated health. Encounter health presentation
 continues to accumulate damage across pairs without changing simultaneous fire.
 
-Trench protection is deferred until a separate trench feature exists. Ambushing
-infantry are not treated as dug in. The future trench feature must supply the
-strong infantry/field-gun protection and the tank exception described above.
+## Entrenchment
+
+Only infantry already on the map can dig in. This exclusive stationary action
+costs 64 supplies plus ordinary upkeep, requires that stock before submitting,
+and never fires or grants readiness. Protection completes after all combat,
+including indirect fire; diggers remain exposed throughout the digging turn.
+Holding, ambush, stand ground, and rotation preserve entrenchment with no extra
+maintenance. Firing still needs an ordinary ambush order and its supply costs.
+Actual movement and boarding clear it; a move blocked before leaving preserves
+it. No terrain or abandoned trench persists. Dismounting consumes movement, so
+infantry cannot dig in during their unloading turn.
+
+Full-health, head-on attacks against ready entrenched infantry on open ground
+inflict 1 HP from infantry, 1 HP from a field gun (direct or indirect), and 16 HP
+from a tank. Against holding entrenched infantry, infantry deal 2 HP and field
+guns deal 2 HP. Health, facing, cover, readiness, and the existing minimum 1 HP
+hit still apply. Entrenchment changes incoming damage without adding return
+fire, range, visibility, or offensive power.

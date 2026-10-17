@@ -641,3 +641,15 @@ fogged squares. Confirmed hits use the theater and unit-loss dialog headed or
 labeled `indirect fire`. Landings without a confirmed target open a single terrain
 scene headed `indirect fire impact`, with the existing explosion animation and
 theater controls. Show no combatants, health, or hit/miss claim in that scene.
+
+## Infantry digging and entrenchment
+
+Enable the existing `dig in` menu action only for unentrenched infantry that
+can afford the server-provided digging cost plus upkeep. Keep it disabled during
+a planned dismount. Saving shows `dig in`, its supply cost, the end-of-turn
+completion, and the standard revoke action. Infantry cannot fire while digging.
+An entrenched unit uses its approved red or blue dug-in sprite on the board,
+in the inspector, and in combat formations, with existing facing mirroring.
+Name the selected unit `entrenched infantry` and include this status in its
+accessible label. Changing facing preserves the sprite; successful movement
+restores the ordinary infantry sprite, and leaves no terrain graphic behind.

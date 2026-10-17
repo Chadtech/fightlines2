@@ -32,6 +32,7 @@ module TurnPlayback exposing
 
 import Api.Enum.CombatKind as CombatKind exposing (CombatKind)
 import Api.Enum.Direction exposing (Direction)
+import Api.Enum.Entrenchment as Entrenchment
 import Api.Object
 import Api.Object.GameSnapshot as GameApi
 import Api.Object.IndirectImpact as IndirectImpactApi
@@ -978,7 +979,10 @@ presentationFrame playing next =
                             |> Maybe.andThen
                                 (\_ -> movementDirection)
                         )
-                        { unit | spriteFacing = SpriteFacing.turn movementDirection unit.spriteFacing }
+                        { unit
+                            | spriteFacing = SpriteFacing.turn movementDirection unit.spriteFacing
+                            , entrenchment = Entrenchment.Exposed
+                        }
                         |> Unit.setOnMap edge.origin
 
                 Nothing ->

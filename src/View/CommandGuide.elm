@@ -116,4 +116,4 @@ description command =
             "keep a field gun stationary and select any tile within its indirect range, including fog. one shell lands after movement and unloading, hitting whoever occupies that tile, including allies. terrain does not block the shot. empty tiles waste ammunition; unseen hits stay unconfirmed. readiness, firing, and normal upkeep spend supplies."
 
         DigIn ->
-            "not implemented yet. this infantry and field-gun command is intended for preparing a defensive position. it is currently disabled; trench protection is not available."
+            "infantry spend their whole turn and a substantial supply cost plus normal upkeep digging in. protection begins at turn end. entrenched infantry take very little damage from infantry and field guns, but remain vulnerable to tanks. choose ambush on later turns to fire. moving or boarding a truck removes entrenchment and leaves nothing behind."

@@ -155,9 +155,9 @@ buildMoveOrderInput required____ fillOptionals____ =
     let
         optionals____ =
             fillOptionals____
-                { direction = Absent, ambush = Absent, standGround = Absent, indirectFire = Absent, attackMove = Absent, unloads = Absent, loadCrates = Absent, crateUnloads = Absent }
+                { direction = Absent, ambush = Absent, standGround = Absent, digIn = Absent, indirectFire = Absent, attackMove = Absent, unloads = Absent, loadCrates = Absent, crateUnloads = Absent }
     in
-    { unitId = required____.unitId, path = required____.path, direction = optionals____.direction, ambush = optionals____.ambush, standGround = optionals____.standGround, indirectFire = optionals____.indirectFire, attackMove = optionals____.attackMove, unloads = optionals____.unloads, loadCrates = optionals____.loadCrates, crateUnloads = optionals____.crateUnloads }
+    { unitId = required____.unitId, path = required____.path, direction = optionals____.direction, ambush = optionals____.ambush, standGround = optionals____.standGround, digIn = optionals____.digIn, indirectFire = optionals____.indirectFire, attackMove = optionals____.attackMove, unloads = optionals____.unloads, loadCrates = optionals____.loadCrates, crateUnloads = optionals____.crateUnloads }
 
 
 type alias MoveOrderInputRequiredFields =
@@ -170,6 +170,7 @@ type alias MoveOrderInputOptionalFields =
     { direction : OptionalArgument Api.Enum.Direction.Direction
     , ambush : OptionalArgument Bool
     , standGround : OptionalArgument Bool
+    , digIn : OptionalArgument Bool
     , indirectFire : OptionalArgument CoordinateInput
     , attackMove : OptionalArgument Bool
     , unloads : OptionalArgument (List UnloadOrderInput)
@@ -186,6 +187,7 @@ type alias MoveOrderInput =
     , direction : OptionalArgument Api.Enum.Direction.Direction
     , ambush : OptionalArgument Bool
     , standGround : OptionalArgument Bool
+    , digIn : OptionalArgument Bool
     , indirectFire : OptionalArgument CoordinateInput
     , attackMove : OptionalArgument Bool
     , unloads : OptionalArgument (List UnloadOrderInput)
@@ -199,7 +201,7 @@ type alias MoveOrderInput =
 encodeMoveOrderInput : MoveOrderInput -> Value
 encodeMoveOrderInput input____ =
     Encode.maybeObject
-        [ ( "unitId", Encode.string input____.unitId |> Just ), ( "path", (encodeCoordinateInput |> Encode.list) input____.path |> Just ), ( "direction", Encode.enum Api.Enum.Direction.toString |> Encode.optional input____.direction ), ( "ambush", Encode.bool |> Encode.optional input____.ambush ), ( "standGround", Encode.bool |> Encode.optional input____.standGround ), ( "indirectFire", encodeCoordinateInput |> Encode.optional input____.indirectFire ), ( "attackMove", Encode.bool |> Encode.optional input____.attackMove ), ( "unloads", (encodeUnloadOrderInput |> Encode.list) |> Encode.optional input____.unloads ), ( "loadCrates", Encode.int |> Encode.optional input____.loadCrates ), ( "crateUnloads", (encodeCrateUnloadInput |> Encode.list) |> Encode.optional input____.crateUnloads ) ]
+        [ ( "unitId", Encode.string input____.unitId |> Just ), ( "path", (encodeCoordinateInput |> Encode.list) input____.path |> Just ), ( "direction", Encode.enum Api.Enum.Direction.toString |> Encode.optional input____.direction ), ( "ambush", Encode.bool |> Encode.optional input____.ambush ), ( "standGround", Encode.bool |> Encode.optional input____.standGround ), ( "digIn", Encode.bool |> Encode.optional input____.digIn ), ( "indirectFire", encodeCoordinateInput |> Encode.optional input____.indirectFire ), ( "attackMove", Encode.bool |> Encode.optional input____.attackMove ), ( "unloads", (encodeUnloadOrderInput |> Encode.list) |> Encode.optional input____.unloads ), ( "loadCrates", Encode.int |> Encode.optional input____.loadCrates ), ( "crateUnloads", (encodeCrateUnloadInput |> Encode.list) |> Encode.optional input____.crateUnloads ) ]
 
 
 buildPositionInput :

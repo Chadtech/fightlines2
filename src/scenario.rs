@@ -243,8 +243,15 @@ pub struct UnitResources {
     supply_cargo: Vec<CargoStock>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
+pub enum Entrenchment {
+    Exposed,
+    Entrenched,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unit {
+    entrenchment: Entrenchment,
     id: UnitId,
     player_number: PlayerNumber,
     kind: UnitKind,
@@ -261,6 +268,10 @@ pub struct Unit {
 
 #[graphql_object]
 impl Unit {
+    pub fn entrenchment(&self) -> Entrenchment {
+        self.entrenchment
+    }
+
     pub fn id(&self) -> String {
         self.id.to_string()
     }
@@ -406,7 +417,14 @@ impl Unit {
         }
     }
 
+    pub fn dig_in(&mut self) {
+        if self.kind == UnitKind::Infantry && self.is_alive() && self.board_position().is_some() {
+            self.entrenchment = Entrenchment::Entrenched;
+        }
+    }
+
     pub fn board(&mut self, carrier: UnitId) {
+        self.entrenchment = Entrenchment::Exposed;
         self.location = Location::Aboard(carrier);
     }
 
@@ -441,6 +459,7 @@ impl Unit {
     }
 
     pub fn apply_combat_outcome(&mut self, outcome: &Unit) {
+        self.entrenchment = outcome.entrenchment;
         self.hit_points = outcome.hit_points;
         self.supplies = outcome.supplies;
         self.direction = outcome.direction;
@@ -520,6 +539,9 @@ impl Unit {
     }
 
     pub fn move_to(&mut self, position: Coordinate) {
+        if self.board_position() != Some(position) {
+            self.entrenchment = Entrenchment::Exposed;
+        }
         self.location = Location::OnMap(position);
     }
 }
@@ -538,6 +560,7 @@ impl Scenario {
             .units
             .iter()
             .map(|starting| Unit {
+                entrenchment: Entrenchment::Exposed,
                 id: UnitId(starting.id),
                 player_number: starting.player_number,
                 sprite_facing: starting.direction.map_or(
@@ -691,6 +714,38 @@ mod tests {
     use crate::map::{MapTheme, Terrain};
     use crate::test_support::{FixtureValue, TestResult};
     use std::collections::BTreeSet;
+
+    #[test]
+    fn entrenchment_survives_holds_and_rotation_but_not_movement_or_boarding() -> TestResult<()> {
+        let mut scenario = Scenario::supply_point().fixture()?;
+        let mut infantry = scenario.units.first().fixture()?.clone();
+        let origin = infantry.board_position().fixture()?;
+        infantry.dig_in();
+        infantry.rotate(Direction::West);
+        infantry.follow_terrain_path(&scenario.map, &[origin], 0);
+        assert_eq!(infantry.entrenchment(), Entrenchment::Entrenched);
+        infantry.follow_terrain_path(&scenario.map, &[origin, Coordinate::new(3, 3)], 0);
+        assert_eq!(infantry.entrenchment(), Entrenchment::Exposed);
+        infantry.dig_in();
+        let truck = scenario
+            .units
+            .iter()
+            .find(|unit| unit.kind() == UnitKind::Truck)
+            .fixture()?
+            .unit_id();
+        infantry.board(truck);
+        assert_eq!(infantry.entrenchment(), Entrenchment::Exposed);
+        infantry.dig_in();
+        assert_eq!(infantry.entrenchment(), Entrenchment::Exposed);
+        let tank = scenario
+            .units
+            .iter_mut()
+            .find(|unit| unit.kind() == UnitKind::Tank)
+            .fixture()?;
+        tank.dig_in();
+        assert_eq!(tank.entrenchment(), Entrenchment::Exposed);
+        Ok(())
+    }
 
     #[test]
     fn infantry_terrain_supply_costs_reserve_upkeep_and_charge_entered_tiles() -> TestResult<()> {

@@ -1228,8 +1228,26 @@ applyUnitCommand map units playerNumbers movementRules depots command unit model
             UnitCommand.HoldPosition ->
                 holdPosition map units depots unit model
 
-            _ ->
-                IC.happy model
+            UnitCommand.DigIn ->
+                case Unit.mapPosition unit of
+                    Just position ->
+                        let
+                            planned : PlannedOrder
+                            planned =
+                                { unitId = unit.id
+                                , action = PlannedOrder.DigIn position
+                                }
+
+                            otherOrders : List PlannedOrder
+                            otherOrders =
+                                List.filter (\other -> other.unitId /= unit.id) (orders model)
+                        in
+                        model
+                            |> setOrders (planned :: otherOrders)
+                            |> finishUnitCommand map units
+
+                    Nothing ->
+                        IC.violated (CommandUnitHasNoPosition unit.id) model
 
     else
         IC.happy model

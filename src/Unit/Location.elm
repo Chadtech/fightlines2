@@ -14,10 +14,13 @@ import UnitId exposing (UnitId)
 
 {-| Board occupancy and transport are mutually exclusive. Aboard units derive
 physical position from their carrier, without storing a duplicate coordinate.
+Dismounting is a local planning projection; it permits follow-up actions but
+records that unloading has already consumed part of the turn.
 -}
 type Location
     = OnMap Coordinate
     | Aboard UnitId
+    | Dismounting Coordinate
 
 
 selection : SelectionSet Location Api.Union.UnitLocation

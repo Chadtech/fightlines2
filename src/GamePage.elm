@@ -2744,6 +2744,9 @@ unitOrderView model unit =
                                 PlannedOrder.StandGround facing ->
                                     "stand ground: " ++ Direction.label facing.direction
 
+                                PlannedOrder.DigIn _ ->
+                                    "dig in"
+
                                 PlannedOrder.Hold _ ->
                                     "hold position"
 
@@ -2879,6 +2882,11 @@ ambushCosts unit order =
     case order.action of
         PlannedOrder.IndirectFire _ ->
             indirectFireDetails unit
+
+        PlannedOrder.DigIn _ ->
+            [ H.p [] [ H.text "entrenched after this turn; no movement or firing while digging" ]
+            , H.p [] [ H.text ("supplies: normal upkeep + " ++ String.fromInt unit.combatRules.digInCost ++ " digging") ]
+            ]
 
         PlannedOrder.StandGround _ ->
             [ H.p [] [ H.text "combat ready when attacked; does not fire" ]

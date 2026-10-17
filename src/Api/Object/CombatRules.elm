@@ -44,6 +44,11 @@ damage =
     Object.selectionForField "Int" "damage" [] Decode.int
 
 
+digInCost : SelectionSet Int Api.Object.CombatRules
+digInCost =
+    Object.selectionForField "Int" "digInCost" [] Decode.int
+
+
 readinessCost : SelectionSet Int Api.Object.CombatRules
 readinessCost =
     Object.selectionForField "Int" "readinessCost" [] Decode.int

@@ -292,7 +292,8 @@ fn resolve_arrivals(
         frames: vec![initial_frame],
     };
     if orders.iter().any(|order| {
-        order.facing.is_ambush()
+        order.facing.is_digging_in()
+            || order.facing.is_ambush()
             || order.facing.is_standing_ground()
             || order.facing.indirect_target().is_some()
     }) {

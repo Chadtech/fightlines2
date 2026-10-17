@@ -1,5 +1,6 @@
 module View.UnitStatus exposing (toHtml)
 
+import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Css
 import Html.Styled as H exposing (Html)
@@ -111,7 +112,7 @@ portrait : String -> Unit -> Html msg
 portrait playerName unit =
     H.div
         [ Aria.role Aria.Image
-        , Aria.label (playerName ++ " " ++ UnitKindUtil.label unit.kind)
+        , Aria.label (playerName ++ " " ++ unitTitle unit)
         , A.css
             [ S.bgNightwood3
             , S.indentStrong
@@ -158,7 +159,7 @@ unitHelp playerName unit =
                         [ S.textGray5
                         ]
                     ]
-                    [ H.text (UnitKindUtil.label unit.kind)
+                    [ H.text (unitTitle unit)
                     ]
                 , InfoMarker.toHtml
                 ]
@@ -405,7 +406,7 @@ supplyConsumption kind =
             "tanks consume supplies each turn and for combat readiness and firing. movement uses fuel without spending supplies. when supplies reach 0, this unit perishes."
 
         Kind.Infantry ->
-            "infantry consume supplies each turn, while walking, for attack move, stand ground or ambush readiness, and when firing. hills, forests, and mountains cost additional walking supplies. when supplies reach 0, this unit perishes."
+            "infantry consume supplies each turn, while walking, for attack move, stand ground or ambush readiness, when digging in, and when firing. hills, forests, and mountains cost additional walking supplies. when supplies reach 0, this unit perishes."
 
         Kind.FieldGun ->
             "field guns consume a small amount of supplies each turn, and additional supplies when moving, standing ground, attack-moving, and engaging enemies. when supplies reach 0, this unit perishes."
@@ -461,3 +462,12 @@ fuelExplanation fuel =
         ++ " fuel"
         ++ cargoCost
         ++ ". loading and unloading happen after movement. holds and canceled moves use none. nearby fuel depots and ground or carried fuel drums refill vehicle tanks at turn end."
+
+
+unitTitle : Unit -> String
+unitTitle unit =
+    if unit.entrenchment == Entrenchment.Entrenched then
+        "entrenched " ++ UnitKindUtil.label unit.kind
+
+    else
+        UnitKindUtil.label unit.kind

@@ -3,6 +3,7 @@ port module MovementChecks exposing (main)
 import Api.Enum.AmbushShape as AmbushShape
 import Api.Enum.DepotKind as DepotKind
 import Api.Enum.Direction as Direction
+import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as MapTheme
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing
@@ -102,6 +103,7 @@ check rules fixture =
                         , shape = AmbushShape.Line
                         , damage = 4
                         , readinessCost = 2
+                        , digInCost = 64
                         , shotCost = 2
                         }
                     , cargoCapacity = 0
@@ -109,6 +111,7 @@ check rules fixture =
                     , kind = fixture.kind
                     , location = Location.OnMap fixture.origin
                     , playerNumber = PlayerNumber.Player1
+                    , entrenchment = Entrenchment.Exposed
                     , spriteFacing = SpriteFacing.Right
                     , direction = Just Direction.East
                     , resources =
@@ -251,6 +254,7 @@ traceChecks rules =
                         , shape = AmbushShape.Line
                         , damage = 4
                         , readinessCost = 2
+                        , digInCost = 64
                         , shotCost = 2
                         }
                     , cargoCapacity = 0
@@ -258,6 +262,7 @@ traceChecks rules =
                     , kind = UnitKind.Infantry
                     , location = Location.OnMap origin
                     , playerNumber = PlayerNumber.Player1
+                    , entrenchment = Entrenchment.Exposed
                     , spriteFacing = SpriteFacing.Right
                     , direction = Just Direction.East
                     , resources =
@@ -592,6 +597,7 @@ reservationChecks rules =
                         , shape = AmbushShape.Line
                         , damage = 4
                         , readinessCost = 2
+                        , digInCost = 64
                         , shotCost = 2
                         }
                     , cargoCapacity = 0
@@ -603,6 +609,7 @@ reservationChecks rules =
                             , y = 0
                             }
                     , playerNumber = PlayerNumber.Player1
+                    , entrenchment = Entrenchment.Exposed
                     , spriteFacing = SpriteFacing.Right
                     , direction = Just Direction.East
                     , resources =
@@ -685,6 +692,7 @@ fuelChecks rules =
                         , shape = AmbushShape.Line
                         , damage = 4
                         , readinessCost = 2
+                        , digInCost = 64
                         , shotCost = 2
                         }
                     , cargoCapacity = 0
@@ -696,6 +704,7 @@ fuelChecks rules =
                             , y = 0
                             }
                     , playerNumber = PlayerNumber.Player1
+                    , entrenchment = Entrenchment.Exposed
                     , spriteFacing = SpriteFacing.Right
                     , direction = Just Direction.East
                     , resources =
@@ -819,6 +828,7 @@ supplyChecks rules =
                         , shape = AmbushShape.Line
                         , damage = 4
                         , readinessCost = 2
+                        , digInCost = 64
                         , shotCost = 2
                         }
                     , cargoCapacity = 0
@@ -830,6 +840,7 @@ supplyChecks rules =
                             , y = 0
                             }
                     , playerNumber = PlayerNumber.Player1
+                    , entrenchment = Entrenchment.Exposed
                     , spriteFacing = SpriteFacing.Right
                     , direction = Just Direction.East
                     , resources =
@@ -995,6 +1006,7 @@ transportChecks rules =
                 passenger =
                     { id = passengerId
                     , playerNumber = PlayerNumber.Player1
+                    , entrenchment = Entrenchment.Exposed
                     , spriteFacing = SpriteFacing.Right
                     , kind = UnitKind.Infantry
                     , direction = Just Direction.East
@@ -1005,6 +1017,7 @@ transportChecks rules =
                         , shape = AmbushShape.Line
                         , damage = 4
                         , readinessCost = 2
+                        , digInCost = 64
                         , shotCost = 2
                         }
                     , cargoCapacity = 0
@@ -1043,6 +1056,7 @@ transportChecks rules =
                             , shape = AmbushShape.Line
                             , damage = 4
                             , readinessCost = 2
+                            , digInCost = 64
                             , shotCost = 2
                             }
                         , cargoCapacity = 2

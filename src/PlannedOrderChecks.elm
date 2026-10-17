@@ -37,6 +37,10 @@ orderChecks unitId passengerId =
         hold =
             { unitId = unitId, action = Hold { x = 1, y = 1 } }
 
+        diggingIn : PlannedOrder
+        diggingIn =
+            { unitId = unitId, action = DigIn { x = 1, y = 1 } }
+
         standingGround : PlannedOrder
         standingGround =
             { unitId = unitId, action = StandGround { position = { x = 1, y = 1 }, direction = Direction.West } }
@@ -130,7 +134,16 @@ orderChecks unitId passengerId =
                 }
     in
     List.concat
-        [ expect "supply runs preserve movement, passenger exits, and original crate slots in submission"
+        [ expect "digging serializes an exclusive stationary action"
+            ((PlannedOrder.toInput diggingIn).digIn
+                == Present True
+                && (PlannedOrder.toInput diggingIn).ambush
+                == Present False
+                && (PlannedOrder.toInput diggingIn).path
+                == [ { x = 1, y = 1 } ]
+                && not (PlannedOrder.isMoving diggingIn)
+            )
+        , expect "supply runs preserve movement, passenger exits, and original crate slots in submission"
             (PlannedOrder.toInput freight
                 == { loadCrates = Present 0
                    , crateUnloads =
@@ -143,6 +156,7 @@ orderChecks unitId passengerId =
                               }
                             ]
                    , attackMove = Present False
+                   , digIn = Present False
                    , standGround = Present False
                    , ambush = Present False
                    , unitId = UnitId.toString unitId
@@ -179,6 +193,7 @@ orderChecks unitId passengerId =
                 == { loadCrates = Present 0
                    , crateUnloads = Present []
                    , attackMove = Present True
+                   , digIn = Present False
                    , standGround = Present False
                    , ambush = Present False
                    , unitId = UnitId.toString unitId
@@ -204,6 +219,7 @@ orderChecks unitId passengerId =
                    , path = [ { x = 1, y = 1 } ]
                    , indirectFire = Absent
                    , direction = Present Direction.West
+                   , digIn = Present False
                    , standGround = Present True
                    , ambush = Present False
                    , attackMove = Present False
@@ -218,6 +234,7 @@ orderChecks unitId passengerId =
                 == { loadCrates = Present 0
                    , crateUnloads = Present []
                    , attackMove = Present False
+                   , digIn = Present False
                    , standGround = Present False
                    , ambush = Present True
                    , unitId = UnitId.toString unitId
@@ -237,6 +254,7 @@ orderChecks unitId passengerId =
                 == { loadCrates = Present 0
                    , crateUnloads = Present []
                    , attackMove = Present False
+                   , digIn = Present False
                    , standGround = Present False
                    , ambush = Present False
                    , unitId = UnitId.toString unitId
@@ -255,6 +273,7 @@ orderChecks unitId passengerId =
                 == { loadCrates = Present 0
                    , crateUnloads = Present []
                    , attackMove = Present False
+                   , digIn = Present False
                    , standGround = Present False
                    , ambush = Present False
                    , unitId = UnitId.toString unitId
@@ -286,6 +305,7 @@ orderChecks unitId passengerId =
                 == { loadCrates = Present 0
                    , crateUnloads = Present []
                    , attackMove = Present False
+                   , digIn = Present False
                    , standGround = Present False
                    , ambush = Present False
                    , unitId = UnitId.toString unitId

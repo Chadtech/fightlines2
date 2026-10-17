@@ -262,6 +262,9 @@ commandButton unit command =
             if implemented then
                 Command.label command
 
+            else if command == Command.DigIn then
+                "requires stationary, unentrenched infantry and " ++ String.fromInt unit.combatRules.digInCost ++ " supplies plus upkeep"
+
             else if command == Command.IndirectFire then
                 "not enough supplies for readiness and one shell"
 

@@ -1,21 +1,22 @@
 # Todo
 ## doing now
+- Dig in
 
 ## Bugs
 
 
 ## Immediately
-- OrderPlanning is big
-- OrderPlanning has `Context` record which might pass too much data too deep
-
-## Soon
-- Dig in
 - Attacking and destroying supply depots and supply crates
 - Pick up crates/drums already on the ground
-
-## Later
+- 
+## Soon
 - Hide map editor UI in Elm code if flag is not set
 - Review last turn step by step view
 - Good UI for truck cargo
+- Sound
+- Manufacturing and cities
+
+## Later
 - Attack animations
 - Infantry weapon diversity (bazooka, mounted machine gun)
+- Tutorial missions

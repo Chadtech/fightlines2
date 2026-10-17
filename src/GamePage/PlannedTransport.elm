@@ -21,6 +21,7 @@ import Map exposing (Map)
 import Movement
 import PlannedOrder exposing (PlannedOrder)
 import Unit exposing (Unit)
+import Unit.Location as Location
 import Unit.Supplies as Supplies exposing (Supplies)
 import UnitId exposing (UnitId)
 import UnitResources
@@ -101,9 +102,10 @@ planningUnit map drafts unit =
                         (Supplies.setCurrent (supplies.current - cost) supplies)
                         resources
             in
-            Unit.setOnMap
-                unload.destination
-                { unit | resources = Maybe.map spendUnloading unit.resources }
+            { unit
+                | location = Location.Dismounting unload.destination
+                , resources = Maybe.map spendUnloading unit.resources
+            }
     in
     if (unit.kind == Kind.Infantry) && (Unit.carrierId unit /= Nothing) then
         exit

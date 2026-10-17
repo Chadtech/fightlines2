@@ -12,6 +12,7 @@ type alias CombatRules =
     , shape : AmbushShape
     , damage : Int
     , readinessCost : Int
+    , digInCost : Int
     , shotCost : Int
     }
 
@@ -24,4 +25,5 @@ selection =
         |> SS.with RulesApi.shape
         |> SS.with RulesApi.damage
         |> SS.with RulesApi.readinessCost
+        |> SS.with RulesApi.digInCost
         |> SS.with RulesApi.shotCost

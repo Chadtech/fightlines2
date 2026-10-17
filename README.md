@@ -105,7 +105,18 @@ planned destination while it has cargo room. Otherwise other units cannot choose
 it; changing or clearing the move frees that square. Routes
 can pass through reserved destinations. Depots are passable.
 The selection panel shows the selected unit's illustration, name, and player,
-with expandable unit and gauge explanations. Every unit starts with 16/16 hit points, supplied by the server. Combat damage uses weapon matchup, health, readiness, facing, cover, and ambush advantage; see [combat_factors.md](combat_factors.md). Healing and trench protection are not implemented yet. Tanks and trucks start with 128/128 fuel. Each
+with expandable unit and gauge explanations. Every unit starts with 16/16 hit points, supplied by the server. Combat damage uses weapon matchup, health, readiness, facing, cover, and ambush advantage; see [combat_factors.md](combat_factors.md). Healing is not implemented yet.
+
+Infantry can choose **dig in** to spend their whole turn and 64 supplies plus
+normal upkeep. They cannot move or fire while digging and gain entrenchment only
+after all combat resolves. Entrenchment persists through holding, ambush, stand
+ground, and facing changes; infantry and field guns do very little damage to
+them, while tanks retain their devastating damage. Entrenchment grants no
+automatic firing: choose ambush on later turns to intercept enemies. Successful
+movement or boarding removes it, leaving no trench behind; a move blocked before
+departure preserves it. Infantry cannot dig on their unloading turn.
+
+Tanks and trucks start with 128/128 fuel. Each
 successfully traversed tile costs tanks 8 fuel. Trucks spend 2 fuel plus 2 per occupied
 cargo slot (passenger, supply crate, or fuel drum) at departure, independently of
 terrain movement costs. Interrupted routes pay only for successfully traveled tiles; holds consume none.

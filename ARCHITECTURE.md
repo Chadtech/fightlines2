@@ -917,7 +917,7 @@ weapon grants firing capability without protecting the crew. Infantry have very 
 weapon effectiveness against ready tanks, while remaining dangerous to unready
 tanks. `CombatRules.damage` is base
 weapon power; `Shot.damage` is the calculated hit. All shots in a volley use the
-pre-volley board. Exact initial tuning and the deferred trench protection are
+pre-volley board. Exact initial tuning and entrenchment protection are
 recorded in `combat_factors.md`. Ready field guns intercept contacting
 attack-moving tanks or opposing tank ambushes inside their eligible firing area
 in a separate first volley.
@@ -1231,3 +1231,27 @@ values; reserved unloading supplies affect command affordability only. Physical
 board and cargo data stay unchanged until playback. Finishing exit choices opens the first infantry command menu; saving a
 command advances to the next unloaded infantry without an order. Missing commands
 use the existing submission warning and explicit hold fallback at the exit.
+
+## Infantry entrenchment
+
+`Unit` owns typed `Entrenchment`, initialized as `Exposed` and exported with each
+observable unit. No map state or terrain object represents a trench. The
+exclusive `FacingOrder::DigIn` action is validated for exposed infantry already
+on the board and costs the Rust-exported `CombatRules.digInCost` (64) plus
+ordinary upkeep. `Combat::prepare` charges digging before any combat; `Turns`
+marks surviving diggers `Entrenched` after indirect fire and before resource
+settlement. Earlier playback frames retain the exposed state.
+
+`Combat::damage` applies incoming infantry ×0.15 and field-gun ×0.06 factors
+before final rounding; tanks bypass this factor. Entrenchment supplies no firing
+or readiness. `Unit::move_to` clears it on a changed square; boarding clears it
+even for a stationary pickup. Holds and rotation preserve it. Projection reuses
+ordinary unit visibility, so hidden entrenchment never creates a map marker.
+
+Elm carries `PlannedOrder.DigIn` through the existing save/revoke/submission
+workflow. `Unit.Location.Dismounting` describes a projected unloading position
+for planning, while excluding digging on that turn. Ordinary commands can use
+that projected map position. `View.UnitSprite` uses the approved team-colored
+entrenched masters for board cells, inspector portraits, and theater figures;
+`tools/build-entrenched-sprites.cjs` packs them without changing their sources.
+`TurnPlayback` clears the displayed entrenchment as actual movement begins.

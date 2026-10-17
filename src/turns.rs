@@ -3,8 +3,8 @@ use crate::{
     map::Coordinate,
     movement, movement_resolution,
     scenario::{
-        Depot, Direction, PlayerNumber, ResourceSettlement, Scenario, SpriteFacing, Unit, UnitId,
-        UnitKind,
+        Depot, Direction, Entrenchment, PlayerNumber, ResourceSettlement, Scenario, SpriteFacing,
+        Unit, UnitId, UnitKind,
     },
     supplies::{self, CrateUnload, GroundSupplyCrate, SupplyOrder},
 };
@@ -28,6 +28,8 @@ pub struct MoveOrderInput {
     ambush: Option<bool>,
     /// Stationary defensive readiness without firing.
     stand_ground: Option<bool>,
+    /// Infantry spend the turn preparing persistent protection.
+    dig_in: Option<bool>,
     /// Stationary field-gun shell aimed at a tile, independently of sight.
     indirect_fire: Option<CoordinateInput>,
     /// Move until contact, then fire at the encountered enemy.
@@ -58,6 +60,7 @@ pub enum TravelMode {
 #[derive(Clone, Copy, Debug)]
 pub enum FacingOrder {
     Unchanged,
+    DigIn,
     AfterMove(Direction),
     Ambush(Direction),
     StandGround(Direction),
@@ -65,16 +68,31 @@ pub enum FacingOrder {
 }
 
 impl FacingOrder {
+    pub fn is_digging_in(self) -> bool {
+        match self {
+            Self::DigIn => true,
+            Self::Unchanged
+            | Self::AfterMove(_)
+            | Self::Ambush(_)
+            | Self::StandGround(_)
+            | Self::IndirectFire(_) => false,
+        }
+    }
+
     pub fn indirect_target(self) -> Option<Coordinate> {
         match self {
             Self::IndirectFire(target) => Some(target),
-            Self::Unchanged | Self::AfterMove(_) | Self::Ambush(_) | Self::StandGround(_) => None,
+            Self::DigIn
+            | Self::Unchanged
+            | Self::AfterMove(_)
+            | Self::Ambush(_)
+            | Self::StandGround(_) => None,
         }
     }
 
     pub fn direction(self) -> Option<Direction> {
         match self {
-            Self::Unchanged | Self::AfterMove(_) | Self::IndirectFire(_) => None,
+            Self::DigIn | Self::Unchanged | Self::AfterMove(_) | Self::IndirectFire(_) => None,
             Self::Ambush(direction) | Self::StandGround(direction) => Some(direction),
         }
     }
@@ -82,16 +100,22 @@ impl FacingOrder {
     pub fn is_standing_ground(self) -> bool {
         match self {
             Self::StandGround(_) => true,
-            Self::Unchanged | Self::AfterMove(_) | Self::Ambush(_) | Self::IndirectFire(_) => false,
+            Self::DigIn
+            | Self::Unchanged
+            | Self::AfterMove(_)
+            | Self::Ambush(_)
+            | Self::IndirectFire(_) => false,
         }
     }
 
     pub fn is_ambush(self) -> bool {
         match self {
             Self::Ambush(_) => true,
-            Self::Unchanged | Self::AfterMove(_) | Self::StandGround(_) | Self::IndirectFire(_) => {
-                false
-            }
+            Self::DigIn
+            | Self::Unchanged
+            | Self::AfterMove(_)
+            | Self::StandGround(_)
+            | Self::IndirectFire(_) => false,
         }
     }
 }
@@ -350,7 +374,8 @@ pub(crate) fn planned_loads(scenario: &Scenario, orders: &[MoveOrder]) -> Vec<Pl
         order.travel == TravelMode::Normal
             && match order.facing {
                 FacingOrder::Unchanged => true,
-                FacingOrder::AfterMove(_)
+                FacingOrder::DigIn
+                | FacingOrder::AfterMove(_)
                 | FacingOrder::Ambush(_)
                 | FacingOrder::StandGround(_)
                 | FacingOrder::IndirectFire(_) => false,
@@ -520,6 +545,35 @@ pub fn validate(
                 .or_else(|| scenario.physical_position(unit))
         {
             return Err("movement must start at the unit's current position.");
+        }
+        let dig_in = input.dig_in == Some(true);
+        if dig_in {
+            if unit.kind() != UnitKind::Infantry
+                || unit.carrier_id().is_some()
+                || starts_at_exit.is_some()
+            {
+                return Err("only infantry already on the map can dig in.");
+            }
+            if unit.entrenchment() == Entrenchment::Entrenched {
+                return Err("this infantry is already entrenched.");
+            }
+            if path.len() != 1
+                || input.direction.is_some()
+                || input.ambush == Some(true)
+                || input.stand_ground == Some(true)
+                || input.attack_move == Some(true)
+                || input.indirect_fire.is_some()
+                || !input.unloads.as_ref().is_none_or(Vec::is_empty)
+                || input.load_crates.is_some_and(|count| count != 0)
+                || !input.crate_unloads.as_ref().is_none_or(Vec::is_empty)
+            {
+                return Err("digging in takes the whole turn without other actions.");
+            }
+            if unit.supplies().current()
+                < unit.supplies().upkeep_per_turn() + combat::rules(unit.kind()).dig_in_cost
+            {
+                return Err("not enough supplies to dig in.");
+            }
         }
         let indirect_fire = if let Some(target) = input.indirect_fire {
             if unit.kind() != UnitKind::FieldGun || unit.carrier_id().is_some() {
@@ -797,7 +851,9 @@ pub fn validate(
             } else {
                 TravelMode::Normal
             },
-            facing: if let Some(target) = indirect_fire {
+            facing: if dig_in {
+                FacingOrder::DigIn
+            } else if let Some(target) = indirect_fire {
                 FacingOrder::IndirectFire(target)
             } else if stand_ground {
                 FacingOrder::StandGround(
@@ -1373,6 +1429,16 @@ impl Turns {
                 })
                 .map(|order| (order.unit_id, order.supply.clone()))
                 .collect();
+            // Surviving diggers gain protection after indirect fire and before settlement.
+            for order in orders.iter().filter(|order| order.facing.is_digging_in()) {
+                if let Some(unit) = scenario
+                    .units
+                    .iter_mut()
+                    .find(|unit| unit.unit_id() == order.unit_id)
+                {
+                    unit.dig_in();
+                }
+            }
             supplies::resolve_orders(scenario, &supply_orders, self.number);
             let mut reports: Vec<_> = [PlayerNumber::Player1, PlayerNumber::Player2]
                 .into_iter()
@@ -1753,6 +1819,7 @@ mod tests {
                     Ok(MoveOrderInput {
                         ambush: None,
                         stand_ground: None,
+                        dig_in: None,
                         indirect_fire: None,
                         attack_move: None,
                         direction: None,
@@ -2632,6 +2699,164 @@ mod tests {
                 .count(),
             1
         );
+        Ok(())
+    }
+
+    #[test]
+    fn digging_spends_supplies_and_completes_only_at_turn_end() -> TestResult<()> {
+        let mut scenario = Scenario::supply_point().fixture()?;
+        scenario.depots.clear();
+        let initial = scenario.units.first().fixture()?.clone();
+        let id = initial.unit_id();
+        let mut inputs = holds(&scenario, PlayerNumber::Player1)?;
+        inputs.first_mut().fixture()?.dig_in = Some(true);
+        let mut turns = Turns::default();
+        resolve_orders(&mut scenario, &mut turns, inputs)?;
+        let unit = scenario
+            .units
+            .iter()
+            .find(|unit| unit.unit_id() == id)
+            .fixture()?;
+        assert_eq!(unit.entrenchment(), Entrenchment::Entrenched);
+        assert_eq!(unit.supplies().current(), initial.supplies().current() - 68);
+        assert_eq!(unit.board_position(), initial.board_position());
+        let resolution = turns.last_resolution.as_ref().fixture()?;
+        assert!(resolution.frames.iter().all(|frame| frame.shots.is_empty()));
+        let (last, earlier) = resolution.frames.split_last().fixture()?;
+        assert!(earlier.iter().all(|frame| {
+            frame
+                .units
+                .iter()
+                .filter(|unit| unit.unit_id() == id)
+                .all(|unit| unit.entrenchment() == Entrenchment::Exposed)
+        }));
+        assert_eq!(
+            last.units
+                .iter()
+                .find(|unit| unit.unit_id() == id)
+                .fixture()?
+                .entrenchment(),
+            Entrenchment::Entrenched
+        );
+        let inputs = holds(&scenario, PlayerNumber::Player1)?;
+        resolve_orders(&mut scenario, &mut turns, inputs)?;
+        let unit = scenario
+            .units
+            .iter()
+            .find(|unit| unit.unit_id() == id)
+            .fixture()?;
+        assert_eq!(unit.entrenchment(), Entrenchment::Entrenched);
+        assert_eq!(unit.supplies().current(), initial.supplies().current() - 72);
+        Ok(())
+    }
+
+    #[test]
+    fn indirect_fire_kills_diggers_before_protection_but_barely_hurts_entrenched_infantry()
+    -> TestResult<()> {
+        for already_entrenched in [false, true] {
+            let mut scenario = Scenario::supply_point().fixture()?;
+            scenario.depots.clear();
+            let infantry = scenario
+                .units
+                .iter()
+                .find(|unit| {
+                    unit.kind() == UnitKind::Infantry
+                        && unit.player_number() == PlayerNumber::Player1
+                })
+                .fixture()?
+                .unit_id();
+            let gun = scenario
+                .units
+                .iter()
+                .find(|unit| {
+                    unit.kind() == UnitKind::FieldGun
+                        && unit.player_number() == PlayerNumber::Player2
+                })
+                .fixture()?
+                .unit_id();
+            scenario
+                .units
+                .retain(|unit| unit.unit_id() == infantry || unit.unit_id() == gun);
+            scenario.map = Map::new(9, 9, Terrain::Plain, BTreeMap::new()).fixture()?;
+            for unit in &mut scenario.units {
+                if unit.unit_id() == infantry {
+                    unit.move_to(Coordinate::new(3, 3));
+                    if already_entrenched {
+                        unit.dig_in();
+                    }
+                } else {
+                    unit.move_to(Coordinate::new(3, 6));
+                }
+            }
+            let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
+            player1.first_mut().fixture()?.dig_in = Some(!already_entrenched);
+            let mut player2 = holds(&scenario, PlayerNumber::Player2)?;
+            player2.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 3, y: 3 });
+            let mut turns = Turns::default();
+            turns.submit(&mut scenario, PlayerNumber::Player1, 1, player1)?;
+            turns.submit(&mut scenario, PlayerNumber::Player2, 1, player2)?;
+            let survivor = scenario
+                .units
+                .iter()
+                .find(|unit| unit.unit_id() == infantry);
+            if already_entrenched {
+                assert_eq!(survivor.fixture()?.hit_points().current(), 14);
+                assert_eq!(survivor.fixture()?.entrenchment(), Entrenchment::Entrenched);
+            } else {
+                assert!(survivor.is_none());
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn digging_rejects_combined_actions_and_insufficient_supplies() -> TestResult<()> {
+        for action in 0..9 {
+            let mut scenario = Scenario::supply_point().fixture()?;
+            let mut inputs = holds(&scenario, PlayerNumber::Player1)?;
+            let input = inputs.first_mut().fixture()?;
+            input.dig_in = Some(true);
+            match action {
+                0 => input.ambush = Some(true),
+                1 => input.stand_ground = Some(true),
+                2 => input.attack_move = Some(true),
+                3 => input.direction = Some(Direction::East),
+                4 => input.indirect_fire = Some(CoordinateInput { x: 1, y: 1 }),
+                5 => input.path.push(CoordinateInput { x: 2, y: 1 }),
+                6 => input.load_crates = Some(1),
+                7 => scenario
+                    .units
+                    .first_mut()
+                    .fixture()?
+                    .set_supplies_for_test(67),
+                _ => scenario.units.first_mut().fixture()?.dig_in(),
+            }
+            assert!(validate(&scenario, PlayerNumber::Player1, inputs).is_err());
+        }
+        let mut scenario = Scenario::supply_point().fixture()?;
+        let mut inputs = holds(&scenario, PlayerNumber::Player1)?;
+        inputs.first_mut().fixture()?.dig_in = Some(true);
+        scenario
+            .units
+            .first_mut()
+            .fixture()?
+            .set_supplies_for_test(68);
+        assert!(validate(&scenario, PlayerNumber::Player1, inputs).is_ok());
+        for kind in [UnitKind::Tank, UnitKind::Truck, UnitKind::FieldGun] {
+            let mut inputs = holds(&scenario, PlayerNumber::Player1)?;
+            let id = scenario
+                .units
+                .iter()
+                .find(|unit| unit.kind() == kind && unit.player_number() == PlayerNumber::Player1)
+                .fixture()?
+                .id();
+            inputs
+                .iter_mut()
+                .find(|input| input.unit_id == id)
+                .fixture()?
+                .dig_in = Some(true);
+            assert!(validate(&scenario, PlayerNumber::Player1, inputs).is_err());
+        }
         Ok(())
     }
 

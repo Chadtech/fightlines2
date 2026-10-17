@@ -16,6 +16,7 @@ module Unit exposing
     )
 
 import Api.Enum.Direction exposing (Direction)
+import Api.Enum.Entrenchment as Entrenchment exposing (Entrenchment)
 import Api.Enum.PlayerNumber exposing (PlayerNumber)
 import Api.Enum.SpriteFacing exposing (SpriteFacing)
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
@@ -44,6 +45,7 @@ type alias Unit =
     , cargoCapacity : Int
     , destroyed : Bool
     , combatRules : CombatRules
+    , entrenchment : Entrenchment
     , location : Location
     }
 
@@ -60,14 +62,24 @@ selection =
         |> SS.with UnitApi.cargoCapacity
         |> SS.with UnitApi.destroyed
         |> SS.with (UnitApi.combatRules CombatRules.selection)
+        |> SS.with UnitApi.entrenchment
         |> SS.with (UnitApi.location Location.selection)
 
 
 label : Unit -> String
 label unit =
+    let
+        kindLabel : String
+        kindLabel =
+            if unit.entrenchment == Entrenchment.Entrenched then
+                "entrenched " ++ UnitKindUtil.label unit.kind
+
+            else
+                UnitKindUtil.label unit.kind
+    in
     String.join " "
         [ PlayerNumber.label unit.playerNumber
-        , UnitKindUtil.label unit.kind
+        , kindLabel
         , UnitId.toString unit.id
         ]
 
@@ -165,6 +177,9 @@ loadingTarget units mover destination =
 mapPosition : Unit -> Maybe Coordinate
 mapPosition unit =
     case unit.location of
+        Location.Dismounting position ->
+            Just position
+
         Location.OnMap position ->
             Just position
 
@@ -175,6 +190,9 @@ mapPosition unit =
 carrierId : Unit -> Maybe UnitId
 carrierId unit =
     case unit.location of
+        Location.Dismounting _ ->
+            Nothing
+
         Location.OnMap _ ->
             Nothing
 
@@ -188,6 +206,9 @@ and carriers that are themselves aboard have no physical position.
 physicalPosition : List Unit -> Unit -> Maybe Coordinate
 physicalPosition units unit =
     case unit.location of
+        Location.Dismounting position ->
+            Just position
+
         Location.OnMap position ->
             Just position
 

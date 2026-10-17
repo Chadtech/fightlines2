@@ -3,6 +3,7 @@ port module OrderPlanningChecks exposing (main)
 import Api.Enum.AmbushShape as AmbushShape
 import Api.Enum.DepotKind as DepotKind
 import Api.Enum.Direction as DirectionEnum
+import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as Theme
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing
@@ -529,6 +530,7 @@ planningChecks infantryId truckId passengerId =
                     , shape = AmbushShape.Cross
                     , damage = 12
                     , readinessCost = 2
+                    , digInCost = 16
                     , shotCost = 3
                     }
             }
@@ -640,6 +642,29 @@ planningChecks infantryId truckId passengerId =
                         outOfRangeContext.movementRules
                         outOfRangeContext.depots
                         UnitCommand.IndirectFire
+                        >> fixtureValue
+                   )
+
+        diggingIn : OrderPlanning.Model
+        diggingIn =
+            OrderPlanning.init
+                |> (OrderPlanning.selectUnit
+                        context.map
+                        context.units
+                        context.playerNumbers
+                        context.movementRules
+                        context.supplyCrates
+                        context.depots
+                        infantryId
+                        >> fixtureValue
+                   )
+                |> (OrderPlanning.applyCommand
+                        context.map
+                        context.units
+                        context.playerNumbers
+                        context.movementRules
+                        context.depots
+                        UnitCommand.DigIn
                         >> fixtureValue
                    )
 
@@ -3720,6 +3745,19 @@ planningChecks infantryId truckId passengerId =
                         )
                     )
             )
+        , expect "dig in saves a stationary order and can be revoked"
+            (OrderPlanning.orders diggingIn
+                == [ { unitId = infantryId, action = PlannedOrder.DigIn { x = 1, y = 1 } } ]
+                && List.isEmpty (OrderPlanning.orders (OrderPlanning.revokeSelectedOrder context.map context.units context.playerNumbers diggingIn |> fixtureValue))
+            )
+        , expect "dig in excludes entrenched infantry, dismounts, field guns, trucks and insufficient supplies"
+            (not (UnitCommand.canUse { infantry | entrenchment = Entrenchment.Entrenched } UnitCommand.DigIn)
+                && not (UnitCommand.canUse { infantry | location = Location.Dismounting { x = 1, y = 1 } } UnitCommand.DigIn)
+                && not (UnitCommand.canUse insufficientReadiness UnitCommand.DigIn)
+                && not (UnitCommand.canUse fieldGun UnitCommand.DigIn)
+                && not (UnitCommand.canUse truck UnitCommand.DigIn)
+                && not (List.member UnitCommand.DigIn (UnitCommand.available fieldGun))
+            )
         , expect "stand ground requires readiness supplies and excludes trucks and passengers"
             (not (UnitCommand.canUse insufficientReadiness UnitCommand.StandGround)
                 && not (List.member UnitCommand.StandGround (UnitCommand.available truck))
@@ -4117,6 +4155,7 @@ unit id kind location =
     in
     { id = id
     , playerNumber = PlayerNumber.Player1
+    , entrenchment = Entrenchment.Exposed
     , spriteFacing = SpriteFacing.Right
     , kind = kind
     , direction = direction
@@ -4127,6 +4166,7 @@ unit id kind location =
         , shape = AmbushShape.Line
         , damage = 4
         , readinessCost = 2
+        , digInCost = 16
         , shotCost = 2
         }
     , cargoCapacity = capacity

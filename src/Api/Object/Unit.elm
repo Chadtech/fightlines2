@@ -5,6 +5,7 @@
 module Api.Object.Unit exposing (..)
 
 import Api.Enum.Direction
+import Api.Enum.Entrenchment
 import Api.Enum.PlayerNumber
 import Api.Enum.SpriteFacing
 import Api.Enum.UnitKind
@@ -21,6 +22,11 @@ import Graphql.Operation exposing (RootMutation, RootQuery, RootSubscription)
 import Graphql.OptionalArgument exposing (OptionalArgument(..))
 import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
+
+
+entrenchment : SelectionSet Api.Enum.Entrenchment.Entrenchment Api.Object.Unit
+entrenchment =
+    Object.selectionForField "Enum.Entrenchment.Entrenchment" "entrenchment" [] Api.Enum.Entrenchment.decoder
 
 
 id : SelectionSet String Api.Object.Unit

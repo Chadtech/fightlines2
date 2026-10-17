@@ -1,7 +1,9 @@
 //! Stationary directional combat. Outcomes are resolved at shared movement and transport boundaries.
 use crate::{
     map::{Coordinate, Terrain},
-    scenario::{Direction, HitPoints, PlayerNumber, Scenario, Unit, UnitId, UnitKind},
+    scenario::{
+        Direction, Entrenchment, HitPoints, PlayerNumber, Scenario, Unit, UnitId, UnitKind,
+    },
     turns::{FacingOrder, MoveOrder, TravelMode, TurnFrame},
     visibility,
 };
@@ -22,6 +24,7 @@ pub struct CombatRules {
     pub shape: AmbushShape,
     /// Full-health weapon power before matchup and situational factors.
     pub damage: i32,
+    pub dig_in_cost: i32,
     pub readiness_cost: i32,
     pub shot_cost: i32,
 }
@@ -41,6 +44,7 @@ pub fn rules(kind: UnitKind) -> CombatRules {
             UnitKind::Infantry | UnitKind::Tank | UnitKind::Truck => AmbushShape::Line,
         },
         damage,
+        dig_in_cost: if kind == UnitKind::Infantry { 64 } else { 0 },
         readiness_cost: 8,
         shot_cost: match kind {
             UnitKind::Infantry => 12,
@@ -204,6 +208,16 @@ pub struct Combat {
 
 impl Combat {
     pub fn prepare(board: &mut Scenario, orders: &[MoveOrder]) -> Self {
+        // Pay before combat; protection is completed only after all fighting.
+        for order in orders.iter().filter(|order| order.facing.is_digging_in()) {
+            if let Some(unit) = board
+                .units
+                .iter_mut()
+                .find(|unit| unit.unit_id() == order.unit_id)
+            {
+                unit.spend_supplies(rules(unit.kind()).dig_in_cost);
+            }
+        }
         let mut ambushers = BTreeSet::new();
         for order in orders.iter().filter(|order| {
             order.facing.is_ambush()
@@ -343,6 +357,15 @@ impl Combat {
         } else {
             1.0
         };
+        let entrenchment = if target.entrenchment() == Entrenchment::Entrenched {
+            match shooter.kind() {
+                UnitKind::Infantry => 0.15,
+                UnitKind::FieldGun => 0.06,
+                UnitKind::Tank | UnitKind::Truck => 1.0,
+            }
+        } else {
+            1.0
+        };
         let damage = f64::from(rules(shooter.kind()).damage)
             * strength.powi(2)
             * matchup
@@ -350,7 +373,8 @@ impl Combat {
             * facing
             * aim
             * cover
-            * ambush;
+            * ambush
+            * entrenchment;
         // Round once, after every factor. A living armed shooter still inflicts a hit.
         if shooter.is_alive() && shooter.kind() != UnitKind::Truck {
             (damage.round() as i32).clamp(1, target.hit_points().maximum())
@@ -951,6 +975,125 @@ mod tests {
                 16 - expected
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn entrenchment_protects_against_infantry_and_both_gun_attacks_but_not_tanks() -> TestResult<()>
+    {
+        for (kind, combat_kind, expected) in [
+            (UnitKind::Infantry, CombatKind::AttackMove, 1),
+            (UnitKind::FieldGun, CombatKind::Ambush, 1),
+            (UnitKind::FieldGun, CombatKind::IndirectFire, 1),
+            (UnitKind::Tank, CombatKind::AttackMove, 16),
+        ] {
+            let (mut board, mut orders) = fixture(kind, UnitKind::Infantry, Coordinate::new(4, 3))?;
+            board.units.get_mut(1).fixture()?.rotate(Direction::West);
+            board.units.get_mut(1).fixture()?.dig_in();
+            orders.get_mut(1).fixture()?.facing = FacingOrder::StandGround(Direction::West);
+            let combat = Combat::prepare(&mut board, &orders);
+            assert_eq!(
+                combat.damage(
+                    &board,
+                    board.units.first().fixture()?,
+                    board.units.get(1).fixture()?,
+                    combat_kind
+                ),
+                expected
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn entrenched_infantry_win_a_comparable_infantry_exchange() -> TestResult<()> {
+        let (mut board, mut orders) = fixture(
+            UnitKind::Infantry,
+            UnitKind::Infantry,
+            Coordinate::new(4, 3),
+        )?;
+        board.units.first_mut().fixture()?.rotate(Direction::East);
+        board.units.get_mut(1).fixture()?.dig_in();
+        orders.get_mut(1).fixture()?.facing = FacingOrder::Ambush(Direction::West);
+        let resolved = resolve_completed_movement(&board, &orders, 1)?;
+        let units = &resolved.frames.last().fixture()?.units;
+        assert_eq!(units.first().fixture()?.hit_points().current(), 9);
+        assert_eq!(units.get(1).fixture()?.hit_points().current(), 15);
+        Ok(())
+    }
+
+    #[test]
+    fn only_successfully_traveled_movement_removes_entrenchment() -> TestResult<()> {
+        let (mut board, mut orders) = fixture(
+            UnitKind::Infantry,
+            UnitKind::Infantry,
+            Coordinate::new(4, 3),
+        )?;
+        board.units.first_mut().fixture()?.dig_in();
+        let id = board.units.first().fixture()?.unit_id();
+        orders.first_mut().fixture()?.facing = FacingOrder::Unchanged;
+        orders
+            .first_mut()
+            .fixture()?
+            .path
+            .push(Coordinate::new(4, 3));
+        let blocked = movement_resolution::resolve(&board, &orders, 1)?;
+        assert!(blocked.stopped.contains(&id));
+        assert_eq!(
+            blocked
+                .frames
+                .last()
+                .fixture()?
+                .units
+                .iter()
+                .find(|unit| unit.unit_id() == id)
+                .fixture()?
+                .entrenchment(),
+            Entrenchment::Entrenched
+        );
+        orders.first_mut().fixture()?.path = vec![Coordinate::new(3, 3), Coordinate::new(3, 4)];
+        let moved = movement_resolution::resolve(&board, &orders, 1)?;
+        assert_eq!(
+            moved
+                .frames
+                .last()
+                .fixture()?
+                .units
+                .iter()
+                .find(|unit| unit.unit_id() == id)
+                .fixture()?
+                .entrenchment(),
+            Entrenchment::Exposed
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn digging_in_is_vulnerable_and_never_initiates_fire() -> TestResult<()> {
+        let (mut board, mut orders) = fixture(
+            UnitKind::Infantry,
+            UnitKind::Infantry,
+            Coordinate::new(4, 3),
+        )?;
+        orders.get_mut(1).fixture()?.facing = FacingOrder::DigIn;
+        let mut combat = Combat::prepare(&mut board, &orders);
+        assert_eq!(
+            board.units.get(1).fixture()?.entrenchment(),
+            Entrenchment::Exposed
+        );
+        assert_eq!(board.units.get(1).fixture()?.supplies().current(), 128);
+        assert_eq!(
+            combat.damage(
+                &board,
+                board.units.first().fixture()?,
+                board.units.get(1).fixture()?,
+                CombatKind::AttackMove
+            ),
+            11
+        );
+        let mut frames = Vec::new();
+        combat.finish(&mut board, &mut BTreeSet::new(), &mut frames);
+        assert!(!combat.has_fired(board.units.get(1).fixture()?.unit_id()));
         Ok(())
     }
 

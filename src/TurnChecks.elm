@@ -3,6 +3,7 @@ port module TurnChecks exposing (main)
 import Api.Enum.AmbushShape as AmbushShape
 import Api.Enum.CombatKind as CombatKind
 import Api.Enum.Direction as Direction
+import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as MapTheme
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing
@@ -59,11 +60,13 @@ playbackChecks first second =
                     , shape = AmbushShape.Line
                     , damage = 4
                     , readinessCost = 2
+                    , digInCost = 64
                     , shotCost = 2
                     }
               , cargoCapacity = 0
               , id = first
               , playerNumber = PlayerNumber.Player1
+              , entrenchment = Entrenchment.Exposed
               , spriteFacing = SpriteFacing.Right
               , direction = Just Direction.East
               , kind = Kind.Infantry
@@ -96,11 +99,13 @@ playbackChecks first second =
                     , shape = AmbushShape.Line
                     , damage = 4
                     , readinessCost = 2
+                    , digInCost = 64
                     , shotCost = 2
                     }
               , cargoCapacity = 0
               , id = second
               , playerNumber = PlayerNumber.Player2
+              , entrenchment = Entrenchment.Exposed
               , spriteFacing = SpriteFacing.Left
               , direction = Just Direction.West
               , kind = Kind.Infantry
@@ -399,11 +404,13 @@ truckPlaybackChecks unitId =
                     , shape = AmbushShape.Line
                     , damage = 4
                     , readinessCost = 2
+                    , digInCost = 64
                     , shotCost = 2
                     }
               , cargoCapacity = 0
               , id = unitId
               , playerNumber = PlayerNumber.Player1
+              , entrenchment = Entrenchment.Exposed
               , spriteFacing = SpriteFacing.Right
               , direction = Nothing
               , kind = Kind.Truck
@@ -478,6 +485,7 @@ transportPlaybackChecks passengerId truckId =
         truck =
             { id = truckId
             , playerNumber = PlayerNumber.Player1
+            , entrenchment = Entrenchment.Exposed
             , spriteFacing = SpriteFacing.Right
             , kind = Kind.Truck
             , direction = Nothing
@@ -488,6 +496,7 @@ transportPlaybackChecks passengerId truckId =
                 , shape = AmbushShape.Line
                 , damage = 4
                 , readinessCost = 2
+                , digInCost = 64
                 , shotCost = 2
                 }
             , cargoCapacity = 2
@@ -533,6 +542,7 @@ transportPlaybackChecks passengerId truckId =
                     , shape = AmbushShape.Line
                     , damage = 4
                     , readinessCost = 2
+                    , digInCost = 64
                     , shotCost = 2
                     }
                 , cargoCapacity = 0
@@ -661,6 +671,7 @@ spriteFacingChecks id =
         tank =
             { id = id
             , playerNumber = PlayerNumber.Player1
+            , entrenchment = Entrenchment.Exposed
             , spriteFacing = SpriteFacing.Right
             , direction = Just Direction.East
             , kind = Kind.Tank
@@ -671,6 +682,7 @@ spriteFacingChecks id =
                 , shape = AmbushShape.Line
                 , damage = 4
                 , readinessCost = 2
+                , digInCost = 64
                 , shotCost = 2
                 }
             , cargoCapacity = 0
@@ -819,6 +831,7 @@ combatPlaybackChecks first second =
         attacker =
             { id = first
             , playerNumber = PlayerNumber.Player1
+            , entrenchment = Entrenchment.Exposed
             , spriteFacing = SpriteFacing.Right
             , direction = Just Direction.East
             , kind = Kind.Tank
@@ -829,6 +842,7 @@ combatPlaybackChecks first second =
                 , shape = AmbushShape.Line
                 , damage = 8
                 , readinessCost = 2
+                , digInCost = 64
                 , shotCost = 2
                 }
             , cargoCapacity = 0
@@ -1281,6 +1295,7 @@ combatDeathChecks first second =
                 attacker =
                     { id = first
                     , playerNumber = PlayerNumber.Player1
+                    , entrenchment = Entrenchment.Exposed
                     , spriteFacing = SpriteFacing.Right
                     , direction = Just Direction.East
                     , kind = Kind.Tank
@@ -1291,6 +1306,7 @@ combatDeathChecks first second =
                         , shape = AmbushShape.Line
                         , damage = 8
                         , readinessCost = 2
+                        , digInCost = 64
                         , shotCost = 2
                         }
                     , cargoCapacity = 0
@@ -1445,6 +1461,7 @@ deathPlaybackChecks id =
         dead =
             { id = id
             , playerNumber = PlayerNumber.Player1
+            , entrenchment = Entrenchment.Exposed
             , spriteFacing = SpriteFacing.Right
             , direction = Just Direction.East
             , kind = Kind.Infantry
@@ -1455,6 +1472,7 @@ deathPlaybackChecks id =
                 , shape = AmbushShape.Line
                 , damage = 4
                 , readinessCost = 2
+                , digInCost = 64
                 , shotCost = 2
                 }
             , cargoCapacity = 0
@@ -1554,6 +1572,7 @@ deathFocusChecks first second =
         dead =
             { id = first
             , playerNumber = PlayerNumber.Player2
+            , entrenchment = Entrenchment.Exposed
             , spriteFacing = SpriteFacing.Left
             , direction = Just Direction.West
             , kind = Kind.Infantry
@@ -1564,6 +1583,7 @@ deathFocusChecks first second =
                 , shape = AmbushShape.Line
                 , damage = 4
                 , readinessCost = 2
+                , digInCost = 64
                 , shotCost = 2
                 }
             , cargoCapacity = 0
@@ -1714,6 +1734,7 @@ lossDetailsChecks first second =
             , playerNumber = PlayerNumber.Player1
             , kind = Kind.Infantry
             , direction = Nothing
+            , entrenchment = Entrenchment.Exposed
             , spriteFacing = SpriteFacing.Right
             , resources = Nothing
             , cargoCapacity = 0
@@ -1724,6 +1745,7 @@ lossDetailsChecks first second =
                 , shape = AmbushShape.Line
                 , damage = 4
                 , readinessCost = 2
+                , digInCost = 64
                 , shotCost = 2
                 }
             , location = Location.OnMap { x = 0, y = 0 }
@@ -1821,6 +1843,7 @@ carrierLossEventChecks first second =
                 truck =
                     { id = first
                     , playerNumber = PlayerNumber.Player2
+                    , entrenchment = Entrenchment.Exposed
                     , spriteFacing = SpriteFacing.Left
                     , direction = Nothing
                     , kind = Kind.Truck
@@ -1831,6 +1854,7 @@ carrierLossEventChecks first second =
                         , shape = AmbushShape.Line
                         , damage = 0
                         , readinessCost = 0
+                        , digInCost = 64
                         , shotCost = 0
                         }
                     , cargoCapacity = 2

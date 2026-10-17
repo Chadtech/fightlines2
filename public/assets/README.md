@@ -146,3 +146,11 @@ anime style. It previews the hovered or focused indirect-fire square and marks
 saved targets above board artwork. Built-in imagegen produced the approved
 master in `artwork/effects/illustrated/target-sight/target-sight-v1.png`.
 `node tools/build-effect-sprites.cjs` exports it with 12px transparent margins.
+
+## Entrenched infantry
+
+`infantry-entrenched-v1/red.png` and `blue.png` contain the approved dug-in
+infantry in transparent 256px cells. They replace the normal idle atlas cell
+while entrenched, including inspector and combat portraits.
+`tools/build-entrenched-sprites.cjs` (included in `make sprites`) trims and fits
+the local `infantry-dug-in-{red,blue}-v4.png` masters without recoloring them.

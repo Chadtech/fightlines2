@@ -56,3 +56,7 @@
 !/public/assets/terrain-mountains-illustrated-v1.png
 !/public/assets/terrain-mountains-snow-illustrated-v1.png
 !/public/assets/terrain-mountains-desert-illustrated-v1.png
+
+# Entrenched infantry runtime cells.
+!/public/assets/infantry-entrenched-v1/
+!/public/assets/infantry-entrenched-v1/*.png
