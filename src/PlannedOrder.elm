@@ -11,6 +11,7 @@ module PlannedOrder exposing
     , UnloadOrder
     , crateUnloads
     , destination
+    , hold
     , isAttackMove
     , isMoving
     , loadingCrates
@@ -25,6 +26,7 @@ import Api.InputObject
 import Coordinate exposing (Coordinate)
 import Graphql.OptionalArgument as OptionalArgument exposing (OptionalArgument)
 import Movement
+import Unit exposing (Unit)
 import UnitId exposing (UnitId)
 
 
@@ -98,6 +100,20 @@ type alias UnloadOrder =
     { unitId : UnitId
     , destination : Coordinate
     }
+
+
+{-| Hold at a unit's physical position, resolving passengers through their carrier.
+A missing carrier or board position leaves no legal hold to construct.
+-}
+hold : List Unit -> Unit -> Maybe PlannedOrder
+hold units unit =
+    Unit.physicalPosition units unit
+        |> Maybe.map
+            (\position ->
+                { unitId = unit.id
+                , action = Hold position
+                }
+            )
 
 
 destination : PlannedOrder -> Coordinate

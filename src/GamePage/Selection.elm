@@ -1,19 +1,16 @@
 module GamePage.Selection exposing
     ( CommandMenuState(..)
-    , DestinationFeedback(..)
     , Inspection(..)
-    , MovePlanning
-    , MovePurpose(..)
     , SelectedUnit
     , Selection(..)
-    , StationaryPurpose(..)
     , UnitInteraction(..)
     , toInspection
     )
 
-import Api.Enum.Direction exposing (Direction)
 import Coordinate exposing (Coordinate)
-import Movement
+import GamePage.DirectionPlanning exposing (DirectionPlanning)
+import GamePage.IndirectFirePlanning exposing (IndirectFirePlanning)
+import GamePage.MovePlanning exposing (MovePlanning)
 import UnitCommand
 import UnitId exposing (UnitId)
 
@@ -43,37 +40,13 @@ type alias SelectedUnit =
 type UnitInteraction
     = CommandMenu CommandMenuState
     | ChoosingMove MovePlanning
-    | ChoosingDirection StationaryPurpose Direction
-    | ChoosingAttackDirection Movement.Option Direction
-    | ChoosingIndirectFire (Maybe Coordinate)
-
-
-type StationaryPurpose
-    = AmbushPurpose
-    | StandGroundPurpose
+    | ChoosingDirection DirectionPlanning
+    | ChoosingIndirectFire IndirectFirePlanning
 
 
 type CommandMenuState
     = ChoosingCommand (Maybe UnitCommand.MenuOption)
     | ReadingGuide (Maybe UnitCommand.MenuOption)
-
-
-type MovePurpose
-    = NormalMove
-    | AttackMove
-
-
-type alias MovePlanning =
-    { purpose : MovePurpose
-    , preview : Movement.Option
-    , options : List Movement.Option
-    , destinationFeedback : DestinationFeedback
-    }
-
-
-type DestinationFeedback
-    = NoDestinationFeedback
-    | DestinationUnavailable
 
 
 

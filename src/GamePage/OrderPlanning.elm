@@ -1,13 +1,8 @@
 module GamePage.OrderPlanning exposing
-    ( Cargo(..)
-    , Context
-    , Drafts
+    ( Drafts
     , InvariantViolation(..)
     , Model(..)
-    , UnloadChoice
-    , UnloadPlanning
     , applyCommand
-    , boardingPassengers
     , canRevokeOrder
     , canSelectUnloadCargo
     , chooseUnloadSquare
@@ -26,22 +21,17 @@ module GamePage.OrderPlanning exposing
     , focusedCommand
     , indirectTargetPreview
     , indirectTargets
-    , indirectTargetsInRange
     , init
-    , isDismounting
     , isOwnUnit
-    , loadingTarget
     , missingOrders
     , moveOptions
     , movementPlanning
     , openCommandGuide
     , orders
     , pathPreview
-    , planningUnit
     , previewDirection
     , previewTile
     , promptDismountedCommands
-    , receivingLoad
     , restoreCommands
     , revokeSelectedOrder
     , saveDirection
@@ -63,38 +53,47 @@ module GamePage.OrderPlanning exposing
     , toggleAvailableUnloadCargo
     , toggleUnloadCargo
     , toggleUnloadPassenger
-    , truckDestination
     , unloadChoice
     , unloadPlanning
     )
 
-import Api.Enum.Direction as DirectionEnum exposing (Direction)
+import Api.Enum.Direction exposing (Direction)
 import Api.Enum.PlayerNumber exposing (PlayerNumber)
 import Api.Enum.UnitKind as Kind
 import Coordinate exposing (Coordinate)
 import Depot exposing (Depot)
-import Direction
+import GamePage.DestinationFeedback exposing (DestinationFeedback(..))
+import GamePage.DirectionPlanning as DirectionPlanning
+import GamePage.IndirectFirePlanning as IndirectFirePlanning exposing (IndirectFirePlanning)
+import GamePage.MovePlanning as MovePlanning
+    exposing
+        ( MovePlanning
+        , MovePurpose(..)
+        )
+import GamePage.OrderDependencies as OrderDependencies
+import GamePage.PlannedTransport as PlannedTransport
 import GamePage.Selection as Selection
     exposing
         ( CommandMenuState(..)
-        , DestinationFeedback(..)
         , Inspection(..)
-        , MovePlanning
-        , MovePurpose(..)
         , Selection(..)
-        , StationaryPurpose(..)
         , UnitInteraction(..)
         )
+import GamePage.UnloadCargo as UnloadCargo exposing (UnloadCargo)
+import GamePage.UnloadPlanning as UnloadPlanning
+    exposing
+        ( UnloadChoice
+        , UnloadPlanning
+        )
+import GamePage.UnloadingTruck as UnloadingTruck exposing (UnloadingTruck)
 import InvariantCheck as IC exposing (InvariantCheck)
 import Map exposing (Map)
 import Movement
-import PlannedOrder exposing (AttackPlan, MovePlan, PlannedOrder, StationaryUnload)
+import PlannedOrder exposing (PlannedOrder)
 import Supply
 import Unit exposing (Unit)
-import Unit.Supplies
 import UnitCommand
 import UnitId exposing (UnitId)
-import UnitResources
 import Util.List as ListUtil
 
 
@@ -102,19 +101,6 @@ import Util.List as ListUtil
 ----------------------------------------------------------------
 -- TYPES --
 ----------------------------------------------------------------
-
-
-{-| Read-only board and player data needed for local planning. Lifecycle and
-camera state remain with the page.
--}
-type alias Context =
-    { map : Map
-    , depots : List Depot
-    , units : List Unit
-    , movementRules : List Movement.Rule
-    , supplyCrates : List Supply.GroundCrate
-    , playerNumbers : List PlayerNumber
-    }
 
 
 {-| Planning has one active workflow. Unload stages own their truck plan and
@@ -137,52 +123,11 @@ type alias Drafts =
 type InvariantViolation
     = PlanningUnitNotFound UnitId
     | CommandUnitHasNoPosition UnitId
-    | CommandUnitNotOnBoard UnitId
     | LoadingOrderNotFound UnitId
-
-
-{-| Crates use their original zero-based slot in the truck's supply cargo list.
-Slots stay stable during planning; the server removes unloaded slots in descending order.
--}
-type Cargo
-    = Passenger UnitId
-    | Crate Int
-
-
-type alias UnloadingTruck =
-    { truckId : UnitId
-    , crateUnloads : List PlannedOrder.CrateUnload
-    , plan : TruckPlan
-    }
-
-
-type TruckPlan
-    = MovingTruck MovePlan
-    | StationaryTruck StationaryUnload
-
-
-type alias UnloadChoice =
-    { truck : UnloadingTruck
-    , otherOrders : List PlannedOrder
-    , checked : List Cargo
-    }
-
-
-type alias UnloadPlanning =
-    { truck : UnloadingTruck
-    , otherOrders : List PlannedOrder
-    , cargo : Cargo
-    , remaining : List Cargo
-    , options : List Movement.Option
-    , destinationFeedback : DestinationFeedback
-    }
-
-
-type alias UnloadQueue =
-    { truck : UnloadingTruck
-    , otherOrders : List PlannedOrder
-    , passengers : List Cargo
-    }
+    | TransportInvariantViolated PlannedTransport.InvariantViolation
+    | OrderDependenciesInvariantViolated OrderDependencies.InvariantViolation
+    | DirectionInvariantViolated DirectionPlanning.InvariantViolation
+    | IndirectFireInvariantViolated IndirectFirePlanning.InvariantViolation
 
 
 
@@ -215,10 +160,10 @@ orders model =
             drafts.orders
 
         ChoosingPassengers choice ->
-            truckOrder choice.truck :: choice.otherOrders
+            UnloadingTruck.toOrder choice.truck :: choice.otherOrders
 
         ChoosingExits unloading ->
-            truckOrder unloading.truck :: unloading.otherOrders
+            UnloadingTruck.toOrder unloading.truck :: unloading.otherOrders
 
 
 setOrders : List PlannedOrder -> Model -> Model
@@ -244,15 +189,10 @@ selection model =
             Just (Inspecting (Selection.UnitInspection id))
 
         ChoosingPassengers choice ->
-            Just (Inspecting (Selection.UnitInspection choice.truck.truckId))
+            Just (Inspecting (Selection.UnitInspection (UnloadingTruck.unitId choice.truck)))
 
         ChoosingExits unloading ->
-            case unloading.cargo of
-                Passenger id ->
-                    Just (Inspecting (Selection.UnitInspection id))
-
-                Crate _ ->
-                    Just (Inspecting (Selection.UnitInspection unloading.truck.truckId))
+            Just (Inspecting (Selection.UnitInspection (UnloadCargo.inspectionUnit unloading.truck unloading.cargo)))
 
 
 {-| Return to ordinary planning with this selection. Leaving passenger or exit
@@ -296,29 +236,14 @@ submissionDrafts model =
             Nothing
 
 
-truckDestination : UnloadingTruck -> Coordinate
-truckDestination truck =
-    truckOrder truck |> PlannedOrder.destination
-
-
 startUnload : UnitId -> Movement.Option -> Model -> Model
 startUnload truckId move model =
-    startTruckUnload
-        { truckId = truckId
-        , crateUnloads = []
-        , plan = MovingTruck { move = move, unloads = [] }
-        }
-        model
+    startTruckUnload (UnloadingTruck.moving truckId move) model
 
 
 startStationaryUnload : UnitId -> Coordinate -> Model -> Model
 startStationaryUnload truckId position model =
-    startTruckUnload
-        { truckId = truckId
-        , crateUnloads = []
-        , plan = StationaryTruck { position = position, unloads = [] }
-        }
-        model
+    startTruckUnload (UnloadingTruck.stationary truckId position) model
 
 
 unloadChoice : Model -> Maybe UnloadChoice
@@ -344,143 +269,80 @@ unloadPlanning model =
 {-| Check the whole selection, including scarce exits and passenger supplies.
 Checked cargo always remains removable.
 -}
-canSelectUnloadCargo : Context -> Cargo -> Model -> Bool
-canSelectUnloadCargo context cargo model =
+canSelectUnloadCargo :
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> List Movement.Rule
+    -> List Supply.GroundCrate
+    -> UnloadCargo
+    -> Model
+    -> InvariantCheck InvariantViolation Bool
+canSelectUnloadCargo map units playerNumbers movementRules supplyCrates cargo model =
     case model of
         ChoosingPassengers choice ->
-            List.member cargo choice.checked
-                || (confirmUnloadPassengers []
-                        (unloadOptions context)
-                        (toggleUnloadCargo cargo True model)
-                        |> IC.andThen (canCompleteUnload context)
-                        |> IC.value
-                   )
+            UnloadPlanning.canSelectCargo
+                (unloadOptions map units playerNumbers movementRules supplyCrates)
+                cargo
+                choice
 
         _ ->
-            False
+            IC.happy False
 
 
-toggleAvailableUnloadCargo : Context -> Cargo -> Bool -> Model -> Model
-toggleAvailableUnloadCargo context cargo checked model =
-    if not checked || canSelectUnloadCargo context cargo model then
-        toggleUnloadCargo cargo checked model
+toggleAvailableUnloadCargo :
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> List Movement.Rule
+    -> List Supply.GroundCrate
+    -> UnloadCargo
+    -> Bool
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+toggleAvailableUnloadCargo map units playerNumbers movementRules supplyCrates cargo checked model =
+    if not checked then
+        IC.happy (toggleUnloadCargo cargo False model)
 
     else
-        model
+        let
+            toggleIfAvailable : Bool -> Model
+            toggleIfAvailable available =
+                if available then
+                    toggleUnloadCargo cargo True model
 
-
-{-| Search at most two cargo exits. Use raw options during simulation to avoid
-recursing through the filtered board picker.
--}
-canCompleteUnload : Context -> Model -> InvariantCheck InvariantViolation Bool
-canCompleteUnload context model =
-    case model of
-        ChoosingExits unloading ->
-            let
-                tryOptions : List Movement.Option -> InvariantCheck InvariantViolation Bool
-                tryOptions options =
-                    case options of
-                        [] ->
-                            IC.happy False
-
-                        option :: remaining ->
-                            let
-                                tryRemaining : Bool -> InvariantCheck InvariantViolation Bool
-                                tryRemaining completes =
-                                    if completes then
-                                        IC.happy True
-
-                                    else
-                                        tryOptions remaining
-                            in
-                            saveUnloadDestination []
-                                (unloadOptions context)
-                                option.destination
-                                (ChoosingExits { unloading | options = [ option ] })
-                                |> IC.andThen (canCompleteUnload context)
-                                |> IC.andThen tryRemaining
-            in
-            unloadOptions context model unloading.cargo
-                |> IC.andThen tryOptions
-
-        _ ->
-            IC.happy True
-
-
-availableUnloadOptions : Context -> Model -> Cargo -> InvariantCheck InvariantViolation (List Movement.Option)
-availableUnloadOptions context model cargo =
-    let
-        completes : Movement.Option -> InvariantCheck InvariantViolation Bool
-        completes option =
-            case model of
-                ChoosingExits unloading ->
-                    saveUnloadDestination []
-                        (unloadOptions context)
-                        option.destination
-                        (ChoosingExits { unloading | options = [ option ] })
-                        |> IC.andThen (canCompleteUnload context)
-
-                _ ->
-                    IC.happy False
-
-        keepCompleting :
-            Movement.Option
-            -> InvariantCheck InvariantViolation (List Movement.Option)
-            -> InvariantCheck InvariantViolation (List Movement.Option)
-        keepCompleting option retained =
-            let
-                keepIfComplete : Bool -> InvariantCheck InvariantViolation (List Movement.Option)
-                keepIfComplete possible =
-                    if possible then
-                        IC.map ((::) option) retained
-
-                    else
-                        retained
-            in
-            completes option |> IC.andThen keepIfComplete
-    in
-    unloadOptions context model cargo
-        |> IC.andThen (List.foldr keepCompleting (IC.happy []))
+                else
+                    model
+        in
+        canSelectUnloadCargo map units playerNumbers movementRules supplyCrates cargo model
+            |> IC.map toggleIfAvailable
 
 
 toggleUnloadPassenger : UnitId -> Bool -> Model -> Model
 toggleUnloadPassenger id =
-    toggleUnloadCargo (Passenger id)
+    toggleUnloadCargo (UnloadCargo.Passenger id)
 
 
-toggleUnloadCargo : Cargo -> Bool -> Model -> Model
+toggleUnloadCargo : UnloadCargo -> Bool -> Model -> Model
 toggleUnloadCargo cargo checked model =
     case model of
         ChoosingPassengers choice ->
-            let
-                retained : List Cargo
-                retained =
-                    List.filter ((/=) cargo) choice.checked
-
-                selected : List Cargo
-                selected =
-                    if checked then
-                        cargo :: retained
-
-                    else
-                        retained
-            in
-            ChoosingPassengers { choice | checked = selected }
+            ChoosingPassengers (UnloadPlanning.toggleCargo cargo checked choice)
 
         _ ->
             model
 
 
-confirmUnloadPassengers : List Depot -> (Model -> Cargo -> InvariantCheck InvariantViolation (List Movement.Option)) -> Model -> InvariantCheck InvariantViolation Model
-confirmUnloadPassengers depots options model =
+confirmUnloadPassengers :
+    List Depot
+    -> (UnloadPlanning -> InvariantCheck InvariantViolation (List Movement.Option))
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+confirmUnloadPassengers depots exitOptions model =
     case model of
         ChoosingPassengers choice ->
-            nextUnloadPassenger depots
-                options
-                { truck = choice.truck
-                , otherOrders = choice.otherOrders
-                , passengers = List.reverse choice.checked
-                }
+            UnloadPlanning.confirm exitOptions choice
+                |> IC.map (applyUnloadStep depots)
 
         _ ->
             IC.happy model
@@ -488,92 +350,15 @@ confirmUnloadPassengers depots options model =
 
 saveUnloadDestination :
     List Depot
-    -> (Model -> Cargo -> InvariantCheck InvariantViolation (List Movement.Option))
+    -> (UnloadPlanning -> InvariantCheck InvariantViolation (List Movement.Option))
     -> Coordinate
     -> Model
     -> InvariantCheck InvariantViolation Model
-saveUnloadDestination depots options destination model =
+saveUnloadDestination depots exitOptions destination model =
     case model of
-        ChoosingExits unloading ->
-            if
-                List.any
-                    (\option -> option.destination == destination)
-                    unloading.options
-            then
-                let
-                    truck : UnloadingTruck
-                    truck =
-                        unloading.truck
-
-                    updated : UnloadingTruck
-                    updated =
-                        case unloading.cargo of
-                            Passenger passengerId ->
-                                let
-                                    appendPassenger : List PlannedOrder.UnloadOrder -> List PlannedOrder.UnloadOrder
-                                    appendPassenger unloads =
-                                        let
-                                            passengerExit : PlannedOrder.UnloadOrder
-                                            passengerExit =
-                                                { unitId = passengerId
-                                                , destination = destination
-                                                }
-
-                                            exits : List PlannedOrder.UnloadOrder
-                                            exits =
-                                                [ passengerExit
-                                                ]
-                                        in
-                                        unloads ++ exits
-
-                                    plan : TruckPlan
-                                    plan =
-                                        case truck.plan of
-                                            MovingTruck moving ->
-                                                MovingTruck
-                                                    { moving
-                                                        | unloads = appendPassenger moving.unloads
-                                                    }
-
-                                            StationaryTruck stationary ->
-                                                StationaryTruck
-                                                    { stationary
-                                                        | unloads = appendPassenger stationary.unloads
-                                                    }
-                                in
-                                { truck
-                                    | plan = plan
-                                }
-
-                            Crate index ->
-                                let
-                                    crateExit : PlannedOrder.CrateUnload
-                                    crateExit =
-                                        { cargoIndex = index
-                                        , destination = destination
-                                        }
-
-                                    exits : List PlannedOrder.CrateUnload
-                                    exits =
-                                        [ crateExit
-                                        ]
-                                in
-                                { truck
-                                    | crateUnloads = truck.crateUnloads ++ exits
-                                }
-                in
-                nextUnloadPassenger depots
-                    options
-                    { truck = updated
-                    , otherOrders = unloading.otherOrders
-                    , passengers = unloading.remaining
-                    }
-
-            else
-                IC.happy
-                    (ChoosingExits
-                        { unloading | destinationFeedback = DestinationUnavailable }
-                    )
+        ChoosingExits planning ->
+            UnloadPlanning.saveDestination exitOptions destination planning
+                |> IC.map (applyUnloadStep depots)
 
         _ ->
             IC.happy model
@@ -634,120 +419,42 @@ dismissDialog model =
             model
 
 
-chooseUnloadSquare : Context -> Coordinate -> Model -> InvariantCheck InvariantViolation Model
-chooseUnloadSquare context destination model =
+chooseUnloadSquare :
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> List Movement.Rule
+    -> List Supply.GroundCrate
+    -> List Depot
+    -> Coordinate
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+chooseUnloadSquare map units playerNumbers movementRules supplyCrates depots destination model =
     model
-        |> saveUnloadDestination context.depots (availableUnloadOptions context) destination
-        |> IC.map (promptDismountedCommands context)
+        |> saveUnloadDestination depots
+            (UnloadPlanning.availableOptions (unloadOptions map units playerNumbers movementRules supplyCrates))
+            destination
+        |> IC.map (promptDismountedCommands map units)
 
 
-{-| Project an infantry's planned dismount for local command planning. The board and cargo
-remain authoritative until playback; previews reserve the actual unloading cost.
--}
-planningUnit : Context -> List PlannedOrder -> Unit -> Unit
-planningUnit context drafts unit =
+promptDismountedCommands : Map -> List Unit -> Model -> Model
+promptDismountedCommands map units original =
     let
-        exit : Maybe PlannedOrder.UnloadOrder
-        exit =
-            drafts
-                |> List.concatMap PlannedOrder.unloads
-                |> ListUtil.find (\unload -> unload.unitId == unit.id)
-
-        dismount : PlannedOrder.UnloadOrder -> Unit
-        dismount unload =
-            let
-                spendUnloading : UnitResources.UnitResources -> UnitResources.UnitResources
-                spendUnloading resources =
-                    let
-                        supplies : Unit.Supplies.Supplies
-                        supplies =
-                            resources.supplies
-
-                        cost : Int
-                        cost =
-                            Movement.supplyCost
-                                context.map
-                                supplies
-                                [ unload.destination, unload.destination ]
-                    in
-                    { resources
-                        | supplies = { supplies | current = supplies.current - cost }
-                    }
-            in
-            Unit.setOnMap
-                unload.destination
-                { unit | resources = Maybe.map spendUnloading unit.resources }
-    in
-    if (unit.kind == Kind.Infantry) && (Unit.carrierId unit /= Nothing) then
-        exit
-            |> Maybe.map dismount
-            |> Maybe.withDefault unit
-
-    else
-        unit
-
-
-{-| A projected infantry is on the map while its physical unit is still aboard.
--}
-isDismounting : Context -> Unit -> Bool
-isDismounting context unit =
-    let
-        wasAboard : Bool
-        wasAboard =
-            context.units
-                |> ListUtil.find (\original -> original.id == unit.id)
-                |> Maybe.andThen Unit.carrierId
-                |> (/=) Nothing
-    in
-    (unit.kind == Kind.Infantry) && Unit.onBoard unit && wasAboard
-
-
-promptDismountedCommands : Context -> Model -> Model
-promptDismountedCommands context original =
-    let
-        clearPassengerHold : List PlannedOrder -> List PlannedOrder
-        clearPassengerHold drafts =
-            let
-                staleHold : PlannedOrder -> Bool
-                staleHold order =
-                    case ListUtil.find (\unit -> unit.id == order.unitId) context.units of
-                        Just unit ->
-                            let
-                                planned : Unit
-                                planned =
-                                    planningUnit context drafts unit
-                            in
-                            (Unit.carrierId unit /= Nothing)
-                                && Unit.onBoard planned
-                                && (List.head (PlannedOrder.path order) /= Unit.boardPosition planned)
-
-                        Nothing ->
-                            False
-            in
-            List.filter (not << staleHold) drafts
-
         model : Model
         model =
             case original of
                 OrdinaryPlanning drafts ->
-                    OrdinaryPlanning { drafts | orders = clearPassengerHold drafts.orders }
+                    OrdinaryPlanning { drafts | orders = PlannedTransport.withoutStalePassengerHolds map units drafts.orders }
 
                 ChoosingCrates id depot drafts ->
-                    ChoosingCrates id depot { drafts | orders = clearPassengerHold drafts.orders }
+                    ChoosingCrates id depot { drafts | orders = PlannedTransport.withoutStalePassengerHolds map units drafts.orders }
 
                 _ ->
                     original
     in
     case model of
         OrdinaryPlanning _ ->
-            let
-                needsCommand : Unit -> Bool
-                needsCommand unit =
-                    (Unit.carrierId unit /= Nothing)
-                        && Unit.onBoard (planningUnit context (orders model) unit)
-                        && not (List.any (\order -> order.unitId == unit.id) (orders model))
-            in
-            case ListUtil.find needsCommand context.units of
+            case PlannedTransport.nextDismountedUnit map units (orders model) of
                 Just unit ->
                     setUnitInteraction unit.id (CommandMenu (ChoosingCommand Nothing)) model
 
@@ -758,15 +465,23 @@ promptDismountedCommands context original =
             model
 
 
-applyCommand : Context -> UnitCommand.Command -> Model -> InvariantCheck InvariantViolation Model
-applyCommand context command model =
+applyCommand :
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> List Movement.Rule
+    -> List Depot
+    -> UnitCommand.Command
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+applyCommand map units playerNumbers movementRules depots command model =
     case ( selection model, hasDialog model ) of
         ( Just (UnitSelection { interaction }), False ) ->
             case interaction of
                 CommandMenu _ ->
-                    case selectedUnit context model of
+                    case selectedUnit map units model of
                         Just unit ->
-                            applyUnitCommand context command unit model
+                            applyUnitCommand map units playerNumbers movementRules depots command unit model
 
                         Nothing ->
                             missingSelectedUnit (selection model) model
@@ -798,15 +513,15 @@ commandGuideOpen model =
             False
 
 
-openCommandGuide : Context -> Model -> Model
-openCommandGuide context model =
-    case ( model, commandMenuUnit context model ) of
+openCommandGuide : Map -> List Unit -> List PlayerNumber -> Model -> Model
+openCommandGuide map units playerNumbers model =
+    case ( model, commandMenuUnit map units model ) of
         ( OrdinaryPlanning drafts, Just unit ) ->
             case drafts.selection of
                 Just (UnitSelection selected) ->
                     case selected.interaction of
                         CommandMenu (ChoosingCommand focused) ->
-                            if isOwnUnit context unit then
+                            if isOwnUnit playerNumbers unit then
                                 setSelection
                                     (Just (UnitSelection { selected | interaction = CommandMenu (ReadingGuide focused) }))
                                     model
@@ -824,13 +539,13 @@ openCommandGuide context model =
             model
 
 
-commandMenuUnit : Context -> Model -> Maybe Unit
-commandMenuUnit context model =
+commandMenuUnit : Map -> List Unit -> Model -> Maybe Unit
+commandMenuUnit map units model =
     case ( selection model, hasDialog model ) of
         ( Just (UnitSelection { interaction }), False ) ->
             case interaction of
                 CommandMenu _ ->
-                    selectedUnit context model
+                    selectedUnit map units model
 
                 _ ->
                     Nothing
@@ -839,99 +554,9 @@ commandMenuUnit context model =
             Nothing
 
 
-{-| Trucks receive boarding units at their planned destination. Other departing
-allies free their starting squares while their destinations remain reserved.
--}
-loadingTarget : Context -> Unit -> Coordinate -> List PlannedOrder -> Maybe Unit
-loadingTarget context mover destination drafts =
-    Unit.loadingTarget (destinationUnits context drafts) mover destination
-
-
-{-| Include arriving passengers and waiting pickups at the truck's destination.
-Existing passengers remain separate because unloading does not free a berth yet.
--}
-boardingPassengers : Context -> UnitId -> List PlannedOrder -> List UnitId
-boardingPassengers context truckId drafts =
-    let
-        boardsTruck : PlannedOrder -> Bool
-        boardsTruck plan =
-            let
-                receiver : Unit -> Maybe Unit
-                receiver passenger =
-                    loadingTarget context passenger (PlannedOrder.destination plan) drafts
-
-                targetId : Maybe UnitId
-                targetId =
-                    context.units
-                        |> ListUtil.find (\unit -> unit.id == plan.unitId)
-                        |> Maybe.andThen receiver
-                        |> Maybe.map .id
-            in
-            (plan.unitId /= truckId)
-                && not (PlannedOrder.isAttackMove plan)
-                && (targetId == Just truckId)
-    in
-    drafts
-        |> List.filter boardsTruck
-        |> List.map .unitId
-
-
-destinationUnits : Context -> List PlannedOrder -> List Unit
-destinationUnits context drafts =
-    let
-        destinationUnit : Unit -> Maybe Unit
-        destinationUnit unit =
-            let
-                departure : PlannedOrder -> Bool
-                departure plan =
-                    (plan.unitId == unit.id) && PlannedOrder.isMoving plan
-            in
-            case ListUtil.find departure drafts of
-                Just plan ->
-                    if unit.kind == Kind.Truck then
-                        Just (Unit.setOnMap (PlannedOrder.destination plan) unit)
-
-                    else
-                        Nothing
-
-                Nothing ->
-                    Just unit
-    in
-    List.filterMap destinationUnit context.units
-
-
-receivingLoad : Context -> Unit -> List PlannedOrder -> Bool
-receivingLoad context unit drafts =
-    let
-        receives : PlannedOrder -> Bool
-        receives plan =
-            if not (PlannedOrder.isMoving plan) || PlannedOrder.isAttackMove plan then
-                False
-
-            else
-                case ListUtil.find (\mover -> mover.id == plan.unitId) context.units of
-                    Just mover ->
-                        if Unit.carrierId mover == Just unit.id then
-                            True
-
-                        else
-                            loadingTarget
-                                context
-                                mover
-                                (PlannedOrder.destination plan)
-                                drafts
-                                |> Maybe.map .id
-                                |> (==) (Just unit.id)
-
-                    Nothing ->
-                        False
-    in
-    List.any receives drafts
-
-
-focusCommand : Context -> UnitCommand.MenuOption -> Model -> Model
-focusCommand context command model =
-    case ( selection model, commandMenuUnit context model ) of
+focusCommand : Map -> List Unit -> UnitCommand.MenuOption -> Model -> Model
+focusCommand map units command model =
+    case ( selection model, commandMenuUnit map units model ) of
         ( Just (UnitSelection selected), Just _ ) ->
             case selected.interaction of
                 CommandMenu _ ->
@@ -947,9 +572,9 @@ focusCommand context command model =
             model
 
 
-canRevokeOrder : Context -> UnitId -> Model -> Bool
-canRevokeOrder context unitId model =
-    case ( model, selectedUnit context model ) of
+canRevokeOrder : Map -> List Unit -> List PlayerNumber -> UnitId -> Model -> Bool
+canRevokeOrder map units playerNumbers unitId model =
+    case ( model, selectedUnit map units model ) of
         ( OrdinaryPlanning drafts, Just unit ) ->
             let
                 selectionAllowsRevoking : Bool
@@ -971,7 +596,7 @@ canRevokeOrder context unitId model =
             in
             selectionAllowsRevoking
                 && (unit.id == unitId)
-                && isOwnUnit context unit
+                && isOwnUnit playerNumbers unit
                 && (Unit.carrierId unit == Nothing)
                 && List.any (\order -> order.unitId == unitId) drafts.orders
 
@@ -979,19 +604,25 @@ canRevokeOrder context unitId model =
             False
 
 
-revokeSelectedOrder : Context -> Model -> InvariantCheck InvariantViolation Model
-revokeSelectedOrder context model =
-    case selectedUnit context model of
+revokeSelectedOrder :
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+revokeSelectedOrder map units playerNumbers model =
+    case selectedUnit map units model of
         Just unit ->
-            if canRevokeOrder context unit.id model then
-                model
-                    |> setOrders
-                        (revokeDependentOrders
-                            context
-                            [ unit.id ]
-                            (orders model)
-                        )
-                    |> inspectSelectedUnit context
+            if canRevokeOrder map units playerNumbers unit.id model then
+                let
+                    saveOrders : List PlannedOrder -> Model
+                    saveOrders retained =
+                        setOrders retained model
+                in
+                OrderDependencies.revoke units [ unit.id ] (orders model)
+                    |> IC.mapError OrderDependenciesInvariantViolated
+                    |> IC.map saveOrders
+                    |> IC.andThen (inspectSelectedUnit map units)
 
             else
                 IC.happy model
@@ -1000,121 +631,54 @@ revokeSelectedOrder context model =
             missingSelectedUnit (selection model) model
 
 
-{-| Revoking a departure also revokes routes relying on the vacated square.
-Each step removes orders, so chains and cycles terminate.
--}
-revokeDependentOrders : Context -> List UnitId -> List PlannedOrder -> List PlannedOrder
-revokeDependentOrders context revokedIds drafts =
-    let
-        removed : List PlannedOrder
-        removed =
-            List.filter (\plan -> List.member plan.unitId revokedIds) drafts
-
-        origin : PlannedOrder -> Maybe Coordinate
-        origin plan =
-            if PlannedOrder.isMoving plan then
-                context.units
-                    |> ListUtil.find (\unit -> unit.id == plan.unitId)
-                    |> Maybe.andThen Unit.boardPosition
-
-            else
-                Nothing
-
-        occupiedAgain : List Coordinate
-        occupiedAgain =
-            List.filterMap origin removed
-
-        retained : List PlannedOrder
-        retained =
-            List.filter
-                (\plan -> not (List.member plan.unitId revokedIds))
-                drafts
-
-        dependsOnDeparture : PlannedOrder -> Bool
-        dependsOnDeparture plan =
-            let
-                needsDestination : Bool
-                needsDestination =
-                    PlannedOrder.isMoving plan && List.member (PlannedOrder.destination plan) occupiedAgain
-
-                needsPassengerExit : Bool
-                needsPassengerExit =
-                    List.any (\unload -> List.member unload.destination occupiedAgain) (PlannedOrder.unloads plan)
-
-                needsTruck : Bool
-                needsTruck =
-                    context.units
-                        |> ListUtil.find (\unit -> unit.id == plan.unitId)
-                        |> Maybe.andThen boardingTarget
-                        |> Maybe.map (\truck -> List.member truck.id revokedIds)
-                        |> Maybe.withDefault False
-
-                boardingTarget : Unit -> Maybe Unit
-                boardingTarget unit =
-                    loadingTarget context unit (PlannedOrder.destination plan) drafts
-
-                needsCrateExit : Bool
-                needsCrateExit =
-                    List.any
-                        (\unload -> List.member unload.destination occupiedAgain)
-                        (PlannedOrder.crateUnloads plan)
-
-                needsDismount : Bool
-                needsDismount =
-                    removed
-                        |> List.concatMap PlannedOrder.unloads
-                        |> List.any (\exit -> exit.unitId == plan.unitId)
-            in
-            needsDestination
-                || needsPassengerExit
-                || needsCrateExit
-                || needsTruck
-                || needsDismount
-
-        dependentIds : List UnitId
-        dependentIds =
-            retained |> List.filter dependsOnDeparture |> List.map .unitId
-    in
-    if List.isEmpty dependentIds then
-        retained
-
-    else
-        revokeDependentOrders context dependentIds retained
-
-
-saveDirection : Context -> Direction -> Model -> InvariantCheck InvariantViolation Model
-saveDirection context direction model =
+saveDirection :
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> Direction
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+saveDirection map units playerNumbers direction model =
     case selection model of
         Just (UnitSelection { id, interaction }) ->
+            let
+                saveOrder : Maybe PlannedOrder -> InvariantCheck InvariantViolation Model
+                saveOrder maybeOrder =
+                    case maybeOrder of
+                        Just order ->
+                            model
+                                |> setOrders (order :: List.filter (\other -> other.unitId /= id) (orders model))
+                                |> finishUnitCommand map units
+
+                        Nothing ->
+                            IC.happy model
+            in
             case interaction of
-                ChoosingAttackDirection move _ ->
-                    let
-                        attackPlan : AttackPlan
-                        attackPlan =
-                            { move = move
-                            , direction = direction
-                            }
+                ChoosingDirection planning ->
+                    case planning of
+                        DirectionPlanning.AttackMove move _ ->
+                            DirectionPlanning.attackOrder id move direction
+                                |> saveOrder
 
-                        plannedOrder : PlannedOrder
-                        plannedOrder =
-                            { unitId = id
-                            , action =
-                                PlannedOrder.AttackMove attackPlan
-                            }
-                    in
-                    if Direction.reversesPath move.path direction then
-                        IC.happy model
+                        DirectionPlanning.Stationary purpose _ ->
+                            case selectedUnit map units model of
+                                Just unit ->
+                                    let
+                                        canSave : Bool
+                                        canSave =
+                                            isOwnUnit playerNumbers unit
+                                                && not (PlannedTransport.receivingLoad units unit (orders model))
+                                    in
+                                    if canSave then
+                                        DirectionPlanning.stationaryOrder purpose unit direction
+                                            |> IC.mapError DirectionInvariantViolated
+                                            |> IC.andThen saveOrder
 
-                    else
-                        model
-                            |> setOrders
-                                (plannedOrder
-                                    :: List.filter (\order -> order.unitId /= id) (orders model)
-                                )
-                            |> finishUnitCommand context
+                                    else
+                                        IC.happy model
 
-                ChoosingDirection purpose _ ->
-                    saveStationaryDirection purpose context direction model
+                                Nothing ->
+                                    missingSelectedUnit (selection model) model
 
                 _ ->
                     IC.happy model
@@ -1123,60 +687,18 @@ saveDirection context direction model =
             IC.happy model
 
 
-saveStationaryDirection :
-    StationaryPurpose
-    -> Context
-    -> Direction
+selectUnit :
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> List Movement.Rule
+    -> List Supply.GroundCrate
+    -> List Depot
+    -> UnitId
     -> Model
     -> InvariantCheck InvariantViolation Model
-saveStationaryDirection purpose context direction model =
-    case selectedUnit context model of
-        Just unit ->
-            let
-                canSave : Bool
-                canSave =
-                    choosingDirection model
-                        && isOwnUnit context unit
-                        && not (receivingLoad context unit (orders model))
-            in
-            if canSave then
-                case Unit.boardPosition unit of
-                    Just position ->
-                        let
-                            order : PlannedOrder
-                            order =
-                                { unitId = unit.id
-                                , action =
-                                    case purpose of
-                                        AmbushPurpose ->
-                                            PlannedOrder.Ambush { position = position, direction = direction }
-
-                                        StandGroundPurpose ->
-                                            PlannedOrder.StandGround { position = position, direction = direction }
-                                }
-                        in
-                        setOrders
-                            (order
-                                :: List.filter
-                                    (\plan -> plan.unitId /= unit.id)
-                                    (orders model)
-                            )
-                            model
-                            |> finishUnitCommand context
-
-                    Nothing ->
-                        IC.violated (CommandUnitNotOnBoard unit.id) model
-
-            else
-                IC.happy model
-
-        Nothing ->
-            missingSelectedUnit (selection model) model
-
-
-selectUnit : Context -> UnitId -> Model -> InvariantCheck InvariantViolation Model
-selectUnit context id model =
-    case ListUtil.find (\unit -> unit.id == id) context.units of
+selectUnit map units playerNumbers movementRules supplyCrates depots id model =
+    case ListUtil.find (\unit -> unit.id == id) units of
         Nothing ->
             IC.happy model
 
@@ -1185,7 +707,7 @@ selectUnit context id model =
                 choosingTransportDestination : Bool
                 choosingTransportDestination =
                     ((pathPreview model /= Nothing) || (unloadPlanning model /= Nothing))
-                        && (Maybe.map .id (selectedUnit context model) /= Just id)
+                        && (Maybe.map .id (selectedUnit map units model) /= Just id)
 
                 choosingOccupiedDestination : Bool
                 choosingOccupiedDestination =
@@ -1193,7 +715,7 @@ selectUnit context id model =
 
                 nextSelection : Selection
                 nextSelection =
-                    unitSelection context unit model
+                    unitSelection map units playerNumbers unit model
 
                 reopeningCommands : Bool
                 reopeningCommands =
@@ -1201,30 +723,40 @@ selectUnit context id model =
                         && (nextSelection /= Inspecting (UnitInspection id))
             in
             if choosingOccupiedDestination then
-                Unit.boardPosition unit
+                Unit.mapPosition unit
                     |> Maybe.map
-                        (\position -> selectTile context position model)
+                        (\position ->
+                            selectTile
+                                map
+                                units
+                                playerNumbers
+                                movementRules
+                                supplyCrates
+                                depots
+                                position
+                                model
+                        )
                     |> Maybe.withDefault (IC.happy model)
 
-            else if (Maybe.map .id (selectedUnit context model) == Just id) && not reopeningCommands then
+            else if (Maybe.map .id (selectedUnit map units model) == Just id) && not reopeningCommands then
                 IC.happy (setSelection Nothing model)
 
             else
                 IC.happy (setSelection (Just nextSelection) model)
 
 
-selectNextUnorderedUnit : Context -> Model -> Model
-selectNextUnorderedUnit context model =
+selectNextUnorderedUnit : Map -> List Unit -> List PlayerNumber -> Model -> Model
+selectNextUnorderedUnit map units playerNumbers model =
     case ( model, hasDialog model ) of
         ( OrdinaryPlanning _, False ) ->
             let
                 candidates : List Unit
                 candidates =
-                    missingOrders context (orders model)
+                    missingOrders map units playerNumbers (orders model)
 
                 currentId : Maybe UnitId
                 currentId =
-                    selectedUnit context model |> Maybe.map .id
+                    selectedUnit map units model |> Maybe.map .id
 
                 afterCurrent : List Unit -> List Unit
                 afterCurrent remaining =
@@ -1250,7 +782,7 @@ selectNextUnorderedUnit context model =
             in
             case next of
                 Just unit ->
-                    setSelection (Just (unitSelection context unit model)) model
+                    setSelection (Just (unitSelection map units playerNumbers unit model)) model
 
                 Nothing ->
                     model
@@ -1259,54 +791,78 @@ selectNextUnorderedUnit context model =
             model
 
 
-selectTile : Context -> Coordinate -> Model -> InvariantCheck InvariantViolation Model
-selectTile context position model =
+selectTile :
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> List Movement.Rule
+    -> List Supply.GroundCrate
+    -> List Depot
+    -> Coordinate
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+selectTile map units playerNumbers movementRules supplyCrates depots position model =
     if choosingIndirectFire model then
-        saveIndirectFire context position model
+        saveIndirectFire map units position model
 
     else
-        selectTransportTile context position model
+        selectTransportTile map units playerNumbers movementRules supplyCrates depots position model
 
 
-selectTransportTile : Context -> Coordinate -> Model -> InvariantCheck InvariantViolation Model
-selectTransportTile context position model =
+selectTransportTile :
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> List Movement.Rule
+    -> List Supply.GroundCrate
+    -> List Depot
+    -> Coordinate
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+selectTransportTile map units playerNumbers movementRules supplyCrates depots position model =
     case unloadPlanning model of
         Just _ ->
-            chooseUnloadSquare context position model
+            chooseUnloadSquare map units playerNumbers movementRules supplyCrates depots position model
 
         _ ->
-            selectMovementTile context position model
+            selectMovementTile map units playerNumbers movementRules depots position model
 
 
-previewTile : Context -> Coordinate -> Model -> Model
-previewTile context position model =
+previewTile :
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> List Movement.Rule
+    -> Coordinate
+    -> Model
+    -> Model
+previewTile map units playerNumbers movementRules position model =
     case selection model of
         Just (UnitSelection selected) ->
             case selected.interaction of
                 ChoosingMove planning ->
-                    case traceTo context position model of
-                        Just preview ->
-                            model
-                                |> setUnitInteraction selected.id
-                                    (ChoosingMove
-                                        { planning
-                                            | preview = preview
-                                            , destinationFeedback = NoDestinationFeedback
-                                        }
-                                    )
+                    let
+                        savePreview : MovePlanning -> Model
+                        savePreview updated =
+                            setUnitInteraction selected.id (ChoosingMove updated) model
+                    in
+                    case selectedUnit map units model of
+                        Just unit ->
+                            if isOwnUnit playerNumbers unit then
+                                MovePlanning.previewTo map units movementRules unit position planning
+                                    |> Maybe.map savePreview
+                                    |> Maybe.withDefault model
+
+                            else
+                                model
 
                         Nothing ->
                             model
 
-                ChoosingIndirectFire _ ->
-                    if List.member position (indirectTargets context model) then
-                        setUnitInteraction
-                            selected.id
-                            (ChoosingIndirectFire (Just position))
-                            model
-
-                    else
-                        clearTargetPreview model
+                ChoosingIndirectFire planning ->
+                    setUnitInteraction selected.id
+                        (ChoosingIndirectFire (IndirectFirePlanning.previewTo map position planning))
+                        model
 
                 _ ->
                     model
@@ -1315,21 +871,46 @@ previewTile context position model =
             model
 
 
-extendPath : Context -> Direction -> Model -> Model
-extendPath context direction model =
-    case pathPreview model of
-        Just preview ->
-            previewTile context (Direction.step preview.destination direction) model
+extendPath :
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> List Movement.Rule
+    -> Direction
+    -> Model
+    -> Model
+extendPath map units playerNumbers movementRules direction model =
+    case ( selectedUnit map units model, movementPlanning model ) of
+        ( Just unit, Just planning ) ->
+            let
+                savePreview : MovePlanning -> Model
+                savePreview updated =
+                    setUnitInteraction unit.id (ChoosingMove updated) model
+            in
+            if isOwnUnit playerNumbers unit then
+                MovePlanning.extendPath map units movementRules unit direction planning
+                    |> Maybe.map savePreview
+                    |> Maybe.withDefault model
 
-        Nothing ->
+            else
+                model
+
+        _ ->
             model
 
 
-confirmPath : Context -> Model -> InvariantCheck InvariantViolation Model
-confirmPath context model =
+confirmPath :
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> List Movement.Rule
+    -> List Depot
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+confirmPath map units playerNumbers movementRules depots model =
     case pathPreview model of
         Just preview ->
-            selectMovementTile context preview.destination model
+            selectMovementTile map units playerNumbers movementRules depots preview.destination model
 
         Nothing ->
             IC.happy model
@@ -1355,8 +936,8 @@ indirectTargetPreview model =
     case selection model of
         Just (UnitSelection { interaction }) ->
             case interaction of
-                ChoosingIndirectFire target ->
-                    target
+                ChoosingIndirectFire planning ->
+                    IndirectFirePlanning.targetPreview planning
 
                 _ ->
                     Nothing
@@ -1370,8 +951,8 @@ clearTargetPreview model =
     case selection model of
         Just (UnitSelection selected) ->
             case selected.interaction of
-                ChoosingIndirectFire _ ->
-                    setUnitInteraction selected.id (ChoosingIndirectFire Nothing) model
+                ChoosingIndirectFire planning ->
+                    setUnitInteraction selected.id (ChoosingIndirectFire (IndirectFirePlanning.clearPreview planning)) model
 
                 _ ->
                     model
@@ -1380,98 +961,48 @@ clearTargetPreview model =
             model
 
 
-indirectTargets : Context -> Model -> List Coordinate
-indirectTargets context model =
-    if choosingIndirectFire model then
-        case
-            selectedUnit context model
-                |> Maybe.andThen
-                    (\unit ->
-                        Unit.boardPosition unit
-                            |> Maybe.map
-                                (Tuple.pair
-                                    unit.combatRules.indirectRange
-                                )
-                    )
-        of
-            Just ( indirectRange, origin ) ->
-                indirectTargetsInRange context.map origin indirectRange
+indirectTargets : Map -> Model -> List Coordinate
+indirectTargets map model =
+    case selection model of
+        Just (UnitSelection { interaction }) ->
+            case interaction of
+                ChoosingIndirectFire planning ->
+                    IndirectFirePlanning.targets map planning
 
-            Nothing ->
-                []
+                _ ->
+                    []
 
-    else
-        []
-
-
-indirectTargetsInRange : Map -> Coordinate -> Int -> List Coordinate
-indirectTargetsInRange map origin indirectRange =
-    let
-        inRange : Coordinate -> Bool
-        inRange target =
-            ((target.x - origin.x) ^ 2 + (target.y - origin.y) ^ 2) <= (indirectRange ^ 2)
-    in
-    Map.positions map |> List.filter inRange
+        _ ->
+            []
 
 
 choosingDirection : Model -> Bool
 choosingDirection model =
     case selection model of
-        Just (UnitSelection selected) ->
-            case selected.interaction of
-                ChoosingDirection _ _ ->
+        Just (UnitSelection { interaction }) ->
+            case interaction of
+                ChoosingDirection _ ->
                     True
 
-                ChoosingAttackDirection _ _ ->
-                    True
-
-                CommandMenu _ ->
-                    False
-
-                ChoosingIndirectFire _ ->
-                    False
-
-                ChoosingMove _ ->
+                _ ->
                     False
 
         _ ->
             False
 
 
-previewFacing : UnitInteraction -> Direction -> UnitInteraction
-previewFacing interaction direction =
-    case interaction of
-        ChoosingDirection purpose _ ->
-            ChoosingDirection purpose direction
-
-        ChoosingAttackDirection move _ ->
-            if Direction.reversesPath move.path direction then
-                interaction
-
-            else
-                ChoosingAttackDirection move direction
-
-        _ ->
-            interaction
-
-
 previewDirection : Direction -> Model -> Model
 previewDirection direction model =
     case selection model of
         Just (UnitSelection selected) ->
-            let
-                canPreview : Bool
-                canPreview =
-                    choosingDirection model
-            in
-            if canPreview then
-                model
-                    |> setUnitInteraction
-                        selected.id
-                        (previewFacing selected.interaction direction)
+            case selected.interaction of
+                ChoosingDirection planning ->
+                    setUnitInteraction selected.id
+                        (ChoosingDirection (DirectionPlanning.preview direction planning))
+                        model
 
-            else
-                model
+                _ ->
+                    model
 
         _ ->
             model
@@ -1521,13 +1052,13 @@ moveOptions model =
                 |> Maybe.withDefault []
 
 
-isOwnUnit : Context -> Unit -> Bool
-isOwnUnit context unit =
-    List.member unit.playerNumber context.playerNumbers
+isOwnUnit : List PlayerNumber -> Unit -> Bool
+isOwnUnit playerNumbers unit =
+    List.member unit.playerNumber playerNumbers
 
 
-selectedUnitFromSelection : Context -> Maybe Selection -> Maybe Unit
-selectedUnitFromSelection context selected =
+selectedUnitFromSelection : List Unit -> Maybe Selection -> Maybe Unit
+selectedUnitFromSelection units selected =
     let
         id : Maybe UnitId
         id =
@@ -1541,55 +1072,77 @@ selectedUnitFromSelection context selected =
                 _ ->
                     Nothing
     in
-    id |> Maybe.andThen (\unitId -> ListUtil.find (\unit -> unit.id == unitId) context.units)
+    id |> Maybe.andThen (\unitId -> ListUtil.find (\unit -> unit.id == unitId) units)
 
 
-missingOrders : Context -> List PlannedOrder -> List Unit
-missingOrders context drafts =
-    let
-        missing : Unit -> Bool
-        missing unit =
-            isOwnUnit context unit && Unit.onBoard unit && not (List.any (\order -> order.unitId == unit.id) drafts)
-    in
-    context.units
-        |> List.map (planningUnit context drafts)
-        |> List.filter missing
-
-
-submissionOrders : Context -> List PlannedOrder -> List PlannedOrder
-submissionOrders context drafts =
+missingOrders : Map -> List Unit -> List PlayerNumber -> List PlannedOrder -> List Unit
+missingOrders map units playerNumbers drafts =
     let
         missing : Unit -> Bool
         missing unit =
             isOwnUnit
-                context
+                playerNumbers
+                unit
+                && Unit.onMap unit
+                && not (List.any (\order -> order.unitId == unit.id) drafts)
+    in
+    units
+        |> List.map (PlannedTransport.planningUnit map drafts)
+        |> List.filter missing
+
+
+submissionOrders : Map -> List Unit -> List PlayerNumber -> List PlannedOrder -> List PlannedOrder
+submissionOrders map units playerNumbers drafts =
+    let
+        missing : Unit -> Bool
+        missing unit =
+            isOwnUnit
+                playerNumbers
                 unit
                 && not (List.any (\order -> order.unitId == unit.id) drafts)
 
         holds : List PlannedOrder
         holds =
-            context.units
-                |> List.map (planningUnit context drafts)
+            units
+                |> List.map (PlannedTransport.planningUnit map drafts)
                 |> List.filter missing
-                |> List.filterMap (holdOrder context.units)
+                |> List.filterMap (PlannedOrder.hold units)
     in
     drafts ++ holds
 
 
-confirmPassengers : Context -> Model -> InvariantCheck InvariantViolation Model
-confirmPassengers context model =
-    let
-        confirmIfPossible : Bool -> InvariantCheck InvariantViolation Model
-        confirmIfPossible possible =
-            if possible then
-                confirmUnloadPassengers context.depots (availableUnloadOptions context) model
+confirmPassengers :
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> List Movement.Rule
+    -> List Supply.GroundCrate
+    -> List Depot
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+confirmPassengers map units playerNumbers movementRules supplyCrates depots model =
+    case model of
+        ChoosingPassengers choice ->
+            let
+                rawOptions :
+                    UnloadPlanning
+                    -> InvariantCheck InvariantViolation (List Movement.Option)
+                rawOptions =
+                    unloadOptions map units playerNumbers movementRules supplyCrates
 
-            else
-                IC.happy model
-    in
-    confirmUnloadPassengers [] (unloadOptions context) model
-        |> IC.andThen (canCompleteUnload context)
-        |> IC.andThen confirmIfPossible
+                confirmIfPossible : Bool -> InvariantCheck InvariantViolation Model
+                confirmIfPossible possible =
+                    if possible then
+                        confirmUnloadPassengers depots (UnloadPlanning.availableOptions rawOptions) model
+
+                    else
+                        IC.happy model
+            in
+            UnloadPlanning.canConfirm rawOptions choice
+                |> IC.andThen confirmIfPossible
+
+        _ ->
+            IC.happy model
 
 
 focusedCommand : Model -> Maybe UnitCommand.MenuOption
@@ -1609,10 +1162,7 @@ focusedCommand model =
                 ChoosingMove _ ->
                     Nothing
 
-                ChoosingDirection _ _ ->
-                    Nothing
-
-                ChoosingAttackDirection _ _ ->
+                ChoosingDirection _ ->
                     Nothing
 
         _ ->
@@ -1625,47 +1175,58 @@ focusedCommand model =
 ----------------------------------------------------------------
 
 
-applyUnitCommand : Context -> UnitCommand.Command -> Unit -> Model -> InvariantCheck InvariantViolation Model
-applyUnitCommand context command unit model =
+applyUnitCommand :
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> List Movement.Rule
+    -> List Depot
+    -> UnitCommand.Command
+    -> Unit
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+applyUnitCommand map units playerNumbers movementRules depots command unit model =
     let
         canApply : Bool
         canApply =
-            isOwnUnit context unit
-                && not (receivingLoad context unit (orders model))
+            isOwnUnit playerNumbers unit
+                && not (PlannedTransport.receivingLoad units unit (orders model))
                 && List.member command (UnitCommand.available unit)
                 && UnitCommand.canUse unit command
     in
     if canApply then
         case command of
             UnitCommand.IndirectFire ->
-                IC.happy (setUnitInteraction unit.id (ChoosingIndirectFire Nothing) model)
+                let
+                    beginTargeting : Maybe IndirectFirePlanning -> Model
+                    beginTargeting maybePlanning =
+                        case maybePlanning of
+                            Just planning ->
+                                setUnitInteraction unit.id (ChoosingIndirectFire planning) model
+
+                            Nothing ->
+                                model
+                in
+                IndirectFirePlanning.start unit
+                    |> IC.mapError IndirectFireInvariantViolated
+                    |> IC.map beginTargeting
 
             UnitCommand.Move ->
-                beginMovement NormalMove context unit model
+                beginMovement NormalMove map units movementRules unit model
 
             UnitCommand.AttackMove ->
-                beginMovement AttackMove context unit model
+                beginMovement AttackMove map units movementRules unit model
 
             UnitCommand.Ambush ->
-                model
-                    |> setUnitInteraction
-                        unit.id
-                        (ChoosingDirection AmbushPurpose
-                            (Maybe.withDefault
-                                DirectionEnum.North
-                                unit.direction
-                            )
-                        )
+                setUnitInteraction unit.id (ChoosingDirection (DirectionPlanning.ambush unit)) model
                     |> IC.happy
 
             UnitCommand.StandGround ->
-                setUnitInteraction unit.id
-                    (ChoosingDirection StandGroundPurpose (Maybe.withDefault DirectionEnum.North unit.direction))
-                    model
+                setUnitInteraction unit.id (ChoosingDirection (DirectionPlanning.standGround unit)) model
                     |> IC.happy
 
             UnitCommand.HoldPosition ->
-                holdPosition context unit model
+                holdPosition map units depots unit model
 
             _ ->
                 IC.happy model
@@ -1688,76 +1249,33 @@ missingSelectedUnit selected fallback =
             IC.happy fallback
 
 
-saveIndirectFire : Context -> Coordinate -> Model -> InvariantCheck InvariantViolation Model
-saveIndirectFire context target model =
-    case selectedUnit context model of
+saveIndirectFire :
+    Map
+    -> List Unit
+    -> Coordinate
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+saveIndirectFire map units target model =
+    case selectedUnit map units model of
         Just unit ->
-            case Unit.boardPosition unit of
-                Just origin ->
-                    let
-                        order : PlannedOrder
-                        order =
-                            { unitId = unit.id
-                            , action = PlannedOrder.IndirectFire { position = origin, target = target }
-                            }
+            let
+                saveOrder : Maybe PlannedOrder -> InvariantCheck InvariantViolation Model
+                saveOrder maybeOrder =
+                    case maybeOrder of
+                        Just planned ->
+                            model
+                                |> setOrders (planned :: List.filter (\other -> other.unitId /= unit.id) (orders model))
+                                |> finishUnitCommand map units
 
-                        otherUnitOrder : PlannedOrder -> Bool
-                        otherUnitOrder plan =
-                            plan.unitId /= order.unitId
-                    in
-                    if List.member target (indirectTargets context model) then
-                        model
-                            |> setOrders (order :: List.filter otherUnitOrder (orders model))
-                            |> finishUnitCommand context
-
-                    else
-                        IC.happy model
-
-                Nothing ->
-                    IC.violated (CommandUnitNotOnBoard unit.id) model
+                        Nothing ->
+                            IC.happy model
+            in
+            IndirectFirePlanning.order map unit target
+                |> IC.mapError IndirectFireInvariantViolated
+                |> IC.andThen saveOrder
 
         Nothing ->
             missingSelectedUnit (selection model) model
-
-
-truckOrder : UnloadingTruck -> PlannedOrder
-truckOrder truck =
-    let
-        action : PlannedOrder.Action
-        action =
-            case truck.plan of
-                MovingTruck plan ->
-                    PlannedOrder.Move plan
-
-                StationaryTruck plan ->
-                    if List.isEmpty plan.unloads then
-                        PlannedOrder.Hold plan.position
-
-                    else
-                        PlannedOrder.Unload plan
-    in
-    if List.isEmpty truck.crateUnloads then
-        { unitId = truck.truckId
-        , action = action
-        }
-
-    else
-        let
-            order : PlannedOrder
-            order =
-                { unitId = truck.truckId
-                , action = action
-                }
-        in
-        { unitId = truck.truckId
-        , action =
-            PlannedOrder.SupplyTransfer
-                { route = PlannedOrder.path order
-                , destination = PlannedOrder.destination order
-                , handling = PlannedOrder.UnloadingCrates truck.crateUnloads
-                , passengers = PlannedOrder.unloads order
-                }
-        }
 
 
 {-| A saved truck order enters loading only at its own depot destination.
@@ -1787,13 +1305,13 @@ offerCrateLoading depots order drafts =
                     OrdinaryPlanning drafts
 
 
-offerTruckLoading : Context -> Unit -> Model -> InvariantCheck InvariantViolation Model
-offerTruckLoading context unit model =
+offerTruckLoading : List Depot -> Unit -> Model -> InvariantCheck InvariantViolation Model
+offerTruckLoading depots unit model =
     case ( unit.kind, model ) of
         ( Kind.Truck, OrdinaryPlanning drafts ) ->
             case ListUtil.find (\order -> order.unitId == unit.id) drafts.orders of
                 Just order ->
-                    IC.happy (offerCrateLoading context.depots order drafts)
+                    IC.happy (offerCrateLoading depots order drafts)
 
                 Nothing ->
                     IC.violated (LoadingOrderNotFound unit.id) model
@@ -1802,12 +1320,25 @@ offerTruckLoading context unit model =
             IC.happy model
 
 
+applyUnloadStep : List Depot -> UnloadPlanning.Step -> Model
+applyUnloadStep depots step =
+    case step of
+        UnloadPlanning.ChoosingExit planning ->
+            ChoosingExits planning
+
+        UnloadPlanning.Finished truck otherOrders ->
+            finishUnloading depots
+                truck
+                otherOrders
+                (Just (Inspecting (Selection.UnitInspection (UnloadingTruck.unitId truck))))
+
+
 finishUnloading : List Depot -> UnloadingTruck -> List PlannedOrder -> Maybe Selection -> Model
 finishUnloading depots truck otherOrders selected =
     let
         order : PlannedOrder
         order =
-            truckOrder truck
+            UnloadingTruck.toOrder truck
     in
     offerCrateLoading depots
         order
@@ -1816,16 +1347,16 @@ finishUnloading depots truck otherOrders selected =
         }
 
 
-skipUnloading : Context -> Model -> Model
-skipUnloading context model =
+skipUnloading : Map -> List Unit -> List Depot -> Model -> Model
+skipUnloading map units depots model =
     case model of
         ChoosingPassengers choice ->
-            finishUnloading context.depots choice.truck choice.otherOrders Nothing
-                |> promptDismountedCommands context
+            finishUnloading depots choice.truck choice.otherOrders Nothing
+                |> promptDismountedCommands map units
 
         ChoosingExits unloading ->
-            finishUnloading context.depots unloading.truck unloading.otherOrders Nothing
-                |> promptDismountedCommands context
+            finishUnloading depots unloading.truck unloading.otherOrders Nothing
+                |> promptDismountedCommands map units
 
         _ ->
             model
@@ -1835,85 +1366,38 @@ startTruckUnload : UnloadingTruck -> Model -> Model
 startTruckUnload truck model =
     case model of
         OrdinaryPlanning drafts ->
-            ChoosingPassengers
-                { truck = truck
-                , otherOrders =
-                    List.filter
-                        (\order -> order.unitId /= truck.truckId)
-                        drafts.orders
-                , checked = []
-                }
+            ChoosingPassengers (UnloadPlanning.startChoice truck drafts.orders)
 
         _ ->
             model
 
 
-nextUnloadPassenger :
-    List Depot
-    -> (Model -> Cargo -> InvariantCheck InvariantViolation (List Movement.Option))
-    -> UnloadQueue
+openUnloadPrompt :
+    List Unit
+    -> List Depot
+    -> Unit
+    -> Movement.Option
+    -> Model
     -> InvariantCheck InvariantViolation Model
-nextUnloadPassenger depots options queue =
-    case queue.passengers of
-        [] ->
-            finishUnloading depots
-                queue.truck
-                queue.otherOrders
-                (Just (Inspecting (Selection.UnitInspection queue.truck.truckId)))
-                |> IC.happy
-
-        cargo :: remaining ->
-            let
-                unloading : UnloadPlanning
-                unloading =
-                    { truck = queue.truck
-                    , otherOrders = queue.otherOrders
-                    , cargo = cargo
-                    , remaining = remaining
-                    , options = []
-                    , destinationFeedback = NoDestinationFeedback
-                    }
-
-                model : Model
-                model =
-                    ChoosingExits unloading
-
-                withOptions : List Movement.Option -> Model
-                withOptions choices =
-                    ChoosingExits { unloading | options = choices }
-            in
-            options model cargo
-                |> IC.map withOptions
-
-
-openUnloadPrompt : Context -> Unit -> Movement.Option -> Model -> InvariantCheck InvariantViolation Model
-openUnloadPrompt context truck move model =
-    if hasCargo context truck then
+openUnloadPrompt units depots truck move model =
+    if PlannedTransport.hasCargo units truck then
         model
             |> startUnload truck.id move
             |> IC.happy
 
     else
-        offerTruckLoading context truck model
+        offerTruckLoading depots truck model
 
 
-hasCargo : Context -> Unit -> Bool
-hasCargo context truck =
-    let
-        hasPassengers : Bool
-        hasPassengers =
-            List.any (\passenger -> Unit.carrierId passenger == Just truck.id) context.units
-
-        hasCrates : Bool
-        hasCrates =
-            Unit.crateCount truck > 0
-    in
-    hasPassengers || hasCrates
-
-
-holdPosition : Context -> Unit -> Model -> InvariantCheck InvariantViolation Model
-holdPosition context unit model =
-    case holdOrder context.units unit of
+holdPosition :
+    Map
+    -> List Unit
+    -> List Depot
+    -> Unit
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+holdPosition map units depots unit model =
+    case PlannedOrder.hold units unit of
         Just hold ->
             let
                 next : InvariantCheck InvariantViolation Model
@@ -1925,146 +1409,64 @@ holdPosition context unit model =
                                 (orders model)
                         )
                         model
-                        |> finishUnitCommand context
+                        |> finishUnitCommand map units
             in
-            if hasCargo context unit then
+            if PlannedTransport.hasCargo units unit then
                 next
                     |> IC.map (startStationaryUnload unit.id (PlannedOrder.destination hold))
 
             else
-                next |> IC.andThen (offerTruckLoading context unit)
+                next |> IC.andThen (offerTruckLoading depots unit)
 
         Nothing ->
             IC.violated (CommandUnitHasNoPosition unit.id) model
 
 
 unloadOptions :
-    Context
-    -> Model
-    -> Cargo
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> List Movement.Rule
+    -> List Supply.GroundCrate
+    -> UnloadPlanning
     -> InvariantCheck InvariantViolation (List Movement.Option)
-unloadOptions context model cargo =
-    case unloadPlanning model of
-        Just planning ->
-            let
-                projectTruck : Unit -> Unit
-                projectTruck unit =
-                    if unit.id == planning.truck.truckId then
-                        Unit.setOnMap (truckDestination planning.truck) unit
-
-                    else
-                        unit
-
-                projectedUnits : List Unit
-                projectedUnits =
-                    List.map projectTruck context.units
-            in
-            case cargo of
-                Passenger passengerId ->
-                    case ListUtil.find (\unit -> unit.id == passengerId) projectedUnits of
-                        Just passenger ->
-                            Movement.optionsAvoiding [] context.movementRules context.map projectedUnits passenger
-                                |> List.filter
-                                    (Movement.canStop
-                                        (reservedDestinations context passenger model)
-                                        (List.map
-                                            projectTruck
-                                            (destinationUnits context (orders model))
-                                        )
-                                        passenger
-                                    )
-                                |> IC.happy
-
-                        Nothing ->
-                            IC.violated (PlanningUnitNotFound passengerId) []
-
-                Crate _ ->
-                    IC.happy (crateExitOptions context planning (orders model))
-
-        Nothing ->
-            IC.happy []
-
-
-crateExitOptions : Context -> UnloadPlanning -> List PlannedOrder -> List Movement.Option
-crateExitOptions context planning plans =
+unloadOptions map units playerNumbers movementRules supplyCrates planning =
     let
-        origin : Coordinate
-        origin =
-            truckDestination planning.truck
-
-        reserved : List Coordinate
-        reserved =
-            List.concatMap (PlannedOrder.crateUnloads >> List.map .destination) plans
-
-        available : Coordinate -> Bool
-        available exit =
-            let
-                insideMap : Bool
-                insideMap =
-                    (exit.x >= 0)
-                        && (exit.y >= 0)
-                        && (exit.x < context.map.width)
-                        && (exit.y < context.map.height)
-
-                blocksExit : Unit -> Bool
-                blocksExit unit =
-                    not (isOwnUnit context unit) && Unit.boardPosition unit == Just exit
-
-                hasUnit : Bool
-                hasUnit =
-                    List.any blocksExit context.units
-
-                hasCrate : Bool
-                hasCrate =
-                    List.any (\crate -> crate.position == exit) context.supplyCrates
-            in
-            insideMap && not (List.member exit reserved) && not hasUnit && not hasCrate
-
-        option : Coordinate -> Movement.Option
-        option exit =
-            { destination = exit
-            , path =
-                [ origin
-                , exit
-                ]
-            , cost = 0
-            }
+        violation : UnloadPlanning.InvariantViolation -> InvariantViolation
+        violation error =
+            case error of
+                UnloadPlanning.PassengerNotFound id ->
+                    PlanningUnitNotFound id
     in
-    [ { x = origin.x
-      , y = origin.y - 1
-      }
-    , { x = origin.x + 1
-      , y = origin.y
-      }
-    , { x = origin.x
-      , y = origin.y + 1
-      }
-    , { x = origin.x - 1
-      , y = origin.y
-      }
-    ]
-        |> List.filter available
-        |> List.map option
+    UnloadPlanning.options map
+        units
+        playerNumbers
+        movementRules
+        supplyCrates
+        (PlannedTransport.occupancy units)
+        planning
+        |> IC.mapError violation
 
 
-selectedUnit : Context -> Model -> Maybe Unit
-selectedUnit context model =
-    selectedUnitFromSelection context (selection model)
-        |> Maybe.map (planningUnit context (orders model))
+selectedUnit : Map -> List Unit -> Model -> Maybe Unit
+selectedUnit map units model =
+    selectedUnitFromSelection units (selection model)
+        |> Maybe.map (PlannedTransport.planningUnit map (orders model))
 
 
-traceTo : Context -> Coordinate -> Model -> Maybe Movement.Option
-traceTo context position model =
-    case ( selectedUnit context model, movementPlanning model ) of
+traceTo :
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> List Movement.Rule
+    -> Coordinate
+    -> Model
+    -> Maybe Movement.Option
+traceTo map units playerNumbers movementRules position model =
+    case ( selectedUnit map units model, movementPlanning model ) of
         ( Just unit, Just planning ) ->
-            if isOwnUnit context unit then
-                Movement.preview
-                    context.movementRules
-                    context.map
-                    context.units
-                    (movementUnit planning.purpose unit)
-                    planning.preview
-                    position
+            if isOwnUnit playerNumbers unit then
+                MovePlanning.traceTo map units movementRules unit position planning
 
             else
                 Nothing
@@ -2073,25 +1475,21 @@ traceTo context position model =
             Nothing
 
 
-beginMovement : MovePurpose -> Context -> Unit -> Model -> InvariantCheck InvariantViolation Model
-beginMovement purpose context unit model =
-    case Unit.physicalPosition context.units unit of
+beginMovement :
+    MovePurpose
+    -> Map
+    -> List Unit
+    -> List Movement.Rule
+    -> Unit
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+beginMovement purpose map units movementRules unit model =
+    case Unit.physicalPosition units unit of
         Just origin ->
             let
                 planning : MovePlanning
                 planning =
-                    { purpose = purpose
-                    , preview = Movement.start origin
-                    , options =
-                        Movement.optionsAvoiding
-                            []
-                            context.movementRules
-                            context.map
-                            context.units
-                            (movementUnit purpose unit)
-                            |> List.filter (canStop purpose context unit model)
-                    , destinationFeedback = NoDestinationFeedback
-                    }
+                    MovePlanning.start purpose map units movementRules (orders model) unit origin
             in
             model
                 |> setUnitInteraction unit.id (ChoosingMove planning)
@@ -2101,204 +1499,9 @@ beginMovement purpose context unit model =
             IC.violated (CommandUnitHasNoPosition unit.id) model
 
 
-boardingSpace : Context -> Unit -> Unit -> Model -> Bool
-boardingSpace context mover truck model =
-    let
-        alreadyAboard : Int
-        alreadyAboard =
-            List.length
-                (List.filter
-                    (\unit -> Unit.carrierId unit == Just truck.id)
-                    context.units
-                )
-
-        incomingPassengers : Int
-        incomingPassengers =
-            boardingPassengers context truck.id (orders model)
-                |> List.filter ((/=) mover.id)
-                |> List.length
-
-        plannedCrates : Int
-        plannedCrates =
-            ListUtil.find (\order -> order.unitId == truck.id) (orders model)
-                |> Maybe.map loadingCount
-                |> Maybe.withDefault 0
-
-        loadingCount : PlannedOrder -> Int
-        loadingCount order =
-            case order.action of
-                PlannedOrder.SupplyTransfer plan ->
-                    PlannedOrder.loadingCrates plan
-
-                _ ->
-                    0
-
-        fitsCargo : Bool
-        fitsCargo =
-            alreadyAboard + Unit.crateCount truck + plannedCrates + incomingPassengers < truck.cargoCapacity
-
-        compatible : Bool
-        compatible =
-            Unit.boardPosition truck
-                |> Maybe.andThen
-                    (\destination ->
-                        loadingTarget context mover destination (orders model)
-                    )
-                |> Maybe.map .id
-                |> (==) (Just truck.id)
-    in
-    compatible && fitsCargo
-
-
-reservedDestinations : Context -> Unit -> Model -> List Coordinate
-reservedDestinations context unit model =
-    let
-        reserves : PlannedOrder -> Bool
-        reserves plan =
-            let
-                destinationTarget : Maybe Unit
-                destinationTarget =
-                    loadingTarget
-                        context
-                        unit
-                        (PlannedOrder.destination plan)
-                        (orders model)
-
-                isWaitingTarget : Unit -> Bool
-                isWaitingTarget target =
-                    (target.id == plan.unitId)
-                        && not (receivingLoad context target (orders model) && target.cargoCapacity == 0)
-                        && (target.cargoCapacity == 0 || boardingSpace context unit target model)
-
-                waitingTarget : Bool
-                waitingTarget =
-                    not
-                        (PlannedOrder.isMoving plan)
-                        && (destinationTarget |> Maybe.map isWaitingTarget |> Maybe.withDefault False)
-
-                boardingDestination : Bool
-                boardingDestination =
-                    destinationTarget
-                        |> Maybe.map (\target -> boardingSpace context unit target model)
-                        |> Maybe.withDefault False
-            in
-            plan.unitId /= unit.id && not waitingTarget && not boardingDestination
-
-        unavailableReceiver : Unit -> Bool
-        unavailableReceiver target =
-            let
-                boardingTarget : Coordinate -> Maybe Unit
-                boardingTarget position =
-                    loadingTarget context unit position (orders model)
-
-                hasBoardingSpace : Unit -> Bool
-                hasBoardingSpace truck =
-                    boardingSpace context unit truck model
-
-                canBoardAtTarget : Bool
-                canBoardAtTarget =
-                    Unit.boardPosition target
-                        |> Maybe.andThen boardingTarget
-                        |> Maybe.map hasBoardingSpace
-                        |> Maybe.withDefault False
-            in
-            (target.id /= unit.id)
-                && receivingLoad context target (orders model)
-                && not canBoardAtTarget
-
-        unavailableReceivers : List Coordinate
-        unavailableReceivers =
-            destinationUnits context (orders model)
-                |> List.filter unavailableReceiver
-                |> List.filterMap Unit.boardPosition
-
-        savedDestinations : List Coordinate
-        savedDestinations =
-            destinations ++ passengerExits
-
-        destinations : List Coordinate
-        destinations =
-            List.map PlannedOrder.destination (List.filter reserves (orders model))
-
-        otherPassengerExits : PlannedOrder -> List Coordinate
-        otherPassengerExits order =
-            PlannedOrder.unloads order
-                |> List.filter (\exit -> exit.unitId /= unit.id)
-                |> List.map .destination
-
-        passengerExits : List Coordinate
-        passengerExits =
-            List.concatMap otherPassengerExits (orders model)
-    in
-    savedDestinations ++ unavailableReceivers
-
-
-saveMove : Context -> Unit -> Movement.Option -> Model -> List PlannedOrder
-saveMove context unit move model =
-    let
-        receiver : Maybe Unit
-        receiver =
-            moveReceiver context unit move model
-
-        retained : List PlannedOrder
-        retained =
-            orders model
-                |> List.filter
-                    (\plan ->
-                        (plan.unitId /= unit.id)
-                            && (Just plan.unitId /= Maybe.map .id receiver)
-                    )
-
-        receiverOrder : Unit -> Maybe PlannedOrder
-        receiverOrder target =
-            case ListUtil.find (\plan -> plan.unitId == target.id) (orders model) of
-                Just plan ->
-                    case plan.action of
-                        PlannedOrder.SupplyTransfer _ ->
-                            Just plan
-
-                        _ ->
-                            if PlannedOrder.isMoving plan then
-                                Just plan
-
-                            else
-                                holdOrder context.units target
-
-                Nothing ->
-                    holdOrder context.units target
-
-        receiverHold : List PlannedOrder
-        receiverHold =
-            receiver
-                |> Maybe.andThen receiverOrder
-                |> Maybe.map List.singleton
-                |> Maybe.withDefault []
-    in
-    { unitId = unit.id
-    , action = PlannedOrder.Move { move = move, unloads = [] }
-    }
-        :: (receiverHold ++ retained)
-
-
-moveReceiver : Context -> Unit -> Movement.Option -> Model -> Maybe Unit
-moveReceiver context unit move model =
-    case Unit.carrierId unit of
-        Just carrier ->
-            context.units
-                |> ListUtil.find
-                    (\truck -> truck.id == carrier)
-
-        Nothing ->
-            loadingTarget
-                context
-                unit
-                move.destination
-                (orders model)
-
-
-inspectSelectedUnit : Context -> Model -> InvariantCheck InvariantViolation Model
-inspectSelectedUnit context model =
-    case selectedUnit context model of
+inspectSelectedUnit : Map -> List Unit -> Model -> InvariantCheck InvariantViolation Model
+inspectSelectedUnit map units model =
+    case selectedUnit map units model of
         Just unit ->
             IC.happy (setSelection (Just (Inspecting (UnitInspection unit.id))) model)
 
@@ -2306,28 +1509,33 @@ inspectSelectedUnit context model =
             missingSelectedUnit (selection model) model
 
 
-finishUnitCommand : Context -> Model -> InvariantCheck InvariantViolation Model
-finishUnitCommand context model =
-    inspectSelectedUnit context model
-        |> IC.map (promptDismountedCommands context)
+finishUnitCommand : Map -> List Unit -> Model -> InvariantCheck InvariantViolation Model
+finishUnitCommand map units model =
+    inspectSelectedUnit map units model
+        |> IC.map (promptDismountedCommands map units)
 
 
-restoreCommands : Context -> Model -> InvariantCheck InvariantViolation Model
-restoreCommands context model =
-    case selectedUnit context model of
+restoreCommands :
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+restoreCommands map units playerNumbers model =
+    case selectedUnit map units model of
         Just unit ->
-            IC.happy (setSelection (Just (unitSelection context unit model)) model)
+            IC.happy (setSelection (Just (unitSelection map units playerNumbers unit model)) model)
 
         Nothing ->
             missingSelectedUnit (selection model) model
 
 
-unitSelection : Context -> Unit -> Model -> Selection
-unitSelection context original model =
+unitSelection : Map -> List Unit -> List PlayerNumber -> Unit -> Model -> Selection
+unitSelection map units playerNumbers original model =
     let
         unit : Unit
         unit =
-            planningUnit context (orders model) original
+            PlannedTransport.planningUnit map (orders model) original
 
         hasOrder : Bool
         hasOrder =
@@ -2335,9 +1543,9 @@ unitSelection context original model =
 
         canChooseCommand : Bool
         canChooseCommand =
-            isOwnUnit context unit
-                && Unit.onBoard unit
-                && not (receivingLoad context unit (orders model))
+            isOwnUnit playerNumbers unit
+                && Unit.onMap unit
+                && not (PlannedTransport.receivingLoad units unit (orders model))
                 && not hasOrder
     in
     if canChooseCommand then
@@ -2347,51 +1555,71 @@ unitSelection context original model =
         Inspecting (UnitInspection unit.id)
 
 
-selectMovementTile : Context -> Coordinate -> Model -> InvariantCheck InvariantViolation Model
-selectMovementTile context position model =
+selectMovementTile :
+    Map
+    -> List Unit
+    -> List PlayerNumber
+    -> List Movement.Rule
+    -> List Depot
+    -> Coordinate
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+selectMovementTile map units playerNumbers movementRules depots position model =
     let
         notOwnUnit : () -> Model
         notOwnUnit _ =
             setSelection (Just (Inspecting (TileInspection position))) model
     in
-    case selectedUnit context model of
+    case selectedUnit map units model of
         Just unit ->
-            if isOwnUnit context unit && pathPreview model /= Nothing then
+            if isOwnUnit playerNumbers unit && pathPreview model /= Nothing then
                 let
                     destinationOption : Movement.Option -> Maybe Movement.Option
                     destinationOption preview =
-                        if canStop (movePurpose model) context unit model preview then
+                        if MovePlanning.canStop (movePurpose model) units unit (orders model) preview then
                             Just preview
 
                         else
                             Nothing
                 in
                 case
-                    traceTo context position model
+                    traceTo map units playerNumbers movementRules position model
                         |> Maybe.andThen destinationOption
                 of
                     Just move ->
                         let
                             offerReceiverLoading : Model -> InvariantCheck InvariantViolation Model
-                            offerReceiverLoading =
-                                case moveReceiver context unit move model of
-                                    Just receiver ->
-                                        offerTruckLoading context receiver
+                            offerReceiverLoading state =
+                                let
+                                    offerToReceiver : Maybe Unit -> InvariantCheck InvariantViolation Model
+                                    offerToReceiver receiver =
+                                        case receiver of
+                                            Just target ->
+                                                offerTruckLoading depots target state
 
-                                    Nothing ->
-                                        IC.happy
+                                            Nothing ->
+                                                IC.happy state
+                                in
+                                PlannedTransport.moveReceiver units unit move (orders model)
+                                    |> IC.mapError TransportInvariantViolated
+                                    |> IC.andThen offerToReceiver
+
+                            saveOrders : List PlannedOrder -> Model
+                            saveOrders drafts =
+                                setOrders drafts model
                         in
                         if movePurpose model == AttackMove then
                             setUnitInteraction unit.id
-                                (ChoosingAttackDirection move (Direction.alongPath move.path unit.direction |> Maybe.withDefault DirectionEnum.North))
+                                (ChoosingDirection (DirectionPlanning.attackMove move unit))
                                 model
                                 |> IC.happy
 
                         else
-                            model
-                                |> setOrders (saveMove context unit move model)
-                                |> finishUnitCommand context
-                                |> IC.andThen (openUnloadPrompt context unit move)
+                            PlannedTransport.moveOrders units unit move (orders model)
+                                |> IC.mapError TransportInvariantViolated
+                                |> IC.map saveOrders
+                                |> IC.andThen (finishUnitCommand map units)
+                                |> IC.andThen (openUnloadPrompt units depots unit move)
                                 |> IC.andThen offerReceiverLoading
 
                     Nothing ->
@@ -2420,7 +1648,7 @@ setMoveDestinationFeedback feedback model =
                         |> setUnitInteraction
                             selected.id
                             (ChoosingMove
-                                { planning | destinationFeedback = feedback }
+                                (MovePlanning.setDestinationFeedback feedback planning)
                             )
 
                 _ ->
@@ -2440,94 +1668,8 @@ hasDialog model =
             commandGuideOpen model || submissionWarningOpen model || unloadChoice model /= Nothing
 
 
-holdOrder : List Unit -> Unit -> Maybe PlannedOrder
-holdOrder units unit =
-    Unit.physicalPosition units unit
-        |> Maybe.map
-            (\position ->
-                { unitId = unit.id
-                , action = PlannedOrder.Hold position
-                }
-            )
-
-
 movePurpose : Model -> MovePurpose
 movePurpose model =
     movementPlanning model
         |> Maybe.map .purpose
         |> Maybe.withDefault NormalMove
-
-
-movementUnit : MovePurpose -> Unit -> Unit
-movementUnit purpose unit =
-    let
-        reserveCombatSupplies : UnitResources.UnitResources -> UnitResources.UnitResources
-        reserveCombatSupplies resources =
-            let
-                supplies : Unit.Supplies.Supplies
-                supplies =
-                    resources.supplies
-            in
-            { resources
-                | supplies =
-                    { supplies
-                        | current = supplies.current - unit.combatRules.readinessCost - unit.combatRules.shotCost
-                    }
-            }
-    in
-    case purpose of
-        NormalMove ->
-            unit
-
-        AttackMove ->
-            { unit
-                | resources =
-                    Maybe.map reserveCombatSupplies unit.resources
-            }
-
-
-canStop : MovePurpose -> Context -> Unit -> Model -> Movement.Option -> Bool
-canStop purpose context unit model option =
-    case purpose of
-        NormalMove ->
-            let
-                endsOnTruck : Bool
-                endsOnTruck =
-                    destinationUnits context (orders model)
-                        |> List.any
-                            (\other ->
-                                (other.kind == Kind.Truck)
-                                    && (Unit.boardPosition other == Just option.destination)
-                            )
-            in
-            not (isDismounting context unit && endsOnTruck)
-                && Movement.canStop
-                    (reservedDestinations context unit model)
-                    (destinationUnits context (orders model))
-                    unit
-                    option
-
-        AttackMove ->
-            let
-                alliedOccupants : List Unit
-                alliedOccupants =
-                    destinationUnits
-                        context
-                        (orders model)
-                        |> List.filter (\other -> other.playerNumber == unit.playerNumber)
-
-                occupied : Bool
-                occupied =
-                    List.any
-                        (\other ->
-                            Unit.boardPosition other == Just option.destination
-                        )
-                        alliedOccupants
-            in
-            (option.cost > 0)
-                && not occupied
-                && not
-                    (List.member
-                        option.destination
-                        (reservedDestinations context unit model)
-                    )

@@ -1,6 +1,7 @@
 module Unit.Supplies exposing
     ( Supplies
     , selection
+    , setCurrent
     )
 
 import Api.Object
@@ -25,3 +26,8 @@ selection =
         |> SS.with SuppliesApi.upkeepPerTurn
         |> SS.with SuppliesApi.roughTerrainSurcharge
         |> SS.with SuppliesApi.movementPerTile
+
+
+setCurrent : Int -> Supplies -> Supplies
+setCurrent current supplies =
+    { supplies | current = current }

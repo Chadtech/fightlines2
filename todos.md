@@ -1,6 +1,5 @@
 # Todo
 ## doing now
-- Win condition check
 
 ## Bugs
 

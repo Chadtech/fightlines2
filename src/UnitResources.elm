@@ -1,6 +1,7 @@
 module UnitResources exposing
     ( UnitResources
     , selection
+    , setSupplies
     )
 
 import Api.Object
@@ -30,3 +31,8 @@ selection =
         |> SS.with (ResourcesApi.supplies Supplies.selection)
         |> SS.with (ResourcesApi.fuel Fuel.selection)
         |> SS.with (ResourcesApi.supplyCargo Supply.cargoSelection)
+
+
+setSupplies : Supplies -> UnitResources -> UnitResources
+setSupplies supplies resources =
+    { resources | supplies = supplies }

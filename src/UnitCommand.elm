@@ -160,7 +160,7 @@ canUse unit command =
                     |> Maybe.map canAffordShell
                     |> Maybe.withDefault False
         in
-        (unit.kind == Kind.FieldGun) && Unit.onBoard unit && affordable
+        (unit.kind == Kind.FieldGun) && Unit.onMap unit && affordable
 
     else if command == Ambush || command == StandGround then
         let
@@ -170,7 +170,7 @@ canUse unit command =
                     |> Maybe.map (\resources -> resources.supplies.current >= resources.supplies.upkeepPerTurn + unit.combatRules.readinessCost)
                     |> Maybe.withDefault False
         in
-        unit.direction /= Nothing && Unit.onBoard unit && affordable
+        unit.direction /= Nothing && Unit.onMap unit && affordable
 
     else if command == AttackMove then
         let
@@ -180,7 +180,7 @@ canUse unit command =
                     |> Maybe.map (\resources -> resources.supplies.current >= resources.supplies.upkeepPerTurn + resources.supplies.movementPerTile + unit.combatRules.readinessCost + unit.combatRules.shotCost)
                     |> Maybe.withDefault False
         in
-        Unit.onBoard unit && affordable
+        Unit.onMap unit && affordable
 
     else
         isImplemented command

@@ -5,7 +5,7 @@ module InvariantCheck exposing
     , happy
     , map
     , mapError
-    , value
+    , resolve
     , violated
     )
 
@@ -57,21 +57,25 @@ andThen next check =
             next usable
 
         Violated violation usable ->
-            next usable
-                |> value
-                |> Violated violation
+            case next usable of
+                Satisfied updated ->
+                    Violated violation updated
+
+                Violated _ updated ->
+                    Violated violation updated
 
 
-{-| Extract the usable value, whether or not the invariant was satisfied.
+{-| Resolve at a boundary that handles the diagnostic alongside the retained
+value. Domain operations should use `map` or `andThen` to preserve the check.
 -}
-value : InvariantCheck error value -> value
-value check =
+resolve : (Maybe error -> value -> result) -> InvariantCheck error value -> result
+resolve handle check =
     case check of
         Satisfied usable ->
-            usable
+            handle Nothing usable
 
-        Violated _ usable ->
-            usable
+        Violated violation usable ->
+            handle (Just violation) usable
 
 
 {-| Extract a violation for the caller to record.

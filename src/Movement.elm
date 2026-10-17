@@ -19,7 +19,7 @@ import Coordinate exposing (Coordinate)
 import Dict exposing (Dict)
 import Map exposing (Map)
 import Unit exposing (Unit)
-import Unit.Supplies exposing (Supplies)
+import Unit.Supplies as Supplies exposing (Supplies)
 import UnitResources exposing (UnitResources)
 import Util.List as ListUtil
 
@@ -461,13 +461,13 @@ remainingResources fuelPerTile map current resources =
             resources.supplies
     in
     { resources
-        | supplies =
-            { supplies | current = supplies.current - supplyCost map supplies current.path }
-        , fuel =
+        | fuel =
             Maybe.map
                 (\fuel -> { fuel | current = fuel.current - tiles * fuelPerTile })
                 resources.fuel
     }
+        |> UnitResources.setSupplies
+            (Supplies.setCurrent (supplies.current - supplyCost map supplies current.path) supplies)
 
 
 takeThrough : Coordinate -> List Coordinate -> List Coordinate
@@ -489,7 +489,7 @@ canStop reserved units mover option =
     let
         occupied : Bool
         occupied =
-            List.any (\unit -> Unit.boardPosition unit == Just option.destination) units
+            List.any (\unit -> Unit.mapPosition unit == Just option.destination) units
 
         canLoad : Bool
         canLoad =

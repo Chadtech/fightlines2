@@ -1009,7 +1009,7 @@ observedMovement frames unit =
         destination : Maybe Coordinate
         destination =
             ListUtil.find sameUnit frames.next.units
-                |> Maybe.andThen Unit.boardPosition
+                |> Maybe.andThen Unit.mapPosition
     in
     case ( origin, destination ) of
         ( Just from, Just to ) ->

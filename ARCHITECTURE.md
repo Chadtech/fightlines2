@@ -284,11 +284,15 @@ warning and unload checklist are rendered directly from these alternatives;
 `GamePage.Model` has no separate dialog state. Only one workflow can be active.
 `TurnLifecycle` owns the outer phases and delegates editable planning through
 `mapPlanning`; the planning module operates only on `OrderPlanning.Model`, without
-knowing about submission, waiting or playback. `OrderPlanning.Context` supplies
-read-only map, units, movement rules and player numbers. The module owns command
-selection, move tracing and confirmation, ambush drafts, reservations, loading
-partner holds, moving/stationary truck unload workflows, readiness and default
-submission holds. `UnitCommand.MenuOption` owns command choices independently of
+knowing about submission, waiting or playback. Planning functions accept only
+the map, units, ownership, movement rules, visible supply crates or depots needed
+by each operation, with explicit arguments instead of a shared context record.
+`GamePage` derives own player numbers and filters supply crates to visible tiles
+before passing them to planning. The module coordinates command
+selection, move tracing and confirmation, ambush drafts, moving/stationary truck
+unload workflows, readiness and default submission holds. `GamePage.PlannedTransport`
+owns boarding partners, transport reservations and receiving-unit holds.
+`UnitCommand.MenuOption` owns command choices independently of
 the view. Page helpers delegate edits through `TurnLifecycle.mapPlanning`, so
 locked phases cannot accept draft changes. `GamePage` retains navigation guards,
 views and view messages, focus/dialog effects, GraphQL conversion and snapshot
@@ -304,10 +308,74 @@ without selection. Saving or revoking an order returns to inspection. Clicking
 an inspected unit without an order reopens commands when eligible; otherwise
 clicking the selected unit clears selection.
 `UnitInteraction` distinguishes `CommandMenu`, `ChoosingMove MovePlanning` and
-`ChoosingDirection`. `MovePlanning` owns a required path preview and reachable
+`ChoosingDirection DirectionPlanning`. `MovePlanning` owns a required path preview and reachable
 options; neither can exist outside movement selection. `ChoosingExits` owns the
 current passenger's reachable options and remaining queue. Leaving a workflow
 keeps saved drafts and passenger exits while dropping its interaction data.
+
+`GamePage.MovePlanning` owns `MovePlanning` and `MovePurpose`, route initialization,
+pointer previews, keyboard path extension, legal stopping destinations and
+attack-move supply reservations. Its functions take explicit map, unit, movement
+rule and saved-order inputs. `Selection` carries the active plan; `OrderPlanning`
+resolves the selected unit and ownership, reports missing physical origins, saves
+completed orders and coordinates facing, loading and unloading. Shared destination
+feedback is defined in `GamePage.DestinationFeedback` for movement and unloading.
+
+`GamePage.DirectionPlanning` owns direction plans for ambush, stand ground and
+attack-move final facing. It initializes facing, updates previews, rejects reverse
+final-segment attack facing and constructs completed orders. Stationary commands
+require a map position; `CommandUnitNotOnMap` retains no order on failure and is
+propagated as `DirectionInvariantViolated`. `Selection` carries the plan, while
+`OrderPlanning` resolves selected units, applies eligibility checks, saves the
+order and finishes the command. Attack orders use the selected identity and
+confirmed route; if finishing the command cannot resolve the selected unit, its
+diagnostic retains the saved order.
+
+`GamePage.IndirectFirePlanning` owns opaque targeting state, target previews,
+circular range queries and indirect-fire order construction. Starting targeting
+requires a map position and captures the firing origin and range for the active
+selection. Preview queries need only that validated plan and the map. Saving
+rechecks the current unit's map position, range and map bounds; invalid targets
+save no order. Missing required map positions return `CommandUnitNotOnMap`,
+propagated as `IndirectFireInvariantViolated` without changing drafts or selection.
+The coordinator retains command eligibility, selected-unit lookup, order saving
+and command completion. Visibility and occupancy do not restrict indirect targets.
+
+Unloading domain types and operations live beneath that coordinator.
+`GamePage.UnloadingTruck` owns an opaque moving/stationary truck plan, accumulating
+passenger and crate exits and converting the result to `PlannedOrder`.
+`GamePage.UnloadCargo` identifies a passenger or stable cargo slot and owns saving
+its exit and choosing its inspection unit. `GamePage.UnloadPlanning` owns the cargo
+checklist, sequential exit choices, placement feasibility and movement options.
+Its operations return the next exit picker or a finished truck plan; they do not
+depend on `OrderPlanning.Model`, depot loading or infantry command selection.
+`PlannedTransport.occupancy` supplies reservation-aware passenger occupancy;
+`OrderPlanning` handles the follow-up transitions. Diagnostics from simulated
+placements retain their first invariant violation and safe continuation value.
+
+`GamePage.PlannedTransport` keeps its `Occupancy` type with the operations that
+derive destination units and reservations from saved orders. It also owns cargo
+capacity checks, move orders with receiving-unit holds, dismount projections,
+stale passenger-hold removal and finding the next dismounted infantry needing a
+command. These operations take explicit units, orders and map data as needed;
+they do not depend on the planning model, selection or dialogs. `PlannedOrder.hold`
+constructs shared hold orders from physical positions. The coordinator retains
+revoke eligibility and chooses when to open loading, unloading or infantry
+commands. `GamePage.OrderDependencies.revoke` removes revoked orders and cascades
+through routes, passenger/crate exits and boarding or dismount commands that
+depend on them. It accepts only units, revoked unit IDs and saved orders; the
+coordinator applies the resulting drafts and returns the selected unit to inspection.
+Before revocation, every saved order must resolve to an existing unit. A missing
+unit returns `OrderDependencies.OrderUnitNotFound` with the original drafts,
+propagated as `OrderDependenciesInvariantViolated` by the coordinator. A passenger
+without an authoritative map position remains valid during planned dismounting.
+
+`PlannedTransport.moveReceiver` distinguishes an ordinary move with no boarding
+partner from an explicit carrier ID that fails to resolve to a carrier on the map.
+The latter returns a transport-owned invariant violation. `moveOrders` also
+requires a receiving hold when a partner is present; failed carrier or hold
+construction retains the existing drafts. `OrderPlanning` preserves these checks
+as `TransportInvariantViolated` through the existing shared diagnostic boundary.
 
 The command guide is a `ReadingGuide` state inside the selected unit's
 `CommandMenu`, alongside `ChoosingCommand`. It retains the focused menu option
@@ -485,6 +553,11 @@ continues with the retained value and preserves the first diagnostic in a chain.
 its violation as `Error.OrderPlanningInvariantViolated` in `Shared.Model.errors`.
 Pure transitions use `GamePage.mapPlanning`. Inspections, view queries, unavailable
 commands, unreachable destinations, and out-of-phase events remain silent.
+Cargo eligibility retains its invariant check through checkbox updates, so failed
+placement lookups reach the same diagnostic boundary. Rendering explicitly disables
+a choice when its eligibility check reports a violation. `InvariantCheck.resolve`
+delivers the optional diagnostic and retained value together at such boundaries;
+there is no unchecked value accessor.
 
 `movement.rs` owns the movement table exposed as `GameSnapshot.movementRules`.
 Budgets and terrain entry costs use integer half-points (2 means one displayed
@@ -1152,7 +1225,7 @@ only during transport; dismount movement retreats from occupied truck squares.
 Playback frames remain the authority for timing; dependent action events follow
 transport events.
 
-`OrderPlanning.planningUnit` projects dismounted infantry only for command selection,
+`PlannedTransport.planningUnit` projects dismounted infantry only for command selection,
 route previews, and submission. Inspector resource gauges retain authoritative
 values; reserved unloading supplies affect command affordability only. Physical
 board and cargo data stay unchanged until playback. Finishing exit choices opens the first infantry command menu; saving a

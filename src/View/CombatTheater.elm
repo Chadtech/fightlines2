@@ -73,7 +73,7 @@ attackerOnLeft : Panel -> Bool
 attackerOnLeft panel =
     case panel.encounter of
         Exchange exchange ->
-            case ( Unit.boardPosition exchange.attacker, Unit.boardPosition exchange.target ) of
+            case ( Unit.mapPosition exchange.attacker, Unit.mapPosition exchange.target ) of
                 ( Just attacker, Just target ) ->
                     (attacker.x < target.x)
                         || ((attacker.x == target.x) && (attacker.y <= target.y))
@@ -462,7 +462,7 @@ portrait map panel health unit =
     let
         terrain : Terrain
         terrain =
-            Unit.boardPosition unit
+            Unit.mapPosition unit
                 |> Maybe.map (Map.terrainAt map)
                 |> Maybe.withDefault map.baseTile
 

@@ -369,9 +369,9 @@ playbackChecks first second =
             (Maybe.map .elapsed surplus == Just 90 && surplusFrame.visibleTiles == middleFrame.visibleTiles && TurnPlayback.movingPositions surplus == [ { unitId = second, position = { x = 1.5, y = 1 } } ])
         , expect "rotation rewinds facing and stays still until its event completes" (rotationPending /= Nothing && rotationHalfway == rotationUnits && Turn.movingPosition rotationPending == Nothing)
         , expect "ambush playback applies the chosen facing without moving" (rotationFinished == Nothing && List.map .direction rotatedUnits == [ Just Direction.West, Just Direction.West ] && List.map .location rotatedUnits == List.map .location units)
-        , expect "rewind restores the event origins" (List.map Unit.boardPosition rewound == [ Just { x = 0, y = 0 }, Just { x = 2, y = 1 } ])
+        , expect "rewind restores the event origins" (List.map Unit.mapPosition rewound == [ Just { x = 0, y = 0 }, Just { x = 2, y = 1 } ])
         , expect "halfway position interpolates the first unit only" (Turn.movingPosition halfway == Just { unitId = first, position = { x = 0.5, y = 0 } })
-        , expect "animation never mutates authoritative cell positions mid-edge" (List.map Unit.boardPosition halfwayUnits == List.map Unit.boardPosition rewound)
+        , expect "animation never mutates authoritative cell positions mid-edge" (List.map Unit.mapPosition halfwayUnits == List.map Unit.mapPosition rewound)
         , expect "second event starts after the first finishes" (Turn.movingPosition next == Just { unitId = second, position = { x = 2, y = 1 } })
         , expect "rewind restores initial facing" (List.map .direction rewound == [ Just Direction.South, Just Direction.North ])
         , expect "moving unit turns while waiting unit keeps its facing" (List.map .direction halfwayUnits == [ Just Direction.East, Just Direction.North ])
@@ -632,13 +632,13 @@ transportPlaybackChecks passengerId truckId =
     in
     List.concat
         [ transportExpect "shared unloading displays the passenger walking from its truck"
-            (TurnPlayback.movingPositions sharedUnloading == [ { unitId = passengerId, position = { x = 1.5, y = 0 } } ] && List.map Unit.boardPosition sharedUnloadFrame.units == [ Just { x = 1, y = 0 }, Just { x = 1, y = 0 } ])
+            (TurnPlayback.movingPositions sharedUnloading == [ { unitId = passengerId, position = { x = 1.5, y = 0 } } ] && List.map Unit.mapPosition sharedUnloadFrame.units == [ Just { x = 1, y = 0 }, Just { x = 1, y = 0 } ])
         , transportExpect "loading rewind restores passengers to the board" (List.map Unit.carrierId rewound == [ Nothing, Nothing ])
         , transportExpect "load event attaches cargo after movement" (afterLoading == units)
         , transportExpect "riding passengers follow their truck" (riding == units)
         , transportExpect "unload rewind restores cargo" (unloadRewound == units)
         , transportExpect "unload event puts passenger on the board" (afterUnloading == unloadUnits)
-        , transportExpect "passengers have no board position" (Unit.boardPosition passenger == Nothing)
+        , transportExpect "passengers have no board position" (Unit.mapPosition passenger == Nothing)
         , transportExpect "riding position derives from the moved truck" (Unit.physicalPosition riding passenger == Just { x = 1, y = 0 })
         , transportExpect "missing carriers have no physical position" (Unit.physicalPosition [ passenger ] passenger == Nothing)
         , transportExpect "aboard carriers have no physical position" (Unit.physicalPosition [ passenger, { truck | location = Location.Aboard passengerId } ] passenger == Nothing)
@@ -1320,7 +1320,7 @@ combatDeathChecks first second =
 
                 lethalShot : Unit -> Shot
                 lethalShot victim =
-                    { kind = CombatKind.Ambush, origin = { x = 2, y = 2 }, destination = Unit.boardPosition victim |> Maybe.withDefault { x = 3, y = 2 }, attacker = attacker, target = victim, damage = 8, attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }, targetHealth = { before = { current = 8, maximum = 16 }, after = { current = 0, maximum = 16 } } }
+                    { kind = CombatKind.Ambush, origin = { x = 2, y = 2 }, destination = Unit.mapPosition victim |> Maybe.withDefault { x = 3, y = 2 }, attacker = attacker, target = victim, damage = 8, attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }, targetHealth = { before = { current = 8, maximum = 16 }, after = { current = 0, maximum = 16 } } }
 
                 volley : TurnPlayback.Frame
                 volley =
@@ -1624,7 +1624,7 @@ deathFocusChecks first second =
             in
             expect "concealed resources still permit a public death marker" (Unit.isDying dead)
                 ++ expect "death focus holds the survivor still for the full pause" (deathFrame.units == [ dead, survivor ] && List.isEmpty (TurnPlayback.movingPositions before))
-                ++ expect "completed deaths clear before subsequent movement" (List.map .id clearedFrame.units == [ second ] && List.map Unit.boardPosition clearedFrame.units == [ Unit.boardPosition survivor ] && clearedFrame.visibleTiles == paused.visibleTiles)
+                ++ expect "completed deaths clear before subsequent movement" (List.map .id clearedFrame.units == [ second ] && List.map Unit.mapPosition clearedFrame.units == [ Unit.mapPosition survivor ] && clearedFrame.visibleTiles == paused.visibleTiles)
                 ++ expect "surviving units resume their movement after death focus" (List.map .unitId (TurnPlayback.movingPositions after) == [ second ])
                 ++ expect "carrier passengers inherit the carrier's loss cause"
                     (TurnPlayback.losses { animation | current = { dying | units = [ dead, { survivor | destroyed = True, location = Location.Aboard first } ] } }

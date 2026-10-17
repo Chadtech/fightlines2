@@ -49,16 +49,21 @@ import Error exposing (Error)
 import GameOutcome
 import GamePage.BattlefieldNavigation as BattlefieldNavigation
 import GamePage.CurrentTurn as CurrentTurn
-import GamePage.OrderPlanning as OrderPlanning exposing (UnloadChoice, UnloadPlanning)
+import GamePage.DestinationFeedback exposing (DestinationFeedback(..))
+import GamePage.DirectionPlanning as DirectionPlanning
+import GamePage.IndirectFirePlanning as IndirectFirePlanning
+import GamePage.MovePlanning as MovePlanning
+import GamePage.OrderPlanning as OrderPlanning
+import GamePage.PlannedTransport as PlannedTransport
 import GamePage.Selection
     exposing
-        ( DestinationFeedback(..)
-        , Inspection(..)
-        , MovePlanning
+        ( Inspection(..)
         , Selection(..)
-        , StationaryPurpose(..)
         , UnitInteraction(..)
         )
+import GamePage.UnloadCargo as UnloadCargo exposing (UnloadCargo)
+import GamePage.UnloadPlanning exposing (UnloadChoice, UnloadPlanning)
+import GamePage.UnloadingTruck as UnloadingTruck
 import Graphql.Http
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import Html.Attributes as HA
@@ -485,7 +490,7 @@ depotLoadingRoom model unit =
 
         incoming : Int
         incoming =
-            OrderPlanning.boardingPassengers (planningContext model) unit.id (plannedOrders model)
+            PlannedTransport.boardingPassengers model.units unit.id (plannedOrders model)
                 |> List.length
 
         depot : Maybe Depot
@@ -524,15 +529,14 @@ plannedDepot model id =
         |> Maybe.andThen atDestination
 
 
-planningContext : Model -> OrderPlanning.Context
-planningContext model =
-    { map = model.map
-    , units = model.units
-    , movementRules = model.movementRules
-    , supplyCrates = List.filter (\crate -> List.member crate.position model.visibleTiles) model.supplyCrates
-    , depots = model.depots
-    , playerNumbers = List.filter .isYou model.players |> List.map .playerNumber
-    }
+ownPlayerNumbers : Model -> List PlayerNumber
+ownPlayerNumbers model =
+    List.filter .isYou model.players |> List.map .playerNumber
+
+
+visibleSupplyCrates : Model -> List Supply.GroundCrate
+visibleSupplyCrates model =
+    List.filter (\crate -> List.member crate.position model.visibleTiles) model.supplyCrates
 
 
 mapPlanning : (OrderPlanning.Model -> OrderPlanning.Model) -> Model -> Model
@@ -540,18 +544,25 @@ mapPlanning transition =
     mapCheckedPlanning (transition >> IC.happy)
 
 
-mapCheckedPlanning : (OrderPlanning.Model -> InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model) -> Model -> Model
+mapCheckedPlanning :
+    (OrderPlanning.Model -> InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model)
+    -> Model
+    -> Model
 mapCheckedPlanning transition model =
     let
         checked : InvariantCheck Error CurrentTurn.Model
         checked =
             CurrentTurn.mapPlanning transition model.currentTurn
                 |> IC.mapError Error.OrderPlanningInvariantViolated
+
+        applyChecked : Maybe Error -> CurrentTurn.Model -> Model
+        applyChecked violation currentTurn =
+            { model
+                | currentTurn = currentTurn
+                , shared = Shared.addError violation model.shared
+            }
     in
-    { model
-        | currentTurn = IC.value checked
-        , shared = Shared.addError (IC.error checked) model.shared
-    }
+    IC.resolve applyChecked checked
 
 
 unloadChoice : Phase -> Maybe UnloadChoice
@@ -579,7 +590,7 @@ dismissDialog model =
         model
             |> mapPlanning
                 (OrderPlanning.dismissDialog
-                    >> OrderPlanning.promptDismountedCommands (planningContext model)
+                    >> OrderPlanning.promptDismountedCommands model.map model.units
                 )
 
 
@@ -691,7 +702,7 @@ combatEncounter model =
 deathInFocus : Model -> Bool
 deathInFocus model =
     List.any
-        (\unit -> Unit.onBoard unit && Unit.isDying unit)
+        (\unit -> Unit.onMap unit && Unit.isDying unit)
         model.units
 
 
@@ -702,7 +713,7 @@ planningLocked model =
 
 unitsWithoutOrders : Model -> List Unit
 unitsWithoutOrders model =
-    OrderPlanning.missingOrders (planningContext model) (plannedOrders model)
+    OrderPlanning.missingOrders model.map model.units (ownPlayerNumbers model) (plannedOrders model)
 
 
 readyToSubmit : Model -> Bool
@@ -732,11 +743,11 @@ unloadDialogHtmlId =
 selectedUnit : Model -> Maybe Unit
 selectedUnit model =
     OrderPlanning.selectedUnitFromSelection
-        (planningContext model)
+        model.units
         (currentSelection model)
         |> Maybe.map
-            (OrderPlanning.planningUnit
-                (planningContext model)
+            (PlannedTransport.planningUnit
+                model.map
                 (plannedOrders model)
             )
 
@@ -745,7 +756,7 @@ selectedPosition : Model -> Maybe Coordinate
 selectedPosition model =
     case unloadPlanning model.currentTurn.phase of
         Just planning ->
-            Just (OrderPlanning.truckDestination planning.truck)
+            Just (UnloadingTruck.destination planning.truck)
 
         Nothing ->
             inspectionPosition model
@@ -758,10 +769,10 @@ inspectionPosition model =
             Just position
 
         Just (Inspecting (UnitInspection _)) ->
-            Maybe.andThen Unit.boardPosition (selectedUnit model)
+            Maybe.andThen Unit.mapPosition (selectedUnit model)
 
         Just (UnitSelection _) ->
-            Maybe.andThen Unit.boardPosition (selectedUnit model)
+            Maybe.andThen Unit.mapPosition (selectedUnit model)
 
         Nothing ->
             Nothing
@@ -769,14 +780,21 @@ inspectionPosition model =
 
 isOwnUnit : Model -> Unit -> Bool
 isOwnUnit model unit =
-    OrderPlanning.isOwnUnit (planningContext model) unit
+    OrderPlanning.isOwnUnit (ownPlayerNumbers model) unit
 
 
 applyCommand : UnitCommand.Command -> Model -> Model
 applyCommand command model =
     model
         |> mapCheckedPlanning
-            (OrderPlanning.applyCommand (planningContext model) command)
+            (OrderPlanning.applyCommand
+                model.map
+                model.units
+                (ownPlayerNumbers model)
+                model.movementRules
+                model.depots
+                command
+            )
 
 
 plannedUnloadRoutes : Model -> List UnloadRoute
@@ -814,7 +832,7 @@ commandMenuUnit : Model -> Maybe Unit
 commandMenuUnit model =
     TurnLifecycle.planning model.currentTurn.phase
         |> Maybe.andThen
-            (OrderPlanning.commandMenuUnit (planningContext model))
+            (OrderPlanning.commandMenuUnit model.map model.units)
 
 
 submitRequest : LobbyId -> Model -> Graphql.Http.Request Snapshot
@@ -823,7 +841,9 @@ submitRequest lobbyId model =
         orders : List PlannedOrder
         orders =
             OrderPlanning.submissionOrders
-                (planningContext model)
+                model.map
+                model.units
+                (ownPlayerNumbers model)
                 (plannedOrders model)
     in
     Api.Mutation.submitTurn
@@ -883,8 +903,8 @@ plannedAction model unit move =
         "unload at"
 
     else if
-        OrderPlanning.loadingTarget
-            (planningContext model)
+        PlannedTransport.loadingTarget
+            model.units
             unit
             move.destination
             (plannedOrders model)
@@ -898,8 +918,8 @@ plannedAction model unit move =
 
 receivingLoad : Unit -> Model -> Bool
 receivingLoad unit model =
-    OrderPlanning.receivingLoad
-        (planningContext model)
+    PlannedTransport.receivingLoad
+        model.units
         unit
         (plannedOrders model)
 
@@ -918,14 +938,14 @@ focusCommand : UnitCommand.MenuOption -> Model -> Model
 focusCommand command model =
     model
         |> mapPlanning
-            (OrderPlanning.focusCommand (planningContext model) command)
+            (OrderPlanning.focusCommand model.map model.units command)
 
 
 revokeSelectedOrder : Model -> Model
 revokeSelectedOrder model =
     model
         |> mapCheckedPlanning
-            (OrderPlanning.revokeSelectedOrder (planningContext model))
+            (OrderPlanning.revokeSelectedOrder model.map model.units (ownPlayerNumbers model))
 
 
 choosingDirection : Model -> Bool
@@ -939,26 +959,30 @@ saveDirection : Direction -> Model -> Model
 saveDirection direction model =
     model
         |> mapCheckedPlanning
-            (OrderPlanning.saveDirection (planningContext model) direction)
+            (OrderPlanning.saveDirection model.map model.units (ownPlayerNumbers model) direction)
 
 
 rotationSelection : Model -> Maybe RotationSelection
 rotationSelection model =
+    let
+        atPosition : UnitId -> Direction -> Coordinate -> RotationSelection
+        atPosition unitId direction position =
+            { unitId = unitId
+            , position = position
+            , direction = direction
+            }
+    in
     case ( currentSelection model, selectedUnit model ) of
         ( Just (UnitSelection selection), Just unit ) ->
             case selection.interaction of
-                ChoosingDirection _ direction ->
-                    Unit.boardPosition unit
-                        |> Maybe.map
-                            (\position ->
-                                { unitId = unit.id
-                                , position = position
-                                , direction = direction
-                                }
-                            )
+                ChoosingDirection planning ->
+                    case planning of
+                        DirectionPlanning.AttackMove move direction ->
+                            Just { unitId = unit.id, position = move.destination, direction = direction }
 
-                ChoosingAttackDirection move direction ->
-                    Just { unitId = unit.id, position = move.destination, direction = direction }
+                        DirectionPlanning.Stationary _ direction ->
+                            Unit.mapPosition unit
+                                |> Maybe.map (atPosition unit.id direction)
 
                 CommandMenu _ ->
                     Nothing
@@ -1067,7 +1091,17 @@ selectUnit id model =
                 model
 
     else
-        model |> mapCheckedPlanning (OrderPlanning.selectUnit (planningContext model) id)
+        model
+            |> mapCheckedPlanning
+                (OrderPlanning.selectUnit
+                    model.map
+                    model.units
+                    (ownPlayerNumbers model)
+                    model.movementRules
+                    (visibleSupplyCrates model)
+                    model.depots
+                    id
+                )
 
 
 selectTile : Coordinate -> Model -> Model
@@ -1077,7 +1111,16 @@ selectTile position model =
 
     else
         model
-            |> mapCheckedPlanning (OrderPlanning.selectTile (planningContext model) position)
+            |> mapCheckedPlanning
+                (OrderPlanning.selectTile
+                    model.map
+                    model.units
+                    (ownPlayerNumbers model)
+                    model.movementRules
+                    (visibleSupplyCrates model)
+                    model.depots
+                    position
+                )
 
 
 inspectDepot : Coordinate -> Model -> Model
@@ -1097,7 +1140,7 @@ previewUnit id model =
     else
         model.units
             |> ListUtil.find (\unit -> unit.id == id)
-            |> Maybe.andThen Unit.boardPosition
+            |> Maybe.andThen Unit.mapPosition
             |> Maybe.map (\position -> previewTile position model)
             |> Maybe.withDefault model
 
@@ -1109,7 +1152,14 @@ previewTile position model =
 
     else
         model
-            |> mapPlanning (OrderPlanning.previewTile (planningContext model) position)
+            |> mapPlanning
+                (OrderPlanning.previewTile
+                    model.map
+                    model.units
+                    (ownPlayerNumbers model)
+                    model.movementRules
+                    position
+                )
 
 
 extendPath : Direction -> Model -> Model
@@ -1119,13 +1169,27 @@ extendPath direction model =
 
     else
         model
-            |> mapPlanning (OrderPlanning.extendPath (planningContext model) direction)
+            |> mapPlanning
+                (OrderPlanning.extendPath
+                    model.map
+                    model.units
+                    (ownPlayerNumbers model)
+                    model.movementRules
+                    direction
+                )
 
 
 confirmPath : Model -> Model
 confirmPath model =
     model
-        |> mapCheckedPlanning (OrderPlanning.confirmPath (planningContext model))
+        |> mapCheckedPlanning
+            (OrderPlanning.confirmPath
+                model.map
+                model.units
+                (ownPlayerNumbers model)
+                model.movementRules
+                model.depots
+            )
 
 
 focusAdjacentCommand :
@@ -1304,7 +1368,7 @@ choosingIndirectFire model =
 indirectTargets : Model -> List Coordinate
 indirectTargets model =
     TurnLifecycle.planning model.currentTurn.phase
-        |> Maybe.map (OrderPlanning.indirectTargets (planningContext model))
+        |> Maybe.map (OrderPlanning.indirectTargets model.map)
         |> Maybe.withDefault []
 
 
@@ -1491,22 +1555,34 @@ update lobbyId msg model =
 
         UnloadUnitToggled id checked ->
             model
-                |> mapPlanning
+                |> mapCheckedPlanning
                     (OrderPlanning.toggleAvailableUnloadCargo
-                        (planningContext model)
-                        (OrderPlanning.Passenger id)
+                        model.map
+                        model.units
+                        (ownPlayerNumbers model)
+                        model.movementRules
+                        (visibleSupplyCrates model)
+                        (UnloadCargo.Passenger id)
                         checked
                     )
                 |> E.withOut
 
         UnloadChoicesConfirmed ->
             model
-                |> mapCheckedPlanning (OrderPlanning.confirmPassengers (planningContext model))
+                |> mapCheckedPlanning
+                    (OrderPlanning.confirmPassengers
+                        model.map
+                        model.units
+                        (ownPlayerNumbers model)
+                        model.movementRules
+                        (visibleSupplyCrates model)
+                        model.depots
+                    )
                 |> E.withOut
 
         UnloadSkipped ->
             model
-                |> mapPlanning (OrderPlanning.skipUnloading (planningContext model))
+                |> mapPlanning (OrderPlanning.skipUnloading model.map model.units model.depots)
                 |> E.withOut
 
         LoadCratesClicked id count ->
@@ -1520,7 +1596,7 @@ update lobbyId msg model =
                         |> mapCheckedPlanning
                             (OrderPlanning.dismissDialog
                                 >> saveCrateLoading id count
-                                >> IC.map (OrderPlanning.promptDismountedCommands (planningContext model))
+                                >> IC.map (OrderPlanning.promptDismountedCommands model.map model.units)
                             )
                         |> E.withOut
 
@@ -1530,10 +1606,14 @@ update lobbyId msg model =
 
         UnloadCrateToggled index checked ->
             model
-                |> mapPlanning
+                |> mapCheckedPlanning
                     (OrderPlanning.toggleAvailableUnloadCargo
-                        (planningContext model)
-                        (OrderPlanning.Crate index)
+                        model.map
+                        model.units
+                        (ownPlayerNumbers model)
+                        model.movementRules
+                        (visibleSupplyCrates model)
+                        (UnloadCargo.Crate index)
                         checked
                     )
                 |> E.withOut
@@ -1547,7 +1627,7 @@ update lobbyId msg model =
         NextUnorderedUnitKeyPressed ->
             model
                 |> mapPlanning
-                    (OrderPlanning.selectNextUnorderedUnit (planningContext model))
+                    (OrderPlanning.selectNextUnorderedUnit model.map model.units (ownPlayerNumbers model))
                 |> E.withOut
 
         RotationChoicesMsg rotationMsg ->
@@ -1751,7 +1831,7 @@ update lobbyId msg model =
 
         BackToCommandsClicked ->
             model
-                |> mapCheckedPlanning (OrderPlanning.restoreCommands (planningContext model))
+                |> mapCheckedPlanning (OrderPlanning.restoreCommands model.map model.units (ownPlayerNumbers model))
                 |> E.withOut
 
         ClearMoveClicked ->
@@ -2082,7 +2162,7 @@ handleCommandMsg commandMsg model =
 
             else
                 model
-                    |> mapPlanning (OrderPlanning.openCommandGuide (planningContext model))
+                    |> mapPlanning (OrderPlanning.openCommandGuide model.map model.units (ownPlayerNumbers model))
                     |> E.withOut
 
         CommandMenu.CancelClicked ->
@@ -2258,7 +2338,7 @@ selectionView model =
 
                 Nothing ->
                     inspectionPosition model
-                        |> Maybe.andThen (\coordinate -> ListUtil.find (\unit -> Unit.boardPosition unit == Just coordinate) model.units)
+                        |> Maybe.andThen (\coordinate -> ListUtil.find (\unit -> Unit.mapPosition unit == Just coordinate) model.units)
 
         position : Maybe Coordinate
         position =
@@ -2453,7 +2533,7 @@ movementView model =
                                     unloadPlanning model.currentTurn.phase
                                         |> Maybe.map .cargo
                                 of
-                                    Just (OrderPlanning.Crate index) ->
+                                    Just (UnloadCargo.Crate index) ->
                                         "cargo " ++ String.fromInt (index + 1)
 
                                     _ ->
@@ -2522,7 +2602,7 @@ movementView model =
         dismountDetails =
             case selectedUnit model of
                 Just unit ->
-                    if OrderPlanning.isDismounting (planningContext model) unit then
+                    if PlannedTransport.isDismounting model.units unit then
                         [ H.p
                             []
                             [ H.text "this infantry acts after unloading, with a fresh movement allowance. unloading and movement both consume supplies."
@@ -2551,7 +2631,7 @@ movementView model =
 canRevokeOrder : Model -> Unit -> Bool
 canRevokeOrder model unit =
     TurnLifecycle.planning model.currentTurn.phase
-        |> Maybe.map (OrderPlanning.canRevokeOrder (planningContext model) unit.id)
+        |> Maybe.map (OrderPlanning.canRevokeOrder model.map model.units (ownPlayerNumbers model) unit.id)
         |> Maybe.withDefault False
 
 
@@ -2595,7 +2675,7 @@ unitOrderView model unit =
                 attackPlanning =
                     TurnLifecycle.planning model.currentTurn.phase
                         |> Maybe.andThen OrderPlanning.movementPlanning
-                        |> Maybe.map (\planning -> planning.purpose == GamePage.Selection.AttackMove)
+                        |> Maybe.map (\planning -> planning.purpose == MovePlanning.AttackMove)
                         |> Maybe.withDefault False
 
                 loadingDetails : List (Html Msg)
@@ -2739,7 +2819,7 @@ choosingAmbush model =
     case currentSelection model of
         Just (UnitSelection { interaction }) ->
             case interaction of
-                ChoosingDirection AmbushPurpose _ ->
+                ChoosingDirection (DirectionPlanning.Stationary DirectionPlanning.AmbushPurpose _) ->
                     True
 
                 _ ->
@@ -2754,7 +2834,7 @@ choosingStandGround model =
     case currentSelection model of
         Just (UnitSelection { interaction }) ->
             case interaction of
-                ChoosingDirection StandGroundPurpose _ ->
+                ChoosingDirection (DirectionPlanning.Stationary DirectionPlanning.StandGroundPurpose _) ->
                     True
 
                 _ ->
@@ -2836,7 +2916,7 @@ ambushDetails unit =
 
 loadingNotice : Model -> Unit -> Coordinate -> List (Html Msg)
 loadingNotice model unit destination =
-    case OrderPlanning.loadingTarget (planningContext model) unit destination (plannedOrders model) of
+    case PlannedTransport.loadingTarget model.units unit destination (plannedOrders model) of
         Just target ->
             let
                 notice : String
@@ -3143,17 +3223,34 @@ unloadChecklist model choice =
     let
         passengers : List Unit
         passengers =
-            List.filter (\unit -> Unit.carrierId unit == Just choice.truck.truckId) model.units
+            List.filter (\unit -> Unit.carrierId unit == Just (UnloadingTruck.unitId choice.truck)) model.units
 
-        unavailable : OrderPlanning.Cargo -> Bool
+        unavailable : UnloadCargo -> Bool
         unavailable cargo =
-            not (OrderPlanning.canSelectUnloadCargo (planningContext model) cargo (OrderPlanning.ChoosingPassengers choice))
+            OrderPlanning.canSelectUnloadCargo
+                model.map
+                model.units
+                (ownPlayerNumbers model)
+                model.movementRules
+                (visibleSupplyCrates model)
+                cargo
+                (OrderPlanning.ChoosingPassengers choice)
+                |> IC.resolve unavailableResult
+
+        unavailableResult : Maybe OrderPlanning.InvariantViolation -> Bool -> Bool
+        unavailableResult violation available =
+            case violation of
+                Just _ ->
+                    True
+
+                Nothing ->
+                    not available
 
         passengerCheckbox : Unit -> Html Msg
         passengerCheckbox unit =
             UnloadPassenger.toHtml
-                { disabled = unavailable (OrderPlanning.Passenger unit.id)
-                , checked = List.member (OrderPlanning.Passenger unit.id) choice.checked
+                { disabled = unavailable (UnloadCargo.Passenger unit.id)
+                , checked = List.member (UnloadCargo.Passenger unit.id) choice.checked
                 , onCheck = UnloadUnitToggled unit.id
                 }
                 unit
@@ -3169,7 +3266,7 @@ unloadChecklist model choice =
         crateChoices : List (Html Msg)
         crateChoices =
             model.units
-                |> ListUtil.find (\unit -> unit.id == choice.truck.truckId)
+                |> ListUtil.find (\unit -> unit.id == UnloadingTruck.unitId choice.truck)
                 |> Maybe.andThen .resources
                 |> Maybe.map (.supplyCargo >> List.indexedMap crateCheckbox)
                 |> Maybe.withDefault []
@@ -3181,9 +3278,9 @@ unloadChecklist model choice =
                 label =
                     Supply.cargoLabel stock.kind ++ " " ++ String.fromInt (index + 1)
             in
-            Checkbox.toHtmlDisabled (unavailable (OrderPlanning.Crate index))
+            Checkbox.toHtmlDisabled (unavailable (UnloadCargo.Crate index))
                 { label = label
-                , checked = List.member (OrderPlanning.Crate index) choice.checked
+                , checked = List.member (UnloadCargo.Crate index) choice.checked
                 , onCheck = UnloadCrateToggled index
                 }
                 [ H.img
@@ -3226,14 +3323,14 @@ unloadChecklist model choice =
             let
                 hasUnavailable : Bool
                 hasUnavailable =
-                    List.any (\unit -> unavailable (OrderPlanning.Passenger unit.id)) passengers
+                    List.any (\unit -> unavailable (UnloadCargo.Passenger unit.id)) passengers
                         || (model.units
                                 |> ListUtil.find
-                                    (\unit -> unit.id == choice.truck.truckId)
+                                    (\unit -> unit.id == UnloadingTruck.unitId choice.truck)
                                 |> Maybe.map
                                     (\truck ->
                                         List.range 0 (Unit.crateCount truck - 1)
-                                            |> List.any (OrderPlanning.Crate >> unavailable)
+                                            |> List.any (UnloadCargo.Crate >> unavailable)
                                     )
                                 |> Maybe.withDefault False
                            )
@@ -3985,7 +4082,7 @@ boardSvg model =
         attacking =
             TurnLifecycle.planning model.currentTurn.phase
                 |> Maybe.andThen OrderPlanning.movementPlanning
-                |> Maybe.map (\planning -> planning.purpose == GamePage.Selection.AttackMove)
+                |> Maybe.map (\planning -> planning.purpose == MovePlanning.AttackMove)
                 |> Maybe.withDefault False
 
         destinationAction : String
@@ -4007,7 +4104,7 @@ boardSvg model =
             case currentSelection model of
                 Just (UnitSelection { interaction }) ->
                     case interaction of
-                        ChoosingAttackDirection _ direction ->
+                        ChoosingDirection (DirectionPlanning.AttackMove _ direction) ->
                             MovementRoute.DirectedAttack direction
 
                         _ ->
@@ -4033,7 +4130,7 @@ boardSvg model =
             case currentSelection model of
                 Just (UnitSelection { interaction }) ->
                     case interaction of
-                        ChoosingAttackDirection move _ ->
+                        ChoosingDirection (DirectionPlanning.AttackMove move _) ->
                             move.path
 
                         _ ->
@@ -4138,7 +4235,7 @@ boardSvg model =
                             , Ev.on "focus" (Decode.succeed (FocusedBoardTile depot.position))
                             , Ev.on "blur" (Decode.succeed TargetPreviewLeft)
                             , onClickWithDetail (ClickedDepotStock depot.position)
-                            , onBoardActivationKeyDown
+                            , onMapActivationKeyDown
                                 { pressedEnter = PressedEnterOnDepotStock depot.position
                                 , pressedSpace = PressedSpaceOnDepotStock depot.position
                                 }
@@ -4207,7 +4304,7 @@ boardSvg model =
                         ]
             in
             if unitIsAmbushing model unit then
-                Unit.boardPosition unit |> Maybe.map markerAt
+                Unit.mapPosition unit |> Maybe.map markerAt
 
             else
                 Nothing
@@ -4344,8 +4441,8 @@ boardSvg model =
                     case ( currentSelection model, selectedUnit model ) of
                         ( Just (UnitSelection { interaction }), Just unit ) ->
                             case interaction of
-                                ChoosingDirection AmbushPurpose direction ->
-                                    Unit.boardPosition unit
+                                ChoosingDirection (DirectionPlanning.Stationary DirectionPlanning.AmbushPurpose direction) ->
+                                    Unit.mapPosition unit
                                         |> Maybe.map (\position -> [ Ambush.coverage model.map position direction unit.combatRules ])
                                         |> Maybe.withDefault []
 
@@ -4422,7 +4519,7 @@ boardSvg model =
             case currentSelection model of
                 Just (UnitSelection { interaction }) ->
                     case interaction of
-                        ChoosingAttackDirection move _ ->
+                        ChoosingDirection (DirectionPlanning.AttackMove move _) ->
                             RotationChoices.attackToSvg move.path
 
                         _ ->
@@ -4476,7 +4573,7 @@ boardSvg model =
             , List.concatMap (PlannedOrder.crateUnloads >> List.map (.destination >> targetOutline)) (plannedOrders model)
             , List.filterMap
                 (\unit ->
-                    Unit.boardPosition unit
+                    Unit.mapPosition unit
                         |> Maybe.map (unitView unit)
                 )
                 model.units
@@ -4530,7 +4627,7 @@ boardTileTarget destinationAction reachable x y =
                         ++ String.fromInt position.y
                         ++ ")"
                     )
-                , onBoardActivationKeyDown
+                , onMapActivationKeyDown
                     { pressedEnter = PressedEnterOnTile position
                     , pressedSpace = PressedSpaceOnTile position
                     }
@@ -4572,7 +4669,7 @@ boardCrate filter visible crate =
             , Ev.on "focus" (Decode.succeed (FocusedBoardTile crate.position))
             , Ev.on "blur" (Decode.succeed TargetPreviewLeft)
             , onClickWithDetail (ClickedTile crate.position)
-            , onBoardActivationKeyDown
+            , onMapActivationKeyDown
                 { pressedEnter = PressedEnterOnTile crate.position
                 , pressedSpace = PressedSpaceOnTile crate.position
                 }
@@ -4605,7 +4702,7 @@ boardDepot filter depot =
             , Ev.on "focus" (Decode.succeed (FocusedBoardTile depot.position))
             , Ev.on "blur" (Decode.succeed TargetPreviewLeft)
             , onClickWithDetail (ClickedDepot depot.position)
-            , onBoardActivationKeyDown
+            , onMapActivationKeyDown
                 { pressedEnter = PressedEnterOnDepot depot.position
                 , pressedSpace = PressedSpaceOnDepot depot.position
                 }
@@ -4705,7 +4802,7 @@ boardUnit unit facing transform ordered passengerCount column =
             , Ev.on "focus" (Decode.succeed (FocusedBoardUnit unit.id))
             , Ev.on "blur" (Decode.succeed TargetPreviewLeft)
             , onClickWithDetail (ClickedUnit unit.id)
-            , onBoardActivationKeyDown
+            , onMapActivationKeyDown
                 { pressedEnter = PressedEnterOnUnit unit.id
                 , pressedSpace = PressedSpaceOnUnit unit.id
                 }
@@ -4759,7 +4856,7 @@ inactiveTargetOrigin =
 boardIndirectTargets : Map -> Coordinate -> Int -> BoardTargeting -> List Coordinate
 boardIndirectTargets map origin range targeting =
     if targeting == ChoosingIndirectTarget then
-        OrderPlanning.indirectTargetsInRange map origin range
+        IndirectFirePlanning.targetsInRange map origin range
 
     else
         []
@@ -4958,8 +5055,8 @@ movementLayer map options origin range targeting paths previewPurpose previewedP
 {-| Enter and Space activate a focused board object. Reserve Meta/Ctrl chords
 for shortcuts on every platform, including the window's submit command.
 -}
-onBoardActivationKeyDown : { pressedEnter : msg, pressedSpace : msg } -> Svg.Attribute msg
-onBoardActivationKeyDown messages =
+onMapActivationKeyDown : { pressedEnter : msg, pressedSpace : msg } -> Svg.Attribute msg
+onMapActivationKeyDown messages =
     let
         shortcutModifier : Decode.Decoder Bool
         shortcutModifier =
@@ -5027,14 +5124,7 @@ keyCommands model =
                 case currentSelection model of
                     Just (UnitSelection { interaction }) ->
                         case interaction of
-                            ChoosingDirection _ _ ->
-                                [ leftKeys (DirectionKeyPressed DirectionEnum.West)
-                                , rightKeys (DirectionKeyPressed DirectionEnum.East)
-                                , upKeys (DirectionKeyPressed DirectionEnum.North)
-                                , downKeys (DirectionKeyPressed DirectionEnum.South)
-                                ]
-
-                            ChoosingAttackDirection _ _ ->
+                            ChoosingDirection _ ->
                                 [ leftKeys (DirectionKeyPressed DirectionEnum.West)
                                 , rightKeys (DirectionKeyPressed DirectionEnum.East)
                                 , upKeys (DirectionKeyPressed DirectionEnum.North)

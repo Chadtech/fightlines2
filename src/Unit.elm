@@ -1,6 +1,5 @@
 module Unit exposing
     ( Unit
-    , boardPosition
     , carrierId
     , crateCount
     , faceDirection
@@ -8,7 +7,8 @@ module Unit exposing
     , isDying
     , label
     , loadingTarget
-    , onBoard
+    , mapPosition
+    , onMap
     , physicalPosition
     , selection
     , setOnMap
@@ -108,9 +108,9 @@ fuelMovementPerTile units unit =
         |> Maybe.withDefault 0
 
 
-onBoard : Unit -> Bool
-onBoard unit =
-    boardPosition unit /= Nothing
+onMap : Unit -> Bool
+onMap unit =
+    mapPosition unit /= Nothing
 
 
 isDying : Unit -> Bool
@@ -151,19 +151,19 @@ loadingTarget units mover destination =
 
                 alliedTarget : Bool
                 alliedTarget =
-                    boardPosition target == Just destination && target.id /= mover.id && target.playerNumber == mover.playerNumber
+                    mapPosition target == Just destination && target.id /= mover.id && target.playerNumber == mover.playerNumber
 
                 loadingAllowed : Bool
                 loadingAllowed =
                     (hasRoom mover && portable target) || (portable mover && hasRoom target)
             in
-            alliedTarget && onBoard mover && onBoard target && loadingAllowed
+            alliedTarget && onMap mover && onMap target && loadingAllowed
     in
     ListUtil.find compatible units
 
 
-boardPosition : Unit -> Maybe Coordinate
-boardPosition unit =
+mapPosition : Unit -> Maybe Coordinate
+mapPosition unit =
     case unit.location of
         Location.OnMap position ->
             Just position
@@ -193,7 +193,7 @@ physicalPosition units unit =
 
         Location.Aboard carrier ->
             ListUtil.find (\truck -> truck.id == carrier) units
-                |> Maybe.andThen boardPosition
+                |> Maybe.andThen mapPosition
 
 
 faceDirection : Maybe Direction -> Unit -> Unit
