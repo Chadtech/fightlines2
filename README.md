@@ -34,7 +34,16 @@ make run
 
 Open http://127.0.0.1:8080, enter your user name and a lobby name, and choose
 **Create lobby**.
-Share the invite link with another player, who enters a name and chooses
+For a solo game, set **opponent** to **ai opponent** in the lobby, then choose
+**Start game**. The AI controls player 2 and responds automatically when you submit
+a turn. It advances toward supply points, attacks visible enemies, uses field-gun
+indirect fire, and seeks supply or fuel depots when low. It follows normal fog,
+movement, resource, combat, and victory rules. This basic opponent has no difficulty
+settings and does not plan passenger transport or freight deliveries.
+Switching back to **human player** reopens the second slot before starting; a joined
+human cannot be replaced.
+
+For a human opponent, share the invite link with another player, who enters a name and chooses
 **Join lobby**. The host selects a map, which immediately saves and shares the selection with
 the other player, then chooses **Start game**.
 Joined browsers navigate to the game page within about two seconds. The initial

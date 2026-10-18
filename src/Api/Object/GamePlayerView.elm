@@ -38,3 +38,8 @@ isYou =
 playerNumber : SelectionSet Api.Enum.PlayerNumber.PlayerNumber Api.Object.GamePlayerView
 playerNumber =
     Object.selectionForField "Enum.PlayerNumber.PlayerNumber" "playerNumber" [] Api.Enum.PlayerNumber.decoder
+
+
+isAi : SelectionSet Bool Api.Object.GamePlayerView
+isAi =
+    Object.selectionForField "Bool" "isAi" [] Decode.bool

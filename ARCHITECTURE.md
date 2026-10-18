@@ -94,6 +94,30 @@ independent of map position; the current scenario and lobby still require two pl
 start requests return the existing game. Joining is capped at two players,
 while reconnecting members can rejoin a full lobby.
 
+`PlayerController` distinguishes a human session from an AI without giving bots
+browser credentials. The host can call `setLobbyOpponent(id, opponent)` with
+`Human` or `Ai` before starting. Selecting AI fills player 2; selecting human removes
+the AI and opens that slot. A joined human cannot be displaced. Both lobby and game
+rosters expose `isAi`; anonymous visitors never become members through an AI slot.
+Lobby polling leaves the opponent selector enabled. Each poll carries the settings
+revision at request time; changing the map or opponent advances that revision and
+invalidates in-flight polls. Older successes and failures cannot overwrite the
+saved settings or interfere with a newer poll.
+
+`ai.rs` builds deterministic ordinary `MoveOrderInput` values from player 2's
+fog-projected pre-turn scenario. It receives neither human orders nor hidden enemy
+positions as planning inputs. Its basic policy advances toward central supply
+points, engages visible enemies with attack moves or field-gun indirect fire,
+and seeks depots for low supplies or fuel. Weighted pathfinding respects terrain,
+resource limits, occupied allied squares, and destination reservations. Passengers
+hold; freight and transport planning are deferred.
+When the human submits, the store prepares both submissions on copies using the
+normal `Turns::submit` validation and resolution path, then commits them together.
+An invalid human or AI submission leaves both the board and pending orders intact.
+Existing observation projection, playback, outcome, and reconnect behavior remain
+shared with human matches. AI processing is synchronous under the store lock;
+there is no background worker or external model service.
+
 The member-only `game` query returns `GameSnapshot`, including the scenario and
 players with `playerNumber` and `isYou`. Lobby snapshots stay small and never include the
 board. The frontend receives sparse terrain overrides and expands them for
@@ -221,7 +245,7 @@ application.
 
 Queries are `health`, `lobby(id)`, `game(id)`, and `maps`. Mutations are
 `createLobby(name, lobbyName)`, `joinLobby(id, name)`,
-`setLobbyMap(id, mapType)`, `startGame(id)`, and
+`setLobbyMap(id, mapType)`, `setLobbyOpponent(id, opponent)`, `startGame(id)`, and
 `submitTurn(id, turnNumber, orders)`, and `saveMap(mapType, definition)`.
 The map authoring operations require `--map-editor`. Lobby
 and game selections expose `id`, `name`, `mapType`, `players { name isHost }`, `isHost`,

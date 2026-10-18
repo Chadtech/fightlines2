@@ -1,0 +1,238 @@
+{
+  "width": 11,
+  "height": 9,
+  "theme": "GreenForest",
+  "features": [
+    {
+      "position": {
+        "x": 3,
+        "y": 1
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 1
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 1
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 7,
+        "y": 1
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 2
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 2
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 3,
+        "y": 3
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 7,
+        "y": 3
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 3,
+        "y": 5
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 7,
+        "y": 5
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 6
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 6
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 3,
+        "y": 7
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 7
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 7
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 7,
+        "y": 7
+      },
+      "terrain": "Forest"
+    }
+  ],
+  "depots": [
+    {
+      "position": {
+        "x": 1,
+        "y": 4
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 4
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 5,
+        "y": 4
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 6
+      },
+      "kind": "Fuel"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 6
+      },
+      "kind": "Fuel"
+    }
+  ],
+  "units": [
+    {
+      "id": 1,
+      "position": {
+        "x": 2,
+        "y": 3
+      },
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
+    },
+    {
+      "id": 2,
+      "position": {
+        "x": 2,
+        "y": 5
+      },
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
+    },
+    {
+      "id": 3,
+      "position": {
+        "x": 2,
+        "y": 4
+      },
+      "playerNumber": "Player1",
+      "kind": "Tank",
+      "direction": "East"
+    },
+    {
+      "id": 4,
+      "position": {
+        "x": 1,
+        "y": 5
+      },
+      "playerNumber": "Player1",
+      "kind": "Truck",
+      "direction": null
+    },
+    {
+      "id": 5,
+      "position": {
+        "x": 8,
+        "y": 3
+      },
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
+    },
+    {
+      "id": 6,
+      "position": {
+        "x": 8,
+        "y": 5
+      },
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
+    },
+    {
+      "id": 7,
+      "position": {
+        "x": 8,
+        "y": 4
+      },
+      "playerNumber": "Player2",
+      "kind": "Tank",
+      "direction": "West"
+    },
+    {
+      "id": 8,
+      "position": {
+        "x": 9,
+        "y": 5
+      },
+      "playerNumber": "Player2",
+      "kind": "Truck",
+      "direction": null
+    }
+  ]
+}

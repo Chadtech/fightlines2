@@ -1,0 +1,621 @@
+{
+  "width": 15,
+  "height": 13,
+  "theme": "Desert",
+  "features": [
+    {
+      "position": {
+        "x": 11,
+        "y": 12
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 3,
+        "y": 12
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 12
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 12
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 12
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 12
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 12
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 5,
+        "y": 12
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 10
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 10
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 2
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 2
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 8
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 5,
+        "y": 8
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 4
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 5,
+        "y": 4
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 12,
+        "y": 0
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 0
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 12,
+        "y": 12
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 12
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 12
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 12
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 11
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 11
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 1
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 0
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 1
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 0
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 1
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 5,
+        "y": 1
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 1
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 1
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 3,
+        "y": 3
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 3
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 5,
+        "y": 3
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 3
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 3
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 3
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 3
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 3
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 4
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 4
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 4
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 4
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 5
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 5
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 7
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 7
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 7
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 7
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 8
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 8
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 8
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 8
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 3,
+        "y": 9
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 5,
+        "y": 9
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 9
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 9
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 9
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 9
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 11
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 5,
+        "y": 11
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 11
+      },
+      "terrain": "Forest"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 11
+      },
+      "terrain": "Forest"
+    }
+  ],
+  "depots": [
+    {
+      "position": {
+        "x": 1,
+        "y": 6
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 6
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 9
+      },
+      "kind": "Fuel"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 9
+      },
+      "kind": "Fuel"
+    },
+    {
+      "position": {
+        "x": 7,
+        "y": 2
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 7,
+        "y": 6
+      },
+      "kind": "Supply"
+    }
+  ],
+  "units": [
+    {
+      "id": 1,
+      "position": {
+        "x": 2,
+        "y": 4
+      },
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
+    },
+    {
+      "id": 2,
+      "position": {
+        "x": 2,
+        "y": 6
+      },
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
+    },
+    {
+      "id": 3,
+      "position": {
+        "x": 2,
+        "y": 8
+      },
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
+    },
+    {
+      "id": 4,
+      "position": {
+        "x": 3,
+        "y": 6
+      },
+      "playerNumber": "Player1",
+      "kind": "Tank",
+      "direction": "East"
+    },
+    {
+      "id": 5,
+      "position": {
+        "x": 1,
+        "y": 5
+      },
+      "playerNumber": "Player1",
+      "kind": "FieldGun",
+      "direction": "East"
+    },
+    {
+      "id": 6,
+      "position": {
+        "x": 1,
+        "y": 7
+      },
+      "playerNumber": "Player1",
+      "kind": "Truck",
+      "direction": null
+    },
+    {
+      "id": 7,
+      "position": {
+        "x": 12,
+        "y": 4
+      },
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
+    },
+    {
+      "id": 8,
+      "position": {
+        "x": 12,
+        "y": 6
+      },
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
+    },
+    {
+      "id": 9,
+      "position": {
+        "x": 12,
+        "y": 8
+      },
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
+    },
+    {
+      "id": 10,
+      "position": {
+        "x": 11,
+        "y": 6
+      },
+      "playerNumber": "Player2",
+      "kind": "Tank",
+      "direction": "West"
+    },
+    {
+      "id": 11,
+      "position": {
+        "x": 13,
+        "y": 5
+      },
+      "playerNumber": "Player2",
+      "kind": "FieldGun",
+      "direction": "West"
+    },
+    {
+      "id": 12,
+      "position": {
+        "x": 13,
+        "y": 7
+      },
+      "playerNumber": "Player2",
+      "kind": "Truck",
+      "direction": null
+    }
+  ]
+}

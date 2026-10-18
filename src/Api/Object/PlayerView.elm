@@ -27,3 +27,8 @@ name =
 isHost : SelectionSet Bool Api.Object.PlayerView
 isHost =
     Object.selectionForField "Bool" "isHost" [] Decode.bool
+
+
+isAi : SelectionSet Bool Api.Object.PlayerView
+isAi =
+    Object.selectionForField "Bool" "isAi" [] Decode.bool

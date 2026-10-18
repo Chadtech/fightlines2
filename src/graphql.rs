@@ -95,6 +95,14 @@ impl Mutation {
         lobby::set_map_type(context, LobbyId::from_token(id), map_type)
     }
 
+    fn set_lobby_opponent(
+        context: &Context,
+        id: String,
+        opponent: lobby::Opponent,
+    ) -> FieldResult<Snapshot> {
+        lobby::set_opponent(context, LobbyId::from_token(id), opponent)
+    }
+
     fn submit_turn(
         context: &Context,
         id: String,
@@ -184,6 +192,135 @@ mod tests {
     use serde_json::{Value, json};
 
     const FIELDS: &str = "id name mapType players { name isHost } isHost isMember gameUrl";
+
+    #[actix_web::test]
+    async fn ai_lobby_authorization_and_turns_over_graphql() -> TestResult<()> {
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(Store::new(crate::seed::Seed::new([19; 32]))))
+                .app_data(web::Data::new(schema()))
+                .route("/graphql", web::post().to(handle)),
+        )
+        .await;
+        macro_rules! execute {
+            ($query:expr, $cookie:expr) => {{
+                let mut request = test::TestRequest::post().uri("/graphql")
+                    .set_json(json!({ "query": $query }));
+                if let Some(cookie) = $cookie { request = request.cookie(cookie); }
+                let response = test::call_service(&app, request.to_request()).await;
+                let cookie = response.response().cookies().next().map(|cookie| cookie.into_owned());
+                let body: Value = test::read_body_json(response).await;
+                (body, cookie)
+            }};
+        }
+        let (created, host) = execute!(
+            "mutation { createLobby(name: \"Host\", lobbyName: \"AI match\") { id } }",
+            None
+        );
+        let id = created["data"]["createLobby"]["id"].as_str().fixture()?;
+        let ai = format!(
+            "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: AI) {{ players {{ name isAi }} isMember }} }}"
+        );
+        let (denied, _) = execute!(&ai, None);
+        assert!(denied["errors"].is_array());
+        let (selected, _) = execute!(&ai, host.clone());
+        assert!(selected.get("errors").is_none(), "{selected}");
+        assert_eq!(
+            selected["data"]["setLobbyOpponent"]["players"][1]["isAi"],
+            true
+        );
+        let (public, _) = execute!(
+            format!("{{ lobby(id: \"{id}\") {{ isMember isHost }} }}"),
+            None
+        );
+        assert_eq!(public["data"]["lobby"]["isMember"], false);
+        let join = format!("mutation {{ joinLobby(id: \"{id}\", name: \"Guest\") {{ id }} }}");
+        let (full, _) = execute!(&join, None);
+        assert!(full["errors"].is_array());
+        let human = format!(
+            "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: HUMAN) {{ players {{ isAi }} }} }}"
+        );
+        let (cleared, _) = execute!(&human, host.clone());
+        assert_eq!(
+            cleared["data"]["setLobbyOpponent"]["players"]
+                .as_array()
+                .fixture()?
+                .len(),
+            1
+        );
+        let (selected, _) = execute!(&ai, host.clone());
+        assert!(selected.get("errors").is_none());
+        let (started, _) = execute!(
+            format!("mutation {{ startGame(id: \"{id}\") {{ gameUrl }} }}"),
+            host.clone()
+        );
+        assert!(started.get("errors").is_none(), "{started}");
+        let (late, _) = execute!(&human, host.clone());
+        assert!(late["errors"].is_array());
+        let game_query = format!(
+            "{{ game(id: \"{id}\") {{ turnNumber submitted players {{ isYou isAi }} scenario {{ units {{ id playerNumber location {{ ... on OnMap {{ position {{ x y }} }} }} }} }} }} }}"
+        );
+        let (game, _) = execute!(&game_query, host.clone());
+        assert_eq!(game["data"]["game"]["players"][1]["isAi"], true);
+        assert_eq!(game["data"]["game"]["players"][1]["isYou"], false);
+        for number in 1..=3 {
+            let (game, _) = execute!(&game_query, host.clone());
+            let orders: Vec<String> = game["data"]["game"]["scenario"]["units"]
+                .as_array()
+                .fixture()?
+                .iter()
+                .filter(|unit| unit["playerNumber"] == "PLAYER1")
+                .filter_map(|unit| {
+                    let id = unit["id"].as_str()?;
+                    let position = &unit["location"]["position"];
+                    Some(format!(
+                        "{{ unitId: \"{id}\", path: [{{ x: {}, y: {} }}] }}",
+                        position["x"], position["y"]
+                    ))
+                })
+                .collect();
+            if number == 1 {
+                let (invalid, _) = execute!(
+                    format!(
+                        "mutation {{ submitTurn(id: \"{id}\", turnNumber: 1, orders: []) {{ turnNumber }} }}"
+                    ),
+                    host.clone()
+                );
+                assert!(invalid["errors"].is_array());
+                let (unchanged, _) = execute!(&game_query, host.clone());
+                assert_eq!(unchanged["data"]["game"]["turnNumber"], 1);
+                assert_eq!(unchanged["data"]["game"]["submitted"], false);
+            }
+            let (result, _) = execute!(
+                format!(
+                    "mutation {{ submitTurn(id: \"{id}\", turnNumber: {number}, orders: [{}]) {{ turnNumber submitted lastResolution {{ turnNumber }} }} }}",
+                    orders.join(",")
+                ),
+                host.clone()
+            );
+            assert!(result.get("errors").is_none(), "{result}");
+            assert_eq!(result["data"]["submitTurn"]["turnNumber"], number + 1);
+            assert_eq!(result["data"]["submitTurn"]["submitted"], false);
+        }
+        // A joined human retains the slot when the host attempts to select AI.
+        let (created, _) = execute!(
+            "mutation { createLobby(name: \"Host\", lobbyName: \"Human match\") { id } }",
+            host.clone()
+        );
+        let other_id = created["data"]["createLobby"]["id"].as_str().fixture()?;
+        let (joined, guest) = execute!(
+            format!("mutation {{ joinLobby(id: \"{other_id}\", name: \"Guest\") {{ id }} }}"),
+            None
+        );
+        assert!(joined.get("errors").is_none());
+        let change =
+            format!("mutation {{ setLobbyOpponent(id: \"{other_id}\", opponent: AI) {{ id }} }}");
+        for cookie in [host, guest] {
+            let (denied, _) = execute!(&change, cookie);
+            assert!(denied["errors"].is_array());
+        }
+        Ok(())
+    }
 
     #[actix_web::test]
     async fn development_game_is_opt_in_and_does_not_replace_identity() -> TestResult<()> {

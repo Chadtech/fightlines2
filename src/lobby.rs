@@ -1,5 +1,6 @@
 use crate::graphql::Context;
 use crate::{
+    ai,
     lobby_id::LobbyId,
     lobby_name::LobbyName,
     map::MapError,
@@ -11,7 +12,7 @@ use crate::{
     turns::{GameOutcome, MoveOrderInput, TurnResolution, Turns},
     visibility,
 };
-use juniper::{FieldError, FieldResult, GraphQLObject};
+use juniper::{FieldError, FieldResult, GraphQLEnum, GraphQLObject};
 
 use std::{collections::BTreeMap, sync::Mutex};
 
@@ -59,12 +60,14 @@ impl Store {
                 host: host.clone(),
                 players: vec![
                     Player {
-                        session: host,
+                        controller: PlayerController::Human(host),
                         name: PlayerName::parse("Test player 1")
                             .ok_or(DevelopmentError::InvalidName)?,
                     },
                     Player {
-                        session: SessionToken::from_token("development-player-2".into()),
+                        controller: PlayerController::Human(SessionToken::from_token(
+                            "development-player-2".into(),
+                        )),
                         name: PlayerName::parse("Test player 2")
                             .ok_or(DevelopmentError::InvalidName)?,
                     },
@@ -138,8 +141,28 @@ impl Game {
     }
 }
 
+enum PlayerController {
+    Human(SessionToken),
+    Ai,
+}
+
+impl PlayerController {
+    fn session(&self) -> Option<&SessionToken> {
+        match self {
+            Self::Human(session) => Some(session),
+            Self::Ai => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
+pub enum Opponent {
+    Human,
+    Ai,
+}
+
 struct Player {
-    session: SessionToken,
+    controller: PlayerController,
     name: PlayerName,
 }
 
@@ -158,6 +181,7 @@ pub struct Snapshot {
 struct PlayerView {
     name: String,
     is_host: bool,
+    is_ai: bool,
 }
 
 /// Public game response built for an authorized member's session.
@@ -189,6 +213,7 @@ struct GamePlayerView {
     is_host: bool,
     is_you: bool,
     player_number: PlayerNumber,
+    is_ai: bool,
 }
 
 //----------------------------------------------------------------
@@ -217,14 +242,14 @@ fn snapshot(
             .iter()
             .map(|player| PlayerView {
                 name: player.name.to_string(),
-                is_host: &player.session == source.host,
+                is_host: player.controller.session() == Some(source.host),
+                is_ai: player.controller.session().is_none(),
             })
             .collect(),
         is_host: session == Some(source.host),
-        is_member: source
-            .players
-            .iter()
-            .any(|player| Some(&player.session) == session),
+        is_member: source.players.iter().any(|player| {
+            player.controller.session().is_some() && player.controller.session() == session
+        }),
         game_url,
     }
 }
@@ -282,8 +307,9 @@ fn game_view(game: &Game, session: &SessionToken) -> GameSnapshot {
             .zip([PlayerNumber::Player1, PlayerNumber::Player2])
             .map(|(player, player_number)| GamePlayerView {
                 name: player.name.to_string(),
-                is_host: player.session == game.host,
-                is_you: &player.session == session,
+                is_host: player.controller.session() == Some(&game.host),
+                is_you: player.controller.session() == Some(session),
+                is_ai: player.controller.session().is_none(),
                 player_number,
             })
             .collect(),
@@ -322,7 +348,7 @@ pub fn create(context: &Context, input: &str, lobby_input: &str) -> FieldResult<
         map_type: MapType::default(),
         host: identity.clone(),
         players: vec![Player {
-            session: identity.clone(),
+            controller: PlayerController::Human(identity.clone()),
             name,
         }],
     };
@@ -370,11 +396,9 @@ pub fn join(context: &Context, id: LobbyId, input: &str) -> FieldResult<Snapshot
     let Some(lobby) = state.lobbies.get(&id) else {
         return error("This lobby no longer exists. Create a new lobby from the home page.");
     };
-    if lobby
-        .players
-        .iter()
-        .any(|player| Some(&player.session) == identity.as_ref())
-    {
+    if lobby.players.iter().any(|player| {
+        player.controller.session().is_some() && player.controller.session() == identity.as_ref()
+    }) {
         return Ok(lobby_snapshot(lobby, identity.as_ref()));
     }
     if lobby
@@ -393,7 +417,7 @@ pub fn join(context: &Context, id: LobbyId, input: &str) -> FieldResult<Snapshot
         .get_mut(&id)
         .ok_or_else(|| FieldError::from("This lobby no longer exists."))?;
     lobby.players.push(Player {
-        session: identity.clone(),
+        controller: PlayerController::Human(identity.clone()),
         name,
     });
     let result = lobby_snapshot(lobby, Some(&identity));
@@ -418,6 +442,44 @@ pub fn set_map_type(context: &Context, id: LobbyId, map_type: MapType) -> FieldR
         return error("Only the host can change the map.");
     }
     lobby.map_type = map_type;
+    Ok(lobby_snapshot(lobby, identity.as_ref()))
+}
+
+/// An occupied human slot cannot be replaced. Switching back opens the invite slot.
+pub fn set_opponent(context: &Context, id: LobbyId, opponent: Opponent) -> FieldResult<Snapshot> {
+    let mut state = context
+        .store
+        .0
+        .lock()
+        .or_else(|_| error("the server state is unavailable."))?;
+    if state.games.contains_key(&id) {
+        return error("the game has already started. its opponent cannot be changed.");
+    }
+    let lobby = state
+        .lobbies
+        .get_mut(&id)
+        .ok_or_else(|| FieldError::from("this lobby no longer exists."))?;
+    let identity = context.identity();
+    if identity.as_ref() != Some(&lobby.host) {
+        return error("only the host can change the opponent.");
+    }
+    if lobby
+        .players
+        .iter()
+        .skip(1)
+        .any(|player| player.controller.session().is_some())
+    {
+        return error("another player has joined. the opponent cannot be changed.");
+    }
+    let ai_name = PlayerName::parse("AI opponent")
+        .ok_or_else(|| FieldError::from("the AI name is invalid."))?;
+    lobby.players.truncate(1);
+    if opponent == Opponent::Ai {
+        lobby.players.push(Player {
+            controller: PlayerController::Ai,
+            name: ai_name,
+        });
+    }
     Ok(lobby_snapshot(lobby, identity.as_ref()))
 }
 
@@ -477,7 +539,11 @@ pub fn game(context: &Context, id: LobbyId) -> FieldResult<GameSnapshot> {
     let Some(identity) = context.identity() else {
         return error("Only the host can start a game, and only joined players can enter it.");
     };
-    if !game.players.iter().any(|player| player.session == identity) {
+    if !game
+        .players
+        .iter()
+        .any(|player| player.controller.session() == Some(&identity))
+    {
         return error("Only the host can start a game, and only joined players can enter it.");
     }
     Ok(game_view(game, &identity))
@@ -514,7 +580,7 @@ pub fn submit_turn(
     let index = game
         .players
         .iter()
-        .position(|player| player.session == identity)
+        .position(|player| player.controller.session() == Some(&identity))
         .ok_or_else(|| {
             FieldError::new(
                 "only joined players can submit turns.",
@@ -526,9 +592,35 @@ pub fn submit_turn(
     } else {
         PlayerNumber::Player2
     };
-    game.turns
-        .submit(&mut game.scenario, player_number, turn_number, orders)
-        .map_err(|message| FieldError::new(message, juniper::Value::null()))?;
+    if game
+        .players
+        .iter()
+        .any(|player| player.controller.session().is_none())
+    {
+        let mut next_turns = game.turns.clone();
+        let mut next_scenario = game.scenario.clone();
+        // Planning sees only the AI's observation of the pre-turn board. It never
+        // receives the human's draft or submitted orders.
+        let ai_orders = ai::plan(&game.scenario, PlayerNumber::Player2)
+            .map_err(|message| FieldError::new(message, juniper::Value::null()))?;
+        next_turns
+            .submit(
+                &mut next_scenario,
+                PlayerNumber::Player2,
+                turn_number,
+                ai_orders,
+            )
+            .map_err(|message| FieldError::new(message, juniper::Value::null()))?;
+        next_turns
+            .submit(&mut next_scenario, player_number, turn_number, orders)
+            .map_err(|message| FieldError::new(message, juniper::Value::null()))?;
+        game.turns = next_turns;
+        game.scenario = next_scenario;
+    } else {
+        game.turns
+            .submit(&mut game.scenario, player_number, turn_number, orders)
+            .map_err(|message| FieldError::new(message, juniper::Value::null()))?;
+    }
     if game.turns.number != turn_number
         && let Some(resolution) = &game.turns.last_resolution
     {

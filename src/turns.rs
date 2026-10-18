@@ -13,31 +13,31 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(GraphQLInputObject)]
 pub struct CoordinateInput {
-    x: i32,
-    y: i32,
+    pub(crate) x: i32,
+    pub(crate) y: i32,
 }
 
 #[derive(GraphQLInputObject)]
 pub struct MoveOrderInput {
-    unit_id: String,
+    pub(crate) unit_id: String,
     /// Includes the starting square. A single square is an explicit hold order.
-    path: Vec<CoordinateInput>,
+    pub(crate) path: Vec<CoordinateInput>,
     /// Ambush facing or final facing after completing an attack-move route.
-    direction: Option<Direction>,
+    pub(crate) direction: Option<Direction>,
     /// Stationary combat readiness, with direction selecting the firing line.
-    ambush: Option<bool>,
+    pub(crate) ambush: Option<bool>,
     /// Stationary defensive readiness without firing.
-    stand_ground: Option<bool>,
+    pub(crate) stand_ground: Option<bool>,
     /// Infantry spend the turn preparing persistent protection.
-    dig_in: Option<bool>,
+    pub(crate) dig_in: Option<bool>,
     /// Stationary field-gun shell aimed at a tile, independently of sight.
-    indirect_fire: Option<CoordinateInput>,
+    pub(crate) indirect_fire: Option<CoordinateInput>,
     /// Move until contact, then fire at the encountered enemy.
-    attack_move: Option<bool>,
+    pub(crate) attack_move: Option<bool>,
     /// Passenger destinations after this truck moves.
-    unloads: Option<Vec<UnloadOrderInput>>,
-    load_crates: Option<i32>,
-    crate_unloads: Option<Vec<CrateUnloadInput>>,
+    pub(crate) unloads: Option<Vec<UnloadOrderInput>>,
+    pub(crate) load_crates: Option<i32>,
+    pub(crate) crate_unloads: Option<Vec<CrateUnloadInput>>,
 }
 
 #[derive(Clone, Debug)]

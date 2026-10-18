@@ -1,5 +1,6 @@
 #![deny(clippy::unwrap_used, clippy::expect_used)]
 
+mod ai;
 mod combat;
 mod graphql;
 mod lobby;

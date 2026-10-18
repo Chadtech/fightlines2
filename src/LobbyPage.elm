@@ -15,6 +15,10 @@ import Api.Enum.MapType
     exposing
         ( MapType
         )
+import Api.Enum.Opponent
+    exposing
+        ( Opponent(..)
+        )
 import Api.Mutation
 import Api.Object
 import Api.Object.PlayerView as PlayerView
@@ -74,6 +78,7 @@ type alias Flags =
 type alias Player =
     { name : String
     , isHost : Bool
+    , isAi : Bool
     }
 
 
@@ -89,10 +94,18 @@ type alias Model =
     , selectedMapType : MapType
     , busy : Bool
     , refreshing : Bool
+    , pollRevision : PollRevision
     , error : Maybe String
     , actionError : Maybe String
     , copyStatus : CopyStatus
     }
+
+
+{-| Polls belong to the lobby settings revision at which they were requested.
+A settings change invalidates older responses without blocking the controls.
+-}
+type PollRevision
+    = PollRevision Int
 
 
 type CopyStatus
@@ -109,7 +122,8 @@ type alias CopyResult =
 
 
 type Msg
-    = MapInputChanged MapType
+    = OpponentInputChanged Opponent
+    | MapInputChanged MapType
     | MapResponseReceived (Response Flags)
     | StartButtonClicked
     | StartMapResponseReceived (Response Flags)
@@ -118,7 +132,7 @@ type Msg
     | CopyLinkResultReceived CopyResult
     | CopyFeedbackElapsed
     | PollTimerElapsed Time.Posix
-    | LobbyResponseReceived (Response Flags)
+    | LobbyResponseReceived PollRevision (Response Flags)
     | ActionResponseReceived (Response Flags)
 
 
@@ -154,6 +168,7 @@ init shared flags =
       , gameUrl = flags.gameUrl
       , busy = False
       , refreshing = False
+      , pollRevision = PollRevision 0
       , error = Nothing
       , actionError = Nothing
       , copyStatus = CopyIdle
@@ -196,14 +211,21 @@ saveMap model =
 
 flagsSelection : SelectionSet Flags Api.Object.Snapshot
 flagsSelection =
-    SS.map7 Flags
-        (Snapshot.id |> SS.mapOrFail LobbyId.parse)
-        Snapshot.name
-        Snapshot.mapType
-        (Snapshot.players (SS.map2 Player PlayerView.name PlayerView.isHost))
-        Snapshot.isHost
-        Snapshot.isMember
-        Snapshot.gameUrl
+    SS.succeed Flags
+        |> SS.with (Snapshot.id |> SS.mapOrFail LobbyId.parse)
+        |> SS.with Snapshot.name
+        |> SS.with Snapshot.mapType
+        |> SS.with
+            (Snapshot.players
+                (SS.succeed Player
+                    |> SS.with PlayerView.name
+                    |> SS.with PlayerView.isHost
+                    |> SS.with PlayerView.isAi
+                )
+            )
+        |> SS.with Snapshot.isHost
+        |> SS.with Snapshot.isMember
+        |> SS.with Snapshot.gameUrl
 
 
 
@@ -215,6 +237,29 @@ flagsSelection =
 update : Msg -> Model -> ( Model, Eff Msg )
 update msg model =
     case msg of
+        OpponentInputChanged opponent ->
+            let
+                canChangeOpponent : Bool
+                canChangeOpponent =
+                    not model.busy
+                        && model.isHost
+                        && (model.gameUrl == Nothing)
+                        && not (hasHumanOpponent model)
+            in
+            if not canChangeOpponent then
+                ( model, E.none )
+
+            else
+                ( beginSettingsChange model
+                , Api.Mutation.setLobbyOpponent
+                    { id = LobbyId.toString model.id
+                    , opponent = opponent
+                    }
+                    flagsSelection
+                    |> ApiRequest.mutationRequest
+                    |> E.request ActionResponseReceived
+                )
+
         MapInputChanged mapType ->
             if model.busy || not model.isHost || model.gameUrl /= Nothing then
                 ( model, E.none )
@@ -223,11 +268,7 @@ update msg model =
                 let
                     updatedModel : Model
                     updatedModel =
-                        { model
-                            | selectedMapType = mapType
-                            , busy = True
-                            , actionError = Nothing
-                        }
+                        beginSettingsChange { model | selectedMapType = mapType }
                 in
                 ( updatedModel
                 , E.request MapResponseReceived (saveMap updatedModel)
@@ -320,20 +361,24 @@ update msg model =
         PollTimerElapsed _ ->
             refresh model
 
-        LobbyResponseReceived result ->
-            case result of
-                Ok flags ->
-                    { model
-                        | refreshing = False
-                    }
-                        |> receive flags
+        LobbyResponseReceived pollRevision result ->
+            if pollRevision /= model.pollRevision then
+                ( model, E.none )
 
-                Err error ->
-                    { model
-                        | refreshing = False
-                        , error = Just (ApiRequest.errorMessage error)
-                    }
-                        |> E.withOut
+            else
+                case result of
+                    Ok flags ->
+                        { model
+                            | refreshing = False
+                        }
+                            |> receive flags
+
+                    Err error ->
+                        { model
+                            | refreshing = False
+                            , error = Just (ApiRequest.errorMessage error)
+                        }
+                            |> E.withOut
 
         ActionResponseReceived result ->
             case result of
@@ -353,6 +398,21 @@ update msg model =
                     )
 
 
+beginSettingsChange : Model -> Model
+beginSettingsChange model =
+    let
+        nextRevision : PollRevision -> PollRevision
+        nextRevision (PollRevision revision) =
+            PollRevision (revision + 1)
+    in
+    { model
+        | busy = True
+        , actionError = Nothing
+        , refreshing = False
+        , pollRevision = nextRevision model.pollRevision
+    }
+
+
 refresh : Model -> ( Model, Eff Msg )
 refresh model =
     if model.refreshing || model.busy then
@@ -362,7 +422,7 @@ refresh model =
         ( { model
             | refreshing = True
           }
-        , E.request LobbyResponseReceived (load model.id)
+        , E.request (LobbyResponseReceived model.pollRevision) (load model.id)
         )
 
 
@@ -442,6 +502,7 @@ view model =
         ]
         [ [ inviteView model
           , mapView model
+          , opponentView model
           , lobbyView model
           , errorNotice
           , case model.error of
@@ -574,6 +635,75 @@ mapView model =
             ]
 
 
+hasHumanOpponent : Model -> Bool
+hasHumanOpponent model =
+    let
+        isHumanOpponent : Player -> Bool
+        isHumanOpponent player =
+            not player.isHost && not player.isAi
+    in
+    List.any isHumanOpponent model.players
+
+
+opponentView : Model -> Html Msg
+opponentView model =
+    let
+        selected : Opponent
+        selected =
+            if List.any .isAi model.players then
+                Ai
+
+            else
+                Human
+
+        option : Opponent -> { value : Opponent, label : String }
+        option opponent =
+            { value = opponent
+            , label = opponentLabel opponent
+            }
+    in
+    if model.isHost && model.gameUrl == Nothing then
+        H.div
+            [ A.css
+                [ S.col
+                , S.g1
+                , S.wFull
+                , S.maxW96
+                ]
+            ]
+            [ H.label
+                [ A.for "opponent"
+                ]
+                [ H.text "opponent"
+                ]
+            , Select.toHtml
+                { htmlId = "opponent"
+                , disabled = model.busy || hasHumanOpponent model
+                , selected = selected
+                , options = List.map option Api.Enum.Opponent.list
+                , toValue = Api.Enum.Opponent.toString
+                , decoder = Api.Enum.Opponent.decoder
+                , onChange = OpponentInputChanged
+                }
+            ]
+
+    else
+        H.p
+            []
+            [ H.text ("opponent: " ++ opponentLabel selected)
+            ]
+
+
+opponentLabel : Opponent -> String
+opponentLabel opponent =
+    case opponent of
+        Human ->
+            "human player"
+
+        Ai ->
+            "ai opponent"
+
+
 lobbyView : Model -> Html Msg
 lobbyView model =
     let
@@ -588,7 +718,7 @@ lobbyView model =
             else if List.length model.players < 2 then
                 H.p
                     []
-                    [ H.text "this map needs two players. share the invite link to fill the second player slot."
+                    [ H.text "invite another player or choose an ai opponent to start."
                     ]
 
             else if model.isHost then
