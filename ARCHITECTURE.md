@@ -38,7 +38,7 @@ terrain overrides. Lookup returns no tile outside the map; missing in-bounds
 coordinates fall back to the base tile. There is no stored dense grid. `Map::from_ascii` parses rectangular sketches
 with `#` for forests, `%` for hills, and spaces or `.` for plain. Spaces are
 preserved; malformed rows and unknown symbols return explicit errors.
-The six built-in scenarios are authored in `maps/*.json`, with dimensions,
+The eight built-in scenarios are authored in `maps/*.json`, with dimensions,
 typed themes, sparse terrain placements, separate supply/fuel depot placements,
 and explicit starting units (stable IDs, player, kind, position, and facing).
 Map JSON enums use Rust variant spelling, such as `GreenForest`, `FieldGun`, and
@@ -746,8 +746,9 @@ touched only at a corner does not obstruct open diagonals. Forest tiles also
 conceal their contents. Own occupied squares remain known, while
 enemies in forests remain concealed even on a known occupied square.
 Units retain an internal firing reveal flag for the next turn. After all
-combat resolves, `Turns` renews it only for units that actually fired, including
-attack moves, ambushes, return fire, and indirect fire. Visibility
+combat resolves, `Turns` renews it only for units that actually fired directly,
+including attack moves, ambushes, and return fire. Indirect fire consumes a shot
+but does not create or renew a reveal. Visibility
 includes each revealed unit and its occupied tile regardless of sight or forest
 cover, without granting surrounding sight or exposing resources or cargo. The
 previous reveal remains in playback frames until the final turn boundary.
@@ -995,13 +996,20 @@ spotlight with repeating shine. Mouse release restores the card even outside the
 `TurnPlayback.focusPositions` derives camera subjects from projected battlefield
 units during combat and casualty pauses, held movement origins, and
 projected indirect impacts. Encounter-only portrait positions never contribute.
-`GamePage` applies `Camera.focusTransform` throughout playback to center those
-subjects and reduce zoom only as needed to fit them with padding, using the
-board's CSS container dimensions. `TurnPlayback.movementFocus` captures the
-projected origins when a newly moving unit appears and retains that framing
-across tile boundaries, arrivals, and idle frames. Simultaneous movers share
-one framing; concealed routes never contribute. The navigation model remains
-untouched, restoring the saved camera when playback finishes.
+`TurnLifecycle.Playing` owns its optional playback camera and remaining pan time;
+the camera is absent until the viewport has been measured. `GamePage` retains the
+battlefield size, measured on initial render and window resize through
+`Effect.measure`. `Camera.frame` tests
+projected subject tiles against that view in pixels and leaves it unchanged when
+they fit. Clipped subjects trigger a pan with one tile of padding and a zoom
+reduction only when needed to fit the group. The board eases necessary changes
+over 1200ms; the playback view owns the remaining settling time and holds the
+animation clock until the camera arrives. Reduced motion disables the CSS pan.
+Movement subjects use interpolated visible sightings; idle frames request no
+framing change. Encounter-only portraits never contribute. The planning
+navigation retains its saved pan and zoom. After playback, `BattlefieldNavigation`
+owns the temporary return-animation status until the saved view settles or the
+user navigates.
 
 
 ## Attack move
@@ -1185,7 +1193,7 @@ snow and desert mountain assets without applying the older feature tint filters.
 `MoveOrderInput.indirectFire` carries a tile coordinate. Validation converts it
 to `FacingOrder::IndirectFire`, requires a stationary on-board field gun with no
 other actions, checks map bounds and the server-exported circular `indirectRange`
-of 12 tiles, and reserves upkeep, readiness, and one shot. Target validation never
+of 9 tiles, and reserves upkeep, readiness, and one shot. Target validation never
 consults visibility or occupancy. Ammunition continues to use supplies.
 
 `Combat.prepare` charges readiness, and `Combat.finish` resolves all surviving
@@ -1195,8 +1203,11 @@ uses `CombatKind::IndirectFire` for observable combat and casualty presentation.
 `TurnFrame.indirectImpacts` records tile landings independently of hit confirmation.
 Visibility projects own landings and observable opposing landings, and removes
 unseen enemy hit shots before theater, loss, and report derivation. Bombardment
-and settlement frames keep uniform timing for hidden hits and misses. Firing
-reveal includes misses as well as hits.
+and settlement frames keep uniform timing for hidden hits and misses. Indirect
+fire never creates a firing reveal. Projection also withholds indirect shots from
+concealed enemy guns, even against the viewer's own units, because `Shot.origin`
+and its attacker carry the firing position. Observable landings remain available
+through `indirectImpacts`, without an attacker portrait for a concealed gun.
 
 Elm's `ChoosingIndirectFire` lives inside unit selection. `OrderPlanning` computes
 range from the selected unit's server rule without consulting fog or occupancy,
@@ -1204,7 +1215,10 @@ and saves `PlannedOrder.IndirectFire` with distinct stationary and target positi
 The board offers tile buttons for pointer and keyboard targeting and preserves a
 saved target outline. `TurnPlayback.Encounter` distinguishes confirmed exchanges
 from impact-only scenes. Projected indirect landings without a matching confirmed
-shot open a terrain-only combat theater with no participants or hit/miss claims.
+shot open a combat theater with the observable firing gun beside the target terrain,
+without a target participant or hit/miss claim. `IndirectImpact.attacker` carries
+a resource-concealed portrait and authoritative health only when that gun appears
+in the projected frame; otherwise the theater shows only the landing.
 Theater controls, map peeks, spotlighting, and automatic closing share one playback
 clock; confirmed hits do not also open an impact-only scene.
 

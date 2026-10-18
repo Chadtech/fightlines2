@@ -15,13 +15,15 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-pub const MAPS: [(MapType, &str); 6] = [
+pub const MAPS: [(MapType, &str); 8] = [
     (MapType::SupplyPoint, "supply-point"),
     (MapType::ElAlamein, "el-alamein"),
     (MapType::BloodGulch, "blood-gulch"),
     (MapType::Arabia, "arabia"),
     (MapType::Sidewinder, "sidewinder"),
     (MapType::BlackForest, "black-forest"),
+    (MapType::Crossroads, "crossroads"),
+    (MapType::Ridgeway, "ridgeway"),
 ];
 
 pub struct Editor {
@@ -466,7 +468,7 @@ mod tests {
             if peer == Ipv4Addr::LOCALHOST {
                 assert_eq!(
                     body["data"]["maps"]["rest"].as_array().map(Vec::len),
-                    Some(5)
+                    Some(MAPS.len() - 1)
                 );
                 assert_eq!(body["data"]["health"], json!(true));
             } else if !success {

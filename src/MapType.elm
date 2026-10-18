@@ -26,3 +26,9 @@ label mapType =
 
         Api.Enum.MapType.BlackForest ->
             "black forest"
+
+        Api.Enum.MapType.Crossroads ->
+            "crossroads"
+
+        Api.Enum.MapType.Ridgeway ->
+            "ridgeway"

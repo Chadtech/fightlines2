@@ -16,11 +16,13 @@ type MapType
     | Arabia
     | Sidewinder
     | BlackForest
+    | Crossroads
+    | Ridgeway
 
 
 list : List MapType
 list =
-    [ SupplyPoint, ElAlamein, BloodGulch, Arabia, Sidewinder, BlackForest ]
+    [ SupplyPoint, ElAlamein, BloodGulch, Arabia, Sidewinder, BlackForest, Crossroads, Ridgeway ]
 
 
 decoder : Decoder MapType
@@ -46,6 +48,12 @@ decoder =
 
                     "BLACK_FOREST" ->
                         Decode.succeed BlackForest
+
+                    "CROSSROADS" ->
+                        Decode.succeed Crossroads
+
+                    "RIDGEWAY" ->
+                        Decode.succeed Ridgeway
 
                     _ ->
                         Decode.fail ("Invalid MapType type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
@@ -74,6 +82,12 @@ toString enum____ =
 
         BlackForest ->
             "BLACK_FOREST"
+
+        Crossroads ->
+            "CROSSROADS"
+
+        Ridgeway ->
+            "RIDGEWAY"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -107,6 +121,12 @@ fromString enumString____ =
 
         "BLACK_FOREST" ->
             Just BlackForest
+
+        "CROSSROADS" ->
+            Just Crossroads
+
+        "RIDGEWAY" ->
+            Just Ridgeway
 
         _ ->
             Nothing

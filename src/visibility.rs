@@ -360,7 +360,20 @@ fn observed_frames(
                             impact.player_number == player_number
                                 || known_endpoint(impact.destination)
                         })
-                        .cloned()
+                        .map(|impact| {
+                            let mut projected = impact.clone();
+                            projected.attacker = impact
+                                .attacker
+                                .as_ref()
+                                .filter(|attacker| {
+                                    observed
+                                        .units
+                                        .iter()
+                                        .any(|unit| unit.unit_id() == attacker.unit.unit_id())
+                                })
+                                .cloned();
+                            projected
+                        })
                         .collect(),
                     depots: observed.depots,
                     supply_crates: observed.supply_crates,
@@ -371,7 +384,16 @@ fn observed_frames(
                             let unconfirmed_bombardment = shot.kind == CombatKind::IndirectFire
                                 && shot.target.player_number() != player_number
                                 && !known_endpoint(shot.destination);
+                            // A confirmed hit must not disclose a concealed gun's origin.
+                            // Its landing remains available through indirect_impacts.
+                            let concealed_bombardment = shot.kind == CombatKind::IndirectFire
+                                && shot.attacker.player_number() != player_number
+                                && !observed
+                                    .units
+                                    .iter()
+                                    .any(|unit| unit.unit_id() == shot.attacker.unit_id());
                             !unconfirmed_bombardment
+                                && !concealed_bombardment
                                 && (shot.attacker.player_number() == player_number
                                     || shot.target.player_number() == player_number
                                     || (known_endpoint(shot.origin)

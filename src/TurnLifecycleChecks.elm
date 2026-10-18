@@ -107,12 +107,40 @@ checks =
                 playing =
                     TurnLifecycle.startTurn False frames
 
+                framedPlayback : Phase
+                framedPlayback =
+                    case playing of
+                        Playing state ->
+                            Playing { state | camera = Just { camera = { offset = { x = 48, y = 24 }, zoom = 1.25 }, remainingPanMs = 0 } }
+
+                        _ ->
+                            playing
+
                 alreadySubmittedPlayback : Phase
                 alreadySubmittedPlayback =
                     TurnLifecycle.startTurn True frames
             in
             List.concat
-                [ expect "starting submission must lock editing and retain the inspected unit"
+                [ expect "playback camera survives inspection changes and intermediate frames"
+                    (case TurnLifecycle.tick 1 (TurnLifecycle.setSelection (Just inspectedTile) framedPlayback) of
+                        Just { phase } ->
+                            case ( phase, framedPlayback ) of
+                                ( Playing next, Playing original ) ->
+                                    next.camera == original.camera
+
+                                _ ->
+                                    False
+
+                        Nothing ->
+                            False
+                    )
+                , expect "finishing playback discards its camera in planning or waiting"
+                    (TurnLifecycle.tick 1000 framedPlayback
+                        == TurnLifecycle.tick 1000 playing
+                        && TurnLifecycle.tick 1000 (TurnLifecycle.observeSubmission True framedPlayback)
+                        == TurnLifecycle.tick 1000 alreadySubmittedPlayback
+                    )
+                , expect "starting submission must lock editing and retain the inspected unit"
                     (TurnLifecycle.startSubmission 1 choosingMove == pending)
                 , expect "starting submission again must not alter any locked phase"
                     (TurnLifecycle.startSubmission 2 pending

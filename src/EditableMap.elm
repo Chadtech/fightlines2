@@ -198,3 +198,9 @@ name kind =
 
         MapType.BlackForest ->
             "black-forest"
+
+        MapType.Crossroads ->
+            "crossroads"
+
+        MapType.Ridgeway ->
+            "ridgeway"

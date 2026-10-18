@@ -8,9 +8,12 @@ module View.CombatTheater exposing
     )
 
 import Api.Enum.CombatKind as CombatKind
+import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
+import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing exposing (SpriteFacing)
 import Api.Enum.Terrain as Terrain exposing (Terrain)
+import Api.Enum.UnitKind as UnitKind
 import CombatHealth exposing (CombatHealth)
 import Coordinate exposing (Coordinate)
 import Css
@@ -18,6 +21,7 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Html.Styled.Lazy as Lazy
+import IndirectImpact exposing (Attacker)
 import Map exposing (Map)
 import Style as S
 import Svg.Styled as Svg
@@ -81,8 +85,14 @@ attackerOnLeft panel =
                 _ ->
                     True
 
-        Impact _ ->
-            True
+        Impact impact ->
+            case impact.attacker |> Maybe.andThen (.unit >> Unit.mapPosition) of
+                Just attacker ->
+                    (attacker.x < impact.destination.x)
+                        || ((attacker.x == impact.destination.x) && (attacker.y <= impact.destination.y))
+
+                Nothing ->
+                    True
 
 
 {-| Let the final impact and its camera shake settle, then pause for half a second.
@@ -177,8 +187,21 @@ theaterView automaticallyClose map panel =
                         , attackerView SpriteFacing.Left
                         ]
 
-                Impact position ->
-                    [ impactScene map panel position ]
+                Impact impact ->
+                    case impact.attacker of
+                        Just attacker ->
+                            if attackerOnLeft panel then
+                                [ impactAttacker map panel attacker SpriteFacing.Right
+                                , impactScene map panel impact.destination
+                                ]
+
+                            else
+                                [ impactScene map panel impact.destination
+                                , impactAttacker map panel attacker SpriteFacing.Left
+                                ]
+
+                        Nothing ->
+                            [ impactScene map panel impact.destination ]
 
         title : String
         title =
@@ -200,8 +223,13 @@ theaterView automaticallyClose map panel =
         sceneColumns : Css.Style
         sceneColumns =
             case panel.encounter of
-                Impact _ ->
-                    S.gridCols1
+                Impact impact ->
+                    case impact.attacker of
+                        Just _ ->
+                            S.gridCols2
+
+                        Nothing ->
+                            S.gridCols1
 
                 Exchange _ ->
                     S.gridCols2
@@ -416,6 +444,19 @@ rumbleTransform panel =
         |> Maybe.withDefault "none"
 
 
+impactAttacker : Map -> Panel -> Attacker -> SpriteFacing -> Html Msg
+impactAttacker map panel attacker facing =
+    let
+        unit : Unit
+        unit =
+            attacker.unit
+    in
+    portrait map
+        panel
+        { before = attacker.health, after = attacker.health }
+        { unit | spriteFacing = facing }
+
+
 impactScene : Map -> Panel -> Coordinate -> Html Msg
 impactScene map panel position =
     let
@@ -450,9 +491,8 @@ impactScene map panel position =
                 |> List.filterMap identity
     in
     scene
-        map
+        (Just (backdropPath map.theme (Map.terrainAt map position)))
         panel
-        (Map.terrainAt map position)
         "indirect fire impact; no confirmed target"
         explosions
 
@@ -474,26 +514,86 @@ portrait map panel health unit =
                 ++ " before combat, "
                 ++ String.fromInt (CombatFormation.figureCount unit.kind health.after.current)
                 ++ " remaining"
-    in
-    scene
-        map
-        panel
-        terrain
-        description
-        (CombatFormation.toSvg panel.elapsed health unit)
 
+        isEntrenchedInfantry : Bool
+        isEntrenchedInfantry =
+            (unit.kind == UnitKind.Infantry) && (unit.entrenchment == Entrenchment.Entrenched)
 
-scene : Map -> Panel -> Terrain -> String -> List (Svg.Svg Msg) -> Html Msg
-scene map panel terrain description figures =
-    let
-        path : String
-        path =
-            backdropPath map.theme terrain
+        team : String
+        team =
+            case unit.playerNumber of
+                PlayerNumber.Player1 ->
+                    "red"
 
-        background : Svg.Svg Msg
-        background =
+                PlayerNumber.Player2 ->
+                    "blue"
+
+        underFieldGunFire : Bool
+        underFieldGunFire =
+            case panel.encounter of
+                Exchange exchange ->
+                    if unit.id == exchange.target.id then
+                        exchange.attacker.kind == UnitKind.FieldGun
+
+                    else
+                        -- Reciprocal shots share one panel; damage confirms return fire.
+                        (exchange.target.kind == UnitKind.FieldGun)
+                            && (health.after.current < health.before.current)
+
+                Impact _ ->
+                    False
+
+        trenchPath : String
+        trenchPath =
+            if underFieldGunFire then
+                "/assets/combat-trench-interior-v1/taking-cover-" ++ team ++ ".png"
+
+            else
+                "/assets/combat-trench-interior-v1/" ++ team ++ ".png"
+
+        trenchImage : Svg.Svg Msg
+        trenchImage =
             Svg.image
-                [ SA.xlinkHref path
+                [ SA.xlinkHref trenchPath
+                , SA.width "96"
+                , SA.height "64"
+                , SA.preserveAspectRatio "xMidYMid meet"
+                , SA.transform trenchFacing
+                , Aria.hidden True
+                ]
+                []
+
+        trenchFacing : String
+        trenchFacing =
+            case unit.spriteFacing of
+                SpriteFacing.Left ->
+                    "translate(96 0) scale(-1 1)"
+
+                SpriteFacing.Right ->
+                    ""
+    in
+    if isEntrenchedInfantry then
+        scene
+            Nothing
+            panel
+            (Unit.label unit)
+            (trenchImage :: CombatFormation.impactsToSvg panel.elapsed health unit)
+
+    else
+        scene
+            (Just (backdropPath map.theme terrain))
+            panel
+            description
+            (CombatFormation.toSvg panel.elapsed health unit)
+
+
+scene : Maybe String -> Panel -> String -> List (Svg.Svg Msg) -> Html Msg
+scene path panel description figures =
+    let
+        background : String -> Svg.Svg Msg
+        background imagePath =
+            Svg.image
+                [ SA.xlinkHref imagePath
                 , SA.x "-4"
                 , SA.y "-4"
                 , SA.width "104"
@@ -505,13 +605,18 @@ scene map panel terrain description figures =
 
         content : List (Svg.Svg Msg)
         content =
-            background :: figures
+            case path of
+                Nothing ->
+                    figures
+
+                Just imagePath ->
+                    background imagePath :: figures
     in
     Svg.svg
         [ SA.viewBox "0 0 96 64"
         , Aria.role Aria.Image
         , Aria.label description
-        , A.attribute "data-combat-backdrop" path
+        , A.attribute "data-combat-backdrop" (Maybe.withDefault "" path)
         , SA.css
             [ S.block
             , S.wFull

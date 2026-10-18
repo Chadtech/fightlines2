@@ -1,5 +1,6 @@
 module TurnLifecycle exposing
     ( Phase(..)
+    , PlaybackCamera
     , Submission
     , WaitingState
     , acknowledgeLoss
@@ -23,6 +24,7 @@ module TurnLifecycle exposing
     , toLabel
     )
 
+import Camera exposing (Camera)
 import GamePage.OrderPlanning as OrderPlanning
 import GamePage.Selection as Selection exposing (Inspection, Selection(..))
 import PlannedOrder exposing (PlannedOrder)
@@ -41,6 +43,13 @@ type alias PlaybackState =
     { animation : TurnPlayback.Playback
     , inspection : Maybe Inspection
     , afterPlayback : AfterPlayback
+    , camera : Maybe PlaybackCamera
+    }
+
+
+type alias PlaybackCamera =
+    { camera : Camera
+    , remainingPanMs : Float
     }
 
 
@@ -335,7 +344,7 @@ startTurn submitted frames =
     in
     case TurnPlayback.start frames of
         Just animation ->
-            Playing { animation = animation, inspection = Nothing, afterPlayback = afterPlayback }
+            Playing { animation = animation, inspection = Nothing, afterPlayback = afterPlayback, camera = Nothing }
 
         Nothing ->
             ready

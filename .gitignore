@@ -60,3 +60,7 @@
 # Entrenched infantry runtime cells.
 !/public/assets/infantry-entrenched-v1/
 !/public/assets/infantry-entrenched-v1/*.png
+
+# Team-colored trench interior combat scenes.
+!/public/assets/combat-trench-interior-v1/
+!/public/assets/combat-trench-interior-v1/*.png

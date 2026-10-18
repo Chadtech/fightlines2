@@ -526,7 +526,7 @@ planningChecks infantryId truckId passengerId =
                 | kind = Kind.FieldGun
                 , combatRules =
                     { range = 3
-                    , indirectRange = 12
+                    , indirectRange = 9
                     , shape = AmbushShape.Cross
                     , damage = 12
                     , readinessCost = 2
@@ -3662,13 +3662,13 @@ planningChecks infantryId truckId passengerId =
                         outOfRangeContext.units
                         outOfRangeContext.playerNumbers
                         outOfRangeContext.movementRules
-                        { x = 14, y = 1 }
+                        { x = 11, y = 1 }
                         (OrderPlanning.previewTile
                             outOfRangeContext.map
                             outOfRangeContext.units
                             outOfRangeContext.playerNumbers
                             outOfRangeContext.movementRules
-                            { x = 13, y = 1 }
+                            { x = 10, y = 1 }
                             edgeAim
                         )
                     )
@@ -3702,20 +3702,20 @@ planningChecks infantryId truckId passengerId =
                 outOfRangeContext.movementRules
                 outOfRangeContext.supplyCrates
                 outOfRangeContext.depots
-                { x = 14, y = 1 }
+                { x = 11, y = 1 }
                 >> fixtureValue
              )
                 edgeAim
                 == edgeAim
             )
         , expect "indirect fire includes the circular range boundary"
-            (List.member { x = 13, y = 1 }
+            (List.member { x = 10, y = 1 }
                 (OrderPlanning.indirectTargets
                     outOfRangeContext.map
                     edgeAim
                 )
                 && not
-                    (List.member { x = 13, y = 2 }
+                    (List.member { x = 10, y = 2 }
                         (OrderPlanning.indirectTargets
                             outOfRangeContext.map
                             edgeAim

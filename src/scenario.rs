@@ -381,7 +381,7 @@ impl Unit {
         self.firing_position_revealed
     }
 
-    /// Firing reveals a unit's position for the following turn.
+    /// Direct fire reveals a unit's position for the following turn.
     pub(crate) fn finish_firing_reveal(&mut self, fired: bool) {
         self.firing_position_revealed = fired;
     }
@@ -703,6 +703,16 @@ impl Scenario {
         MapDefinition::parse(include_str!("../maps/black-forest.json"))?.scenario()
     }
 
+    /// Compact mirrored skirmish with wooded flanks and a shared central supply depot.
+    pub fn crossroads() -> Result<Self, MapError> {
+        MapDefinition::parse(include_str!("../maps/crossroads.json"))?.scenario()
+    }
+
+    /// Mixed arms on three open approaches divided by wooded ridges.
+    pub fn ridgeway() -> Result<Self, MapError> {
+        MapDefinition::parse(include_str!("../maps/ridgeway.json"))?.scenario()
+    }
+
     pub fn supply_point() -> Result<Self, MapError> {
         MapDefinition::parse(include_str!("../maps/supply-point.json"))?.scenario()
     }
@@ -785,13 +795,17 @@ mod tests {
             crate::map_type::MapType::Arabia,
             crate::map_type::MapType::Sidewinder,
             crate::map_type::MapType::BlackForest,
+            crate::map_type::MapType::Crossroads,
+            crate::map_type::MapType::Ridgeway,
         ] {
             let scenario = map_type.scenario().fixture()?;
             let expected = match map_type {
                 crate::map_type::MapType::ElAlamein | crate::map_type::MapType::Arabia => {
                     MapTheme::Desert
                 }
-                crate::map_type::MapType::SupplyPoint => MapTheme::GreenForest,
+                crate::map_type::MapType::SupplyPoint
+                | crate::map_type::MapType::Crossroads
+                | crate::map_type::MapType::Ridgeway => MapTheme::GreenForest,
                 crate::map_type::MapType::BloodGulch | crate::map_type::MapType::BlackForest => {
                     MapTheme::GreenForest
                 }

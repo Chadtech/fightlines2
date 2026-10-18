@@ -10,10 +10,14 @@ import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.Terrain as Terrain
 import Api.Enum.TurnEventKind as EventKind
 import Api.Enum.UnitKind as Kind
+import Camera
 import CombatHealth exposing (CombatHealth)
 import Coordinate exposing (Coordinate)
 import Direction
+import IndirectImpact exposing (IndirectImpact)
+import Map
 import Platform
+import Point exposing (Point)
 import Shot exposing (Shot)
 import Turn
 import TurnPlayback
@@ -42,7 +46,7 @@ checks : List String
 checks =
     case ( UnitId.parse "1", UnitId.parse "2" ) of
         ( Ok first, Ok second ) ->
-            playbackChecks first second ++ truckPlaybackChecks first ++ transportPlaybackChecks first second ++ spriteFacingChecks first ++ deathPlaybackChecks first ++ deathFocusChecks first second ++ combatPlaybackChecks first second ++ combatDeathChecks first second ++ combatTheaterChecks ++ lossDetailsChecks first second ++ carrierLossEventChecks first second
+            playbackChecks first second ++ truckPlaybackChecks first ++ transportPlaybackChecks first second ++ spriteFacingChecks first ++ deathPlaybackChecks first ++ deathFocusChecks first second ++ combatPlaybackChecks first second ++ combatDeathChecks first second ++ cameraChecks ++ combatTheaterChecks ++ lossDetailsChecks first second ++ carrierLossEventChecks first second
 
         _ ->
             [ "could not construct fixture IDs" ]
@@ -262,7 +266,6 @@ playbackChecks first second =
         sharedPlayback =
             { current = firstFrame
             , remaining = [ middleFrame, lastFrame ]
-            , movementFocus = { unitIds = [], positions = [] }
             , acknowledgedLosses = []
             , presentation = TurnPlayback.Battlefield
             , elapsed = 0
@@ -330,26 +333,20 @@ playbackChecks first second =
                 [ name ]
     in
     List.concat
-        [ expect "camera holds simultaneous movement at its opening positions"
-            (Maybe.map TurnPlayback.focusPositions timedHalfway == Just [ { x = 0, y = 0 }, { x = 2, y = 1 } ])
-        , expect "camera does not frame routes entering or leaving fog"
-            (Maybe.map TurnPlayback.focusPositions entering == Just [ { x = 0, y = 0 } ] && Maybe.map TurnPlayback.focusPositions leaving == Just [ { x = 0, y = 0 } ])
-        , expect "camera holds its opening position across movement tile boundaries"
-            (Maybe.map TurnPlayback.focusPositions longRoute
-                == Just [ { x = 0, y = 0 } ]
-                && Maybe.map TurnPlayback.focusPositions afterBoundary
-                == Just [ { x = 0, y = 0 } ]
-                && (TurnPlayback.movingPositions afterBoundary |> List.map .position)
-                == [ { x = 1, y = 0.5 } ]
-            )
-        , expect "camera holds after movement instead of snapping back during an idle frame"
-            (Maybe.map TurnPlayback.focusPositions afterMovement == Just [ { x = 0, y = 0 } ])
-        , expect "camera pans again when a different unit starts moving"
-            (Maybe.map TurnPlayback.focusPositions surplus == Just [ { x = 2, y = 1 } ])
-        , expect "camera frames a fog departure at its last observed origin"
-            (Maybe.map TurnPlayback.focusPositions departing == Just [ { x = 2, y = 1 } ])
+        [ expect "camera subjects follow interpolated visible movers"
+            (Maybe.map TurnPlayback.focusPositions timedHalfway == Just [ { x = 0.5, y = 0 }, { x = 1.5, y = 1 } ])
+        , expect "camera subjects exclude routes entering or leaving fog"
+            (Maybe.map TurnPlayback.focusPositions entering == Just [ { x = 0.5, y = 0 } ] && Maybe.map TurnPlayback.focusPositions leaving == Just [ { x = 0.5, y = 0 } ])
+        , expect "camera subjects track visible movement across tile boundaries"
+            (Maybe.map TurnPlayback.focusPositions afterBoundary == Just [ { x = 1, y = 0.5 } ])
+        , expect "idle frames do not request a return pan"
+            (Maybe.map TurnPlayback.focusPositions afterMovement == Just [])
+        , expect "camera subjects update when another unit starts moving"
+            (Maybe.map TurnPlayback.focusPositions surplus == Just [ { x = 1.5, y = 1 } ])
+        , expect "camera subjects include only the projected fog departure"
+            (Maybe.map TurnPlayback.focusPositions departing == Just (List.map .position (TurnPlayback.movingPositions departing)))
         , expect "camera frames projected indirect impacts even without a hit"
-            (TurnPlayback.focusPositions { sharedPlayback | current = { firstFrame | indirectImpacts = [ { x = 8, y = 9 } ] }, remaining = [] } == [ { x = 8, y = 9 } ])
+            (TurnPlayback.focusPositions { sharedPlayback | current = { firstFrame | indirectImpacts = [ { destination = { x = 8, y = 9 }, attacker = Nothing } ] }, remaining = [] } == [ { x = 8, y = 9 } ])
         , expect "all simultaneous arrivals interpolate using server frame duration"
             (TurnPlayback.movingPositions timedHalfway == [ { unitId = first, position = { x = 0.5, y = 0 } }, { unitId = second, position = { x = 1.5, y = 1 } } ])
         , expect "only the first unit interpolates during its route"
@@ -634,7 +631,6 @@ transportPlaybackChecks passengerId truckId =
                       , visibleTiles = []
                       }
                     ]
-                , movementFocus = { unitIds = [], positions = [] }
                 , acknowledgedLosses = []
                 , presentation = TurnPlayback.Battlefield
                 , elapsed = 0
@@ -741,7 +737,7 @@ spriteFacingChecks id =
 
         playback : TurnPlayback.Playback
         playback =
-            { current = frame tank, remaining = [ frame west, frame north, frame south ], elapsed = 0, movementFocus = { unitIds = [], positions = [] }, acknowledgedLosses = [], presentation = TurnPlayback.Battlefield }
+            { current = frame tank, remaining = [ frame west, frame north, frame south ], elapsed = 0, acknowledgedLosses = [], presentation = TurnPlayback.Battlefield }
 
         ( _, westFrame ) =
             TurnPlayback.tick 90 playback
@@ -962,7 +958,7 @@ combatPlaybackChecks first second =
             let
                 landing : TurnPlayback.Frame
                 landing =
-                    { before | units = [ attacker ], indirectImpacts = [ shot.destination, shot.destination ] }
+                    { before | units = [ attacker ], indirectImpacts = [ { destination = shot.destination, attacker = Nothing }, { destination = shot.destination, attacker = Nothing } ] }
 
                 focus : Maybe TurnPlayback.Playback
                 focus =
@@ -990,22 +986,53 @@ combatPlaybackChecks first second =
                 afterHit =
                     hit |> Maybe.andThen TurnPlayback.continueCombat |> Maybe.map .animation
 
+                knownImpact : IndirectImpact
+                knownImpact =
+                    { destination = shot.destination
+                    , attacker = Just { unit = attacker, health = shot.attackerHealth.before }
+                    }
+
+                knownLanding : TurnPlayback.Frame
+                knownLanding =
+                    { landing | indirectImpacts = [ knownImpact ] }
+
+                knownShown : Maybe TurnPlayback.Playback
+                knownShown =
+                    TurnPlayback.start [ before, knownLanding ]
+                        |> Maybe.andThen (TurnPlayback.tick 180 >> Tuple.first)
+                        |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+
+                knownPanel : TurnPlayback.Panel
+                knownPanel =
+                    { encounter = TurnPlayback.Impact knownImpact
+                    , elapsed = 0
+                    , mapView = TurnPlayback.CardVisible
+                    }
+
                 ready : Float -> Bool
                 ready elapsed =
                     CombatTheater.readyToAutomaticallyClose
-                        { encounter = TurnPlayback.Impact shot.destination
+                        { encounter = TurnPlayback.Impact { destination = shot.destination, attacker = Nothing }
                         , elapsed = elapsed
                         , mapView = TurnPlayback.CardVisible
                         }
             in
-            expect "unconfirmed indirect impacts open a theater without invented combatants"
-                (Maybe.andThen TurnPlayback.activeEncounter shown
-                    == Just (TurnPlayback.Impact shot.destination)
-                    && Maybe.andThen TurnPlayback.combat shown
-                    == Nothing
-                    && Maybe.andThen TurnPlayback.panels shown
-                    /= Nothing
+            expect "known indirect attacker is retained alongside an unconfirmed landing"
+                (Maybe.andThen TurnPlayback.activeEncounter knownShown
+                    == Just (TurnPlayback.Impact knownImpact)
+                    && Maybe.map TurnPlayback.focusPositions knownShown
+                    == Just [ { x = 2, y = 2 }, { x = 3, y = 2 } ]
+                    && CombatTheater.attackerOnLeft knownPanel
+                    && not (CombatTheater.attackerOnLeft { knownPanel | encounter = TurnPlayback.Impact { knownImpact | destination = { x = 1, y = 2 } } })
                 )
+                ++ expect "unconfirmed indirect impacts open a theater without invented combatants"
+                    (Maybe.andThen TurnPlayback.activeEncounter shown
+                        == Just (TurnPlayback.Impact { destination = shot.destination, attacker = Nothing })
+                        && Maybe.andThen TurnPlayback.combat shown
+                        == Nothing
+                        && Maybe.andThen TurnPlayback.panels shown
+                        /= Nothing
+                    )
                 ++ expect "impact spotlight and camera frame only the landing"
                     (Maybe.andThen TurnPlayback.spotlight focus
                         == Just [ shot.destination ]
@@ -1529,7 +1556,7 @@ deathPlaybackChecks id =
 
         animation : TurnPlayback.Playback
         animation =
-            { current = dying, remaining = [ gone ], elapsed = 0, movementFocus = { unitIds = [], positions = [] }, acknowledgedLosses = [], presentation = TurnPlayback.Battlefield }
+            { current = dying, remaining = [ gone ], elapsed = 0, acknowledgedLosses = [], presentation = TurnPlayback.Battlefield }
 
         ( pending, beforeRemoval ) =
             TurnPlayback.tick 1399 animation
@@ -1888,7 +1915,7 @@ carrierLossEventChecks first second =
 
                 animation : TurnPlayback.Playback
                 animation =
-                    { current = frame, remaining = [ { frame | units = [] } ], elapsed = 0, presentation = TurnPlayback.Battlefield, movementFocus = { unitIds = [], positions = [] }, acknowledgedLosses = [] }
+                    { current = frame, remaining = [ { frame | units = [] } ], elapsed = 0, presentation = TurnPlayback.Battlefield, acknowledgedLosses = [] }
 
                 shot : Shot
                 shot =
@@ -1929,3 +1956,64 @@ carrierLossEventChecks first second =
 
         _ ->
             [ "could not construct carrier loss fixture IDs" ]
+
+
+cameraChecks : List String
+cameraChecks =
+    let
+        map : Map.Map
+        map =
+            Map.fromFeatures { width = 17, height = 17, baseTile = Terrain.Plain, theme = MapTheme.GreenForest, features = [] }
+
+        viewport : Point
+        viewport =
+            { x = 1000, y = 600 }
+
+        overview : Camera.Camera
+        overview =
+            { offset = { x = 0, y = 0 }, zoom = 1 }
+
+        zoomed : Camera.Camera
+        zoomed =
+            { overview | zoom = 3 }
+
+        offscreen : List Point
+        offscreen =
+            [ { x = 16, y = 0 } ]
+
+        panned : Camera.Camera
+        panned =
+            Camera.frame viewport map offscreen zoomed
+
+        group : List Point
+        group =
+            [ { x = 0, y = 0 }, { x = 16, y = 16 } ]
+
+        fitted : Camera.Camera
+        fitted =
+            Camera.frame viewport map group zoomed
+
+        expect : String -> Bool -> List String
+        expect name passed =
+            if passed then
+                []
+
+            else
+                [ name ]
+    in
+    List.concat
+        [ expect "overview stays fixed as subjects switch between opposite map corners"
+            (Camera.frame viewport map group overview == overview)
+        , expect "visible unit does not recenter a zoomed view"
+            (Camera.frame viewport map [ { x = 9, y = 8 } ] zoomed == zoomed)
+        , expect "offscreen unit triggers a pan without unnecessary zoom"
+            (panned.offset /= zoomed.offset && panned.zoom == zoomed.zoom)
+        , expect "new visible subject retains the previous playback pan"
+            (Camera.frame viewport map [ { x = 15, y = 1 } ] panned == panned)
+        , expect "idle frames retain the last camera"
+            (Camera.frame viewport map [] panned == panned)
+        , expect "distant simultaneous subjects fit together without repeated reframing"
+            (fitted.zoom < zoomed.zoom && Camera.frame viewport map group fitted == fitted)
+        , expect "narrow viewport uses its horizontal bounds"
+            (Camera.frame { x = 320, y = 900 } map group zoomed /= zoomed)
+        ]

@@ -1,6 +1,7 @@
 module View.CombatFormation exposing
     ( figureCount
     , impactStarts
+    , impactsToSvg
     , lossStartsAt
     , toSvg
     )
@@ -169,7 +170,17 @@ placements kind =
 
 
 toSvg : Float -> CombatHealth -> Unit -> List (Svg msg)
-toSvg elapsed health unit =
+toSvg =
+    layersToSvg [ Combatants, Impacts ]
+
+
+impactsToSvg : Float -> CombatHealth -> Unit -> List (Svg msg)
+impactsToSvg =
+    layersToSvg [ Impacts ]
+
+
+layersToSvg : List Layer -> Float -> CombatHealth -> Unit -> List (Svg msg)
+layersToSvg layers elapsed health unit =
     let
         beforeCount : Int
         beforeCount =
@@ -296,12 +307,8 @@ toSvg elapsed health unit =
         visiblePlacements =
             List.take beforeCount (placements unit.kind)
 
-        combatants : List (Svg msg)
-        combatants =
-            List.indexedMap (figure Combatants) visiblePlacements
-
-        impacts : List (Svg msg)
-        impacts =
-            List.indexedMap (figure Impacts) visiblePlacements
+        renderLayer : Layer -> List (Svg msg)
+        renderLayer layer =
+            List.indexedMap (figure layer) visiblePlacements
     in
-    combatants ++ impacts
+    List.concatMap renderLayer layers

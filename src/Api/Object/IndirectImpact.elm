@@ -20,6 +20,13 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+attacker :
+    SelectionSet decodesTo Api.Object.IndirectFireAttacker
+    -> SelectionSet (Maybe decodesTo) Api.Object.IndirectImpact
+attacker object____ =
+    Object.selectionForCompositeField "attacker" [] object____ (Basics.identity >> Decode.nullable)
+
+
 playerNumber : SelectionSet Api.Enum.PlayerNumber.PlayerNumber Api.Object.IndirectImpact
 playerNumber =
     Object.selectionForField "Enum.PlayerNumber.PlayerNumber" "playerNumber" [] Api.Enum.PlayerNumber.decoder

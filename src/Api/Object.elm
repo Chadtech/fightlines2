@@ -57,6 +57,10 @@ type HitPoints
     = HitPoints
 
 
+type IndirectFireAttacker
+    = IndirectFireAttacker
+
+
 type IndirectImpact
     = IndirectImpact
 

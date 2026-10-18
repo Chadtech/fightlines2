@@ -34,6 +34,8 @@ import Api.Object.Scenario as Scenario
 import Api.Object.TerrainMovementCost as MovementCostApi
 import Api.Query
 import ApiRequest
+import Browser.Dom
+import Browser.Events
 import Camera exposing (Camera)
 import CombatRules
 import Coordinate exposing (Coordinate)
@@ -118,7 +120,7 @@ import Util.Maybe as MaybeUtil
 import View.Ambush as Ambush
 import View.Aria as Aria
 import View.Button as Button
-import View.CargoPassenger as CargoPassenger
+import View.Cargo as Cargo
 import View.Checkbox as Checkbox
 import View.CombatEffects as CombatEffects
 import View.CombatTheater as CombatTheater
@@ -167,8 +169,19 @@ type alias Model =
     , visibleTiles : List Coordinate
     , movementRules : List Movement.Rule
     , navigation : BattlefieldNavigation.Model
+    , battlefieldSize : Maybe Point
     , frame : AnimationFrame.Frame
     }
+
+
+cameraPanDurationMs : Float
+cameraPanDurationMs =
+    1200
+
+
+battlefieldHtmlId : String
+battlefieldHtmlId =
+    "battlefield-navigation"
 
 
 type alias Snapshot =
@@ -216,7 +229,10 @@ type alias RotationSelection =
 
 
 type Msg
-    = BattlefieldNavigationMsg BattlefieldNavigation.Msg
+    = BattlefieldSizeReceived (Result Browser.Dom.Error Browser.Dom.Element)
+    | CameraReturnFinished
+    | WindowResized
+    | BattlefieldNavigationMsg BattlefieldNavigation.Msg
     | CommandMenuMsg CommandMenu.Msg
     | PreviousCommandPressed
     | NextCommandPressed
@@ -294,7 +310,7 @@ type alias Flags =
     { snapshot : Snapshot }
 
 
-init : Shared.Model -> Flags -> ( Model, Eff msg )
+init : Shared.Model -> Flags -> ( Model, Eff Msg )
 init shared flags =
     let
         loadPreference : String -> ( Bool, Maybe Error )
@@ -345,10 +361,11 @@ init shared flags =
             , visibleTiles = flags.snapshot.visibleTiles
             , movementRules = flags.snapshot.movementRules
             , navigation = BattlefieldNavigation.init
+            , battlefieldSize = Nothing
             , frame = AnimationFrame.first
             }
 
-        eff : Eff msg
+        eff : Eff Msg
         eff =
             if showTurnIntroduction model then
                 E.toJs
@@ -359,7 +376,7 @@ init shared flags =
             else
                 E.none
     in
-    ( model, eff )
+    ( model, E.batch [ eff, E.measure battlefieldHtmlId BattlefieldSizeReceived ] )
 
 
 load : LobbyId -> Graphql.Http.Request Flags
@@ -1244,7 +1261,7 @@ focusAdjacentCommand orderCommands current model =
 
 mapNavigation : (BattlefieldNavigation.Model -> BattlefieldNavigation.Model) -> Model -> Model
 mapNavigation change model =
-    { model | navigation = change model.navigation }
+    { model | navigation = change model.navigation |> BattlefieldNavigation.finishReturn }
 
 
 cargoDialogHtmlId : TurnLifecycle.Phase -> Maybe String
@@ -1402,11 +1419,86 @@ indirectFireDetails unit =
 ----------------------------------------------------------------
 
 
+{-| Retain playback framing across subject changes. Only projected positions
+can request a pan, and the saved planning navigation remains independent.
+-}
+updatePlaybackCamera : Model -> Model
+updatePlaybackCamera model =
+    case ( model.currentTurn.phase, model.battlefieldSize ) of
+        ( TurnLifecycle.Playing playing, Just size ) ->
+            let
+                previous : Camera
+                previous =
+                    playing.camera
+                        |> Maybe.map .camera
+                        |> Maybe.withDefault (BattlefieldNavigation.camera model.navigation)
+
+                target : Camera
+                target =
+                    Camera.frame size model.map (TurnPlayback.focusPositions playing.animation) previous
+
+                remainingPanMs : Float
+                remainingPanMs =
+                    if target /= previous then
+                        cameraPanDurationMs
+
+                    else
+                        playing.camera |> Maybe.map .remainingPanMs |> Maybe.withDefault 0
+
+                currentTurn : CurrentTurn.Model
+                currentTurn =
+                    model.currentTurn
+            in
+            { model
+                | currentTurn =
+                    { currentTurn
+                        | phase = TurnLifecycle.Playing { playing | camera = Just { camera = target, remainingPanMs = remainingPanMs } }
+                    }
+            }
+
+        _ ->
+            model
+
+
+playbackCamera : Model -> Maybe TurnLifecycle.PlaybackCamera
+playbackCamera model =
+    case model.currentTurn.phase of
+        TurnLifecycle.Playing playing ->
+            playing.camera
+
+        _ ->
+            Nothing
+
+
 superUpdate : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 superUpdate lobbyId msg model =
-    case update lobbyId msg model of
+    case update lobbyId msg model |> Tuple.mapFirst updatePlaybackCamera of
         ( next, effect ) ->
             let
+                playbackFinished : Bool
+                playbackFinished =
+                    playbackCamera model /= Nothing && playback next == Nothing
+
+                cameraEffect : Eff Msg
+                cameraEffect =
+                    if playbackFinished then
+                        E.after cameraPanDurationMs CameraReturnFinished
+
+                    else
+                        E.none
+
+                withCameraReturn : Model
+                withCameraReturn =
+                    if playbackFinished then
+                        { next | navigation = BattlefieldNavigation.startReturn next.navigation }
+
+                    else
+                        next
+
+                combinedEffect : Eff Msg
+                combinedEffect =
+                    E.batch [ effect, cameraEffect ]
+
                 previousDialogHtmlId : Maybe String
                 previousDialogHtmlId =
                     activeDialogHtmlId model
@@ -1418,23 +1510,40 @@ superUpdate lobbyId msg model =
             case nextDialogHtmlId of
                 Just htmlId ->
                     if nextDialogHtmlId /= previousDialogHtmlId then
-                        ( logNewLossError next
+                        ( logNewLossError withCameraReturn
                         , E.batch
-                            [ effect
+                            [ combinedEffect
                             , E.toJs (ToJs.OpenDialog { htmlId = htmlId })
                             ]
                         )
 
                     else
-                        ( next, effect )
+                        ( withCameraReturn, combinedEffect )
 
                 Nothing ->
-                    ( next, effect )
+                    ( withCameraReturn, combinedEffect )
 
 
 update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 update lobbyId msg model =
     case msg of
+        CameraReturnFinished ->
+            { model | navigation = BattlefieldNavigation.finishReturn model.navigation }
+                |> E.withOut
+
+        BattlefieldSizeReceived result ->
+            case result of
+                Ok element ->
+                    { model | battlefieldSize = Just { x = element.element.width, y = element.element.height } }
+                        |> E.withOut
+
+                Err error ->
+                    { model | shared = Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared }
+                        |> E.withOut
+
+        WindowResized ->
+            ( model, E.measure battlefieldHtmlId BattlefieldSizeReceived )
+
         PanLeftClicked ->
             model
                 |> mapNavigation BattlefieldNavigation.panLeft
@@ -2059,22 +2168,26 @@ handleCurrentTurnMsg lobbyId msg model =
                 )
 
         CurrentTurn.PlaybackFrameElapsed delta ->
-            let
-                advance : Float -> Phase -> Maybe { phase : Phase, frame : TurnPlayback.Frame }
-                advance =
-                    if model.skipUnitLossDialogs then
-                        TurnLifecycle.tick
+            case currentTurn.phase of
+                TurnLifecycle.Playing playing ->
+                    case playing.camera of
+                        Just held ->
+                            if held.remainingPanMs > 0 then
+                                { model
+                                    | currentTurn =
+                                        { currentTurn
+                                            | phase = TurnLifecycle.Playing { playing | camera = Just { held | remainingPanMs = max 0 (held.remainingPanMs - delta) } }
+                                        }
+                                }
+                                    |> E.withOut
 
-                    else
-                        TurnLifecycle.tickUntilLoss
-            in
-            case advance delta currentTurn.phase of
-                Just next ->
-                    applyPlaybackFrame next model
-                        |> automaticallyContinueCombat
-                        |> E.withOut
+                            else
+                                advancePlayback delta model
 
-                Nothing ->
+                        Nothing ->
+                            advancePlayback delta model
+
+                _ ->
                     model |> E.withOut
 
         CurrentTurn.CombatEnterReleased ->
@@ -2084,6 +2197,29 @@ handleCurrentTurnMsg lobbyId msg model =
         CurrentTurn.CombatSeeMapReleased ->
             setCombatMapView TurnPlayback.CardVisible model
                 |> E.withOut
+
+
+{-| Keep the action at its current frame while the camera settles.
+-}
+advancePlayback : Float -> Model -> ( Model, Eff Msg )
+advancePlayback delta model =
+    let
+        advance : Float -> Phase -> Maybe { phase : Phase, frame : TurnPlayback.Frame }
+        advance =
+            if model.skipUnitLossDialogs then
+                TurnLifecycle.tick
+
+            else
+                TurnLifecycle.tickUntilLoss
+    in
+    case advance delta model.currentTurn.phase of
+        Just next ->
+            applyPlaybackFrame next model
+                |> automaticallyContinueCombat
+                |> E.withOut
+
+        Nothing ->
+            model |> E.withOut
 
 
 automaticallyContinueCombat : Model -> Model
@@ -2384,7 +2520,6 @@ selectionView model =
                                 , onRevoke = ClearMoveClicked
                                 }
                             , cargoView model unit
-                            , supplyControls model unit
                             ]
                                 ++ actions
                     in
@@ -3053,11 +3188,15 @@ terrainView model =
             H.text ""
 
 
-supplyControls : Model -> Unit -> Html Msg
-supplyControls model unit =
+cargoView : Model -> Unit -> Html Msg
+cargoView model unit =
     let
-        crates : List Supply.CargoStock
-        crates =
+        passengers : List Unit
+        passengers =
+            List.filter (\passenger -> Unit.carrierId passenger == Just unit.id) model.units
+
+        freight : List Supply.CargoStock
+        freight =
             unit.resources
                 |> Maybe.map .supplyCargo
                 |> Maybe.withDefault []
@@ -3069,131 +3208,18 @@ supplyControls model unit =
                 |> Maybe.map PlannedOrder.crateUnloads
                 |> Maybe.withDefault []
 
-        contents : List (Html Msg)
-        contents =
-            let
-                crateControls : Int -> Supply.CargoStock -> Html Msg
-                crateControls index stock =
-                    let
-                        selectedExit : Maybe Coordinate
-                        selectedExit =
-                            ListUtil.find (\unload -> unload.cargoIndex == index) unloads
-                                |> Maybe.map .destination
-
-                        pending : String
-                        pending =
-                            selectedExit
-                                |> Maybe.map unloadDescription
-                                |> Maybe.withDefault ""
-
-                        unloadDescription : Coordinate -> String
-                        unloadDescription exit =
-                            " · unload at ("
-                                ++ String.fromInt exit.x
-                                ++ ", "
-                                ++ String.fromInt exit.y
-                                ++ ")"
-
-                        crateContents : List (Html Msg)
-                        crateContents =
-                            [ H.p
-                                []
-                                [ H.text (Supply.cargoLabel stock.kind ++ " " ++ String.fromInt (index + 1) ++ ": " ++ String.fromInt stock.current ++ "/" ++ String.fromInt stock.maximum ++ pending)
-                                ]
-                            ]
-                    in
-                    H.div
-                        [ A.css
-                            [ S.col
-                            , S.g1
-                            ]
-                        ]
-                        crateContents
-
-                replenishmentNote : Html Msg
-                replenishmentNote =
-                    H.p
-                        []
-                        [ H.text "supplies refill provisions; fuel drums refill vehicles before upkeep, while stock lasts"
-                        ]
-
-                crateRows : List (Html Msg)
-                crateRows =
-                    List.indexedMap crateControls crates
-            in
-            replenishmentNote :: crateRows
-
-        canInspectSupplyCargo : Bool
-        canInspectSupplyCargo =
-            isOwnUnit model unit && unit.kind == UnitKind.Truck
-    in
-    if canInspectSupplyCargo then
-        H.div
-            [ A.css
-                [ S.col
-                , S.g2
-                ]
-            ]
-            contents
-
-    else
-        H.text ""
-
-
-cargoView : Model -> Unit -> Html Msg
-cargoView model unit =
-    let
-        cargo : List Unit
-        cargo =
-            List.filter (\passenger -> Unit.carrierId passenger == Just unit.id) model.units
-
-        passengerRow : Unit -> Html Msg
-        passengerRow passenger =
-            CargoPassenger.toHtml
-                { onSelect = CargoUnitClicked passenger.id }
-                passenger
-
-        passengerList : List (Html Msg)
-        passengerList =
-            if List.isEmpty cargo then
-                []
-
-            else
-                [ H.div
-                    [ A.css
-                        [ S.col
-                        , S.g2
-                        , S.p2
-                        , S.bgNightwood3
-                        , S.indentStrong
-                        ]
-                    ]
-                    (List.map passengerRow cargo)
-                ]
-
-        cargoSummary : Html Msg
-        cargoSummary =
-            H.p
-                []
-                [ H.text ("cargo: " ++ String.fromInt (List.length cargo + Unit.crateCount unit) ++ "/" ++ String.fromInt unit.cargoCapacity)
-                ]
-
-        cargoContents : List (Html Msg)
-        cargoContents =
-            cargoSummary :: passengerList
-
         canInspectCargo : Bool
         canInspectCargo =
             isOwnUnit model unit && unit.cargoCapacity > 0
     in
     if canInspectCargo then
-        H.div
-            [ A.css
-                [ S.col
-                , S.g2
-                ]
-            ]
-            cargoContents
+        Cargo.toHtml
+            { capacity = unit.cargoCapacity
+            , passengers = passengers
+            , freight = freight
+            , unloads = unloads
+            , onSelectPassenger = CargoUnitClicked
+            }
 
     else
         H.text ""
@@ -3948,12 +3974,18 @@ battlefieldView model =
 
         cameraTransform : String
         cameraTransform =
-            case playback model of
-                Just playing ->
-                    Camera.focusTransform model.map (TurnPlayback.focusPositions playing) camera
+            playbackCamera model
+                |> Maybe.map .camera
+                |> Maybe.withDefault camera
+                |> Camera.transform
 
-                Nothing ->
-                    Camera.transform camera
+        cameraTransition : Css.Style
+        cameraTransition =
+            if playbackCamera model /= Nothing || BattlefieldNavigation.returning model.navigation then
+                S.transformTransition cameraPanDurationMs
+
+            else
+                S.transformTransition 0
 
         cursorStyle : Css.Style
         cursorStyle =
@@ -3967,7 +3999,8 @@ battlefieldView model =
                 S.grabCursor
     in
     H.div
-        [ A.attribute "tabindex" "0"
+        [ A.id battlefieldHtmlId
+        , A.attribute "tabindex" "0"
         , Aria.label "battlefield navigation"
         , A.css
             [ S.relative
@@ -3995,6 +4028,8 @@ battlefieldView model =
                 , S.shrink0
                 , S.transform
                     cameraTransform
+                , cameraTransition
+                , S.reducedMotion [ S.transformTransition 0 ]
                 , Css.Global.descendants
                     [ Css.Global.selector "rect"
                         [ S.outlineNone
@@ -5241,7 +5276,8 @@ panNavigation _ =
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ Time.every 400 AnimationTimerElapsed
+        [ Browser.Events.onResize (\_ _ -> WindowResized)
+        , Time.every 400 AnimationTimerElapsed
         , CurrentTurn.subscriptions model.currentTurn
             |> Sub.map CurrentTurnMsg
         , BattlefieldNavigation.subscriptions model.navigation

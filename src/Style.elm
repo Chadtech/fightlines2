@@ -385,6 +385,7 @@ module Style exposing
     , topValue
     , transform
     , transformOriginTopLeft
+    , transformTransition
     , translateXNeg50pct
     , transparent
     , underline
@@ -3212,3 +3213,8 @@ hViewportInsetRem inset =
 maxH40Viewport : Css.Style
 maxH40Viewport =
     Css.maxHeight (Css.vh 40)
+
+
+transformTransition : Float -> Css.Style
+transformTransition milliseconds =
+    Css.property "transition" ("transform " ++ String.fromFloat milliseconds ++ "ms ease-in-out")

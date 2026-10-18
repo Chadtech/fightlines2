@@ -16,7 +16,19 @@ async function main() {
     assert.equal(metadata.height, 1024, `${name} height`);
     await fs.copyFile(source, path.join(destination, `${name}.png`));
   }
-  console.log(`Exported all ${names.length} combat terrain backdrops.`);
+  const trenchDestination = path.join(root, 'public/assets/combat-trench-interior-v1');
+  await fs.mkdir(trenchDestination, { recursive: true });
+  for (const team of ['red', 'blue']) {
+    await fs.copyFile(
+      path.join(root, `artwork/combat/trench-interior-${team}-v1.png`),
+      path.join(trenchDestination, `${team}.png`)
+    );
+    await fs.copyFile(
+      path.join(root, `artwork/combat/trench-interior-taking-cover-${team}-v2.png`),
+      path.join(trenchDestination, `taking-cover-${team}.png`)
+    );
+  }
+  console.log(`Exported all ${names.length} combat terrain backdrops and the firing and taking-cover trench interiors.`);
 }
 
 main().catch(error => {

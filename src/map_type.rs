@@ -11,6 +11,8 @@ pub enum MapType {
     Arabia,
     Sidewinder,
     BlackForest,
+    Crossroads,
+    Ridgeway,
 }
 
 impl MapType {
@@ -21,7 +23,9 @@ impl MapType {
             | Self::BloodGulch
             | Self::Arabia
             | Self::Sidewinder
-            | Self::BlackForest => 2,
+            | Self::BlackForest
+            | Self::Crossroads
+            | Self::Ridgeway => 2,
         }
     }
 
@@ -46,6 +50,8 @@ impl MapType {
             Self::Arabia => Scenario::arabia(),
             Self::Sidewinder => Scenario::sidewinder(),
             Self::BlackForest => Scenario::black_forest(),
+            Self::Crossroads => Scenario::crossroads(),
+            Self::Ridgeway => Scenario::ridgeway(),
         }
     }
 }

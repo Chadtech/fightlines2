@@ -477,15 +477,17 @@ The card remains open when unchecked, with a `continue` button. Enter also conti
 an explanatory keyboard prompt. Holding `see map` makes the whole card completely transparent
 and clears the backdrop while darkening all board tiles except the combatants,
 whose shine repeats while held; mouse release or leaving the button restores it.
-While held, center the battlefield camera on the visible combatants and reduce
-zoom only as needed to fit their tiles with one tile of padding on each side.
-Keep this framing throughout combat, including its spotlight, card, and casualty
-pause. Playback pans to visible movers when movement begins, fitting simultaneous
-movers together at their starting positions. Hold that framing as they travel
-across tiles and finish; reframe when another visible unit starts moving.
-Playback also centers on projected indirect-fire impacts. Restore the saved pan
-and zoom when playback finishes. Concealed
-combatants remain absent from the battlefield and do not affect camera framing.
+Keep the battlefield camera still while projected action fits the current view,
+including when another visible unit starts moving or combat begins. When action
+leaves the viewport, pan with a 1.2-second ease-in-out transition and pause
+playback until the camera settles. Include one tile of breathing room when
+reframing; reduce zoom only when simultaneous subjects cannot fit together.
+Track interpolated visible movement so a route leaving the view can trigger a
+necessary pan. Idle frames retain the last playback view. Combat, casualty
+pauses, and projected indirect-fire impacts use the same visibility rule.
+Ease back to the saved pan and zoom when playback finishes. Reduced motion makes
+camera changes immediate. Concealed combatants remain absent from the
+battlefield and do not affect camera framing.
 Combine reciprocal shots into one display. After continuing each theater, show
 its casualties’ skull markers for the server-provided death pause, then remove
 those units before the next theater.
@@ -528,7 +530,12 @@ stock reads `stock outside sight`, with no numeric value or gauge. Switching
 inspected objects closes expanded explanations. Ground crates retain their stock
 and delivery timing.
 Truck cargo counts include passengers and crates. The selected truck inspector
-shows each carried crate's stock and saved unloading destination.
+shows passengers and freight together in one inset nightwood cargo list, with
+subtle dividers between rows. Each freight row shows its illustrated sprite, name,
+stock beneath the name, and a slim gold fill bar; saved unloading destinations
+appear beneath that stock. Keep the shared slot count in the cargo heading and
+replenishment help in its native info disclosure. Passenger rows retain their
+inspection action and resource details. An empty cargo tray reads `empty`.
 Saving a truck destination on a depot opens a modal titled `load supply crates`
 asking `how many crates would you like to load?`, with compact `none`, `1`, and
 `2` buttons in a horizontal row. Omit counts that exceed stock or shared cargo
@@ -638,9 +645,11 @@ inspector explains final-occupancy
 resolution, friendly fire, uncertain fog hits, the 12-tile radius, and readiness
 and shot costs. Projected tile landings reuse the combat burst even on empty or
 fogged squares. Confirmed hits use the theater and unit-loss dialog headed or
-labeled `indirect fire`. Landings without a confirmed target open a single terrain
-scene headed `indirect fire impact`, with the existing explosion animation and
-theater controls. Show no combatants, health, or hit/miss claim in that scene.
+labeled `indirect fire`. Landings without a confirmed target open a scene headed `indirect fire impact`,
+with the observable firing gun beside the target terrain, the existing explosion
+animation, and theater controls. Preserve horizontal map order. If the firing gun
+is concealed, show only the target terrain. Show no target combatant or hit/miss
+claim.
 
 ## Infantry digging and entrenchment
 
@@ -649,7 +658,13 @@ can afford the server-provided digging cost plus upkeep. Keep it disabled during
 a planned dismount. Saving shows `dig in`, its supply cost, the end-of-turn
 completion, and the standard revoke action. Infantry cannot fire while digging.
 An entrenched unit uses its approved red or blue dug-in sprite on the board,
-in the inspector, and in combat formations, with existing facing mirroring.
+in the inspector, with existing facing mirroring. In the combat theater, replace
+its formation and terrain backdrop with the approved team-colored trench interior
+scene, mirrored toward the opponent. Preserve the full illustration and existing
+impact timing and camera shake; the painted soldiers remain static through losses.
+Use the matching team-colored taking-cover illustration when the infantry is
+attacked by a field gun, including indirect fire and reciprocal return fire.
+An infantry attack on a field gun that does not return fire keeps the firing scene.
 Name the selected unit `entrenched infantry` and include this status in its
 accessible label. Changing facing preserves the sprite; successful movement
 restores the ordinary infantry sprite, and leaves no terrain graphic behind.

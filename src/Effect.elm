@@ -5,6 +5,7 @@ module Effect exposing
     , focus
     , load
     , map
+    , measure
     , navigate
     , none
     , pushUrl
@@ -149,3 +150,13 @@ toCmd key effect =
 
         ToJsMsg msg ->
             ToJs.toCmd msg
+
+
+{-| Measure a rendered element after the browser has laid it out.
+-}
+measure : String -> (Result Browser.Dom.Error Browser.Dom.Element -> msg) -> Eff msg
+measure htmlId received =
+    Browser.Dom.getElement htmlId
+        |> Task.map (Ok >> received)
+        |> Task.onError (Err >> received >> Task.succeed)
+        |> Request

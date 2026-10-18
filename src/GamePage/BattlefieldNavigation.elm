@@ -4,6 +4,7 @@ module GamePage.BattlefieldNavigation exposing
     , Msg(..)
     , active
     , camera
+    , finishReturn
     , init
     , panDown
     , panLeft
@@ -11,7 +12,9 @@ module GamePage.BattlefieldNavigation exposing
     , panUp
     , press
     , resetViewport
+    , returning
     , scroll
+    , startReturn
     , subscriptions
     , suppressesClick
     , update
@@ -36,7 +39,13 @@ type alias Model =
     { offset : Point
     , zoom : Float
     , pointerGesture : PointerGesture
+    , returnMotion : ReturnMotion
     }
+
+
+type ReturnMotion
+    = Settled
+    | Returning
 
 
 type DragMode
@@ -61,6 +70,7 @@ init =
     { offset = { x = 0, y = 0 }
     , zoom = 1
     , pointerGesture = PointerGesture.idle
+    , returnMotion = Settled
     }
 
 
@@ -73,6 +83,21 @@ init =
 camera : Model -> Camera
 camera model =
     { offset = model.offset, zoom = model.zoom }
+
+
+startReturn : Model -> Model
+startReturn model =
+    { model | returnMotion = Returning }
+
+
+finishReturn : Model -> Model
+finishReturn model =
+    { model | returnMotion = Settled }
+
+
+returning : Model -> Bool
+returning model =
+    model.returnMotion == Returning
 
 
 active : Model -> Bool

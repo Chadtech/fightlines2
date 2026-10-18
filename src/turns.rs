@@ -1415,7 +1415,7 @@ impl Turns {
             }
             combat.finish(scenario, &mut combat_stopped, &mut frames);
             for unit in &mut scenario.units {
-                unit.finish_firing_reveal(combat.has_fired(unit.unit_id()));
+                unit.finish_firing_reveal(combat.has_fired_directly(unit.unit_id()));
             }
             let mut events = playback_order(scenario, self.number, events)?;
             events.extend(dismount_events);
@@ -5398,6 +5398,108 @@ mod tests {
     }
 
     #[test]
+    fn indirect_fire_keeps_guns_concealed_and_does_not_renew_reveals() -> TestResult<()> {
+        for gun_player in [PlayerNumber::Player1, PlayerNumber::Player2] {
+            let enemy_player = if gun_player == PlayerNumber::Player1 {
+                PlayerNumber::Player2
+            } else {
+                PlayerNumber::Player1
+            };
+            for terrain in [Terrain::Plain, Terrain::Forest] {
+                for hit in [false, true] {
+                    for previously_revealed in [false, true] {
+                        let mut scenario = Scenario::supply_point().fixture()?;
+                        scenario.map = Map::new(
+                            20,
+                            3,
+                            Terrain::Plain,
+                            BTreeMap::from([(Coordinate::new(1, 1), terrain)]),
+                        )
+                        .fixture()?;
+                        scenario.depots.clear();
+                        let mut gun = scenario
+                            .units
+                            .iter()
+                            .find(|unit| {
+                                unit.player_number() == gun_player
+                                    && unit.kind() == UnitKind::FieldGun
+                            })
+                            .cloned()
+                            .fixture()?;
+                        let mut target = scenario
+                            .units
+                            .iter()
+                            .find(|unit| {
+                                unit.player_number() == enemy_player
+                                    && unit.kind() == UnitKind::Infantry
+                            })
+                            .cloned()
+                            .fixture()?;
+                        gun.move_to(Coordinate::new(1, 1));
+                        target.move_to(Coordinate::new(9, 1));
+                        gun.finish_firing_reveal(previously_revealed);
+                        let gun_id = gun.unit_id();
+                        let target_id = target.unit_id();
+                        scenario.units = vec![gun, target];
+                        let mut first = holds(&scenario, gun_player)?;
+                        let destination = Coordinate::new(if hit { 9 } else { 8 }, 1);
+                        first.first_mut().fixture()?.indirect_fire = Some(CoordinateInput {
+                            x: destination.x(),
+                            y: destination.y(),
+                        });
+                        let second = holds(&scenario, enemy_player)?;
+                        let mut turns = Turns::default();
+                        turns.submit(&mut scenario, gun_player, 1, first)?;
+                        turns.submit(&mut scenario, enemy_player, 1, second)?;
+                        let visible = visibility::visible_tiles(&scenario, enemy_player);
+                        assert!(!visible.contains(&Coordinate::new(1, 1)));
+                        let observed =
+                            visibility::observed_scenario(&scenario, enemy_player, &visible);
+                        assert!(observed.units.iter().all(|unit| unit.unit_id() != gun_id));
+                        assert!(!scenario.units.first().fixture()?.firing_position_revealed());
+                        let projected = visibility::observed_resolution(
+                            &scenario,
+                            enemy_player,
+                            &visible,
+                            turns.last_resolution.as_ref().fixture()?,
+                        );
+                        if !previously_revealed {
+                            assert!(projected.frames.iter().all(|frame| {
+                                frame.units.iter().all(|unit| unit.unit_id() != gun_id)
+                                    && frame.shots.is_empty()
+                                    && !frame.visible_tiles.contains(&Coordinate::new(1, 1))
+                            }));
+                            let impacts: Vec<_> = projected
+                                .frames
+                                .iter()
+                                .flat_map(|frame| &frame.indirect_impacts)
+                                .collect();
+                            assert_eq!(impacts.len(), 1);
+                            let impact = impacts.first().fixture()?;
+                            assert_eq!(impact.destination, destination);
+                            assert!(impact.attacker.is_none());
+                        }
+                        assert!(
+                            projected
+                                .frames
+                                .last()
+                                .fixture()?
+                                .units
+                                .iter()
+                                .all(|unit| unit.unit_id() != gun_id)
+                        );
+                        let target_unharmed = scenario.units.iter().any(|unit| {
+                            unit.unit_id() == target_id && unit.hit_points().current() == 16
+                        });
+                        assert_eq!(target_unharmed, !hit);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn indirect_fire_resolves_final_occupancy_and_spends_on_misses() -> TestResult<()> {
         for (aim_x, moves, hits) in [
             (9, false, true),
@@ -5506,7 +5608,7 @@ mod tests {
                 assert_eq!(report.damage_inflicted, 0);
                 assert_eq!(report.enemy_units_destroyed, 0);
             } else {
-                assert_eq!(shots.len(), 1);
+                assert!(shots.is_empty());
             }
         }
         Ok(())
@@ -5518,7 +5620,7 @@ mod tests {
         for target in [
             CoordinateInput { x: -1, y: 1 },
             CoordinateInput { x: 20, y: 1 },
-            CoordinateInput { x: 14, y: 1 },
+            CoordinateInput { x: 11, y: 1 },
         ] {
             let mut first = holds(&scenario, PlayerNumber::Player1)?;
             first.first_mut().fixture()?.indirect_fire = Some(target);
@@ -5528,7 +5630,7 @@ mod tests {
         second.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 1, y: 1 });
         assert!(validate(&scenario, PlayerNumber::Player2, second).is_err());
         let mut first = holds(&scenario, PlayerNumber::Player1)?;
-        first.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 13, y: 1 });
+        first.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 10, y: 1 });
         assert!(validate(&scenario, PlayerNumber::Player1, first).is_ok());
         for action in 0..4 {
             let mut first = holds(&scenario, PlayerNumber::Player1)?;
@@ -5608,6 +5710,30 @@ mod tests {
                 1
             );
             assert!(projected.frames.iter().all(|frame| frame.shots.is_empty()));
+            let impact = projected
+                .frames
+                .iter()
+                .flat_map(|frame| &frame.indirect_impacts)
+                .next()
+                .fixture()?;
+            let attacker = impact.attacker.as_ref().fixture()?;
+            assert_eq!(attacker.unit.player_number(), PlayerNumber::Player1);
+            assert!(attacker.unit.resources().is_none());
+            assert_eq!(attacker.health.current(), 16);
+            // The defender can see this landing but cannot see the distant gun.
+            let defender = visibility::observed_resolution(
+                &scenario,
+                PlayerNumber::Player2,
+                &visibility::visible_tiles(&scenario, PlayerNumber::Player2),
+                turns.last_resolution.as_ref().fixture()?,
+            );
+            let impact = defender
+                .frames
+                .iter()
+                .flat_map(|frame| &frame.indirect_impacts)
+                .next()
+                .fixture()?;
+            assert!(impact.attacker.is_none());
             timelines.push(
                 projected
                     .frames
@@ -5617,6 +5743,41 @@ mod tests {
             );
         }
         assert_eq!(timelines.first().fixture()?, timelines.last().fixture()?);
+        Ok(())
+    }
+
+    #[test]
+    fn visible_opposing_indirect_attacker_keeps_portrait_without_resources() -> TestResult<()> {
+        let mut scenario = bombardment_fixture()?;
+        scenario
+            .units
+            .last_mut()
+            .fixture()?
+            .move_to(Coordinate::new(3, 1));
+        let mut first = holds(&scenario, PlayerNumber::Player1)?;
+        first.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 4, y: 1 });
+        let second = holds(&scenario, PlayerNumber::Player2)?;
+        let mut turns = Turns::default();
+        turns.submit(&mut scenario, PlayerNumber::Player1, 1, first)?;
+        turns.submit(&mut scenario, PlayerNumber::Player2, 1, second)?;
+        let projected = visibility::observed_resolution(
+            &scenario,
+            PlayerNumber::Player2,
+            &visibility::visible_tiles(&scenario, PlayerNumber::Player2),
+            turns.last_resolution.as_ref().fixture()?,
+        );
+        let attacker = projected
+            .frames
+            .iter()
+            .flat_map(|frame| &frame.indirect_impacts)
+            .next()
+            .fixture()?
+            .attacker
+            .as_ref()
+            .fixture()?;
+        assert_eq!(attacker.unit.player_number(), PlayerNumber::Player1);
+        assert!(attacker.unit.resources().is_none());
+        assert_eq!(attacker.health.current(), 16);
         Ok(())
     }
 

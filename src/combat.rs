@@ -38,7 +38,7 @@ pub fn rules(kind: UnitKind) -> CombatRules {
     };
     CombatRules {
         range,
-        indirect_range: if kind == UnitKind::FieldGun { 12 } else { 0 },
+        indirect_range: if kind == UnitKind::FieldGun { 9 } else { 0 },
         shape: match kind {
             UnitKind::FieldGun => AmbushShape::Cross,
             UnitKind::Infantry | UnitKind::Tank | UnitKind::Truck => AmbushShape::Line,
@@ -179,8 +179,15 @@ fn attack_aspect(unit: &Unit, opponent: &Unit) -> AttackAspect {
 
 #[derive(Clone, Debug, GraphQLObject)]
 pub struct IndirectImpact {
+    pub attacker: Option<IndirectFireAttacker>,
     pub player_number: PlayerNumber,
     pub destination: Coordinate,
+}
+
+#[derive(Clone, Debug, GraphQLObject)]
+pub struct IndirectFireAttacker {
+    pub unit: Unit,
+    pub health: HitPoints,
 }
 
 pub fn within_indirect_range(origin: Coordinate, target: Coordinate, range: i32) -> bool {
@@ -286,8 +293,9 @@ impl Combat {
         self.indirect_targets.extend(additional.indirect_targets);
     }
 
-    pub fn has_fired(&self, id: UnitId) -> bool {
-        self.fired.contains(&id)
+    pub fn has_fired_directly(&self, id: UnitId) -> bool {
+        // Indirect-fire orders are exclusive, but still consume the unit's shot.
+        self.fired.contains(&id) && !self.indirect_targets.contains_key(&id)
     }
 
     fn can_fire(&self, unit: &Unit) -> bool {
@@ -731,6 +739,10 @@ impl Combat {
                 continue;
             };
             impacts.push(IndirectImpact {
+                attacker: Some(IndirectFireAttacker {
+                    unit: theater_participant(shooter),
+                    health: shooter.hit_points(),
+                }),
                 player_number: shooter.player_number(),
                 destination: *destination,
             });
@@ -1093,7 +1105,7 @@ mod tests {
         );
         let mut frames = Vec::new();
         combat.finish(&mut board, &mut BTreeSet::new(), &mut frames);
-        assert!(!combat.has_fired(board.units.get(1).fixture()?.unit_id()));
+        assert!(!combat.has_fired_directly(board.units.get(1).fixture()?.unit_id()));
         Ok(())
     }
 

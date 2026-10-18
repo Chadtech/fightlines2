@@ -5,8 +5,9 @@ A strategy game about supplies and logistics, built with Rust and Elm.
 The current prototype supports creating a lobby, joining through an invite link,
 and starting a game. The game page shows a free-floating animated SVG board with selectable units and depots.
 Both players can plan and submit turns, with shared movement playback. The camera
-pans to visible units when they start moving, holds still as they travel, and
-frames all combat, including indirect-fire impacts. It
+holds its view while visible action remains on screen, panning only to bring
+offscreen movement, combat, or indirect-fire impacts into view. Necessary pans
+ease over 1.2 seconds while playback pauses for the camera to settle. It
 restores your saved view when playback finishes.
 Fuel, finite supply stocks, replenishment, and directional ambush combat are authoritative. Persistent
 server storage is not implemented yet. Browsers remember the last user name
@@ -159,7 +160,7 @@ and action supply costs, with upkeep charged once. Commands resolve after transp
 and before indirect fire. Prepared ambushes can fire during unloading; a blocked
 exit, stopped truck, or dead passenger prevents the follow-up action. Field guns
 still only dismount. Revoking the truck order also revokes its infantry commands.
-Enemy resources and passengers are concealed outside combat. Combat
+Enemy resources and passengers are concealed outside combat. Direct-fire
 encounters involving your units appear even when the enemy is concealed and reveal
 both participants’ before/after health; supplies and fuel stay hidden. Crate cargo is separate from the truck's own provisions.
 Living units with visible resources show a red heart on light gray below 75%
@@ -187,8 +188,8 @@ conceal all enemy units inside, even adjacent to an observer or an allied unit
 in the same forest. Your own units and their occupied tiles are always visible. Unseen tiles are darker and desaturated, preserving terrain detail;
 the terrain and fixed depot locations remain known. Hidden enemies and their
 paths are withheld from game responses.
-Any unit that fires reveals its occupied tile to the enemy for the following
-turn, even in forests or beyond normal sight. Firing again renews the reveal;
+Any unit that fires directly reveals its occupied tile to the enemy for the following
+turn, even in forests or beyond normal sight. Direct fire again renews the reveal;
 otherwise it expires at the next turn boundary. Ambushes can hit revealed units
 in forests if they remain in the firing area and the firing line is clear.
 Enemy resources stay concealed.
@@ -415,9 +416,10 @@ available to inspect, and no further turns can be submitted. Digging in remains 
 ## Maps
 
 The lobby host can choose **supply point**, **el alamein**, **blood gulch**,
-**arabia**, **sidewinder**, or **black forest**. Each map has its own starting force, with full starting resources.
+**arabia**, **sidewinder**, **black forest**, **crossroads**, or **ridgeway**. Each map has its own starting force, with full starting resources.
 El Alamein, Blood Gulch, and Arabia are 25 x 21 tiles; Sidewinder is 33 x 29,
-and Black Forest is 33 x 25. Counts below are per player:
+Black Forest is 33 x 25, Crossroads is 11 x 9, and Ridgeway is 15 x 13.
+Counts below are per player:
 
 | Map | Infantry | Tanks | Field guns | Trucks | Total |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -427,6 +429,8 @@ and Black Forest is 33 x 25. Counts below are per player:
 | Arabia | 3 | 1 | 2 | 0 | 6 |
 | Sidewinder | 6 | 2 | 2 | 2 | 12 |
 | Black Forest | 10 | 1 | 6 | 2 | 19 |
+| Crossroads | 2 | 1 | 0 | 1 | 4 |
+| Ridgeway | 3 | 1 | 1 | 1 | 6 |
 
 Opposing formations face toward the battlefield. El Alamein staggers the eastern
 base three tiles south of the western base; other maps mirror their formations.
@@ -436,6 +440,16 @@ places infantry on the forward flanks, a tank on the central approach, and its
 gun and trucks near the base. Arabia puts a tank at the tip of a compact formation,
 three infantry across its front, and two guns behind them. Depot squares stay clear.
 
+- **Ridgeway**: a mirrored green map with three infantry, a tank, a field gun,
+  and a truck per player. Three open east–west approaches pass between wooded
+  ridges, with connecting routes for flanking and hills for scouting and gun
+  positions. Each approach has a neutral supply depot on the center line. Home
+  supply and fuel depots support both armies, for seven neutral depots total.
+- **Crossroads**: a compact, mirrored green map for short introductory matches.
+  Each player commands two infantry, a tank, and a truck. An open central approach
+  leads to a shared supply depot, while small woods offer concealed flank routes
+  and hills offer scouting positions. Each starting area has a supply depot and a
+  fuel depot; all five depots are neutral. There are no field guns.
 - **El Alamein**: open desert around a north–south ridge, with gaps through
   the hills. Field depots sit at the northern ridge tip, in a southern ridge
   plateau clearing, and northeast of the ridge in the open desert. Two home
@@ -473,8 +487,8 @@ hills, and forests without changing terrain types, movement costs, or sight.
 Arabia and El Alamein use the desert theme; Supply Point and Blood Gulch use
 green forest, as does Black Forest. Sidewinder uses dedicated textured snow ground
 and snowy hill artwork, with brightened, desaturated forests. Ridges use the
-existing traversable hill rules. All depots provide finite provision stocks for automatic
-replenishment and explicit crate loading.
+existing traversable hill rules. Supply depots provide finite provision stocks for automatic
+replenishment and explicit crate loading; Crossroads and Ridgeway also have fuel depots.
 
 ## Development
 
@@ -587,12 +601,17 @@ layouts are unchanged; place mountains with `^` in a scenario's ASCII sketch.
 ### Indirect fire
 
 Only on-board field guns can choose **indirect fire**. Select any tile within a
-12-tile circular radius, including fog-covered and occupied tiles. Intervening
+9-tile circular radius, including fog-covered and occupied tiles. Intervening
 terrain does not block the shell. The gun stays in place and fires once after
 movement and unloading finish; whoever occupies the tile then takes damage,
 including friendly units. Units that leave before impact escape, and units that
 arrive can be hit. An empty tile wastes the shot. Guns destroyed or loaded before
 impact cannot fire.
+
+Indirect fire does not reveal the gun's location or renew a previous direct-fire
+reveal. Enemy guns remain visible only through normal sight or an existing reveal.
+When the firing gun is hidden, the opponent sees the observable landing without
+the gun's portrait or firing position, including when it hits their own unit.
 
 This uses the existing supply-based ammunition model: normal upkeep plus 8
 readiness supplies and 20 firing supplies, including misses. Damage uses normal
