@@ -141,6 +141,10 @@ compiler success do not establish that these checks pass.
 
 ## Rules, failure safety, and verification
 
+- [ ] Authored maps remain freely editable. Test map validity and game rules
+  without pinning a named map's theme, dimensions, terrain layout, depot positions,
+  symmetry, or force counts. Use explicit test fixtures when behavior needs a
+  particular battlefield arrangement.
 - [ ] Rust owns shared game rules and validation; Elm consumes exported rule
   values for immediate previews. Carry rule changes through resolution, API,
   preview, playback, and presentation as applicable.

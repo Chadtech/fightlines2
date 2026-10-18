@@ -34,13 +34,19 @@ make run
 
 Open http://127.0.0.1:8080, enter your user name and a lobby name, and choose
 **Create lobby**.
-For a solo game, set **opponent** to **ai opponent** in the lobby, then choose
-**Start game**. The AI controls player 2 and responds automatically when you submit
+The lobby has setup controls in the left card and two numbered player slots in
+the right card; the cards stack on narrow screens. Each player can choose
+**your side**: **player 1 (red)** or **player 2 (blue)**. Choosing the other side
+swaps assignments with the opponent, including an AI. Hosting permissions stay
+with the host, and sides lock when the game starts.
+For a solo game, set the other side’s dropdown to **ai**, then choose
+**Start game**. The AI controls the other side and responds automatically when
+you submit
 a turn. It advances toward supply points, attacks visible enemies, uses field-gun
 indirect fire, and seeks supply or fuel depots when low. It follows normal fog,
 movement, resource, combat, and victory rules. This basic opponent has no difficulty
 settings and does not plan passenger transport or freight deliveries.
-Switching back to **human player** reopens the second slot before starting; a joined
+Switching back to **human** reopens the second slot before starting; a joined
 human cannot be replaced.
 
 For a human opponent, share the invite link with another player, who enters a name and chooses
@@ -61,8 +67,9 @@ The initial map type is **supply point**. Joined players see the selected map;
 only the host can change it before starting. The game retains that selection.
 The scenario is a 17 x 17 plain map with mirrored starting forces, 60 forest tiles, and 42 hill tiles,
 three neutral supply depots (one near each starting area and one at the exact center), and three infantry,
-one tank, two field guns, and two trucks per player. The host is player 1 with red units; the second
-player is player 2 with blue units. Click a unit or depot to inspect it; units
+one tank, two field guns, and two trucks per player. Player 1 has red units;
+player 2 has blue units. Either participant can control either starting army.
+Click a unit or depot to inspect it; units
 and depots can also be selected with Tab and Enter/Space. Drag the battlefield
 with the primary mouse button to pan; scroll to zoom around the cursor. The right-side
 panel has selection details and unit actions; the bottom-left control panel has
@@ -202,6 +209,9 @@ turn, even in forests or beyond normal sight. Direct fire again renews the revea
 otherwise it expires at the next turn boundary. Ambushes can hit revealed units
 in forests if they remain in the firing area and the firing line is clear.
 Enemy resources stay concealed.
+After the game ends, the fog lifts across the whole battlefield, revealing all
+remaining units, resources, depot stocks, and freight. The final turn plays with
+normal visibility before the reveal; refreshing a finished game keeps the board revealed.
 Both players share a movement timeline, with units advancing together at their
 scheduled arrivals. Sight refreshes at each arrival boundary. Enemies appear when they enter
 sight. When a visible enemy moves into fog, it moves toward the edge of its last

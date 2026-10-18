@@ -19,6 +19,10 @@ import Api.Enum.Opponent
     exposing
         ( Opponent(..)
         )
+import Api.Enum.PlayerNumber
+    exposing
+        ( PlayerNumber(..)
+        )
 import Api.Mutation
 import Api.Object
 import Api.Object.PlayerView as PlayerView
@@ -45,6 +49,7 @@ import LobbyId
         ( LobbyId
         )
 import MapType
+import PlayerNumber
 import Ports.Js.From as FromJs
 import Ports.Js.To as ToJs
 import Route
@@ -79,6 +84,8 @@ type alias Player =
     { name : String
     , isHost : Bool
     , isAi : Bool
+    , isYou : Bool
+    , playerNumber : PlayerNumber
     }
 
 
@@ -92,7 +99,7 @@ type alias Model =
     , isMember : Bool
     , gameUrl : Maybe String
     , selectedMapType : MapType
-    , busy : Bool
+    , requestStatus : RequestStatus
     , refreshing : Bool
     , pollRevision : PollRevision
     , error : Maybe String
@@ -106,6 +113,15 @@ A settings change invalidates older responses without blocking the controls.
 -}
 type PollRevision
     = PollRevision Int
+
+
+{-| A pending side choice carries its displayed value, so failed requests
+restore the authoritative selection.
+-}
+type RequestStatus
+    = Idle
+    | SavingSettings
+    | ChoosingSide PlayerNumber
 
 
 type CopyStatus
@@ -122,7 +138,8 @@ type alias CopyResult =
 
 
 type Msg
-    = OpponentInputChanged Opponent
+    = SideInputChanged PlayerNumber
+    | OpponentInputChanged Opponent
     | MapInputChanged MapType
     | MapResponseReceived (Response Flags)
     | StartButtonClicked
@@ -166,7 +183,7 @@ init shared flags =
       , isHost = flags.isHost
       , isMember = flags.isMember
       , gameUrl = flags.gameUrl
-      , busy = False
+      , requestStatus = Idle
       , refreshing = False
       , pollRevision = PollRevision 0
       , error = Nothing
@@ -221,6 +238,8 @@ flagsSelection =
                     |> SS.with PlayerView.name
                     |> SS.with PlayerView.isHost
                     |> SS.with PlayerView.isAi
+                    |> SS.with PlayerView.isYou
+                    |> SS.with PlayerView.playerNumber
                 )
             )
         |> SS.with Snapshot.isHost
@@ -237,11 +256,47 @@ flagsSelection =
 update : Msg -> Model -> ( Model, Eff Msg )
 update msg model =
     case msg of
+        SideInputChanged playerNumber ->
+            let
+                canChooseSide : Bool
+                canChooseSide =
+                    not (isBusy model)
+                        && model.isMember
+                        && (model.gameUrl == Nothing)
+                        && List.any .isYou model.players
+
+                isSelectedSide : Player -> Bool
+                isSelectedSide player =
+                    player.isYou && (player.playerNumber == playerNumber)
+
+                alreadySelected : Bool
+                alreadySelected =
+                    List.any isSelectedSide model.players
+            in
+            if not canChooseSide || alreadySelected then
+                ( model, E.none )
+
+            else
+                let
+                    updatedModel : Model
+                    updatedModel =
+                        beginSettingsChange model
+                in
+                ( { updatedModel | requestStatus = ChoosingSide playerNumber }
+                , Api.Mutation.setLobbySide
+                    { id = LobbyId.toString model.id
+                    , playerNumber = playerNumber
+                    }
+                    flagsSelection
+                    |> ApiRequest.mutationRequest
+                    |> E.request ActionResponseReceived
+                )
+
         OpponentInputChanged opponent ->
             let
                 canChangeOpponent : Bool
                 canChangeOpponent =
-                    not model.busy
+                    not (isBusy model)
                         && model.isHost
                         && (model.gameUrl == Nothing)
                         && not (hasHumanOpponent model)
@@ -261,7 +316,7 @@ update msg model =
                 )
 
         MapInputChanged mapType ->
-            if model.busy || not model.isHost || model.gameUrl /= Nothing then
+            if isBusy model || not model.isHost || model.gameUrl /= Nothing then
                 ( model, E.none )
 
             else
@@ -278,14 +333,14 @@ update msg model =
             case result of
                 Ok flags ->
                     { model
-                        | busy = False
+                        | requestStatus = Idle
                         , actionError = Nothing
                     }
                         |> receive flags
 
                 Err error ->
                     ( { model
-                        | busy = False
+                        | requestStatus = Idle
                         , actionError = Just (ApiRequest.errorMessage error)
                       }
                     , E.none
@@ -295,7 +350,7 @@ update msg model =
             let
                 canStart : Bool
                 canStart =
-                    not model.busy
+                    not (isBusy model)
                         && not model.refreshing
                         && model.isHost
                         && model.gameUrl
@@ -308,7 +363,7 @@ update msg model =
 
             else
                 ( { model
-                    | busy = True
+                    | requestStatus = SavingSettings
                     , actionError = Nothing
                   }
                 , E.request StartMapResponseReceived (saveMap model)
@@ -325,7 +380,7 @@ update msg model =
 
                 Err error ->
                     ( { model
-                        | busy = False
+                        | requestStatus = Idle
                         , actionError = Just (ApiRequest.errorMessage error)
                       }
                     , E.none
@@ -384,18 +439,23 @@ update msg model =
             case result of
                 Ok flags ->
                     { model
-                        | busy = False
+                        | requestStatus = Idle
                         , actionError = Nothing
                     }
                         |> receive flags
 
                 Err error ->
                     ( { model
-                        | busy = False
+                        | requestStatus = Idle
                         , actionError = Just (ApiRequest.errorMessage error)
                       }
                     , E.none
                     )
+
+
+isBusy : Model -> Bool
+isBusy model =
+    model.requestStatus /= Idle
 
 
 beginSettingsChange : Model -> Model
@@ -406,7 +466,7 @@ beginSettingsChange model =
             PollRevision (revision + 1)
     in
     { model
-        | busy = True
+        | requestStatus = SavingSettings
         , actionError = Nothing
         , refreshing = False
         , pollRevision = nextRevision model.pollRevision
@@ -415,7 +475,7 @@ beginSettingsChange model =
 
 refresh : Model -> ( Model, Eff Msg )
 refresh model =
-    if model.refreshing || model.busy then
+    if model.refreshing || isBusy model then
         ( model, E.none )
 
     else
@@ -468,18 +528,57 @@ inviteUrl model =
 
 view : Model -> List (Html Msg)
 view model =
-    let
-        errorNotice : Html msg
-        errorNotice =
-            let
-                notice =
-                    [ model.error
-                    , model.actionError
+    [ H.div
+        [ A.css
+            [ S.row
+            , S.itemsStart
+            , S.g4
+            , S.wFull
+            , S.belowWidth 720
+                [ S.col
+                ]
+            ]
+        ]
+        [ H.div
+            [ A.css
+                [ S.widthPct 44
+                , S.minW0
+                , S.belowWidth 720
+                    [ S.wFull
                     ]
-                        |> List.filterMap identity
-                        |> String.join " "
-                        |> String.trim
-            in
+                ]
+            ]
+            [ settingsView model
+            ]
+        , H.div
+            [ A.css
+                [ S.flex1
+                , S.minW0
+                , S.belowWidth 720
+                    [ S.wFull
+                    ]
+                ]
+            ]
+            [ playersView model
+            ]
+        ]
+    ]
+
+
+settingsView : Model -> Html Msg
+settingsView model =
+    let
+        notice : String
+        notice =
+            [ model.error
+            , model.actionError
+            ]
+                |> List.filterMap identity
+                |> String.join " "
+                |> String.trim
+
+        errorNotice : Html Msg
+        errorNotice =
             if String.isEmpty notice then
                 H.text ""
 
@@ -489,27 +588,16 @@ view model =
                     ]
                     [ H.text notice
                     ]
-    in
-    [ H.div
-        [ A.css
-            [ S.flex1
-            , S.col
-            , S.justifyCenter
-            , S.wFull
-            , S.maxW160
-            , S.selfCenter
-            ]
-        ]
-        [ [ inviteView model
-          , mapView model
-          , opponentView model
-          , lobbyView model
-          , errorNotice
-          , case model.error of
+
+        retryControl : Html Msg
+        retryControl =
+            case model.error of
                 Just _ ->
                     H.fieldset
-                        [ A.disabled (model.busy || model.refreshing)
-                        , A.css [ S.border0 ]
+                        [ A.disabled (isBusy model || model.refreshing)
+                        , A.css
+                            [ S.border0
+                            ]
                         ]
                         [ Button.secondary "retry" RetryButtonClicked
                             |> Button.toHtml
@@ -517,13 +605,20 @@ view model =
 
                 Nothing ->
                     H.text ""
-          ]
-            |> Card.toHtml
-                (Card.simple
-                    |> Card.withHeader (CardHeader.simple model.name)
-                )
-        ]
+    in
+    [ mapView model
+    , inviteView model
+    , startControlsView model
+    , errorNotice
+    , retryControl
     ]
+        |> Card.toHtml
+            (Card.simple
+                |> Card.withHeader
+                    (CardHeader.simple model.name
+                        |> CardHeader.withCaption "game lobby"
+                    )
+            )
 
 
 inviteView : Model -> Html Msg
@@ -610,22 +705,15 @@ mapView model =
                 ]
                 [ H.text "map"
                 ]
-            , H.div
-                [ A.css
-                    [ S.wFull
-                    , S.maxW96
-                    ]
-                ]
-                [ Select.toHtml
-                    { htmlId = "map-type"
-                    , disabled = model.busy
-                    , selected = model.selectedMapType
-                    , options = List.map mapOption Api.Enum.MapType.list
-                    , toValue = Api.Enum.MapType.toString
-                    , decoder = Api.Enum.MapType.decoder
-                    , onChange = MapInputChanged
-                    }
-                ]
+            , Select.toHtml
+                { htmlId = "map-type"
+                , disabled = isBusy model
+                , selected = model.selectedMapType
+                , options = List.map mapOption Api.Enum.MapType.list
+                , toValue = Api.Enum.MapType.toString
+                , decoder = Api.Enum.MapType.decoder
+                , onChange = MapInputChanged
+                }
             ]
 
     else
@@ -645,135 +733,309 @@ hasHumanOpponent model =
     List.any isHumanOpponent model.players
 
 
-opponentView : Model -> Html Msg
-opponentView model =
-    let
-        selected : Opponent
-        selected =
-            if List.any .isAi model.players then
-                Ai
-
-            else
-                Human
-
-        option : Opponent -> { value : Opponent, label : String }
-        option opponent =
-            { value = opponent
-            , label = opponentLabel opponent
-            }
-    in
-    if model.isHost && model.gameUrl == Nothing then
-        H.div
-            [ A.css
-                [ S.col
-                , S.g1
-                , S.wFull
-                , S.maxW96
-                ]
-            ]
-            [ H.label
-                [ A.for "opponent"
-                ]
-                [ H.text "opponent"
-                ]
-            , Select.toHtml
-                { htmlId = "opponent"
-                , disabled = model.busy || hasHumanOpponent model
-                , selected = selected
-                , options = List.map option Api.Enum.Opponent.list
-                , toValue = Api.Enum.Opponent.toString
-                , decoder = Api.Enum.Opponent.decoder
-                , onChange = OpponentInputChanged
-                }
-            ]
-
-    else
-        H.p
-            []
-            [ H.text ("opponent: " ++ opponentLabel selected)
-            ]
-
-
 opponentLabel : Opponent -> String
 opponentLabel opponent =
     case opponent of
         Human ->
-            "human player"
+            "human"
 
         Ai ->
-            "ai opponent"
+            "ai"
 
 
-lobbyView : Model -> Html Msg
-lobbyView model =
+startControlsView : Model -> Html Msg
+startControlsView model =
     let
-        controls : Html Msg
-        controls =
+        startButton : Html Msg
+        startButton =
+            if model.isHost && (model.gameUrl == Nothing) then
+                H.fieldset
+                    [ A.disabled (isBusy model || model.refreshing || (List.length model.players /= 2))
+                    , A.css
+                        [ S.border0
+                        ]
+                    ]
+                    [ Button.primary "start game" StartButtonClicked
+                        |> Button.toHtml
+                    ]
+
+            else
+                H.text ""
+
+        status : Html Msg
+        status =
             if model.gameUrl /= Nothing then
                 H.p
                     []
                     [ H.text "this game has started. joining is closed."
                     ]
 
+            else if not model.isHost then
+                H.p
+                    []
+                    [ H.text "waiting for the host to start the game…"
+                    ]
+
             else if List.length model.players < 2 then
                 H.p
                     []
-                    [ H.text "invite another player or choose an ai opponent to start."
+                    [ H.text "waiting for another player"
                     ]
-
-            else if model.isHost then
-                Button.primary "start game" StartButtonClicked
-                    |> Button.toHtml
 
             else
-                H.p
-                    []
-                    [ H.text "you have joined. waiting for the host to start the game…"
-                    ]
+                H.text ""
     in
     H.div
         [ A.css
-            [ S.col
+            [ S.row
+            , S.itemsCenter
+            , S.flexWrap
             , S.g3
             ]
         ]
-        [ H.h2
-            []
-            [ H.text ("players (" ++ String.fromInt (List.length model.players) ++ ")")
-            ]
-        , H.ul
-            [ A.css
-                [ S.col
-                , S.g2
-                , S.listNone
-                ]
-            ]
-            (List.map playerView model.players)
-        , H.fieldset
-            [ A.disabled (model.busy || model.refreshing)
-            , A.css
-                [ S.border0
-                ]
-            ]
-            [ controls
-            ]
+        [ startButton
+        , status
         ]
 
 
-playerView : Player -> Html msg
-playerView player =
+playersView : Model -> Html Msg
+playersView model =
+    [ sideView model
+    , H.p
+        []
+        [ H.text (String.fromInt (List.length model.players) ++ " / 2 players")
+        ]
+    , H.ul
+        [ A.css
+            [ S.col
+            , S.g3
+            , S.listNone
+            ]
+        ]
+        (List.map (playerSlotView model) Api.Enum.PlayerNumber.list)
+    ]
+        |> Card.toHtml
+            (Card.simple
+                |> Card.withHeader (CardHeader.simple "players")
+            )
+
+
+sideLabel : PlayerNumber -> String
+sideLabel playerNumber =
     let
-        suffix : String
-        suffix =
-            if player.isHost then
-                " (host)"
+        color : String
+        color =
+            case playerNumber of
+                Player1 ->
+                    "red"
+
+                Player2 ->
+                    "blue"
+    in
+    PlayerNumber.label playerNumber ++ " (" ++ color ++ ")"
+
+
+sideView : Model -> Html Msg
+sideView model =
+    let
+        ownPlayer : Maybe Player
+        ownPlayer =
+            List.filter .isYou model.players |> List.head
+
+        selectedSide : Player -> PlayerNumber
+        selectedSide player =
+            case model.requestStatus of
+                ChoosingSide playerNumber ->
+                    playerNumber
+
+                _ ->
+                    player.playerNumber
+
+        option : PlayerNumber -> { value : PlayerNumber, label : String }
+        option playerNumber =
+            { value = playerNumber
+            , label = sideLabel playerNumber
+            }
+    in
+    case ownPlayer of
+        Just player ->
+            H.div
+                [ A.css
+                    [ S.col
+                    , S.g1
+                    ]
+                ]
+                [ H.label
+                    [ A.for "your-side"
+                    ]
+                    [ H.text "your side"
+                    ]
+                , Select.toHtml
+                    { htmlId = "your-side"
+                    , disabled = isBusy model || (model.gameUrl /= Nothing)
+                    , selected = selectedSide player
+                    , options = List.map option Api.Enum.PlayerNumber.list
+                    , toValue = Api.Enum.PlayerNumber.toString
+                    , decoder = Api.Enum.PlayerNumber.decoder
+                    , onChange = SideInputChanged
+                    }
+                , H.p
+                    []
+                    [ H.text "switching sides also moves your opponent."
+                    ]
+                ]
+
+        Nothing ->
+            H.text ""
+
+
+playerSlotView : Model -> PlayerNumber -> Html Msg
+playerSlotView model playerNumber =
+    let
+        belongsToSlot : Player -> Bool
+        belongsToSlot player =
+            player.playerNumber == playerNumber
+
+        occupant : Maybe Player
+        occupant =
+            model.players
+                |> List.filter belongsToSlot
+                |> List.head
+
+        controller : Opponent
+        controller =
+            if Maybe.map .isAi occupant == Just True then
+                Ai
+
+            else
+                Human
+
+        canConfigure : Bool
+        canConfigure =
+            model.isHost && (model.gameUrl == Nothing) && (Maybe.map .isHost occupant /= Just True)
+
+        controllerHtmlId : String
+        controllerHtmlId =
+            "slot-controller-" ++ Api.Enum.PlayerNumber.toString playerNumber
+
+        slotLabel : String
+        slotLabel =
+            sideLabel playerNumber
+
+        label : Html Msg
+        label =
+            if canConfigure then
+                H.label
+                    [ A.for controllerHtmlId
+                    ]
+                    [ H.text slotLabel
+                    ]
+
+            else
+                H.span
+                    []
+                    [ H.text slotLabel
+                    ]
+
+        occupantName : String
+        occupantName =
+            case occupant of
+                Just player ->
+                    let
+                        role : String
+                        role =
+                            if player.isHost && player.isYou then
+                                " (you, host)"
+
+                            else if player.isHost then
+                                " (host)"
+
+                            else if player.isYou then
+                                " (you)"
+
+                            else
+                                ""
+                    in
+                    player.name ++ role
+
+                Nothing ->
+                    "waiting for player"
+
+        option : Opponent -> { value : Opponent, label : String }
+        option opponent =
+            { value = opponent
+            , label = opponentLabel opponent
+            }
+
+        control : Html Msg
+        control =
+            if canConfigure then
+                Select.toHtml
+                    { htmlId = controllerHtmlId
+                    , disabled = isBusy model || hasHumanOpponent model
+                    , selected = controller
+                    , options = List.map option Api.Enum.Opponent.list
+                    , toValue = Api.Enum.Opponent.toString
+                    , decoder = Api.Enum.Opponent.decoder
+                    , onChange = OpponentInputChanged
+                    }
+
+            else
+                H.span
+                    []
+                    [ H.text (opponentLabel controller)
+                    ]
+
+        controlTitle : String
+        controlTitle =
+            if canConfigure && hasHumanOpponent model then
+                "a joined human cannot be replaced"
 
             else
                 ""
     in
     H.li
-        []
-        [ H.text (player.name ++ suffix)
+        [ A.css
+            [ S.row
+            , S.itemsCenter
+            , S.g3
+            , S.py2
+            , S.when (playerNumber /= Player1)
+                (S.batch
+                    [ S.borderT
+                    , S.borderGray2
+                    , S.pt4
+                    ]
+                )
+            ]
+        ]
+        [ H.div
+            [ A.css
+                [ S.col
+                , S.g1
+                , S.flex1
+                , S.minW0
+                , S.wrapAnywhere
+                ]
+            ]
+            [ label
+            , H.span
+                [ A.css
+                    [ S.textGray5
+                    ]
+                ]
+                [ H.text occupantName
+                ]
+            ]
+        , H.div
+            [ A.title controlTitle
+            , A.css
+                [ S.w32
+                , S.shrink0
+                ]
+            ]
+            [ control
+            ]
         ]
 
 

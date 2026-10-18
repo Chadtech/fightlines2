@@ -48,7 +48,7 @@ import Effect as E
         ( Eff
         )
 import Error exposing (Error)
-import GameOutcome
+import GameOutcome exposing (GameOutcome)
 import GamePage.BattlefieldNavigation as BattlefieldNavigation
 import GamePage.CurrentTurn as CurrentTurn
 import GamePage.DestinationFeedback exposing (DestinationFeedback(..))
@@ -3803,14 +3803,6 @@ turnPanel model =
     let
         ownStatus : String
         ownStatus =
-            if model.currentTurn.outcome /= Nothing then
-                "game over"
-
-            else
-                activeOwnStatus
-
-        activeOwnStatus : String
-        activeOwnStatus =
             case model.currentTurn.phase of
                 TurnLifecycle.Playing _ ->
                     "submitted plan"
@@ -3831,14 +3823,6 @@ turnPanel model =
 
         opponentStatus : String
         opponentStatus =
-            if model.currentTurn.outcome /= Nothing then
-                "game over"
-
-            else
-                activeOpponentStatus
-
-        activeOpponentStatus : String
-        activeOpponentStatus =
             case model.currentTurn.phase of
                 TurnLifecycle.Playing _ ->
                     "submitted plan"
@@ -3890,7 +3874,7 @@ turnPanel model =
     in
     TurnControls.panel
         [ Lazy.lazy3 turnSubmit displayedTurnNumber activity submitLabel
-        , Lazy.lazy4 turnFeedback model.players ownStatus opponentStatus model.currentTurn.error
+        , Lazy.lazy5 turnFeedback model.players ownStatus opponentStatus model.currentTurn.outcome model.currentTurn.error
         , TurnControls.navigation (Lazy.lazy viewControls zoomPercent)
         ]
 
@@ -3912,19 +3896,37 @@ turnSubmit number activity submitLabel =
         ]
 
 
-turnFeedback : List Player -> String -> String -> Maybe String -> Html Msg
-turnFeedback players ownStatus opponentStatus error =
+turnFeedback :
+    List Player
+    -> String
+    -> String
+    -> Maybe GameOutcome
+    -> Maybe String
+    -> Html Msg
+turnFeedback players ownStatus opponentStatus outcome error =
     let
         playerRow : Player -> Html Msg
         playerRow player =
             let
                 status : String
                 status =
-                    if player.isYou then
-                        ownStatus
+                    case outcome of
+                        Just (GameOutcome.Victory winner) ->
+                            if player.playerNumber == winner then
+                                "won"
 
-                    else
-                        opponentStatus
+                            else
+                                "lost"
+
+                        Just GameOutcome.Draw ->
+                            "draw"
+
+                        Nothing ->
+                            if player.isYou then
+                                ownStatus
+
+                            else
+                                opponentStatus
             in
             TurnControls.playerRow
                 { name = player.name

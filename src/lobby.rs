@@ -3,13 +3,13 @@ use crate::{
     ai,
     lobby_id::LobbyId,
     lobby_name::LobbyName,
-    map::MapError,
+    map::{Coordinate, MapError},
     map_type::MapType,
     player_name::PlayerName,
     scenario::{PlayerNumber, Scenario},
     seed::{self, Seed},
     session_token::SessionToken,
-    turns::{GameOutcome, MoveOrderInput, TurnResolution, Turns},
+    turns::{GameOutcome, MoveOrderInput, TurnFrame, TurnResolution, Turns},
     visibility,
 };
 use juniper::{FieldError, FieldResult, GraphQLEnum, GraphQLObject};
@@ -60,11 +60,13 @@ impl Store {
                 host: host.clone(),
                 players: vec![
                     Player {
+                        player_number: PlayerNumber::Player1,
                         controller: PlayerController::Human(host),
                         name: PlayerName::parse("Test player 1")
                             .ok_or(DevelopmentError::InvalidName)?,
                     },
                     Player {
+                        player_number: PlayerNumber::Player2,
                         controller: PlayerController::Human(SessionToken::from_token(
                             "development-player-2".into(),
                         )),
@@ -162,6 +164,7 @@ pub enum Opponent {
 }
 
 struct Player {
+    player_number: PlayerNumber,
     controller: PlayerController,
     name: PlayerName,
 }
@@ -180,6 +183,8 @@ pub struct Snapshot {
 #[derive(GraphQLObject)]
 struct PlayerView {
     name: String,
+    player_number: PlayerNumber,
+    is_you: bool,
     is_host: bool,
     is_ai: bool,
 }
@@ -242,6 +247,9 @@ fn snapshot(
             .iter()
             .map(|player| PlayerView {
                 name: player.name.to_string(),
+                player_number: player.player_number,
+                is_you: player.controller.session().is_some()
+                    && player.controller.session() == session,
                 is_host: player.controller.session() == Some(source.host),
                 is_ai: player.controller.session().is_none(),
             })
@@ -282,44 +290,74 @@ fn game_snapshot(game: &Game, session: Option<&SessionToken>) -> Snapshot {
     )
 }
 
-fn game_view(game: &Game, session: &SessionToken) -> GameSnapshot {
-    let index = usize::from(session != &game.host);
-    let player_number = if index == 0 {
-        PlayerNumber::Player1
-    } else {
-        PlayerNumber::Player2
+fn game_view(game: &Game, session: &SessionToken) -> FieldResult<GameSnapshot> {
+    let player_number = game
+        .players
+        .iter()
+        .find(|player| player.controller.session() == Some(session))
+        .map(|player| player.player_number)
+        .ok_or_else(|| FieldError::from("only joined players can enter the game."))?;
+    // Observation and turn arrays are indexed by map side, never roster order.
+    let index = match player_number {
+        PlayerNumber::Player1 => 0,
+        PlayerNumber::Player2 => 1,
     };
-    let visible = visibility::visible_tiles(&game.scenario, player_number);
-    let mut scenario = visibility::observed_scenario(&game.scenario, player_number, &visible);
-    scenario.supply_crates = game.observations[index].supply_crates.clone();
-    GameSnapshot {
+    let (scenario, visible) = if game.turns.outcome.is_some() {
+        let visible: Vec<Coordinate> = (0..game.scenario.map.height())
+            .flat_map(|y| {
+                (0..game.scenario.map.width()).map(move |x| Coordinate::new(x as u16, y as u16))
+            })
+            .collect();
+        (game.scenario.clone(), visible)
+    } else {
+        let visible = visibility::visible_tiles(&game.scenario, player_number);
+        let mut scenario = visibility::observed_scenario(&game.scenario, player_number, &visible);
+        scenario.supply_crates = game.observations[index].supply_crates.clone();
+        (scenario, visible.into_iter().collect())
+    };
+    let mut last_resolution = game.observations[index].last_resolution.clone();
+    if game.turns.outcome.is_some()
+        && let Some(resolution) = &mut last_resolution
+    {
+        // Lift fog only after the original, viewer-specific final turn has played.
+        resolution.frames.push(TurnFrame {
+            departures: Vec::new(),
+            indirect_impacts: Vec::new(),
+            depots: scenario.depots.clone(),
+            supply_crates: scenario.supply_crates.clone(),
+            shots: Vec::new(),
+            units: scenario.units.clone(),
+            visible_tiles: visible.clone(),
+            duration_ms: 180,
+        });
+    }
+    Ok(GameSnapshot {
         turn_number: game.turns.number,
         outcome: game.turns.outcome,
         submitted: game.turns.orders[index].is_some(),
         opponent_submitted: game.turns.orders[1 - index].is_some(),
-        last_resolution: game.observations[index].last_resolution.clone(),
+        last_resolution,
         id: game.source_lobby.to_string(),
         name: game.name.to_string(),
         map_type: game.map_type,
         players: game
             .players
             .iter()
-            .zip([PlayerNumber::Player1, PlayerNumber::Player2])
-            .map(|(player, player_number)| GamePlayerView {
+            .map(|player| GamePlayerView {
                 name: player.name.to_string(),
                 is_host: player.controller.session() == Some(&game.host),
                 is_you: player.controller.session() == Some(session),
                 is_ai: player.controller.session().is_none(),
-                player_number,
+                player_number: player.player_number,
             })
             .collect(),
         is_host: session == &game.host,
         is_member: true,
         game_url: Some(format!("/game/{}", game.source_lobby)),
         scenario,
-        visible_tiles: visible.into_iter().collect(),
+        visible_tiles: visible,
         movement_rules: crate::movement::rules(),
-    }
+    })
 }
 
 //----------------------------------------------------------------
@@ -348,6 +386,7 @@ pub fn create(context: &Context, input: &str, lobby_input: &str) -> FieldResult<
         map_type: MapType::default(),
         host: identity.clone(),
         players: vec![Player {
+            player_number: PlayerNumber::Player1,
             controller: PlayerController::Human(identity.clone()),
             name,
         }],
@@ -416,7 +455,9 @@ pub fn join(context: &Context, id: LobbyId, input: &str) -> FieldResult<Snapshot
         .lobbies
         .get_mut(&id)
         .ok_or_else(|| FieldError::from("This lobby no longer exists."))?;
+    let player_number = vacant_side(&lobby.players)?;
     lobby.players.push(Player {
+        player_number,
         controller: PlayerController::Human(identity.clone()),
         name,
     });
@@ -463,24 +504,70 @@ pub fn set_opponent(context: &Context, id: LobbyId, opponent: Opponent) -> Field
     if identity.as_ref() != Some(&lobby.host) {
         return error("only the host can change the opponent.");
     }
-    if lobby
-        .players
-        .iter()
-        .skip(1)
-        .any(|player| player.controller.session().is_some())
-    {
+    if lobby.players.iter().any(|player| {
+        player.controller.session().is_some() && player.controller.session() != Some(&lobby.host)
+    }) {
         return error("another player has joined. the opponent cannot be changed.");
     }
     let ai_name = PlayerName::parse("AI opponent")
         .ok_or_else(|| FieldError::from("the AI name is invalid."))?;
-    lobby.players.truncate(1);
+    lobby
+        .players
+        .retain(|player| player.controller.session().is_some());
     if opponent == Opponent::Ai {
+        let player_number = vacant_side(&lobby.players)?;
         lobby.players.push(Player {
+            player_number,
             controller: PlayerController::Ai,
             name: ai_name,
         });
     }
     Ok(lobby_snapshot(lobby, identity.as_ref()))
+}
+
+/// Each participant chooses their own map side. Taking an occupied side swaps
+/// assignments, preserving the other participant and the host's permissions.
+pub fn set_player_number(
+    context: &Context,
+    id: LobbyId,
+    player_number: PlayerNumber,
+) -> FieldResult<Snapshot> {
+    let mut state = context
+        .store
+        .0
+        .lock()
+        .or_else(|_| error("the server state is unavailable."))?;
+    if state.games.contains_key(&id) {
+        return error("the game has already started. its sides cannot be changed.");
+    }
+    let lobby = state
+        .lobbies
+        .get_mut(&id)
+        .ok_or_else(|| FieldError::from("this lobby no longer exists."))?;
+    let identity = context
+        .identity()
+        .ok_or_else(|| FieldError::from("only joined players can choose a side."))?;
+    let previous = lobby
+        .players
+        .iter()
+        .find(|player| player.controller.session() == Some(&identity))
+        .map(|player| player.player_number)
+        .ok_or_else(|| FieldError::from("only joined players can choose a side."))?;
+    for player in &mut lobby.players {
+        if player.controller.session() == Some(&identity) {
+            player.player_number = player_number;
+        } else if player.player_number == player_number {
+            player.player_number = previous;
+        }
+    }
+    Ok(lobby_snapshot(lobby, Some(&identity)))
+}
+
+fn vacant_side(players: &[Player]) -> FieldResult<PlayerNumber> {
+    [PlayerNumber::Player1, PlayerNumber::Player2]
+        .into_iter()
+        .find(|number| players.iter().all(|player| player.player_number != *number))
+        .ok_or_else(|| FieldError::from("this lobby has no open side."))
 }
 
 pub fn start(context: &Context, id: LobbyId) -> FieldResult<Snapshot> {
@@ -534,7 +621,7 @@ pub fn game(context: &Context, id: LobbyId) -> FieldResult<GameSnapshot> {
     };
     // The opt-in fixture always previews Player1, without changing browser identity.
     if matches!(game.access, GameAccess::DevelopmentPreview) {
-        return Ok(game_view(game, &game.host));
+        return game_view(game, &game.host);
     }
     let Some(identity) = context.identity() else {
         return error("Only the host can start a game, and only joined players can enter it.");
@@ -546,7 +633,7 @@ pub fn game(context: &Context, id: LobbyId) -> FieldResult<GameSnapshot> {
     {
         return error("Only the host can start a game, and only joined players can enter it.");
     }
-    Ok(game_view(game, &identity))
+    game_view(game, &identity)
 }
 
 /// Submit under the same lock as validation and resolution so concurrent players
@@ -577,39 +664,26 @@ pub fn submit_turn(
             juniper::Value::null(),
         )
     })?;
-    let index = game
+    let player_number = game
         .players
         .iter()
-        .position(|player| player.controller.session() == Some(&identity))
-        .ok_or_else(|| {
-            FieldError::new(
-                "only joined players can submit turns.",
-                juniper::Value::null(),
-            )
-        })?;
-    let player_number = if index == 0 {
-        PlayerNumber::Player1
-    } else {
-        PlayerNumber::Player2
-    };
-    if game
+        .find(|player| player.controller.session() == Some(&identity))
+        .map(|player| player.player_number)
+        .ok_or_else(|| FieldError::from("only joined players can submit turns."))?;
+    let ai_player = game
         .players
         .iter()
-        .any(|player| player.controller.session().is_none())
-    {
+        .find(|player| player.controller.session().is_none())
+        .map(|player| player.player_number);
+    if let Some(ai_player) = ai_player {
         let mut next_turns = game.turns.clone();
         let mut next_scenario = game.scenario.clone();
         // Planning sees only the AI's observation of the pre-turn board. It never
         // receives the human's draft or submitted orders.
-        let ai_orders = ai::plan(&game.scenario, PlayerNumber::Player2)
+        let ai_orders = ai::plan(&game.scenario, ai_player)
             .map_err(|message| FieldError::new(message, juniper::Value::null()))?;
         next_turns
-            .submit(
-                &mut next_scenario,
-                PlayerNumber::Player2,
-                turn_number,
-                ai_orders,
-            )
+            .submit(&mut next_scenario, ai_player, turn_number, ai_orders)
             .map_err(|message| FieldError::new(message, juniper::Value::null()))?;
         next_turns
             .submit(&mut next_scenario, player_number, turn_number, orders)
@@ -632,7 +706,7 @@ pub fn submit_turn(
             observation.resolve(&game.scenario, player, resolution);
         }
     }
-    Ok(game_view(game, &identity))
+    game_view(game, &identity)
 }
 
 //----------------------------------------------------------------
@@ -641,4 +715,161 @@ pub fn submit_turn(
 
 fn error<T>(message: &str) -> FieldResult<T> {
     Err(FieldError::new(message, juniper::Value::null()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        map_definition::MapDefinition,
+        scenario::{DepotKind, UnitKind},
+        supplies::{CargoStock, GroundSupplyCrate},
+        test_support::{FixtureValue, TestResult},
+        turns::CoordinateInput,
+    };
+
+    #[test]
+    fn terminal_snapshots_lift_fog_after_projected_playback_for_both_players() -> TestResult<()> {
+        for outcome in [
+            GameOutcome::Victory(PlayerNumber::Player1),
+            GameOutcome::Victory(PlayerNumber::Player2),
+            GameOutcome::Draw,
+        ] {
+            let store = Store::development(Seed::new([0; 32])).fixture()?;
+            let mut state = store.0.lock().fixture()?;
+            let game = state.games.values_mut().next().fixture()?;
+            game.scenario = MapDefinition::parse(r#"{
+                "width": 9, "height": 3, "theme": "GreenForest",
+                "features": [{"position": {"x": 8, "y": 2}, "terrain": "Forest"}],
+                "depots": [{"position": {"x": 4, "y": 1}, "kind": "Supply"}],
+                "units": [
+                    {"id": 1, "position": {"x": 0, "y": 1}, "playerNumber": "Player1", "kind": "Infantry", "direction": "East"},
+                    {"id": 2, "position": {"x": 0, "y": 2}, "playerNumber": "Player1", "kind": "Truck", "direction": null},
+                    {"id": 3, "position": {"x": 8, "y": 1}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"},
+                    {"id": 4, "position": {"x": 8, "y": 2}, "playerNumber": "Player2", "kind": "Truck", "direction": null}
+                ]
+            }"#).fixture()?.scenario().fixture()?;
+            // A remote depot and freight remain outside both armies' sight.
+            let hidden = Coordinate::new(4, 1);
+            game.scenario.supply_crates = vec![GroundSupplyCrate {
+                position: hidden,
+                stock: CargoStock::new(DepotKind::Fuel, 100),
+            }];
+            for unit in &mut game.scenario.units {
+                let survives = match outcome {
+                    GameOutcome::Victory(winner) => unit.player_number() == winner,
+                    GameOutcome::Draw => false,
+                };
+                if !survives && unit.kind() != UnitKind::Truck {
+                    unit.set_supplies_for_test(4);
+                }
+            }
+            for (observation, player) in game
+                .observations
+                .iter_mut()
+                .zip([PlayerNumber::Player1, PlayerNumber::Player2])
+            {
+                *observation = visibility::PlayerObservation::new(&game.scenario, player);
+            }
+            let sessions = [
+                game.host.clone(),
+                game.players
+                    .get(1)
+                    .fixture()?
+                    .controller
+                    .session()
+                    .fixture()?
+                    .clone(),
+            ];
+            for session in &sessions {
+                let ongoing = game_view(game, session).fixture()?;
+                assert!(!ongoing.visible_tiles.contains(&hidden));
+                assert!(ongoing.scenario.supply_crates.is_empty());
+                assert!(ongoing.scenario.units.len() < game.scenario.units.len());
+            }
+            for player in [PlayerNumber::Player1, PlayerNumber::Player2] {
+                let orders = game
+                    .scenario
+                    .units
+                    .iter()
+                    .filter(|unit| unit.player_number() == player)
+                    .map(|unit| {
+                        let position = unit.board_position().fixture()?;
+                        Ok(MoveOrderInput {
+                            unit_id: unit.id(),
+                            path: vec![CoordinateInput {
+                                x: position.x(),
+                                y: position.y(),
+                            }],
+                            direction: None,
+                            ambush: None,
+                            stand_ground: None,
+                            dig_in: None,
+                            indirect_fire: None,
+                            attack_move: None,
+                            unloads: None,
+                            load_crates: None,
+                            crate_unloads: None,
+                        })
+                    })
+                    .collect::<TestResult<Vec<_>>>()?;
+                game.turns
+                    .submit(&mut game.scenario, player, 1, orders)
+                    .fixture()?;
+            }
+            assert_eq!(game.turns.outcome, Some(outcome));
+            for (index, player) in [PlayerNumber::Player1, PlayerNumber::Player2]
+                .into_iter()
+                .enumerate()
+            {
+                let observation = game.observations.get_mut(index).fixture()?;
+                observation.resolve(
+                    &game.scenario,
+                    player,
+                    game.turns.last_resolution.as_ref().fixture()?,
+                );
+                let original = observation.last_resolution.as_ref().fixture()?.clone();
+                let snapshot = game_view(game, sessions.get(index).fixture()?).fixture()?;
+                assert_eq!(snapshot.scenario, game.scenario);
+                let tile_count = (game.scenario.map.width() * game.scenario.map.height()) as usize;
+                assert_eq!(snapshot.visible_tiles.len(), tile_count);
+                assert!(snapshot.visible_tiles.contains(&hidden));
+                let frames = &snapshot.last_resolution.as_ref().fixture()?.frames;
+                assert_eq!(frames.len(), original.frames.len() + 1);
+                for (frame, projected) in frames.iter().zip(&original.frames) {
+                    assert_eq!(frame.units, projected.units);
+                    assert_eq!(frame.visible_tiles, projected.visible_tiles);
+                    assert_eq!(frame.supply_crates, projected.supply_crates);
+                    assert!(!frame.visible_tiles.contains(&hidden));
+                }
+                let revealed = frames.last().fixture()?;
+                assert_eq!(revealed.units, game.scenario.units);
+                assert_eq!(revealed.depots, game.scenario.depots);
+                assert_eq!(revealed.supply_crates, game.scenario.supply_crates);
+                assert_eq!(revealed.visible_tiles, snapshot.visible_tiles);
+                assert!(revealed.shots.is_empty());
+                assert!(revealed.departures.is_empty());
+                assert!(revealed.indirect_impacts.is_empty());
+                // Repeated queries/reconnects reveal once without changing stored observations.
+                let refreshed = game_view(game, sessions.get(index).fixture()?).fixture()?;
+                assert_eq!(refreshed.scenario, snapshot.scenario);
+                assert_eq!(
+                    refreshed.last_resolution.as_ref().fixture()?.frames.len(),
+                    frames.len()
+                );
+                assert_eq!(
+                    game.observations
+                        .get(index)
+                        .fixture()?
+                        .last_resolution
+                        .as_ref()
+                        .fixture()?
+                        .frames
+                        .len(),
+                    original.frames.len()
+                );
+            }
+        }
+        Ok(())
+    }
 }

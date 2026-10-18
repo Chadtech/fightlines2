@@ -4,6 +4,7 @@
 
 module Api.Object.PlayerView exposing (..)
 
+import Api.Enum.PlayerNumber
 import Api.InputObject
 import Api.Interface
 import Api.Object
@@ -22,6 +23,16 @@ import Json.Decode as Decode
 name : SelectionSet String Api.Object.PlayerView
 name =
     Object.selectionForField "String" "name" [] Decode.string
+
+
+playerNumber : SelectionSet Api.Enum.PlayerNumber.PlayerNumber Api.Object.PlayerView
+playerNumber =
+    Object.selectionForField "Enum.PlayerNumber.PlayerNumber" "playerNumber" [] Api.Enum.PlayerNumber.decoder
+
+
+isYou : SelectionSet Bool Api.Object.PlayerView
+isYou =
+    Object.selectionForField "Bool" "isYou" [] Decode.bool
 
 
 isHost : SelectionSet Bool Api.Object.PlayerView

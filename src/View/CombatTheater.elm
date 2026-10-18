@@ -220,6 +220,27 @@ theaterView automaticallyClose map panel =
                         CombatKind.AttackMove ->
                             "attack move"
 
+        explanation : Html Msg
+        explanation =
+            case panel.encounter of
+                Impact impact ->
+                    let
+                        source : String
+                        source =
+                            case impact.attacker of
+                                Nothing ->
+                                    "an enemy field gun fired from the fog of war at this space."
+
+                                Just _ ->
+                                    "a field gun fired indirectly at this space."
+                    in
+                    H.p
+                        []
+                        [ H.text (source ++ " no target or damage could be confirmed.") ]
+
+                Exchange _ ->
+                    H.text ""
+
         sceneColumns : Css.Style
         sceneColumns =
             case panel.encounter of
@@ -308,7 +329,8 @@ theaterView automaticallyClose map panel =
                     ]
                 ]
                 [ Card.toHtml card
-                    [ H.div
+                    [ explanation
+                    , H.div
                         [ A.css
                             [ S.grid
                             , S.g3

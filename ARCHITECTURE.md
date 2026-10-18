@@ -89,24 +89,31 @@ or `Draw` and retains the result through playback, then uses the turn announceme
 dialog to present it, including
 on refresh and when ordinary introductions are skipped.
 Starting requires exactly two players and initializes the scenario once before
-consuming the lobby. The host is `Player1` and the second player is `Player2`. Player ownership is
-independent of map position; the current scenario and lobby still require two players. Repeated
-start requests return the existing game. Joining is capped at two players,
+consuming the lobby. Each roster entry explicitly stores its `PlayerNumber`,
+independently of its human session or AI controller and of the host credential.
+`setLobbySide` lets a member choose their own side before starting, swapping an
+occupied side with that member's previous assignment. Joining and adding AI fill
+the vacant side. Roster order stays stable; fog observations, submitted status,
+reports, and order authorization follow the assigned map side. Lobby roster
+entries expose `playerNumber` and viewer-specific `isYou`. The current scenario
+and lobby still require two players. Repeated start requests return the existing
+game. Joining is capped at two players,
 while reconnecting members can rejoin a full lobby.
 
 `PlayerController` distinguishes a human session from an AI without giving bots
 browser credentials. The host can call `setLobbyOpponent(id, opponent)` with
-`Human` or `Ai` before starting. Selecting AI fills player 2; selecting human removes
-the AI and opens that slot. A joined human cannot be displaced. Both lobby and game
+`Human` or `Ai` before starting. Selecting AI fills the side opposite the host;
+selecting human removes the AI and opens that slot. A joined human cannot be
+displaced. Both lobby and game
 rosters expose `isAi`; anonymous visitors never become members through an AI slot.
 Lobby polling leaves the opponent selector enabled. Each poll carries the settings
 revision at request time; changing the map or opponent advances that revision and
 invalidates in-flight polls. Older successes and failures cannot overwrite the
 saved settings or interfere with a newer poll.
 
-`ai.rs` builds deterministic ordinary `MoveOrderInput` values from player 2's
-fog-projected pre-turn scenario. It receives neither human orders nor hidden enemy
-positions as planning inputs. Its basic policy advances toward central supply
+`ai.rs` builds deterministic ordinary `MoveOrderInput` values from its assigned
+side's fog-projected pre-turn scenario. It receives neither human orders nor
+hidden enemy positions as planning inputs. Its basic policy advances toward central supply
 points, engages visible enemies with attack moves or field-gun indirect fire,
 and seeks depots for low supplies or fuel. Weighted pathfinding respects terrain,
 resource limits, occupied allied squares, and destination reservations. Passengers
@@ -785,6 +792,11 @@ including the development preview. `GameSnapshot.visibleTiles` supplies the
 fog mask; the scenario includes all own units and only observable enemies.
 Response copies conceal enemy resource fields through nullable GraphQL resolvers,
 including every playback frame; authoritative values remain intact.
+Once `Turns.outcome` is present, `game_view` returns the complete authoritative
+scenario and every map coordinate as visible. It appends a reveal frame to the
+response copy of the projected resolution, so the final turn retains its normal
+visibility and reports before the whole battlefield becomes inspectable. Stored
+observations remain unchanged; refreshed terminal snapshots are also fully revealed.
 Terrain and static depots remain public map knowledge. Turn resolutions include
 a shared timeline captured during authoritative movement resolution, followed by
 loading and unloading.
@@ -935,7 +947,9 @@ Final resource cleanup removes dead units and returns their death presentation.
 
 Damage is calculated in `Combat::damage` from weapon matchup, squared attacker
 health fraction, defender readiness, both participants' facing, terrain cover,
-and an ambush advantage against attack movers. Defensive facing only applies
+and an ambush advantage against attack movers. Infantry ambushing a ready tank
+from its flank or rear use a ×5 ambush factor instead of the ordinary factor;
+frontal exchanges retain their low infantry damage. Defensive facing only applies
 to ready infantry and tanks; unready defenders have no combat flanks. Field guns
 always use exposed-defender damage and neutral defensive facing: preparing their
 weapon grants firing capability without protecting the crew. Infantry have very low

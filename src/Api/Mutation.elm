@@ -6,6 +6,7 @@ module Api.Mutation exposing (..)
 
 import Api.Enum.MapType
 import Api.Enum.Opponent
+import Api.Enum.PlayerNumber
 import Api.InputObject
 import Api.Interface
 import Api.Object
@@ -89,6 +90,20 @@ setLobbyOpponent :
     -> SelectionSet decodesTo RootMutation
 setLobbyOpponent requiredArgs____ object____ =
     Object.selectionForCompositeField "setLobbyOpponent" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "opponent" requiredArgs____.opponent (Encode.enum Api.Enum.Opponent.toString) ] object____ Basics.identity
+
+
+type alias SetLobbySideRequiredArguments =
+    { id : String
+    , playerNumber : Api.Enum.PlayerNumber.PlayerNumber
+    }
+
+
+setLobbySide :
+    SetLobbySideRequiredArguments
+    -> SelectionSet decodesTo Api.Object.Snapshot
+    -> SelectionSet decodesTo RootMutation
+setLobbySide requiredArgs____ object____ =
+    Object.selectionForCompositeField "setLobbySide" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "playerNumber" requiredArgs____.playerNumber (Encode.enum Api.Enum.PlayerNumber.toString) ] object____ Basics.identity
 
 
 type alias SubmitTurnRequiredArguments =

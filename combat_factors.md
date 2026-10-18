@@ -4,7 +4,7 @@
 - tanks should devastate field guns at direct contact unless the tank is in the firing area of a ready gun that can still fire
 - infantry should take little damage when dug in, except from tanks, who will obliterate them
 - Units that are not battle ready should pretty much always lose at a great cost. Unready tanks should take big losses to ready infantry
-- Ready tanks should obliterate infantry, including ready infantry attacking them; infantry should barely damage ready tanks
+- Ready tanks should obliterate infantry in frontal mutual combat; infantry should barely damage ready tanks except when ambushing their flank or rear
 - Unready units do not establish a front, flank, or rear defense
 - Units with lower health should be less powerful. This should not scale linearly. A unit with half health should be less than half effective.
 - Flanking. A unit that is attacking or being attacked head on should do better than a unit being attacked adjacent or behind the direction it is facing.
@@ -31,6 +31,7 @@ chosen to express the expectations above rather than a fixed outcome table.
 | Attacker aim | front ×1; flank ×0.85; rear ×0.7 |
 | Hills or forest cover | ×0.85 incoming damage |
 | Ambush firing on an attack mover | ×1.125 |
+| Infantry ambushing a ready tank's flank or rear | ×5 instead of the ordinary ambush factor; applies to all forms of tank readiness |
 | Entrenched infantry | incoming infantry damage ×0.15; incoming field-gun damage ×0.06 (direct and indirect); tank damage unchanged |
 
 Battle readiness means an ambush or stand-ground order, or an attack-move order with enough
@@ -48,6 +49,9 @@ infantry and tanks. An unready tank takes the same damage from every approach di
 its stored sprite/facing direction does not create combat flanks. Units without
 facing also use neutral facing factors.
 Cover does not override forest concealment or firing-line visibility rules.
+The infantry flank/rear ambush factor replaces, rather than stacks with, the
+ordinary attack-mover ambush factor. Frontal ambushes and attack-move shots retain
+their existing damage. Unready tanks do not receive the special factor.
 
 ## Example outcomes
 
@@ -85,12 +89,19 @@ use ambush shots. Readiness does not grant return fire by itself.
 | Field gun | Ready tank on a hill | 15 | 1 |
 | Field gun | Ready infantry on open ground, without trenches | 16 | 0 |
 | Ambushing tank | Attack-moving tank, head-on | 9 | 7 |
+| Ambushing infantry | Attack-moving tank, head-on | 1 | 15 |
+| Ambushing infantry | Ready tank hit from the flank | 6 | 10 |
+| Ambushing infantry | Ready tank hit from behind | 8 | 8 |
 
 Hills and forests use the same damage reduction. Forest examples require an
 otherwise legal encounter: forest concealment still prevents ordinary ambush
 shots at hidden targets, while attack-move contact can engage concealed enemies.
 Infantry without entrenchment remain exposed to heavy weapons even when ambushing. Ready tanks resist infantry fire particularly
 strongly; infantry readiness does not make them effective against prepared armor.
+Infantry flank and rear ambushes are the exception: at full health on open ground,
+`round(4 × 0.25 × 1.25 × 5) = 6` and `round(4 × 0.25 × 1.5 × 5) = 8`.
+Being ambushed still does not trigger automatic return fire or stop a surviving
+attack mover's remaining route.
 The 12-damage infantry hit against an unready tank applies from every direction.
 
 Wounded attackers lose power much faster than their health percentage:

@@ -3,6 +3,7 @@ use crate::{
     lobby_id::LobbyId,
     map_editor,
     map_type::MapType,
+    scenario::PlayerNumber,
     session_token::SessionToken,
 };
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -103,6 +104,14 @@ impl Mutation {
         lobby::set_opponent(context, LobbyId::from_token(id), opponent)
     }
 
+    fn set_lobby_side(
+        context: &Context,
+        id: String,
+        player_number: PlayerNumber,
+    ) -> FieldResult<Snapshot> {
+        lobby::set_player_number(context, LobbyId::from_token(id), player_number)
+    }
+
     fn submit_turn(
         context: &Context,
         id: String,
@@ -187,7 +196,13 @@ pub fn export_schema() -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{FixtureValue, TestResult};
+    use crate::{
+        map::MapTheme,
+        map_definition::MapDefinition,
+        scenario::PlayerNumber,
+        test_support::{FixtureValue, TestResult},
+        visibility,
+    };
     use actix_web::{App, http::StatusCode, test};
     use serde_json::{Value, json};
 
@@ -318,6 +333,259 @@ mod tests {
         for cookie in [host, guest] {
             let (denied, _) = execute!(&change, cookie);
             assert!(denied["errors"].is_array());
+        }
+        Ok(())
+    }
+
+    #[actix_web::test]
+    async fn side_selection_preserves_identity_fog_and_turn_ownership() -> TestResult<()> {
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(Store::new(crate::seed::Seed::new([23; 32]))))
+                .app_data(web::Data::new(schema()))
+                .route("/graphql", web::post().to(handle)),
+        )
+        .await;
+        macro_rules! execute {
+            ($query:expr, $cookie:expr) => {{
+                let mut request = test::TestRequest::post().uri("/graphql")
+                    .set_json(json!({ "query": $query }));
+                if let Some(cookie) = $cookie { request = request.cookie(cookie); }
+                let response = test::call_service(&app, request.to_request()).await;
+                let cookie = response.response().cookies().next().map(|cookie| cookie.into_owned());
+                let body: Value = test::read_body_json(response).await;
+                (body, cookie)
+            }};
+        }
+        let roster = "players { name isHost isYou isAi playerNumber } isHost isMember";
+        let (outsider, outsider_cookie) = execute!(
+            "mutation { createLobby(name: \"Outsider\", lobbyName: \"Other\") { id } }",
+            None
+        );
+        assert!(outsider.get("errors").is_none());
+        for ai in [false, true] {
+            for host_side in [PlayerNumber::Player1, PlayerNumber::Player2] {
+                let side = match host_side {
+                    PlayerNumber::Player1 => "PLAYER1",
+                    PlayerNumber::Player2 => "PLAYER2",
+                };
+                let other_side = match host_side {
+                    PlayerNumber::Player1 => "PLAYER2",
+                    PlayerNumber::Player2 => "PLAYER1",
+                };
+                let (created, host) = execute!(
+                    "mutation { createLobby(name: \"Host\", lobbyName: \"Choose sides\") { id } }",
+                    None
+                );
+                let id = created["data"]["createLobby"]["id"].as_str().fixture()?;
+                let choose = format!(
+                    "mutation {{ setLobbySide(id: \"{id}\", playerNumber: {side}) {{ {roster} }} }}"
+                );
+                for cookie in [None, outsider_cookie.clone()] {
+                    let (denied, _) = execute!(&choose, cookie);
+                    assert!(denied["errors"].is_array(), "{denied}");
+                }
+                // Choosing before an opponent arrives leaves the opposite side open.
+                let (chosen, _) = execute!(&choose, host.clone());
+                assert!(chosen.get("errors").is_none(), "{chosen}");
+                assert_eq!(
+                    chosen["data"]["setLobbySide"]["players"][0]["playerNumber"],
+                    side
+                );
+                assert_eq!(chosen["data"]["setLobbySide"]["players"][0]["isYou"], true);
+                assert_eq!(chosen["data"]["setLobbySide"]["isHost"], true);
+                let guest = if ai {
+                    let (selected, _) = execute!(
+                        format!(
+                            "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: AI) {{ {roster} }} }}"
+                        ),
+                        host.clone()
+                    );
+                    assert!(selected.get("errors").is_none(), "{selected}");
+                    assert_eq!(
+                        selected["data"]["setLobbyOpponent"]["players"][1]["playerNumber"],
+                        other_side
+                    );
+                    assert_eq!(
+                        selected["data"]["setLobbyOpponent"]["players"][1]["isYou"],
+                        false
+                    );
+                    // AI removal and replacement must retain the host's chosen side.
+                    let (removed, _) = execute!(
+                        format!(
+                            "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: HUMAN) {{ {roster} }} }}"
+                        ),
+                        host.clone()
+                    );
+                    assert_eq!(
+                        removed["data"]["setLobbyOpponent"]["players"][0]["playerNumber"],
+                        side
+                    );
+                    assert_eq!(
+                        removed["data"]["setLobbyOpponent"]["players"]
+                            .as_array()
+                            .fixture()?
+                            .len(),
+                        1
+                    );
+                    let (selected, _) = execute!(
+                        format!(
+                            "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: AI) {{ id }} }}"
+                        ),
+                        host.clone()
+                    );
+                    assert!(selected.get("errors").is_none(), "{selected}");
+                    None
+                } else {
+                    let (joined, guest) = execute!(
+                        format!(
+                            "mutation {{ joinLobby(id: \"{id}\", name: \"Guest\") {{ {roster} }} }}"
+                        ),
+                        None
+                    );
+                    assert!(joined.get("errors").is_none(), "{joined}");
+                    assert_eq!(
+                        joined["data"]["joinLobby"]["players"][1]["playerNumber"],
+                        other_side
+                    );
+                    assert_eq!(joined["data"]["joinLobby"]["players"][1]["isYou"], true);
+                    // A guest can swap both occupied sides, without acquiring host rights.
+                    let (swapped, _) = execute!(&choose, guest.clone());
+                    assert!(swapped.get("errors").is_none(), "{swapped}");
+                    assert_eq!(
+                        swapped["data"]["setLobbySide"]["players"][0]["playerNumber"],
+                        other_side
+                    );
+                    assert_eq!(
+                        swapped["data"]["setLobbySide"]["players"][1]["playerNumber"],
+                        side
+                    );
+                    assert_eq!(swapped["data"]["setLobbySide"]["isHost"], false);
+                    let (rejoined, _) = execute!(
+                        format!(
+                            "mutation {{ joinLobby(id: \"{id}\", name: \"Guest\") {{ {roster} }} }}"
+                        ),
+                        guest.clone()
+                    );
+                    assert_eq!(
+                        rejoined["data"]["joinLobby"]["players"][1]["playerNumber"],
+                        side
+                    );
+                    for query in [
+                        format!("mutation {{ startGame(id: \"{id}\") {{ id }} }}"),
+                        format!(
+                            "mutation {{ setLobbyMap(id: \"{id}\", mapType: SUPPLY_POINT) {{ id }} }}"
+                        ),
+                        format!(
+                            "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: AI) {{ id }} }}"
+                        ),
+                    ] {
+                        let (denied, _) = execute!(&query, guest.clone());
+                        assert!(denied["errors"].is_array(), "{denied}");
+                    }
+                    guest
+                };
+                // Restore the requested assignment, then repeat to check idempotence.
+                for _ in 0..2 {
+                    let (chosen, _) = execute!(&choose, host.clone());
+                    assert_eq!(
+                        chosen["data"]["setLobbySide"]["players"][0]["playerNumber"],
+                        side
+                    );
+                    assert_eq!(
+                        chosen["data"]["setLobbySide"]["players"][1]["playerNumber"],
+                        other_side
+                    );
+                }
+                let (started, _) = execute!(
+                    format!("mutation {{ startGame(id: \"{id}\") {{ gameUrl }} }}"),
+                    host.clone()
+                );
+                assert!(started.get("errors").is_none(), "{started}");
+                let (late, _) = execute!(&choose, host.clone());
+                assert!(late["errors"].is_array());
+                let game_query = format!(
+                    "{{ game(id: \"{id}\") {{ turnNumber submitted opponentSubmitted {roster} visibleTiles {{ x y }} scenario {{ units {{ id playerNumber }} }} lastResolution {{ reports {{ playerNumber }} }} }} }}"
+                );
+                let expected = crate::map_type::MapType::default().scenario().fixture()?;
+                let (game, _) = execute!(&game_query, host.clone());
+                assert!(game.get("errors").is_none(), "{game}");
+                assert_eq!(game["data"]["game"]["players"][0]["playerNumber"], side);
+                assert_eq!(game["data"]["game"]["players"][0]["isYou"], true);
+                let visible = visibility::visible_tiles(&expected, host_side);
+                let expected_tiles: Vec<_> = visible
+                    .iter()
+                    .map(|position| json!({"x":position.x(),"y":position.y()}))
+                    .collect();
+                assert_eq!(game["data"]["game"]["visibleTiles"], json!(expected_tiles));
+                let observed = visibility::observed_scenario(&expected, host_side, &visible);
+                let expected_ids: Vec<_> =
+                    observed.units.iter().map(|unit| json!(unit.id())).collect();
+                let actual_ids: Vec<_> = game["data"]["game"]["scenario"]["units"]
+                    .as_array()
+                    .fixture()?
+                    .iter()
+                    .map(|unit| unit["id"].clone())
+                    .collect();
+                assert_eq!(actual_ids, expected_ids);
+                let hold_orders = |player: PlayerNumber| -> TestResult<String> {
+                    expected
+                        .units
+                        .iter()
+                        .filter(|unit| unit.player_number() == player)
+                        .map(|unit| {
+                            let position = unit.board_position().fixture()?;
+                            Ok(format!(
+                                "{{ unitId: \"{}\", path: [{{x: {}, y: {}}}] }}",
+                                unit.id(),
+                                position.x(),
+                                position.y()
+                            ))
+                        })
+                        .collect::<TestResult<Vec<_>>>()
+                        .map(|orders| orders.join(","))
+                };
+                let opponent_side = match host_side {
+                    PlayerNumber::Player1 => PlayerNumber::Player2,
+                    PlayerNumber::Player2 => PlayerNumber::Player1,
+                };
+                let submit = |orders: &str| {
+                    format!(
+                        "mutation {{ submitTurn(id: \"{id}\", turnNumber: 1, orders: [{orders}]) {{ turnNumber submitted opponentSubmitted }} }}"
+                    )
+                };
+                let (foreign, _) = execute!(submit(&hold_orders(opponent_side)?), host.clone());
+                assert!(foreign["errors"].is_array());
+                let (unchanged, _) = execute!(&game_query, host.clone());
+                assert_eq!(unchanged["data"]["game"]["submitted"], false);
+                assert_eq!(unchanged["data"]["game"]["opponentSubmitted"], false);
+                let (submitted, _) = execute!(submit(&hold_orders(host_side)?), host.clone());
+                assert!(submitted.get("errors").is_none(), "{submitted}");
+                if !ai {
+                    assert_eq!(submitted["data"]["submitTurn"]["submitted"], true);
+                    let (waiting, _) = execute!(&game_query, guest.clone());
+                    assert_eq!(waiting["data"]["game"]["submitted"], false);
+                    assert_eq!(waiting["data"]["game"]["opponentSubmitted"], true);
+                    let (resolved, _) =
+                        execute!(submit(&hold_orders(opponent_side)?), guest.clone());
+                    assert!(resolved.get("errors").is_none(), "{resolved}");
+                    assert_eq!(resolved["data"]["submitTurn"]["turnNumber"], 2);
+                } else {
+                    assert_eq!(submitted["data"]["submitTurn"]["turnNumber"], 2);
+                }
+                let (reconnected, _) = execute!(&game_query, host.clone());
+                assert_eq!(reconnected["data"]["game"]["turnNumber"], 2);
+                assert_eq!(reconnected["data"]["game"]["submitted"], false);
+                assert_eq!(
+                    reconnected["data"]["game"]["players"][0]["playerNumber"],
+                    side
+                );
+                let reports = reconnected["data"]["game"]["lastResolution"]["reports"]
+                    .as_array()
+                    .fixture()?;
+                assert_eq!(reports.len(), 1);
+                assert_eq!(reports[0]["playerNumber"], side);
+            }
         }
         Ok(())
     }
@@ -576,13 +844,26 @@ mod tests {
         assert_eq!(member["data"]["game"]["mapType"], "SUPPLY_POINT");
         assert_eq!(member["data"]["game"]["isMember"], true);
         let scenario = &member["data"]["game"]["scenario"];
-        assert_eq!(scenario["map"]["width"], 17);
-        assert_eq!(scenario["map"]["height"], 17);
+        let definition =
+            MapDefinition::parse(include_str!("../maps/supply-point.json")).fixture()?;
+        let expected = definition.scenario().fixture()?;
+        let expected_theme = match definition.theme {
+            MapTheme::GreenForest => "GREEN_FOREST",
+            MapTheme::Desert => "DESERT",
+            MapTheme::Snow => "SNOW",
+        };
+        assert_eq!(scenario["map"]["width"], definition.width);
+        assert_eq!(scenario["map"]["height"], definition.height);
         assert_eq!(scenario["map"]["baseTile"], "PLAIN");
-        assert_eq!(scenario["map"]["theme"], "GREEN_FOREST");
-        assert_eq!(scenario["map"]["features"].as_array().fixture()?.len(), 102);
-        assert_eq!(scenario["depots"].as_array().fixture()?.len(), 3);
-        assert_eq!(scenario["units"].as_array().fixture()?.len(), 8);
+        assert_eq!(scenario["map"]["theme"], expected_theme);
+        assert_eq!(
+            scenario["map"]["features"].as_array().fixture()?.len(),
+            definition.features.len()
+        );
+        assert_eq!(
+            scenario["depots"].as_array().fixture()?.len(),
+            definition.depots.len()
+        );
         assert!(scenario["units"].as_array().fixture()?.iter().all(|unit| {
             unit["location"]["__typename"] == "OnMap"
                 && unit["location"]["position"]["x"].is_number()
@@ -600,24 +881,32 @@ mod tests {
         let (host_view, _) = execute!(&game, Some(host.clone()));
         let host_scenario = &host_view["data"]["game"]["scenario"];
         assert_eq!(host_scenario["map"], scenario["map"]);
-        assert!(
-            scenario["units"]
+        for (response, player) in [
+            (&member, PlayerNumber::Player2),
+            (&host_view, PlayerNumber::Player1),
+        ] {
+            let visible = visibility::visible_tiles(&expected, player);
+            let observed = visibility::observed_scenario(&expected, player, &visible);
+            let unit_ids: Vec<_> = response["data"]["game"]["scenario"]["units"]
                 .as_array()
                 .fixture()?
                 .iter()
-                .all(|unit| unit["playerNumber"] == "PLAYER2")
-        );
-        assert!(
-            host_scenario["units"]
+                .map(|unit| unit["id"].as_str().fixture())
+                .collect::<TestResult<_>>()?;
+            let expected_ids: Vec<_> = observed.units.iter().map(|unit| unit.id()).collect();
+            assert_eq!(unit_ids, expected_ids);
+            let visible_tiles: Vec<_> = response["data"]["game"]["visibleTiles"]
                 .as_array()
                 .fixture()?
                 .iter()
-                .all(|unit| unit["playerNumber"] == "PLAYER1")
-        );
-        assert_ne!(
-            host_view["data"]["game"]["visibleTiles"],
-            member["data"]["game"]["visibleTiles"]
-        );
+                .map(|position| json!({"x":position["x"],"y":position["y"]}))
+                .collect();
+            let expected_tiles: Vec<_> = visible
+                .iter()
+                .map(|position| json!({"x":position.x(),"y":position.y()}))
+                .collect();
+            assert_eq!(visible_tiles, expected_tiles);
+        }
         assert_eq!(host_view["data"]["game"]["players"][0]["isYou"], true);
         let (outsider, _) = execute!(&game, None);
         assert!(outsider["errors"].is_array());

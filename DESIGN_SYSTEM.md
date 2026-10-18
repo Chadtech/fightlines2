@@ -83,11 +83,27 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
 - Buttons size to their labels and align to the start of the form.
 - The spacing unit is 0.25rem: `p1`/`g1` are 0.25rem, `p2`/`g2` are 0.5rem,
   and `p3`/`g3` are 0.75rem. `p2px` is a literal 2px inset.
-- Lobby cards fill available width up to 40rem, centered horizontally and vertically. Create and join forms share this
-  vertical centering. Allow taller content to expand the page and scroll. Name
-  fields stay within 24rem. Place the selectable invite URL beside `copy link`
-  and let that row wrap on narrow screens. Lobby updates are automatic; show
-  `retry` only after an update fails.
+- The joined lobby is a top-aligned, full-width workspace with two cards side
+  by side. The left card takes 44% of the row and has the lobby name at the left
+  of its title bar and `game lobby` at the right. Its body contains map selection,
+  the invite link with `copy link`, and the left-aligned `start game` action.
+  The right card is headed `players`. Stack the cards below 720px and allow the
+  page to scroll. Keep creation and joining as centered compact forms.
+- Keep `start game` visible for the host and disable it until both slots are
+  filled or while a request is pending. Show `waiting for another player` beside it
+  when the human slot is empty; omit routine readiness or success text.
+  Lobby updates are automatic; show `retry` only after an update fails.
+- Show two numbered player slots, including the empty human slot, as flat rows
+  on the card’s ordinary warm gray surface with a quiet divider. Put the player
+  name or `waiting for player` beneath the slot label and a compact controller
+  column at the right. Reserve inset green surfaces for editable controls.
+  Label sides `player 1 (red)` and `player 2 (blue)` and place occupants according
+  to their assigned side. The host’s side reads `human`; the host can select
+  `human` or `ai` for the other side. Disable that selector once a human joins.
+  Guests see controller types as read-only text. Above the occupied count, show
+  each member a `your side` select using the shared inset control. Explain that
+  switching sides also moves the opponent. Keep host and own-player labels on
+  their occupants when assignments change. Side changes lock at game start.
 - Use `Card.compactForm` for the centered creation form; it fills available
   width up to 24rem. Preserve useful gutters and allow content to wrap.
 - Use a separate `Card.compactForm` join page for invite visitors. Show the name
@@ -219,6 +235,9 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
 - Unseen terrain and known depots use 18% saturation and 58% brightness,
   preserving the artwork's internal shading instead of covering it with an opaque
   tint. Keep visibility boundaries crisp at tile edges.
+  After the final turn's playback, lift fog across the entire battlefield for
+  victory and draw results. Show all remaining units, freight, and resource stocks
+  at normal visibility, including when viewing a finished game after refresh.
 - Keep comparable square footprints with transparent padding. Illustrated
   infantry, tanks, trucks and field guns fit within 232 x 232px bounds in 256px
   cells, preserving each master’s aspect ratio. Keep side-profile vehicles, a substantial tank turret and thick barrel,
@@ -648,8 +667,10 @@ fogged squares. Confirmed hits use the theater and unit-loss dialog headed or
 labeled `indirect fire`. Landings without a confirmed target open a scene headed `indirect fire impact`,
 with the observable firing gun beside the target terrain, the existing explosion
 animation, and theater controls. Preserve horizontal map order. If the firing gun
-is concealed, show only the target terrain. Show no target combatant or hit/miss
-claim.
+is concealed, show only the target terrain. Above the scene, explain that an enemy
+field gun fired from the fog of war at this space; for an observable gun, explain
+that a field gun fired indirectly at this space. State that no target or damage
+could be confirmed. Show no target combatant or hit/miss claim.
 
 ## Infantry digging and entrenchment
 
