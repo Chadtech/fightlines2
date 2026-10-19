@@ -83,7 +83,7 @@ type alias Flags =
 type alias Player =
     { name : String
     , isHost : Bool
-    , isAi : Bool
+    , opponent : Opponent
     , isYou : Bool
     , playerNumber : PlayerNumber
     }
@@ -237,7 +237,7 @@ flagsSelection =
                 (SS.succeed Player
                     |> SS.with PlayerView.name
                     |> SS.with PlayerView.isHost
-                    |> SS.with PlayerView.isAi
+                    |> SS.with PlayerView.opponent
                     |> SS.with PlayerView.isYou
                     |> SS.with PlayerView.playerNumber
                 )
@@ -728,7 +728,7 @@ hasHumanOpponent model =
     let
         isHumanOpponent : Player -> Bool
         isHumanOpponent player =
-            not player.isHost && not player.isAi
+            not player.isHost && (player.opponent == Human)
     in
     List.any isHumanOpponent model.players
 
@@ -740,7 +740,10 @@ opponentLabel opponent =
             "human"
 
         Ai ->
-            "ai"
+            "ai easy"
+
+        AiMedium ->
+            "ai medium"
 
 
 startControlsView : Model -> Html Msg
@@ -904,11 +907,9 @@ playerSlotView model playerNumber =
 
         controller : Opponent
         controller =
-            if Maybe.map .isAi occupant == Just True then
-                Ai
-
-            else
-                Human
+            occupant
+                |> Maybe.map .opponent
+                |> Maybe.withDefault Human
 
         canConfigure : Bool
         canConfigure =

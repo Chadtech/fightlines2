@@ -169,7 +169,7 @@ type alias Model =
     , visibleTiles : List Coordinate
     , movementRules : List Movement.Rule
     , navigation : BattlefieldNavigation.Model
-    , battlefieldSize : Maybe Point
+    , battlefieldViewport : Maybe Camera.Viewport
     , frame : AnimationFrame.Frame
     }
 
@@ -230,6 +230,7 @@ type alias RotationSelection =
 
 type Msg
     = BattlefieldSizeReceived (Result Browser.Dom.Error Browser.Dom.Element)
+    | GameControlsSizeReceived Browser.Dom.Element (Result Browser.Dom.Error Browser.Dom.Element)
     | CameraReturnFinished
     | WindowResized
     | BattlefieldNavigationMsg BattlefieldNavigation.Msg
@@ -341,7 +342,7 @@ init shared flags =
 
         model : Model
         model =
-            { currentTurn = CurrentTurn.init flags.snapshot.turn
+            { currentTurn = CurrentTurn.init (turnObservation flags.snapshot)
             , shared =
                 shared
                     |> Shared.addError maybeError
@@ -361,7 +362,7 @@ init shared flags =
             , visibleTiles = flags.snapshot.visibleTiles
             , movementRules = flags.snapshot.movementRules
             , navigation = BattlefieldNavigation.init
-            , battlefieldSize = Nothing
+            , battlefieldViewport = Nothing
             , frame = AnimationFrame.first
             }
 
@@ -1424,8 +1425,8 @@ can request a pan, and the saved planning navigation remains independent.
 -}
 updatePlaybackCamera : Model -> Model
 updatePlaybackCamera model =
-    case ( model.currentTurn.phase, model.battlefieldSize ) of
-        ( TurnLifecycle.Playing playing, Just size ) ->
+    case ( model.currentTurn.phase, model.battlefieldViewport ) of
+        ( TurnLifecycle.Playing playing, Just viewport ) ->
             let
                 previous : Camera
                 previous =
@@ -1435,7 +1436,7 @@ updatePlaybackCamera model =
 
                 target : Camera
                 target =
-                    Camera.frame size model.map (TurnPlayback.focusPositions playing.animation) previous
+                    Camera.frame viewport model.map (TurnPlayback.focusPositions playing.animation) previous
 
                 remainingPanMs : Float
                 remainingPanMs =
@@ -1472,16 +1473,31 @@ playbackCamera model =
 
 superUpdate : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 superUpdate lobbyId msg model =
-    case update lobbyId msg model |> Tuple.mapFirst updatePlaybackCamera of
-        ( next, effect ) ->
+    case update lobbyId msg model of
+        ( updated, effect ) ->
             let
+                playbackStarted : Bool
+                playbackStarted =
+                    (playback model == Nothing) && (playback updated /= Nothing)
+
+                next : Model
+                next =
+                    if playbackStarted then
+                        { updated | battlefieldViewport = Nothing }
+
+                    else
+                        updatePlaybackCamera updated
+
                 playbackFinished : Bool
                 playbackFinished =
                     playbackCamera model /= Nothing && playback next == Nothing
 
                 cameraEffect : Eff Msg
                 cameraEffect =
-                    if playbackFinished then
+                    if playbackStarted then
+                        E.measure battlefieldHtmlId BattlefieldSizeReceived
+
+                    else if playbackFinished then
                         E.after cameraPanDurationMs CameraReturnFinished
 
                     else
@@ -1533,8 +1549,27 @@ update lobbyId msg model =
 
         BattlefieldSizeReceived result ->
             case result of
-                Ok element ->
-                    { model | battlefieldSize = Just { x = element.element.width, y = element.element.height } }
+                Ok battlefield ->
+                    ( model, E.measure TurnControls.htmlId (GameControlsSizeReceived battlefield) )
+
+                Err error ->
+                    { model | shared = Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared }
+                        |> E.withOut
+
+        GameControlsSizeReceived battlefield result ->
+            case result of
+                Ok controls ->
+                    let
+                        viewport : Camera.Viewport
+                        viewport =
+                            { size = { x = battlefield.element.width, y = battlefield.element.height }
+                            , bottomInset =
+                                clamp 0
+                                    battlefield.element.height
+                                    (battlefield.element.y + battlefield.element.height - controls.element.y)
+                            }
+                    in
+                    { model | battlefieldViewport = Just viewport }
                         |> E.withOut
 
                 Err error ->
@@ -2033,6 +2068,21 @@ update lobbyId msg model =
             case introMsg of
                 TurnIntroduction.BeginClicked ->
                     { model | currentTurn = CurrentTurn.acknowledgeIntroduction model.currentTurn } |> E.withOut
+
+                TurnIntroduction.ReplayClicked ->
+                    if showTurnIntroduction model then
+                        case CurrentTurn.replay model.currentTurn of
+                            Just replay ->
+                                applyPlaybackFrame
+                                    { phase = replay.currentTurn.phase, frame = replay.frame }
+                                    { model | currentTurn = replay.currentTurn }
+                                    |> E.withOut
+
+                            Nothing ->
+                                model |> E.withOut
+
+                    else
+                        model |> E.withOut
 
                 TurnIntroduction.BattlefieldViewClicked ->
                     { model | currentTurn = CurrentTurn.acknowledgeIntroduction model.currentTurn } |> E.withOut
@@ -3711,6 +3761,7 @@ turnAnnouncement model =
                 { turnNumber = model.currentTurn.number
                 , skipDialogs = model.skipTurnIntroduction
                 , previousTurn = model.currentTurn.resolution
+                , canReplay = CurrentTurn.canReplay model.currentTurn
                 }
 
 
@@ -4054,7 +4105,13 @@ battlefieldView model =
 at : Coordinate -> List (Svg msg) -> Svg msg
 at position children =
     Svg.g
-        [ SA.transform ("translate(" ++ String.fromInt (position.x * 16) ++ " " ++ String.fromInt (position.y * 16) ++ ")")
+        [ SA.transform
+            ("translate("
+                ++ String.fromInt (position.x * 16)
+                ++ " "
+                ++ String.fromInt (position.y * 16)
+                ++ ")"
+            )
         ]
         children
 
@@ -4207,7 +4264,8 @@ boardSvg model =
             -- coordinate stored in selection or unit location is persistent.
             case destinationSelection of
                 Just position ->
-                    SvgLazy.lazy7 selectedTerrainLayer
+                    SvgLazy.lazy7
+                        selectedTerrainLayer
                         model.map
                         visibleTiles
                         options
@@ -4217,7 +4275,8 @@ boardSvg model =
                         position
 
                 Nothing ->
-                    SvgLazy.lazy6 unselectedTerrainLayer
+                    SvgLazy.lazy6
+                        unselectedTerrainLayer
                         model.map
                         visibleTiles
                         options

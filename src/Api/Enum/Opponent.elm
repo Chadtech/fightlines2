@@ -7,14 +7,20 @@ module Api.Enum.Opponent exposing (..)
 import Json.Decode as Decode exposing (Decoder)
 
 
+{-|
+
+  - Ai - The original Easy opponent; retains the existing AI wire value.
+
+-}
 type Opponent
     = Human
     | Ai
+    | AiMedium
 
 
 list : List Opponent
 list =
-    [ Human, Ai ]
+    [ Human, Ai, AiMedium ]
 
 
 decoder : Decoder Opponent
@@ -28,6 +34,9 @@ decoder =
 
                     "AI" ->
                         Decode.succeed Ai
+
+                    "AI_MEDIUM" ->
+                        Decode.succeed AiMedium
 
                     _ ->
                         Decode.fail ("Invalid Opponent type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
@@ -44,6 +53,9 @@ toString enum____ =
 
         Ai ->
             "AI"
+
+        AiMedium ->
+            "AI_MEDIUM"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -65,6 +77,9 @@ fromString enumString____ =
 
         "AI" ->
             Just Ai
+
+        "AI_MEDIUM" ->
+            Just AiMedium
 
         _ ->
             Nothing

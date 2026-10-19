@@ -249,6 +249,15 @@ causeDetails cause =
             , unitDetail "destroyed by" attacker
             ]
 
+        ConcealedIndirectFire ->
+            [ detail "attack"
+                [ H.text "indirect fire"
+                ]
+            , detail "destroyed by"
+                [ H.text "a field gun in the fog of war"
+                ]
+            ]
+
         SuppliesExhausted ->
             [ detail "cause"
                 [ H.text "ran out of supplies"

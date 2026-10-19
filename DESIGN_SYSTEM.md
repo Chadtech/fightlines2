@@ -99,7 +99,9 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   column at the right. Reserve inset green surfaces for editable controls.
   Label sides `player 1 (red)` and `player 2 (blue)` and place occupants according
   to their assigned side. The host’s side reads `human`; the host can select
-  `human` or `ai` for the other side. Disable that selector once a human joins.
+  `human`, `ai easy`, or `ai medium` for the other side. Easy uses the original
+  AI; Medium evaluates tactics using one-turn simulations. Keep these choices
+  in the existing controller selector. Disable that selector once a human joins.
   Guests see controller types as read-only text. Above the occupied count, show
   each member a `your side` select using the shared inset control. Explain that
   switching sides also moves the opponent. Keep host and own-player labels on
@@ -496,11 +498,15 @@ The card remains open when unchecked, with a `continue` button. Enter also conti
 an explanatory keyboard prompt. Holding `see map` makes the whole card completely transparent
 and clears the backdrop while darkening all board tiles except the combatants,
 whose shine repeats while held; mouse release or leaving the button restores it.
+Keyboard users hold Enter or Space on `see map`; releasing restores the card
+without continuing combat. Moving keyboard focus away also restores the card.
 Keep the battlefield camera still while projected action fits the current view,
 including when another visible unit starts moving or combat begins. When action
 leaves the viewport, pan with a 1.2-second ease-in-out transition and pause
 playback until the camera settles. Include one tile of breathing room when
 reframing; reduce zoom only when simultaneous subjects cannot fit together.
+Keep subject tiles above the bottom controls and beside the right panel; use
+the controls' actual height, including when they wrap, to frame the clear area.
 Track interpolated visible movement so a route leaving the view can trigger a
 necessary pan. Idle frames retain the last playback view. Combat, casualty
 pauses, and projected indirect-fire impacts use the same visibility rule.
@@ -595,6 +601,10 @@ to the usual 1rem typography; its accessible equivalent is the ordinary title.
 The card pops in over 320ms with a small overshoot, and a diagonal shine drifts
 across the panel every 4.8 seconds. Place `begin turn` first, beside the remembered
 `skip this dialog` checkbox. Checking skips and dismisses; Escape also begins.
+Offer a secondary `replay turn` button beside `begin turn` when the previous
+turn has playback frames. Replay returns to this same card; beginning the turn
+or skipping the dialog removes access. Omit replay on the first turn and game
+conclusions.
 The native modal traps focus and blocks battlefield input. Use viewport gutters
 and a compact layout at short heights; reduced motion removes pop and shine.
 
@@ -667,10 +677,15 @@ fogged squares. Confirmed hits use the theater and unit-loss dialog headed or
 labeled `indirect fire`. Landings without a confirmed target open a scene headed `indirect fire impact`,
 with the observable firing gun beside the target terrain, the existing explosion
 animation, and theater controls. Preserve horizontal map order. If the firing gun
-is concealed, show only the target terrain. Above the scene, explain that an enemy
+is concealed, omit its portrait and origin. Show any observed target with its
+authoritative health transition and the `indirect fire` heading; preserve trench
+and taking-cover artwork. Use empty terrain only when no target is confirmed.
+Above the scene, explain that an enemy
 field gun fired from the fog of war at this space; for an observable gun, explain
-that a field gun fired indirectly at this space. State that no target or damage
-could be confirmed. Show no target combatant or hit/miss claim.
+that a field gun fired indirectly at this space. For an observed target, state
+whether it was hit, destroyed, or took no damage. Otherwise state that no target
+or damage could be confirmed and show no hit/miss claim. Loss dialogs retain
+indirect fire as their cause without an attacker portrait or location.
 
 ## Infantry digging and entrenchment
 

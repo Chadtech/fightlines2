@@ -7,7 +7,7 @@ use crate::{
     turns::{FacingOrder, MoveOrder, TravelMode, TurnFrame},
     visibility,
 };
-use juniper::{GraphQLEnum, GraphQLObject};
+use juniper::{GraphQLEnum, GraphQLObject, graphql_object};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, GraphQLEnum)]
@@ -100,7 +100,7 @@ fn theater_shots(board: &Scenario, engagements: &[Engagement]) -> Vec<Shot> {
     let mut participants = board.units.clone();
     let mut pending: Vec<_> = engagements.iter().collect();
     let mut shots = Vec::new();
-    while let Some(first) = pending.first().copied() {
+    while let Some(first) = next_theater_pair(&pending) {
         let (pair, rest): (Vec<_>, Vec<_>) = pending.into_iter().partition(|engagement| {
             (engagement.shooter == first.shooter && engagement.target == first.target)
                 || (engagement.shooter == first.target && engagement.target == first.shooter)
@@ -143,6 +143,21 @@ fn theater_shots(board: &Scenario, engagements: &[Engagement]) -> Vec<Shot> {
     shots
 }
 
+/// Show a shooter's outgoing pair before another pair can kill it. Reciprocal
+/// shots are already one pair. Cycles retain stable order because no pair can
+/// precede all of its incoming fire in a simultaneous cycle.
+fn next_theater_pair<'a>(pending: &[&'a Engagement]) -> Option<&'a Engagement> {
+    pending
+        .iter()
+        .copied()
+        .find(|candidate| {
+            !pending
+                .iter()
+                .any(|other| other.shooter == candidate.target && other.target != candidate.shooter)
+        })
+        .or_else(|| pending.first().copied())
+}
+
 #[derive(Clone, Copy)]
 enum AttackAspect {
     Front,
@@ -177,17 +192,43 @@ fn attack_aspect(unit: &Unit, opponent: &Unit) -> AttackAspect {
     }
 }
 
-#[derive(Clone, Debug, GraphQLObject)]
+#[derive(Clone, Debug)]
 pub struct IndirectImpact {
     pub attacker: Option<IndirectFireAttacker>,
     pub player_number: PlayerNumber,
     pub destination: Coordinate,
+    pub target: Option<IndirectFireTarget>,
+}
+
+#[graphql_object]
+impl IndirectImpact {
+    fn attacker(&self) -> Option<&IndirectFireAttacker> {
+        self.attacker.as_ref()
+    }
+
+    fn player_number(&self) -> PlayerNumber {
+        self.player_number
+    }
+
+    fn destination(&self) -> Coordinate {
+        self.destination
+    }
+
+    fn target(&self) -> Option<&IndirectFireTarget> {
+        self.target.as_ref()
+    }
 }
 
 #[derive(Clone, Debug, GraphQLObject)]
 pub struct IndirectFireAttacker {
     pub unit: Unit,
     pub health: HitPoints,
+}
+
+#[derive(Clone, Debug, GraphQLObject)]
+pub struct IndirectFireTarget {
+    pub unit: Unit,
+    pub health: CombatHealth,
 }
 
 pub fn within_indirect_range(origin: Coordinate, target: Coordinate, range: i32) -> bool {
@@ -416,14 +457,18 @@ impl Combat {
             AmbushShape::Line => false,
             AmbushShape::Cross => forward == (rule.range + 1) / 2 && sideways.abs() == 1,
         };
-        let visible = visibility::visible_tiles(board, shooter.player_number());
         if !self.can_fire(shooter)
             || !target.is_alive()
             || shooter.player_number() == target.player_number()
             || !(in_line || in_cross_arm)
-            || !visibility::unit_observable(&board.map, &visible, target)
             || !visibility::clear_line(&board.map, origin, destination)
         {
+            return None;
+        }
+        // Most pairs cannot engage. Avoid recomputing the entire army's sight
+        // for them, especially during the AI's repeated candidate simulations.
+        let visible = visibility::visible_tiles(board, shooter.player_number());
+        if !visibility::unit_observable(&board.map, &visible, target) {
             return None;
         }
         Some(Engagement {
@@ -753,6 +798,7 @@ impl Combat {
                 }),
                 player_number: shooter.player_number(),
                 destination: *destination,
+                target: None,
             });
             if let Some(target) = board
                 .units
@@ -815,6 +861,21 @@ impl Combat {
             });
         }
         if let Some(frame) = frames.get_mut(volley_frame) {
+            for impact in &mut impacts {
+                impact.target = frame
+                    .shots
+                    .iter()
+                    .find(|shot| {
+                        shot.destination == impact.destination
+                            && impact.attacker.as_ref().is_some_and(|attacker| {
+                                attacker.unit.unit_id() == shot.attacker.unit_id()
+                            })
+                    })
+                    .map(|shot| IndirectFireTarget {
+                        unit: shot.target.clone(),
+                        health: shot.target_health,
+                    });
+            }
             frame.indirect_impacts = impacts;
         }
     }
@@ -2347,6 +2408,102 @@ mod tests {
                 projected.get(1).fixture()?.target_health.before.current(),
                 4
             );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn attack_movers_show_their_simultaneous_shot_before_another_pair_kills_them() -> TestResult<()>
+    {
+        let (mut scenario, mut orders) = fixture(
+            UnitKind::FieldGun,
+            UnitKind::Infantry,
+            Coordinate::new(4, 4),
+        )?;
+        let mut defender = Scenario::el_alamein()
+            .fixture()?
+            .units
+            .into_iter()
+            .find(|unit| {
+                unit.player_number() == PlayerNumber::Player1 && unit.kind() == UnitKind::Infantry
+            })
+            .fixture()?;
+        defender.move_to(Coordinate::new(5, 3));
+        let defender_id = defender.unit_id();
+        let attacker_id = scenario.units.get(1).fixture()?.unit_id();
+        orders.get_mut(1).fixture()?.travel = TravelMode::AttackMove;
+        orders.push(MoveOrder {
+            unit_id: defender_id,
+            path: vec![Coordinate::new(5, 3)],
+            travel: TravelMode::Normal,
+            facing: FacingOrder::Unchanged,
+            supply: crate::supplies::SupplyOrder::default(),
+            unloads: Vec::new(),
+        });
+        scenario.units.push(defender);
+        let mut combat = Combat::prepare(&mut scenario, &orders);
+        scenario
+            .units
+            .get_mut(1)
+            .fixture()?
+            .move_to(Coordinate::new(4, 3));
+        let before = scenario.clone();
+        let mut frames = Vec::new();
+        combat.engage_contacts(
+            &mut scenario,
+            &mut BTreeSet::new(),
+            &mut frames,
+            &[(attacker_id, defender_id)],
+        );
+        let volley = frames.first().fixture()?;
+        assert_eq!(volley.shots.len(), 2);
+        let attack = volley
+            .shots
+            .iter()
+            .find(|shot| shot.kind == CombatKind::AttackMove)
+            .fixture()?;
+        assert_eq!(attack.attacker_health.before.current(), 16);
+        assert_eq!(attack.attacker_health.after.current(), 16);
+        assert!(attack.target_health.after.current() < attack.target_health.before.current());
+        assert_eq!(
+            volley.shots.first().fixture()?.attacker.unit_id(),
+            attacker_id
+        );
+        assert_eq!(
+            volley.shots.get(1).fixture()?.target_health.after.current(),
+            0
+        );
+        assert!(
+            !scenario
+                .units
+                .iter()
+                .find(|unit| unit.unit_id() == attacker_id)
+                .fixture()?
+                .is_alive()
+        );
+        for player in [PlayerNumber::Player1, PlayerNumber::Player2] {
+            let resolution = crate::turns::TurnResolution {
+                reports: Vec::new(),
+                turn_number: 1,
+                events: Vec::new(),
+                frames: frames.clone(),
+            };
+            let projected = visibility::observed_resolution(
+                &before,
+                player,
+                &visibility::visible_tiles(&before, player),
+                &resolution,
+            );
+            let shot = projected
+                .frames
+                .first()
+                .fixture()?
+                .shots
+                .first()
+                .fixture()?;
+            assert_eq!(shot.kind, CombatKind::AttackMove);
+            assert_eq!(shot.attacker_health.before.current(), 16);
+            assert!(shot.attacker.resources().is_none());
         }
         Ok(())
     }

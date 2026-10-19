@@ -102,10 +102,13 @@ while reconnecting members can rejoin a full lobby.
 
 `PlayerController` distinguishes a human session from an AI without giving bots
 browser credentials. The host can call `setLobbyOpponent(id, opponent)` with
-`Human` or `Ai` before starting. Selecting AI fills the side opposite the host;
+`Human`, `Ai` (Easy), or `AiMedium` before starting. The AI controller owns its
+`ai::Difficulty`, which stays with the AI when players swap sides. Selecting AI
+fills the side opposite the host;
 selecting human removes the AI and opens that slot. A joined human cannot be
 displaced. Both lobby and game
-rosters expose `isAi`; anonymous visitors never become members through an AI slot.
+rosters expose `isAi` and typed `opponent`; anonymous visitors never become
+members through an AI slot.
 Lobby polling leaves the opponent selector enabled. Each poll carries the settings
 revision at request time; changing the map or opponent advances that revision and
 invalidates in-flight polls. Older successes and failures cannot overwrite the
@@ -117,7 +120,24 @@ hidden enemy positions as planning inputs. Its basic policy advances toward cent
 points, engages visible enemies with attack moves or field-gun indirect fire,
 and seeks depots for low supplies or fuel. Weighted pathfinding respects terrain,
 resource limits, occupied allied squares, and destination reservations. Passengers
-hold; freight and transport planning are deferred.
+hold; freight and transport planning are deferred. This policy remains unchanged
+as Easy. `ai/medium.rs` performs a bounded, deterministic one-turn search over
+holds, ambushes, digging, indirect targets and affordable route prefixes. Each
+candidate uses `Turns::submit` for validation and resolution against assumed
+stationary enemy ambushes. Sequential planning includes earlier allied choices,
+so later guns can avoid overkill. The score weighs material losses, own resources,
+progress toward supply or combat objectives, and entrenched defense. Search never
+reads human orders. Before simulation, private enemy health, supplies and fuel
+are replaced with a full-resource assumption, private cargo is cleared, and
+unseen depot stock uses its default capacity; projection flags alone do not
+erase underlying values.
+Medium ranks route prefixes and scores objective progress by remaining terrain
+movement cost, so a detour around mountains can start by moving away from the
+objective. Per-unit reverse searches are reused across candidate simulations;
+impassable objectives use the closest tiles in the unit's reachable terrain
+component. Route generation and resolution still handle occupancy and resources.
+Medium scouts the opposing half using public map geometry and keeps one infantry
+guarding the central supply point. Neither mode plans freight or transport.
 When the human submits, the store prepares both submissions on copies using the
 normal `Turns::submit` validation and resolution path, then commits them together.
 An invalid human or AI submission leaves both the board and pending orders intact.
@@ -688,7 +708,7 @@ transport and final-state transitions use 180ms. It interpolates units observed 
 of an edge, updates facing during movement, and applies transport transitions
 after movement. Fractional presentation positions go only to `GamePage`.
 Refresh starts directly at
-the completed snapshot; it does not replay old turns. Same-turn polling preserves
+the completed snapshot; it does not automatically replay old turns. Same-turn polling preserves
 local drafts and monotonic submission flags. Page response messages retain the
 originating game ID through `Main`. `TurnChecks.elm` verifies timed frame playback,
 visibility boundaries, interpolation,
@@ -978,7 +998,9 @@ lines, floating damage numbers, or calculating combat outcomes.
 
 `TurnPlayback.Presentation` separates ordinary battlefield playback from combat
 focus. Entering a projected volley captures the pre-hit frame and queues its
-distinct encounter unit pairs, combining reciprocal shots. Stationary return fire
+distinct encounter unit pairs, combining reciprocal shots. Redundant pairs where
+a participant has already died and neither unit's health changes are omitted;
+zero-damage encounters between living units remain visible. Stationary return fire
 in a later volley shares the same theater and impact clock, using the first
 volley's starting health and the return volley's final health. Combining stops
 at movement, sight or logistics changes, another encounter, or an intervening
@@ -1023,7 +1045,10 @@ the hit/death feedback. These pauses affect local presentation only; Rust frame
 timing, combat outcomes, and fog projection remain authoritative.
 
 Projected `Shot.attackerHealth` and `Shot.targetHealth` carry authoritative before
-and after hit points for each pair, including concealed enemies. Rust sequences health losses across pairs within a simultaneous volley; reciprocal shots share a single transition. This presentation sequence does not change simultaneous resolution. This permits enemy health inside the
+and after hit points for each pair, including concealed enemies. Rust sequences health losses across pairs within a simultaneous volley; reciprocal shots share a single transition.
+For chains of encounters, a unit's outgoing pair is shown before another pair
+can kill it, so its simultaneous shot retains a living formation and observable
+participants stay on the held board until their lethal pair. This presentation sequence does not change simultaneous resolution. This permits enemy health inside the
 encounter card without exposing enemy supplies or fuel through `Unit.resources`.
 Panel state owns its capped presentation clock and `CardVisible | SeeingMap`
 mode. Its 3000ms capped clock allows the 200ms opening expansion, a one-second
@@ -1036,8 +1061,11 @@ units during combat and casualty pauses, held movement origins, and
 projected indirect impacts. Encounter-only portrait positions never contribute.
 `TurnLifecycle.Playing` owns its optional playback camera and remaining pan time;
 the camera is absent until the viewport has been measured. `GamePage` retains the
-battlefield size, measured on initial render and window resize through
-`Effect.measure`. `Camera.frame` tests
+battlefield size and bottom control inset, measured on initial render, playback
+start, and window resize through `Effect.measure`. The battlefield already excludes
+the right panel. The bottom inset uses the rendered controls' top edge, including
+their responsive wrapping. `Camera.frame` preserves the full battlefield size for
+board scaling, but fits and centers subjects in the clear area above the controls. It tests
 projected subject tiles against that view in pixels and leaves it unchanged when
 they fit. Clipped subjects trigger a pan with one tile of padding and a zoom
 reduction only when needed to fit the group. The board eases necessary changes
@@ -1179,7 +1207,13 @@ owner resolution, and rendering does not log errors.
 
 `GamePage.CurrentTurn` owns the per-turn introduction acknowledgment. Initialization
 and a newer server turn mark it awaiting introduction; same-turn polling preserves
-acknowledgment. The page presents it only when planning is unlocked, after all
+acknowledgment. The awaiting introduction owns the viewer-projected playback
+frames, including on initial load. Its replay operation restarts the existing
+`TurnLifecycle` animation and rewinds the displayed board to its first frame,
+then returns to the pending introduction. Acknowledgment releases those frames;
+replay is available only from the new-turn card, never during planning or after
+the game ends. Same-turn polling preserves the retained frames.
+The page presents it only when planning is unlocked, after all
 playback and loss dialogs have finished. `GamePage.initialEffect` opens the initial
 native modal after rendering; `superUpdate` opens subsequent introductions when
 the active dialog changes. `View.TurnIntroduction` supplies the card artwork and
@@ -1246,6 +1280,10 @@ fire never creates a firing reveal. Projection also withholds indirect shots fro
 concealed enemy guns, even against the viewer's own units, because `Shot.origin`
 and its attacker carry the firing position. Observable landings remain available
 through `indirectImpacts`, without an attacker portrait for a concealed gun.
+`IndirectImpact.target` independently carries the observed target portrait and
+authoritative health transition. Projection removes hidden target data even when
+the viewer fired the shell; it preserves the viewer's own target and damage even
+when the firing gun is concealed.
 
 Elm's `ChoosingIndirectFire` lives inside unit selection. `OrderPlanning` computes
 range from the selected unit's server rule without consulting fog or occupancy,
@@ -1253,12 +1291,20 @@ and saves `PlannedOrder.IndirectFire` with distinct stationary and target positi
 The board offers tile buttons for pointer and keyboard targeting and preserves a
 saved target outline. `TurnPlayback.Encounter` distinguishes confirmed exchanges
 from impact-only scenes. Projected indirect landings without a matching confirmed
-shot open a combat theater with the observable firing gun beside the target terrain,
-without a target participant or hit/miss claim. `IndirectImpact.attacker` carries
-a resource-concealed portrait and authoritative health only when that gun appears
-in the projected frame; otherwise the theater shows only the landing.
+shot open a combat theater with the observable firing gun beside the observed
+target or landing terrain. `IndirectImpact.attacker` carries a resource-concealed
+portrait and authoritative health only when that gun appears in the projected
+frame; a concealed gun remains absent even when its target is known.
 Theater controls, map peeks, spotlighting, and automatic closing share one playback
-clock; confirmed hits do not also open an impact-only scene.
+clock; confirmed hits do not also open an impact-only scene. A known target of a
+concealed gun uses its own formation and health animation, headed `indirect fire`;
+only landings without a known target use empty terrain and uncertainty copy.
+Multiple unconfirmed landings at one observed target combine their health changes
+into one scene. Target health also identifies artillery deaths and carrier losses
+without revealing an attacker or origin. These casualties use the same
+acknowledgment and death pause as ordinary exchanges.
+Holding Enter or Space on `see map` previews the battlefield; releasing either key
+restores the card without triggering the global Enter-to-continue shortcut.
 
 ## Infantry commands after dismounting
 

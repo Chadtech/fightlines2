@@ -18,6 +18,8 @@ confirmed enemy losses, known HP damage inflicted, and total supplies consumed.
 Spending includes movement, combat readiness, firing, and upkeep; replenishment
 and stock discarded with destroyed units are not spending. Choose **begin turn** or press Escape to continue. Checking
 **skip this dialog** dismisses it and remembers the preference in this browser.
+When the previous turn has an animation, **replay turn** on this card rewatches it
+and returns to the card. Replay is available only here, before beginning the turn.
 The combat theater also remembers its **automatically close** checkbox. When
 enabled, each encounter continues half a second after its animation finishes.
 
@@ -39,13 +41,19 @@ the right card; the cards stack on narrow screens. Each player can choose
 **your side**: **player 1 (red)** or **player 2 (blue)**. Choosing the other side
 swaps assignments with the opponent, including an AI. Hosting permissions stay
 with the host, and sides lock when the game starts.
-For a solo game, set the other side’s dropdown to **ai**, then choose
-**Start game**. The AI controls the other side and responds automatically when
+For a solo game, set the other side’s dropdown to **ai easy** or **ai medium**,
+then choose **Start game**. The AI controls the other side and responds automatically when
 you submit
 a turn. It advances toward supply points, attacks visible enemies, uses field-gun
 indirect fire, and seeks supply or fuel depots when low. It follows normal fog,
-movement, resource, combat, and victory rules. This basic opponent has no difficulty
-settings and does not plan passenger transport or freight deliveries.
+movement, resource, combat, and victory rules. **Easy** preserves the original AI.
+**Medium** compares candidate orders by simulating a turn through the normal game
+engine: it weighs damage and casualties, coordinates fire to avoid wasting shots,
+considers flanking routes, digs in to defend supply points, and balances advancing
+with resupply. It assumes visible enemies are healthy and supplied because their
+actual gauges are private, and models stationary enemy defenses rather than
+reading your orders. Both modes obey fog of war. Neither mode currently plans
+passenger transport or freight deliveries. Choose difficulty before starting.
 Switching back to **human** reopens the second slot before starting; a joined
 human cannot be replaced.
 

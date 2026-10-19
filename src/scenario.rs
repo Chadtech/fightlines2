@@ -398,6 +398,15 @@ impl Unit {
         self.supplies.current = current;
     }
 
+    /// Conservative simulation assumption for an observed enemy whose gauges are
+    /// private. Preserve public position, kind, facing and entrenchment only.
+    pub(crate) fn assume_full_resources(&mut self) {
+        self.hit_points = HitPoints::full();
+        self.supplies = Supplies::for_kind(self.kind);
+        self.fuel = Fuel::for_kind(self.kind);
+        self.supply_cargo.clear();
+    }
+
     /// Conceal private gauges on response copies, preserving authoritative resources.
     pub(crate) fn conceal_resources(&mut self) {
         self.resources_visible = false;

@@ -1,6 +1,6 @@
 use crate::graphql::Context;
 use crate::{
-    ai,
+    ai::{self, Difficulty},
     lobby_id::LobbyId,
     lobby_name::LobbyName,
     map::{Coordinate, MapError},
@@ -145,14 +145,22 @@ impl Game {
 
 enum PlayerController {
     Human(SessionToken),
-    Ai,
+    Ai(Difficulty),
 }
 
 impl PlayerController {
+    fn opponent(&self) -> Opponent {
+        match self {
+            Self::Human(_) => Opponent::Human,
+            Self::Ai(Difficulty::Easy) => Opponent::Ai,
+            Self::Ai(Difficulty::Medium) => Opponent::AiMedium,
+        }
+    }
+
     fn session(&self) -> Option<&SessionToken> {
         match self {
             Self::Human(session) => Some(session),
-            Self::Ai => None,
+            Self::Ai(_) => None,
         }
     }
 }
@@ -160,7 +168,9 @@ impl PlayerController {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
 pub enum Opponent {
     Human,
+    /// The original Easy opponent; retains the existing AI wire value.
     Ai,
+    AiMedium,
 }
 
 struct Player {
@@ -187,6 +197,7 @@ struct PlayerView {
     is_you: bool,
     is_host: bool,
     is_ai: bool,
+    opponent: Opponent,
 }
 
 /// Public game response built for an authorized member's session.
@@ -219,6 +230,7 @@ struct GamePlayerView {
     is_you: bool,
     player_number: PlayerNumber,
     is_ai: bool,
+    opponent: Opponent,
 }
 
 //----------------------------------------------------------------
@@ -252,6 +264,7 @@ fn snapshot(
                     && player.controller.session() == session,
                 is_host: player.controller.session() == Some(source.host),
                 is_ai: player.controller.session().is_none(),
+                opponent: player.controller.opponent(),
             })
             .collect(),
         is_host: session == Some(source.host),
@@ -348,6 +361,7 @@ fn game_view(game: &Game, session: &SessionToken) -> FieldResult<GameSnapshot> {
                 is_host: player.controller.session() == Some(&game.host),
                 is_you: player.controller.session() == Some(session),
                 is_ai: player.controller.session().is_none(),
+                opponent: player.controller.opponent(),
                 player_number: player.player_number,
             })
             .collect(),
@@ -514,11 +528,16 @@ pub fn set_opponent(context: &Context, id: LobbyId, opponent: Opponent) -> Field
     lobby
         .players
         .retain(|player| player.controller.session().is_some());
-    if opponent == Opponent::Ai {
+    let difficulty = match opponent {
+        Opponent::Human => None,
+        Opponent::Ai => Some(Difficulty::Easy),
+        Opponent::AiMedium => Some(Difficulty::Medium),
+    };
+    if let Some(difficulty) = difficulty {
         let player_number = vacant_side(&lobby.players)?;
         lobby.players.push(Player {
             player_number,
-            controller: PlayerController::Ai,
+            controller: PlayerController::Ai(difficulty),
             name: ai_name,
         });
     }
@@ -673,14 +692,16 @@ pub fn submit_turn(
     let ai_player = game
         .players
         .iter()
-        .find(|player| player.controller.session().is_none())
-        .map(|player| player.player_number);
-    if let Some(ai_player) = ai_player {
+        .find_map(|player| match player.controller {
+            PlayerController::Ai(difficulty) => Some((player.player_number, difficulty)),
+            PlayerController::Human(_) => None,
+        });
+    if let Some((ai_player, difficulty)) = ai_player {
         let mut next_turns = game.turns.clone();
         let mut next_scenario = game.scenario.clone();
         // Planning sees only the AI's observation of the pre-turn board. It never
         // receives the human's draft or submitted orders.
-        let ai_orders = ai::plan(&game.scenario, ai_player)
+        let ai_orders = ai::plan_with_difficulty(&game.scenario, ai_player, difficulty)
             .map_err(|message| FieldError::new(message, juniper::Value::null()))?;
         next_turns
             .submit(&mut next_scenario, ai_player, turn_number, ai_orders)

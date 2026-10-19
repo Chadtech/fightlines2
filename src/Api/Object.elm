@@ -61,6 +61,10 @@ type IndirectFireAttacker
     = IndirectFireAttacker
 
 
+type IndirectFireTarget
+    = IndirectFireTarget
+
+
 type IndirectImpact
     = IndirectImpact
 

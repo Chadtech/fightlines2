@@ -19,6 +19,7 @@ import View.Dialog as Dialog exposing (Dialog)
 
 type Msg
     = BeginClicked
+    | ReplayClicked
     | BattlefieldViewClicked
     | SkipDialogsChanged Bool
 
@@ -32,11 +33,23 @@ type alias DialogConfig =
     { turnNumber : Int
     , skipDialogs : Bool
     , previousTurn : Maybe Turn.Resolution
+    , canReplay : Bool
     }
 
 
 dialog : DialogConfig -> Dialog Msg
 dialog config =
+    let
+        replayButton : Html Msg
+        replayButton =
+            if config.canReplay then
+                Button.secondary "replay turn" ReplayClicked
+                    |> Button.large
+                    |> Button.toHtml
+
+            else
+                H.text ""
+    in
     Dialog.make dialogHtmlId
         ("turn " ++ String.fromInt config.turnNumber)
         BeginClicked
@@ -64,6 +77,7 @@ dialog config =
             [ Button.primary "begin turn" BeginClicked
                 |> Button.large
                 |> Button.toHtml
+            , replayButton
             , Checkbox.toHtml
                 { label = "skip this dialog"
                 , checked = config.skipDialogs

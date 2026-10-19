@@ -2,6 +2,7 @@ module View.TurnControls exposing
     ( Activity(..)
     , Msg(..)
     , feedback
+    , htmlId
     , navigation
     , panel
     , playerRow
@@ -34,10 +35,16 @@ type Msg
     = SubmitClicked
 
 
+htmlId : String
+htmlId =
+    "game-controls"
+
+
 panel : List (Html msg) -> Html msg
 panel children =
     H.section
-        [ Aria.label "game controls"
+        [ A.id htmlId
+        , Aria.label "game controls"
         , A.css
             [ S.bgGray1
             , S.outdentTopRight

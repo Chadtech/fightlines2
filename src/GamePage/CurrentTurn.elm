@@ -3,11 +3,13 @@ module GamePage.CurrentTurn exposing
     , Msg(..)
     , Observation
     , acknowledgeIntroduction
+    , canReplay
     , init
     , introductionPending
     , mapPlanning
     , pollFailed
     , pollSucceeded
+    , replay
     , setSelection
     , startSubmission
     , submissionFailed
@@ -47,7 +49,7 @@ type alias Model =
 
 
 type Introduction
-    = AwaitingIntroduction
+    = AwaitingIntroduction (List TurnPlayback.Frame)
     | IntroductionAcknowledged
 
 
@@ -70,8 +72,13 @@ type alias Observation =
 ----------------------------------------------------------------
 
 
-init : Turn.Snapshot -> Model
-init turn =
+init : Observation -> Model
+init observation =
+    let
+        turn : Turn.Snapshot
+        turn =
+            observation.turn
+    in
     { number = turn.number
     , outcome = turn.outcome
     , opponentSubmitted = turn.opponentSubmitted
@@ -79,7 +86,7 @@ init turn =
     , phase = TurnLifecycle.observeSubmission turn.submitted (TurnLifecycle.Planning OrderPlanning.init)
     , refreshing = False
     , error = Nothing
-    , introduction = AwaitingIntroduction
+    , introduction = AwaitingIntroduction observation.playbackFrames
     }
 
 
@@ -91,12 +98,47 @@ init turn =
 
 introductionPending : Model -> Bool
 introductionPending model =
-    model.introduction == AwaitingIntroduction && not (TurnLifecycle.planningLocked model.phase)
+    case model.introduction of
+        AwaitingIntroduction _ ->
+            not (TurnLifecycle.planningLocked model.phase)
+
+        IntroductionAcknowledged ->
+            False
 
 
 acknowledgeIntroduction : Model -> Model
 acknowledgeIntroduction model =
     { model | introduction = IntroductionAcknowledged }
+
+
+{-| Replay is available only before acknowledging the new turn's introduction.
+Retain the viewer-projected frames until then, including during replay itself.
+-}
+canReplay : Model -> Bool
+canReplay model =
+    case model.introduction of
+        AwaitingIntroduction (_ :: _ :: _) ->
+            (model.outcome == Nothing) && introductionPending model
+
+        _ ->
+            False
+
+
+replay : Model -> Maybe { currentTurn : Model, frame : TurnPlayback.Frame }
+replay model =
+    if canReplay model then
+        case model.introduction of
+            AwaitingIntroduction ((first :: _) as frames) ->
+                Just
+                    { currentTurn = { model | phase = TurnLifecycle.startTurn False frames }
+                    , frame = first
+                    }
+
+            _ ->
+                Nothing
+
+    else
+        Nothing
 
 
 {-| Apply a checked transition only while the turn permits planning edits.
@@ -230,7 +272,7 @@ receive observation model =
             , resolution = observation.turn.resolution
             , phase = TurnLifecycle.startTurn observation.turn.submitted observation.playbackFrames
             , error = Nothing
-            , introduction = AwaitingIntroduction
+            , introduction = AwaitingIntroduction observation.playbackFrames
         }
 
 

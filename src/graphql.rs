@@ -244,6 +244,27 @@ mod tests {
             selected["data"]["setLobbyOpponent"]["players"][1]["isAi"],
             true
         );
+        for (choice, expected) in [
+            ("AI_MEDIUM", "AI_MEDIUM"),
+            ("AI", "AI"),
+            ("AI_MEDIUM", "AI_MEDIUM"),
+        ] {
+            let (updated, _) = execute!(
+                format!(
+                    "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: {choice}) {{ players {{ opponent isAi }} }} }}"
+                ),
+                host.clone()
+            );
+            assert!(updated.get("errors").is_none(), "{updated}");
+            assert_eq!(
+                updated["data"]["setLobbyOpponent"]["players"][0]["opponent"],
+                "HUMAN"
+            );
+            assert_eq!(
+                updated["data"]["setLobbyOpponent"]["players"][1]["opponent"],
+                expected
+            );
+        }
         let (public, _) = execute!(
             format!("{{ lobby(id: \"{id}\") {{ isMember isHost }} }}"),
             None
@@ -263,7 +284,8 @@ mod tests {
                 .len(),
             1
         );
-        let (selected, _) = execute!(&ai, host.clone());
+        let medium = ai.replace("opponent: AI", "opponent: AI_MEDIUM");
+        let (selected, _) = execute!(&medium, host.clone());
         assert!(selected.get("errors").is_none());
         let (started, _) = execute!(
             format!("mutation {{ startGame(id: \"{id}\") {{ gameUrl }} }}"),
@@ -273,10 +295,11 @@ mod tests {
         let (late, _) = execute!(&human, host.clone());
         assert!(late["errors"].is_array());
         let game_query = format!(
-            "{{ game(id: \"{id}\") {{ turnNumber submitted players {{ isYou isAi }} scenario {{ units {{ id playerNumber location {{ ... on OnMap {{ position {{ x y }} }} }} }} }} }} }}"
+            "{{ game(id: \"{id}\") {{ turnNumber submitted players {{ isYou isAi opponent }} scenario {{ units {{ id playerNumber location {{ ... on OnMap {{ position {{ x y }} }} }} }} }} }} }}"
         );
         let (game, _) = execute!(&game_query, host.clone());
         assert_eq!(game["data"]["game"]["players"][1]["isAi"], true);
+        assert_eq!(game["data"]["game"]["players"][1]["opponent"], "AI_MEDIUM");
         assert_eq!(game["data"]["game"]["players"][1]["isYou"], false);
         for number in 1..=3 {
             let (game, _) = execute!(&game_query, host.clone());
@@ -328,8 +351,9 @@ mod tests {
             None
         );
         assert!(joined.get("errors").is_none());
-        let change =
-            format!("mutation {{ setLobbyOpponent(id: \"{other_id}\", opponent: AI) {{ id }} }}");
+        let change = format!(
+            "mutation {{ setLobbyOpponent(id: \"{other_id}\", opponent: AI_MEDIUM) {{ id }} }}"
+        );
         for cookie in [host, guest] {
             let (denied, _) = execute!(&change, cookie);
             assert!(denied["errors"].is_array());
@@ -357,7 +381,7 @@ mod tests {
                 (body, cookie)
             }};
         }
-        let roster = "players { name isHost isYou isAi playerNumber } isHost isMember";
+        let roster = "players { name isHost isYou isAi playerNumber opponent } isHost isMember";
         let (outsider, outsider_cookie) = execute!(
             "mutation { createLobby(name: \"Outsider\", lobbyName: \"Other\") { id } }",
             None
@@ -397,7 +421,7 @@ mod tests {
                 let guest = if ai {
                     let (selected, _) = execute!(
                         format!(
-                            "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: AI) {{ {roster} }} }}"
+                            "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: AI_MEDIUM) {{ {roster} }} }}"
                         ),
                         host.clone()
                     );
@@ -409,6 +433,10 @@ mod tests {
                     assert_eq!(
                         selected["data"]["setLobbyOpponent"]["players"][1]["isYou"],
                         false
+                    );
+                    assert_eq!(
+                        selected["data"]["setLobbyOpponent"]["players"][1]["opponent"],
+                        "AI_MEDIUM"
                     );
                     // AI removal and replacement must retain the host's chosen side.
                     let (removed, _) = execute!(
@@ -430,7 +458,7 @@ mod tests {
                     );
                     let (selected, _) = execute!(
                         format!(
-                            "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: AI) {{ id }} }}"
+                            "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: AI_MEDIUM) {{ id }} }}"
                         ),
                         host.clone()
                     );
@@ -477,7 +505,7 @@ mod tests {
                             "mutation {{ setLobbyMap(id: \"{id}\", mapType: SUPPLY_POINT) {{ id }} }}"
                         ),
                         format!(
-                            "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: AI) {{ id }} }}"
+                            "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: AI_MEDIUM) {{ id }} }}"
                         ),
                     ] {
                         let (denied, _) = execute!(&query, guest.clone());
@@ -496,6 +524,12 @@ mod tests {
                         chosen["data"]["setLobbySide"]["players"][1]["playerNumber"],
                         other_side
                     );
+                    if ai {
+                        assert_eq!(
+                            chosen["data"]["setLobbySide"]["players"][1]["opponent"],
+                            "AI_MEDIUM"
+                        );
+                    }
                 }
                 let (started, _) = execute!(
                     format!("mutation {{ startGame(id: \"{id}\") {{ gameUrl }} }}"),

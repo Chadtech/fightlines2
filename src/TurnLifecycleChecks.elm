@@ -587,7 +587,7 @@ currentTurnChecks =
     let
         initial : CurrentTurn.Model
         initial =
-            CurrentTurn.init { number = 1, submitted = False, opponentSubmitted = False, outcome = Nothing, resolution = Nothing }
+            CurrentTurn.init { turn = { number = 1, submitted = False, opponentSubmitted = False, outcome = Nothing, resolution = Nothing }, playbackFrames = [] }
 
         observation : CurrentTurn.Observation
         observation =
@@ -611,37 +611,37 @@ currentTurnChecks =
         turn =
             observation.turn
 
+        frames : List TurnPlayback.Frame
+        frames =
+            [ { depots = []
+              , supplyCrates = []
+              , departures = []
+              , indirectImpacts = []
+              , shots = []
+              , durationMs = 180
+              , units = []
+              , visibleTiles = []
+              }
+            , { depots = []
+              , supplyCrates = []
+              , departures = []
+              , indirectImpacts = []
+              , shots = []
+              , durationMs = 180
+              , units = []
+              , visibleTiles = [ { x = 1, y = 1 } ]
+              }
+            ]
+
+        nextObservation : CurrentTurn.Observation
+        nextObservation =
+            { turn = { turn | number = 2, submitted = False, opponentSubmitted = False }
+            , playbackFrames = frames
+            }
+
         advanced : CurrentTurn.Model
         advanced =
-            CurrentTurn.pollSucceeded
-                { observation
-                    | turn = { turn | number = 2, submitted = False, opponentSubmitted = False }
-                    , playbackFrames =
-                        [ { depots = []
-                          , supplyCrates = []
-                          , departures = []
-                          , indirectImpacts = []
-                          , shots = []
-                          , durationMs = 180
-                          , units = []
-                          , visibleTiles = []
-                          }
-                        , { depots = []
-                          , supplyCrates = []
-                          , departures = []
-                          , indirectImpacts = []
-                          , shots = []
-                          , durationMs = 180
-                          , units = []
-                          , visibleTiles =
-                                [ { x = 1
-                                  , y = 1
-                                  }
-                                ]
-                          }
-                        ]
-                }
-                waiting
+            CurrentTurn.pollSucceeded nextObservation waiting
 
         recovered : CurrentTurn.Model
         recovered =
@@ -659,10 +659,68 @@ currentTurnChecks =
 
         finishedOnRefresh : CurrentTurn.Model
         finishedOnRefresh =
-            CurrentTurn.init { turn | outcome = Just (GameOutcome.Victory PlayerNumber.Player1), submitted = False }
+            CurrentTurn.init { turn = { turn | outcome = Just (GameOutcome.Victory PlayerNumber.Player1), submitted = False }, playbackFrames = [] }
+
+        completePlayback : CurrentTurn.Model -> CurrentTurn.Model
+        completePlayback current =
+            case TurnLifecycle.tick 1000 current.phase of
+                Just next ->
+                    { current | phase = next.phase }
+
+                Nothing ->
+                    current
+
+        introduced : CurrentTurn.Model
+        introduced =
+            completePlayback advanced
+
+        replayed : Maybe { currentTurn : CurrentTurn.Model, frame : TurnPlayback.Frame }
+        replayed =
+            CurrentTurn.replay introduced
+
+        replayFinished : Maybe CurrentTurn.Model
+        replayFinished =
+            Maybe.map (.currentTurn >> completePlayback) replayed
+
+        refreshed : CurrentTurn.Model
+        refreshed =
+            CurrentTurn.init nextObservation
+
+        replayRewinds : { currentTurn : CurrentTurn.Model, frame : TurnPlayback.Frame } -> Bool
+        replayRewinds replay =
+            (replay.frame.visibleTiles == [])
+                && (replay.currentTurn.phase == advanced.phase)
+                && (replay.currentTurn.number == 2)
+
+        replayLocksPlanning : { currentTurn : CurrentTurn.Model, frame : TurnPlayback.Frame } -> Bool
+        replayLocksPlanning replay =
+            not (CurrentTurn.introductionPending replay.currentTurn)
+                && (CurrentTurn.startSubmission replay.currentTurn == Nothing)
+                && (CurrentTurn.replay replay.currentTurn == Nothing)
     in
     List.concat
-        [ expect "the final result waits for playback before opening"
+        [ expect "replay is absent on the first turn and during original playback"
+            (not (CurrentTurn.canReplay initial) && CurrentTurn.replay initial == Nothing && CurrentTurn.replay advanced == Nothing)
+        , expect "the completed turn is replayable only while its introduction is pending"
+            (CurrentTurn.canReplay introduced && replayed /= Nothing)
+        , expect "replay rewinds projected sight and starts the original animation"
+            (Maybe.map replayRewinds replayed == Just True)
+        , expect "replay locks planning, hides the introduction, and cannot restart mid-animation"
+            (Maybe.map replayLocksPlanning replayed == Just True)
+        , expect "replay finishes on the same introduction and supports repeated replay"
+            (replayFinished == Just introduced && Maybe.andThen CurrentTurn.replay replayFinished == replayed)
+        , expect "beginning the next turn permanently removes replay access for that introduction"
+            (CurrentTurn.replay (CurrentTurn.acknowledgeIntroduction introduced)
+                == Nothing
+                && not (CurrentTurn.canReplay (CurrentTurn.pollSucceeded { observation | turn = { turn | number = 2, submitted = False } } (CurrentTurn.acknowledgeIntroduction introduced)))
+            )
+        , expect "same-turn polling preserves the retained replay frames"
+            (CurrentTurn.replay (CurrentTurn.pollSucceeded { nextObservation | playbackFrames = [] } introduced) == replayed)
+        , expect "refresh keeps replay available without starting playback automatically"
+            (CurrentTurn.canReplay refreshed && TurnLifecycle.playback refreshed.phase == Nothing)
+        , expect "the game conclusion does not offer next-turn replay"
+            (CurrentTurn.replay { introduced | outcome = Just GameOutcome.Draw } == Nothing)
+        , expect "the final result waits for playback before opening"
             (not (CurrentTurn.introductionPending { advanced | outcome = Just (GameOutcome.Victory PlayerNumber.Player1) }))
         , expect "finished games retain the authoritative winner and announce it"
             (finished.outcome == Just (GameOutcome.Victory PlayerNumber.Player1) && CurrentTurn.introductionPending finished)
@@ -677,7 +735,7 @@ currentTurnChecks =
         , expect "acknowledgment survives same-turn polling"
             (not (CurrentTurn.introductionPending (CurrentTurn.pollSucceeded { observation | turn = { turn | submitted = False, opponentSubmitted = False } } (CurrentTurn.acknowledgeIntroduction initial))))
         , expect "submitted turns do not show an introduction"
-            (not (CurrentTurn.introductionPending (CurrentTurn.init observation.turn)))
+            (not (CurrentTurn.introductionPending (CurrentTurn.init observation)))
         , expect "new introduction waits until playback finishes"
             (not (CurrentTurn.introductionPending advanced)
                 && CurrentTurn.introductionPending { advanced | phase = Planning OrderPlanning.init }
@@ -701,7 +759,7 @@ currentTurnChecks =
         , expect "poll failure clears in-flight status so polling can retry"
             (not (CurrentTurn.pollFailed "poll failed" pendingPoll).refreshing)
         , expect "initialization never replays prior resolution"
-            (TurnLifecycle.playback (CurrentTurn.init observation.turn).phase == Nothing)
+            (TurnLifecycle.playback (CurrentTurn.init observation).phase == Nothing)
         ]
 
 

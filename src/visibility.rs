@@ -362,6 +362,18 @@ fn observed_frames(
                         })
                         .map(|impact| {
                             let mut projected = impact.clone();
+                            // Known target health survives concealed-gun filtering.
+                            // Hidden occupants, their health, and hidden casualties do not.
+                            projected.target = impact
+                                .target
+                                .as_ref()
+                                .filter(|target| {
+                                    observed
+                                        .units
+                                        .iter()
+                                        .any(|unit| unit.unit_id() == target.unit.unit_id())
+                                })
+                                .cloned();
                             projected.attacker = impact
                                 .attacker
                                 .as_ref()

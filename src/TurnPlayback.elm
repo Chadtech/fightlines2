@@ -139,6 +139,7 @@ type alias Loss =
 
 type LossCause
     = Destroyed CombatKind Unit
+    | ConcealedIndirectFire
     | SuppliesExhausted
     | CarrierLost Unit LossCause
 
@@ -174,7 +175,11 @@ losses playback =
                             CarrierLost carrier (cause carrier)
 
                         Nothing ->
-                            SuppliesExhausted
+                            if List.any (\impact -> IndirectImpact.destroyedUnitId impact == Just unit.id) playback.current.indirectImpacts then
+                                ConcealedIndirectFire
+
+                            else
+                                SuppliesExhausted
 
         unacknowledged : Unit -> Bool
         unacknowledged unit =
@@ -408,10 +413,28 @@ exchanges frame =
                     }
                         :: remaining
     in
-    collect frame.shots
+    collect frame.shots |> List.filter displayExchange
 
 
-{-| Impact scenes retain only observable attackers and never confirm a target.
+{-| Simultaneous shots can overkill a target already lost in an earlier pair.
+Keep zero-damage encounters between living units and any reciprocal damage,
+but do not open an empty scene for a redundant post-death pair.
+-}
+displayExchange : CombatExchange -> Bool
+displayExchange exchange =
+    let
+        bothAlive : Bool
+        bothAlive =
+            (exchange.attackerHealth.before.current > 0) && (exchange.targetHealth.before.current > 0)
+
+        healthChanged : CombatHealth -> Bool
+        healthChanged health =
+            health.before.current /= health.after.current
+    in
+    bothAlive || healthChanged exchange.attackerHealth || healthChanged exchange.targetHealth
+
+
+{-| Impact scenes retain observable targets independently of firing origins.
 Confirmed indirect shots already have their own exchange at the same landing.
 -}
 encounters : Frame -> List Encounter
@@ -428,8 +451,17 @@ encounters frame =
 
         unique : IndirectImpact -> List IndirectImpact -> List IndirectImpact
         unique impact impacts =
+            let
+                merge : IndirectImpact -> IndirectImpact
+                merge existing =
+                    if existing.destination == impact.destination then
+                        { existing | target = combineImpactTargets existing.target impact.target }
+
+                    else
+                        existing
+            in
             if List.any (\existing -> existing.destination == impact.destination) impacts then
-                impacts
+                List.map merge impacts
 
             else
                 impacts ++ [ impact ]
@@ -440,6 +472,47 @@ encounters frame =
                 |> List.foldl unique []
                 |> List.map Impact
            )
+
+
+{-| Several concealed guns can hit the same observed unit in one volley. Its
+single landing scene spans the complete health change, including a later kill.
+-}
+combineImpactTargets :
+    Maybe IndirectImpact.Target
+    -> Maybe IndirectImpact.Target
+    -> Maybe IndirectImpact.Target
+combineImpactTargets first second =
+    case ( first, second ) of
+        ( Just earlier, Just later ) ->
+            if earlier.unit.id == later.unit.id then
+                Just
+                    { earlier
+                        | health =
+                            { before =
+                                { current =
+                                    max
+                                        earlier.health.before.current
+                                        later.health.before.current
+                                , maximum = earlier.health.before.maximum
+                                }
+                            , after =
+                                { current =
+                                    min
+                                        earlier.health.after.current
+                                        later.health.after.current
+                                , maximum = earlier.health.after.maximum
+                                }
+                            }
+                    }
+
+            else
+                first
+
+        ( Nothing, _ ) ->
+            second
+
+        ( _, Nothing ) ->
+            first
 
 
 beginFrame : FrameTransition -> List Frame -> Playback
@@ -589,7 +662,7 @@ type alias MovementEdge =
 
 selection :
     SelectionSet Unit Api.Object.Unit
-    -> SelectionSet Coordinate Api.Object.Coordinate
+    -> SelectionSset Coordinate Api.Object.Coordinate
     -> SelectionSet (List Frame) Api.Object.GameSnapshot
 selection unit coordinate =
     GameApi.lastResolution
@@ -616,7 +689,8 @@ selection unit coordinate =
 
 initial : List Frame -> Frame -> Frame
 initial frames fallback =
-    List.head frames |> Maybe.withDefault fallback
+    List.head frames
+        |> Maybe.withDefault fallback
 
 
 start : List Frame -> Maybe Playback
@@ -846,8 +920,8 @@ exchangeDeathFrame projected focus =
                         |> List.filter (\( _, health ) -> health == 0)
                         |> List.map Tuple.first
 
-                Impact _ ->
-                    []
+                Impact impact ->
+                    IndirectImpact.destroyedUnitId impact |> Maybe.map List.singleton |> Maybe.withDefault []
 
         before : Frame
         before =

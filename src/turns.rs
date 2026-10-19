@@ -11,13 +11,13 @@ use crate::{
 use juniper::{GraphQLEnum, GraphQLInputObject, GraphQLObject, graphql_object};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(GraphQLInputObject)]
+#[derive(Clone, GraphQLInputObject)]
 pub struct CoordinateInput {
     pub(crate) x: i32,
     pub(crate) y: i32,
 }
 
-#[derive(GraphQLInputObject)]
+#[derive(Clone, GraphQLInputObject)]
 pub struct MoveOrderInput {
     pub(crate) unit_id: String,
     /// Includes the starting square. A single square is an explicit hold order.
@@ -120,13 +120,13 @@ impl FacingOrder {
     }
 }
 
-#[derive(GraphQLInputObject)]
+#[derive(Clone, GraphQLInputObject)]
 pub struct UnloadOrderInput {
     unit_id: String,
     destination: CoordinateInput,
 }
 
-#[derive(GraphQLInputObject)]
+#[derive(Clone, GraphQLInputObject)]
 pub struct CrateUnloadInput {
     cargo_index: i32,
     destination: CoordinateInput,
@@ -5478,6 +5478,12 @@ mod tests {
                             let impact = impacts.first().fixture()?;
                             assert_eq!(impact.destination, destination);
                             assert!(impact.attacker.is_none());
+                            assert_eq!(impact.target.is_some(), hit);
+                            if let Some(target) = &impact.target {
+                                assert_eq!(target.unit.unit_id(), target_id);
+                                assert_eq!(target.health.before.current(), 16);
+                                assert!(target.unit.resources().is_none());
+                            }
                         }
                         assert!(
                             projected
@@ -5609,6 +5615,68 @@ mod tests {
                 assert_eq!(report.enemy_units_destroyed, 0);
             } else {
                 assert!(shots.is_empty());
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn indirect_targets_keep_health_without_revealing_hidden_guns_or_occupants() -> TestResult<()> {
+        for entrenched in [false, true] {
+            let mut scenario = bombardment_fixture()?;
+            let target = scenario.units.get_mut(1).fixture()?;
+            let target_id = target.unit_id();
+            if entrenched {
+                target.dig_in();
+            }
+            let mut first = holds(&scenario, PlayerNumber::Player1)?;
+            first.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 9, y: 1 });
+            let second = holds(&scenario, PlayerNumber::Player2)?;
+            let mut turns = Turns::default();
+            turns.submit(&mut scenario, PlayerNumber::Player1, 1, first)?;
+            turns.submit(&mut scenario, PlayerNumber::Player2, 1, second)?;
+            let resolution = turns.last_resolution.as_ref().fixture()?;
+            let impact = resolution
+                .frames
+                .iter()
+                .flat_map(|frame| &frame.indirect_impacts)
+                .next()
+                .fixture()?;
+            let target = impact.target.as_ref().fixture()?;
+            assert_eq!(target.unit.unit_id(), target_id);
+            assert_eq!(target.health.before.current(), 16);
+            assert_eq!(
+                target.health.after.current(),
+                if entrenched { 14 } else { 0 }
+            );
+            assert!(target.unit.resources().is_none());
+            for player in [PlayerNumber::Player1, PlayerNumber::Player2] {
+                let projected = visibility::observed_resolution(
+                    &scenario,
+                    player,
+                    &visibility::visible_tiles(&scenario, player),
+                    resolution,
+                );
+                let impact = projected
+                    .frames
+                    .iter()
+                    .flat_map(|frame| &frame.indirect_impacts)
+                    .next()
+                    .fixture()?;
+                assert!(projected.frames.iter().all(|frame| frame.shots.is_empty()));
+                if player == PlayerNumber::Player1 {
+                    assert!(impact.target.is_none());
+                } else {
+                    assert!(impact.attacker.is_none());
+                    let target = impact.target.as_ref().fixture()?;
+                    assert_eq!(target.unit.unit_id(), target_id);
+                    assert_eq!(target.health.before.current(), 16);
+                    assert_eq!(
+                        target.health.after.current(),
+                        if entrenched { 14 } else { 0 }
+                    );
+                    assert!(target.unit.resources().is_none());
+                }
             }
         }
         Ok(())

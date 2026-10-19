@@ -4,6 +4,7 @@
 
 module Api.Object.PlayerView exposing (..)
 
+import Api.Enum.Opponent
 import Api.Enum.PlayerNumber
 import Api.InputObject
 import Api.Interface
@@ -43,3 +44,8 @@ isHost =
 isAi : SelectionSet Bool Api.Object.PlayerView
 isAi =
     Object.selectionForField "Bool" "isAi" [] Decode.bool
+
+
+opponent : SelectionSet Api.Enum.Opponent.Opponent Api.Object.PlayerView
+opponent =
+    Object.selectionForField "Enum.Opponent.Opponent" "opponent" [] Api.Enum.Opponent.decoder

@@ -37,3 +37,10 @@ destination :
     -> SelectionSet decodesTo Api.Object.IndirectImpact
 destination object____ =
     Object.selectionForCompositeField "destination" [] object____ Basics.identity
+
+
+target :
+    SelectionSet decodesTo Api.Object.IndirectFireTarget
+    -> SelectionSet (Maybe decodesTo) Api.Object.IndirectImpact
+target object____ =
+    Object.selectionForCompositeField "target" [] object____ (Basics.identity >> Decode.nullable)

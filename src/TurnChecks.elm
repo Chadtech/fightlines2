@@ -346,7 +346,7 @@ playbackChecks first second =
         , expect "camera subjects include only the projected fog departure"
             (Maybe.map TurnPlayback.focusPositions departing == Just (List.map .position (TurnPlayback.movingPositions departing)))
         , expect "camera frames projected indirect impacts even without a hit"
-            (TurnPlayback.focusPositions { sharedPlayback | current = { firstFrame | indirectImpacts = [ { destination = { x = 8, y = 9 }, attacker = Nothing } ] }, remaining = [] } == [ { x = 8, y = 9 } ])
+            (TurnPlayback.focusPositions { sharedPlayback | current = { firstFrame | indirectImpacts = [ { destination = { x = 8, y = 9 }, attacker = Nothing, target = Nothing } ] }, remaining = [] } == [ { x = 8, y = 9 } ])
         , expect "all simultaneous arrivals interpolate using server frame duration"
             (TurnPlayback.movingPositions timedHalfway == [ { unitId = first, position = { x = 0.5, y = 0 } }, { unitId = second, position = { x = 1.5, y = 1 } } ])
         , expect "only the first unit interpolates during its route"
@@ -958,7 +958,7 @@ combatPlaybackChecks first second =
             let
                 landing : TurnPlayback.Frame
                 landing =
-                    { before | units = [ attacker ], indirectImpacts = [ { destination = shot.destination, attacker = Nothing }, { destination = shot.destination, attacker = Nothing } ] }
+                    { before | units = [ attacker ], indirectImpacts = [ { destination = shot.destination, attacker = Nothing, target = Nothing }, { destination = shot.destination, attacker = Nothing, target = Nothing } ] }
 
                 focus : Maybe TurnPlayback.Playback
                 focus =
@@ -990,6 +990,7 @@ combatPlaybackChecks first second =
                 knownImpact =
                     { destination = shot.destination
                     , attacker = Just { unit = attacker, health = shot.attackerHealth.before }
+                    , target = Nothing
                     }
 
                 knownLanding : TurnPlayback.Frame
@@ -1009,10 +1010,47 @@ combatPlaybackChecks first second =
                     , mapView = TurnPlayback.CardVisible
                     }
 
+                observedTarget : IndirectImpact
+                observedTarget =
+                    { destination = shot.destination
+                    , attacker = Nothing
+                    , target = Just { unit = { target | kind = Kind.Infantry }, health = shot.targetHealth }
+                    }
+
+                showTarget : List IndirectImpact -> Bool -> Maybe TurnPlayback.Playback
+                showTarget impacts destroyed =
+                    TurnPlayback.start
+                        [ { before | units = [ target ] }
+                        , { landing | units = [ { target | destroyed = destroyed } ], indirectImpacts = impacts }
+                        ]
+                        |> Maybe.andThen (TurnPlayback.tick 180 >> Tuple.first)
+                        |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+
+                targetShown : Maybe TurnPlayback.Playback
+                targetShown =
+                    showTarget [ observedTarget ] False
+
+                laterImpact : IndirectImpact
+                laterImpact =
+                    { observedTarget | target = Maybe.map (\known -> { known | health = { before = { current = 8, maximum = 16 }, after = { current = 0, maximum = 16 } } }) observedTarget.target }
+
+                combined : Maybe TurnPlayback.Panel
+                combined =
+                    showTarget [ observedTarget, laterImpact ] True |> Maybe.andThen TurnPlayback.panels
+
+                targetHealth : TurnPlayback.Panel -> Maybe CombatHealth
+                targetHealth panel =
+                    case panel.encounter of
+                        TurnPlayback.Impact impact ->
+                            Maybe.map .health impact.target
+
+                        TurnPlayback.Exchange _ ->
+                            Nothing
+
                 ready : Float -> Bool
                 ready elapsed =
                     CombatTheater.readyToAutomaticallyClose
-                        { encounter = TurnPlayback.Impact { destination = shot.destination, attacker = Nothing }
+                        { encounter = TurnPlayback.Impact { destination = shot.destination, attacker = Nothing, target = Nothing }
                         , elapsed = elapsed
                         , mapView = TurnPlayback.CardVisible
                         }
@@ -1027,11 +1065,27 @@ combatPlaybackChecks first second =
                 )
                 ++ expect "unconfirmed indirect impacts open a theater without invented combatants"
                     (Maybe.andThen TurnPlayback.activeEncounter shown
-                        == Just (TurnPlayback.Impact { destination = shot.destination, attacker = Nothing })
+                        == Just (TurnPlayback.Impact { destination = shot.destination, attacker = Nothing, target = Nothing })
                         && Maybe.andThen TurnPlayback.combat shown
                         == Nothing
                         && Maybe.andThen TurnPlayback.panels shown
                         /= Nothing
+                    )
+                ++ expect "a concealed gun retains the observed target and authoritative damage"
+                    (Maybe.andThen TurnPlayback.activeEncounter targetShown
+                        == Just (TurnPlayback.Impact observedTarget)
+                        && Maybe.map TurnPlayback.focusPositions targetShown
+                        == Just [ { x = 3, y = 2 } ]
+                    )
+                ++ expect "observed targets animate their whole health change across duplicate landings"
+                    (Maybe.andThen targetHealth combined == Just { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } })
+                ++ expect "observed infantry impacts retain the full casualty animation before automatic close"
+                    (Maybe.map (\panel -> not (CombatTheater.readyToAutomaticallyClose { panel | elapsed = 2719 }) && CombatTheater.readyToAutomaticallyClose { panel | elapsed = 2720 }) combined == Just True)
+                ++ expect "combined concealed gun impacts retain the casualty ID without an attacker"
+                    (showTarget [ observedTarget, laterImpact ] True
+                        |> Maybe.andThen TurnPlayback.continueCombat
+                        |> Maybe.map (.animation >> TurnPlayback.losses >> List.map .cause)
+                        |> (==) (Just [ TurnPlayback.ConcealedIndirectFire ])
                     )
                 ++ expect "impact spotlight and camera frame only the landing"
                     (Maybe.andThen TurnPlayback.spotlight focus
@@ -1435,6 +1489,137 @@ combatDeathChecks first second =
                         |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
                         |> Maybe.andThen TurnPlayback.continueCombat
 
+                concealedShell : TurnPlayback.Frame
+                concealedShell =
+                    { volley
+                        | units = [ attacker, { target | destroyed = True }, other ]
+                        , shots = []
+                        , indirectImpacts = [ { destination = { x = 3, y = 2 }, attacker = Nothing, target = Just { unit = target, health = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } } } } ]
+                    }
+
+                shellDeath : Maybe { animation : TurnPlayback.Playback, frame : TurnPlayback.Frame }
+                shellDeath =
+                    TurnPlayback.start [ before, concealedShell, cleanup ]
+                        |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+                        |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+                        |> Maybe.andThen TurnPlayback.continueCombat
+
+                shellCarrierDeath : Maybe TurnPlayback.LossEvent
+                shellCarrierDeath =
+                    let
+                        carrier : Unit
+                        carrier =
+                            { target | kind = Kind.Truck }
+
+                        passenger : Unit
+                        passenger =
+                            { other | location = Location.Aboard second }
+
+                        carriedBefore : TurnPlayback.Frame
+                        carriedBefore =
+                            { before | units = [ attacker, carrier, passenger ] }
+
+                        carriedDeath : TurnPlayback.Frame
+                        carriedDeath =
+                            { concealedShell | units = [ attacker, { carrier | destroyed = True }, { passenger | destroyed = True } ] }
+                    in
+                    TurnPlayback.start [ carriedBefore, carriedDeath, cleanup ]
+                        |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+                        |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+                        |> Maybe.andThen TurnPlayback.continueCombat
+                        |> Maybe.andThen (.animation >> TurnPlayback.lossEvent)
+
+                overkill : Shot
+                overkill =
+                    { reciprocal
+                        | origin = { x = 2, y = 3 }
+                        , destination = { x = 3, y = 2 }
+                        , attacker = { other | playerNumber = PlayerNumber.Player1 }
+                        , target = target
+                        , attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }
+                        , targetHealth = { before = { current = 0, maximum = 16 }, after = { current = 0, maximum = 16 } }
+                    }
+
+                afterOverkill : Maybe TurnPlayback.Playback
+                afterOverkill =
+                    TurnPlayback.start [ before, { volley | shots = [ lethalShot target, overkill ], units = [ attacker, { target | destroyed = True }, other ] }, cleanup ]
+                        |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+                        |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+                        |> Maybe.andThen TurnPlayback.continueCombat
+                        |> Maybe.andThen (.animation >> TurnPlayback.tick 1400 >> Tuple.first)
+
+                singlePair : Shot -> Maybe TurnPlayback.CombatExchange
+                singlePair shot =
+                    TurnPlayback.start [ before, { before | durationMs = 450, shots = [ shot ] }, cleanup ]
+                        |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+                        |> Maybe.andThen TurnPlayback.combat
+
+                chainAttacker : Unit
+                chainAttacker =
+                    { target | kind = Kind.Infantry }
+
+                chainDefender : Unit
+                chainDefender =
+                    { attacker | kind = Kind.Infantry }
+
+                chainGun : Unit
+                chainGun =
+                    { other | playerNumber = PlayerNumber.Player1, kind = Kind.FieldGun }
+
+                chainAttack : Shot
+                chainAttack =
+                    { reciprocal
+                        | kind = CombatKind.AttackMove
+                        , attacker = chainAttacker
+                        , target = chainDefender
+                        , damage = 1
+                        , attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }
+                        , targetHealth = { before = { current = 16, maximum = 16 }, after = { current = 15, maximum = 16 } }
+                    }
+
+                chain : Bool -> Maybe TurnPlayback.Playback
+                chain concealed =
+                    let
+                        units : List Unit
+                        units =
+                            if concealed then
+                                [ chainDefender, chainGun ]
+
+                            else
+                                [ chainDefender, chainAttacker, chainGun ]
+
+                        opening : TurnPlayback.Frame
+                        opening =
+                            { before | units = units }
+
+                        dying : Unit -> Unit
+                        dying unit =
+                            { unit | destroyed = unit.id == second }
+
+                        killShot : Shot
+                        killShot =
+                            lethalShot chainAttacker
+
+                        landing : TurnPlayback.Frame
+                        landing =
+                            { volley
+                                | units = List.map dying units
+                                , shots =
+                                    [ chainAttack
+                                    , { killShot | attacker = chainGun, origin = { x = 2, y = 3 }, targetHealth = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } } }
+                                    ]
+                            }
+                    in
+                    TurnPlayback.start [ opening, landing, cleanup ]
+                        |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+
+                chainKillingPair : Maybe TurnPlayback.Playback
+                chainKillingPair =
+                    chain False
+                        |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+                        |> Maybe.andThen TurnPlayback.continueCombat
+                        |> Maybe.map .animation
+
                 expect : String -> Bool -> List String
                 expect label passed =
                     if passed then
@@ -1446,6 +1631,40 @@ combatDeathChecks first second =
             List.concat
                 [ expect "a previously visible enemy concealed at death never enters the loss queue"
                     (concealedDeath |> Maybe.map (.animation >> TurnPlayback.losses >> List.isEmpty) |> (==) (Just True))
+                , expect "concealed artillery casualties retain their cause without an attacker portrait"
+                    (Maybe.map (.animation >> TurnPlayback.losses >> List.map .cause) shellDeath == Just [ TurnPlayback.ConcealedIndirectFire ])
+                , expect "concealed artillery deaths pause at their own impact scene"
+                    (Maybe.map (.frame >> dyingIds) shellDeath == Just [ second ])
+                , expect "passengers share their carrier's concealed artillery loss event"
+                    (Maybe.map (.loss >> .cause) shellCarrierDeath
+                        == Just TurnPlayback.ConcealedIndirectFire
+                        && Maybe.map (.passengers >> List.map .id) shellCarrierDeath
+                        == Just [ third ]
+                    )
+                , expect "artillery deaths retain acknowledgment and the server casualty pause"
+                    (Maybe.map (.animation >> TurnPlayback.tickUntilLoss 60000 >> Tuple.second >> dyingIds) shellDeath
+                        == Just [ second ]
+                        && Maybe.map (.animation >> TurnPlayback.acknowledgeLoss second >> TurnPlayback.tickUntilLoss 1400 >> Tuple.second >> dyingIds) shellDeath
+                        == Just []
+                    )
+                , expect "overkill does not open an empty encounter after the target's death"
+                    (Maybe.andThen TurnPlayback.activeEncounter afterOverkill == Nothing && afterOverkill /= Nothing)
+                , expect "zero-damage shots between living combatants still open the theater"
+                    (singlePair { overkill | targetHealth = overkill.attackerHealth, damage = 0 } /= Nothing)
+                , expect "reciprocal damage is retained even when the other participant already died"
+                    (singlePair { overkill | attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 12, maximum = 16 } } } /= Nothing)
+                , expect "a simultaneous attack move starts with the enemy's full formation"
+                    (chain False |> Maybe.andThen TurnPlayback.combat |> Maybe.map (.attackerHealth >> .before >> .current >> CombatFormation.figureCount Kind.Infantry) |> (==) (Just 8))
+                , expect "a visible attack mover stays on the held board until its later lethal pair"
+                    (Maybe.andThen TurnPlayback.spotlight (chain False)
+                        == Just [ { x = 2, y = 2 }, { x = 3, y = 2 } ]
+                        && (Maybe.andThen TurnPlayback.combat chainKillingPair |> Maybe.map (.attacker >> .id) |> (==) (Just third))
+                    )
+                , expect "concealed attack movers retain their theater formation without a map spotlight"
+                    (Maybe.andThen TurnPlayback.spotlight (chain True)
+                        == Just [ { x = 2, y = 2 } ]
+                        && (chain True |> Maybe.andThen TurnPlayback.combat |> Maybe.map (.attackerHealth >> .before >> .current) |> (==) (Just 16))
+                    )
                 , expect "concealed combat casualties never gain a battlefield skull from their portrait"
                     (concealedDeath |> Maybe.map (.frame >> dyingIds >> List.isEmpty) |> (==) (Just True))
                 , expect "loss dialog identifies the lethal shot and its attacker"
@@ -1834,6 +2053,8 @@ lossDetailsChecks first second =
             (resolve ownerName (TurnPlayback.Destroyed CombatKind.AttackMove attacker)
                 == Ok { ownerName = "Alice", cause = UnitLoss.Destroyed CombatKind.AttackMove { unit = attacker, ownerName = "Bob" } }
             )
+        , expect "concealed artillery loss details require no attacker owner or portrait"
+            (resolve missingAttackerOwner TurnPlayback.ConcealedIndirectFire == Ok { ownerName = "Alice", cause = UnitLoss.ConcealedIndirectFire })
         , expect "missing casualty owner retains unit ID and player number"
             (resolve (always Nothing) TurnPlayback.SuppliesExhausted
                 == Err (UnitLoss.OwnerNotFound { unitId = first, playerNumber = PlayerNumber.Player1 })
@@ -1965,9 +2186,13 @@ cameraChecks =
         map =
             Map.fromFeatures { width = 17, height = 17, baseTile = Terrain.Plain, theme = MapTheme.GreenForest, features = [] }
 
-        viewport : Point
+        viewport : Camera.Viewport
         viewport =
-            { x = 1000, y = 600 }
+            { size = { x = 1000, y = 600 }, bottomInset = 0 }
+
+        withControls : Camera.Viewport
+        withControls =
+            { viewport | bottomInset = 150 }
 
         overview : Camera.Camera
         overview =
@@ -1993,6 +2218,51 @@ cameraChecks =
         fitted =
             Camera.frame viewport map group zoomed
 
+        southernUnit : List Point
+        southernUnit =
+            [ { x = 8, y = 16 } ]
+
+        aboveControls : Camera.Camera
+        aboveControls =
+            Camera.frame withControls map southernUnit overview
+
+        fittedAboveControls : Camera.Camera
+        fittedAboveControls =
+            Camera.frame withControls map group zoomed
+
+        narrowViewport : Camera.Viewport
+        narrowViewport =
+            { size = { x = 320, y = 900 }, bottomInset = 340 }
+
+        narrowFit : Camera.Camera
+        narrowFit =
+            Camera.frame narrowViewport map group zoomed
+
+        tilesClearPanels : Camera.Viewport -> List Point -> Camera.Camera -> Bool
+        tilesClearPanels view positions camera =
+            let
+                tilePixels : Float
+                tilePixels =
+                    min (0.8 * view.size.x) (0.76 * view.size.y) * camera.zoom / 17
+
+                tileIsClear : Point -> Bool
+                tileIsClear position =
+                    let
+                        left : Float
+                        left =
+                            view.size.x / 2 + camera.offset.x + (position.x - 8.5) * tilePixels
+
+                        top : Float
+                        top =
+                            view.size.y / 2 + camera.offset.y + (position.y - 8.5) * tilePixels
+                    in
+                    (left >= 0)
+                        && (left + tilePixels <= view.size.x)
+                        && (top >= 0)
+                        && (top + tilePixels <= view.size.y - view.bottomInset)
+            in
+            List.all tileIsClear positions
+
         expect : String -> Bool -> List String
         expect name passed =
             if passed then
@@ -2015,5 +2285,22 @@ cameraChecks =
         , expect "distant simultaneous subjects fit together without repeated reframing"
             (fitted.zoom < zoomed.zoom && Camera.frame viewport map group fitted == fitted)
         , expect "narrow viewport uses its horizontal bounds"
-            (Camera.frame { x = 320, y = 900 } map group zoomed /= zoomed)
+            (Camera.frame { size = { x = 320, y = 900 }, bottomInset = 0 } map group zoomed /= zoomed)
+        , expect "a southern tile covered by controls pans into the clear area without changing zoom"
+            (not (tilesClearPanels withControls southernUnit overview)
+                && tilesClearPanels withControls southernUnit aboveControls
+                && (aboveControls.zoom == overview.zoom)
+            )
+        , expect "an unobscured tile retains the view with controls present"
+            (Camera.frame withControls map [ { x = 8, y = 8 } ] overview == overview)
+        , expect "a pan above controls settles without repeated reframing"
+            (Camera.frame withControls map southernUnit aboveControls == aboveControls)
+        , expect "simultaneous subjects fit above the controls and beside the right panel"
+            (tilesClearPanels withControls group fittedAboveControls
+                && (Camera.frame withControls map group fittedAboveControls == fittedAboveControls)
+            )
+        , expect "wrapped controls and a narrow battlefield keep every subject clear of both panels"
+            (tilesClearPanels narrowViewport group narrowFit
+                && (Camera.frame narrowViewport map group narrowFit == narrowFit)
+            )
         ]

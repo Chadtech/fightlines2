@@ -1,5 +1,6 @@
 module Camera exposing
     ( Camera
+    , Viewport
     , anchor
     , boardWidth
     , frame
@@ -13,6 +14,15 @@ import Point exposing (Point)
 type alias Camera =
     { offset : Point
     , zoom : Float
+    }
+
+
+{-| Keep the full container size for board scaling; the bottom controls obscure
+part of that container without changing its coordinate system.
+-}
+type alias Viewport =
+    { size : Point
+    , bottomInset : Float
     }
 
 
@@ -61,7 +71,7 @@ transform camera =
 breathing room, reducing zoom only when the group cannot fit the viewport.
 Viewport dimensions and offsets are in pixels; subject positions are in tiles.
 -}
-frame : Point -> Map -> List Point -> Camera -> Camera
+frame : Viewport -> Map -> List Point -> Camera -> Camera
 frame viewport map positions camera =
     case positions of
         [] ->
@@ -88,7 +98,11 @@ frame viewport map positions camera =
 
                 boardPixels : Float
                 boardPixels =
-                    min (0.8 * viewport.x) (0.76 * viewport.y)
+                    min (0.8 * viewport.size.x) (0.76 * viewport.size.y)
+
+                visibleHeight : Float
+                visibleHeight =
+                    max 1 (viewport.size.y - viewport.bottomInset)
 
                 tilePixels : Float
                 tilePixels =
@@ -114,13 +128,16 @@ frame viewport map positions camera =
                 zoom =
                     min camera.zoom
                         (min
-                            (viewport.x * width / (boardPixels * (bounds.right - bounds.left + 3)))
-                            (viewport.y * width / (boardPixels * (bounds.bottom - bounds.top + 3)))
+                            (viewport.size.x * width / (boardPixels * (bounds.right - bounds.left + 3)))
+                            (visibleHeight * width / (boardPixels * (bounds.bottom - bounds.top + 3)))
                         )
 
                 subjectsVisible : Bool
                 subjectsVisible =
-                    left >= -viewport.x / 2 && right <= viewport.x / 2 && top >= -viewport.y / 2 && bottom <= viewport.y / 2
+                    (left >= -viewport.size.x / 2)
+                        && (right <= viewport.size.x / 2)
+                        && (top >= -viewport.size.y / 2)
+                        && (bottom <= viewport.size.y / 2 - viewport.bottomInset)
             in
             if subjectsVisible then
                 camera
@@ -129,6 +146,6 @@ frame viewport map positions camera =
                 { zoom = zoom
                 , offset =
                     { x = -(bounds.left + bounds.right + 1 - width) / 2 * boardPixels * zoom / width
-                    , y = -(bounds.top + bounds.bottom + 1 - toFloat map.height) / 2 * boardPixels * zoom / width
+                    , y = -(bounds.top + bounds.bottom + 1 - toFloat map.height) / 2 * boardPixels * zoom / width - viewport.bottomInset / 2
                     }
                 }

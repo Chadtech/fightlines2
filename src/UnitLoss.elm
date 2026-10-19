@@ -31,6 +31,7 @@ type alias NamedUnit =
 
 type Cause
     = Destroyed CombatKind NamedUnit
+    | ConcealedIndirectFire
     | SuppliesExhausted
     | CarrierLost NamedUnit Cause
 
@@ -60,6 +61,9 @@ resolveCause ownerName cause =
 
         TurnPlayback.SuppliesExhausted ->
             Ok SuppliesExhausted
+
+        TurnPlayback.ConcealedIndirectFire ->
+            Ok ConcealedIndirectFire
 
         TurnPlayback.CarrierLost carrier carrierCause ->
             Result.map2 CarrierLost

@@ -10,6 +10,25 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+mod medium;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Difficulty {
+    Easy,
+    Medium,
+}
+
+pub fn plan_with_difficulty(
+    scenario: &Scenario,
+    player: PlayerNumber,
+    difficulty: Difficulty,
+) -> Result<Vec<MoveOrderInput>, &'static str> {
+    match difficulty {
+        Difficulty::Easy => plan(scenario, player),
+        Difficulty::Medium => medium::plan(scenario, player),
+    }
+}
+
 pub fn plan(
     scenario: &Scenario,
     player: PlayerNumber,

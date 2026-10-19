@@ -21,7 +21,8 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Html.Styled.Lazy as Lazy
-import IndirectImpact exposing (Attacker)
+import IndirectImpact exposing (Attacker, IndirectImpact)
+import Json.Decode as Decode
 import Map exposing (Map)
 import Style as S
 import Svg.Styled as Svg
@@ -121,8 +122,13 @@ impactStarts panel =
             CombatFormation.impactStarts exchange.attacker.kind exchange.attackerHealth
                 ++ CombatFormation.impactStarts exchange.target.kind exchange.targetHealth
 
-        Impact _ ->
-            [ 1200, 1330, 1460, 1590 ]
+        Impact { target } ->
+            case target of
+                Just observed ->
+                    CombatFormation.impactStarts observed.unit.kind observed.health
+
+                Nothing ->
+                    [ 1200, 1330, 1460, 1590 ]
 
 
 impactContactDelayMs : Float
@@ -192,22 +198,27 @@ theaterView automaticallyClose map panel =
                         Just attacker ->
                             if attackerOnLeft panel then
                                 [ impactAttacker map panel attacker SpriteFacing.Right
-                                , impactScene map panel impact.destination
+                                , impactTarget map panel impact SpriteFacing.Left
                                 ]
 
                             else
-                                [ impactScene map panel impact.destination
+                                [ impactTarget map panel impact SpriteFacing.Right
                                 , impactAttacker map panel attacker SpriteFacing.Left
                                 ]
 
                         Nothing ->
-                            [ impactScene map panel impact.destination ]
+                            [ impactTarget map panel impact SpriteFacing.Left ]
 
         title : String
         title =
             case panel.encounter of
-                Impact _ ->
-                    "indirect fire impact"
+                Impact { target } ->
+                    case target of
+                        Just _ ->
+                            "indirect fire"
+
+                        Nothing ->
+                            "indirect fire impact"
 
                 Exchange exchange ->
                     case exchange.kind of
@@ -233,10 +244,26 @@ theaterView automaticallyClose map panel =
 
                                 Just _ ->
                                     "a field gun fired indirectly at this space."
+
+                        outcome : String
+                        outcome =
+                            case impact.target of
+                                Just target ->
+                                    if target.health.after.current == 0 then
+                                        " a unit was destroyed at this space."
+
+                                    else if target.health.after.current < target.health.before.current then
+                                        " a unit was hit at this space."
+
+                                    else
+                                        " a unit was at the impact site and took no damage."
+
+                                Nothing ->
+                                    " no target or damage could be confirmed."
                     in
                     H.p
                         []
-                        [ H.text (source ++ " no target or damage could be confirmed.") ]
+                        [ H.text (source ++ outcome) ]
 
                 Exchange _ ->
                     H.text ""
@@ -356,6 +383,9 @@ theaterView automaticallyClose map panel =
                             [ Ev.onMouseDown SeeMapPressed
                             , Ev.onMouseUp SeeMapReleased
                             , Ev.onMouseLeave SeeMapReleased
+                            , Ev.on "focusout" (Decode.succeed SeeMapReleased)
+                            , Ev.custom "keydown" (seeMapKey SeeMapPressed)
+                            , Ev.custom "keyup" (seeMapKey SeeMapReleased)
                             ]
                             [ Button.secondary "see map" SeeMapReleased |> Button.toHtml
                             ]
@@ -370,6 +400,23 @@ theaterView automaticallyClose map panel =
                 ]
             ]
         ]
+
+
+seeMapKey : Msg -> Decode.Decoder { message : Msg, stopPropagation : Bool, preventDefault : Bool }
+seeMapKey message =
+    let
+        handled : Msg -> { message : Msg, stopPropagation : Bool, preventDefault : Bool }
+        handled event =
+            { message = event
+            , stopPropagation = True
+            , preventDefault = True
+            }
+    in
+    Decode.oneOf
+        [ HtmlEvent.enter message
+        , HtmlEvent.key " " message
+        ]
+        |> Decode.map handled
 
 
 backdropPath : MapTheme -> Terrain -> String
@@ -479,6 +526,21 @@ impactAttacker map panel attacker facing =
         { unit | spriteFacing = facing }
 
 
+impactTarget : Map -> Panel -> IndirectImpact -> SpriteFacing -> Html Msg
+impactTarget map panel impact facing =
+    case impact.target of
+        Just target ->
+            let
+                unit : Unit
+                unit =
+                    target.unit
+            in
+            portrait map panel target.health { unit | spriteFacing = facing }
+
+        Nothing ->
+            impactScene map panel impact.destination
+
+
 impactScene : Map -> Panel -> Coordinate -> Html Msg
 impactScene map panel position =
     let
@@ -562,8 +624,8 @@ portrait map panel health unit =
                         (exchange.target.kind == UnitKind.FieldGun)
                             && (health.after.current < health.before.current)
 
-                Impact _ ->
-                    False
+                Impact impact ->
+                    Maybe.map (.unit >> .id) impact.target == Just unit.id
 
         trenchPath : String
         trenchPath =

@@ -2703,7 +2703,7 @@ planningChecks infantryId truckId passengerId =
 
         initialTurn : CurrentTurn.Model
         initialTurn =
-            CurrentTurn.init { number = 1, submitted = False, opponentSubmitted = False, outcome = Nothing, resolution = Nothing }
+            CurrentTurn.init { turn = { number = 1, submitted = False, opponentSubmitted = False, outcome = Nothing, resolution = Nothing }, playbackFrames = [] }
 
         brokenTurn : CurrentTurn.Model
         brokenTurn =
