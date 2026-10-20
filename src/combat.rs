@@ -8,6 +8,7 @@ use crate::{
     visibility,
 };
 use juniper::{GraphQLEnum, GraphQLObject, graphql_object};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, GraphQLEnum)]
@@ -55,14 +56,14 @@ pub fn rules(kind: UnitKind) -> CombatRules {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
 pub enum CombatKind {
     Ambush,
     AttackMove,
     IndirectFire,
 }
 
-#[derive(Clone, Debug, GraphQLObject)]
+#[derive(Clone, Debug, GraphQLObject, Serialize, Deserialize)]
 pub struct Shot {
     pub kind: CombatKind,
     pub origin: Coordinate,
@@ -81,7 +82,7 @@ fn theater_participant(unit: &Unit) -> Unit {
     participant
 }
 
-#[derive(Clone, Copy, Debug, GraphQLObject)]
+#[derive(Clone, Copy, Debug, GraphQLObject, Serialize, Deserialize)]
 pub struct CombatHealth {
     pub before: HitPoints,
     pub after: HitPoints,
@@ -192,7 +193,7 @@ fn attack_aspect(unit: &Unit, opponent: &Unit) -> AttackAspect {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndirectImpact {
     pub attacker: Option<IndirectFireAttacker>,
     pub player_number: PlayerNumber,
@@ -219,13 +220,13 @@ impl IndirectImpact {
     }
 }
 
-#[derive(Clone, Debug, GraphQLObject)]
+#[derive(Clone, Debug, GraphQLObject, Serialize, Deserialize)]
 pub struct IndirectFireAttacker {
     pub unit: Unit,
     pub health: HitPoints,
 }
 
-#[derive(Clone, Debug, GraphQLObject)]
+#[derive(Clone, Debug, GraphQLObject, Serialize, Deserialize)]
 pub struct IndirectFireTarget {
     pub unit: Unit,
     pub health: CombatHealth,

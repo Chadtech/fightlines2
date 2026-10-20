@@ -874,7 +874,14 @@ supplyChecks rules =
 
                 fieldGun : Unit.Unit
                 fieldGun =
-                    { exhausted | kind = UnitKind.FieldGun }
+                    { unit
+                        | kind = UnitKind.FieldGun
+                        , resources = Maybe.map (\resources -> { resources | supplies = { supplies | current = 27, maximum = 196, upkeepPerTurn = 4, movementPerTile = 24 } }) unit.resources
+                    }
+
+                suppliedFieldGun : Unit.Unit
+                suppliedFieldGun =
+                    { fieldGun | resources = Maybe.map (\resources -> { resources | supplies = { supplies | current = 28, maximum = 196, upkeepPerTurn = 4, movementPerTile = 24 } }) fieldGun.resources }
 
                 vehicle : Unit.Unit
                 vehicle =
@@ -903,6 +910,7 @@ supplyChecks rules =
             List.concat
                 [ test "upkeep is reserved before walking" (Movement.tileLimit units exhausted == Just 0 && List.isEmpty (Movement.options [] rules map units exhausted))
                 , test "field guns also need supplies after upkeep" (List.isEmpty (Movement.options [] rules map units fieldGun))
+                , test "field guns can move with exactly 28 supplies" (Movement.options [] rules map [ suppliedFieldGun ] suppliedFieldGun |> List.any (\option -> option.destination == { x = 1, y = 0 }))
                 , test "tracing reserves upkeep only once" (traced |> Maybe.map (\path -> List.length path.path == 3) |> Maybe.withDefault False)
                 , test "extending a trace cannot overspend supplies" (traced |> Maybe.andThen (\path -> Movement.trace rules map units unit path { x = 2, y = 1 }) |> (==) Nothing)
                 , test "backtracking refunds movement supplies" (traced |> Maybe.andThen (\path -> Movement.trace rules map units unit path { x = 0, y = 1 }) |> Maybe.andThen (\path -> Movement.trace rules map units unit path { x = 0, y = 2 }) |> Maybe.map (\path -> List.length path.path == 3) |> Maybe.withDefault False)

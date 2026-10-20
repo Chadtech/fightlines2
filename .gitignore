@@ -64,3 +64,6 @@
 # Team-colored trench interior combat scenes.
 !/public/assets/combat-trench-interior-v1/
 !/public/assets/combat-trench-interior-v1/*.png
+
+# Private authoritative game archives.
+/game-logs/

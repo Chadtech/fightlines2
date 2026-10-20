@@ -1,8 +1,9 @@
 use crate::{map::MapError, map_definition::MapDefinition, map_editor, scenario::Scenario};
 use juniper::GraphQLEnum;
+use serde::{Deserialize, Serialize};
 
 /// Selects the fixed initial board and forces for a game.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, GraphQLEnum)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
 pub enum MapType {
     #[default]
     SupplyPoint,

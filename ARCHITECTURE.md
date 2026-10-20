@@ -17,6 +17,20 @@ players. Lobbies and games are held in memory and disappear on server restart.
 There is no account system, host transfer, player removal, or expiry cleanup
 yet.
 
+`game_log.rs` writes private, versioned JSON archives outside the frontend directory.
+The store records an initial authoritative scenario and roster (without credentials),
+then accepted human and AI submissions with resulting boards, pending-player status,
+outcomes, and unprojected playback frames. Game creation and turn submission prepare
+state on copies and publish a synced record before committing to memory. Failed
+writes preserve the lobby, board, and pending orders; retries of already locked
+orders create no additional records. Each game gets a fresh directory even when its
+ID is reused after a restart. Atomic publication excludes incomplete temporary files
+and never overwrites a record. Writes are synchronous under the store lock.
+`--replay-game-log` re-runs captured inputs through `Turns::submit` and compares
+all recorded results using the current engine; it does not regenerate AI orders or
+restore browser sessions. These archives are for operator debugging and never go
+through player GraphQL responses. See [deployment](DEPLOYMENT.md#game-archives).
+
 `SessionToken` identifies a browser through its HTTP-only cookie. It is the
 credential checked against the host and roster, rather than a login account or a
 particular lobby. `PlayerName` validates trimmed display names. `LobbyName`
@@ -749,7 +763,7 @@ snapshot fuel values; it does not calculate resource outcomes.
 
 Every Rust unit carries `Supplies` with current and maximum quantities plus
 `upkeepPerTurn`, `movementPerTile`, and `roughTerrainSurcharge` rates. Infantry start at
-192/192; field guns start at 196/196; vehicles start at 128/128. All kinds have upkeep 4. Infantry spend 12 supplies per plain tile and 16 per hill, forest, or mountain tile and field guns spend 8;
+192/192; field guns start at 196/196; vehicles start at 128/128. All kinds have upkeep 4. Infantry spend 12 supplies per plain tile and 16 per hill, forest, or mountain tile and field guns spend 24 per tile;
 tanks and trucks spend fuel but no movement supplies. These are unit provisions, separate
 from fuel and carried supply crates.
 

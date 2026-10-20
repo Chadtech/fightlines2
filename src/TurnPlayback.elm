@@ -662,7 +662,7 @@ type alias MovementEdge =
 
 selection :
     SelectionSet Unit Api.Object.Unit
-    -> SelectionSset Coordinate Api.Object.Coordinate
+    -> SelectionSet Coordinate Api.Object.Coordinate
     -> SelectionSet (List Frame) Api.Object.GameSnapshot
 selection unit coordinate =
     GameApi.lastResolution

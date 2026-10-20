@@ -639,9 +639,11 @@ portrait map panel health unit =
         trenchImage =
             Svg.image
                 [ SA.xlinkHref trenchPath
-                , SA.width "96"
-                , SA.height "64"
-                , SA.preserveAspectRatio "xMidYMid meet"
+                , SA.x "-4"
+                , SA.y "-4"
+                , SA.width "104"
+                , SA.height "72"
+                , SA.preserveAspectRatio "xMidYMid slice"
                 , SA.transform trenchFacing
                 , Aria.hidden True
                 ]

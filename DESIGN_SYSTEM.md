@@ -696,8 +696,9 @@ completion, and the standard revoke action. Infantry cannot fire while digging.
 An entrenched unit uses its approved red or blue dug-in sprite on the board,
 in the inspector, with existing facing mirroring. In the combat theater, replace
 its formation and terrain backdrop with the approved team-colored trench interior
-scene, mirrored toward the opponent. Preserve the full illustration and existing
-impact timing and camera shake; the painted soldiers remain static through losses.
+scene, mirrored toward the opponent. Fill the scene without letterboxing and
+overscan the artwork for camera shake, cropping the sides as needed. Preserve
+existing impact timing; the painted soldiers remain static through losses.
 Use the matching team-colored taking-cover illustration when the infantry is
 attacked by a field gun, including indirect fire and reciprocal return fire.
 An infantry attack on a field gun that does not return fire keeps the firing scene.

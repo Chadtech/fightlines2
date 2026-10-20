@@ -677,7 +677,7 @@ mod tests {
             };
             let mut scenario = MapDefinition::parse(&format!(r#"{{
                 "width": 12, "height": 8, "theme": "Snow", "features": [],
-                "depots": [{{"position": {{"x": 6, "y": 1}}, "kind": "Supply"}}],
+                "depots": [{{"position": {{"x": 6, "y": 2}}, "kind": "Supply"}}],
                 "units": [
                     {{"id": 1, "position": {{"x": 6, "y": 4}}, "playerNumber": "Player1", "kind": "{kind:?}", "direction": {direction}}},
                     {{"id": 2, "position": {{"x": 0, "y": 0}}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}},
@@ -685,7 +685,7 @@ mod tests {
                 ]
             }}"#)).fixture()?.scenario().fixture()?;
             scenario.map = crate::map::Map::from_ascii(
-                "............\n............\n............\n^^^^^^^^^...\n............\n............\n............\n............",
+                "............\n............\n............\n^^^^^^^.....\n............\n............\n............\n............",
             ).fixture()?;
             let unit = scenario.units.first_mut().fixture()?;
             unit.set_supplies_for_test(unit.supplies().maximum() / 2 - 1);
@@ -725,7 +725,7 @@ mod tests {
             }
             let unit = scenario.units.first().fixture()?;
             assert!(
-                distance(unit.board_position().fixture()?, Coordinate::new(6, 1)) <= 1,
+                distance(unit.board_position().fixture()?, Coordinate::new(6, 2)) <= 1,
                 "{kind:?} never reached supply"
             );
             assert!(

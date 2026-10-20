@@ -1,6 +1,7 @@
 use crate::graphql::Context;
 use crate::{
     ai::{self, Difficulty},
+    game_log::{Directory, GameLog, GameStarted, RecordedPlayer, Submission, SubmissionResult},
     lobby_id::LobbyId,
     lobby_name::LobbyName,
     map::{Coordinate, MapError},
@@ -9,11 +10,12 @@ use crate::{
     scenario::{PlayerNumber, Scenario},
     seed::{self, Seed},
     session_token::SessionToken,
-    turns::{GameOutcome, MoveOrderInput, TurnFrame, TurnResolution, Turns},
+    turns::{self, GameOutcome, MoveOrderInput, TurnFrame, TurnResolution, Turns},
     visibility,
 };
 use juniper::{FieldError, FieldResult, GraphQLEnum, GraphQLObject};
 
+use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, sync::Mutex};
 
 //----------------------------------------------------------------
@@ -35,7 +37,10 @@ impl std::fmt::Display for DevelopmentError {
     }
 }
 
-pub struct Store(Mutex<State>);
+pub struct Store {
+    state: Mutex<State>,
+    game_logs: Option<Directory>,
+}
 
 struct State {
     seed: Seed,
@@ -45,7 +50,15 @@ struct State {
 
 impl Store {
     pub fn new(seed: Seed) -> Self {
-        Self(Mutex::new(State::new(seed)))
+        Self {
+            state: Mutex::new(State::new(seed)),
+            game_logs: None,
+        }
+    }
+
+    pub fn with_game_logs(mut self, directory: Directory) -> Self {
+        self.game_logs = Some(directory);
+        self
     }
 
     pub fn development(seed: Seed) -> Result<Self, DevelopmentError> {
@@ -79,7 +92,10 @@ impl Store {
         );
         game.access = GameAccess::DevelopmentPreview;
         state.games.insert(game.source_lobby.clone(), game);
-        Ok(Self(Mutex::new(state)))
+        Ok(Self {
+            state: Mutex::new(state),
+            game_logs: None,
+        })
     }
 }
 
@@ -99,6 +115,7 @@ impl State {
     }
 }
 
+#[derive(Clone)]
 struct Lobby {
     id: LobbyId,
     name: LobbyName,
@@ -110,6 +127,7 @@ struct Lobby {
 /// Starting consumes the lobby. The source ID keeps existing invite URLs
 /// resolvable for polling players and repeated start requests.
 struct Game {
+    log: Option<GameLog>,
     turns: Turns,
     observations: [visibility::PlayerObservation; 2],
     access: GameAccess,
@@ -129,6 +147,7 @@ enum GameAccess {
 impl Game {
     fn from_lobby(lobby: Lobby, scenario: Scenario) -> Self {
         Self {
+            log: None,
             observations: [PlayerNumber::Player1, PlayerNumber::Player2]
                 .map(|player| visibility::PlayerObservation::new(&scenario, player)),
             turns: Turns::default(),
@@ -143,6 +162,7 @@ impl Game {
     }
 }
 
+#[derive(Clone)]
 enum PlayerController {
     Human(SessionToken),
     Ai(Difficulty),
@@ -165,7 +185,7 @@ impl PlayerController {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
 pub enum Opponent {
     Human,
     /// The original Easy opponent; retains the existing AI wire value.
@@ -173,6 +193,7 @@ pub enum Opponent {
     AiMedium,
 }
 
+#[derive(Clone)]
 struct Player {
     player_number: PlayerNumber,
     controller: PlayerController,
@@ -387,7 +408,7 @@ pub fn create(context: &Context, input: &str, lobby_input: &str) -> FieldResult<
     };
     let mut state = context
         .store
-        .0
+        .state
         .lock()
         .or_else(|_| error("The server state is unavailable."))?;
     let identity = context
@@ -414,7 +435,7 @@ pub fn create(context: &Context, input: &str, lobby_input: &str) -> FieldResult<
 pub fn get(context: &Context, id: LobbyId) -> FieldResult<Snapshot> {
     let state = context
         .store
-        .0
+        .state
         .lock()
         .or_else(|_| error("The server state is unavailable."))?;
     let identity = context.identity();
@@ -434,7 +455,7 @@ pub fn join(context: &Context, id: LobbyId, input: &str) -> FieldResult<Snapshot
     };
     let mut state = context
         .store
-        .0
+        .state
         .lock()
         .or_else(|_| error("The server state is unavailable."))?;
     let identity = context.identity();
@@ -483,7 +504,7 @@ pub fn join(context: &Context, id: LobbyId, input: &str) -> FieldResult<Snapshot
 pub fn set_map_type(context: &Context, id: LobbyId, map_type: MapType) -> FieldResult<Snapshot> {
     let mut state = context
         .store
-        .0
+        .state
         .lock()
         .or_else(|_| error("The server state is unavailable."))?;
     if state.games.contains_key(&id) {
@@ -504,7 +525,7 @@ pub fn set_map_type(context: &Context, id: LobbyId, map_type: MapType) -> FieldR
 pub fn set_opponent(context: &Context, id: LobbyId, opponent: Opponent) -> FieldResult<Snapshot> {
     let mut state = context
         .store
-        .0
+        .state
         .lock()
         .or_else(|_| error("the server state is unavailable."))?;
     if state.games.contains_key(&id) {
@@ -553,7 +574,7 @@ pub fn set_player_number(
 ) -> FieldResult<Snapshot> {
     let mut state = context
         .store
-        .0
+        .state
         .lock()
         .or_else(|_| error("the server state is unavailable."))?;
     if state.games.contains_key(&id) {
@@ -592,7 +613,7 @@ fn vacant_side(players: &[Player]) -> FieldResult<PlayerNumber> {
 pub fn start(context: &Context, id: LobbyId) -> FieldResult<Snapshot> {
     let mut state = context
         .store
-        .0
+        .state
         .lock()
         .or_else(|_| error("The server state is unavailable."))?;
     let identity = context.identity();
@@ -615,12 +636,34 @@ pub fn start(context: &Context, id: LobbyId) -> FieldResult<Snapshot> {
         .map_type
         .scenario()
         .or_else(|_| error("The map could not be initialized."))?;
-    let lobby = state
-        .lobbies
-        .remove(&id)
-        .ok_or_else(|| FieldError::from("This lobby no longer exists."))?;
-    let game = Game::from_lobby(lobby, scenario);
+    // Persist the initial board before consuming the lobby. A disk failure leaves
+    // it available for the host to retry.
+    let mut game = Game::from_lobby(lobby.clone(), scenario);
+    if let Some(directory) = &context.store.game_logs {
+        game.log = Some(
+            directory
+                .start(GameStarted {
+                    game_id: id.clone(),
+                    name: game.name.to_string(),
+                    map_type: game.map_type,
+                    players: game
+                        .players
+                        .iter()
+                        .map(|player| RecordedPlayer {
+                            player_number: player.player_number,
+                            name: player.name.to_string(),
+                            opponent: player.controller.opponent(),
+                        })
+                        .collect(),
+                    scenario: game.scenario.clone(),
+                    server_version: env!("CARGO_PKG_VERSION").into(),
+                    build_revision: option_env!("FIGHTLINES_BUILD_REVISION").map(String::from),
+                })
+                .map_err(|error| log_error(&id, error))?,
+        );
+    }
     let result = game_snapshot(&game, identity.as_ref());
+    state.lobbies.remove(&id);
     state.games.insert(id, game);
     Ok(result)
 }
@@ -628,7 +671,7 @@ pub fn start(context: &Context, id: LobbyId) -> FieldResult<Snapshot> {
 pub fn game(context: &Context, id: LobbyId) -> FieldResult<GameSnapshot> {
     let state = context
         .store
-        .0
+        .state
         .lock()
         .or_else(|_| error("The server state is unavailable."))?;
     let Some(game) = state.games.get(&id) else {
@@ -665,7 +708,7 @@ pub fn submit_turn(
 ) -> FieldResult<GameSnapshot> {
     let mut state = context
         .store
-        .0
+        .state
         .lock()
         .or_else(|_| error("the server state is unavailable."))?;
     let game = state
@@ -689,6 +732,14 @@ pub fn submit_turn(
         .find(|player| player.controller.session() == Some(&identity))
         .map(|player| player.player_number)
         .ok_or_else(|| FieldError::from("only joined players can submit turns."))?;
+    // Lost-response retries keep the already accepted orders and create no new
+    // archive entry. Stale turn numbers still follow normal validation below.
+    if game.turns.number == turn_number
+        && game.turns.outcome.is_none()
+        && game.turns.orders[turns::player_index(player_number)].is_some()
+    {
+        return game_view(game, &identity);
+    }
     let ai_player = game
         .players
         .iter()
@@ -696,26 +747,45 @@ pub fn submit_turn(
             PlayerController::Ai(difficulty) => Some((player.player_number, difficulty)),
             PlayerController::Human(_) => None,
         });
+    let mut next_turns = game.turns.clone();
+    let mut next_scenario = game.scenario.clone();
+    let mut submissions = Vec::new();
     if let Some((ai_player, difficulty)) = ai_player {
-        let mut next_turns = game.turns.clone();
-        let mut next_scenario = game.scenario.clone();
         // Planning sees only the AI's observation of the pre-turn board. It never
         // receives the human's draft or submitted orders.
         let ai_orders = ai::plan_with_difficulty(&game.scenario, ai_player, difficulty)
             .map_err(|message| FieldError::new(message, juniper::Value::null()))?;
+        submissions.push(Submission {
+            player_number: ai_player,
+            orders: ai_orders,
+        });
+    }
+    submissions.push(Submission {
+        player_number,
+        orders,
+    });
+    for submission in &submissions {
         next_turns
-            .submit(&mut next_scenario, ai_player, turn_number, ai_orders)
-            .map_err(|message| FieldError::new(message, juniper::Value::null()))?;
-        next_turns
-            .submit(&mut next_scenario, player_number, turn_number, orders)
-            .map_err(|message| FieldError::new(message, juniper::Value::null()))?;
-        game.turns = next_turns;
-        game.scenario = next_scenario;
-    } else {
-        game.turns
-            .submit(&mut game.scenario, player_number, turn_number, orders)
+            .submit(
+                &mut next_scenario,
+                submission.player_number,
+                turn_number,
+                submission.orders.clone(),
+            )
             .map_err(|message| FieldError::new(message, juniper::Value::null()))?;
     }
+    if let Some(log) = &mut game.log {
+        log.submitted(SubmissionResult::new(
+            turn_number,
+            submissions,
+            &next_scenario,
+            &next_turns,
+        ))
+        .map_err(|error| log_error(&id, error))?;
+    }
+    // Commit only after both validation/resolution and the durable write succeed.
+    game.turns = next_turns;
+    game.scenario = next_scenario;
     if game.turns.number != turn_number
         && let Some(resolution) = &game.turns.last_resolution
     {
@@ -733,6 +803,13 @@ pub fn submit_turn(
 //----------------------------------------------------------------
 // ERRORS
 //----------------------------------------------------------------
+
+fn log_error(id: &LobbyId, error: std::io::Error) -> FieldError {
+    eprintln!("Game archive write failed for game {id}: {error}");
+    FieldError::from(
+        "the game could not be recorded. please retry after the server storage is available.",
+    )
+}
 
 fn error<T>(message: &str) -> FieldResult<T> {
     Err(FieldError::new(message, juniper::Value::null()))
@@ -757,7 +834,7 @@ mod tests {
             GameOutcome::Draw,
         ] {
             let store = Store::development(Seed::new([0; 32])).fixture()?;
-            let mut state = store.0.lock().fixture()?;
+            let mut state = store.state.lock().fixture()?;
             let game = state.games.values_mut().next().fixture()?;
             game.scenario = MapDefinition::parse(r#"{
                 "width": 9, "height": 3, "theme": "GreenForest",

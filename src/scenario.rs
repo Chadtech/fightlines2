@@ -32,7 +32,7 @@ pub enum Direction {
 }
 
 /// Horizontal artwork orientation, retained across north/south movement.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
 pub enum SpriteFacing {
     Left,
     Right,
@@ -67,7 +67,7 @@ impl Direction {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct UnitId(u16);
 
 impl UnitId {
@@ -83,7 +83,7 @@ impl fmt::Display for UnitId {
 }
 
 /// Authoritative health; combat applies damage and healing remains future work.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLObject)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLObject, Serialize, Deserialize)]
 pub struct HitPoints {
     current: i32,
     maximum: i32,
@@ -107,7 +107,7 @@ impl HitPoints {
 }
 
 /// Vehicle fuel consumption per traversed tile, independent of movement points.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLObject)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLObject, Serialize, Deserialize)]
 pub struct Fuel {
     pub(crate) current: i32,
     pub(crate) maximum: i32,
@@ -134,7 +134,7 @@ impl Fuel {
 }
 
 /// Unit provisions, separate from fuel and finite supply-crate cargo.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Supplies {
     current: i32,
     maximum: i32,
@@ -166,7 +166,7 @@ impl Supplies {
     fn for_kind(kind: UnitKind) -> Self {
         let movement_per_tile = match kind {
             UnitKind::Infantry => 12,
-            UnitKind::FieldGun => 8,
+            UnitKind::FieldGun => 24,
             UnitKind::Tank => 0,
             UnitKind::Truck => 0,
         };
@@ -205,7 +205,7 @@ impl Supplies {
 }
 
 /// A unit either occupies a board square or rides in a carrier.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Location {
     OnMap(Coordinate),
     Aboard(UnitId),
@@ -243,13 +243,13 @@ pub struct UnitResources {
     supply_cargo: Vec<CargoStock>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
 pub enum Entrenchment {
     Exposed,
     Entrenched,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Unit {
     entrenchment: Entrenchment,
     id: UnitId,
@@ -346,7 +346,7 @@ pub enum DepotKind {
     Fuel,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Depot {
     pub(crate) kind: DepotKind,
     pub(crate) position: Coordinate,
@@ -368,7 +368,7 @@ pub struct ResourceSettlement {
 }
 
 /// Current board state, including hit points, fuel and supplies. Combat remains future work.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Scenario {
     pub(crate) map: Map,
     pub(crate) depots: Vec<Depot>,
@@ -766,8 +766,16 @@ mod tests {
     }
 
     #[test]
-    fn infantry_terrain_supply_costs_reserve_upkeep_and_charge_entered_tiles() -> TestResult<()> {
-        for (sketch, expected) in [("...", 24), (".%%", 32), (".##", 32), (".%#", 32)] {
+    fn walking_terrain_supply_costs_reserve_upkeep_and_charge_entered_tiles() -> TestResult<()> {
+        for (kind, sketch, expected) in [
+            (UnitKind::Infantry, "...", 24),
+            (UnitKind::Infantry, ".%%", 32),
+            (UnitKind::Infantry, ".##", 32),
+            (UnitKind::Infantry, ".%#", 32),
+            (UnitKind::FieldGun, "...", 48),
+            (UnitKind::FieldGun, ".%%", 48),
+            (UnitKind::FieldGun, ".##", 48),
+        ] {
             let map = Map::from_ascii(sketch).fixture()?;
             let path = [
                 Coordinate::new(0, 0),
@@ -775,9 +783,13 @@ mod tests {
                 Coordinate::new(2, 0),
             ];
             let mut scenario = Scenario::supply_point().fixture()?;
-            let unit = scenario.units.first_mut().fixture()?;
+            let unit = scenario
+                .units
+                .iter_mut()
+                .find(|unit| unit.kind() == kind)
+                .fixture()?;
             unit.move_to(path[0]);
-            unit.set_supplies_for_test(expected);
+            unit.set_supplies_for_test(expected + 3);
             assert!(!unit.supplies().can_afford_movement(&map, &path));
             unit.set_supplies_for_test(expected + 4);
             assert!(unit.supplies().can_afford_movement(&map, &path));
@@ -941,7 +953,7 @@ mod tests {
             );
             let (maximum, movement_per_tile) = match unit.kind {
                 UnitKind::Infantry => (192, 12),
-                UnitKind::FieldGun => (196, 8),
+                UnitKind::FieldGun => (196, 24),
                 UnitKind::Tank => (128, 0),
                 UnitKind::Truck => (128, 0),
             };

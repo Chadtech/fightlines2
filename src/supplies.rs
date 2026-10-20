@@ -4,6 +4,7 @@ use crate::{
     scenario::{DepotKind, PlayerNumber, Scenario, Unit, UnitId, UnitKind},
 };
 use juniper::GraphQLObject;
+use serde::{Deserialize, Serialize};
 
 /// Default capacities for newly created sources; existing stocks retain their own maximum.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLObject)]
@@ -19,7 +20,7 @@ pub fn rules() -> SupplyRules {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, GraphQLObject)]
+#[derive(Clone, Debug, PartialEq, Eq, GraphQLObject, Serialize, Deserialize)]
 pub struct ResourceStock {
     pub current: i32,
     pub maximum: i32,
@@ -35,7 +36,7 @@ impl ResourceStock {
 }
 
 /// A neutral freight load; its resource identity survives loading and delivery.
-#[derive(Clone, Debug, PartialEq, Eq, GraphQLObject)]
+#[derive(Clone, Debug, PartialEq, Eq, GraphQLObject, Serialize, Deserialize)]
 pub struct CargoStock {
     pub kind: DepotKind,
     pub current: i32,
@@ -57,7 +58,7 @@ impl CargoStock {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, GraphQLObject)]
+#[derive(Clone, Debug, PartialEq, Eq, GraphQLObject, Serialize, Deserialize)]
 pub struct GroundSupplyCrate {
     pub position: Coordinate,
     pub stock: CargoStock,

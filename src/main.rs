@@ -2,6 +2,7 @@
 
 mod ai;
 mod combat;
+mod game_log;
 mod graphql;
 mod lobby;
 mod lobby_id;
@@ -29,6 +30,16 @@ fn main() -> io::Result<()> {
     if env::args().nth(1).as_deref() == Some("--export-schema") {
         return graphql::export_schema();
     }
+    if env::args().nth(1).as_deref() == Some("--replay-game-log") {
+        let directory = env::args_os().nth(2).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "usage: --replay-game-log <game-directory>",
+            )
+        })?;
+        println!("{}", game_log::replay(std::path::Path::new(&directory))?);
+        return Ok(());
+    }
     match dotenvy::from_path(".env") {
         Ok(()) => {}
         Err(dotenvy::Error::Io(error)) if error.kind() == io::ErrorKind::NotFound => {}
@@ -53,6 +64,20 @@ async fn run() -> io::Result<()> {
         Err(env::VarError::NotPresent) => seed::Seed::new([0; 32]),
         Err(error) => return Err(io::Error::new(io::ErrorKind::InvalidInput, error)),
     };
+    let log_path = env::var_os("FIGHTLINES_GAME_LOG_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("game-logs"));
+    let logs = game_log::Directory::open(log_path.clone())?;
+    if log_path
+        .canonicalize()?
+        .starts_with(frontend.canonicalize()?)
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "FIGHTLINES_GAME_LOG_DIR must be outside FIGHTLINES_FRONTEND_DIR",
+        ));
+    }
+    println!("Game archives: {}", log_path.canonicalize()?.display());
     let listener = TcpListener::bind(&address)?;
     println!("FightLines listening on http://{}", listener.local_addr()?);
 
@@ -66,6 +91,7 @@ async fn run() -> io::Result<()> {
     } else {
         lobby::Store::new(seed)
     };
+    let store = store.with_game_logs(logs);
     let editor_enabled = env::args().any(|argument| argument == "--map-editor");
     let editor = web::Data::new(map_editor::Editor {
         directory: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("maps"),

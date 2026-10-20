@@ -43,12 +43,13 @@ pub enum MapTheme {
 }
 
 /// Only terrain exceptions are stored. Depots and units live separately.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Map {
     width: u16,
     height: u16,
     base_tile: Terrain,
     theme: MapTheme,
+    #[serde(with = "terrain_features")]
     features: BTreeMap<Coordinate, Terrain>,
 }
 
@@ -346,5 +347,32 @@ mod tests {
         );
 
         Ok(())
+    }
+}
+
+// JSON object keys cannot represent coordinates. Store sparse terrain as pairs.
+mod terrain_features {
+    use super::{Coordinate, Terrain};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+    use std::collections::BTreeMap;
+
+    pub fn serialize<S: Serializer>(
+        features: &BTreeMap<Coordinate, Terrain>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        features.iter().collect::<Vec<_>>().serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<BTreeMap<Coordinate, Terrain>, D::Error> {
+        let pairs = Vec::<(Coordinate, Terrain)>::deserialize(deserializer)?;
+        let mut features = BTreeMap::new();
+        for (coordinate, terrain) in pairs {
+            if features.insert(coordinate, terrain).is_some() {
+                return Err(D::Error::custom("duplicate terrain coordinate"));
+            }
+        }
+        Ok(features)
     }
 }

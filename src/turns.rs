@@ -9,15 +9,16 @@ use crate::{
     supplies::{self, CrateUnload, GroundSupplyCrate, SupplyOrder},
 };
 use juniper::{GraphQLEnum, GraphQLInputObject, GraphQLObject, graphql_object};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Clone, GraphQLInputObject)]
+#[derive(Clone, GraphQLInputObject, Serialize, Deserialize)]
 pub struct CoordinateInput {
     pub(crate) x: i32,
     pub(crate) y: i32,
 }
 
-#[derive(Clone, GraphQLInputObject)]
+#[derive(Clone, GraphQLInputObject, Serialize, Deserialize)]
 pub struct MoveOrderInput {
     pub(crate) unit_id: String,
     /// Includes the starting square. A single square is an explicit hold order.
@@ -120,13 +121,13 @@ impl FacingOrder {
     }
 }
 
-#[derive(Clone, GraphQLInputObject)]
+#[derive(Clone, GraphQLInputObject, Serialize, Deserialize)]
 pub struct UnloadOrderInput {
     unit_id: String,
     destination: CoordinateInput,
 }
 
-#[derive(Clone, GraphQLInputObject)]
+#[derive(Clone, GraphQLInputObject, Serialize, Deserialize)]
 pub struct CrateUnloadInput {
     cargo_index: i32,
     destination: CoordinateInput,
@@ -138,7 +139,7 @@ pub struct UnloadOrder {
     pub destination: Coordinate,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
 pub enum TurnEventKind {
     Move,
     Ambush,
@@ -151,7 +152,7 @@ pub enum TurnEventKind {
 
 /// Ordered presentation events. Future attacks and interruptions belong here;
 /// clients replay these outcomes rather than reimplementing resolution rules.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TurnEvent {
     pub rotation_direction: Option<Direction>,
     pub initial_direction: Option<Direction>,
@@ -191,7 +192,7 @@ impl TurnEvent {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnitDeparture {
     pub unit_id: UnitId,
     pub direction: Direction,
@@ -207,7 +208,7 @@ impl UnitDeparture {
     }
 }
 
-#[derive(Clone, Debug, GraphQLObject)]
+#[derive(Clone, Debug, GraphQLObject, Serialize, Deserialize)]
 pub struct TurnFrame {
     /// Observed exits toward fog; never contains a hidden destination or route.
     pub departures: Vec<UnitDeparture>,
@@ -222,7 +223,7 @@ pub struct TurnFrame {
 }
 
 /// The visibility projection exposes only the viewer's report.
-#[derive(Clone, Debug, GraphQLObject)]
+#[derive(Clone, Debug, GraphQLObject, Serialize, Deserialize)]
 pub struct TurnReport {
     pub player_number: PlayerNumber,
     pub units_lost: i32,
@@ -284,7 +285,7 @@ impl TurnReport {
     }
 }
 
-#[derive(Clone, Debug, GraphQLObject)]
+#[derive(Clone, Debug, GraphQLObject, Serialize, Deserialize)]
 pub struct TurnResolution {
     pub reports: Vec<TurnReport>,
     pub turn_number: i32,
@@ -294,7 +295,7 @@ pub struct TurnResolution {
 }
 
 /// Terminal result; absence means multiple players still have combat forces.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GameOutcome {
     Victory(PlayerNumber),
     Draw,
@@ -3839,7 +3840,8 @@ mod tests {
         scenario.depots.clear();
         let mut turns = Turns::default();
         for unit in &mut scenario.units {
-            let supplies = if unit.kind() == UnitKind::Infantry {
+            let supplies = if unit.kind() == UnitKind::Infantry || unit.kind() == UnitKind::FieldGun
+            {
                 28
             } else if unit.kind() == UnitKind::Tank {
                 20
@@ -3861,7 +3863,7 @@ mod tests {
             .submit(&mut scenario, PlayerNumber::Player1, number, vec![])
             .fixture()?;
         assert!(scenario.units.iter().all(|unit| unit.supplies().current()
-            == if unit.kind() == UnitKind::Infantry {
+            == if unit.kind() == UnitKind::Infantry || unit.kind() == UnitKind::FieldGun {
                 28
             } else if unit.kind() == UnitKind::Tank {
                 20
@@ -3910,7 +3912,7 @@ mod tests {
         for id in ["2", "6"] {
             assert_eq!(vehicle(&mut scenario, id)?.supplies().current(), 24);
         }
-        // The gun spends 8 walking supplies and 4 upkeep, exhausting its 12.
+        // The gun spends 24 walking supplies and 4 upkeep, exhausting its 28.
         assert!(!scenario.units.iter().any(|unit| unit.id() == "13"));
         assert_eq!(vehicle(&mut scenario, "4")?.supplies().current(), 8);
         assert_eq!(vehicle(&mut scenario, "11")?.supplies().current(), 16);

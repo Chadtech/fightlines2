@@ -209,6 +209,173 @@ mod tests {
     const FIELDS: &str = "id name mapType players { name isHost } isHost isMember gameUrl";
 
     #[actix_web::test]
+    async fn game_archives_replay_human_and_ai_turns_and_preserve_state_on_disk_failure()
+    -> TestResult<()> {
+        use crate::{game_log, seed::Seed};
+        use std::{
+            fs,
+            time::{SystemTime, UNIX_EPOCH},
+        };
+        let root = std::env::temp_dir().join(format!(
+            "fightlines-game-logs-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        for ai in [false, true] {
+            let directory = root.join(if ai { "ai" } else { "human" });
+            let store = Store::new(Seed::new([34; 32]))
+                .with_game_logs(game_log::Directory::open(directory.clone())?);
+            let app = test::init_service(
+                App::new()
+                    .app_data(web::Data::new(store))
+                    .app_data(web::Data::new(schema()))
+                    .route("/graphql", web::post().to(handle)),
+            )
+            .await;
+            macro_rules! execute {
+                ($query:expr, $cookie:expr) => {{
+                    let mut request = test::TestRequest::post().uri("/graphql")
+                        .set_json(json!({"query": $query}));
+                    if let Some(cookie) = $cookie { request = request.cookie(cookie); }
+                    let response = test::call_service(&app, request.to_request()).await;
+                    let cookie = response.response().cookies().next().map(|cookie| cookie.into_owned());
+                    let body: Value = test::read_body_json(response).await;
+                    (body, cookie)
+                }};
+            }
+            let (created, host) = execute!(
+                "mutation { createLobby(name: \"Archive host\", lobbyName: \"Archive test\") { id } }",
+                None
+            );
+            let id = created["data"]["createLobby"]["id"].as_str().fixture()?;
+            let guest = if ai {
+                let (selected, _) = execute!(
+                    format!("mutation {{ setLobbyOpponent(id: \"{id}\", opponent: AI) {{ id }} }}"),
+                    host.clone()
+                );
+                assert!(selected.get("errors").is_none(), "{selected}");
+                None
+            } else {
+                let (joined, guest) = execute!(
+                    format!(
+                        "mutation {{ joinLobby(id: \"{id}\", name: \"Archive guest\") {{ id }} }}"
+                    ),
+                    None
+                );
+                assert!(joined.get("errors").is_none(), "{joined}");
+                guest
+            };
+            let start = format!("mutation {{ startGame(id: \"{id}\") {{ gameUrl }} }}");
+            let offline = directory.with_extension("offline");
+            fs::rename(&directory, &offline)?;
+            let (failed, _) = execute!(&start, host.clone());
+            assert!(failed["errors"].is_array(), "{failed}");
+            fs::rename(&offline, &directory)?;
+            for _ in 0..2 {
+                let (started, _) = execute!(&start, host.clone());
+                assert!(started.get("errors").is_none(), "{started}");
+            }
+            let paths = fs::read_dir(&directory)?.collect::<Result<Vec<_>, _>>()?;
+            assert_eq!(paths.len(), 1);
+            let archive = paths.first().fixture()?.path();
+            assert!(game_log::replay(&archive)?.contains("0 submission records"));
+            let initial: Value =
+                serde_json::from_reader(fs::File::open(archive.join("00000000.json"))?)?;
+            assert_eq!(
+                initial["event"]["data"]["players"][0]["name"],
+                "Archive host"
+            );
+            let source = MapType::default().scenario().fixture()?;
+            let orders = |player| -> TestResult<String> {
+                source
+                    .units
+                    .iter()
+                    .filter(|unit| unit.player_number() == player)
+                    .map(|unit| {
+                        let position = unit.board_position().fixture()?;
+                        Ok(format!(
+                            "{{ unitId: \"{}\", path: [{{ x: {}, y: {} }}] }}",
+                            unit.id(),
+                            position.x(),
+                            position.y()
+                        ))
+                    })
+                    .collect::<TestResult<Vec<_>>>()
+                    .map(|orders| orders.join(","))
+            };
+            let submit = |orders: &str| {
+                format!(
+                    "mutation {{ submitTurn(id: \"{id}\", turnNumber: 1, orders: [{orders}]) {{ turnNumber submitted opponentSubmitted }} }}"
+                )
+            };
+            let query =
+                format!("{{ game(id: \"{id}\") {{ turnNumber submitted opponentSubmitted }} }}");
+            let (invalid, _) = execute!(submit(""), host.clone());
+            assert!(invalid["errors"].is_array());
+            let (unauthorized, _) = execute!(submit(&orders(PlayerNumber::Player1)?), None);
+            assert!(unauthorized["errors"].is_array());
+            assert_eq!(fs::read_dir(&archive)?.count(), 1);
+            let offline_archive = archive.with_extension("offline");
+            fs::rename(&archive, &offline_archive)?;
+            let (failed, _) = execute!(submit(&orders(PlayerNumber::Player1)?), host.clone());
+            assert!(failed["errors"].is_array());
+            let (unchanged, _) = execute!(&query, host.clone());
+            assert_eq!(unchanged["data"]["game"]["turnNumber"], 1);
+            assert_eq!(unchanged["data"]["game"]["submitted"], false);
+            fs::rename(&offline_archive, &archive)?;
+            let (accepted, _) = execute!(submit(&orders(PlayerNumber::Player1)?), host.clone());
+            assert!(accepted.get("errors").is_none(), "{accepted}");
+            if !ai {
+                assert_eq!(accepted["data"]["submitTurn"]["turnNumber"], 1);
+                assert!(game_log::replay(&archive)?.contains("1 submission records"));
+                // A retry cannot replace locked orders, nor add duplicate log records.
+                let (retry, _) = execute!(submit(""), host.clone());
+                assert!(retry.get("errors").is_none(), "{retry}");
+                assert_eq!(fs::read_dir(&archive)?.count(), 2);
+                fs::rename(&archive, &offline_archive)?;
+                let (failed, _) = execute!(submit(&orders(PlayerNumber::Player2)?), guest.clone());
+                assert!(failed["errors"].is_array());
+                let (waiting, _) = execute!(&query, guest.clone());
+                assert_eq!(waiting["data"]["game"]["submitted"], false);
+                assert_eq!(waiting["data"]["game"]["opponentSubmitted"], true);
+                fs::rename(&offline_archive, &archive)?;
+                let (accepted, _) =
+                    execute!(submit(&orders(PlayerNumber::Player2)?), guest.clone());
+                assert!(accepted.get("errors").is_none(), "{accepted}");
+            }
+            let (resolved, _) = execute!(&query, host.clone());
+            assert_eq!(resolved["data"]["game"]["turnNumber"], 2);
+            let expected = if ai { 1 } else { 2 };
+            assert_eq!(fs::read_dir(&archive)?.count(), expected + 1);
+            // Reopen files after gameplay; replay needs no live store or session.
+            assert!(game_log::replay(&archive)?.contains(&format!(
+                "Verified {expected} submission records; next turn 2"
+            )));
+            for entry in fs::read_dir(&archive)? {
+                let bytes = fs::read_to_string(entry?.path())?;
+                assert!(!bytes.contains("session"));
+                assert!(!bytes.contains(host.as_ref().fixture()?.value()));
+                if let Some(guest) = &guest {
+                    assert!(!bytes.contains(guest.value()));
+                }
+            }
+            let last = archive.join(format!("{expected:08}.json"));
+            let mut changed: Value = serde_json::from_reader(fs::File::open(&last)?)?;
+            changed["event"]["data"]["next_turn_number"] = json!(99);
+            fs::write(&last, serde_json::to_vec(&changed)?)?;
+            assert!(
+                game_log::replay(&archive)
+                    .err()
+                    .fixture()?
+                    .to_string()
+                    .contains("replay differs")
+            );
+        }
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[actix_web::test]
     async fn ai_lobby_authorization_and_turns_over_graphql() -> TestResult<()> {
         let app = test::init_service(
             App::new()

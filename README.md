@@ -9,9 +9,12 @@ holds its view while visible action remains on screen, panning only to bring
 offscreen movement, combat, or indirect-fire impacts into view. Necessary pans
 ease over 1.2 seconds while playback pauses for the camera to settle. It
 restores your saved view when playback finishes.
-Fuel, finite supply stocks, replenishment, and directional ambush combat are authoritative. Persistent
-server storage is not implemented yet. Browsers remember the last user name
-used to successfully create or join a lobby and prefill it next time.
+Fuel, finite supply stocks, replenishment, and directional ambush combat are
+authoritative. Active games remain in memory, while private game archives on disk
+retain starting boards, accepted orders, and turn results for debugging. See
+[game archives](DEPLOYMENT.md#game-archives) for storage and replay commands.
+Browsers remember the last user name used to successfully create or join a lobby
+and prefill it next time.
 Each planning turn opens with a gold turn-introduction card, a pop-in animation,
 and drifting shine. From turn two, it also reports your previous turn’s unit losses,
 confirmed enemy losses, known HP damage inflicted, and total supplies consumed.
@@ -229,9 +232,9 @@ Hidden positions and route segments are withheld from responses.
 Infantry start with 192/192 supplies; field guns start with 196/196; tanks and trucks
 start with 128/128. Every unit spends 4 supplies per resolved turn, even when holding or stopped
 by an encounter. Infantry spend 12 supplies per plain tile and 16 per hill, forest, or mountain tile;
-field guns spend 8 supplies per tile. Tanks and trucks use fuel
+field guns spend 24 supplies per tile. Tanks and trucks use fuel
 for movement and spend no movement supplies. Movement reserves the turn's upkeep before spending
-supplies. Infantry need at least 16 supplies for a plain tile or 20 for hills, forest, or mountains; field guns need at least 12. Tank movement needs enough fuel but no additional supplies beyond upkeep.
+supplies. Infantry need at least 16 supplies for a plain tile or 20 for hills, forest, or mountains; field guns need at least 28. Tank movement needs enough fuel but no additional supplies beyond upkeep.
 Units below these thresholds can still hold.
 Units die immediately when supplies reach zero after turn upkeep. A dead truck
 also loses its passengers. During playback, a skull and crossbones appears for 0.6 seconds, blinks away
