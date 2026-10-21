@@ -29,7 +29,63 @@ and never overwrites a record. Writes are synchronous under the store lock.
 `--replay-game-log` re-runs captured inputs through `Turns::submit` and compares
 all recorded results using the current engine; it does not regenerate AI orders or
 restore browser sessions. These archives are for operator debugging and never go
-through player GraphQL responses. See [deployment](DEPLOYMENT.md#game-archives).
+through player GraphQL responses. `game_archive.rs` exposes separate read-only
+`loggedGames`, `loggedGame`, and `loggedTurn` queries only when `--game-logs` is
+enabled. `/logged-games` and `/logged-games/:archiveId` are registered with the
+same flag. Browsing works through the server's deployment address, including
+HTTPS reverse proxies. There is no operator authentication yet: enabled archive
+pages and queries are accessible to anyone who can reach the server.
+An archive ID includes its start timestamp, distinguishing
+games whose lobby ID was reused after restart. `GameLogId` validates this ID at
+the Elm boundary.
+
+Each archived roster entry records its own `Controller` (human, easy AI, or medium
+AI) in `controller`. Readers also accept the legacy `opponent` field, while new
+records always write `controller`.
+
+`game_log::Archive` reads contiguous published records, validates their versions
+and turn sequence, and ignores pending writes. The list uses a `LoggedGameEntry`
+union: a complete `LoggedGame` or an `ArchiveReadError` containing its archive ID
+and error message. An unreadable archive has no game metadata or outcome.
+Browser replay reads captured results without using today's engine
+to regenerate orders. A selected turn advances `PlayerObservation` from the start
+through each recorded resolution, preserving fog and freight memory. Live games
+and archives share terminal reveal projection in `lobby::observed_board`.
+
+`Main` owns initial loading/failure states for `LoggedGames` and `GameReplay`.
+Replay responses correlate with their archive ID and requested turn/player.
+`GamePage` and `GameReplay` are independent pages. `GamePage` owns live turn
+planning, submission, polling, and introductions through `CurrentTurn` and
+`TurnLifecycle`. `GameReplay` owns archive requests, turn/player selection,
+continuous playback, pause, and inspection. Its timeline permits only `Ready`
+and `Playing`; it carries no live lifecycle or lobby ID and cannot submit orders.
+Each page owns its own `Shared.Model`.
+
+`BattlefieldSnapshot` selects viewer-projected board data without live turn
+status. Replay selects recorded frames and resolution separately and never reads
+`submitted` or `opponentSubmitted`. `Game.View.Battlefield` renders the board, fog,
+movement, facing, and targeting from resolved display inputs; it has no requests
+or planning state. `Game.View.BattlefieldInspection` shares keyed unit/depot/freight/
+terrain rows and cargo inspection. `Game.View.BattlefieldWorkspace` shares the viewport
+and panel layout. `BattlefieldNavigation` shares pan/zoom and pointer gestures.
+`PlaybackPresentation` shares camera framing, combat/loss views, preferences,
+and playback subscriptions, while `TurnPlayback` owns the recorded animation.
+Only live `CurrentTurn` subscribes to polling. `Game.Checks.Replay` covers replay
+pause/resume, bounded navigation, request correlation and retry, viewer changes,
+continuous versus manual playback, and camera preservation.
+
+Replay handles presentation work at the transitions that require it. Playback
+start, frame advancement, combat continuation, and loss acknowledgment refresh
+the relevant camera or loss dialog. Viewport measurements and navigation changes
+refresh camera framing; finishing playback restores the saved view and may load
+the next turn. Loading a turn without animation frames also advances continuous
+playback. Unrelated messages do not run a presentation pass after `update`.
+
+Replay controls replace the live turn-submit panel. Pause holds the recorded
+timeline and allows manual pan/zoom from the held camera. Automatic framing
+resumes with playback. Play continues through subsequent turns, while manual
+turn navigation plays a single selected turn. See
+[deployment](DEPLOYMENT.md#game-archives).
 
 `SessionToken` identifies a browser through its HTTP-only cookie. It is the
 credential checked against the host and roster, rather than a login account or a
@@ -115,16 +171,16 @@ game. Joining is capped at two players,
 while reconnecting members can rejoin a full lobby.
 
 `PlayerController` distinguishes a human session from an AI without giving bots
-browser credentials. The host can call `setLobbyOpponent(id, opponent)` with
+browser credentials. The host can call `setLobbyController(id, controller)` with
 `Human`, `Ai` (Easy), or `AiMedium` before starting. The AI controller owns its
 `ai::Difficulty`, which stays with the AI when players swap sides. Selecting AI
 fills the side opposite the host;
 selecting human removes the AI and opens that slot. A joined human cannot be
 displaced. Both lobby and game
-rosters expose `isAi` and typed `opponent`; anonymous visitors never become
-members through an AI slot.
-Lobby polling leaves the opponent selector enabled. Each poll carries the settings
-revision at request time; changing the map or opponent advances that revision and
+rosters expose `isAi` and `controller` with the public `Controller` enum; anonymous
+visitors never become members through an AI slot.
+Lobby polling leaves the controller selector enabled. Each poll carries the settings
+revision at request time; changing the map or controller advances that revision and
 invalidates in-flight polls. Older successes and failures cannot overwrite the
 saved settings or interfere with a newer poll.
 
@@ -179,6 +235,19 @@ requiring or setting a session cookie. Normal games retain member authorization.
 The fixture resets on restart and does not consume the normal token seed.
 
 ## Frontend
+
+Elm page modules live under `src/Page/` with the `Page.*` namespace, including
+initialization/load-failure views.
+`Main.elm` remains at the source root as the application entry point. Imports
+may alias page modules to their basenames, such as `Page.GamePage as GamePage`.
+
+`src/Game/` contains the Elm game domain and runtime shared by player and replay
+pages: battlefield snapshots/navigation, units and resources, maps, movement,
+orders, turn lifecycle, and playback. Planning helpers also live here rather
+than under the player page. Game-specific views live in `src/Game/View/`, and
+game checks live in `src/Game/Checks/`. Generic controls remain in `src/View/`;
+application infrastructure, general utilities, and editor-only data stay outside
+`Game`. Imports may retain concise domain aliases, such as `Game.Unit as Unit`.
 
 `Page` in `Main` is the top-level state, starting at `Blank` before handling
 the initial route. Every page carries shared state, with feature pages storing
@@ -262,13 +331,24 @@ and server-timed casualty presentation.
 The backend serves the frontend on the same origin, so no development proxy or
 CORS configuration is required.
 
-`GamePage.Model` stores map, units, and depots directly, as does its decoded
-`Snapshot`. Movement helpers accept the map and unit list as separate arguments;
-turn playback helpers accept and return unit lists. `GamePage` owns board
-rendering and coordinated planning/selection state. `GamePage.BattlefieldNavigation`
-owns camera state, pan/zoom/gesture functions and pointer subscriptions. The page
-owns view-related navigation messages, event decoders, the viewport surface and
-controls. `Camera` shares board sizing and coordinate projection with command-menu
+`GamePage.Model` stores map, units, and depots directly. Its decoded `Snapshot`
+combines a `BattlefieldSnapshot.Snapshot` with live rules and turn status.
+Movement helpers accept the map and unit list as separate arguments;
+turn playback helpers accept and return unit lists. `Game.View.Battlefield` owns board
+rendering; `GamePage` owns coordinated planning/selection state.
+The renderer's `Args` contains shared board inputs and a `Presentation`:
+`Viewing` carries saved overlays and one `Interaction`, while `Playing` carries
+the animation and its optional loss spotlight. Inspection, destination choice,
+indirect targeting, and direction choice are exclusive interaction variants;
+each carries only its own display inputs. Both pages construct these view types
+from their existing state. Saved orders remain visible while another order is
+being planned, and selection is shared with playback.
+`BattlefieldNavigation` owns camera state, pan/zoom/gesture functions and pointer
+subscriptions. `Game.View.Battlefield` exposes board SVG rendering, viewport
+attributes/events, camera attributes, and navigation controls. The player and
+replay pages compose their viewport and camera containers and map messages at
+that boundary; the player page also places its command menu. `Camera` shares
+board sizing and coordinate projection with command-menu
 anchors. Navigation starts with zero pixel offset and 100% overview zoom.
 Reset restores the centered whole-map overview. Pan and cursor zoom update the
 offset directly, without DOM measurements or team centering. Polling does not
@@ -286,7 +366,7 @@ application.
 
 Queries are `health`, `lobby(id)`, `game(id)`, and `maps`. Mutations are
 `createLobby(name, lobbyName)`, `joinLobby(id, name)`,
-`setLobbyMap(id, mapType)`, `setLobbyOpponent(id, opponent)`, `startGame(id)`, and
+`setLobbyMap(id, mapType)`, `setLobbyController(id, controller)`, `startGame(id)`, and
 `submitTurn(id, turnNumber, orders)`, and `saveMap(mapType, definition)`.
 The map authoring operations require `--map-editor`. Lobby
 and game selections expose `id`, `name`, `mapType`, `players { name isHost }`, `isHost`,
@@ -331,16 +411,16 @@ catches callers incompatible with a regenerated schema. The current server uses
 synchronous resolvers for its in-memory operations.
 
 `UnitCommand` owns the command vocabulary and per-unit availability.
-`GamePage.OrderPlanning` owns editable unit/tile selection and saved drafts;
+`Game.OrderPlanning` owns editable unit/tile selection and saved drafts;
 `TurnLifecycle` retains inspection while orders are locked. `PlannedOrder` gives
 saved orders separate `Hold`, `Move`, `Unload` and `Ambush` actions. Moving truck
 unloads belong to `Move`; stationary truck unloads belong to `Unload`.
 `Ambush` carries a stationary position and required direction.
 Its submission adapter converts these actions to the existing GraphQL input,
-using single-coordinate paths for holds and ambushes. `PlannedOrderChecks`
+using single-coordinate paths for holds and ambushes. `Game.Checks.PlannedOrder`
 verifies that conversion, including unloading from stationary trucks.
 `TurnLifecycle.Phase` owns planning, submission, waiting and playback.
-`GamePage.OrderPlanning` owns the planning custom type and its transitions:
+`Game.OrderPlanning` owns the planning custom type and its transitions:
 `OrdinaryPlanning`, `ConfirmingSubmission`,
 `ChoosingPassengers` or `ChoosingExits`. Ordinary planning and submission
 confirmation carry drafts and selection; unload stages carry the required truck
@@ -355,15 +435,15 @@ by each operation, with explicit arguments instead of a shared context record.
 `GamePage` derives own player numbers and filters supply crates to visible tiles
 before passing them to planning. The module coordinates command
 selection, move tracing and confirmation, ambush drafts, moving/stationary truck
-unload workflows, readiness and default submission holds. `GamePage.PlannedTransport`
+unload workflows, readiness and default submission holds. `Game.PlannedTransport`
 owns boarding partners, transport reservations and receiving-unit holds.
 `UnitCommand.MenuOption` owns command choices independently of
 the view. Page helpers delegate edits through `TurnLifecycle.mapPlanning`, so
 locked phases cannot accept draft changes. `GamePage` retains navigation guards,
 views and view messages, focus/dialog effects, GraphQL conversion and snapshot
-reconciliation. `OrderPlanningChecks` covers these planning behaviors alongside
+reconciliation. `Game.Checks.OrderPlanning` covers these planning behaviors alongside
 the lifecycle and movement checks.
-`GamePage.Selection` allows `Inspecting Inspection` or `UnitSelection SelectedUnit`.
+`Game.Selection` allows `Inspecting Inspection` or `UnitSelection SelectedUnit`.
 Unload stages derive inspection from the truck or current passenger instead of
 storing another selection. Submission, waiting and playback store only
 `Inspection`, which identifies a unit or tile. Locking orders drops interaction
@@ -378,15 +458,15 @@ options; neither can exist outside movement selection. `ChoosingExits` owns the
 current passenger's reachable options and remaining queue. Leaving a workflow
 keeps saved drafts and passenger exits while dropping its interaction data.
 
-`GamePage.MovePlanning` owns `MovePlanning` and `MovePurpose`, route initialization,
+`Game.MovePlanning` owns `MovePlanning` and `MovePurpose`, route initialization,
 pointer previews, keyboard path extension, legal stopping destinations and
 attack-move supply reservations. Its functions take explicit map, unit, movement
 rule and saved-order inputs. `Selection` carries the active plan; `OrderPlanning`
 resolves the selected unit and ownership, reports missing physical origins, saves
 completed orders and coordinates facing, loading and unloading. Shared destination
-feedback is defined in `GamePage.DestinationFeedback` for movement and unloading.
+feedback is defined in `Game.DestinationFeedback` for movement and unloading.
 
-`GamePage.DirectionPlanning` owns direction plans for ambush, stand ground and
+`Game.DirectionPlanning` owns direction plans for ambush, stand ground and
 attack-move final facing. It initializes facing, updates previews, rejects reverse
 final-segment attack facing and constructs completed orders. Stationary commands
 require a map position; `CommandUnitNotOnMap` retains no order on failure and is
@@ -396,7 +476,7 @@ order and finishes the command. Attack orders use the selected identity and
 confirmed route; if finishing the command cannot resolve the selected unit, its
 diagnostic retains the saved order.
 
-`GamePage.IndirectFirePlanning` owns opaque targeting state, target previews,
+`Game.IndirectFirePlanning` owns opaque targeting state, target previews,
 circular range queries and indirect-fire order construction. Starting targeting
 requires a map position and captures the firing origin and range for the active
 selection. Preview queries need only that validated plan and the map. Saving
@@ -407,10 +487,10 @@ The coordinator retains command eligibility, selected-unit lookup, order saving
 and command completion. Visibility and occupancy do not restrict indirect targets.
 
 Unloading domain types and operations live beneath that coordinator.
-`GamePage.UnloadingTruck` owns an opaque moving/stationary truck plan, accumulating
+`Game.UnloadingTruck` owns an opaque moving/stationary truck plan, accumulating
 passenger and crate exits and converting the result to `PlannedOrder`.
-`GamePage.UnloadCargo` identifies a passenger or stable cargo slot and owns saving
-its exit and choosing its inspection unit. `GamePage.UnloadPlanning` owns the cargo
+`Game.UnloadCargo` identifies a passenger or stable cargo slot and owns saving
+its exit and choosing its inspection unit. `Game.UnloadPlanning` owns the cargo
 checklist, sequential exit choices, placement feasibility and movement options.
 Its operations return the next exit picker or a finished truck plan; they do not
 depend on `OrderPlanning.Model`, depot loading or infantry command selection.
@@ -418,7 +498,7 @@ depend on `OrderPlanning.Model`, depot loading or infantry command selection.
 `OrderPlanning` handles the follow-up transitions. Diagnostics from simulated
 placements retain their first invariant violation and safe continuation value.
 
-`GamePage.PlannedTransport` keeps its `Occupancy` type with the operations that
+`Game.PlannedTransport` keeps its `Occupancy` type with the operations that
 derive destination units and reservations from saved orders. It also owns cargo
 capacity checks, move orders with receiving-unit holds, dismount projections,
 stale passenger-hold removal and finding the next dismounted infantry needing a
@@ -426,7 +506,7 @@ command. These operations take explicit units, orders and map data as needed;
 they do not depend on the planning model, selection or dialogs. `PlannedOrder.hold`
 constructs shared hold orders from physical positions. The coordinator retains
 revoke eligibility and chooses when to open loading, unloading or infantry
-commands. `GamePage.OrderDependencies.revoke` removes revoked orders and cascades
+commands. `Game.OrderDependencies.revoke` removes revoked orders and cascades
 through routes, passenger/crate exits and boarding or dismount commands that
 depend on them. It accepts only units, revoked unit IDs and saved orders; the
 coordinator applies the resulting drafts and returns the selected unit to inspection.
@@ -449,7 +529,7 @@ gating; locked lifecycle phases convert the selection to inspection and discard
 the guide. `GamePage` derives the native dialog from that interaction and opens
 it through the existing dialog-change effect.
 
-`View.CommandMenu` renders the board-anchored command popup and emits command choices
+`Game.View.CommandMenu` renders the board-anchored command popup and emits command choices
 and arrow-key events. `GamePage.update` chooses the adjacent enabled command,
 wrapping at the ends, and `Effect.focus` uses Elm's DOM API to focus its HTML ID. Selection tracks the focused command. While the popup is open, page-level
 up/down arrow and W/S commands navigate its enabled options instead of panning, including
@@ -467,18 +547,20 @@ popup stops mouse presses from starting a battlefield drag.
 Board data types live in `Coordinate`, `TerrainFeature`, `Map`, `Depot`, `Unit`
 and its local board view; the view composes them without owning domain data.
 `View.Sprite` clips atlas cells using named sheet dimensions and coordinates,
-using styled SVG. `View.UnitSprite` owns the shared unit atlas, kind/player row
+using styled SVG. `Game.View.UnitSprite` owns the shared unit atlas, kind/player row
 mapping, and facing. Its portrait API uses separate elongated field-gun assets
 for the status panel and combat formations; other portraits use the board atlas.
 Portrait width drives SVG framing and formation scaling without changing map cells.
 `Camera` names the shared offset/zoom data used by navigation, the page viewport
-and command positioning. `GamePage.BattlefieldNavigation` owns camera offset, zoom and an opaque
+and command positioning. `BattlefieldNavigation` owns camera offset, zoom and an opaque
 `PointerGesture`. The page handles pointer, button and keyboard events by calling
 its direct transition functions. Pointer subscriptions emit its own `Msg` for mouse movement, release and
 visibility changes; the page maps these messages and delegates to its `update`.
-View-related messages and rendering remain in `GamePage`.
-`GamePage.boardView` wraps the board in the camera transform and places the
-command overlay outside that transform. The page reads
+`Game.View.Battlefield.Msg` describes shared board events; each page interprets them.
+Each page wraps `Game.View.Battlefield.toSvg` in its camera container using
+`camera`, and applies `viewportAttributes` to the outer navigation
+surface. The player page places its command overlay outside the camera transform.
+The shared view accepts no parent-message mapping or page content. The page reads
 its camera for command positioning and queries `active` and `suppressesClick`
 when handling previews and selection. `GamePage.keyCommands` retains keyboard
 priority across dialogs, command menus, movement, ambush and navigation.
@@ -486,7 +568,7 @@ The board appears beside a
 full-height right panel containing selection details and resolution information.
 `GamePage.turnPanel` overlays compact horizontal game controls at the battlefield's
 bottom-left edge, with submit, turn status, and camera controls side by side.
-`View.TurnControls` owns the responsive surface and activity animations; the page
+`Game.View.TurnControls` owns the responsive surface and activity animations; the page
 maps its existing lifecycle to the component's presentation variants. Narrow
 layouts wrap the camera controls below without reserving a fixed panel height.
 The gesture transitions from idle to pressed to panning, then retains click
@@ -523,10 +605,10 @@ derives its active dialog through `GamePage.dialog : Model -> Maybe (Dialog Msg)
 into application messages. `Main.view` renders the optional dialog through
 `View.Dialog.toHtml`, which creates the native modal; dialogs are not part of
 the individual page's view content.
-`GamePage` renders raster sprite-sheet cells in nested SVG viewports;
+`Game.View.Battlefield` renders raster sprite-sheet cells in nested SVG viewports;
 terrain, depots, units, and an inset SVG selection square are separate layers. Player 2's
 infantry, tanks and field guns initially face west and player 1's east. Trucks have no direction or facing marker. Movement updates stored direction
-from the last successfully traversed path edge; units that never move preserve it. `View.UnitFacing` overlays illustrated red striking arrows at tile edges
+from the last successfully traversed path edge; units that never move preserve it. `Game.View.UnitFacing` overlays illustrated red striking arrows at tile edges
 only for ambush previews, saved orders, and ambush events during playback,
 using each unit's direction, with selected-unit brightness and a synchronized
 two-second opacity pulse. Component-owned styles keep the markers steady for
@@ -594,6 +676,15 @@ main page. These are local copies; changes in People are not synced
 automatically.
 
 ## Deterministic token generation
+
+Startup uses a fresh 256-bit seed from the operating system unless
+`FIGHTLINES_SEED` explicitly supplies a valid debugging override. Before serving
+requests, `game_log::Directory::record_server_start` saves the initial seed,
+timestamp, and build metadata in a separate `server-start-*.json` file with Unix
+mode `0600`. Archive queries only read validated game directories, so these seed
+records never enter browser responses. Console output includes only the private
+record path. Randomness or persistence failure stops startup. This records the
+seed, not the complete input history needed for full server-session replay.
 
 `seed::token(seed)` returns a token and a successor seed without consulting the
 clock or operating system randomness. The store retains the successor under the
@@ -702,7 +793,7 @@ previews. Matching submission failures restore the saved drafts with inspection
 preserved and editing closed; request messages carry their originating turn number, so late
 responses cannot reopen an advanced turn. A poll confirming submission transitions
 to waiting even before the submission response arrives, and a later error cannot
-unlock it. `GamePage.CurrentTurn` owns the turn number, opponent submission status, resolution,
+unlock it. `Game.CurrentTurn` owns the turn number, opponent submission status, resolution,
 errors, in-flight polling and the lifecycle phase. It reconciles snapshots, ignores
 stale responses, and owns polling and playback subscriptions. Its snapshot
 functions return only the updated current-turn model; the page initializes the
@@ -714,7 +805,7 @@ Poll request state remains separate from the phase because a request can already
 in flight when submission begins. Playback remembers whether its completed
 snapshot's turn is already submitted and finishes in planning or waiting accordingly.
 Initialization enters planning or waiting directly, without replaying history.
-`TurnLifecycleChecks` covers draft recovery, polling races, and playback transitions. `TurnPlayback.elm` starts from the
+`Game.Checks.TurnLifecycle` covers draft recovery, polling races, and playback transitions. `TurnPlayback.elm` starts from the
 server-projected initial frame and advances all arriving units together. Each frame
 carries `durationMs`, the elapsed time from the preceding frame, alongside observable
 units and the sight mask at that boundary. Movement spans a nominal 2520ms turn;
@@ -724,12 +815,12 @@ after movement. Fractional presentation positions go only to `GamePage`.
 Refresh starts directly at
 the completed snapshot; it does not automatically replay old turns. Same-turn polling preserves
 local drafts and monotonic submission flags. Page response messages retain the
-originating game ID through `Main`. `TurnChecks.elm` verifies timed frame playback,
+originating game ID through `Main`. `Game.Checks.Turn.elm` verifies timed frame playback,
 visibility boundaries, interpolation,
 transport, facing, and reconstruction of the final board.
 
 `tests/movement.json` contains shared rule and reachability cases. `make check`
-checks the Rust rules against them and runs `MovementChecks.elm` in Node,
+checks the Rust rules against them and runs `Game.Checks.Movement.elm` in Node,
 including path adjacency, blocking, accumulated costs, and route tracing.
 
 ## Next milestone
@@ -774,11 +865,11 @@ including holds and interrupted movement. Units at zero supplies are removed
 immediately, along with passengers of exhausted carriers. `finish_turn_resources`
 returns a presentation snapshot with zero supplies and health for dead units.
 When deaths occur, resolution adds that snapshot followed by the authoritative
-surviving units with a 1400ms transition. `View.UnitDeath` shows a skull and
+surviving units with a 1400ms transition. `Game.View.UnitDeath` shows a skull and
 crossbones for 600ms, hides it for 200ms, then shows it for another 600ms until
 removal (steady throughout under reduced motion).
 `GamePage` freezes its sprite clock while an on-board death is visible, and
-`View.UnitDeath` pauses surrounding CSS animations through the game root's
+`Game.View.UnitDeath` pauses surrounding CSS animations through the game root's
 death-focus class. `TurnPlayback.start` omits previously presented casualties
 from later frames, so combat death markers clear after the server's pause
 before subsequent movement resumes. Server visibility and timing remain intact.
@@ -852,7 +943,7 @@ origin and holds still during the exit.
 
 ## Unit transport
 
-Rust `Location` and Elm `Unit.Location` distinguish `OnMap Coordinate` from
+Rust `Location` and Elm `Game.Unit.Location` distinguish `OnMap Coordinate` from
 `Aboard UnitId`. A passenger stores only its carrier ID, retaining its own
 resources and direction. GraphQL exposes `Unit.location` as a union: `OnMap`
 contains `position`, and `Aboard` contains `carrierId`. Snapshot selections decode
@@ -918,7 +1009,7 @@ when rewinding, and load carrier IDs identify the truck. Playback applies those
 events as location transitions; riding positions are derived from the truck.
 Supply crates share truck berths with passengers and are resolved through `supplies.rs`.
 `GamePage` counts passengers from the current board's `Aboard` locations
-and overlays `View.UnitCargo` on loaded trucks, outside the sprite's order-dimming
+and overlays `Game.View.UnitCargo` on loaded trucks, outside the sprite's order-dimming
 filter and side-mirroring transform. Load/unload playback therefore updates the
 badge without additional state. Its component owns the synchronized opacity
 pulse and reduced-motion styles. The badge ignores pointer events; cargo counts
@@ -941,9 +1032,9 @@ GraphQL, and Elm. Ownership fields use `player_number` in Rust and
 `playerNumber` in GraphQL, Elm, and map JSON.
 `Direction` is the cardinal orientation used for movement and ambush;
 `SpriteFacing` retains the left/right artwork orientation through vertical turns.
-The view module `View.UnitFacing` renders the cardinal direction marker.
+The view module `Game.View.UnitFacing` renders the cardinal direction marker.
 
-`View.TurnControls.Msg` owns the submit-button event. `GamePage` wraps it in
+`Game.View.TurnControls.Msg` owns the submit-button event. `GamePage` wraps it in
 `TurnControlsMsg` and dispatches it through `handleTurnControlsMsg`. Layout,
 button effects, and reduced-motion rules use element-local Elm CSS.
 Its shared style node defines keyframes and the navigation container query;
@@ -1020,15 +1111,15 @@ volley's starting health and the return volley's final health. Combining stops
 at movement, sight or logistics changes, another encounter, or an intervening
 casualty; authoritative damage calculations remain unchanged. Combat focus holds each
 pair in a 300ms spotlight stage followed by a panel stage that waits for Enter without
-advancing movement interpolation or revealing the volley. `GamePage` freezes idle/interface animation and renders `View.CombatTheater`
+advancing movement interpolation or revealing the volley. `GamePage` freezes idle/interface animation and renders `Game.View.CombatTheater`
 as one ambush card with inward-facing formations and a brief CSS expansion.
-`View.CombatTheater` receives the immutable map and chooses each participant's backdrop
-from its on-board position, terrain, and map theme. `View.CombatFormation` maps
+`Game.View.CombatTheater` receives the immutable map and chooses each participant's backdrop
+from its on-board position, terrain, and map theme. `Game.View.CombatFormation` maps
 authoritative before/after health to staggered figures for every unit kind and
 represents every two HP with one smaller infantry figure (up to eight), and
 every four HP with one figure for other kinds, then sequences individual
 casualty explosions and disappearance after a one-second anticipation beat.
-`View.CombatExplosion` selects six illustrated horizontal impact frames from that
+`Game.View.CombatExplosion` selects six illustrated horizontal impact frames from that
 same clock, with a 100ms duration and figure removal beneath the blast at 50ms.
 Approach and contact occupy the first 20ms; the final clearing tail takes 20ms.
 Formation sprites render before all impact overlays so other figures cannot
@@ -1040,7 +1131,7 @@ from the latest contact on either side, beginning 20ms after the projectile
 appears and settling over 160ms. Each scene moves its backdrop, figures, and
 impact overlays together; backdrop overscan prevents exposed edges. Reduced
 motion disables the shake.
-Reduced motion substitutes a steady peak-impact frame. `View.CombatEffects`
+Reduced motion substitutes a steady peak-impact frame. `Game.View.CombatEffects`
 owns the board spotlight, shine, firing flashes, and target explosions.
 Spotlight coordinates and camera subjects resolve encounter IDs against projected
 battlefield units; map flashes and explosions also require a projected participant.
@@ -1148,9 +1239,9 @@ not erase sightings or reveal future freight changes during playback. These memo
 are presentation data only: order validation and Elm placement previews use only
 currently visible crates. The existing `visibleTiles` mask distinguishes remembered
 freight without adding a second wire representation.
-`View.DepotStatus` renders the depot portrait and optional stock gauge without
+`Game.View.DepotStatus` renders the depot portrait and optional stock gauge without
 inventing resource values outside sight. `GamePage` derives stacked unit, depot, ground freight, and terrain inspection
-rows from the selected physical tile. `View.StockGauge` shares depot and freight
+rows from the selected physical tile. `Game.View.StockGauge` shares depot and freight
 stock presentation. Identity-keyed rows reset native disclosures when the inspected
 object changes; freight uses only projected current or remembered stock.
 
@@ -1207,7 +1298,7 @@ its existing playing state. The skip preference selects ordinary timed playback.
 
 `GamePage` loads and saves `skipUnitLossDialogs` through the existing local-storage
 boundary. It derives the active dialog from playback and opens it through the native
-modal port when the casualty changes. `View.UnitDeath` owns its information, actions,
+modal port when the casualty changes. `Game.View.UnitDeath` owns its information, actions,
 steady marker, and board spotlight; `View.Dialog.atBottom` supplies native
 focus trapping with lower-screen placement and a transparent backdrop.
 
@@ -1219,7 +1310,7 @@ owner resolution, and rendering does not log errors.
 
 ## Turn introduction
 
-`GamePage.CurrentTurn` owns the per-turn introduction acknowledgment. Initialization
+`Game.CurrentTurn` owns the per-turn introduction acknowledgment. Initialization
 and a newer server turn mark it awaiting introduction; same-turn polling preserves
 acknowledgment. The awaiting introduction owns the viewer-projected playback
 frames, including on initial load. Its replay operation restarts the existing
@@ -1230,7 +1321,7 @@ the game ends. Same-turn polling preserves the retained frames.
 The page presents it only when planning is unlocked, after all
 playback and loss dialogs have finished. `GamePage.initialEffect` opens the initial
 native modal after rendering; `superUpdate` opens subsequent introductions when
-the active dialog changes. `View.TurnIntroduction` supplies the card artwork and
+the active dialog changes. `Game.View.TurnIntroduction` supplies the card artwork and
 actions through `Dialog.announcement`, which owns wide modal placement. The
 introduction owns its animation styles, mounted once in the application shell;
 its shine animation has a separate name from the turn controls' shine. The page remembers `skipTurnIntroduction`
@@ -1271,7 +1362,7 @@ Mountain terrain flows through the generated GraphQL `Terrain` enum. Rust moveme
 rules export a cost of 4 half-points for infantry and zero for tanks, trucks and
 field guns. Nonpositive costs are impassable in client previews, order validation,
 unload validation and resolution. Visibility grants +2 radius to mountain observers
-and treats them as elevated observers. `View.TerrainTile` selects dedicated green,
+and treats them as elevated observers. `Game.View.TerrainTile` selects dedicated green,
 snow and desert mountain assets without applying the older feature tint filters.
 
 ## Indirect fire
@@ -1361,9 +1452,9 @@ even for a stationary pickup. Holds and rotation preserve it. Projection reuses
 ordinary unit visibility, so hidden entrenchment never creates a map marker.
 
 Elm carries `PlannedOrder.DigIn` through the existing save/revoke/submission
-workflow. `Unit.Location.Dismounting` describes a projected unloading position
+workflow. `Game.Unit.Location.Dismounting` describes a projected unloading position
 for planning, while excluding digging on that turn. Ordinary commands can use
-that projected map position. `View.UnitSprite` uses the approved team-colored
+that projected map position. `Game.View.UnitSprite` uses the approved team-colored
 entrenched masters for board cells, inspector portraits, and theater figures;
 `tools/build-entrenched-sprites.cjs` packs them without changing their sources.
 `TurnPlayback` clears the displayed entrenchment as actual movement begins.

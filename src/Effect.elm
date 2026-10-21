@@ -1,6 +1,7 @@
 module Effect exposing
     ( Eff
     , after
+    , and
     , batch
     , focus
     , load
@@ -56,6 +57,11 @@ batch effects =
 withOut : model -> ( model, Eff msg )
 withOut model =
     ( model, none )
+
+
+and : Eff msg -> ( model, Eff msg ) -> ( model, Eff msg )
+and effect ( model, eff ) =
+    ( model, Batch [ effect, eff ] )
 
 
 toJs : ToJs.Msg -> Eff msg

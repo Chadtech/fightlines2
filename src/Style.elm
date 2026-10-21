@@ -449,6 +449,7 @@ import Css.Value
         ( Supported
         , Value
         )
+import Size exposing (Size)
 
 
 basisFull : Css.Style
@@ -2747,7 +2748,7 @@ transformOriginTopLeft =
     Css.property "transform-origin" "top left"
 
 
-aspectRatio : { width : Int, height : Int } -> Css.Style
+aspectRatio : Size -> Css.Style
 aspectRatio ratio =
     Css.property "aspect-ratio"
         (String.fromInt ratio.width ++ " / " ++ String.fromInt ratio.height)
@@ -3193,7 +3194,7 @@ minWFitContent =
     Css.property "min-width" "fit-content"
 
 
-fitWithinContainer : { width : Int, height : Int } -> Css.Style
+fitWithinContainer : Size -> Css.Style
 fitWithinContainer ratio =
     Css.batch
         [ Css.property "width"

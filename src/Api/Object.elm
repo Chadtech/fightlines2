@@ -9,6 +9,14 @@ type Aboard
     = Aboard
 
 
+type ArchivePlayer
+    = ArchivePlayer
+
+
+type ArchiveReadError
+    = ArchiveReadError
+
+
 type CargoStock
     = CargoStock
 
@@ -67,6 +75,14 @@ type IndirectFireTarget
 
 type IndirectImpact
     = IndirectImpact
+
+
+type LoggedGame
+    = LoggedGame
+
+
+type LoggedGameStatus
+    = LoggedGameStatus
 
 
 type Map

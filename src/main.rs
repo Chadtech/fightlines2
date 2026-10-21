@@ -2,6 +2,7 @@
 
 mod ai;
 mod combat;
+mod game_archive;
 mod game_log;
 mod graphql;
 mod lobby;
@@ -54,16 +55,12 @@ async fn run() -> io::Result<()> {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("public"));
 
-    let seed = match env::var("FIGHTLINES_SEED") {
-        Ok(value) => seed::Seed::from_hex(&value).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "FIGHTLINES_SEED must contain 64 hexadecimal characters",
-            )
-        })?,
-        Err(env::VarError::NotPresent) => seed::Seed::new([0; 32]),
+    let seed_override = match env::var("FIGHTLINES_SEED") {
+        Ok(value) => Some(value),
+        Err(env::VarError::NotPresent) => None,
         Err(error) => return Err(io::Error::new(io::ErrorKind::InvalidInput, error)),
     };
+    let seed = seed::Seed::startup(seed_override.as_deref())?;
     let log_path = env::var_os("FIGHTLINES_GAME_LOG_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("game-logs"));
@@ -79,6 +76,8 @@ async fn run() -> io::Result<()> {
     }
     println!("Game archives: {}", log_path.canonicalize()?.display());
     let listener = TcpListener::bind(&address)?;
+    let server_start = logs.record_server_start(seed)?;
+    println!("Private server-start record: {}", server_start.display());
     println!("FightLines listening on http://{}", listener.local_addr()?);
 
     let store = if env::args().any(|argument| argument == "--dev-game") {
@@ -100,6 +99,17 @@ async fn run() -> io::Result<()> {
     });
     if editor_enabled {
         println!("Map editor: http://{}/map-editor", listener.local_addr()?);
+    }
+    let archives_enabled = env::args().any(|argument| argument == "--game-logs");
+    let archives = web::Data::new(game_archive::Browser {
+        directory: log_path,
+        index: frontend.join("index.html"),
+    });
+    if archives_enabled {
+        println!(
+            "Logged games: http://{}/logged-games",
+            listener.local_addr()?
+        );
     }
     let store = web::Data::new(store);
     let schema = web::Data::new(graphql::schema());
@@ -127,6 +137,12 @@ async fn run() -> io::Result<()> {
                     async move { NamedFile::open(index) }
                 }),
             );
+        if archives_enabled {
+            app = app
+                .app_data(archives.clone())
+                .route("/logged-games", web::get().to(game_archive::page))
+                .route("/logged-games/{id}", web::get().to(game_archive::page));
+        }
         if editor_enabled {
             app = app
                 .app_data(editor.clone())

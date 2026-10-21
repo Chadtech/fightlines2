@@ -1,0 +1,3710 @@
+module Page.GamePage exposing
+    ( Flags
+    , Model
+    , Msg
+    , dialog
+    , init
+    , keyCommands
+    , load
+    , setShared
+    , subscriptions
+    , superUpdate
+    , view
+    )
+
+import Api.Enum.DepotKind as DepotKind
+import Api.Enum.Direction as DirectionEnum exposing (Direction)
+import Api.Enum.MapType
+    exposing
+        ( MapType
+        )
+import Api.Enum.PlayerNumber as PlayerNumberEnum exposing (PlayerNumber)
+import Api.Enum.TurnEventKind as TurnEventKind
+import Api.Enum.UnitKind as UnitKind
+import Api.Mutation
+import Api.Object
+import Api.Object.GameSnapshot as SnapshotApi
+import Api.Object.MovementRule as MovementRuleApi
+import Api.Object.Scenario as Scenario
+import Api.Object.TerrainMovementCost as MovementCostApi
+import Api.Query
+import ApiRequest
+import Browser.Dom
+import Browser.Events
+import Effect as E
+    exposing
+        ( Eff
+        )
+import Error exposing (Error)
+import Game.AnimationFrame as AnimationFrame
+import Game.BattlefieldNavigation as BattlefieldNavigation
+import Game.BattlefieldSnapshot as BattlefieldSnapshot exposing (Player)
+import Game.Camera as Camera
+import Game.CombatRules as CombatRules
+import Game.Coordinate as Coordinate exposing (Coordinate)
+import Game.CurrentTurn as CurrentTurn
+import Game.Depot as Depot exposing (Depot)
+import Game.DestinationFeedback exposing (DestinationFeedback(..))
+import Game.Direction as Direction
+import Game.DirectionPlanning as DirectionPlanning
+import Game.IndirectFirePlanning as IndirectFirePlanning
+import Game.Inspection as Inspection exposing (Inspection(..))
+import Game.Map as Map exposing (Map)
+import Game.MovePlanning as MovePlanning
+import Game.Movement as Movement
+import Game.OrderPlanning as OrderPlanning
+import Game.Outcome as GameOutcome exposing (GameOutcome)
+import Game.PlannedOrder as PlannedOrder
+    exposing
+        ( PlannedOrder
+        , UnloadOrder
+        )
+import Game.PlannedTransport as PlannedTransport
+import Game.PlaybackPresentation as PlaybackPresentation
+import Game.PlayerNumber as PlayerNumber
+import Game.Selection
+    exposing
+        ( Selection(..)
+        , UnitInteraction(..)
+        )
+import Game.Supply as Supply
+import Game.Turn as Turn
+import Game.TurnLifecycle as TurnLifecycle exposing (Phase)
+import Game.TurnPlayback as TurnPlayback
+import Game.Unit as Unit exposing (Unit)
+import Game.UnitCommand as UnitCommand
+import Game.UnitId as UnitId exposing (UnitId)
+import Game.UnloadCargo as UnloadCargo exposing (UnloadCargo)
+import Game.UnloadPlanning exposing (UnloadChoice, UnloadPlanning)
+import Game.UnloadingTruck as UnloadingTruck
+import Game.View.Battlefield as Battlefield
+    exposing
+        ( UnloadRoute
+        )
+import Game.View.BattlefieldInspection as BattlefieldInspection
+import Game.View.BattlefieldWorkspace as BattlefieldWorkspace
+import Game.View.CombatTheater as CombatTheater
+import Game.View.CommandGuide as CommandGuide
+import Game.View.CommandMenu as CommandMenu
+import Game.View.MovementRoute as MovementRoute
+import Game.View.RotationChoices as RotationChoices
+import Game.View.TurnControls as TurnControls
+import Game.View.TurnIntroduction as TurnIntroduction
+import Game.View.UnitDeath as UnitDeath
+import Game.View.UnitStatus as UnitStatus
+import Game.View.UnloadPassenger as UnloadPassenger
+import Graphql.Http
+import Graphql.SelectionSet as SS exposing (SelectionSet)
+import Html.Styled as H
+    exposing
+        ( Html
+        )
+import Html.Styled.Attributes as A
+import Html.Styled.Events as HtmlEvents
+import Html.Styled.Lazy as Lazy
+import InvariantCheck as IC exposing (InvariantCheck)
+import Json.Decode as Decode
+import Json.Encode as Encode
+import KeyCmd exposing (KeyCmd)
+import LobbyId
+    exposing
+        ( LobbyId
+        )
+import LocalStorage
+import Ports.Js.To as ToJs
+import Shared
+import Style as S
+import Time
+import Util.Html.Event as HtmlEvent
+import Util.List as ListUtil
+import Util.Maybe as MaybeUtil
+import View.Aria as Aria
+import View.Button as Button
+import View.Checkbox as Checkbox
+import View.Dialog as Dialog exposing (Dialog)
+
+
+
+----------------------------------------------------------------
+-- TYPES --
+----------------------------------------------------------------
+
+
+type alias Model =
+    { currentTurn : CurrentTurn.Model
+    , shared : Shared.Model
+    , skipTurnIntroduction : Bool
+    , skipUnitLossDialogs : Bool
+    , automaticallyCloseCombatTheater : Bool
+    , name : String
+    , mapType : MapType
+    , players : List Player
+    , map : Map
+    , units : List Unit
+    , depots : List Depot
+    , supplyCrates : List Supply.GroundCrate
+    , supplyRules : Supply.Rules
+    , visibleTiles : List Coordinate
+    , movementRules : List Movement.Rule
+    , navigation : BattlefieldNavigation.Model
+    , battlefieldViewport : Maybe Camera.Viewport
+    , frame : AnimationFrame.Frame
+    }
+
+
+type alias Snapshot =
+    { battlefield : BattlefieldSnapshot.Snapshot
+    , supplyRules : Supply.Rules
+    , movementRules : List Movement.Rule
+    , turn : Turn.Snapshot
+    , playbackFrames : List TurnPlayback.Frame
+    }
+
+
+type alias RotationSelection =
+    { unitId : UnitId
+    , position : Coordinate
+    , direction : Direction
+    }
+
+
+type Msg
+    = BattlefieldSizeReceived (Result Browser.Dom.Error Browser.Dom.Element)
+    | GameControlsSizeReceived Browser.Dom.Element (Result Browser.Dom.Error Browser.Dom.Element)
+    | CameraReturnFinished
+    | WindowResized
+    | BattlefieldMsg Battlefield.Msg
+    | BattlefieldNavigationMsg BattlefieldNavigation.Msg
+    | CommandMenuMsg CommandMenu.Msg
+    | PreviousCommandPressed
+    | NextCommandPressed
+    | CommandFocusCompleted
+    | PanLeftKeyPressed
+    | PanRightKeyPressed
+    | PanUpKeyPressed
+    | PanDownKeyPressed
+    | ZoomInKeyPressed
+    | ZoomOutKeyPressed
+    | AnimationTimerElapsed Time.Posix
+    | TurnIntroductionMsg TurnIntroduction.Msg
+    | UnitDeathMsg UnitDeath.Msg
+    | CombatTheaterMsg CombatTheater.Msg
+    | DirectionKeyPressed Direction
+    | PathDirectionKeyPressed Direction
+    | PathEnterPressed
+    | NextUnorderedUnitKeyPressed
+    | ClearMoveClicked
+    | BackToCommandsClicked
+    | CargoUnitClicked UnitId
+    | LoadCratesClicked UnitId Int
+    | UnloadCrateToggled Int Bool
+    | UnloadUnitToggled UnitId Bool
+    | UnloadChoicesConfirmed
+    | UnloadSkipped
+    | InspectClicked
+    | EscapePressed
+    | DialogDismissed
+    | SubmissionConfirmed
+    | SubmitKeyPressed
+    | SubmissionEnterPressed
+    | TurnControlsMsg TurnControls.Msg
+    | SubmitResponseReceived Int (ApiRequest.Response Snapshot)
+    | CurrentTurnMsg CurrentTurn.Msg
+    | PollResponseReceived (ApiRequest.Response Snapshot)
+
+
+
+----------------------------------------------------------------
+-- INIT --
+----------------------------------------------------------------
+
+
+type alias Flags =
+    { snapshot : Snapshot }
+
+
+init : Shared.Model -> Flags -> ( Model, Eff Msg )
+init shared flags =
+    let
+        loadPreference : String -> ( Bool, Maybe Error )
+        loadPreference key =
+            case LocalStorage.get shared.localStorage key Decode.bool of
+                Ok saved ->
+                    ( Maybe.withDefault False saved, Nothing )
+
+                Err decodeError ->
+                    let
+                        error : Error
+                        error =
+                            Error.LocalStorageDecodeFailed
+                                { key = key
+                                , error = decodeError
+                                }
+                    in
+                    ( False, Just error )
+
+        ( automaticallyCloseCombatTheater, maybeError ) =
+            PlaybackPresentation.loadPreference PlaybackPresentation.AutomaticallyCloseCombat shared
+
+        ( skipTurnIntroduction, introductionPreferenceError ) =
+            loadPreference turnIntroductionPreferenceKey
+
+        ( skipLossDialogs, lossPreferenceError ) =
+            PlaybackPresentation.loadPreference PlaybackPresentation.SkipLossDialogs shared
+
+        model : Model
+        model =
+            { currentTurn = CurrentTurn.init (turnObservation flags.snapshot)
+            , shared =
+                shared
+                    |> Shared.addError maybeError
+                    |> Shared.addError lossPreferenceError
+                    |> Shared.addError introductionPreferenceError
+            , skipTurnIntroduction = skipTurnIntroduction
+            , skipUnitLossDialogs = skipLossDialogs
+            , automaticallyCloseCombatTheater = automaticallyCloseCombatTheater
+            , name = flags.snapshot.battlefield.name
+            , mapType = flags.snapshot.battlefield.mapType
+            , players = flags.snapshot.battlefield.players
+            , map = flags.snapshot.battlefield.map
+            , units = flags.snapshot.battlefield.units
+            , depots = flags.snapshot.battlefield.depots
+            , supplyCrates = flags.snapshot.battlefield.supplyCrates
+            , supplyRules = flags.snapshot.supplyRules
+            , visibleTiles = flags.snapshot.battlefield.visibleTiles
+            , movementRules = flags.snapshot.movementRules
+            , navigation = BattlefieldNavigation.init
+            , battlefieldViewport = Nothing
+            , frame = AnimationFrame.first
+            }
+
+        eff : Eff Msg
+        eff =
+            if showTurnIntroduction model then
+                E.toJs
+                    (ToJs.OpenDialog
+                        { htmlId = TurnIntroduction.dialogHtmlId }
+                    )
+
+            else
+                E.none
+    in
+    ( model
+    , E.batch
+        [ eff
+        , Battlefield.measure BattlefieldSizeReceived
+        ]
+    )
+
+
+load : LobbyId -> Graphql.Http.Request Flags
+load id =
+    Api.Query.game
+        { id = LobbyId.toString id }
+        (SS.map Flags snapshotSelection)
+        |> ApiRequest.queryRequest
+
+
+
+----------------------------------------------------------------
+-- API --
+----------------------------------------------------------------
+
+
+setShared : Shared.Model -> Model -> Model
+setShared shared model =
+    let
+        ( skipLossDialogs, lossError ) =
+            PlaybackPresentation.loadPreference PlaybackPresentation.SkipLossDialogs shared
+
+        ( automaticallyClose, combatError ) =
+            PlaybackPresentation.loadPreference PlaybackPresentation.AutomaticallyCloseCombat shared
+
+        refreshed : Model
+        refreshed =
+            { model
+                | shared = shared |> Shared.addError lossError |> Shared.addError combatError
+                , skipUnitLossDialogs = skipLossDialogs
+                , automaticallyCloseCombatTheater = automaticallyClose
+            }
+    in
+    case LocalStorage.get shared.localStorage turnIntroductionPreferenceKey Decode.bool of
+        Ok saved ->
+            { refreshed | skipTurnIntroduction = Maybe.withDefault False saved }
+
+        Err error ->
+            { refreshed
+                | shared = Shared.addError (Just (Error.LocalStorageDecodeFailed { key = turnIntroductionPreferenceKey, error = error })) refreshed.shared
+            }
+
+
+
+----------------------------------------------------------------
+-- HELPERS --
+----------------------------------------------------------------
+
+
+turnIntroductionPreferenceKey : String
+turnIntroductionPreferenceKey =
+    "skipTurnIntroduction"
+
+
+showTurnIntroduction : Model -> Bool
+showTurnIntroduction model =
+    (model.currentTurn.outcome /= Nothing || not model.skipTurnIntroduction)
+        && CurrentTurn.introductionPending model.currentTurn
+
+
+{-| Save the chosen load count on an existing truck order, retaining its route and passenger exits.
+-}
+saveCrateLoading : UnitId -> Int -> OrderPlanning.Model -> InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
+saveCrateLoading id count state =
+    let
+        retainsOrder : PlannedOrder -> Bool
+        retainsOrder order =
+            order.unitId /= id
+
+        loadingOrder : PlannedOrder -> PlannedOrder
+        loadingOrder order =
+            { unitId = id
+            , action =
+                PlannedOrder.SupplyTransfer
+                    { route = PlannedOrder.path order
+                    , destination = PlannedOrder.destination order
+                    , handling = PlannedOrder.LoadingCrates count
+                    , passengers = PlannedOrder.unloads order
+                    }
+            }
+    in
+    case state of
+        OrderPlanning.OrdinaryPlanning drafts ->
+            case ListUtil.find (\order -> order.unitId == id) drafts.orders of
+                Just order ->
+                    OrderPlanning.OrdinaryPlanning
+                        { orders = loadingOrder order :: List.filter retainsOrder drafts.orders
+                        , selection = Just (Inspecting (UnitInspection id))
+                        }
+                        |> IC.happy
+
+                Nothing ->
+                    IC.violated (OrderPlanning.LoadingOrderNotFound id) state
+
+        _ ->
+            IC.happy state
+
+
+depotLoadingRoom : Model -> Unit -> Int
+depotLoadingRoom model unit =
+    let
+        passengers : Int
+        passengers =
+            List.filter
+                (\passenger -> Unit.carrierId passenger == Just unit.id)
+                model.units
+                |> List.length
+
+        crates : Int
+        crates =
+            unit.resources
+                |> Maybe.map (.supplyCargo >> List.length)
+                |> Maybe.withDefault 0
+
+        incoming : Int
+        incoming =
+            PlannedTransport.boardingPassengers model.units unit.id (plannedOrders model)
+                |> List.length
+
+        depot : Maybe Depot
+        depot =
+            plannedDepot model unit.id
+
+        stockLimit : Int
+        stockLimit =
+            case
+                depot
+                    |> Maybe.andThen .stock
+            of
+                Just stock ->
+                    (stock.current + model.supplyRules.crateCapacity - 1)
+                        // model.supplyRules.crateCapacity
+
+                Nothing ->
+                    2
+    in
+    min
+        stockLimit
+        (max 0 (unit.cargoCapacity - passengers - crates - incoming))
+
+
+plannedDepot : Model -> UnitId -> Maybe Depot
+plannedDepot model id =
+    let
+        atDestination : PlannedOrder -> Maybe Depot
+        atDestination order =
+            ListUtil.find
+                (\depot -> depot.position == PlannedOrder.destination order)
+                model.depots
+    in
+    plannedOrders model
+        |> ListUtil.find (\order -> order.unitId == id)
+        |> Maybe.andThen atDestination
+
+
+ownPlayerNumbers : Model -> List PlayerNumber
+ownPlayerNumbers model =
+    List.filter .isYou model.players |> List.map .playerNumber
+
+
+visibleSupplyCrates : Model -> List Supply.GroundCrate
+visibleSupplyCrates model =
+    List.filter (\crate -> List.member crate.position model.visibleTiles) model.supplyCrates
+
+
+mapPlanning : (OrderPlanning.Model -> OrderPlanning.Model) -> Model -> Model
+mapPlanning transition =
+    mapCheckedPlanning (transition >> IC.happy)
+
+
+mapCheckedPlanning :
+    (OrderPlanning.Model
+     ->
+        InvariantCheck
+            OrderPlanning.InvariantViolation
+            OrderPlanning.Model
+    )
+    -> Model
+    -> Model
+mapCheckedPlanning transition model =
+    let
+        checked : InvariantCheck Error CurrentTurn.Model
+        checked =
+            CurrentTurn.mapPlanning transition model.currentTurn
+                |> IC.mapError Error.OrderPlanningInvariantViolated
+
+        applyChecked : Maybe Error -> CurrentTurn.Model -> Model
+        applyChecked violation currentTurn =
+            { model
+                | currentTurn = currentTurn
+                , shared = Shared.addError violation model.shared
+            }
+    in
+    IC.resolve applyChecked checked
+
+
+unloadChoice : Phase -> Maybe UnloadChoice
+unloadChoice phase =
+    TurnLifecycle.planning phase
+        |> Maybe.andThen OrderPlanning.unloadChoice
+
+
+unloadPlanning : Phase -> Maybe UnloadPlanning
+unloadPlanning phase =
+    TurnLifecycle.planning phase |> Maybe.andThen OrderPlanning.unloadPlanning
+
+
+isChoosingUnload : Model -> Bool
+isChoosingUnload model =
+    unloadPlanning model.currentTurn.phase /= Nothing
+
+
+dismissDialog : Model -> Model
+dismissDialog model =
+    if showTurnIntroduction model then
+        { model | currentTurn = CurrentTurn.acknowledgeIntroduction model.currentTurn }
+
+    else
+        model
+            |> mapPlanning
+                (OrderPlanning.dismissDialog
+                    >> OrderPlanning.promptDismountedCommands model.map model.units
+                )
+
+
+partialOrdersDialogHtmlId : String
+partialOrdersDialogHtmlId =
+    "submit-turn-warning"
+
+
+commandGuideOpen : Model -> Bool
+commandGuideOpen model =
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.map OrderPlanning.commandGuideOpen
+        |> Maybe.withDefault False
+
+
+hasDialog : Model -> Bool
+hasDialog model =
+    dialog model /= Nothing
+
+
+plannedOrders : Model -> List PlannedOrder
+plannedOrders model =
+    TurnLifecycle.orders model.currentTurn.phase
+
+
+playback : Model -> Maybe TurnPlayback.Playback
+playback model =
+    TurnLifecycle.playback model.currentTurn.phase
+
+
+unitLoss : Model -> Maybe TurnPlayback.Loss
+unitLoss model =
+    PlaybackPresentation.loss model.skipUnitLossDialogs (playback model)
+
+
+ownerName : Model -> Unit -> Maybe String
+ownerName model =
+    PlaybackPresentation.ownerName model.players
+
+
+{-| Called only after detecting a newly active dialog. Repeated playback ticks
+and view rendering must not append the same loss error again.
+-}
+logNewLossError : Model -> Model
+logNewLossError model =
+    { model | shared = Shared.addError (PlaybackPresentation.lossError model.players (unitLoss model)) model.shared }
+
+
+activeDialogHtmlId : Model -> Maybe String
+activeDialogHtmlId model =
+    if commandGuideOpen model then
+        Just CommandGuide.dialogHtmlId
+
+    else if showTurnIntroduction model then
+        Just TurnIntroduction.dialogHtmlId
+
+    else
+        playbackDialogHtmlId model
+
+
+playbackDialogHtmlId : Model -> Maybe String
+playbackDialogHtmlId model =
+    case unitLoss model of
+        Just loss ->
+            Just (UnitDeath.dialogHtmlId loss)
+
+        Nothing ->
+            cargoDialogHtmlId model.currentTurn.phase
+
+
+combatEncounter : Model -> Maybe TurnPlayback.Encounter
+combatEncounter model =
+    playback model |> Maybe.andThen TurnPlayback.activeEncounter
+
+
+deathInFocus : Model -> Bool
+deathInFocus model =
+    List.any
+        (\unit -> Unit.onMap unit && Unit.isDying unit)
+        model.units
+
+
+planningLocked : Model -> Bool
+planningLocked model =
+    model.currentTurn.outcome /= Nothing || TurnLifecycle.planningLocked model.currentTurn.phase
+
+
+unitsWithoutOrders : Model -> List Unit
+unitsWithoutOrders model =
+    OrderPlanning.missingOrders model.map model.units (ownPlayerNumbers model) (plannedOrders model)
+
+
+readyToSubmit : Model -> Bool
+readyToSubmit model =
+    not (planningLocked model) && List.isEmpty (unitsWithoutOrders model)
+
+
+submitTurn : LobbyId -> Model -> ( Model, Eff Msg )
+submitTurn lobbyId model =
+    case CurrentTurn.startSubmission model.currentTurn of
+        Just currentTurn ->
+            ( { model | currentTurn = currentTurn }
+            , E.request
+                (SubmitResponseReceived model.currentTurn.number)
+                (submitRequest lobbyId model)
+            )
+
+        Nothing ->
+            ( model, E.none )
+
+
+unloadDialogHtmlId : String
+unloadDialogHtmlId =
+    "unload-passengers"
+
+
+selectedUnit : Model -> Maybe Unit
+selectedUnit model =
+    OrderPlanning.selectedUnitFromSelection
+        model.units
+        (currentSelection model)
+        |> Maybe.map
+            (PlannedTransport.planningUnit
+                model.map
+                (plannedOrders model)
+            )
+
+
+selectedPosition : Model -> Maybe Coordinate
+selectedPosition model =
+    case unloadPlanning model.currentTurn.phase of
+        Just planning ->
+            Just (UnloadingTruck.destination planning.truck)
+
+        Nothing ->
+            inspectionPosition model
+
+
+inspectionPosition : Model -> Maybe Coordinate
+inspectionPosition model =
+    case currentSelection model of
+        Just (Inspecting (TileInspection position)) ->
+            Just position
+
+        Just (Inspecting (UnitInspection _)) ->
+            Maybe.andThen Unit.mapPosition (selectedUnit model)
+
+        Just (UnitSelection _) ->
+            Maybe.andThen Unit.mapPosition (selectedUnit model)
+
+        Nothing ->
+            Nothing
+
+
+isOwnUnit : Model -> Unit -> Bool
+isOwnUnit model unit =
+    OrderPlanning.isOwnUnit (ownPlayerNumbers model) unit
+
+
+applyCommand : UnitCommand.Command -> Model -> Model
+applyCommand command model =
+    model
+        |> mapCheckedPlanning
+            (OrderPlanning.applyCommand
+                model.map
+                model.units
+                (ownPlayerNumbers model)
+                model.movementRules
+                model.depots
+                command
+            )
+
+
+plannedUnloadRoutes : Model -> List UnloadRoute
+plannedUnloadRoutes model =
+    let
+        truckUnloads : PlannedOrder -> List UnloadRoute
+        truckUnloads plan =
+            let
+                route : UnloadOrder -> Maybe UnloadRoute
+                route unload =
+                    let
+                        withDirection : Direction -> UnloadRoute
+                        withDirection direction =
+                            { origin = PlannedOrder.destination plan
+                            , direction = direction
+                            }
+                    in
+                    Direction.between
+                        (PlannedOrder.destination plan)
+                        unload.destination
+                        |> Maybe.map withDirection
+            in
+            List.filterMap route (PlannedOrder.unloads plan)
+    in
+    List.concatMap truckUnloads (plannedOrders model)
+
+
+focusedCommand : Model -> Maybe UnitCommand.MenuOption
+focusedCommand model =
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.andThen OrderPlanning.focusedCommand
+
+
+commandMenuUnit : Model -> Maybe Unit
+commandMenuUnit model =
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.andThen
+            (OrderPlanning.commandMenuUnit model.map model.units)
+
+
+submitRequest : LobbyId -> Model -> Graphql.Http.Request Snapshot
+submitRequest lobbyId model =
+    let
+        orders : List PlannedOrder
+        orders =
+            OrderPlanning.submissionOrders
+                model.map
+                model.units
+                (ownPlayerNumbers model)
+                (plannedOrders model)
+    in
+    Api.Mutation.submitTurn
+        { id = LobbyId.toString lobbyId
+        , turnNumber = model.currentTurn.number
+        , orders = List.map PlannedOrder.toInput orders
+        }
+        snapshotSelection
+        |> ApiRequest.mutationRequest
+
+
+turnObservation : Snapshot -> CurrentTurn.Observation
+turnObservation snapshot =
+    { turn = snapshot.turn
+    , playbackFrames = snapshot.playbackFrames
+    }
+
+
+applyTurnSnapshot : Snapshot -> CurrentTurn.Model -> Model -> Model
+applyTurnSnapshot snapshot currentTurn model =
+    let
+        next : Model
+        next =
+            { model | currentTurn = currentTurn }
+    in
+    if currentTurn.number > model.currentTurn.number then
+        let
+            frame : TurnPlayback.Frame
+            frame =
+                TurnPlayback.initial snapshot.playbackFrames
+                    { departures = []
+                    , indirectImpacts = []
+                    , shots = []
+                    , durationMs = 180
+                    , units = snapshot.battlefield.units
+                    , visibleTiles = snapshot.battlefield.visibleTiles
+                    , depots = snapshot.battlefield.depots
+                    , supplyCrates = snapshot.battlefield.supplyCrates
+                    }
+        in
+        { next
+            | map = snapshot.battlefield.map
+            , depots = frame.depots
+            , supplyCrates = frame.supplyCrates
+            , supplyRules = snapshot.supplyRules
+            , units = frame.units
+            , visibleTiles = frame.visibleTiles
+        }
+
+    else
+        next
+
+
+plannedAction : Model -> Unit -> Movement.Option -> String
+plannedAction model unit move =
+    if Unit.carrierId unit /= Nothing && List.length move.path > 1 then
+        "unload at"
+
+    else if
+        PlannedTransport.loadingTarget
+            model.units
+            unit
+            move.destination
+            (plannedOrders model)
+            /= Nothing
+    then
+        "load at"
+
+    else
+        "move to"
+
+
+receivingLoad : Unit -> Model -> Bool
+receivingLoad unit model =
+    PlannedTransport.receivingLoad
+        model.units
+        unit
+        (plannedOrders model)
+
+
+currentSelection : Model -> Maybe Selection
+currentSelection model =
+    TurnLifecycle.selection model.currentTurn.phase
+
+
+setSelection : Maybe Selection -> Model -> Model
+setSelection selected model =
+    { model | currentTurn = CurrentTurn.setSelection selected model.currentTurn }
+
+
+focusCommand : UnitCommand.MenuOption -> Model -> Model
+focusCommand command model =
+    model
+        |> mapPlanning
+            (OrderPlanning.focusCommand model.map model.units command)
+
+
+revokeSelectedOrder : Model -> Model
+revokeSelectedOrder model =
+    model
+        |> mapCheckedPlanning
+            (OrderPlanning.revokeSelectedOrder model.map model.units (ownPlayerNumbers model))
+
+
+choosingDirection : Model -> Bool
+choosingDirection model =
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.map OrderPlanning.choosingDirection
+        |> Maybe.withDefault False
+
+
+saveDirection : Direction -> Model -> Model
+saveDirection direction model =
+    model
+        |> mapCheckedPlanning
+            (OrderPlanning.saveDirection model.map model.units (ownPlayerNumbers model) direction)
+
+
+rotationSelection : Model -> Maybe RotationSelection
+rotationSelection model =
+    let
+        atPosition : UnitId -> Direction -> Coordinate -> RotationSelection
+        atPosition unitId direction position =
+            { unitId = unitId
+            , position = position
+            , direction = direction
+            }
+    in
+    case ( currentSelection model, selectedUnit model ) of
+        ( Just (UnitSelection selection), Just unit ) ->
+            case selection.interaction of
+                ChoosingDirection planning ->
+                    case planning of
+                        DirectionPlanning.AttackMove move direction ->
+                            Just { unitId = unit.id, position = move.destination, direction = direction }
+
+                        DirectionPlanning.Stationary _ direction ->
+                            Unit.mapPosition unit
+                                |> Maybe.map (atPosition unit.id direction)
+
+                CommandMenu _ ->
+                    Nothing
+
+                ChoosingIndirectFire _ ->
+                    Nothing
+
+                ChoosingMove _ ->
+                    Nothing
+
+        _ ->
+            Nothing
+
+
+previewDirection : Direction -> Model -> Model
+previewDirection direction model =
+    if BattlefieldNavigation.active model.navigation then
+        model
+
+    else
+        model
+            |> mapPlanning (OrderPlanning.previewDirection direction)
+
+
+loadSnapshot : LobbyId -> Graphql.Http.Request Snapshot
+loadSnapshot id =
+    Api.Query.game { id = LobbyId.toString id } snapshotSelection
+        |> ApiRequest.queryRequest
+
+
+snapshotSelection : SelectionSet Snapshot Api.Object.GameSnapshot
+snapshotSelection =
+    let
+        terrainCostSelection : SelectionSet Movement.TerrainCost Api.Object.TerrainMovementCost
+        terrainCostSelection =
+            SS.succeed Movement.TerrainCost
+                |> SS.with MovementCostApi.terrain
+                |> SS.with MovementCostApi.cost
+
+        movementRuleSelection : SelectionSet Movement.Rule Api.Object.MovementRule
+        movementRuleSelection =
+            SS.succeed Movement.Rule
+                |> SS.with MovementRuleApi.kind
+                |> SS.with MovementRuleApi.budget
+                |> SS.with (MovementRuleApi.terrainCosts terrainCostSelection)
+    in
+    SS.succeed Snapshot
+        |> SS.with BattlefieldSnapshot.selection
+        |> SS.with (SnapshotApi.scenario (Scenario.supplyRules Supply.rulesSelection))
+        |> SS.with (SnapshotApi.movementRules movementRuleSelection)
+        |> SS.with Turn.selection
+        |> SS.with (TurnPlayback.selection Unit.selection Coordinate.selection)
+
+
+destinationFeedback : Model -> DestinationFeedback
+destinationFeedback model =
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.map OrderPlanning.destinationFeedback
+        |> Maybe.withDefault NoDestinationFeedback
+
+
+pathPreview : Model -> Maybe Movement.Option
+pathPreview model =
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.andThen OrderPlanning.pathPreview
+
+
+clearSelection : Model -> Model
+clearSelection model =
+    setSelection Nothing model
+
+
+selectUnit : UnitId -> Model -> Model
+selectUnit id model =
+    if planningLocked model then
+        case ListUtil.find (\unit -> unit.id == id) model.units of
+            Just unit ->
+                if Maybe.map .id (selectedUnit model) == Just id then
+                    clearSelection model
+
+                else
+                    setSelection (Just (Inspecting (UnitInspection unit.id))) model
+
+            Nothing ->
+                model
+
+    else
+        model
+            |> mapCheckedPlanning
+                (OrderPlanning.selectUnit
+                    model.map
+                    model.units
+                    (ownPlayerNumbers model)
+                    model.movementRules
+                    (visibleSupplyCrates model)
+                    model.depots
+                    id
+                )
+
+
+selectTile : Coordinate -> Model -> Model
+selectTile position model =
+    if planningLocked model then
+        setSelection (Just (Inspecting (TileInspection position))) model
+
+    else
+        model
+            |> mapCheckedPlanning
+                (OrderPlanning.selectTile
+                    model.map
+                    model.units
+                    (ownPlayerNumbers model)
+                    model.movementRules
+                    (visibleSupplyCrates model)
+                    model.depots
+                    position
+                )
+
+
+inspectDepot : Coordinate -> Model -> Model
+inspectDepot position model =
+    if choosingIndirectFire model then
+        selectTile position model
+
+    else
+        setSelection (Just (Inspecting (TileInspection position))) model
+
+
+previewUnit : UnitId -> Model -> Model
+previewUnit id model =
+    if planningLocked model then
+        model
+
+    else
+        model.units
+            |> ListUtil.find (\unit -> unit.id == id)
+            |> Maybe.andThen Unit.mapPosition
+            |> Maybe.map (\position -> previewTile position model)
+            |> Maybe.withDefault model
+
+
+previewTile : Coordinate -> Model -> Model
+previewTile position model =
+    if BattlefieldNavigation.active model.navigation && pathPreview model == Nothing then
+        model
+
+    else
+        model
+            |> mapPlanning
+                (OrderPlanning.previewTile
+                    model.map
+                    model.units
+                    (ownPlayerNumbers model)
+                    model.movementRules
+                    position
+                )
+
+
+extendPath : Direction -> Model -> Model
+extendPath direction model =
+    if BattlefieldNavigation.active model.navigation then
+        model
+
+    else
+        model
+            |> mapPlanning
+                (OrderPlanning.extendPath
+                    model.map
+                    model.units
+                    (ownPlayerNumbers model)
+                    model.movementRules
+                    direction
+                )
+
+
+confirmPath : Model -> Model
+confirmPath model =
+    model
+        |> mapCheckedPlanning
+            (OrderPlanning.confirmPath
+                model.map
+                model.units
+                (ownPlayerNumbers model)
+                model.movementRules
+                model.depots
+            )
+
+
+focusAdjacentCommand :
+    (List UnitCommand.MenuOption -> List UnitCommand.MenuOption)
+    -> Maybe UnitCommand.MenuOption
+    -> Model
+    -> Eff Msg
+focusAdjacentCommand orderCommands current model =
+    let
+        afterCurrent : List UnitCommand.MenuOption -> List UnitCommand.MenuOption
+        afterCurrent remaining =
+            case remaining of
+                [] ->
+                    []
+
+                command :: rest ->
+                    if Just command == current then
+                        rest
+
+                    else
+                        afterCurrent rest
+    in
+    case commandMenuUnit model of
+        Just unit ->
+            let
+                commands : List UnitCommand.MenuOption
+                commands =
+                    UnitCommand.enabledOptions unit
+                        |> orderCommands
+
+                adjacent : Maybe UnitCommand.MenuOption
+                adjacent =
+                    case afterCurrent commands |> List.head of
+                        Just command ->
+                            Just command
+
+                        Nothing ->
+                            List.head commands
+            in
+            case adjacent of
+                Just command ->
+                    E.focus
+                        { htmlId = CommandMenu.optionHtmlId command }
+                        CommandFocusCompleted
+
+                Nothing ->
+                    E.none
+
+        Nothing ->
+            E.none
+
+
+mapNavigation : (BattlefieldNavigation.Model -> BattlefieldNavigation.Model) -> Model -> Model
+mapNavigation change model =
+    { model | navigation = change model.navigation |> BattlefieldNavigation.finishReturn }
+
+
+cargoDialogHtmlId : TurnLifecycle.Phase -> Maybe String
+cargoDialogHtmlId phase =
+    case phase of
+        TurnLifecycle.Planning (OrderPlanning.ChoosingCrates _ _ _) ->
+            Just loadCratesDialogHtmlId
+
+        TurnLifecycle.Planning (OrderPlanning.ChoosingPassengers _) ->
+            Just unloadDialogHtmlId
+
+        _ ->
+            Nothing
+
+
+loadCratesDialogHtmlId : String
+loadCratesDialogHtmlId =
+    "load-supply-crates-dialog"
+
+
+suppressesBattlefieldClick : { detail : Int } -> Model -> Bool
+suppressesBattlefieldClick click model =
+    (click.detail /= 0)
+        && BattlefieldNavigation.suppressesClick model.navigation
+
+
+choosingIndirectFire : Model -> Bool
+choosingIndirectFire model =
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.map OrderPlanning.choosingIndirectFire
+        |> Maybe.withDefault False
+
+
+indirectFireDetails : Unit -> List (Html Msg)
+indirectFireDetails unit =
+    let
+        costs : String
+        costs =
+            "range: "
+                ++ String.fromInt unit.combatRules.indirectRange
+                ++ " tiles · supplies: upkeep + "
+                ++ String.fromInt unit.combatRules.readinessCost
+                ++ " readiness + "
+                ++ String.fromInt unit.combatRules.shotCost
+                ++ " per shot"
+    in
+    [ H.p
+        []
+        [ H.text "choose any tile in range, including fog. fires after movement and unloading at whoever remains there; friendly units can be hit. empty tiles waste the shot. unseen hits stay unconfirmed."
+        ]
+    , H.p
+        []
+        [ H.text costs
+        ]
+    ]
+
+
+handleBattlefieldMsg : Battlefield.Msg -> Model -> Model
+handleBattlefieldMsg msg model =
+    case msg of
+        Battlefield.PanLeftClicked ->
+            model
+                |> mapNavigation BattlefieldNavigation.panLeft
+
+        Battlefield.PanRightClicked ->
+            model
+                |> mapNavigation BattlefieldNavigation.panRight
+
+        Battlefield.PanUpClicked ->
+            model
+                |> mapNavigation BattlefieldNavigation.panUp
+
+        Battlefield.PanDownClicked ->
+            model
+                |> mapNavigation BattlefieldNavigation.panDown
+
+        Battlefield.ZoomInClicked ->
+            model
+                |> mapNavigation BattlefieldNavigation.zoomIn
+
+        Battlefield.ZoomOutClicked ->
+            model
+                |> mapNavigation BattlefieldNavigation.zoomOut
+
+        Battlefield.ResetViewClicked ->
+            model
+                |> mapNavigation BattlefieldNavigation.resetViewport
+
+        Battlefield.RotationChoicesMsg rotationMsg ->
+            let
+                next : Model
+                next =
+                    case rotationMsg of
+                        RotationChoices.MouseMovedOverDirection direction ->
+                            previewDirection direction model
+
+                        RotationChoices.FocusedDirection direction ->
+                            previewDirection direction model
+
+                        RotationChoices.DirectionActivationKeyPressed direction ->
+                            saveDirection direction model
+
+                        RotationChoices.ClickedDirection direction ->
+                            if BattlefieldNavigation.suppressesClick model.navigation then
+                                model
+
+                            else
+                                saveDirection direction model
+            in
+            next
+
+        Battlefield.ClickedUnit id click ->
+            let
+                next : Model
+                next =
+                    if suppressesBattlefieldClick click model then
+                        model
+
+                    else
+                        selectUnit id model
+            in
+            next
+
+        Battlefield.PressedEnterOnUnit id ->
+            let
+                next : Model
+                next =
+                    let
+                        confirmsSelectedUnitPreview : Bool
+                        confirmsSelectedUnitPreview =
+                            (pathPreview model /= Nothing)
+                                && (Maybe.map .id (selectedUnit model) == Just id)
+                    in
+                    if confirmsSelectedUnitPreview then
+                        confirmPath model
+
+                    else
+                        selectUnit id model
+            in
+            next
+
+        Battlefield.PressedSpaceOnUnit id ->
+            model
+                |> selectUnit id
+
+        Battlefield.MouseOverUnit id ->
+            previewUnit id model
+
+        Battlefield.ClickedDepot position click ->
+            let
+                next : Model
+                next =
+                    if suppressesBattlefieldClick click model then
+                        model
+
+                    else
+                        selectTile position model
+            in
+            next
+
+        Battlefield.PressedEnterOnDepot position ->
+            model
+                |> selectTile position
+
+        Battlefield.PressedSpaceOnDepot position ->
+            model
+                |> selectTile position
+
+        Battlefield.MouseOverDepot position ->
+            let
+                next : Model
+                next =
+                    if planningLocked model then
+                        model
+
+                    else
+                        previewTile position model
+            in
+            next
+
+        Battlefield.ClickedDepotStock position click ->
+            let
+                next : Model
+                next =
+                    if suppressesBattlefieldClick click model then
+                        model
+
+                    else
+                        inspectDepot position model
+            in
+            next
+
+        Battlefield.PressedEnterOnDepotStock position ->
+            inspectDepot position model
+
+        Battlefield.PressedSpaceOnDepotStock position ->
+            inspectDepot position model
+
+        Battlefield.ClickedTile position click ->
+            let
+                next : Model
+                next =
+                    if suppressesBattlefieldClick click model then
+                        model
+
+                    else
+                        selectTile position model
+            in
+            next
+
+        Battlefield.PressedEnterOnTile position ->
+            model
+                |> selectTile position
+
+        Battlefield.PressedSpaceOnTile position ->
+            model
+                |> selectTile position
+
+        Battlefield.FocusedBoardUnit id ->
+            if choosingIndirectFire model then
+                previewUnit id model
+
+            else
+                model
+
+        Battlefield.FocusedBoardTile position ->
+            if choosingIndirectFire model then
+                previewTile position model
+
+            else
+                model
+
+        Battlefield.TargetPreviewLeft ->
+            mapPlanning OrderPlanning.clearTargetPreview model
+
+        Battlefield.MouseOverTile position ->
+            let
+                next : Model
+                next =
+                    if planningLocked model then
+                        model
+
+                    else
+                        previewTile position model
+            in
+            next
+
+        Battlefield.MousePressed point ->
+            model
+                |> mapNavigation (BattlefieldNavigation.press point)
+
+        Battlefield.WheelScrolled anchor delta ->
+            model
+                |> mapNavigation (BattlefieldNavigation.scroll anchor delta)
+
+        Battlefield.HomePressed ->
+            model
+                |> mapNavigation BattlefieldNavigation.resetViewport
+
+
+
+----------------------------------------------------------------
+-- UPDATE --
+----------------------------------------------------------------
+
+
+{-| Retain playback framing across subject changes. Only projected positions
+can request a pan, and the saved planning navigation remains independent.
+-}
+updatePlaybackCamera : Model -> Model
+updatePlaybackCamera model =
+    case ( model.currentTurn.phase, model.battlefieldViewport ) of
+        ( TurnLifecycle.Playing playing, Just viewport ) ->
+            let
+                held : PlaybackPresentation.PlaybackCamera
+                held =
+                    PlaybackPresentation.frameCamera viewport model.map (BattlefieldNavigation.camera model.navigation) playing.animation playing.camera
+
+                currentTurn : CurrentTurn.Model
+                currentTurn =
+                    model.currentTurn
+            in
+            { model
+                | currentTurn =
+                    { currentTurn
+                        | phase = TurnLifecycle.Playing { playing | camera = Just held }
+                    }
+            }
+
+        _ ->
+            model
+
+
+playbackCamera : Model -> Maybe TurnLifecycle.PlaybackCamera
+playbackCamera model =
+    case model.currentTurn.phase of
+        TurnLifecycle.Playing playing ->
+            playing.camera
+
+        _ ->
+            Nothing
+
+
+superUpdate : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
+superUpdate lobbyId msg model =
+    case update lobbyId msg model of
+        ( updated, effect ) ->
+            let
+                playbackStarted : Bool
+                playbackStarted =
+                    (playback model == Nothing) && (playback updated /= Nothing)
+
+                next : Model
+                next =
+                    if playbackStarted then
+                        { updated | battlefieldViewport = Nothing }
+
+                    else
+                        updatePlaybackCamera updated
+
+                playbackFinished : Bool
+                playbackFinished =
+                    playbackCamera model /= Nothing && playback next == Nothing
+
+                cameraEffect : Eff Msg
+                cameraEffect =
+                    if playbackStarted then
+                        Battlefield.measure BattlefieldSizeReceived
+
+                    else if playbackFinished then
+                        E.after PlaybackPresentation.cameraPanDurationMs CameraReturnFinished
+
+                    else
+                        E.none
+
+                withCameraReturn : Model
+                withCameraReturn =
+                    if playbackFinished then
+                        { next | navigation = BattlefieldNavigation.startReturn next.navigation }
+
+                    else
+                        next
+
+                combinedEffect : Eff Msg
+                combinedEffect =
+                    E.batch [ effect, cameraEffect ]
+
+                previousDialogHtmlId : Maybe String
+                previousDialogHtmlId =
+                    activeDialogHtmlId model
+
+                nextDialogHtmlId : Maybe String
+                nextDialogHtmlId =
+                    activeDialogHtmlId next
+            in
+            case nextDialogHtmlId of
+                Just htmlId ->
+                    if nextDialogHtmlId /= previousDialogHtmlId then
+                        ( logNewLossError withCameraReturn
+                        , E.batch
+                            [ combinedEffect
+                            , E.toJs (ToJs.OpenDialog { htmlId = htmlId })
+                            ]
+                        )
+
+                    else
+                        ( withCameraReturn, combinedEffect )
+
+                Nothing ->
+                    ( withCameraReturn, combinedEffect )
+
+
+update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
+update lobbyId msg model =
+    case msg of
+        BattlefieldMsg boardMsg ->
+            E.withOut (handleBattlefieldMsg boardMsg model)
+
+        CameraReturnFinished ->
+            { model | navigation = BattlefieldNavigation.finishReturn model.navigation }
+                |> E.withOut
+
+        BattlefieldSizeReceived result ->
+            case result of
+                Ok battlefield ->
+                    ( model, E.measure TurnControls.htmlId (GameControlsSizeReceived battlefield) )
+
+                Err error ->
+                    { model | shared = Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared }
+                        |> E.withOut
+
+        GameControlsSizeReceived battlefield result ->
+            case result of
+                Ok controls ->
+                    let
+                        viewport : Camera.Viewport
+                        viewport =
+                            { size = { x = battlefield.element.width, y = battlefield.element.height }
+                            , bottomInset =
+                                clamp 0
+                                    battlefield.element.height
+                                    (battlefield.element.y + battlefield.element.height - controls.element.y)
+                            }
+                    in
+                    { model | battlefieldViewport = Just viewport }
+                        |> E.withOut
+
+                Err error ->
+                    { model | shared = Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared }
+                        |> E.withOut
+
+        WindowResized ->
+            ( model, Battlefield.measure BattlefieldSizeReceived )
+
+        PanLeftKeyPressed ->
+            model
+                |> mapNavigation BattlefieldNavigation.panLeft
+                |> E.withOut
+
+        PanRightKeyPressed ->
+            model
+                |> mapNavigation BattlefieldNavigation.panRight
+                |> E.withOut
+
+        PanUpKeyPressed ->
+            model
+                |> mapNavigation BattlefieldNavigation.panUp
+                |> E.withOut
+
+        PanDownKeyPressed ->
+            model
+                |> mapNavigation BattlefieldNavigation.panDown
+                |> E.withOut
+
+        ZoomInKeyPressed ->
+            model
+                |> mapNavigation BattlefieldNavigation.zoomIn
+                |> E.withOut
+
+        ZoomOutKeyPressed ->
+            model
+                |> mapNavigation BattlefieldNavigation.zoomOut
+                |> E.withOut
+
+        BattlefieldNavigationMsg navigationMsg ->
+            let
+                dragMode : BattlefieldNavigation.DragMode
+                dragMode =
+                    if pathPreview model /= Nothing then
+                        BattlefieldNavigation.TraceRoute
+
+                    else
+                        BattlefieldNavigation.PanCamera
+
+                traced : Model
+                traced =
+                    model
+                        |> mapNavigation (BattlefieldNavigation.update dragMode navigationMsg)
+            in
+            if pathPreview model /= Nothing then
+                let
+                    next : Model -> Model
+                    next =
+                        case navigationMsg of
+                            BattlefieldNavigation.MouseReleased _ ->
+                                if BattlefieldNavigation.suppressesClick traced.navigation then
+                                    confirmPath
+
+                                else
+                                    identity
+
+                            _ ->
+                                identity
+                in
+                traced
+                    |> next
+                    |> E.withOut
+
+            else
+                traced
+                    |> E.withOut
+
+        UnloadUnitToggled id checked ->
+            model
+                |> mapCheckedPlanning
+                    (OrderPlanning.toggleAvailableUnloadCargo
+                        model.map
+                        model.units
+                        (ownPlayerNumbers model)
+                        model.movementRules
+                        (visibleSupplyCrates model)
+                        (UnloadCargo.Passenger id)
+                        checked
+                    )
+                |> E.withOut
+
+        UnloadChoicesConfirmed ->
+            model
+                |> mapCheckedPlanning
+                    (OrderPlanning.confirmPassengers
+                        model.map
+                        model.units
+                        (ownPlayerNumbers model)
+                        model.movementRules
+                        (visibleSupplyCrates model)
+                        model.depots
+                    )
+                |> E.withOut
+
+        UnloadSkipped ->
+            model
+                |> mapPlanning (OrderPlanning.skipUnloading model.map model.units model.depots)
+                |> E.withOut
+
+        LoadCratesClicked id count ->
+            case
+                ListUtil.find
+                    (\unit -> unit.id == id && isOwnUnit model unit)
+                    model.units
+            of
+                Just _ ->
+                    model
+                        |> mapCheckedPlanning
+                            (OrderPlanning.dismissDialog
+                                >> saveCrateLoading id count
+                                >> IC.map (OrderPlanning.promptDismountedCommands model.map model.units)
+                            )
+                        |> E.withOut
+
+                Nothing ->
+                    model
+                        |> E.withOut
+
+        UnloadCrateToggled index checked ->
+            model
+                |> mapCheckedPlanning
+                    (OrderPlanning.toggleAvailableUnloadCargo
+                        model.map
+                        model.units
+                        (ownPlayerNumbers model)
+                        model.movementRules
+                        (visibleSupplyCrates model)
+                        (UnloadCargo.Crate index)
+                        checked
+                    )
+                |> E.withOut
+
+        CargoUnitClicked id ->
+            model
+                |> clearSelection
+                |> selectUnit id
+                |> E.withOut
+
+        NextUnorderedUnitKeyPressed ->
+            model
+                |> mapPlanning
+                    (OrderPlanning.selectNextUnorderedUnit model.map model.units (ownPlayerNumbers model))
+                |> E.withOut
+
+        CommandMenuMsg commandMsg ->
+            model
+                |> handleCommandMsg commandMsg
+
+        PreviousCommandPressed ->
+            ( model, focusAdjacentCommand List.reverse (focusedCommand model) model )
+
+        NextCommandPressed ->
+            ( model, focusAdjacentCommand identity (focusedCommand model) model )
+
+        CommandFocusCompleted ->
+            model |> E.withOut
+
+        DirectionKeyPressed direction ->
+            model
+                |> saveDirection direction
+                |> E.withOut
+
+        PathDirectionKeyPressed direction ->
+            model
+                |> extendPath direction
+                |> E.withOut
+
+        PathEnterPressed ->
+            model
+                |> confirmPath
+                |> E.withOut
+
+        BackToCommandsClicked ->
+            model
+                |> mapCheckedPlanning (OrderPlanning.restoreCommands model.map model.units (ownPlayerNumbers model))
+                |> E.withOut
+
+        ClearMoveClicked ->
+            model
+                |> revokeSelectedOrder
+                |> E.withOut
+
+        InspectClicked ->
+            model
+                |> clearSelection
+                |> E.withOut
+
+        EscapePressed ->
+            if hasDialog model then
+                model
+                    |> dismissDialog
+                    |> E.withOut
+
+            else
+                model
+                    |> clearSelection
+                    |> E.withOut
+
+        TurnControlsMsg turnControlsMsg ->
+            handleTurnControlsMsg lobbyId turnControlsMsg model
+
+        DialogDismissed ->
+            model
+                |> dismissDialog
+                |> E.withOut
+
+        SubmitKeyPressed ->
+            if canSubmitWithKeyboard model then
+                requestSubmission lobbyId model
+
+            else
+                model |> E.withOut
+
+        SubmissionConfirmed ->
+            confirmSubmission lobbyId model
+
+        SubmissionEnterPressed ->
+            confirmSubmission lobbyId model
+
+        SubmitResponseReceived turnNumber result ->
+            case result of
+                Ok snapshot ->
+                    model
+                        |> applyTurnSnapshot
+                            snapshot
+                            (CurrentTurn.submissionSucceeded
+                                turnNumber
+                                (turnObservation snapshot)
+                                model.currentTurn
+                            )
+                        |> E.withOut
+
+                Err error ->
+                    { model | currentTurn = CurrentTurn.submissionFailed turnNumber (ApiRequest.errorMessage error) model.currentTurn }
+                        |> E.withOut
+
+        CurrentTurnMsg turnMsg ->
+            handleCurrentTurnMsg lobbyId turnMsg model
+
+        PollResponseReceived result ->
+            case result of
+                Ok snapshot ->
+                    model
+                        |> applyTurnSnapshot
+                            snapshot
+                            (CurrentTurn.pollSucceeded
+                                (turnObservation snapshot)
+                                model.currentTurn
+                            )
+                        |> E.withOut
+
+                Err error ->
+                    { model | currentTurn = CurrentTurn.pollFailed (ApiRequest.errorMessage error) model.currentTurn }
+                        |> E.withOut
+
+        AnimationTimerElapsed _ ->
+            if deathInFocus model || combatEncounter model /= Nothing then
+                model |> E.withOut
+
+            else
+                { model | frame = AnimationFrame.next model.frame }
+                    |> E.withOut
+
+        TurnIntroductionMsg introMsg ->
+            case introMsg of
+                TurnIntroduction.BeginClicked ->
+                    { model | currentTurn = CurrentTurn.acknowledgeIntroduction model.currentTurn } |> E.withOut
+
+                TurnIntroduction.ReplayClicked ->
+                    if showTurnIntroduction model then
+                        case CurrentTurn.replay model.currentTurn of
+                            Just replay ->
+                                applyPlaybackFrame
+                                    { phase = replay.currentTurn.phase, frame = replay.frame }
+                                    { model | currentTurn = replay.currentTurn }
+                                    |> E.withOut
+
+                            Nothing ->
+                                model |> E.withOut
+
+                    else
+                        model |> E.withOut
+
+                TurnIntroduction.BattlefieldViewClicked ->
+                    { model | currentTurn = CurrentTurn.acknowledgeIntroduction model.currentTurn } |> E.withOut
+
+                TurnIntroduction.SkipDialogsChanged skip ->
+                    ( { model
+                        | skipTurnIntroduction = skip
+                        , currentTurn = CurrentTurn.acknowledgeIntroduction model.currentTurn
+                      }
+                    , E.toJs (ToJs.SetLocalStorage { key = turnIntroductionPreferenceKey, value = Encode.bool skip })
+                    )
+
+        UnitDeathMsg lossMsg ->
+            case lossMsg of
+                UnitDeath.ContinueClicked unitId ->
+                    let
+                        currentTurn : CurrentTurn.Model
+                        currentTurn =
+                            model.currentTurn
+                    in
+                    { model
+                        | currentTurn =
+                            { currentTurn
+                                | phase =
+                                    TurnLifecycle.acknowledgeLoss
+                                        unitId
+                                        currentTurn.phase
+                            }
+                    }
+                        |> E.withOut
+
+                UnitDeath.SkipDialogsChanged skip ->
+                    ( { model | skipUnitLossDialogs = skip }
+                    , PlaybackPresentation.rememberPreference PlaybackPresentation.SkipLossDialogs skip
+                    )
+
+        CombatTheaterMsg panelMsg ->
+            case panelMsg of
+                CombatTheater.AutomaticallyCloseChanged automaticallyClose ->
+                    ( { model | automaticallyCloseCombatTheater = automaticallyClose }
+                    , PlaybackPresentation.rememberPreference PlaybackPresentation.AutomaticallyCloseCombat automaticallyClose
+                    )
+
+                CombatTheater.ContinueClicked ->
+                    continueCombat model
+                        |> E.withOut
+
+                CombatTheater.SeeMapPressed ->
+                    setCombatMapView TurnPlayback.SeeingMap model |> E.withOut
+
+                CombatTheater.SeeMapReleased ->
+                    setCombatMapView TurnPlayback.CardVisible model |> E.withOut
+
+
+handleTurnControlsMsg : LobbyId -> TurnControls.Msg -> Model -> ( Model, Eff Msg )
+handleTurnControlsMsg lobbyId msg model =
+    case msg of
+        TurnControls.SubmitClicked ->
+            requestSubmission lobbyId model
+
+
+canSubmitWithKeyboard : Model -> Bool
+canSubmitWithKeyboard model =
+    case ( hasDialog model, model.currentTurn.phase ) of
+        ( False, TurnLifecycle.Planning (OrderPlanning.OrdinaryPlanning { selection }) ) ->
+            let
+                idleSelection : Bool
+                idleSelection =
+                    case selection of
+                        Just (UnitSelection _) ->
+                            False
+
+                        _ ->
+                            True
+            in
+            idleSelection && not (BattlefieldNavigation.active model.navigation)
+
+        _ ->
+            False
+
+
+confirmSubmission : LobbyId -> Model -> ( Model, Eff Msg )
+confirmSubmission lobbyId model =
+    case model.currentTurn.phase of
+        TurnLifecycle.Planning (OrderPlanning.ConfirmingSubmission _) ->
+            submitTurn lobbyId model
+
+        _ ->
+            model |> E.withOut
+
+
+requestSubmission : LobbyId -> Model -> ( Model, Eff Msg )
+requestSubmission lobbyId model =
+    if
+        planningLocked model
+            || isChoosingUnload model
+            || (unloadChoice model.currentTurn.phase /= Nothing)
+    then
+        model |> E.withOut
+
+    else if List.isEmpty (unitsWithoutOrders model) then
+        model
+            |> submitTurn lobbyId
+
+    else
+        ( model
+            |> mapPlanning OrderPlanning.showSubmissionWarning
+        , E.toJs
+            (ToJs.OpenDialog { htmlId = partialOrdersDialogHtmlId })
+        )
+
+
+handleCurrentTurnMsg : LobbyId -> CurrentTurn.Msg -> Model -> ( Model, Eff Msg )
+handleCurrentTurnMsg lobbyId msg model =
+    let
+        currentTurn : CurrentTurn.Model
+        currentTurn =
+            model.currentTurn
+    in
+    case msg of
+        CurrentTurn.PollTimerElapsed ->
+            if currentTurn.outcome /= Nothing || currentTurn.refreshing || not (TurnLifecycle.canPoll currentTurn.phase) then
+                model |> E.withOut
+
+            else
+                ( { model | currentTurn = { currentTurn | refreshing = True } }
+                , E.request PollResponseReceived (loadSnapshot lobbyId)
+                )
+
+        CurrentTurn.GotPlaybackPresentationMsg playbackMsg ->
+            case playbackMsg of
+                PlaybackPresentation.FrameElapsed delta ->
+                    advanceCurrentPlayback delta model
+
+                PlaybackPresentation.CombatEnterReleased ->
+                    continueCombat model
+                        |> E.withOut
+
+                PlaybackPresentation.CombatSeeMapReleased ->
+                    setCombatMapView TurnPlayback.CardVisible model
+                        |> E.withOut
+
+
+advanceCurrentPlayback : Float -> Model -> ( Model, Eff Msg )
+advanceCurrentPlayback delta model =
+    let
+        currentTurn : CurrentTurn.Model
+        currentTurn =
+            model.currentTurn
+    in
+    case model.currentTurn.phase of
+        TurnLifecycle.Playing playing ->
+            case playing.camera of
+                Just held ->
+                    if held.remainingPanMs > 0 then
+                        { model
+                            | currentTurn =
+                                { currentTurn
+                                    | phase = TurnLifecycle.Playing { playing | camera = Just { held | remainingPanMs = max 0 (held.remainingPanMs - delta) } }
+                                }
+                        }
+                            |> E.withOut
+
+                    else
+                        advancePlayback delta model
+
+                Nothing ->
+                    advancePlayback delta model
+
+        _ ->
+            model |> E.withOut
+
+
+{-| Keep the action at its current frame while the camera settles.
+-}
+advancePlayback : Float -> Model -> ( Model, Eff Msg )
+advancePlayback delta model =
+    let
+        advance : Float -> Phase -> Maybe { phase : Phase, frame : TurnPlayback.Frame }
+        advance =
+            if model.skipUnitLossDialogs then
+                TurnLifecycle.tick
+
+            else
+                TurnLifecycle.tickUntilLoss
+    in
+    case advance delta model.currentTurn.phase of
+        Just next ->
+            applyPlaybackFrame next model
+                |> automaticallyContinueCombat
+                |> E.withOut
+
+        Nothing ->
+            model |> E.withOut
+
+
+automaticallyContinueCombat : Model -> Model
+automaticallyContinueCombat model =
+    let
+        ready : Bool
+        ready =
+            playback model
+                |> Maybe.map (PlaybackPresentation.readyToAutomaticallyClose model.automaticallyCloseCombatTheater)
+                |> Maybe.withDefault False
+    in
+    if ready then
+        continueCombat model
+
+    else
+        model
+
+
+continueCombat : Model -> Model
+continueCombat model =
+    case TurnLifecycle.continueCombat model.currentTurn.phase of
+        Just next ->
+            applyPlaybackFrame next model
+
+        Nothing ->
+            model
+
+
+setCombatMapView : TurnPlayback.MapView -> Model -> Model
+setCombatMapView mapView model =
+    let
+        currentTurn : CurrentTurn.Model
+        currentTurn =
+            model.currentTurn
+    in
+    { model
+        | currentTurn =
+            { currentTurn
+                | phase =
+                    TurnLifecycle.setCombatMapView mapView currentTurn.phase
+            }
+    }
+
+
+applyPlaybackFrame :
+    { phase : Phase
+    , frame : TurnPlayback.Frame
+    }
+    -> Model
+    -> Model
+applyPlaybackFrame next model =
+    let
+        currentTurn : CurrentTurn.Model
+        currentTurn =
+            model.currentTurn
+    in
+    { model
+        | currentTurn = { currentTurn | phase = next.phase }
+        , depots = next.frame.depots
+        , supplyCrates = next.frame.supplyCrates
+        , units = next.frame.units
+        , visibleTiles = next.frame.visibleTiles
+    }
+
+
+handleCommandMsg : CommandMenu.Msg -> Model -> ( Model, Eff Msg )
+handleCommandMsg commandMsg model =
+    case commandMsg of
+        CommandMenu.MenuPressed ->
+            model |> E.withOut
+
+        CommandMenu.InfoClicked ->
+            if hasDialog model then
+                model |> E.withOut
+
+            else
+                model
+                    |> mapPlanning (OrderPlanning.openCommandGuide model.map model.units (ownPlayerNumbers model))
+                    |> E.withOut
+
+        CommandMenu.CancelClicked ->
+            model
+                |> clearSelection
+                |> E.withOut
+
+        CommandMenu.CommandFocused command ->
+            model
+                |> focusCommand command
+                |> E.withOut
+
+        CommandMenu.CommandPicked command ->
+            model
+                |> applyCommand command
+                |> E.withOut
+
+        CommandMenu.ArrowedUpCommandMenu current ->
+            ( model
+            , focusAdjacentCommand List.reverse (Just current) model
+            )
+
+        CommandMenu.ArrowedDownCommandMenu current ->
+            ( model
+            , focusAdjacentCommand identity (Just current) model
+            )
+
+
+
+----------------------------------------------------------------
+-- VIEW --
+----------------------------------------------------------------
+
+
+battlefieldView : Model -> Html Msg
+battlefieldView model =
+    let
+        presentation : Battlefield.Presentation
+        presentation =
+            battlefieldPresentation model
+
+        args : Battlefield.Args
+        args =
+            { map = model.map
+            , units = model.units
+            , depots = model.depots
+            , supplyCrates = model.supplyCrates
+            , visibleTiles = model.visibleTiles
+            , frame = model.frame
+            , selected = selectedPosition model
+            , selectedUnitId = selectedUnit model |> Maybe.map .id
+            , ambushing = List.filter (unitIsAmbushing model) model.units |> List.map .id
+            , presentation = presentation
+            }
+
+        heldCamera : Maybe Camera.Camera
+        heldCamera =
+            playbackCamera model |> Maybe.map .camera
+
+        viewportAttributes : List (H.Attribute Msg)
+        viewportAttributes =
+            Battlefield.viewportAttributes
+                { dragging = BattlefieldNavigation.active model.navigation
+                , interaction = Battlefield.interaction presentation
+                }
+                |> List.map (A.map BattlefieldMsg)
+    in
+    H.div
+        viewportAttributes
+        [ Battlefield.camera
+            { camera = Maybe.withDefault (BattlefieldNavigation.camera model.navigation) heldCamera
+            , transitioning = (heldCamera /= Nothing) || BattlefieldNavigation.returning model.navigation
+            }
+            [ Battlefield.toSvg args
+                |> H.fromUnstyled
+            ]
+            |> H.map BattlefieldMsg
+        , commandMenu model
+        ]
+
+
+battlefieldPresentation : Model -> Battlefield.Presentation
+battlefieldPresentation model =
+    case playback model of
+        Just animation ->
+            Battlefield.Playing
+                { animation = animation
+                , loss = unitLoss model
+                }
+
+        Nothing ->
+            Battlefield.Viewing
+                { saved =
+                    { orders = plannedOrders model
+                    , unloadRoutes = plannedUnloadRoutes model
+                    }
+                , interaction = battlefieldInteraction model
+                }
+
+
+battlefieldInteraction : Model -> Battlefield.Interaction
+battlefieldInteraction model =
+    case unloadPlanning model.currentTurn.phase of
+        Just unloading ->
+            Battlefield.ChoosingDestination
+                { options = unloading.options
+                , action = "unload at"
+                , purpose = MovementRoute.Travel
+                , path = pathPreview model |> Maybe.map .path |> Maybe.withDefault []
+                }
+
+        Nothing ->
+            case ( currentSelection model, selectedUnit model ) of
+                ( Just (UnitSelection selection), Just unit ) ->
+                    case selection.interaction of
+                        ChoosingMove planning ->
+                            let
+                                purpose : MovementRoute.Purpose
+                                purpose =
+                                    case planning.purpose of
+                                        MovePlanning.NormalMove ->
+                                            MovementRoute.Travel
+
+                                        MovePlanning.AttackMove ->
+                                            MovementRoute.Attack
+
+                                action : String
+                                action =
+                                    case planning.purpose of
+                                        MovePlanning.NormalMove ->
+                                            "move to"
+
+                                        MovePlanning.AttackMove ->
+                                            "attack move to"
+                            in
+                            Battlefield.ChoosingDestination
+                                { options = planning.options
+                                , action = action
+                                , purpose = purpose
+                                , path = planning.preview.path
+                                }
+
+                        ChoosingIndirectFire planning ->
+                            case Unit.mapPosition unit of
+                                Just origin ->
+                                    Battlefield.ChoosingIndirectTarget
+                                        { origin = origin
+                                        , range = unit.combatRules.indirectRange
+                                        , preview = IndirectFirePlanning.targetPreview planning
+                                        }
+
+                                Nothing ->
+                                    Battlefield.Inspecting
+
+                        ChoosingDirection planning ->
+                            battlefieldDirection unit planning
+
+                        CommandMenu _ ->
+                            Battlefield.Inspecting
+
+                _ ->
+                    Battlefield.Inspecting
+
+
+battlefieldDirection : Unit -> DirectionPlanning.DirectionPlanning -> Battlefield.Interaction
+battlefieldDirection unit planning =
+    case planning of
+        DirectionPlanning.AttackMove move direction ->
+            Battlefield.ChoosingDirection
+                { unitId = unit.id
+                , position = move.destination
+                , direction = direction
+                , purpose = Battlefield.AttackMoveFacing move.path
+                }
+
+        DirectionPlanning.Stationary stationaryPurpose direction ->
+            case Unit.mapPosition unit of
+                Just position ->
+                    let
+                        purpose : Battlefield.DirectionPurpose
+                        purpose =
+                            case stationaryPurpose of
+                                DirectionPlanning.AmbushPurpose ->
+                                    Battlefield.AmbushFacing unit.combatRules
+
+                                DirectionPlanning.StandGroundPurpose ->
+                                    Battlefield.StandGroundFacing
+                    in
+                    Battlefield.ChoosingDirection
+                        { unitId = unit.id
+                        , position = position
+                        , direction = direction
+                        , purpose = purpose
+                        }
+
+                Nothing ->
+                    Battlefield.Inspecting
+
+
+viewControls : Int -> Html Msg
+viewControls zoom =
+    Battlefield.navigationControls zoom
+        |> H.map BattlefieldMsg
+
+
+view : Model -> List (Html Msg)
+view model =
+    BattlefieldWorkspace.toHtml
+        { loss = unitLoss model /= Nothing
+        , combat = combatEncounter model /= Nothing
+        , dying = deathInFocus model
+        , battlefield = battlefieldView model
+        , controls = turnPanel model
+        , inspection = selectionView model
+        , hasSelection = currentSelection model /= Nothing
+        , combatOverlay = PlaybackPresentation.combatOverlay model.automaticallyCloseCombatTheater model.map (playback model) |> H.map CombatTheaterMsg
+        }
+
+
+commandMenu : Model -> Html Msg
+commandMenu model =
+    let
+        menuUnit : Maybe Unit
+        menuUnit =
+            if commandGuideOpen model then
+                selectedUnit model
+
+            else
+                commandMenuUnit model
+    in
+    case menuUnit of
+        Just unit ->
+            case Unit.physicalPosition model.units unit of
+                Just position ->
+                    CommandMenu.toHtml
+                        model.map
+                        (BattlefieldNavigation.camera model.navigation)
+                        position
+                        unit
+                        |> H.map CommandMenuMsg
+
+                Nothing ->
+                    H.text ""
+
+        Nothing ->
+            H.text ""
+
+
+selectionView : Model -> Html Msg
+selectionView model =
+    let
+        inspectedUnit : Maybe Unit
+        inspectedUnit =
+            case selectedUnit model of
+                Just unit ->
+                    Just unit
+
+                Nothing ->
+                    inspectionPosition model
+                        |> Maybe.andThen (\coordinate -> ListUtil.find (\unit -> Unit.mapPosition unit == Just coordinate) model.units)
+
+        unitContent : Unit -> { unit : Unit, content : List (Html Msg) }
+        unitContent unit =
+            let
+                actions : List (Html Msg)
+                actions =
+                    if Maybe.map .id (selectedUnit model) == Just unit.id then
+                        [ movementView model ]
+
+                    else
+                        []
+
+                authoritativeUnit : Unit
+                authoritativeUnit =
+                    model.units
+                        |> ListUtil.find (\original -> original.id == unit.id)
+                        |> Maybe.withDefault unit
+
+                revoke : Maybe Msg
+                revoke =
+                    if canRevokeOrder model unit then
+                        Just ClearMoveClicked
+
+                    else
+                        Nothing
+
+                content : List (Html Msg)
+                content =
+                    [ UnitStatus.toHtml
+                        (ownerName model unit |> Maybe.withDefault "")
+                        authoritativeUnit
+                        revoke
+                    , BattlefieldInspection.cargo
+                        { units = model.units
+                        , ownPlayers = ownPlayerNumbers model
+                        , orders = plannedOrders model
+                        , onSelectPassenger = CargoUnitClicked
+                        }
+                        unit
+                    ]
+                        ++ actions
+            in
+            { unit = unit, content = content }
+
+        position : Maybe Coordinate
+        position =
+            case inspectedUnit of
+                Just unit ->
+                    Unit.physicalPosition model.units unit
+
+                Nothing ->
+                    inspectionPosition model
+    in
+    BattlefieldInspection.toHtml
+        { map = model.map
+        , depots = model.depots
+        , supplyCrates = model.supplyCrates
+        , visibleTiles = model.visibleTiles
+        , position = position
+        , unit = Maybe.map unitContent inspectedUnit
+        }
+
+
+movementView : Model -> Html Msg
+movementView model =
+    let
+        details : List (Html Msg)
+        details =
+            case selectedUnit model of
+                Just unit ->
+                    if not (isOwnUnit model unit) then
+                        []
+
+                    else if model.currentTurn.outcome /= Nothing then
+                        [ H.p
+                            []
+                            [ H.text "the game is over. the battlefield is available to inspect."
+                            ]
+                        ]
+
+                    else if planningLocked model then
+                        [ H.p
+                            []
+                            [ H.text "orders are locked while waiting or playing the turn."
+                            ]
+                        ]
+
+                    else if isChoosingUnload model then
+                        let
+                            unloadingCargoLabel : String
+                            unloadingCargoLabel =
+                                case
+                                    unloadPlanning model.currentTurn.phase
+                                        |> Maybe.map .cargo
+                                of
+                                    Just (UnloadCargo.Crate index) ->
+                                        "cargo " ++ String.fromInt (index + 1)
+
+                                    _ ->
+                                        Unit.label unit
+                        in
+                        [ H.p
+                            []
+                            [ H.text ("choose an adjacent square to unload " ++ unloadingCargoLabel)
+                            ]
+                        , Button.primary "skip remaining cargo" UnloadSkipped
+                            |> Button.toHtml
+                        ]
+
+                    else if Unit.carrierId unit /= Nothing then
+                        transportDetails model unit
+
+                    else if receivingLoad unit model then
+                        let
+                            orderDetails : List (Html Msg)
+                            orderDetails =
+                                unitOrderView model unit
+
+                            cargoDetails : List (Html Msg)
+                            cargoDetails =
+                                transportDetails model unit
+                        in
+                        orderDetails ++ cargoDetails
+
+                    else if choosingIndirectFire model then
+                        indirectFireDetails unit
+
+                    else if choosingAmbush model then
+                        ambushDetails unit
+
+                    else if choosingStandGround model then
+                        [ H.p [] [ H.text "choose a stand ground direction on the map, or press an arrow key / wasd" ]
+                        , H.p [] [ H.text "combat ready when attacked; does not fire" ]
+                        , Button.primary "back to commands" BackToCommandsClicked
+                            |> Button.toHtml
+                        ]
+
+                    else if choosingDirection model then
+                        [ H.p [] [ H.text "choose final attack direction around the destination. click to save, or press an arrow key or wasd." ]
+                        , Button.primary "back to commands" BackToCommandsClicked
+                            |> Button.toHtml
+                        ]
+
+                    else
+                        unitOrderView model unit
+
+                Nothing ->
+                    []
+
+        feedback : List (Html Msg)
+        feedback =
+            if destinationFeedback model == DestinationUnavailable then
+                [ H.p
+                    [ Aria.role Aria.Status ]
+                    [ H.text "that square cannot be a destination within this unit’s movement budget." ]
+                ]
+
+            else
+                []
+
+        dismountDetails : List (Html Msg)
+        dismountDetails =
+            case selectedUnit model of
+                Just unit ->
+                    if PlannedTransport.isDismounting model.units unit then
+                        [ H.p
+                            []
+                            [ H.text "this infantry acts after unloading, with a fresh movement allowance. unloading and movement both consume supplies."
+                            ]
+                        ]
+
+                    else
+                        []
+
+                Nothing ->
+                    []
+
+        content : List (Html Msg)
+        content =
+            dismountDetails ++ details ++ feedback
+    in
+    H.div
+        [ A.css
+            [ S.col
+            , S.g2
+            ]
+        ]
+        content
+
+
+canRevokeOrder : Model -> Unit -> Bool
+canRevokeOrder model unit =
+    TurnLifecycle.planning model.currentTurn.phase
+        |> Maybe.map (OrderPlanning.canRevokeOrder model.map model.units (ownPlayerNumbers model) unit.id)
+        |> Maybe.withDefault False
+
+
+unitOrderView : Model -> Unit -> List (Html Msg)
+unitOrderView model unit =
+    let
+        maybePlan : Maybe PlannedOrder
+        maybePlan =
+            ListUtil.find
+                (\plan -> plan.unitId == unit.id)
+                (plannedOrders model)
+    in
+    case ( pathPreview model, maybePlan ) of
+        ( Just preview, _ ) ->
+            let
+                budget : String
+                budget =
+                    let
+                        ruleAppliesToUnit : Movement.Rule -> Bool
+                        ruleAppliesToUnit rule =
+                            rule.kind == unit.kind
+                    in
+                    model.movementRules
+                        |> ListUtil.find ruleAppliesToUnit
+                        |> Maybe.map (.budget >> Movement.pointsLabel)
+                        |> Maybe.withDefault "?"
+
+                previewDetails : List (Html Msg)
+                previewDetails =
+                    [ H.p
+                        []
+                        [ H.text "choose a destination on the map"
+                        ]
+                    , H.p
+                        []
+                        [ H.text ("movement: " ++ Movement.pointsLabel preview.cost ++ " / " ++ budget)
+                        ]
+                    ]
+
+                attackPlanning : Bool
+                attackPlanning =
+                    TurnLifecycle.planning model.currentTurn.phase
+                        |> Maybe.andThen OrderPlanning.movementPlanning
+                        |> Maybe.map (\planning -> planning.purpose == MovePlanning.AttackMove)
+                        |> Maybe.withDefault False
+
+                loadingDetails : List (Html Msg)
+                loadingDetails =
+                    if attackPlanning then
+                        [ H.p [] [ H.text "stops at the first enemy and attacks. allies are passable." ] ]
+
+                    else
+                        loadingNotice model unit preview.destination
+
+                controls : List (Html Msg)
+                controls =
+                    [ Button.primary "back to commands" BackToCommandsClicked
+                        |> Button.toHtml
+                    ]
+            in
+            previewDetails ++ loadingDetails ++ controls
+
+        ( Nothing, Just plan ) ->
+            let
+                unloadSummary : UnloadOrder -> Html Msg
+                unloadSummary unload =
+                    let
+                        passengerName : String
+                        passengerName =
+                            ListUtil.find (\passenger -> passenger.id == unload.unitId) model.units
+                                |> Maybe.map Unit.label
+                                |> Maybe.withDefault "unit"
+                    in
+                    H.p []
+                        [ H.text
+                            ("unload "
+                                ++ passengerName
+                                ++ " "
+                                ++ " at ("
+                                ++ String.fromInt unload.destination.x
+                                ++ ", "
+                                ++ String.fromInt unload.destination.y
+                                ++ ")"
+                            )
+                        ]
+
+                unloadDetails : List (Html Msg)
+                unloadDetails =
+                    List.map unloadSummary (PlannedOrder.unloads plan)
+
+                orderDetails : List (Html Msg)
+                orderDetails =
+                    let
+                        chosenOrderText : String
+                        chosenOrderText =
+                            case plan.action of
+                                PlannedOrder.SupplyTransfer supply ->
+                                    "cargo run to ("
+                                        ++ String.fromInt supply.destination.x
+                                        ++ ", "
+                                        ++ String.fromInt supply.destination.y
+                                        ++ "): load "
+                                        ++ String.fromInt (PlannedOrder.loadingCrates supply)
+                                        ++ " · unload "
+                                        ++ String.fromInt (List.length (PlannedOrder.unloadingCrates supply))
+
+                                PlannedOrder.IndirectFire fire ->
+                                    "indirect fire: (" ++ String.fromInt fire.target.x ++ ", " ++ String.fromInt fire.target.y ++ ")"
+
+                                PlannedOrder.StandGround facing ->
+                                    "stand ground: " ++ Direction.label facing.direction
+
+                                PlannedOrder.DigIn _ ->
+                                    "dig in"
+
+                                PlannedOrder.Hold _ ->
+                                    "hold position"
+
+                                PlannedOrder.Unload _ ->
+                                    "hold position"
+
+                                PlannedOrder.Ambush ambush ->
+                                    "ambush: " ++ Direction.label ambush.direction
+
+                                PlannedOrder.AttackMove attack ->
+                                    "attack move: ("
+                                        ++ String.fromInt attack.move.destination.x
+                                        ++ ", "
+                                        ++ String.fromInt attack.move.destination.y
+                                        ++ ") · facing: "
+                                        ++ Direction.label attack.direction
+                                        ++ " · movement: "
+                                        ++ Movement.pointsLabel attack.move.cost
+
+                                PlannedOrder.Move movePlan ->
+                                    if List.length movePlan.move.path <= 1 then
+                                        "hold position"
+
+                                    else
+                                        [ plannedAction model unit movePlan.move
+                                        , ": ("
+                                        , String.fromInt movePlan.move.destination.x
+                                        , ", "
+                                        , String.fromInt movePlan.move.destination.y
+                                        , ") · movement: "
+                                        , Movement.pointsLabel movePlan.move.cost
+                                        ]
+                                            |> String.concat
+                    in
+                    [ H.h3 [] [ H.text chosenOrderText ]
+                    ]
+
+                loadingDetails : List (Html Msg)
+                loadingDetails =
+                    case plan.action of
+                        PlannedOrder.Move movePlan ->
+                            loadingNotice model unit movePlan.move.destination
+
+                        _ ->
+                            []
+            in
+            orderDetails ++ loadingDetails ++ unloadDetails ++ ambushCosts unit plan
+
+        ( Nothing, Nothing ) ->
+            []
+
+
+choosingAmbush : Model -> Bool
+choosingAmbush model =
+    case currentSelection model of
+        Just (UnitSelection { interaction }) ->
+            case interaction of
+                ChoosingDirection (DirectionPlanning.Stationary DirectionPlanning.AmbushPurpose _) ->
+                    True
+
+                _ ->
+                    False
+
+        _ ->
+            False
+
+
+choosingStandGround : Model -> Bool
+choosingStandGround model =
+    case currentSelection model of
+        Just (UnitSelection { interaction }) ->
+            case interaction of
+                ChoosingDirection (DirectionPlanning.Stationary DirectionPlanning.StandGroundPurpose _) ->
+                    True
+
+                _ ->
+                    False
+
+        _ ->
+            False
+
+
+unitIsAmbushing : Model -> Unit -> Bool
+unitIsAmbushing model unit =
+    let
+        previewingAmbush : Bool
+        previewingAmbush =
+            choosingAmbush model && Maybe.map .unitId (rotationSelection model) == Just unit.id
+
+        ambushOrder : PlannedOrder -> Bool
+        ambushOrder order =
+            case order.action of
+                PlannedOrder.Ambush _ ->
+                    order.unitId == unit.id
+
+                _ ->
+                    False
+
+        ambushEvent : Turn.Event -> Bool
+        ambushEvent event =
+            event.unitId == unit.id && event.kind == TurnEventKind.Ambush
+    in
+    case model.currentTurn.phase of
+        TurnLifecycle.Playing _ ->
+            model.currentTurn.resolution
+                |> Maybe.map (\resolution -> List.any ambushEvent resolution.events)
+                |> Maybe.withDefault False
+
+        _ ->
+            previewingAmbush || List.any ambushOrder (plannedOrders model)
+
+
+ambushCosts : Unit -> PlannedOrder -> List (Html Msg)
+ambushCosts unit order =
+    case order.action of
+        PlannedOrder.IndirectFire _ ->
+            indirectFireDetails unit
+
+        PlannedOrder.DigIn _ ->
+            [ H.p [] [ H.text "entrenched after this turn; no movement or firing while digging" ]
+            , H.p [] [ H.text ("supplies: normal upkeep + " ++ String.fromInt unit.combatRules.digInCost ++ " digging") ]
+            ]
+
+        PlannedOrder.StandGround _ ->
+            [ H.p [] [ H.text "combat ready when attacked; does not fire" ]
+            , H.p [] [ H.text ("supplies: normal upkeep + " ++ String.fromInt unit.combatRules.readinessCost ++ " readiness") ]
+            ]
+
+        PlannedOrder.Ambush _ ->
+            List.drop 1 (ambushDetails unit)
+
+        _ ->
+            []
+
+
+ambushDetails : Unit -> List (Html Msg)
+ambushDetails unit =
+    let
+        rules : CombatRules.CombatRules
+        rules =
+            unit.combatRules
+    in
+    [ H.p
+        []
+        [ H.text "choose an ambush direction on the map, or press an arrow key / wasd"
+        ]
+    , H.p
+        []
+        [ H.text ("range: " ++ String.fromInt rules.range ++ " · base damage: " ++ String.fromInt rules.damage)
+        ]
+    , H.p
+        []
+        [ H.text ("supplies: normal upkeep + " ++ String.fromInt rules.readinessCost ++ " readiness + " ++ String.fromInt rules.shotCost ++ " per shot")
+        ]
+    ]
+
+
+loadingNotice : Model -> Unit -> Coordinate -> List (Html Msg)
+loadingNotice model unit destination =
+    case PlannedTransport.loadingTarget model.units unit destination (plannedOrders model) of
+        Just target ->
+            let
+                notice : String
+                notice =
+                    if unit.kind == UnitKind.Truck then
+                        "this move will pick up " ++ Unit.label target ++ " into this truck. the passenger will hold position."
+
+                    else
+                        "this move will board " ++ Unit.label target ++ " when both units reach the destination."
+            in
+            [ H.p
+                [ Aria.role Aria.Status
+                , A.css
+                    [ S.bgYellow2
+                    , S.textGray5
+                    , S.p2
+                    ]
+                ]
+                [ H.text notice ]
+            ]
+
+        Nothing ->
+            []
+
+
+transportDetails : Model -> Unit -> List (Html Msg)
+transportDetails model unit =
+    let
+        description : String
+        description =
+            if receivingLoad unit model then
+                "receiving cargo at the planned destination. revoking this order also clears dependent boarding moves."
+
+            else if Unit.carrierId unit /= Nothing then
+                "aboard a truck. select the truck and choose its move destination to unload passengers."
+
+            else if unit.kind == UnitKind.Truck then
+                "move onto allied infantry or a field gun to load it. the unit will hold. trucks carry two units."
+
+            else if unit.kind == UnitKind.Tank then
+                "tanks cannot board trucks."
+
+            else
+                "move onto an allied truck or its planned destination to board. trucks have two berths shared with supply crates and fuel drums."
+    in
+    [ H.p
+        []
+        [ H.text description
+        ]
+    ]
+
+
+unloadChecklist : Model -> UnloadChoice -> Dialog Msg
+unloadChecklist model choice =
+    let
+        passengers : List Unit
+        passengers =
+            List.filter (\unit -> Unit.carrierId unit == Just (UnloadingTruck.unitId choice.truck)) model.units
+
+        unavailable : UnloadCargo -> Bool
+        unavailable cargo =
+            OrderPlanning.canSelectUnloadCargo
+                model.map
+                model.units
+                (ownPlayerNumbers model)
+                model.movementRules
+                (visibleSupplyCrates model)
+                cargo
+                (OrderPlanning.ChoosingPassengers choice)
+                |> IC.resolve unavailableResult
+
+        unavailableResult : Maybe OrderPlanning.InvariantViolation -> Bool -> Bool
+        unavailableResult violation available =
+            case violation of
+                Just _ ->
+                    True
+
+                Nothing ->
+                    not available
+
+        passengerCheckbox : Unit -> Html Msg
+        passengerCheckbox unit =
+            UnloadPassenger.toHtml
+                { disabled = unavailable (UnloadCargo.Passenger unit.id)
+                , checked = List.member (UnloadCargo.Passenger unit.id) choice.checked
+                , onCheck = UnloadUnitToggled unit.id
+                }
+                unit
+
+        choices : List (Html Msg)
+        choices =
+            passengerChoices ++ crateChoices
+
+        passengerChoices : List (Html Msg)
+        passengerChoices =
+            List.map passengerCheckbox passengers
+
+        crateChoices : List (Html Msg)
+        crateChoices =
+            model.units
+                |> ListUtil.find (\unit -> unit.id == UnloadingTruck.unitId choice.truck)
+                |> Maybe.andThen .resources
+                |> Maybe.map (.supplyCargo >> List.indexedMap crateCheckbox)
+                |> Maybe.withDefault []
+
+        crateCheckbox : Int -> Supply.CargoStock -> Html Msg
+        crateCheckbox index stock =
+            let
+                label : String
+                label =
+                    Supply.cargoLabel stock.kind ++ " " ++ String.fromInt (index + 1)
+            in
+            Checkbox.new
+                { label = label
+                , checked = List.member (UnloadCargo.Crate index) choice.checked
+                , onCheck = UnloadCrateToggled index
+                }
+                |> Checkbox.disabled (unavailable (UnloadCargo.Crate index))
+                |> Checkbox.toHtml
+                    [ H.img
+                        [ A.src (Supply.cargoImage stock.kind)
+                        , A.alt ""
+                        , A.width 48
+                        , A.height 48
+                        ]
+                        []
+                    , H.span
+                        []
+                        [ H.text (label ++ " · " ++ Supply.resourceLabel stock.kind ++ " " ++ String.fromInt stock.current ++ "/" ++ String.fromInt stock.maximum)
+                        ]
+                    ]
+
+        proceedButton : Html Msg
+        proceedButton =
+            if List.isEmpty choice.checked then
+                Button.secondary "proceed without unloading" UnloadSkipped
+                    |> Button.toHtml
+
+            else
+                Button.primary "choose unload squares" UnloadChoicesConfirmed
+                    |> Button.toHtml
+
+        actions : Html Msg
+        actions =
+            H.form
+                [ A.attribute "method" "dialog"
+                ]
+                [ proceedButton
+                ]
+
+        content : List (Html Msg)
+        content =
+            choices ++ unavailableContent ++ actionContent
+
+        unavailableContent : List (Html Msg)
+        unavailableContent =
+            let
+                hasUnavailable : Bool
+                hasUnavailable =
+                    List.any (\unit -> unavailable (UnloadCargo.Passenger unit.id)) passengers
+                        || (model.units
+                                |> ListUtil.find
+                                    (\unit -> unit.id == UnloadingTruck.unitId choice.truck)
+                                |> Maybe.map
+                                    (\truck ->
+                                        List.range 0 (Unit.crateCount truck - 1)
+                                            |> List.any (UnloadCargo.Crate >> unavailable)
+                                    )
+                                |> Maybe.withDefault False
+                           )
+            in
+            if hasUnavailable then
+                [ H.p
+                    [ A.css [ S.textGray4 ] ]
+                    [ H.text "remaining cargo has no available unload space or insufficient supplies" ]
+                ]
+
+            else
+                []
+
+        actionContent : List (Html Msg)
+        actionContent =
+            [ actions
+            ]
+    in
+    Dialog.make unloadDialogHtmlId "unload" DialogDismissed content
+
+
+depotLoadingDialog : Model -> UnitId -> Depot -> Dialog Msg
+depotLoadingDialog model id depot =
+    let
+        truck : Maybe Unit
+        truck =
+            ListUtil.find (\unit -> unit.id == id) model.units
+
+        room : Int
+        room =
+            truck
+                |> Maybe.map (depotLoadingRoom model)
+                |> Maybe.withDefault 0
+
+        cargoLabel : String
+        cargoLabel =
+            Supply.cargoPlural depot.kind
+
+        question : String
+        question =
+            case depot.kind of
+                DepotKind.Supply ->
+                    "how many crates would you like to load?"
+
+                DepotKind.Fuel ->
+                    "how many drum loads should this truck take?"
+
+        stock : Maybe Supply.Stock
+        stock =
+            depot.stock
+
+        resourceLabel : String
+        resourceLabel =
+            Depot.resourceLabel depot
+
+        stockLabel : String
+        stockLabel =
+            case stock of
+                Just known ->
+                    String.fromInt known.current ++ " " ++ resourceLabel
+
+                Nothing ->
+                    "stock outside sight"
+
+        loadAmount : Int -> Maybe Int
+        loadAmount count =
+            stock
+                |> Maybe.map
+                    (\known ->
+                        min known.current (count * model.supplyRules.crateCapacity)
+                    )
+
+        choice : Int -> Html Msg
+        choice count =
+            let
+                buttonLabel : String
+                buttonLabel =
+                    if count == 0 then
+                        "none"
+
+                    else
+                        String.fromInt count
+
+                quantity : String
+                quantity =
+                    if count == 0 then
+                        "—"
+
+                    else
+                        loadAmount count
+                            |> Maybe.map String.fromInt
+                            |> Maybe.withDefault "?"
+
+                cargoName : String
+                cargoName =
+                    case depot.kind of
+                        DepotKind.Supply ->
+                            if count == 1 then
+                                "supply crate"
+
+                            else
+                                "supply crates"
+
+                        DepotKind.Fuel ->
+                            if count == 1 then
+                                "fuel drum"
+
+                            else
+                                "fuel drums"
+
+                quantityLabel : String
+                quantityLabel =
+                    case loadAmount count of
+                        Just amount ->
+                            String.fromInt amount ++ " " ++ resourceLabel
+
+                        Nothing ->
+                            "stock outside sight"
+
+                accessibleLabel : String
+                accessibleLabel =
+                    if count == 0 then
+                        "load none"
+
+                    else
+                        "load "
+                            ++ String.fromInt count
+                            ++ " "
+                            ++ cargoName
+                            ++ ", "
+                            ++ quantityLabel
+
+                berthFill : Int -> Html Msg
+                berthFill index =
+                    let
+                        amount : Int
+                        amount =
+                            loadAmount count
+                                |> Maybe.withDefault 0
+                                |> (\total -> clamp 0 model.supplyRules.crateCapacity (total - index * model.supplyRules.crateCapacity))
+
+                        percentage : Float
+                        percentage =
+                            100 * toFloat amount / toFloat model.supplyRules.crateCapacity
+                    in
+                    H.div
+                        [ A.css
+                            [ S.flex1_1_0pct
+                            , S.bgNightwood3
+                            , S.h2
+                            ]
+                        ]
+                        [ H.div
+                            [ A.css
+                                [ S.bgYellow4
+                                , S.hFull
+                                , S.widthPct percentage
+                                ]
+                            ]
+                            []
+                        ]
+
+                berthFills : List (Html Msg)
+                berthFills =
+                    if (count > 0) && (stock /= Nothing) then
+                        List.map berthFill [ 0, 1 ]
+
+                    else
+                        []
+            in
+            H.div
+                [ A.css
+                    [ S.col
+                    , S.itemsCenter
+                    , S.flex1_1_0pct
+                    , S.minW0
+                    , S.g3
+                    ]
+                ]
+                [ Button.secondary buttonLabel (LoadCratesClicked id count)
+                    |> Button.accessibleLabel accessibleLabel
+                    |> Button.fullWidth
+                    |> Button.toHtml
+                , H.span
+                    [ A.css
+                        [ S.textGray5
+                        , S.tabularNums
+                        ]
+                    ]
+                    [ H.text quantity
+                    ]
+                , H.div
+                    [ Aria.hidden True
+                    , A.css
+                        [ S.row
+                        , S.g1
+                        , S.wFull
+                        , S.h2
+                        ]
+                    ]
+                    berthFills
+                ]
+
+        stockDetails : List (Html Msg)
+        stockDetails =
+            if room == 0 then
+                let
+                    explanation : String
+                    explanation =
+                        case stock of
+                            Just known ->
+                                if known.current == 0 then
+                                    "depot empty"
+
+                                else
+                                    "no cargo room"
+
+                            Nothing ->
+                                "no cargo room"
+                in
+                [ H.p
+                    []
+                    [ H.text explanation
+                    ]
+                ]
+
+            else
+                []
+
+        actions : Html Msg
+        actions =
+            H.form
+                [ A.attribute "method" "dialog"
+                , A.css
+                    [ S.row
+                    , S.g3
+                    ]
+                ]
+                (List.range 0 room
+                    |> List.map choice
+                )
+
+        content : List (Html Msg)
+        content =
+            [ H.div
+                [ A.css
+                    [ S.row
+                    , S.justifySpaceBetween
+                    , S.flexWrap
+                    , S.g2
+                    ]
+                ]
+                [ H.span
+                    []
+                    [ H.text "depot"
+                    ]
+                , H.span
+                    [ A.css
+                        [ S.textGray5
+                        , S.tabularNums
+                        ]
+                    ]
+                    [ H.text stockLabel
+                    ]
+                ]
+            , H.p
+                []
+                [ H.text question
+                ]
+            , actions
+            ]
+                ++ stockDetails
+    in
+    Dialog.make loadCratesDialogHtmlId
+        ("load " ++ cargoLabel)
+        DialogDismissed
+        content
+
+
+{-| Dialogs derive from the command guide, turn introduction, playback loss, or the active planning workflow.
+-}
+dialog : Model -> Maybe (Dialog Msg)
+dialog model =
+    MaybeUtil.lazyFirst
+        [ commandGuideDialog model
+        , introductionDialog model
+        , lossDialog model
+        , planningDialog model
+        ]
+
+
+commandGuideDialog : Model -> () -> Maybe (Dialog Msg)
+commandGuideDialog model _ =
+    if commandGuideOpen model then
+        Just (CommandGuide.dialog DialogDismissed)
+
+    else
+        Nothing
+
+
+introductionDialog : Model -> () -> Maybe (Dialog Msg)
+introductionDialog model _ =
+    if showTurnIntroduction model then
+        turnAnnouncement model
+            |> Dialog.map TurnIntroductionMsg
+            |> Just
+
+    else
+        Nothing
+
+
+turnAnnouncement : Model -> Dialog TurnIntroduction.Msg
+turnAnnouncement model =
+    let
+        victory : PlayerNumber -> Dialog TurnIntroduction.Msg
+        victory winner =
+            let
+                winnerName : String
+                winnerName =
+                    model.players
+                        |> ListUtil.find (\player -> player.playerNumber == winner)
+                        |> Maybe.map .name
+                        |> Maybe.withDefault (PlayerNumber.label winner)
+            in
+            TurnIntroduction.conclusion
+                { headline = winnerName ++ " wins"
+                , caption = "the opposing army has no surviving combat units"
+                , previousTurn = model.currentTurn.resolution
+                }
+    in
+    case model.currentTurn.outcome of
+        Just (GameOutcome.Victory winner) ->
+            victory winner
+
+        Just GameOutcome.Draw ->
+            TurnIntroduction.conclusion
+                { headline = "draw"
+                , caption = "neither army has surviving combat units"
+                , previousTurn = model.currentTurn.resolution
+                }
+
+        Nothing ->
+            TurnIntroduction.dialog
+                { turnNumber = model.currentTurn.number
+                , skipDialogs = model.skipTurnIntroduction
+                , previousTurn = model.currentTurn.resolution
+                , canReplay = CurrentTurn.canReplay model.currentTurn
+                }
+
+
+lossDialog : Model -> () -> Maybe (Dialog Msg)
+lossDialog model _ =
+    PlaybackPresentation.lossDialog
+        { skipDialogs = model.skipUnitLossDialogs
+        , players = model.players
+        , ownPlayers = ownPlayerNumbers model
+        }
+        (playback model)
+        |> Maybe.map (Dialog.map UnitDeathMsg)
+
+
+planningDialog : Model -> () -> Maybe (Dialog Msg)
+planningDialog model _ =
+    case model.currentTurn.phase of
+        TurnLifecycle.Planning (OrderPlanning.ConfirmingSubmission _) ->
+            Just (submissionWarning model)
+
+        TurnLifecycle.Planning (OrderPlanning.ChoosingPassengers choice) ->
+            Just (unloadChecklist model choice)
+
+        TurnLifecycle.Planning (OrderPlanning.ChoosingCrates id depot _) ->
+            Just (depotLoadingDialog model id depot)
+
+        _ ->
+            Nothing
+
+
+submissionWarning : Model -> Dialog Msg
+submissionWarning model =
+    let
+        missingCount : Int
+        missingCount =
+            List.length (unitsWithoutOrders model)
+
+        warning : String
+        warning =
+            if missingCount == 1 then
+                "1 unit has no orders. it will hold position if you submit this turn."
+
+            else
+                String.fromInt missingCount
+                    ++ " units have no orders. they will hold position if you submit this turn."
+    in
+    Dialog.make partialOrdersDialogHtmlId
+        "units without orders"
+        DialogDismissed
+        [ H.p
+            []
+            [ H.text warning
+            ]
+        , H.form
+            [ A.attribute "method" "dialog"
+            , HtmlEvents.custom "keydown"
+                (HtmlEvent.enter
+                    { message = SubmissionEnterPressed
+                    , stopPropagation = True
+                    , preventDefault = True
+                    }
+                )
+            , A.css
+                [ S.row
+                , S.flexWrap
+                , S.g3
+                ]
+            ]
+            [ Button.secondary "keep planning" DialogDismissed
+                |> Button.toHtml
+            , Button.primary "submit anyway" SubmissionConfirmed
+                |> Button.toHtml
+            ]
+        ]
+
+
+turnPanel : Model -> Html Msg
+turnPanel model =
+    let
+        ownStatus : String
+        ownStatus =
+            case model.currentTurn.phase of
+                TurnLifecycle.Playing _ ->
+                    "submitted plan"
+
+                TurnLifecycle.WaitingForOpponent _ ->
+                    "submitted plan"
+
+                _ ->
+                    "planning"
+
+        submitLabel : String
+        submitLabel =
+            if model.currentTurn.outcome /= Nothing then
+                "game over"
+
+            else
+                TurnLifecycle.toLabel model.currentTurn.phase
+
+        opponentStatus : String
+        opponentStatus =
+            case model.currentTurn.phase of
+                TurnLifecycle.Playing _ ->
+                    "submitted plan"
+
+                _ ->
+                    if model.currentTurn.opponentSubmitted then
+                        "submitted plan"
+
+                    else
+                        "planning"
+
+        submitLocked : Bool
+        submitLocked =
+            planningLocked model || isChoosingUnload model || choosingDirection model
+
+        activity : TurnControls.Activity
+        activity =
+            case model.currentTurn.phase of
+                TurnLifecycle.Submitting _ ->
+                    TurnControls.Submitting
+
+                TurnLifecycle.WaitingForOpponent _ ->
+                    TurnControls.Waiting
+
+                TurnLifecycle.Playing _ ->
+                    TurnControls.Playing
+
+                TurnLifecycle.Planning _ ->
+                    if submitLocked then
+                        TurnControls.Locked
+
+                    else if readyToSubmit model then
+                        TurnControls.Ready
+
+                    else
+                        TurnControls.Planning
+
+        displayedTurnNumber : Int
+        displayedTurnNumber =
+            if model.currentTurn.outcome /= Nothing then
+                model.currentTurn.number - 1
+
+            else
+                model.currentTurn.number
+
+        zoomPercent : Int
+        zoomPercent =
+            round ((BattlefieldNavigation.camera model.navigation).zoom * 100)
+    in
+    TurnControls.panel
+        [ Lazy.lazy3 turnSubmit displayedTurnNumber activity submitLabel
+        , Lazy.lazy5 turnFeedback model.players ownStatus opponentStatus model.currentTurn.outcome model.currentTurn.error
+        , TurnControls.navigation (Lazy.lazy viewControls zoomPercent)
+        ]
+
+
+turnSubmit : Int -> TurnControls.Activity -> String -> Html Msg
+turnSubmit number activity submitLabel =
+    H.div
+        [ A.css
+            [ S.col
+            , S.g2
+            , S.shrink0
+            ]
+        ]
+        [ H.p
+            []
+            [ H.text ("turn " ++ String.fromInt number) ]
+        , TurnControls.submit activity submitLabel
+            |> H.map TurnControlsMsg
+        ]
+
+
+turnFeedback :
+    List Player
+    -> String
+    -> String
+    -> Maybe GameOutcome
+    -> Maybe String
+    -> Html Msg
+turnFeedback players ownStatus opponentStatus outcome error =
+    let
+        playerRow : Player -> Html Msg
+        playerRow player =
+            let
+                status : String
+                status =
+                    case outcome of
+                        Just (GameOutcome.Victory winner) ->
+                            if player.playerNumber == winner then
+                                "won"
+
+                            else
+                                "lost"
+
+                        Just GameOutcome.Draw ->
+                            "draw"
+
+                        Nothing ->
+                            if player.isYou then
+                                ownStatus
+
+                            else
+                                opponentStatus
+            in
+            TurnControls.playerRow
+                { name = player.name
+                , playerNumber = player.playerNumber
+                , status = status
+                }
+
+        errorDetails : List (Html Msg)
+        errorDetails =
+            case error of
+                Nothing ->
+                    []
+
+                Just message ->
+                    [ H.p [ Aria.role Aria.Alert ] [ H.text message ] ]
+
+        content : List (Html Msg)
+        content =
+            [ H.div
+                [ Aria.role Aria.Status ]
+                [ H.ul
+                    [ Aria.label "player statuses"
+                    , Aria.role Aria.List
+                    , A.css
+                        [ S.col
+                        , S.listNone
+                        , S.g2
+                        ]
+                    ]
+                    (List.map playerRow players)
+                ]
+            ]
+
+        feedbackContent : List (Html Msg)
+        feedbackContent =
+            content ++ errorDetails
+    in
+    TurnControls.feedback feedbackContent
+
+
+
+----------------------------------------------------------------
+-- SUBSCRIPTIONS --
+----------------------------------------------------------------
+
+
+keyCommands : Model -> KeyCmd Msg
+keyCommands model =
+    let
+        navigation : List (KeyCmd Msg)
+        navigation =
+            if hasDialog model then
+                []
+
+            else
+                case currentSelection model of
+                    Just (UnitSelection { interaction }) ->
+                        case interaction of
+                            ChoosingDirection _ ->
+                                [ leftKeys (DirectionKeyPressed DirectionEnum.West)
+                                , rightKeys (DirectionKeyPressed DirectionEnum.East)
+                                , upKeys (DirectionKeyPressed DirectionEnum.North)
+                                , downKeys (DirectionKeyPressed DirectionEnum.South)
+                                ]
+
+                            ChoosingMove _ ->
+                                [ leftKeys (PathDirectionKeyPressed DirectionEnum.West)
+                                , rightKeys (PathDirectionKeyPressed DirectionEnum.East)
+                                , upKeys (PathDirectionKeyPressed DirectionEnum.North)
+                                , downKeys (PathDirectionKeyPressed DirectionEnum.South)
+                                , KeyCmd.enter PathEnterPressed
+                                ]
+
+                            ChoosingIndirectFire _ ->
+                                []
+
+                            CommandMenu _ ->
+                                [ upKeys PreviousCommandPressed
+                                , downKeys NextCommandPressed
+                                ]
+
+                    Just (Inspecting _) ->
+                        panNavigation ()
+
+                    Nothing ->
+                        panNavigation ()
+
+        camera : KeyCmd Msg
+        camera =
+            [ KeyCmd.plus ZoomInKeyPressed
+            , KeyCmd.minus ZoomOutKeyPressed
+            ]
+                |> KeyCmd.batch
+
+        submission : KeyCmd Msg
+        submission =
+            if canSubmitWithKeyboard model then
+                KeyCmd.enter SubmitKeyPressed |> KeyCmd.cmd
+
+            else
+                KeyCmd.none
+
+        unitSelection : KeyCmd Msg
+        unitSelection =
+            if hasDialog model || planningLocked model then
+                KeyCmd.none
+
+            else
+                KeyCmd.period NextUnorderedUnitKeyPressed
+    in
+    if hasDialog model || combatEncounter model /= Nothing then
+        KeyCmd.none
+
+    else
+        KeyCmd.batch
+            [ KeyCmd.escape EscapePressed
+            , camera
+            , unitSelection
+            , submission
+            , KeyCmd.batch navigation
+            ]
+
+
+leftKeys : msg -> KeyCmd msg
+leftKeys msg =
+    KeyCmd.batch
+        [ KeyCmd.leftArrow msg
+        , KeyCmd.a msg
+        ]
+
+
+rightKeys : msg -> KeyCmd msg
+rightKeys msg =
+    KeyCmd.batch
+        [ KeyCmd.rightArrow msg
+        , KeyCmd.d msg
+        ]
+
+
+upKeys : msg -> KeyCmd msg
+upKeys msg =
+    KeyCmd.batch
+        [ KeyCmd.upArrow msg
+        , KeyCmd.w msg
+        ]
+
+
+downKeys : msg -> KeyCmd msg
+downKeys msg =
+    KeyCmd.batch
+        [ KeyCmd.downArrow msg
+        , KeyCmd.s msg
+        ]
+
+
+panNavigation : () -> List (KeyCmd Msg)
+panNavigation _ =
+    [ leftKeys PanLeftKeyPressed
+    , rightKeys PanRightKeyPressed
+    , upKeys PanUpKeyPressed
+    , downKeys PanDownKeyPressed
+    ]
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.batch
+        [ Browser.Events.onResize (\_ _ -> WindowResized)
+        , Time.every 400 AnimationTimerElapsed
+        , CurrentTurn.subscriptions model.currentTurn
+            |> Sub.map CurrentTurnMsg
+        , BattlefieldNavigation.subscriptions model.navigation
+            |> Sub.map BattlefieldNavigationMsg
+        ]

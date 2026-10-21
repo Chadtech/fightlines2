@@ -118,7 +118,8 @@ compiler success do not establish that these checks pass.
   in the component's `toHtml` or local helpers, rather than a generic style
   named for that control. A shared select control is `View.Select`, not just
   `S.selectControl`.
-- [ ] Repeated controls and visual elements reuse `View.*` components. Check
+- [ ] Repeated controls and visual elements reuse `View.*` or `Game.View.*`
+  components. Check
   existing buttons, selects, dialogs, info markers, and loading bars before
   building another local implementation.
 - [ ] Component APIs express semantic variants and modifiers, such as

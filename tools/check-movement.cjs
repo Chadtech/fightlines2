@@ -5,9 +5,9 @@ const { join } = require('node:path');
 const directory = mkdtempSync(join(tmpdir(), 'fightlines-movement-'));
 try {
   const output = join(directory, 'checks.js');
-  execFileSync('elm', ['make', 'src/MovementChecks.elm', `--output=${output}`], { stdio: 'inherit' });
+  execFileSync('elm', ['make', 'src/Game/Checks/Movement.elm', `--output=${output}`], { stdio: 'inherit' });
   const { Elm } = require(output);
-  const app = Elm.MovementChecks.init({ flags: JSON.parse(readFileSync('tests/movement.json', 'utf8')) });
+  const app = Elm.Game.Checks.Movement.init({ flags: JSON.parse(readFileSync('tests/movement.json', 'utf8')) });
   app.ports.results.subscribe(failures => {
     if (failures.length) {
       console.error(failures.join('\n'));

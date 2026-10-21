@@ -4,6 +4,7 @@
 
 module Api.Query exposing (..)
 
+import Api.Enum.PlayerNumber
 import Api.InputObject
 import Api.Interface
 import Api.Object
@@ -17,6 +18,40 @@ import Graphql.Operation exposing (RootMutation, RootQuery, RootSubscription)
 import Graphql.OptionalArgument exposing (OptionalArgument(..))
 import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode exposing (Decoder)
+
+
+loggedGames :
+    SelectionSet decodesTo Api.Union.LoggedGameEntry
+    -> SelectionSet (List decodesTo) RootQuery
+loggedGames object____ =
+    Object.selectionForCompositeField "loggedGames" [] object____ (Basics.identity >> Decode.list)
+
+
+type alias LoggedGameRequiredArguments =
+    { id : String }
+
+
+loggedGame :
+    LoggedGameRequiredArguments
+    -> SelectionSet decodesTo Api.Object.LoggedGame
+    -> SelectionSet decodesTo RootQuery
+loggedGame requiredArgs____ object____ =
+    Object.selectionForCompositeField "loggedGame" [ Argument.required "id" requiredArgs____.id Encode.string ] object____ Basics.identity
+
+
+type alias LoggedTurnRequiredArguments =
+    { id : String
+    , turnNumber : Int
+    , playerNumber : Api.Enum.PlayerNumber.PlayerNumber
+    }
+
+
+loggedTurn :
+    LoggedTurnRequiredArguments
+    -> SelectionSet decodesTo Api.Object.GameSnapshot
+    -> SelectionSet decodesTo RootQuery
+loggedTurn requiredArgs____ object____ =
+    Object.selectionForCompositeField "loggedTurn" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "turnNumber" requiredArgs____.turnNumber Encode.int, Argument.required "playerNumber" requiredArgs____.playerNumber (Encode.enum Api.Enum.PlayerNumber.toString) ] object____ Basics.identity
 
 
 maps :

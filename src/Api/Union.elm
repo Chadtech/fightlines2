@@ -5,5 +5,9 @@
 module Api.Union exposing (..)
 
 
+type LoggedGameEntry
+    = LoggedGameEntry
+
+
 type UnitLocation
     = UnitLocation

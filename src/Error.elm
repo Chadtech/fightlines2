@@ -2,9 +2,9 @@ module Error exposing (Error(..))
 
 import Api.Enum.PlayerNumber exposing (PlayerNumber)
 import Browser.Dom
-import GamePage.OrderPlanning as OrderPlanning
+import Game.OrderPlanning as OrderPlanning
+import Game.UnitId as UnitId exposing (UnitId)
 import Json.Decode as JD
-import UnitId exposing (UnitId)
 
 
 type Error

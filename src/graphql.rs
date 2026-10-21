@@ -1,4 +1,5 @@
 use crate::{
+    game_archive,
     lobby::{self, GameSnapshot, Snapshot, Store},
     lobby_id::LobbyId,
     map_editor,
@@ -20,6 +21,7 @@ use std::sync::{
 pub struct Context {
     pub store: Arc<Store>,
     pub editor: map_editor::Access,
+    pub archives: game_archive::Access,
     identity: Mutex<Option<SessionToken>>,
     persist_identity: AtomicBool,
 }
@@ -51,6 +53,21 @@ pub struct Query;
 
 #[graphql_object(context = Context)]
 impl Query {
+    fn logged_games(context: &Context) -> FieldResult<Vec<game_archive::LoggedGameEntry>> {
+        game_archive::games(context)
+    }
+    fn logged_game(context: &Context, id: String) -> FieldResult<game_archive::LoggedGame> {
+        game_archive::game(context, id)
+    }
+    fn logged_turn(
+        context: &Context,
+        id: String,
+        turn_number: i32,
+        player_number: PlayerNumber,
+    ) -> FieldResult<GameSnapshot> {
+        game_archive::turn(context, id, turn_number, player_number)
+    }
+
     fn maps(context: &Context) -> FieldResult<map_editor::MapCatalog> {
         map_editor::maps(context)
     }
@@ -96,12 +113,12 @@ impl Mutation {
         lobby::set_map_type(context, LobbyId::from_token(id), map_type)
     }
 
-    fn set_lobby_opponent(
+    fn set_lobby_controller(
         context: &Context,
         id: String,
-        opponent: lobby::Opponent,
+        controller: lobby::Controller,
     ) -> FieldResult<Snapshot> {
-        lobby::set_opponent(context, LobbyId::from_token(id), opponent)
+        lobby::set_controller(context, LobbyId::from_token(id), controller)
     }
 
     fn set_lobby_side(
@@ -146,12 +163,14 @@ pub async fn handle(
     store: web::Data<Store>,
     editor: Option<web::Data<map_editor::Editor>>,
     schema: web::Data<Schema>,
+    archives: Option<web::Data<game_archive::Browser>>,
 ) -> HttpResponse {
     // Mutations in one document share the newly created browser identity.
     let original = SessionToken::from_request(&request);
     let context = Context {
         store: store.into_inner(),
         editor: map_editor::Access::from_request(editor, &request),
+        archives: game_archive::Access::from_browser(archives),
         identity: Mutex::new(original),
         persist_identity: AtomicBool::new(false),
     };
@@ -176,6 +195,7 @@ pub fn export_schema() -> std::io::Result<()> {
     let context = Context {
         store: Arc::new(Store::new(crate::seed::Seed::new([0; 32]))),
         editor: map_editor::Access::Disabled,
+        archives: game_archive::Access::Disabled,
         identity: Mutex::new(None),
         persist_identity: AtomicBool::new(false),
     };
@@ -250,7 +270,9 @@ mod tests {
             let id = created["data"]["createLobby"]["id"].as_str().fixture()?;
             let guest = if ai {
                 let (selected, _) = execute!(
-                    format!("mutation {{ setLobbyOpponent(id: \"{id}\", opponent: AI) {{ id }} }}"),
+                    format!(
+                        "mutation {{ setLobbyController(id: \"{id}\", controller: AI) {{ id }} }}"
+                    ),
                     host.clone()
                 );
                 assert!(selected.get("errors").is_none(), "{selected}");
@@ -401,14 +423,14 @@ mod tests {
         );
         let id = created["data"]["createLobby"]["id"].as_str().fixture()?;
         let ai = format!(
-            "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: AI) {{ players {{ name isAi }} isMember }} }}"
+            "mutation {{ setLobbyController(id: \"{id}\", controller: AI) {{ players {{ name isAi }} isMember }} }}"
         );
         let (denied, _) = execute!(&ai, None);
         assert!(denied["errors"].is_array());
         let (selected, _) = execute!(&ai, host.clone());
         assert!(selected.get("errors").is_none(), "{selected}");
         assert_eq!(
-            selected["data"]["setLobbyOpponent"]["players"][1]["isAi"],
+            selected["data"]["setLobbyController"]["players"][1]["isAi"],
             true
         );
         for (choice, expected) in [
@@ -418,17 +440,17 @@ mod tests {
         ] {
             let (updated, _) = execute!(
                 format!(
-                    "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: {choice}) {{ players {{ opponent isAi }} }} }}"
+                    "mutation {{ setLobbyController(id: \"{id}\", controller: {choice}) {{ players {{ controller isAi }} }} }}"
                 ),
                 host.clone()
             );
             assert!(updated.get("errors").is_none(), "{updated}");
             assert_eq!(
-                updated["data"]["setLobbyOpponent"]["players"][0]["opponent"],
+                updated["data"]["setLobbyController"]["players"][0]["controller"],
                 "HUMAN"
             );
             assert_eq!(
-                updated["data"]["setLobbyOpponent"]["players"][1]["opponent"],
+                updated["data"]["setLobbyController"]["players"][1]["controller"],
                 expected
             );
         }
@@ -441,17 +463,17 @@ mod tests {
         let (full, _) = execute!(&join, None);
         assert!(full["errors"].is_array());
         let human = format!(
-            "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: HUMAN) {{ players {{ isAi }} }} }}"
+            "mutation {{ setLobbyController(id: \"{id}\", controller: HUMAN) {{ players {{ isAi }} }} }}"
         );
         let (cleared, _) = execute!(&human, host.clone());
         assert_eq!(
-            cleared["data"]["setLobbyOpponent"]["players"]
+            cleared["data"]["setLobbyController"]["players"]
                 .as_array()
                 .fixture()?
                 .len(),
             1
         );
-        let medium = ai.replace("opponent: AI", "opponent: AI_MEDIUM");
+        let medium = ai.replace("controller: AI", "controller: AI_MEDIUM");
         let (selected, _) = execute!(&medium, host.clone());
         assert!(selected.get("errors").is_none());
         let (started, _) = execute!(
@@ -462,11 +484,14 @@ mod tests {
         let (late, _) = execute!(&human, host.clone());
         assert!(late["errors"].is_array());
         let game_query = format!(
-            "{{ game(id: \"{id}\") {{ turnNumber submitted players {{ isYou isAi opponent }} scenario {{ units {{ id playerNumber location {{ ... on OnMap {{ position {{ x y }} }} }} }} }} }} }}"
+            "{{ game(id: \"{id}\") {{ turnNumber submitted players {{ isYou isAi controller }} scenario {{ units {{ id playerNumber location {{ ... on OnMap {{ position {{ x y }} }} }} }} }} }} }}"
         );
         let (game, _) = execute!(&game_query, host.clone());
         assert_eq!(game["data"]["game"]["players"][1]["isAi"], true);
-        assert_eq!(game["data"]["game"]["players"][1]["opponent"], "AI_MEDIUM");
+        assert_eq!(
+            game["data"]["game"]["players"][1]["controller"],
+            "AI_MEDIUM"
+        );
         assert_eq!(game["data"]["game"]["players"][1]["isYou"], false);
         for number in 1..=3 {
             let (game, _) = execute!(&game_query, host.clone());
@@ -519,7 +544,7 @@ mod tests {
         );
         assert!(joined.get("errors").is_none());
         let change = format!(
-            "mutation {{ setLobbyOpponent(id: \"{other_id}\", opponent: AI_MEDIUM) {{ id }} }}"
+            "mutation {{ setLobbyController(id: \"{other_id}\", controller: AI_MEDIUM) {{ id }} }}"
         );
         for cookie in [host, guest] {
             let (denied, _) = execute!(&change, cookie);
@@ -548,7 +573,7 @@ mod tests {
                 (body, cookie)
             }};
         }
-        let roster = "players { name isHost isYou isAi playerNumber opponent } isHost isMember";
+        let roster = "players { name isHost isYou isAi playerNumber controller } isHost isMember";
         let (outsider, outsider_cookie) = execute!(
             "mutation { createLobby(name: \"Outsider\", lobbyName: \"Other\") { id } }",
             None
@@ -576,7 +601,7 @@ mod tests {
                     let (denied, _) = execute!(&choose, cookie);
                     assert!(denied["errors"].is_array(), "{denied}");
                 }
-                // Choosing before an opponent arrives leaves the opposite side open.
+                // Choosing before another player arrives leaves the opposite side open.
                 let (chosen, _) = execute!(&choose, host.clone());
                 assert!(chosen.get("errors").is_none(), "{chosen}");
                 assert_eq!(
@@ -588,36 +613,36 @@ mod tests {
                 let guest = if ai {
                     let (selected, _) = execute!(
                         format!(
-                            "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: AI_MEDIUM) {{ {roster} }} }}"
+                            "mutation {{ setLobbyController(id: \"{id}\", controller: AI_MEDIUM) {{ {roster} }} }}"
                         ),
                         host.clone()
                     );
                     assert!(selected.get("errors").is_none(), "{selected}");
                     assert_eq!(
-                        selected["data"]["setLobbyOpponent"]["players"][1]["playerNumber"],
+                        selected["data"]["setLobbyController"]["players"][1]["playerNumber"],
                         other_side
                     );
                     assert_eq!(
-                        selected["data"]["setLobbyOpponent"]["players"][1]["isYou"],
+                        selected["data"]["setLobbyController"]["players"][1]["isYou"],
                         false
                     );
                     assert_eq!(
-                        selected["data"]["setLobbyOpponent"]["players"][1]["opponent"],
+                        selected["data"]["setLobbyController"]["players"][1]["controller"],
                         "AI_MEDIUM"
                     );
                     // AI removal and replacement must retain the host's chosen side.
                     let (removed, _) = execute!(
                         format!(
-                            "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: HUMAN) {{ {roster} }} }}"
+                            "mutation {{ setLobbyController(id: \"{id}\", controller: HUMAN) {{ {roster} }} }}"
                         ),
                         host.clone()
                     );
                     assert_eq!(
-                        removed["data"]["setLobbyOpponent"]["players"][0]["playerNumber"],
+                        removed["data"]["setLobbyController"]["players"][0]["playerNumber"],
                         side
                     );
                     assert_eq!(
-                        removed["data"]["setLobbyOpponent"]["players"]
+                        removed["data"]["setLobbyController"]["players"]
                             .as_array()
                             .fixture()?
                             .len(),
@@ -625,7 +650,7 @@ mod tests {
                     );
                     let (selected, _) = execute!(
                         format!(
-                            "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: AI_MEDIUM) {{ id }} }}"
+                            "mutation {{ setLobbyController(id: \"{id}\", controller: AI_MEDIUM) {{ id }} }}"
                         ),
                         host.clone()
                     );
@@ -672,7 +697,7 @@ mod tests {
                             "mutation {{ setLobbyMap(id: \"{id}\", mapType: SUPPLY_POINT) {{ id }} }}"
                         ),
                         format!(
-                            "mutation {{ setLobbyOpponent(id: \"{id}\", opponent: AI_MEDIUM) {{ id }} }}"
+                            "mutation {{ setLobbyController(id: \"{id}\", controller: AI_MEDIUM) {{ id }} }}"
                         ),
                     ] {
                         let (denied, _) = execute!(&query, guest.clone());
@@ -693,7 +718,7 @@ mod tests {
                     );
                     if ai {
                         assert_eq!(
-                            chosen["data"]["setLobbySide"]["players"][1]["opponent"],
+                            chosen["data"]["setLobbySide"]["players"][1]["controller"],
                             "AI_MEDIUM"
                         );
                     }

@@ -24,12 +24,12 @@ import Api.Object.MapDefinition as DefinitionApi
 import Api.Object.NamedMap as NamedApi
 import Api.Object.TerrainPlacement as TerrainApi
 import Api.Object.UnitPlacement as UnitApi
-import Coordinate exposing (Coordinate)
+import Game.Coordinate as Coordinate exposing (Coordinate)
+import Game.Map as Map exposing (Map)
+import Game.TerrainFeature as TerrainFeature exposing (TerrainFeature)
 import Graphql.Operation exposing (RootMutation)
 import Graphql.OptionalArgument as Optional
 import Graphql.SelectionSet as SS exposing (SelectionSet)
-import Map exposing (Map)
-import TerrainFeature exposing (TerrainFeature)
 
 
 type alias Definition =

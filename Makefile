@@ -1,4 +1,4 @@
-.PHONY: build frontend generate-api sprites check run dev editor
+.PHONY: build frontend generate-api sprites check run dev editor logs
 
 build: frontend
 	cargo build --locked
@@ -23,17 +23,21 @@ check:
 	node tools/check-turns.cjs
 	node tools/check-orders.cjs
 	node tools/check-lifecycle.cjs
+	node tools/check-replay.cjs
 	node tools/check-planning.cjs
 	node tools/check-pointer.cjs
 	node tools/check-local-storage.cjs
 	$(MAKE) frontend
-	elm make src/Style.elm src/View/*.elm --output=/dev/null
+	elm make src/Style.elm src/View/*.elm src/Game/View/*.elm --output=/dev/null
 
 run: frontend
 	cargo run --locked -p fightlines-server
 
 dev: frontend
-	cargo run --locked -p fightlines-server -- --dev-game --map-editor
+	cargo run --locked -p fightlines-server -- --dev-game --map-editor --game-logs
 
 editor: frontend
 	cargo run --locked -p fightlines-server -- --map-editor
+
+logs: frontend
+	cargo run --locked -p fightlines-server -- --game-logs

@@ -5,9 +5,9 @@ const { join } = require('node:path');
 const directory = mkdtempSync(join(tmpdir(), 'fightlines-planning-'));
 try {
   const output = join(directory, 'checks.js');
-  execFileSync('elm', ['make', 'src/OrderPlanningChecks.elm', `--output=${output}`], { stdio: 'inherit' });
+  execFileSync('elm', ['make', 'src/Game/Checks/OrderPlanning.elm', `--output=${output}`], { stdio: 'inherit' });
   const { Elm } = require(output);
-  const app = Elm.OrderPlanningChecks.init({ flags: null });
+  const app = Elm.Game.Checks.OrderPlanning.init({ flags: null });
   app.ports.results.subscribe(failures => {
     if (failures.length) {
       console.error(failures.join('\n'));

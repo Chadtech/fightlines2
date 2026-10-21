@@ -1,4 +1,8 @@
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{
+    Rng, SeedableRng, TryRng,
+    rngs::{StdRng, SysRng},
+};
+use std::io;
 
 /// Explicit state for deterministic token generation. Never sent to clients.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -7,6 +11,30 @@ pub struct Seed([u8; 32]);
 impl Seed {
     pub const fn new(bytes: [u8; 32]) -> Self {
         Self(bytes)
+    }
+
+    /// Resolve the optional debugging override without changing process environment.
+    pub fn startup(override_hex: Option<&str>) -> io::Result<Self> {
+        match override_hex {
+            Some(value) => Self::from_hex(value).ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "FIGHTLINES_SEED must contain 64 hexadecimal characters",
+                )
+            }),
+            None => {
+                let mut bytes = [0; 32];
+                SysRng
+                    .try_fill_bytes(&mut bytes)
+                    .map_err(io::Error::other)?;
+                Ok(Self(bytes))
+            }
+        }
+    }
+
+    /// Secret material: only write this to the private server-start record.
+    pub fn to_hex(self) -> String {
+        self.0.iter().map(|byte| format!("{byte:02x}")).collect()
     }
 
     pub fn from_hex(value: &str) -> Option<Self> {
@@ -36,6 +64,28 @@ pub fn token(seed: Seed) -> (String, Seed) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::{FixtureValue, TestResult};
+
+    #[test]
+    fn startup_generates_fresh_seeds_or_uses_the_exact_debug_override() -> TestResult<()> {
+        let first = Seed::startup(None)?;
+        let second = Seed::startup(None)?;
+        assert!(first != second);
+        assert!(Seed::from_hex(&first.to_hex()) == Some(first));
+        let override_hex = "aB".repeat(32);
+        let overridden = Seed::startup(Some(&override_hex))?;
+        assert!(overridden == Seed::new([0xab; 32]));
+        assert!(Seed::startup(Some(&overridden.to_hex()))? == overridden);
+        for invalid in ["", "invalid", &"a".repeat(63), &"g".repeat(64)] {
+            let error = Seed::startup(Some(invalid)).err().fixture()?;
+            assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+            assert_eq!(
+                error.to_string(),
+                "FIGHTLINES_SEED must contain 64 hexadecimal characters"
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn generation_is_replayable_and_advances() {

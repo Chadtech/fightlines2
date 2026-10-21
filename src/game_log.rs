@@ -1,9 +1,10 @@
 //! Private authoritative archives, independent of HTTP and viewer projections.
 use crate::{
-    lobby::Opponent,
+    lobby::Controller,
     lobby_id::LobbyId,
     map_type::MapType,
     scenario::{PlayerNumber, Scenario},
+    seed::Seed,
     turns::{self, GameOutcome, MoveOrderInput, TurnResolution, Turns},
 };
 use serde::{Deserialize, Serialize};
@@ -27,8 +28,9 @@ pub struct GameLog {
 pub struct RecordedPlayer {
     pub player_number: PlayerNumber,
     pub name: String,
-    /// Human, Ai (Easy), or AiMedium; never a browser credential.
-    pub opponent: Opponent,
+    /// This player's control kind, never another player or a browser credential.
+    #[serde(alias = "opponent")]
+    pub controller: Controller,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -73,6 +75,16 @@ struct Record {
     event: Event,
 }
 
+/// Kept separate from game records so archive queries cannot expose the seed.
+#[derive(Serialize)]
+struct ServerStarted {
+    format_version: u32,
+    started_at_unix_ms: u128,
+    initial_seed: String,
+    server_version: &'static str,
+    build_revision: Option<&'static str>,
+}
+
 fn now() -> io::Result<std::time::Duration> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -91,6 +103,40 @@ impl Directory {
         private_file(&probe)?.sync_all()?;
         fs::remove_file(probe)?;
         Ok(Self(path))
+    }
+
+    pub fn record_server_start(&self, seed: Seed) -> io::Result<PathBuf> {
+        let started_at = now()?;
+        // Root-level files are not game directories and are never browsed.
+        let path = self.0.join(format!(
+            "server-start-{}-{}.json",
+            started_at.as_nanos(),
+            std::process::id()
+        ));
+        let record = ServerStarted {
+            format_version: FORMAT_VERSION,
+            started_at_unix_ms: started_at.as_millis(),
+            initial_seed: seed.to_hex(),
+            server_version: env!("CARGO_PKG_VERSION"),
+            build_revision: option_env!("FIGHTLINES_BUILD_REVISION"),
+        };
+        let mut bytes = serde_json::to_vec_pretty(&record)?;
+        bytes.push(b'\n');
+        let mut file = private_file(&path)?;
+        let mut write = || -> io::Result<()> {
+            file.write_all(&bytes)?;
+            file.sync_all()?;
+            sync_directory(&self.0)
+        };
+        let result = write();
+        drop(file);
+        if let Err(error) = result {
+            if let Err(cleanup) = fs::remove_file(&path) {
+                eprintln!("Server-start record cleanup failed: {cleanup}");
+            }
+            return Err(error);
+        }
+        Ok(path)
     }
 
     pub fn start(&self, started: GameStarted) -> io::Result<GameLog> {
@@ -217,10 +263,8 @@ fn submitted_players(turns: &Turns) -> Vec<PlayerNumber> {
         .collect()
 }
 
-/// Re-run captured orders using the current engine. Compare every authoritative
-/// board, pending status, outcome and playback frame, without re-running the AI.
-/// Source records remain readable even when a future engine produces differences.
-pub fn replay(directory: &Path) -> io::Result<String> {
+/// A published archive is a contiguous prefix; pending files are never read.
+fn records(directory: &Path) -> io::Result<Vec<Record>> {
     let mut paths = fs::read_dir(directory)?
         .map(|entry| entry.map(|entry| entry.path()))
         .collect::<io::Result<Vec<_>>>()?;
@@ -229,24 +273,87 @@ pub fn replay(directory: &Path) -> io::Result<String> {
             .is_some_and(|extension| extension == "json")
     });
     paths.sort();
-    let mut scenario = None;
-    let mut turns = Turns::default();
-    let mut count = 0;
+    let mut records = Vec::new();
     for (index, path) in paths.iter().enumerate() {
-        let expected_name = format!("{index:08}.json");
-        if path.file_name().and_then(|name| name.to_str()) != Some(&expected_name) {
+        let expected = format!("{index:08}.json");
+        if path.file_name().and_then(|name| name.to_str()) != Some(&expected) {
             return Err(io::Error::other(format!(
-                "missing or unexpected record at {expected_name}"
+                "missing or unexpected record at {expected}"
             )));
         }
         let record: Record = serde_json::from_reader(File::open(path)?)
-            .map_err(|error| io::Error::other(format!("{}: {error}", path.display())))?;
+            .map_err(|error| io::Error::other(format!("{expected}: {error}")))?;
         if record.format_version != FORMAT_VERSION {
             return Err(io::Error::other(format!(
                 "unsupported game log version {}",
                 record.format_version
             )));
         }
+        records.push(record);
+    }
+    Ok(records)
+}
+
+pub struct Archive {
+    pub started: GameStarted,
+    pub recorded_at_unix_ms: u128,
+    pub submissions: Vec<SubmissionResult>,
+}
+
+impl Archive {
+    pub fn read(directory: &Path) -> io::Result<Self> {
+        let mut records = records(directory)?.into_iter();
+        let first = records
+            .next()
+            .ok_or_else(|| io::Error::other("game log has no Started record"))?;
+        let Event::Started(started) = first.event else {
+            return Err(io::Error::other("game log must begin with Started"));
+        };
+        let mut submissions = Vec::new();
+        let mut next_turn = 1;
+        for record in records {
+            let Event::Submitted(submitted) = record.event else {
+                return Err(io::Error::other("unexpected Started record"));
+            };
+            if submitted.submissions.is_empty() || submitted.turn_number != next_turn {
+                return Err(io::Error::other("invalid submission sequence"));
+            }
+            match &submitted.resolution {
+                Some(resolution)
+                    if resolution.turn_number == next_turn
+                        && submitted.next_turn_number == next_turn + 1 =>
+                {
+                    next_turn += 1
+                }
+                None if submitted.next_turn_number == next_turn => {}
+                _ => return Err(io::Error::other("invalid recorded turn resolution")),
+            }
+            submissions.push(submitted);
+        }
+        Ok(Self {
+            started,
+            recorded_at_unix_ms: first.recorded_at_unix_ms,
+            submissions,
+        })
+    }
+
+    pub fn turn_count(&self) -> i32 {
+        self.submissions
+            .iter()
+            .filter(|submission| submission.resolution.is_some())
+            .count() as i32
+    }
+}
+
+/// Re-run captured orders using the current engine. Compare every authoritative
+/// board, pending status, outcome and playback frame, without re-running the AI.
+/// Source records remain readable even when a future engine produces differences.
+pub fn replay(directory: &Path) -> io::Result<String> {
+    let mut scenario = None;
+    let mut turns = Turns::default();
+    let mut count = 0;
+    for (index, record) in records(directory)?.into_iter().enumerate() {
+        let path = directory.join(format!("{index:08}.json"));
         match record.event {
             Event::Started(started) if index == 0 => scenario = Some(started.scenario),
             Event::Submitted(submitted) => {
@@ -303,6 +410,61 @@ mod tests {
         test_support::{FixtureValue, TestResult},
     };
     use serde_json::json;
+
+    #[test]
+    fn recorded_players_accept_legacy_opponent_fields_and_write_controller() -> TestResult<()> {
+        for controller in [Controller::Human, Controller::Ai, Controller::AiMedium] {
+            let current = json!({
+                "player_number": "Player1",
+                "name": "Recorded player",
+                "controller": controller,
+            });
+            let legacy = json!({
+                "player_number": "Player1",
+                "name": "Recorded player",
+                "opponent": controller,
+            });
+            for value in [current.clone(), legacy] {
+                let player: RecordedPlayer = serde_json::from_value(value)?;
+                assert_eq!(player.controller, controller);
+                assert_eq!(serde_json::to_value(player)?, current);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn server_start_records_keep_the_seed_private_and_preserve_previous_runs() -> TestResult<()> {
+        let root = std::env::temp_dir().join(format!(
+            "fightlines-server-start-{}-{}",
+            std::process::id(),
+            now()?.as_nanos()
+        ));
+        let directory = Directory::open(root.clone())?;
+        let seed = Seed::new([19; 32]);
+        let first = directory.record_server_start(seed)?;
+        let original = fs::read(&first)?;
+        let record: serde_json::Value = serde_json::from_slice(&original)?;
+        assert_eq!(record["format_version"], FORMAT_VERSION);
+        assert_eq!(record["initial_seed"], "13".repeat(32));
+        assert!(record["started_at_unix_ms"].as_u64().fixture()? > 0);
+        assert_eq!(record["server_version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(
+            record["build_revision"],
+            serde_json::to_value(option_env!("FIGHTLINES_BUILD_REVISION"))?
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(fs::metadata(&first)?.permissions().mode() & 0o777, 0o600);
+        }
+        let second = directory.record_server_start(Seed::new([20; 32]))?;
+        assert_ne!(first, second);
+        assert_eq!(fs::read(first)?, original);
+        assert!(second.is_file());
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
 
     #[test]
     fn archives_hidden_combat_terminal_outcomes_and_detects_missing_or_malformed_records()

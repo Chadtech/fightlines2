@@ -1,4 +1,9 @@
-module View.Checkbox exposing (toHtml, toHtmlDisabled)
+module View.Checkbox exposing
+    ( Checkbox
+    , disabled
+    , new
+    , toHtml
+    )
 
 import Css
 import Html.Styled as H exposing (Html)
@@ -8,19 +13,55 @@ import Style as S
 import View.Aria as Aria
 
 
-toHtml :
+
+----------------------------------------------------------------
+-- TYPES --
+----------------------------------------------------------------
+
+
+type Checkbox msg
+    = Checkbox
+        { label : String
+        , checked : Bool
+        , onCheck : Bool -> msg
+        , disabled : Bool
+        }
+
+
+
+----------------------------------------------------------------
+-- API --
+----------------------------------------------------------------
+
+
+new :
     { label : String
     , checked : Bool
     , onCheck : Bool -> msg
     }
-    -> List (Html msg)
-    -> Html msg
-toHtml config =
-    toHtmlDisabled False config
+    -> Checkbox msg
+new config =
+    Checkbox
+        { label = config.label
+        , checked = config.checked
+        , onCheck = config.onCheck
+        , disabled = False
+        }
 
 
-toHtmlDisabled : Bool -> { label : String, checked : Bool, onCheck : Bool -> msg } -> List (Html msg) -> Html msg
-toHtmlDisabled disabled config content =
+disabled : Bool -> Checkbox msg -> Checkbox msg
+disabled value (Checkbox config) =
+    Checkbox { config | disabled = value }
+
+
+
+----------------------------------------------------------------
+-- VIEW --
+----------------------------------------------------------------
+
+
+toHtml : List (Html msg) -> Checkbox msg -> Html msg
+toHtml content (Checkbox config) =
     let
         checkbox : Html msg
         checkbox =
@@ -28,7 +69,7 @@ toHtmlDisabled disabled config content =
                 [ A.type_ "checkbox"
                 , Aria.label config.label
                 , A.checked config.checked
-                , A.disabled disabled
+                , A.disabled config.disabled
                 , Ev.onCheck config.onCheck
                 , A.css
                     [ S.appearanceNone

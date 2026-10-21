@@ -45,6 +45,9 @@ prototype; do not update it unless the task explicitly requires that.
 
 ### Formatting and imports
 
+- Keep page modules in `src/Page/`, game domain/runtime modules in `src/Game/`,
+  game-specific views in `src/Game/View/`, and generic controls in `src/View/`.
+  Use the corresponding module namespace; concise import aliases are welcome.
 - Use `elm-format`. Write multiline exposing lists, imports with exposing lists,
   record definitions, and record updates with one entry per line, following the
   existing layout. A single exported entry may remain inline.
@@ -144,7 +147,8 @@ prototype; do not update it unless the task explicitly requires that.
       |> Button.toHtml
   ```
 
-- Use `Html.Styled`, `Style` helpers, and the reusable `View.*` components.
+- Use `Html.Styled`, `Style` helpers, and reusable `View.*` or `Game.View.*`
+  components.
   Page modules must use `Style` helpers rather than importing or calling `Css`
   directly. Reuse existing generic helpers and add missing ones to `Style`
   rather than scattering `Css.property` calls through views. Centralize palette

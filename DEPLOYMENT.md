@@ -7,11 +7,10 @@ precedence over `.env`, so shell exports and hosting configuration still work.
 A missing `.env` is allowed; malformed or unreadable files stop startup with an
 error. Schema export does not load `.env`.
 
-`make dev` passes `--dev-game --map-editor` to the server to seed a public development preview
+`make dev` passes `--dev-game --map-editor --game-logs` to the server to seed a public development preview
 at `/game/00000000000000000000000000000000`. Use `make run` for ordinary play
-and omit both development flags on hosted servers. The fixture is absent by default;
-the flag does not alter authorization
-for normal games.
+and omit `--dev-game` and `--map-editor` on hosted servers. The fixture is absent
+by default; the flag does not alter authorization for normal games.
 
 Build the Elm frontend before starting the Rust server. Serve it behind an
 HTTPS reverse proxy for internet hosting.
@@ -26,11 +25,12 @@ responses use `no-store`.
   to another machine, and include `index.html`, `main.js`,
   the generated `elm.js`, and the `assets/` directory containing the sprite
   sheets.
-- `FIGHTLINES_SEED`: initial token-generation seed, exactly 64 hexadecimal
-  characters (32 bytes). Defaults to all zeroes for reproducible local testing.
-  Use a private seed for a hosted server: anyone who knows the seed can reproduce
-  session credentials. Reusing a seed after restart can recreate IDs and tokens,
-  so use a distinct seed for each hosted run.
+- `FIGHTLINES_SEED`: optional debugging override for the initial token-generation
+  seed, exactly 64 hexadecimal characters (32 bytes). When unset, each startup
+  obtains a fresh 256-bit seed from the operating system. Empty or malformed
+  overrides stop startup. Leave it unset for production; deliberately reusing a
+  seed can reproduce IDs and browser credentials. If an existing `.env` sets a
+  fixed seed, remove or comment out that line to use the random default.
 
 For other devices on your network, bind `FIGHTLINES_ADDR=0.0.0.0:8080` and share
 your machine's reachable address rather than `127.0.0.1`. Internet play requires
@@ -48,6 +48,19 @@ both sides' orders; only the server operator should have access. Session cookies
 credentials, and token-generation seeds are excluded. On Unix, per-game directories
 use mode `0700` and files `0600`.
 
+Every server startup separately saves
+`server-start-<unix-nanoseconds>-<process-id>.json` in this same directory. It
+contains the exact initial seed, UTC start timestamp in Unix milliseconds,
+package version, and optional build revision. These private files use mode
+`0600` on Unix and are excluded from archive queries and replay pages. Console
+output prints only the record path, never the seed. Failure to obtain randomness
+or persist the seed stops startup before serving requests.
+
+To reproduce token generation for debugging, read `initial_seed` from the private
+record and supply it as `FIGHTLINES_SEED` on a debugging server. The same seed and
+ordered inputs reproduce the same IDs and tokens with the same build. Full
+server-session input recording and replay are not implemented yet.
+
 Each game has a directory named `<game-id>-<start-time-in-unix-nanoseconds>`:
 
 - `00000000.json` contains the exact starting scenario, roster and AI difficulty,
@@ -64,6 +77,25 @@ On Unix the containing directories are synced too. If storage fails, the request
 returns an error and leaves game state unchanged; the server prints the storage
 error. Restore storage and retry. Recording is synchronous, so use reliable local
 storage. A filesystem supporting hard links is required.
+
+To browse saved games, run `make logs`, or add `--game-logs` to the
+server command, then open `/logged-games` at the server's deployment address
+(`http://127.0.0.1:8080/logged-games` locally). `make dev` also
+enables these pages. The list includes unfinished recordings and isolates errors
+for malformed archives. Replay reads saved boards and frames rather than rerunning
+orders, so it can display archives after rule changes. Pending submissions do not
+appear as completed turns. Turn zero is the starting board; turns one onward
+play their recorded resolution. The player selector applies normal fog and
+remembered freight, with the final reveal after terminal playback.
+
+Both HTML routes and the `loggedGames`, `loggedGame`, and `loggedTurn` GraphQL
+queries require this opt-in flag. They accept remote connections and deployment
+hostnames, including behind HTTPS reverse proxies. Operator password protection
+is not implemented yet; when enabled, anyone who can reach the server can browse
+recordings. Leave the flag off on public deployments until operator access is
+protected. Protect the archive GraphQL queries as well as the HTML routes when
+adding authentication. The replay API exposes no credentials and does not restore
+sessions, submit orders, or mutate logs.
 
 To check a saved game with the current engine, run:
 

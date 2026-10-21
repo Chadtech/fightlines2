@@ -169,11 +169,11 @@ enum PlayerController {
 }
 
 impl PlayerController {
-    fn opponent(&self) -> Opponent {
+    fn kind(&self) -> Controller {
         match self {
-            Self::Human(_) => Opponent::Human,
-            Self::Ai(Difficulty::Easy) => Opponent::Ai,
-            Self::Ai(Difficulty::Medium) => Opponent::AiMedium,
+            Self::Human(_) => Controller::Human,
+            Self::Ai(Difficulty::Easy) => Controller::Ai,
+            Self::Ai(Difficulty::Medium) => Controller::AiMedium,
         }
     }
 
@@ -185,10 +185,11 @@ impl PlayerController {
     }
 }
 
+/// A player's public control kind, without human session credentials.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
-pub enum Opponent {
+pub enum Controller {
     Human,
-    /// The original Easy opponent; retains the existing AI wire value.
+    /// The original Easy AI; retains the existing AI wire value.
     Ai,
     AiMedium,
 }
@@ -218,7 +219,7 @@ struct PlayerView {
     is_you: bool,
     is_host: bool,
     is_ai: bool,
-    opponent: Opponent,
+    controller: Controller,
 }
 
 /// Public game response built for an authorized member's session.
@@ -251,7 +252,7 @@ struct GamePlayerView {
     is_you: bool,
     player_number: PlayerNumber,
     is_ai: bool,
-    opponent: Opponent,
+    controller: Controller,
 }
 
 //----------------------------------------------------------------
@@ -285,7 +286,7 @@ fn snapshot(
                     && player.controller.session() == session,
                 is_host: player.controller.session() == Some(source.host),
                 is_ai: player.controller.session().is_none(),
-                opponent: player.controller.opponent(),
+                controller: player.controller.kind(),
             })
             .collect(),
         is_host: session == Some(source.host),
@@ -336,35 +337,16 @@ fn game_view(game: &Game, session: &SessionToken) -> FieldResult<GameSnapshot> {
         PlayerNumber::Player1 => 0,
         PlayerNumber::Player2 => 1,
     };
-    let (scenario, visible) = if game.turns.outcome.is_some() {
-        let visible: Vec<Coordinate> = (0..game.scenario.map.height())
-            .flat_map(|y| {
-                (0..game.scenario.map.width()).map(move |x| Coordinate::new(x as u16, y as u16))
-            })
-            .collect();
-        (game.scenario.clone(), visible)
-    } else {
-        let visible = visibility::visible_tiles(&game.scenario, player_number);
-        let mut scenario = visibility::observed_scenario(&game.scenario, player_number, &visible);
-        scenario.supply_crates = game.observations[index].supply_crates.clone();
-        (scenario, visible.into_iter().collect())
-    };
-    let mut last_resolution = game.observations[index].last_resolution.clone();
-    if game.turns.outcome.is_some()
-        && let Some(resolution) = &mut last_resolution
-    {
-        // Lift fog only after the original, viewer-specific final turn has played.
-        resolution.frames.push(TurnFrame {
-            departures: Vec::new(),
-            indirect_impacts: Vec::new(),
-            depots: scenario.depots.clone(),
-            supply_crates: scenario.supply_crates.clone(),
-            shots: Vec::new(),
-            units: scenario.units.clone(),
-            visible_tiles: visible.clone(),
-            duration_ms: 180,
-        });
-    }
+    let ObservedBoard {
+        scenario,
+        visible,
+        last_resolution,
+    } = observed_board(
+        &game.scenario,
+        &game.observations[index],
+        game.turns.outcome,
+        player_number,
+    );
     Ok(GameSnapshot {
         turn_number: game.turns.number,
         outcome: game.turns.outcome,
@@ -382,7 +364,7 @@ fn game_view(game: &Game, session: &SessionToken) -> FieldResult<GameSnapshot> {
                 is_host: player.controller.session() == Some(&game.host),
                 is_you: player.controller.session() == Some(session),
                 is_ai: player.controller.session().is_none(),
-                opponent: player.controller.opponent(),
+                controller: player.controller.kind(),
                 player_number: player.player_number,
             })
             .collect(),
@@ -393,6 +375,98 @@ fn game_view(game: &Game, session: &SessionToken) -> FieldResult<GameSnapshot> {
         visible_tiles: visible,
         movement_rules: crate::movement::rules(),
     })
+}
+
+struct ObservedBoard {
+    scenario: Scenario,
+    visible: Vec<Coordinate>,
+    last_resolution: Option<TurnResolution>,
+}
+
+/// Shared terminal reveal and fog projection for live and recorded boards.
+fn observed_board(
+    source: &Scenario,
+    observation: &visibility::PlayerObservation,
+    outcome: Option<GameOutcome>,
+    player_number: PlayerNumber,
+) -> ObservedBoard {
+    let (scenario, visible) = if outcome.is_some() {
+        let visible: Vec<Coordinate> = (0..source.map.height())
+            .flat_map(|y| (0..source.map.width()).map(move |x| Coordinate::new(x as u16, y as u16)))
+            .collect();
+        (source.clone(), visible)
+    } else {
+        let visible = visibility::visible_tiles(source, player_number);
+        let mut scenario = visibility::observed_scenario(source, player_number, &visible);
+        scenario.supply_crates = observation.supply_crates.clone();
+        (scenario, visible.into_iter().collect())
+    };
+    let mut last_resolution = observation.last_resolution.clone();
+    if outcome.is_some()
+        && let Some(resolution) = &mut last_resolution
+    {
+        // Lift fog only after the original, viewer-specific final turn has played.
+        resolution.frames.push(TurnFrame {
+            departures: Vec::new(),
+            indirect_impacts: Vec::new(),
+            depots: scenario.depots.clone(),
+            supply_crates: scenario.supply_crates.clone(),
+            shots: Vec::new(),
+            units: scenario.units.clone(),
+            visible_tiles: visible.clone(),
+            duration_ms: 180,
+        });
+    }
+    ObservedBoard {
+        scenario,
+        visible,
+        last_resolution,
+    }
+}
+
+impl GameSnapshot {
+    pub fn archived(
+        started: &GameStarted,
+        source: &Scenario,
+        observation: visibility::PlayerObservation,
+        outcome: Option<GameOutcome>,
+        player: PlayerNumber,
+        turn_number: i32,
+    ) -> Self {
+        let ObservedBoard {
+            scenario,
+            visible: visible_tiles,
+            last_resolution,
+        } = observed_board(source, &observation, outcome, player);
+        Self {
+            turn_number,
+            outcome,
+            submitted: true,
+            opponent_submitted: true,
+            last_resolution,
+            id: started.game_id.to_string(),
+            name: started.name.clone(),
+            map_type: started.map_type,
+            players: started
+                .players
+                .iter()
+                .map(|entry| GamePlayerView {
+                    name: entry.name.clone(),
+                    is_host: false,
+                    is_you: entry.player_number == player,
+                    player_number: entry.player_number,
+                    is_ai: entry.controller != Controller::Human,
+                    controller: entry.controller,
+                })
+                .collect(),
+            is_host: false,
+            is_member: false,
+            game_url: None,
+            scenario,
+            movement_rules: crate::movement::rules(),
+            visible_tiles,
+        }
+    }
 }
 
 //----------------------------------------------------------------
@@ -522,14 +596,18 @@ pub fn set_map_type(context: &Context, id: LobbyId, map_type: MapType) -> FieldR
 }
 
 /// An occupied human slot cannot be replaced. Switching back opens the invite slot.
-pub fn set_opponent(context: &Context, id: LobbyId, opponent: Opponent) -> FieldResult<Snapshot> {
+pub fn set_controller(
+    context: &Context,
+    id: LobbyId,
+    controller: Controller,
+) -> FieldResult<Snapshot> {
     let mut state = context
         .store
         .state
         .lock()
         .or_else(|_| error("the server state is unavailable."))?;
     if state.games.contains_key(&id) {
-        return error("the game has already started. its opponent cannot be changed.");
+        return error("player controllers cannot be changed after the game has started.");
     }
     let lobby = state
         .lobbies
@@ -537,22 +615,22 @@ pub fn set_opponent(context: &Context, id: LobbyId, opponent: Opponent) -> Field
         .ok_or_else(|| FieldError::from("this lobby no longer exists."))?;
     let identity = context.identity();
     if identity.as_ref() != Some(&lobby.host) {
-        return error("only the host can change the opponent.");
+        return error("only the host can change the controller.");
     }
     if lobby.players.iter().any(|player| {
         player.controller.session().is_some() && player.controller.session() != Some(&lobby.host)
     }) {
-        return error("another player has joined. the opponent cannot be changed.");
+        return error("another player has joined. the controller cannot be changed.");
     }
-    let ai_name = PlayerName::parse("AI opponent")
+    let ai_name = PlayerName::parse("AI player")
         .ok_or_else(|| FieldError::from("the AI name is invalid."))?;
     lobby
         .players
         .retain(|player| player.controller.session().is_some());
-    let difficulty = match opponent {
-        Opponent::Human => None,
-        Opponent::Ai => Some(Difficulty::Easy),
-        Opponent::AiMedium => Some(Difficulty::Medium),
+    let difficulty = match controller {
+        Controller::Human => None,
+        Controller::Ai => Some(Difficulty::Easy),
+        Controller::AiMedium => Some(Difficulty::Medium),
     };
     if let Some(difficulty) = difficulty {
         let player_number = vacant_side(&lobby.players)?;
@@ -652,7 +730,7 @@ pub fn start(context: &Context, id: LobbyId) -> FieldResult<Snapshot> {
                         .map(|player| RecordedPlayer {
                             player_number: player.player_number,
                             name: player.name.to_string(),
-                            opponent: player.controller.opponent(),
+                            controller: player.controller.kind(),
                         })
                         .collect(),
                     scenario: game.scenario.clone(),

@@ -10,7 +10,8 @@ the design direction changes. User feedback takes precedence.
   explain later actions on the screen where they become available.
 - Let appearance explain behavior: inset fields invite input, outset buttons
   perform actions, and links navigate.
-- Reuse `src/Style.elm` tokens and `src/View/` components. Keep page composition
+- Reuse `src/Style.elm` tokens, generic `src/View/` controls, and game-specific
+  `src/Game/View/` components. Keep page composition
   in the page module. Keep generic utilities and palette tokens in `Style`;
   component-specific styling belongs in the component module.
 - Verify real content, focus, loading, errors, and narrow layouts in the browser.
@@ -226,7 +227,7 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   pointed tree crowns and trunks exaggerated enough to read at 30px display size.
   Terrain features stay inside their own cells. Keep tile hit targets separate
   from the artwork and use subtle square grid strokes to clarify cell boundaries.
-- Maps have a visual theme independent of terrain rules. `View.TerrainTile`
+- Maps have a visual theme independent of terrain rules. `Game.View.TerrainTile`
   renders each grass, hill, or forest cell with its map's theme. GreenForest uses
   the green artwork; Desert uses a sandy SVG floor and dedicated sandy hills,
   with warm-tinted forests; Snow uses a pale ground, dedicated snow-covered hills,
@@ -681,9 +682,9 @@ is concealed, omit its portrait and origin. Show any observed target with its
 authoritative health transition and the `indirect fire` heading; preserve trench
 and taking-cover artwork. Use empty terrain only when no target is confirmed.
 Above the scene, explain that an enemy
-field gun fired from the fog of war at this space; for an observable gun, explain
+field gun fired from an unknown location at this space; for an observable gun, explain
 that a field gun fired indirectly at this space. For an observed target, state
-whether it was hit, destroyed, or took no damage. Otherwise state that no target
+whether it was hit or destroyed. Otherwise state that no target
 or damage could be confirmed and show no hit/miss claim. Loss dialogs retain
 indirect fire as their cause without an attacker portrait or location.
 
@@ -705,3 +706,21 @@ An infantry attack on a field gun that does not return fire keeps the firing sce
 Name the selected unit `entrenched infantry` and include this status in its
 accessible label. Changing facing preserves the sprite; successful movement
 restores the ordinary infantry sprite, and leaves no terrain graphic behind.
+
+
+## Logged games and replay
+
+Use an ordinary beveled card for the logged-game list, with flat separated rows
+showing the name, UTC start time, map, both players/controllers, completed turns,
+and outcome. Each readable row links to its replay. Unreadable archive rows show
+only the archive ID and error, without placeholder game details or a replay link.
+Keep home and refresh navigation above the rows, with explicit empty/loading
+and failure states.
+
+Replay reuses the full-viewport battlefield and inspection panel. Replace the
+submission controls with the game name, back link, previous/play/pause/next,
+turn and player-view selectors, and the existing camera controls. Keep order
+commands unavailable. Bound the replay control panel to 40% of viewport height,
+with internal scrolling when its controls wrap on narrow or short screens. Turn
+zero shows the starting board. Preserve normal
+fog, combat/loss dialogs, and final reveal while viewing a recording.

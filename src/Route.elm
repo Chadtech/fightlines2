@@ -4,6 +4,7 @@ module Route exposing
     , toString
     )
 
+import Game.LogId as GameLogId exposing (GameLogId)
 import LobbyId
     exposing
         ( LobbyId
@@ -25,6 +26,8 @@ type Route
     | Lobby LobbyId
     | Game LobbyId
     | MapEditor
+    | LoggedGames
+    | Replay GameLogId
 
 
 fromUrl : Url -> Maybe Route
@@ -35,7 +38,9 @@ fromUrl =
 parser : Parser (Route -> a) a
 parser =
     P.oneOf
-        [ P.map MapEditor (P.s "map-editor")
+        [ P.map LoggedGames (P.s "logged-games")
+        , P.map Replay (P.s "logged-games" </> P.custom "gameLogId" (GameLogId.parse >> Result.toMaybe))
+        , P.map MapEditor (P.s "map-editor")
         , P.map NewLobby P.top
         , P.map Lobby (P.s "lobby" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe))
         , P.map Game (P.s "game" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe))
@@ -48,6 +53,12 @@ toString route =
         parts : List String
         parts =
             case route of
+                LoggedGames ->
+                    [ "logged-games" ]
+
+                Replay id ->
+                    [ "logged-games", GameLogId.toString id ]
+
                 MapEditor ->
                     [ "map-editor" ]
 

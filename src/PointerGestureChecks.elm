@@ -1,6 +1,6 @@
 port module PointerGestureChecks exposing (main)
 
-import GamePage.BattlefieldNavigation as Navigation
+import Game.BattlefieldNavigation as Navigation
 import Platform
 import PointerGesture
 

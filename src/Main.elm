@@ -4,7 +4,6 @@ import ApiRequest
     exposing
         ( Response
         )
-import AppInitError
 import Browser
 import Browser.Navigation as Navigation
 import Css.Global
@@ -12,26 +11,40 @@ import Effect as E
     exposing
         ( Eff
         )
-import GameLoadFailed
-import GamePage
+import Game.LogId as GameLogId exposing (GameLogId)
+import Game.View.CombatEffects as CombatEffects
+import Game.View.CombatTheater as CombatTheater
+import Game.View.DepotStock as DepotStock
+import Game.View.TargetSight as TargetSight
+import Game.View.TurnControls as TurnControls
+import Game.View.TurnIntroduction as TurnIntroduction
+import Game.View.UnitCargo as UnitCargo
+import Game.View.UnitDeath as UnitDeath
+import Game.View.UnitFacing as UnitFacing
+import Game.View.UnitWarnings as UnitWarnings
 import Html.Styled as H
     exposing
         ( Html
         )
 import Html.Styled.Attributes as A
-import JoinLobby
 import Json.Decode as Decode
 import KeyCmd
 import LobbyId
     exposing
         ( LobbyId
         )
-import LobbyLoadFailed
-import LobbyPage
 import LocalStorage exposing (LocalStorage)
-import MapEditor
-import NewLobby
 import OperatingSystem exposing (OperatingSystem)
+import Page.AppInitError as AppInitError
+import Page.GameLoadFailed as GameLoadFailed
+import Page.GamePage as GamePage
+import Page.GameReplay as GameReplay
+import Page.JoinLobby as JoinLobby
+import Page.LobbyLoadFailed as LobbyLoadFailed
+import Page.LobbyPage as LobbyPage
+import Page.LoggedGames as LoggedGames
+import Page.MapEditor as MapEditor
+import Page.NewLobby as NewLobby
 import Ports.Js.From as FromJs
 import Route
     exposing
@@ -46,18 +59,8 @@ import Url
 import View.Aria as Aria
 import View.Button as Button
 import View.Card as Card
-import View.CombatEffects as CombatEffects
-import View.CombatTheater as CombatTheater
-import View.DepotStock as DepotStock
 import View.Dialog as Dialog exposing (Dialog)
 import View.LoadingBar as LoadingBar
-import View.TargetSight as TargetSight
-import View.TurnControls as TurnControls
-import View.TurnIntroduction as TurnIntroduction
-import View.UnitCargo as UnitCargo
-import View.UnitDeath as UnitDeath
-import View.UnitFacing as UnitFacing
-import View.UnitWarnings as UnitWarnings
 
 
 
@@ -80,6 +83,12 @@ type Page
     | LoadingMapEditor Shared.Model
     | MapEditorLoadFailed Shared.Model String
     | MapEditor MapEditor.Model
+    | LoadingLoggedGames Shared.Model
+    | LoggedGamesLoadFailed Shared.Model String
+    | LoggedGames LoggedGames.Model
+    | LoadingReplay Shared.Model GameLogId
+    | ReplayLoadFailed Shared.Model GameLogId String
+    | Replay GameLogId GameReplay.Model
     | NotFound Shared.Model
 
 
@@ -102,6 +111,9 @@ type Msg
     | GameLoadFailedMsg LobbyId GameLoadFailed.Msg
     | MapEditorResponseReceived (ApiRequest.Response MapEditor.Flags)
     | MapEditorMsg MapEditor.Msg
+    | LoggedGamesResponseReceived (Response LoggedGames.Flags)
+    | ReplayResponseReceived GameLogId (Response GameReplay.Flags)
+    | ReplayMsg GameLogId GameReplay.Msg
     | ReturnHomeButtonClicked
     | JsErrorReceived FromJs.Error
     | LocalStorageChanged LocalStorage
@@ -218,6 +230,24 @@ getShared page =
         MapEditor model ->
             Just model.shared
 
+        LoadingLoggedGames shared ->
+            Just shared
+
+        LoggedGamesLoadFailed shared _ ->
+            Just shared
+
+        LoggedGames model ->
+            Just model.shared
+
+        LoadingReplay shared _ ->
+            Just shared
+
+        ReplayLoadFailed shared _ _ ->
+            Just shared
+
+        Replay _ model ->
+            Just (GameReplay.getShared model)
+
         NotFound shared ->
             Just shared
 
@@ -264,6 +294,24 @@ setShared shared page =
         MapEditor model ->
             MapEditor (MapEditor.setShared shared model)
 
+        LoadingLoggedGames _ ->
+            LoadingLoggedGames shared
+
+        LoggedGamesLoadFailed _ error ->
+            LoggedGamesLoadFailed shared error
+
+        LoggedGames model ->
+            LoggedGames (LoggedGames.setShared shared model)
+
+        LoadingReplay _ id ->
+            LoadingReplay shared id
+
+        ReplayLoadFailed _ id error ->
+            ReplayLoadFailed shared id error
+
+        Replay id model ->
+            Replay id (GameReplay.setShared shared model)
+
         NotFound _ ->
             NotFound shared
 
@@ -301,6 +349,12 @@ loadGame shared id =
 handleRoute : Shared.Model -> Maybe Route -> Page -> ( Page, Eff Msg )
 handleRoute shared route page =
     case route of
+        Just Route.LoggedGames ->
+            ( LoadingLoggedGames shared, E.request LoggedGamesResponseReceived LoggedGames.load )
+
+        Just (Route.Replay id) ->
+            ( LoadingReplay shared id, E.request (ReplayResponseReceived id) (GameReplay.load id) )
+
         Just Route.MapEditor ->
             ( LoadingMapEditor shared
             , MapEditor.load
@@ -329,6 +383,52 @@ handleRoute shared route page =
 update : Msg -> Page -> ( Page, Eff Msg )
 update msg page =
     case msg of
+        LoggedGamesResponseReceived result ->
+            case page of
+                LoadingLoggedGames shared ->
+                    case result of
+                        Ok flags ->
+                            ( LoggedGames (LoggedGames.init shared flags), E.none )
+
+                        Err error ->
+                            ( LoggedGamesLoadFailed shared (ApiRequest.errorMessage error), E.none )
+
+                _ ->
+                    E.withOut page
+
+        ReplayResponseReceived id result ->
+            case page of
+                LoadingReplay shared currentId ->
+                    if id /= currentId then
+                        E.withOut page
+
+                    else
+                        case result of
+                            Ok flags ->
+                                GameReplay.init shared id flags
+                                    |> Tuple.mapFirst (Replay id)
+                                    |> Tuple.mapSecond (E.map (ReplayMsg id))
+
+                            Err error ->
+                                E.withOut (ReplayLoadFailed shared id (ApiRequest.errorMessage error))
+
+                _ ->
+                    E.withOut page
+
+        ReplayMsg id replayMsg ->
+            case page of
+                Replay currentId model ->
+                    if id /= currentId then
+                        E.withOut page
+
+                    else
+                        GameReplay.update replayMsg model
+                            |> Tuple.mapFirst (Replay id)
+                            |> Tuple.mapSecond (E.map (ReplayMsg id))
+
+                _ ->
+                    E.withOut page
+
         MapEditorResponseReceived result ->
             case page of
                 LoadingMapEditor shared ->
@@ -554,6 +654,9 @@ view page =
 dialog : Page -> Maybe (Dialog Msg)
 dialog page =
     case page of
+        Replay id model ->
+            GameReplay.dialog model |> Maybe.map (Dialog.map (ReplayMsg id))
+
         Game id model ->
             GamePage.dialog model
                 |> Maybe.map (Dialog.map (GameMsg id))
@@ -623,6 +726,30 @@ shell page =
                 MapEditor model ->
                     List.map (H.map MapEditorMsg) (MapEditor.view model)
 
+                LoadingLoggedGames _ ->
+                    [ H.p
+                        [ Aria.role Aria.Status ]
+                        [ H.text "loading logged games…" ]
+                    ]
+
+                LoggedGamesLoadFailed _ error ->
+                    loadFailure Route.LoggedGames error
+
+                LoggedGames model ->
+                    LoggedGames.view model
+
+                LoadingReplay _ _ ->
+                    [ H.p
+                        [ Aria.role Aria.Status ]
+                        [ H.text "loading replay…" ]
+                    ]
+
+                ReplayLoadFailed _ id error ->
+                    loadFailure (Route.Replay id) error
+
+                Replay id model ->
+                    List.map (H.map (ReplayMsg id)) (GameReplay.view model)
+
                 NotFound _ ->
                     [ [ H.p
                             []
@@ -669,6 +796,31 @@ shell page =
     ]
 
 
+loadFailure : Route -> String -> List (Html msg)
+loadFailure route error =
+    [ Card.toHtml Card.simple
+        [ H.p
+            [ Aria.role Aria.Status ]
+            [ H.text error ]
+        , H.a
+            [ A.href (Route.toString route)
+            , A.css [ S.link ]
+            ]
+            [ H.text "retry" ]
+        , H.a
+            [ A.href (Route.toString Route.LoggedGames)
+            , A.css [ S.link ]
+            ]
+            [ H.text "logged games" ]
+        , H.a
+            [ A.href (Route.toString Route.NewLobby)
+            , A.css [ S.link ]
+            ]
+            [ H.text "home" ]
+        ]
+    ]
+
+
 
 ----------------------------------------------------------------
 -- SUBSCRIPTIONS --
@@ -696,6 +848,9 @@ pageSubscriptions shared page =
             MapEditor model ->
                 MapEditor.subscriptions model |> Sub.map MapEditorMsg
 
+            Replay id model ->
+                GameReplay.subscriptions model |> Sub.map (ReplayMsg id)
+
             Game id model ->
                 GamePage.subscriptions model
                     |> Sub.map (GameMsg id)
@@ -716,6 +871,9 @@ pageSubscriptions shared page =
 keyCommands : Page -> KeyCmd.KeyCmd Msg
 keyCommands page =
     case page of
+        Replay id model ->
+            GameReplay.keyCommands model |> KeyCmd.map (ReplayMsg id)
+
         Game id model ->
             GamePage.keyCommands model |> KeyCmd.map (GameMsg id)
 

@@ -2,6 +2,7 @@
 /elm-stuff/
 /public/elm.js
 /node_modules/
+/output/
 /old
 /.idea
 /.env

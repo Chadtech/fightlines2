@@ -13,6 +13,16 @@ Fuel, finite supply stocks, replenishment, and directional ambush combat are
 authoritative. Active games remain in memory, while private game archives on disk
 retain starting boards, accepted orders, and turn results for debugging. See
 [game archives](DEPLOYMENT.md#game-archives) for storage and replay commands.
+Run `make logs` (or start the server with `--game-logs`) and open
+[/logged-games](http://127.0.0.1:8080/logged-games) to browse recordings by name,
+players, map, date, outcome, and completed turns. Choose **replay game** to inspect
+the starting board, play/pause the game, jump between turns, or switch player views.
+**play** continues through the remaining recorded turns; choosing a turn or using
+**previous**/**next** plays that turn. Combat and loss dialogs use the usual controls.
+These read-only pages work at the server's deployment address and are also enabled
+by `make dev`. When enabled, anyone who can reach the server can view recordings;
+operator password protection is not implemented yet.
+They remain available after restarting the server with the same archive directory.
 Browsers remember the last user name used to successfully create or join a lobby
 and prefill it next time.
 Each planning turn opens with a gold turn-introduction card, a pop-in animation,
@@ -36,6 +46,10 @@ npm ci
 cp .env.example .env
 make run
 ```
+
+Each startup generates a fresh random seed and saves it in a private
+`game-logs/server-start-*.json` record. Set `FIGHTLINES_SEED` only to reproduce a
+specific seed for debugging; see [deployment](DEPLOYMENT.md#game-archives).
 
 Open http://127.0.0.1:8080, enter your user name and a lobby name, and choose
 **Create lobby**.
@@ -521,6 +535,10 @@ existing traversable hill rules. Supply depots provide finite provision stocks f
 replenishment and explicit crate loading; Crossroads and Ridgeway also have fuel depots.
 
 ## Development
+
+Elm pages live in `src/Page/`. The game domain, player planning, and replay
+runtime live in `src/Game/`, with game-specific views in `src/Game/View/` and
+checks in `src/Game/Checks/`. Generic controls remain in `src/View/`.
 
 For a ready-to-view test game, run `make dev` and open
 [http://127.0.0.1:8080/game/00000000000000000000000000000000](http://127.0.0.1:8080/game/00000000000000000000000000000000).
