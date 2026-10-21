@@ -722,6 +722,11 @@ impl Scenario {
         MapDefinition::parse(include_str!("../maps/ridgeway.json"))?.scenario()
     }
 
+    /// Three land crossings over a broad river, with a supplied central island.
+    pub fn three_crossings() -> Result<Self, MapError> {
+        MapDefinition::parse(include_str!("../maps/three-crossings.json"))?.scenario()
+    }
+
     pub fn supply_point() -> Result<Self, MapError> {
         MapDefinition::parse(include_str!("../maps/supply-point.json"))?.scenario()
     }
@@ -817,6 +822,7 @@ mod tests {
             crate::map_type::MapType::BlackForest,
             crate::map_type::MapType::Crossroads,
             crate::map_type::MapType::Ridgeway,
+            crate::map_type::MapType::ThreeCrossings,
         ] {
             let scenario = map_type.scenario().fixture()?;
             let original_visibility =

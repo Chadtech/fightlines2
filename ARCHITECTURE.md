@@ -106,9 +106,9 @@ save leaves the lobby open and shows the error.
 `map.rs` stores width/height, a base terrain tile, and a `BTreeMap` of coordinate
 terrain overrides. Lookup returns no tile outside the map; missing in-bounds
 coordinates fall back to the base tile. There is no stored dense grid. `Map::from_ascii` parses rectangular sketches
-with `#` for forests, `%` for hills, and spaces or `.` for plain. Spaces are
+with `#` for forests, `%` for hills, `^` for mountains, `~` for water, and spaces or `.` for plain. Spaces are
 preserved; malformed rows and unknown symbols return explicit errors.
-The eight built-in scenarios are authored in `maps/*.json`, with dimensions,
+The nine built-in scenarios are authored in `maps/*.json`, with dimensions,
 typed themes, sparse terrain placements, separate supply/fuel depot placements,
 and explicit starting units (stable IDs, player, kind, position, and facing).
 Map JSON enums use Rust variant spelling, such as `GreenForest`, `FieldGun`, and
@@ -116,7 +116,7 @@ Map JSON enums use Rust variant spelling, such as `GreenForest`, `FieldGun`, and
 Unlisted terrain tiles are implicitly `Plain`; explicit plain placements use
 `Plain` in map JSON and `PLAIN` in GraphQL.
 `map_definition.rs` validates dimensions, bounds, unique terrain and depot
-positions, unit IDs and occupancy, mountain passability, facing, and a force for
+positions, unit IDs and occupancy, mountain and water passability, facing, and a force for
 each player. `Scenario::from_definition` initializes resources using ordinary
 rules. The named constructors embed JSON at compile time; the ASCII parser
 remains available to tests for concise fixtures. Initial layouts and deployments
@@ -1364,6 +1364,34 @@ field guns. Nonpositive costs are impassable in client previews, order validatio
 unload validation and resolution. Visibility grants +2 radius to mountain observers
 and treats them as elevated observers. `Game.View.TerrainTile` selects dedicated green,
 snow and desert mountain assets without applying the older feature tint filters.
+
+Water exports zero movement cost for every current unit kind. The shared rule
+table blocks entry, passage, passenger exits, AI routing, and movement resolution;
+map definitions reject starting units on water. Water does not obstruct sight or
+add combat cover. `Game.View.TerrainTile` clips a 32-frame, eight-column water atlas
+with stepped CSS keyframes at 60ms per frame. Its styles are mounted once by
+`Main`; reduced motion holds the first frame, and the existing combat/loss focus
+selectors pause it. The same component serves the board, editor, and inspector
+in every theme. Indirect-fire impacts use the matching water still backdrop.
+
+`Terrain::Beach` is authored land terrain with plain entry and supply costs,
+no extra cover, and no sight obstruction. It accepts current units and passenger
+unloading; water remains impassable. No naval rules are added. Future transport
+rules can distinguish a beach from ordinary land through the shared terrain enum.
+`Game.Shoreline.at` derives typed cliff/sand edges and exposed diagonal corners
+from bounded neighboring terrain. Cliffs are presentation, not another stored
+terrain type. `TerrainTile.onMap` renders these overlays inside the water cell,
+above the animated surface and beneath grid, objects and interaction targets.
+Beach tiles blend themed ground into their inland edges using shared SVG mask
+definitions mounted once by `Main`. Board, editor and inspector use the same
+neighbor-aware renderer; fog and destination dimming apply to the entire tile.
+Beach corner artwork is a quarter-turn projection of the straight beach edge,
+with shared wedge clipping and endpoint samples that join its sand and foam bands.
+`Game.View.Cliff` interprets shoreline direction from water toward land. A northern
+land neighbor selects the visible south-facing wall; a southern land neighbor
+selects the thin rear rim. East/west sides and front/rear corners use dedicated
+artwork with horizontal mirroring, keeping the camera's southern viewpoint fixed.
+`Game.Checks.Shoreline` covers corners, map borders, mixed banks, and beach continuity.
 
 ## Indirect fire
 

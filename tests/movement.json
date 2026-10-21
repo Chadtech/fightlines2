@@ -19,6 +19,14 @@
         {
           "terrain": "MOUNTAINS",
           "cost": 4
+        },
+        {
+          "terrain": "WATER",
+          "cost": 0
+        },
+        {
+          "terrain": "BEACH",
+          "cost": 2
         }
       ]
     },
@@ -41,6 +49,14 @@
         {
           "terrain": "MOUNTAINS",
           "cost": 0
+        },
+        {
+          "terrain": "WATER",
+          "cost": 0
+        },
+        {
+          "terrain": "BEACH",
+          "cost": 2
         }
       ]
     },
@@ -63,6 +79,14 @@
         {
           "terrain": "MOUNTAINS",
           "cost": 0
+        },
+        {
+          "terrain": "WATER",
+          "cost": 0
+        },
+        {
+          "terrain": "BEACH",
+          "cost": 2
         }
       ]
     },
@@ -85,6 +109,14 @@
         {
           "terrain": "MOUNTAINS",
           "cost": 0
+        },
+        {
+          "terrain": "WATER",
+          "cost": 0
+        },
+        {
+          "terrain": "BEACH",
+          "cost": 2
         }
       ]
     }
@@ -540,6 +572,219 @@
           1,
           0,
           2
+        ]
+      ]
+    },
+    {
+      "name": "infantry cannot enter or cross water",
+      "kind": "INFANTRY",
+      "sketch": ".~..",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "allies": [],
+      "expected": []
+    },
+    {
+      "name": "tank cannot enter or cross water",
+      "kind": "TANK",
+      "sketch": ".~..",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "allies": [],
+      "expected": []
+    },
+    {
+      "name": "field_gun cannot enter or cross water",
+      "kind": "FIELD_GUN",
+      "sketch": ".~..",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "allies": [],
+      "expected": []
+    },
+    {
+      "name": "truck cannot enter or cross water",
+      "kind": "TRUCK",
+      "sketch": ".~..",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "allies": [],
+      "expected": []
+    },
+    {
+      "name": "tank routes around water",
+      "kind": "TANK",
+      "sketch": ".~.\n...",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "allies": [],
+      "expected": [
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          1,
+          1,
+          4
+        ],
+        [
+          2,
+          0,
+          8
+        ],
+        [
+          2,
+          1,
+          6
+        ]
+      ]
+    },
+    {
+      "name": "infantry crosses beach with plain movement cost",
+      "kind": "INFANTRY",
+      "sketch": ".:::::::~",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "allies": [],
+      "expected": [
+        [
+          1,
+          0,
+          2
+        ],
+        [
+          2,
+          0,
+          4
+        ]
+      ]
+    },
+    {
+      "name": "tank crosses beach with plain movement cost",
+      "kind": "TANK",
+      "sketch": ".:::::::~",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "allies": [],
+      "expected": [
+        [
+          1,
+          0,
+          2
+        ],
+        [
+          2,
+          0,
+          4
+        ],
+        [
+          3,
+          0,
+          6
+        ],
+        [
+          4,
+          0,
+          8
+        ],
+        [
+          5,
+          0,
+          10
+        ],
+        [
+          6,
+          0,
+          12
+        ]
+      ]
+    },
+    {
+      "name": "field_gun crosses beach with plain movement cost",
+      "kind": "FIELD_GUN",
+      "sketch": ".:::::::~",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "allies": [],
+      "expected": [
+        [
+          1,
+          0,
+          2
+        ]
+      ]
+    },
+    {
+      "name": "truck crosses beach with plain movement cost",
+      "kind": "TRUCK",
+      "sketch": ".:::::::~",
+      "origin": [
+        0,
+        0
+      ],
+      "occupied": [],
+      "allies": [],
+      "expected": [
+        [
+          1,
+          0,
+          2
+        ],
+        [
+          2,
+          0,
+          4
+        ],
+        [
+          3,
+          0,
+          6
+        ],
+        [
+          4,
+          0,
+          8
+        ],
+        [
+          5,
+          0,
+          10
+        ],
+        [
+          6,
+          0,
+          12
+        ],
+        [
+          7,
+          0,
+          14
         ]
       ]
     }

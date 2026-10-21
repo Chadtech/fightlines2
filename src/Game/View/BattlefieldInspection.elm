@@ -184,7 +184,7 @@ terrainView model =
             Keyed.node "div"
                 []
                 [ ( String.fromInt coordinate.x ++ "," ++ String.fromInt coordinate.y
-                  , TerrainInfo.toHtml model.map.theme (Map.terrainAt model.map coordinate)
+                  , TerrainInfo.toHtml model.map coordinate
                   )
                 ]
 

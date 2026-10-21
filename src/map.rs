@@ -31,6 +31,8 @@ pub enum Terrain {
     Hills,
     Forest,
     Mountains,
+    Water,
+    Beach,
 }
 
 /// Appearance is independent of terrain movement and visibility rules.
@@ -134,7 +136,7 @@ impl Map {
     }
 
     /// Parse a rectangular terrain sketch: space or `.` is plain, `#` forest,
-    /// `%` hills, and `^` mountains. Spaces are cells, so leading/trailing spaces are preserved.
+    /// `%` hills, `^` mountains, `~` water, and `:` beach. Spaces preserve their positions.
     /// A final newline is optional; blank rows and unknown symbols are errors.
     #[cfg(test)]
     pub fn from_ascii(sketch: &str) -> Result<Self, MapError> {
@@ -162,6 +164,8 @@ impl Map {
                     '#' => Terrain::Forest,
                     '%' => Terrain::Hills,
                     '^' => Terrain::Mountains,
+                    '~' => Terrain::Water,
+                    ':' => Terrain::Beach,
                     _ => return Err(MapError::UnknownTerrain { position, symbol }),
                 };
                 features.insert(position, terrain);

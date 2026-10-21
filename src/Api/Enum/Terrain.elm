@@ -12,11 +12,13 @@ type Terrain
     | Hills
     | Forest
     | Mountains
+    | Water
+    | Beach
 
 
 list : List Terrain
 list =
-    [ Plain, Hills, Forest, Mountains ]
+    [ Plain, Hills, Forest, Mountains, Water, Beach ]
 
 
 decoder : Decoder Terrain
@@ -36,6 +38,12 @@ decoder =
 
                     "MOUNTAINS" ->
                         Decode.succeed Mountains
+
+                    "WATER" ->
+                        Decode.succeed Water
+
+                    "BEACH" ->
+                        Decode.succeed Beach
 
                     _ ->
                         Decode.fail ("Invalid Terrain type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
@@ -58,6 +66,12 @@ toString enum____ =
 
         Mountains ->
             "MOUNTAINS"
+
+        Water ->
+            "WATER"
+
+        Beach ->
+            "BEACH"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -85,6 +99,12 @@ fromString enumString____ =
 
         "MOUNTAINS" ->
             Just Mountains
+
+        "WATER" ->
+            Just Water
+
+        "BEACH" ->
+            Just Beach
 
         _ ->
             Nothing

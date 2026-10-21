@@ -427,6 +427,12 @@ backdropPath theme terrain =
         name : String
         name =
             case ( theme, terrain ) of
+                ( _, Terrain.Water ) ->
+                    "water"
+
+                ( _, Terrain.Beach ) ->
+                    "beach"
+
                 ( MapTheme.GreenForest, Terrain.Forest ) ->
                     "forest"
 

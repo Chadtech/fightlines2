@@ -23,6 +23,32 @@ directory is available. A fresh clone does not include that directory.
   and soft slope shading. Sources and exact prompts are in `artwork/terrain/illustrated/v7/`;
   `tools/build-terrain-sprites.cjs` exports all three without additional color filters.
 - `terrain-forest-illustrated-v3.png`: transparent illustrated forest overlay.
+- `terrain-water-illustrated-v1.png`: opaque 2048 × 1024 atlas with 32 frames
+  in eight columns and four rows of 256px cells. The approved painted crest
+  lifecycle rebuild forms, advances, breaks, and dissolves individual waves.
+  Board, editor, and inspector use a 1.92-second stepped loop with no theme filter;
+  reduced motion holds the first frame. `combat-backdrops-anime-v1/water.png`
+  is the matching still for indirect-fire impacts. Local masters, generation
+  prompts, and metadata live in `artwork/terrain/illustrated/water-v1/`;
+  `tools/build-terrain-sprites.cjs` copies both runtime exports.
+- `coast-illustrated-v1/`: gentle sandy water edges and opaque beach ground.
+  Generated with built-in imagegen
+  on October 21, 2026 in the established detailed 1980s anime background style.
+  The beach edge faces north and keeps genuine alpha beyond the shore.
+  Beach corners bend the straight beach edge through a quarter turn,
+  preserving its sand, foam, and shallow-water depth at both adjoining edges.
+  The renderer rotates them from neighboring terrain, while
+  animated water stays beneath. `beach.png` also supplies the beach impact
+  backdrop in `combat-backdrops-anime-v1/`. Sources and generation requests live
+  in `artwork/terrain/illustrated/coast-v1/`; the terrain exporter copies them.
+- `coast-illustrated-v2/`: directional cliffs for a fixed camera looking from
+  the south. `cliff-front-edge.png` exposes a tall wall when water is south of land;
+  `cliff-back-edge.png` is a thin bottom-edge rim when water is north of land.
+  A narrow left-edge side sprite and front/back corner sprites are mirrored for
+  the opposing side, preserving downward elevation rather than rotating faces.
+  Artwork stays within each water cell. Built-in imagegen created the variants
+  from the original cliff references; masters and exact prompts are saved in
+  `artwork/terrain/illustrated/coast-v2/`. The terrain exporter copies all five.
 - `supply-depot-illustrated-v1.png`: neutral concrete building with a rounded
   barrel-vault roof, in a transparent 256px square cell with a 232px footprint.
 - `supply-crate-illustrated-v1.png`: three closed wooden military supply boxes,

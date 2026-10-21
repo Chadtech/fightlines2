@@ -89,6 +89,9 @@ impl MapDefinition {
             {
                 return Err(invalid("only infantry can start on mountains"));
             }
+            if map.tile_at(unit.position) == Some(Terrain::Water) {
+                return Err(invalid("units cannot start on water"));
+            }
             match (unit.kind, unit.direction) {
                 (UnitKind::Truck, None) => {}
                 (UnitKind::Truck, Some(_)) => return Err(invalid("trucks have no facing")),
@@ -120,6 +123,49 @@ mod tests {
 
     fn definition() -> TestResult<MapDefinition> {
         MapDefinition::parse(include_str!("../maps/supply-point.json")).fixture()
+    }
+
+    #[test]
+    fn starting_terrain_blocks_water_but_accepts_beaches_for_every_unit() -> TestResult<()> {
+        let original = MapDefinition::parse(
+            r#"{
+                "width": 3, "height": 1, "theme": "GreenForest",
+                "features": [{"position": {"x": 0, "y": 0}, "terrain": "Water"}],
+                "depots": [],
+                "units": [
+                    {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "Player1", "kind": "Infantry", "direction": "East"},
+                    {"id": 2, "position": {"x": 2, "y": 0}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
+                ]
+            }"#,
+        ).fixture()?;
+        for kind in [
+            UnitKind::Infantry,
+            UnitKind::Tank,
+            UnitKind::Truck,
+            UnitKind::FieldGun,
+        ] {
+            let mut draft = original.clone();
+            let unit = draft.units.first_mut().fixture()?;
+            unit.kind = kind;
+            unit.direction = if kind == UnitKind::Truck {
+                None
+            } else {
+                Some(Direction::East)
+            };
+            assert_eq!(
+                draft.terrain_map().err(),
+                Some(MapError::InvalidDefinition(
+                    "units cannot start on water".into()
+                ))
+            );
+            draft.features.clear();
+            draft.features.push(TerrainPlacement {
+                position: Coordinate::new(0, 0),
+                terrain: Terrain::Beach,
+            });
+            draft.scenario().fixture()?;
+        }
+        Ok(())
     }
 
     #[test]

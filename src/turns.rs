@@ -1839,6 +1839,107 @@ mod tests {
     }
 
     #[test]
+    fn water_blocks_every_unit_while_beaches_accept_plain_cost_paths() -> TestResult<()> {
+        for kind in [
+            UnitKind::Infantry,
+            UnitKind::Tank,
+            UnitKind::Truck,
+            UnitKind::FieldGun,
+        ] {
+            let mut scenario = Scenario::supply_point().fixture()?;
+            scenario.map = Map::from_ascii(".~.").fixture()?;
+            scenario.units.retain(|unit| {
+                unit.player_number() == PlayerNumber::Player1 && unit.kind() == kind
+            });
+            scenario.units.truncate(1);
+            let unit = scenario.units.first_mut().fixture()?;
+            unit.move_to(Coordinate::new(0, 0));
+            let id = unit.id();
+            for path in [vec![(0, 0), (1, 0)], vec![(0, 0), (1, 0), (2, 0)]] {
+                let mut inputs = holds(&scenario, PlayerNumber::Player1)?;
+                set_path(&mut inputs, &id, &path)?;
+                assert_eq!(
+                    validate(&scenario, PlayerNumber::Player1, inputs).err(),
+                    Some("this terrain cannot be crossed."),
+                    "{kind:?} must not enter or cross water"
+                );
+            }
+            assert!(!legal_unload(
+                &scenario,
+                scenario.units.first().fixture()?,
+                Coordinate::new(1, 0),
+                None
+            ));
+            scenario.map = Map::from_ascii(".:.").fixture()?;
+            let mut inputs = holds(&scenario, PlayerNumber::Player1)?;
+            set_path(&mut inputs, &id, &[(0, 0), (1, 0)])?;
+            validate(&scenario, PlayerNumber::Player1, inputs).fixture()?;
+            let supplies = scenario.units.first().fixture()?.supplies();
+            let beach_cost = supplies.movement_cost(
+                &scenario.map,
+                &[Coordinate::new(0, 0), Coordinate::new(1, 0)],
+            );
+            let plain = Map::from_ascii("...").fixture()?;
+            assert_eq!(
+                beach_cost,
+                supplies.movement_cost(&plain, &[Coordinate::new(0, 0), Coordinate::new(1, 0)])
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn carried_infantry_and_guns_cannot_unload_onto_water() -> TestResult<()> {
+        for kind in [UnitKind::Infantry, UnitKind::FieldGun] {
+            let mut scenario = Scenario::supply_point().fixture()?;
+            let carrier = scenario
+                .units
+                .iter()
+                .find(|unit| unit.kind() == UnitKind::Truck)
+                .fixture()?
+                .unit_id();
+            let passenger = scenario
+                .units
+                .iter()
+                .find(|unit| unit.kind() == kind)
+                .fixture()?
+                .unit_id();
+            scenario
+                .units
+                .retain(|unit| [carrier, passenger].contains(&unit.unit_id()));
+            scenario.map = Map::from_ascii(".~.").fixture()?;
+            vehicle(&mut scenario, &carrier.to_string())?.move_to(Coordinate::new(0, 0));
+            vehicle(&mut scenario, &passenger.to_string())?.board(carrier);
+            scenario.map = Map::from_ascii(".:.").fixture()?;
+            assert!(legal_unload(
+                &scenario,
+                scenario
+                    .units
+                    .iter()
+                    .find(|unit| unit.unit_id() == passenger)
+                    .fixture()?,
+                Coordinate::new(1, 0),
+                None
+            ));
+            scenario.map = Map::from_ascii(".~.").fixture()?;
+            let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+            orders
+                .iter_mut()
+                .find(|order| order.unit_id == carrier.to_string())
+                .fixture()?
+                .unloads = Some(vec![UnloadOrderInput {
+                unit_id: passenger.to_string(),
+                destination: CoordinateInput { x: 1, y: 0 },
+            }]);
+            assert_eq!(
+                validate(&scenario, PlayerNumber::Player1, orders).err(),
+                Some("unloading requires an empty affordable adjacent square.")
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
     fn mountain_paths_validate_entry_budget_and_vehicle_impassability() -> TestResult<()> {
         for kind in [
             UnitKind::Infantry,

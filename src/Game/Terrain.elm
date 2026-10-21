@@ -17,3 +17,9 @@ label terrain =
 
         Terrain.Forest ->
             "forest"
+
+        Terrain.Water ->
+            "water"
+
+        Terrain.Beach ->
+            "beach"

@@ -1410,7 +1410,7 @@ tile draft map position =
 
         ground : Svg Msg
         ground =
-            TerrainTile.toSvg { theme = draft.theme, terrain = terrain }
+            TerrainTile.onMap map position
 
         interaction : Svg Msg
         interaction =

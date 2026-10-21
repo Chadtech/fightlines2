@@ -281,10 +281,59 @@ fn route(
 mod tests {
     use super::*;
     use crate::{
+        map::Map,
         map_type::MapType,
         test_support::{FixtureValue, TestResult},
         turns::{self, Turns},
     };
+
+    #[test]
+    fn both_difficulties_keep_every_unit_on_its_water_island() -> TestResult {
+        for kind in [
+            UnitKind::Infantry,
+            UnitKind::Tank,
+            UnitKind::Truck,
+            UnitKind::FieldGun,
+        ] {
+            let mut scenario = Scenario::supply_point().fixture()?;
+            scenario.map = Map::from_ascii(".~.").fixture()?;
+            scenario.depots.clear();
+            scenario.units.retain(|unit| unit.kind() == kind);
+            for player in [PlayerNumber::Player1, PlayerNumber::Player2] {
+                let mut retained = false;
+                scenario.units.retain(|unit| {
+                    if unit.player_number() != player {
+                        return true;
+                    }
+                    if retained {
+                        return false;
+                    }
+                    retained = true;
+                    true
+                });
+            }
+            for unit in &mut scenario.units {
+                let x = if unit.player_number() == PlayerNumber::Player1 {
+                    0
+                } else {
+                    2
+                };
+                unit.move_to(Coordinate::new(x, 0));
+            }
+            for difficulty in [Difficulty::Easy, Difficulty::Medium] {
+                let inputs =
+                    plan_with_difficulty(&scenario, PlayerNumber::Player1, difficulty).fixture()?;
+                let orders = turns::validate(&scenario, PlayerNumber::Player1, inputs).fixture()?;
+                assert!(
+                    orders
+                        .iter()
+                        .all(|order| order.path == [Coordinate::new(0, 0)]),
+                    "{difficulty:?} {kind:?} crossed water"
+                );
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn every_map_plays_valid_turns_through_completion() -> TestResult {
@@ -297,6 +346,7 @@ mod tests {
             MapType::BlackForest,
             MapType::Crossroads,
             MapType::Ridgeway,
+            MapType::ThreeCrossings,
         ] {
             let mut scenario = map.scenario().fixture()?;
             let mut turns = Turns::default();

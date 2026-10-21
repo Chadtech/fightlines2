@@ -32,6 +32,11 @@
 !/public/assets/terrain-desert.svg
 !/public/assets/terrain-grass-illustrated-v2.png
 !/public/assets/terrain-snow-plains-illustrated-v1.png
+!/public/assets/terrain-water-illustrated-v1.png
+!/public/assets/coast-illustrated-v1/
+!/public/assets/coast-illustrated-v1/*.png
+!/public/assets/coast-illustrated-v2/
+!/public/assets/coast-illustrated-v2/*.png
 !/public/assets/terrain-hills-illustrated-v7.png
 !/public/assets/terrain-hills-snow-illustrated-v7.png
 !/public/assets/terrain-hills-desert-illustrated-v7.png

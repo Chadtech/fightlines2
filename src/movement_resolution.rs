@@ -714,6 +714,35 @@ mod tests {
     }
 
     #[test]
+    fn resolution_rejects_water_but_accepts_beaches_for_every_unit()
+    -> Result<(), Box<dyn std::error::Error>> {
+        for kind in [
+            UnitKind::Infantry,
+            UnitKind::Tank,
+            UnitKind::Truck,
+            UnitKind::FieldGun,
+        ] {
+            let fixture = Scenario::supply_point().map_err(|error| format!("{error:?}"))?;
+            let id = fixture
+                .units
+                .iter()
+                .find(|unit| unit.kind() == kind)
+                .ok_or("missing fixture unit")?
+                .id();
+            let (mut scenario, orders) = setup(&[(&id, &[(0, 0), (1, 0)])])?;
+            scenario.map = Map::from_ascii(".~.").map_err(|error| format!("{error:?}"))?;
+            match resolve(&scenario, &orders, 1) {
+                Err(ResolutionError::MissingTerrainCost) => {}
+                _ => return Err(format!("{kind:?} water route was not rejected").into()),
+            }
+            scenario.map = Map::from_ascii(".:.").map_err(|error| format!("{error:?}"))?;
+            let result = resolve(&scenario, &orders, 1)?;
+            assert_eq!(path(&result, &id)?.last(), Some(&Coordinate::new(1, 0)));
+        }
+        Ok(())
+    }
+
+    #[test]
     fn resolution_rejects_vehicle_mountain_routes() -> Result<(), Box<dyn std::error::Error>> {
         for kind in [UnitKind::Tank, UnitKind::Truck, UnitKind::FieldGun] {
             let fixture = Scenario::supply_point().map_err(|error| format!("{error:?}"))?;

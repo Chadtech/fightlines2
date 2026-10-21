@@ -32,3 +32,6 @@ label mapType =
 
         Api.Enum.MapType.Ridgeway ->
             "ridgeway"
+
+        Api.Enum.MapType.ThreeCrossings ->
+            "three crossings"

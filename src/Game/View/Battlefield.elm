@@ -21,9 +21,7 @@ module Game.View.Battlefield exposing
     )
 
 import Api.Enum.Direction exposing (Direction)
-import Api.Enum.MapTheme exposing (MapTheme)
 import Api.Enum.SpriteFacing exposing (SpriteFacing)
-import Api.Enum.Terrain exposing (Terrain)
 import Api.Enum.UnitKind as UnitKind
 import Browser.Dom
 import Css
@@ -1291,7 +1289,7 @@ boardTerrainTile map filter visible x y =
     Svg.g
         (appearanceAttributes ++ fogAttributes)
         [ at position
-            [ SvgLazy.lazy2 terrainArtwork map.theme (Map.terrainAt map position)
+            [ SvgLazy.lazy2 terrainArtwork map position
             ]
         ]
 
@@ -1414,15 +1412,12 @@ terrainLayer map visibleTiles reachable choosingDestination selected =
         (List.map terrainTile (Map.positions map))
 
 
-{-| Fog and destination changes only rebuild tile treatment; the underlying
-artwork depends on the two terrain enums, which compare by reference as well.
+{-| Keep neighboring-terrain artwork separate from fog and destination treatment.
+The map contains public terrain only; shoreline rendering does not reveal units.
 -}
-terrainArtwork : MapTheme -> Terrain -> Svg Msg
-terrainArtwork theme terrain =
-    TerrainTile.toSvg
-        { theme = theme
-        , terrain = terrain
-        }
+terrainArtwork : Map -> Coordinate -> Svg Msg
+terrainArtwork map position =
+    TerrainTile.onMap map position
         |> StyledSvg.toUnstyled
 
 

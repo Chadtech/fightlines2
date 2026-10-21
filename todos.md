@@ -39,3 +39,5 @@
 - Landing craft, carries troops
 - Aircraft carrier, carries planes
 - Submarine, stealthy slow ambush ship
+- Decoys, cheap replicas of units that can't move or do anything
+- Tank Hunter, a tank that is slower but has a bonus against tanks

@@ -372,11 +372,22 @@ up authoring. Mirroring units swaps players and reflects east/west facing.
 Shrinking a map crops terrain and objects outside the new bounds; undo restores
 them. Drafts survive switching maps within the page, but refresh discards unsaved edits.
 
+The **water** terrain brush paints animated water. Infantry, tanks, trucks, and
+field guns cannot enter or cross it, unload onto it, or start there. Water leaves
+line of sight clear and uses the same artwork in every theme.
+
+Rocky cliff banks and foam automatically follow land beside water, including
+corners. Paint **beach** to create a sandy shore with a gentle waterline instead.
+Beaches use plain movement and supply costs for all current units, allow ordinary
+passenger unloading, and provide no cover or sight obstruction. Water still blocks
+every current unit. Beaches are separate terrain for future vessel landing rules;
+naval movement and landings are not implemented yet.
+
 **Save map** validates and writes the corresponding `maps/*.json` source file.
 New games on an editor-enabled server read those files immediately; existing
 games keep their initial board. Choose **play in new tab** to create a normal
 lobby and test the saved map. Rebuild the server to embed edits in production.
-The editor currently edits the six existing map choices.
+The editor edits all nine built-in map choices.
 
 The page is absent and the `maps` and `saveMap` operations on `/graphql` are
 disabled unless the server starts with `--map-editor`. Editor requests require
@@ -460,9 +471,11 @@ available to inspect, and no further turns can be submitted. Digging in remains 
 ## Maps
 
 The lobby host can choose **supply point**, **el alamein**, **blood gulch**,
-**arabia**, **sidewinder**, **black forest**, **crossroads**, or **ridgeway**. Each map has its own starting force, with full starting resources.
+**arabia**, **sidewinder**, **black forest**, **crossroads**, **ridgeway**, or
+**three crossings**. Each map has its own starting force, with full starting resources.
 El Alamein, Blood Gulch, and Arabia are 25 x 21 tiles; Sidewinder is 33 x 29,
-Black Forest is 33 x 25, Crossroads is 11 x 9, and Ridgeway is 15 x 13.
+Black Forest is 33 x 25, Crossroads is 11 x 9, Ridgeway is 15 x 13,
+and Three Crossings is 21 x 17.
 Counts below are per player:
 
 | Map | Infantry | Tanks | Field guns | Trucks | Total |
@@ -475,6 +488,7 @@ Counts below are per player:
 | Black Forest | 10 | 1 | 6 | 2 | 19 |
 | Crossroads | 2 | 1 | 0 | 1 | 4 |
 | Ridgeway | 3 | 1 | 1 | 1 | 6 |
+| Three Crossings | 3 | 2 | 1 | 2 | 8 |
 
 Opposing formations face toward the battlefield. El Alamein staggers the eastern
 base three tiles south of the western base; other maps mirror their formations.
@@ -484,6 +498,13 @@ places infantry on the forward flanks, a tank on the central approach, and its
 gun and trucks near the base. Arabia puts a tank at the tip of a compact formation,
 three infantry across its front, and two guns behind them. Depot squares stay clear.
 
+- **Three Crossings**: a mirrored green river battlefield showcasing animated,
+  impassable water. Northern and southern causeways and a central island crossing
+  are the only land routes between banks. Each crossing has a neutral supply
+  depot; home supply and fuel depots support flanking and transport. Forests
+  conceal the bank approaches, and hills overlook the crossings. Rocky banks
+  surround the river, with mirrored beach coves and sandy island corners. Each player
+  commands three infantry, two tanks, a field gun, and two trucks.
 - **Ridgeway**: a mirrored green map with three infantry, a tank, a field gun,
   and a truck per player. Three open east–west approaches pass between wooded
   ridges, with connecting routes for flanking and hills for scouting and gun
@@ -570,10 +591,11 @@ The export scripts remain in `tools/`. Back up source artwork separately.
 - [Agent instructions](AGENTS.md): guidance for automated contributors.
 - [Deployment](DEPLOYMENT.md): configuration, access from other devices, and hosting.
 
-To edit terrain, change the ASCII sketch in `src/scenario.rs`: `#` is forest,
-`%` is hills, `^` is mountains, and spaces or `.` are plain. Keep rows the same width; spaces
-count as cells. Restart `make dev` and refresh the test game URL, or start a new
-normal game, to see the layout.
+Edit terrain with the map editor or the sparse features in `maps/*.json`;
+water uses `"terrain": "Water"`. New games read saved edits in editor mode;
+rebuild the server to embed them for production. Test fixtures also support ASCII
+sketches: `#` is forest, `%` hills, `^` mountains, `~` water, `:` beach,
+and spaces or `.` plain.
 Depots and units are placed separately.
 
 ## Attack move

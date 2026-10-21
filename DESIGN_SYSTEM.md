@@ -639,6 +639,28 @@ themes use their own transparent sprites without extra theme filters. Keep the
 terrain inside its cell, over the existing themed ground. Terrain inspection
 explains +2 sight, infantry's extra movement point, and vehicle impassability.
 
+## Water terrain
+
+Use the approved painted crest lifecycle animation as an opaque tile in every
+map theme. Crests advance, break into foam, and dissolve over a 1.92-second loop;
+keep adjacent cells synchronized and clip artwork inside each cell. Reduced
+motion holds the first frame. Existing fog and combat/loss dimming still apply.
+The editor brush and inspector reuse the board artwork. Explain that every
+current unit is blocked, including passenger unloading, and sight remains clear.
+
+Water beside ordinary land gets an illustrated rocky bank, contact shadow,
+and foam. Use a fixed southern viewing direction: water south of land exposes
+a tall cliff face; water north of land shows a thin sharp rim. Side banks stay
+narrow, and front/rear corners follow the same perspective. Mirror side artwork
+instead of rotating its vertical faces. Derive the bank from neighboring terrain, including exposed diagonal
+corners, and keep it inside the water cell so tile targeting remains accurate.
+Beach is an explicit sandy land tile: blend its inland edges into themed ground,
+and use a shallow turquoise wash and delicate foam along adjoining water instead
+of cliffs. Bend the straight-edge sand and foam profile around beach corners so
+both ends join the adjacent shore. Reuse the same neighbor-aware artwork in the inspector and editor.
+Keep the approved water animation beneath these static shore overlays. Shore
+artwork uses the tile's existing fog, dimming, and selection lifecycle.
+
 ## Development map editor
 
 Contain all editor content in beveled cards within the viewport; the page itself

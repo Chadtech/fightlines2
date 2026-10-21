@@ -1,7 +1,8 @@
 module Game.View.TerrainInfo exposing (toHtml)
 
-import Api.Enum.MapTheme exposing (MapTheme)
 import Api.Enum.Terrain as Terrain exposing (Terrain)
+import Game.Coordinate exposing (Coordinate)
+import Game.Map as Map exposing (Map)
 import Game.Terrain as Terrain
 import Game.View.TerrainTile as TerrainTile
 import Html.Styled as H exposing (Html)
@@ -14,13 +15,18 @@ import View.Aria as Aria
 import View.InfoMarker as InfoMarker
 
 
-toHtml : MapTheme -> Terrain -> Html msg
-toHtml theme terrain =
-    Lazy.lazy2 inspectionView theme terrain
+toHtml : Map -> Coordinate -> Html msg
+toHtml map position =
+    Lazy.lazy2 inspectionView map position
 
 
-inspectionView : MapTheme -> Terrain -> Html msg
-inspectionView theme terrain =
+inspectionView : Map -> Coordinate -> Html msg
+inspectionView map position =
+    let
+        terrain : Terrain
+        terrain =
+            Map.terrainAt map position
+    in
     H.div
         [ A.css
             [ S.col
@@ -48,7 +54,7 @@ inspectionView theme terrain =
                     , S.maxWFull
                     ]
                 ]
-                [ TerrainTile.toSvg { theme = theme, terrain = terrain } ]
+                [ TerrainTile.onMap map position ]
                 |> Svg.toUnstyled
                 |> H.fromUnstyled
             ]
@@ -112,3 +118,9 @@ visibilityText terrain =
 
         Terrain.Forest ->
             "units inside forests are completely concealed, forests also obstruct line of sight."
+
+        Terrain.Water ->
+            "water cannot be entered or crossed by infantry, tanks, trucks, or field guns, including when unloading. it does not block line of sight."
+
+        Terrain.Beach ->
+            "a sandy shore with a gentle water edge. all current units can cross it and unload here using ordinary plain movement and supply costs. it does not provide cover or block sight."

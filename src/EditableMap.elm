@@ -204,3 +204,6 @@ name kind =
 
         MapType.Ridgeway ->
             "ridgeway"
+
+        MapType.ThreeCrossings ->
+            "three-crossings"

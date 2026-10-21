@@ -400,7 +400,9 @@ impl Combat {
             .and_then(|position| board.map.tile_at(position))
         {
             Some(Terrain::Hills | Terrain::Forest) => 0.85,
-            Some(Terrain::Plain | Terrain::Mountains) | None => 1.0,
+            Some(Terrain::Plain | Terrain::Mountains | Terrain::Water | Terrain::Beach) | None => {
+                1.0
+            }
         };
         let ambush = match (kind, shooter.kind(), target.kind(), target_aspect) {
             // Infantry can seriously hurt prepared armor by ambushing its sides or rear.

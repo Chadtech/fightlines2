@@ -169,6 +169,12 @@ check rules fixture =
                                                 else if symbol == '^' then
                                                     Terrain.Mountains
 
+                                                else if symbol == '~' then
+                                                    Terrain.Water
+
+                                                else if symbol == ':' then
+                                                    Terrain.Beach
+
                                                 else
                                                     Terrain.Plain
                                             }

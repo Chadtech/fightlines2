@@ -14,6 +14,7 @@ pub enum MapType {
     BlackForest,
     Crossroads,
     Ridgeway,
+    ThreeCrossings,
 }
 
 impl MapType {
@@ -26,7 +27,8 @@ impl MapType {
             | Self::Sidewinder
             | Self::BlackForest
             | Self::Crossroads
-            | Self::Ridgeway => 2,
+            | Self::Ridgeway
+            | Self::ThreeCrossings => 2,
         }
     }
 
@@ -53,6 +55,7 @@ impl MapType {
             Self::BlackForest => Scenario::black_forest(),
             Self::Crossroads => Scenario::crossroads(),
             Self::Ridgeway => Scenario::ridgeway(),
+            Self::ThreeCrossings => Scenario::three_crossings(),
         }
     }
 }

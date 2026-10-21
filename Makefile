@@ -20,6 +20,7 @@ check:
 	cargo test --locked
 	elm-format src --validate
 	node tools/check-movement.cjs
+	node tools/check-shoreline.cjs
 	node tools/check-turns.cjs
 	node tools/check-orders.cjs
 	node tools/check-lifecycle.cjs

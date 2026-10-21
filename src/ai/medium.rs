@@ -747,6 +747,7 @@ mod tests {
             MapType::BlackForest,
             MapType::Crossroads,
             MapType::Ridgeway,
+            MapType::ThreeCrossings,
         ] {
             let mut scenario = map.scenario().fixture()?;
             let mut turns = Turns::default();

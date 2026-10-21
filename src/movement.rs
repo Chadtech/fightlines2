@@ -17,11 +17,11 @@ pub struct MovementRule {
 
 pub fn rules() -> Vec<MovementRule> {
     [
-        (UnitKind::Infantry, 4, [2, 2, 2, 4]),
-        (UnitKind::Tank, 12, [2, 4, 6, 0]),
+        (UnitKind::Infantry, 4, [2, 2, 2, 4, 0, 2]),
+        (UnitKind::Tank, 12, [2, 4, 6, 0, 0, 2]),
         // One adjacent passable square, regardless of terrain.
-        (UnitKind::FieldGun, 2, [2, 2, 2, 0]),
-        (UnitKind::Truck, 14, [2, 6, 8, 0]),
+        (UnitKind::FieldGun, 2, [2, 2, 2, 0, 0, 2]),
+        (UnitKind::Truck, 14, [2, 6, 8, 0, 0, 2]),
     ]
     .into_iter()
     .map(|(kind, budget, costs)| MovementRule {
@@ -32,6 +32,8 @@ pub fn rules() -> Vec<MovementRule> {
             Terrain::Hills,
             Terrain::Forest,
             Terrain::Mountains,
+            Terrain::Water,
+            Terrain::Beach,
         ]
         .into_iter()
         .zip(costs)
@@ -92,6 +94,8 @@ mod tests {
                     "HILLS" => Terrain::Hills,
                     "FOREST" => Terrain::Forest,
                     "MOUNTAINS" => Terrain::Mountains,
+                    "WATER" => Terrain::Water,
+                    "BEACH" => Terrain::Beach,
                     _ => return Err("unknown fixture terrain".into()),
                 };
                 assert_eq!(entry.terrain, terrain);

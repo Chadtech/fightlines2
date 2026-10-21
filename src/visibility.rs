@@ -119,7 +119,10 @@ pub(crate) fn clear_line(map: &Map, origin: Coordinate, target: Coordinate) -> b
     let origin_terrain = map.tile_at(origin);
     match origin_terrain {
         Some(Terrain::Mountains) => return true,
-        Some(Terrain::Hills | Terrain::Forest | Terrain::Plain) | None => {}
+        Some(
+            Terrain::Hills | Terrain::Forest | Terrain::Plain | Terrain::Water | Terrain::Beach,
+        )
+        | None => {}
     }
     let dx = target.x() - origin.x();
     let dy = target.y() - origin.y();
@@ -134,7 +137,7 @@ pub(crate) fn clear_line(map: &Map, origin: Coordinate, target: Coordinate) -> b
         let blocking_terrain = match map.tile_at(position) {
             Some(Terrain::Mountains) => true,
             Some(Terrain::Hills | Terrain::Forest) => origin_terrain != Some(Terrain::Hills),
-            Some(Terrain::Plain) | None => false,
+            Some(Terrain::Plain | Terrain::Water | Terrain::Beach) | None => false,
         };
         position != origin && position != target && blocking_terrain
     };
@@ -900,6 +903,22 @@ mod tests {
             }
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn water_does_not_obstruct_sight() -> TestResult<()> {
+        let map = Map::from_ascii(".:~.").fixture()?;
+        assert!(clear_line(
+            &map,
+            Coordinate::new(0, 0),
+            Coordinate::new(3, 0)
+        ));
+        assert!(clear_line(
+            &map,
+            Coordinate::new(3, 0),
+            Coordinate::new(0, 0)
+        ));
         Ok(())
     }
 

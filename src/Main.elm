@@ -16,6 +16,7 @@ import Game.View.CombatEffects as CombatEffects
 import Game.View.CombatTheater as CombatTheater
 import Game.View.DepotStock as DepotStock
 import Game.View.TargetSight as TargetSight
+import Game.View.TerrainTile as TerrainTile
 import Game.View.TurnControls as TurnControls
 import Game.View.TurnIntroduction as TurnIntroduction
 import Game.View.UnitCargo as UnitCargo
@@ -770,6 +771,8 @@ shell page =
             [ globalStyles
             , LoadingBar.styles
             , TargetSight.styles
+            , TerrainTile.styles
+            , TerrainTile.definitions
             , UnitFacing.styles
             , UnitCargo.styles
             , UnitWarnings.styles
@@ -783,7 +786,8 @@ shell page =
                 ++ content
     in
     [ H.main_
-        [ A.css
+        [ A.class TerrainTile.clockClass
+        , A.css
             [ S.bgNightwood2
             , S.minHFullViewport
             , S.p4
