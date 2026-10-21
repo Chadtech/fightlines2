@@ -347,6 +347,7 @@ mod tests {
             MapType::Crossroads,
             MapType::Ridgeway,
             MapType::ThreeCrossings,
+            MapType::LakeOfPennsylvania,
         ] {
             let mut scenario = map.scenario().fixture()?;
             let mut turns = Turns::default();

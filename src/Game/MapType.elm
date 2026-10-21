@@ -35,3 +35,6 @@ label mapType =
 
         Api.Enum.MapType.ThreeCrossings ->
             "three crossings"
+
+        Api.Enum.MapType.LakeOfPennsylvania ->
+            "lake of pennsylvania"

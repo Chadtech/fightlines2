@@ -727,6 +727,10 @@ impl Scenario {
         MapDefinition::parse(include_str!("../maps/three-crossings.json"))?.scenario()
     }
 
+    pub fn lake_of_pennsylvania() -> Result<Self, MapError> {
+        MapDefinition::parse(include_str!("../maps/lake-of-pennsylvania.json"))?.scenario()
+    }
+
     pub fn supply_point() -> Result<Self, MapError> {
         MapDefinition::parse(include_str!("../maps/supply-point.json"))?.scenario()
     }
@@ -823,6 +827,7 @@ mod tests {
             crate::map_type::MapType::Crossroads,
             crate::map_type::MapType::Ridgeway,
             crate::map_type::MapType::ThreeCrossings,
+            crate::map_type::MapType::LakeOfPennsylvania,
         ] {
             let scenario = map_type.scenario().fixture()?;
             let original_visibility =

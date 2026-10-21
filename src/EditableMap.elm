@@ -207,3 +207,6 @@ name kind =
 
         MapType.ThreeCrossings ->
             "three-crossings"
+
+        MapType.LakeOfPennsylvania ->
+            "lake-of-pennsylvania"

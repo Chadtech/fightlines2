@@ -435,7 +435,9 @@ update msg page =
                 LoadingMapEditor shared ->
                     case result of
                         Ok flags ->
-                            ( MapEditor (MapEditor.init shared flags), E.none )
+                            MapEditor.init shared flags
+                                |> Tuple.mapFirst MapEditor
+                                |> Tuple.mapSecond (E.map MapEditorMsg)
 
                         Err error ->
                             ( MapEditorLoadFailed shared (ApiRequest.errorMessage error), E.none )

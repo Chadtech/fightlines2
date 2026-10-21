@@ -15,7 +15,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-pub const MAPS: [(MapType, &str); 9] = [
+pub const MAPS: [(MapType, &str); 10] = [
     (MapType::SupplyPoint, "supply-point"),
     (MapType::ElAlamein, "el-alamein"),
     (MapType::BloodGulch, "blood-gulch"),
@@ -25,6 +25,7 @@ pub const MAPS: [(MapType, &str); 9] = [
     (MapType::Crossroads, "crossroads"),
     (MapType::Ridgeway, "ridgeway"),
     (MapType::ThreeCrossings, "three-crossings"),
+    (MapType::LakeOfPennsylvania, "lake-of-pennsylvania"),
 ];
 
 pub struct Editor {

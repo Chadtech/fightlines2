@@ -9,18 +9,20 @@
 
 ## Soon
 - Hide map editor UI in Elm code if flag is not set
-- Review last turn step by step view
 - Good UI for truck cargo
 - Sound
-- Water tile
-
+- Make maps not hardcoded
+- Map selection has thumbnail images
 
 ## Later
 - Attack animations
-- Infantry weapon diversity (bazooka, mounted machine gun)
+- Landing page
+- Launch
+
+## After prod launch
 - Tutorial missions
 - Manufacturing and cities
-
+- Infantry weapon diversity (bazooka, mounted machine gun)
 
 ### Future units
 - Artillery, huge range gun that cannot move itself

@@ -15,6 +15,7 @@ pub enum MapType {
     Crossroads,
     Ridgeway,
     ThreeCrossings,
+    LakeOfPennsylvania,
 }
 
 impl MapType {
@@ -28,7 +29,8 @@ impl MapType {
             | Self::BlackForest
             | Self::Crossroads
             | Self::Ridgeway
-            | Self::ThreeCrossings => 2,
+            | Self::ThreeCrossings
+            | Self::LakeOfPennsylvania => 2,
         }
     }
 
@@ -56,6 +58,7 @@ impl MapType {
             Self::Crossroads => Scenario::crossroads(),
             Self::Ridgeway => Scenario::ridgeway(),
             Self::ThreeCrossings => Scenario::three_crossings(),
+            Self::LakeOfPennsylvania => Scenario::lake_of_pennsylvania(),
         }
     }
 }

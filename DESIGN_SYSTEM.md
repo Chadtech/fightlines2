@@ -674,8 +674,16 @@ relevant brushes in a regular grid with artwork previews. Use inset, pressed
 choices with accessible pressed state for selected tools; reserve gold for save.
 Show player and facing with unit tools. Keep brush size and mirror painting in
 the tools card. Fit the board to the workspace's actual available space by default;
-explicit scales scroll inside its inset map surface. Keep view scale and the
-active-brush hint inside the workspace card. On narrow screens, bound the tools
+the canvas pans freely inside its clipped inset surface. Primary dragging paints;
+the hand tool, Space-drag, or middle dragging pans without changing the brush or
+undo history. Show a grab cursor while the hand tool or Space is active and a
+grabbing cursor during panning. Scroll zooms around the pointer. Keep minus,
+percentage, plus, and fit map controls beneath the canvas, alongside the active
+brush and shortcut hints. Clicking the percentage restores 100% (32 pixels per
+tile) around the current view center; fit map centers the whole map with breathing
+room and follows workspace resizes. Plus/minus zoom, arrow keys pan, and Home fits
+the map outside form fields. Tile keyboard activation uses Enter; Space is reserved
+for temporary panning. On narrow screens, bound the tools
 card's height and put the workspace below it. Mirror painting swaps unit players
 and reflects horizontal facing.
 

@@ -387,7 +387,7 @@ naval movement and landings are not implemented yet.
 New games on an editor-enabled server read those files immediately; existing
 games keep their initial board. Choose **play in new tab** to create a normal
 lobby and test the saved map. Rebuild the server to embed edits in production.
-The editor edits all nine built-in map choices.
+The editor edits all ten built-in map choices.
 
 The page is absent and the `maps` and `saveMap` operations on `/graphql` are
 disabled unless the server starts with `--map-editor`. Editor requests require
@@ -471,11 +471,12 @@ available to inspect, and no further turns can be submitted. Digging in remains 
 ## Maps
 
 The lobby host can choose **supply point**, **el alamein**, **blood gulch**,
-**arabia**, **sidewinder**, **black forest**, **crossroads**, **ridgeway**, or
-**three crossings**. Each map has its own starting force, with full starting resources.
+**arabia**, **sidewinder**, **black forest**, **crossroads**, **ridgeway**,
+**three crossings**, or **lake of pennsylvania**. Each map has its own starting
+force, with full starting resources.
 El Alamein, Blood Gulch, and Arabia are 25 x 21 tiles; Sidewinder is 33 x 29,
 Black Forest is 33 x 25, Crossroads is 11 x 9, Ridgeway is 15 x 13,
-and Three Crossings is 21 x 17.
+Three Crossings is 21 x 17, and Lake of Pennsylvania is 17 x 17.
 Counts below are per player:
 
 | Map | Infantry | Tanks | Field guns | Trucks | Total |
@@ -489,6 +490,7 @@ Counts below are per player:
 | Crossroads | 2 | 1 | 0 | 1 | 4 |
 | Ridgeway | 3 | 1 | 1 | 1 | 6 |
 | Three Crossings | 3 | 2 | 1 | 2 | 8 |
+| Lake of Pennsylvania | 1 | 0 | 0 | 0 | 1 |
 
 Opposing formations face toward the battlefield. El Alamein staggers the eastern
 base three tiles south of the western base; other maps mirror their formations.
@@ -498,6 +500,9 @@ places infantry on the forward flanks, a tank on the central approach, and its
 gun and trucks near the base. Arabia puts a tank at the tip of a compact formation,
 three infantry across its front, and two guns behind them. Depot squares stay clear.
 
+- **Lake of Pennsylvania**: a plain green starter board for editing, with one
+  infantry per player and no terrain features or depots. Choose it in the map
+  editor to paint terrain, place forces, resize, and save your own layout.
 - **Three Crossings**: a mirrored green river battlefield showcasing animated,
   impassable water. Northern and southern causeways and a central island crossing
   are the only land routes between banks. Each crossing has a neutral supply
@@ -592,7 +597,13 @@ The export scripts remain in `tools/`. Back up source artwork separately.
 - [Deployment](DEPLOYMENT.md): configuration, access from other devices, and hosting.
 
 Edit terrain with the map editor or the sparse features in `maps/*.json`;
-water uses `"terrain": "Water"`. New games read saved edits in editor mode;
+water uses `"terrain": "Water"`. In the editor, drag to paint; hold Space and drag,
+use the middle mouse button, or choose **hand · pan** to move the canvas. Scroll to
+zoom around the pointer. The controls beneath the canvas zoom out/in, restore
+100% (32 pixels per tile) when clicking the percentage, or **fit map**. Plus/minus
+zoom, arrow keys pan, and Home fits the map outside form fields. Tab and Enter
+activate tiles. Navigation preserves the brush and stays out of undo history.
+New games read saved edits in editor mode;
 rebuild the server to embed them for production. Test fixtures also support ASCII
 sketches: `#` is forest, `%` hills, `^` mountains, `~` water, `:` beach,
 and spaces or `.` plain.

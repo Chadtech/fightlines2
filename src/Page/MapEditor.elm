@@ -20,9 +20,13 @@ import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Api.Object.MapCatalog as CatalogApi
 import Api.Query as Query
 import ApiRequest
+import Browser.Dom
 import Browser.Events
+import Drag exposing (Drag)
 import EditableMap exposing (Definition, NamedMap)
 import Effect as E exposing (Eff)
+import Error
+import Game.Camera exposing (Camera)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Map as Map exposing (Map)
 import Game.MapType as MapType
@@ -36,6 +40,7 @@ import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Html.Styled.Lazy as Lazy
 import Json.Decode as D
+import Point exposing (Point)
 import Shared
 import Style as S
 import Svg.Styled as Svg exposing (Svg)
@@ -77,11 +82,14 @@ type alias Model =
     , brush : Brush
     , playerNumber : PlayerNumber
     , facing : Direction
-    , stroke : Stroke
+    , gesture : CanvasGesture
     , saveState : SaveState
     , mirror : Bool
     , brushSize : Int
-    , viewScale : ViewScale
+    , canvasView : CanvasView
+    , viewport : Maybe Browser.Dom.Element
+    , tool : Tool
+    , spaceHeld : Bool
     , widthInput : String
     , heightInput : String
     }
@@ -101,11 +109,24 @@ type BrushGroup
     | DepotBrushes
 
 
-type ViewScale
+type CanvasView
     = FitWorkspace
-    | SmallTiles
-    | MediumTiles
-    | LargeTiles
+    | FreeView Camera
+
+
+type Tool
+    = PaintTool
+    | HandTool
+
+
+type CanvasButton
+    = PrimaryButton
+    | MiddleButton
+
+
+type ViewportPurpose
+    = RefreshLayout
+    | ZoomAtPointer Point Float
 
 
 type alias BrushSettings =
@@ -115,9 +136,10 @@ type alias BrushSettings =
     }
 
 
-type Stroke
+type CanvasGesture
     = Resting
     | Painting Definition
+    | Panning Drag
 
 
 type SaveState
@@ -142,7 +164,20 @@ type Msg
     | ThemeInputChanged String
     | MirrorInputChanged Bool
     | BrushSizeInputChanged String
-    | ZoomInputChanged String
+    | HandToolClicked
+    | ZoomInClicked
+    | ZoomOutClicked
+    | ActualSizeClicked
+    | FitMapClicked
+    | CanvasMousePressed CanvasButton Point
+    | CanvasMouseMoved Point Int
+    | WheelScrolled Point Float
+    | CanvasKeyPressed String
+    | SpaceReleased
+    | CanvasFocusReceived
+    | CanvasFocusLost
+    | WindowResized
+    | ViewportMeasured ViewportPurpose (Result Browser.Dom.Error Browser.Dom.Element)
     | TileMousePressed Coordinate
     | TileMouseEntered Coordinate Int
     | TileActivated Coordinate
@@ -162,22 +197,27 @@ type Msg
 ----------------------------------------------------------------
 
 
-init : Shared.Model -> Flags -> Model
+init : Shared.Model -> Flags -> ( Model, Eff Msg )
 init shared flags =
-    { shared = shared
-    , current = document flags.first
-    , others = List.map document flags.rest
-    , brush = PaintTerrain Terrain.Forest
-    , playerNumber = PlayerNumber.Player1
-    , facing = Direction.East
-    , stroke = Resting
-    , saveState = Idle
-    , mirror = False
-    , brushSize = 1
-    , viewScale = FitWorkspace
-    , widthInput = String.fromInt flags.first.definition.width
-    , heightInput = String.fromInt flags.first.definition.height
-    }
+    ( { shared = shared
+      , current = document flags.first
+      , others = List.map document flags.rest
+      , brush = PaintTerrain Terrain.Forest
+      , playerNumber = PlayerNumber.Player1
+      , facing = Direction.East
+      , gesture = Resting
+      , saveState = Idle
+      , mirror = False
+      , brushSize = 1
+      , canvasView = FitWorkspace
+      , viewport = Nothing
+      , tool = PaintTool
+      , spaceHeld = False
+      , widthInput = String.fromInt flags.first.definition.width
+      , heightInput = String.fromInt flags.first.definition.height
+      }
+    , measureViewport
+    )
 
 
 load : Graphql.Http.Request Flags
@@ -214,36 +254,152 @@ saveEffect pending =
 ----------------------------------------------------------------
 
 
-viewScaleValue : ViewScale -> String
-viewScaleValue scale =
-    case scale of
+canvasHtmlId : String
+canvasHtmlId =
+    "map-editor-canvas"
+
+
+measureViewport : Eff Msg
+measureViewport =
+    E.measure canvasHtmlId (ViewportMeasured RefreshLayout)
+
+
+{-| Camera offsets are screen pixels from the canvas center. At 100%, tiles are
+32 pixels wide. Fit leaves room around every edge and follows workspace resizes.
+-}
+canvasCamera : Model -> Camera
+canvasCamera model =
+    case model.canvasView of
+        FreeView camera ->
+            camera
+
         FitWorkspace ->
-            "fit"
+            let
+                fitZoom : Browser.Dom.Element -> Float
+                fitZoom viewport =
+                    min 4
+                        (min
+                            (max 1 (viewport.element.width - 32) / (toFloat model.current.draft.width * 32))
+                            (max 1 (viewport.element.height - 32) / (toFloat model.current.draft.height * 32))
+                        )
+            in
+            { offset = { x = 0, y = 0 }
+            , zoom = model.viewport |> Maybe.map fitZoom |> Maybe.withDefault 1
+            }
 
-        SmallTiles ->
-            "16"
 
-        MediumTiles ->
-            "32"
+zoomCanvas : Point -> Float -> Model -> Model
+zoomCanvas anchor factor model =
+    let
+        camera : Camera
+        camera =
+            canvasCamera model
 
-        LargeTiles ->
-            "48"
+        zoom : Float
+        zoom =
+            clamp 0.01 4 (camera.zoom * factor)
+
+        ratio : Float
+        ratio =
+            zoom / camera.zoom
+    in
+    { model
+        | canvasView =
+            FreeView
+                { zoom = zoom
+                , offset =
+                    { x = anchor.x - (anchor.x - camera.offset.x) * ratio
+                    , y = anchor.y - (anchor.y - camera.offset.y) * ratio
+                    }
+                }
+    }
 
 
-viewTileSize : ViewScale -> Int
-viewTileSize scale =
-    case scale of
-        FitWorkspace ->
-            32
+panCanvas : Point -> Model -> Model
+panCanvas delta model =
+    let
+        camera : Camera
+        camera =
+            canvasCamera model
+    in
+    { model
+        | canvasView = FreeView { camera | offset = { x = camera.offset.x + delta.x, y = camera.offset.y + delta.y } }
+    }
 
-        SmallTiles ->
-            16
 
-        MediumTiles ->
-            32
+usesHand : Model -> Bool
+usesHand model =
+    (model.tool == HandTool) || model.spaceHeld
 
-        LargeTiles ->
-            48
+
+{-| Leave native text editing and browser shortcuts alone. Space still activates
+focused controls; pressing on the canvas moves focus there before a pan begins.
+-}
+canvasKeyDecoder : D.Decoder ( Msg, Bool )
+canvasKeyDecoder =
+    let
+        interpret : String -> String -> Bool -> Bool -> Bool -> D.Decoder ( Msg, Bool )
+        interpret key tag ctrl meta alt =
+            if List.member tag [ "INPUT", "TEXTAREA", "SELECT" ] || ctrl || meta || alt then
+                D.fail "text editing or browser shortcut"
+
+            else if List.member key [ " ", "+", "=", "-", "Home", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown" ] then
+                D.succeed ( CanvasKeyPressed key, (key /= " ") || not (List.member tag [ "BUTTON", "A" ]) )
+
+            else
+                D.fail "not a canvas shortcut"
+    in
+    D.map5 interpret
+        (D.field "key" D.string)
+        (D.at [ "target", "tagName" ] D.string)
+        (D.field "ctrlKey" D.bool)
+        (D.field "metaKey" D.bool)
+        (D.field "altKey" D.bool)
+        |> D.andThen identity
+
+
+canvasPressDecoder : D.Decoder ( Msg, Bool )
+canvasPressDecoder =
+    let
+        pressed : Int -> D.Decoder ( Msg, Bool )
+        pressed button =
+            case button of
+                0 ->
+                    D.map (\point -> ( CanvasMousePressed PrimaryButton point, True )) Point.decoder
+
+                1 ->
+                    D.map (\point -> ( CanvasMousePressed MiddleButton point, True )) Point.decoder
+
+                _ ->
+                    D.fail "only primary or middle mouse button"
+    in
+    D.field "button" D.int |> D.andThen pressed
+
+
+canvasWheelDecoder : D.Decoder ( Msg, Bool )
+canvasWheelDecoder =
+    let
+        scrolled : Point -> Int -> Float -> ( Msg, Bool )
+        scrolled point mode delta =
+            let
+                pixels : Float
+                pixels =
+                    case mode of
+                        1 ->
+                            delta * 16
+
+                        2 ->
+                            delta * 800
+
+                        _ ->
+                            delta
+            in
+            ( WheelScrolled point pixels, True )
+    in
+    D.map3 scrolled
+        (D.map2 Point (D.field "pageX" D.float) (D.field "pageY" D.float))
+        (D.field "deltaMode" D.int)
+        (D.field "deltaY" D.float)
 
 
 editingSaveState : SaveState -> SaveState
@@ -291,14 +447,17 @@ remember before current =
         { current | undo = List.take 100 (before :: current.undo), redo = [] }
 
 
-finishStroke : Model -> Model
-finishStroke model =
-    case model.stroke of
+finishGesture : Model -> Model
+finishGesture model =
+    case model.gesture of
         Resting ->
             model
 
         Painting before ->
-            { model | current = remember before model.current, stroke = Resting }
+            { model | current = remember before model.current, gesture = Resting }
+
+        Panning _ ->
+            { model | gesture = Resting }
 
 
 applyEdit : Definition -> Model -> Model
@@ -584,7 +743,7 @@ update msg model =
                     let
                         finished : Model
                         finished =
-                            finishStroke model
+                            finishGesture model
 
                         pending : PendingSave
                         pending =
@@ -603,7 +762,7 @@ update msg model =
             let
                 finished : Model
                 finished =
-                    finishStroke model
+                    finishGesture model
 
                 matches : Document -> Bool
                 matches doc =
@@ -613,18 +772,20 @@ update msg model =
                 selected :: _ ->
                     { finished
                         | current = selected
+                        , canvasView = FitWorkspace
                         , others = finished.current :: List.filter (not << matches) model.others
                         , widthInput = String.fromInt selected.draft.width
                         , heightInput = String.fromInt selected.draft.height
                         , saveState = editingSaveState model.saveState
                     }
                         |> E.withOut
+                        |> E.and measureViewport
 
                 [] ->
                     ( model, E.none )
 
         BrushButtonClicked brush ->
-            ( { model | brush = brush }, E.none )
+            ( { model | brush = brush, tool = PaintTool }, E.none )
 
         PlayerNumberInputChanged value ->
             { model
@@ -644,7 +805,7 @@ update msg model =
         ThemeInputChanged value ->
             case MapTheme.fromString value of
                 Just theme ->
-                    ( applyEdit { draft | theme = theme } (finishStroke model), E.none )
+                    ( applyEdit { draft | theme = theme } (finishGesture model), E.none )
 
                 Nothing ->
                     ( model, E.none )
@@ -655,58 +816,204 @@ update msg model =
         BrushSizeInputChanged value ->
             ( { model | brushSize = String.toInt value |> Maybe.withDefault model.brushSize }, E.none )
 
-        ZoomInputChanged value ->
+        HandToolClicked ->
+            ( { model | tool = HandTool }, E.none )
+
+        ZoomInClicked ->
+            ( zoomCanvas { x = 0, y = 0 } 1.25 (finishGesture model), E.none )
+
+        ZoomOutClicked ->
+            ( zoomCanvas { x = 0, y = 0 } 0.8 (finishGesture model), E.none )
+
+        ActualSizeClicked ->
+            ( zoomCanvas { x = 0, y = 0 } (1 / (canvasCamera model).zoom) (finishGesture model), E.none )
+
+        FitMapClicked ->
+            ( { model | canvasView = FitWorkspace } |> finishGesture, measureViewport )
+
+        CanvasMousePressed button point ->
             let
-                scale : ViewScale
-                scale =
-                    case value of
-                        "fit" ->
-                            FitWorkspace
+                next : Model
+                next =
+                    if usesHand model || (button == MiddleButton) then
+                        let
+                            finished : Model
+                            finished =
+                                finishGesture model
 
-                        "16" ->
-                            SmallTiles
+                            camera : Camera
+                            camera =
+                                canvasCamera finished
+                        in
+                        { finished
+                            | canvasView = FreeView camera
+                            , gesture = Panning (Drag.startAt { start = point, origin = camera.offset })
+                        }
 
-                        "32" ->
-                            MediumTiles
-
-                        "48" ->
-                            LargeTiles
-
-                        _ ->
-                            model.viewScale
+                    else
+                        model
             in
-            ( { model | viewScale = scale }, E.none )
+            ( next, E.focus { htmlId = canvasHtmlId } CanvasFocusReceived )
 
-        TileMousePressed position ->
+        CanvasFocusReceived ->
+            ( model, E.none )
+
+        CanvasMouseMoved point buttons ->
+            case model.gesture of
+                Panning drag ->
+                    if buttons == 0 then
+                        ( finishGesture model, E.none )
+
+                    else
+                        let
+                            camera : Camera
+                            camera =
+                                canvasCamera model
+                        in
+                        ( { model
+                            | canvasView =
+                                FreeView
+                                    { camera
+                                        | offset =
+                                            { x = (Drag.origin drag).x + point.x - (Drag.start drag).x
+                                            , y = (Drag.origin drag).y + point.y - (Drag.start drag).y
+                                            }
+                                    }
+                          }
+                        , E.none
+                        )
+
+                _ ->
+                    if buttons == 0 then
+                        ( finishGesture model, E.none )
+
+                    else
+                        ( model, E.none )
+
+        WheelScrolled point delta ->
+            ( finishGesture model, E.measure canvasHtmlId (ViewportMeasured (ZoomAtPointer point delta)) )
+
+        CanvasKeyPressed key ->
             let
                 finished : Model
                 finished =
-                    finishStroke model
+                    finishGesture model
+
+                centeredZoom : Float -> ( Model, Eff Msg )
+                centeredZoom factor =
+                    ( zoomCanvas { x = 0, y = 0 } factor finished, E.none )
+
+                pan : Point -> ( Model, Eff Msg )
+                pan delta =
+                    ( panCanvas delta finished, E.none )
             in
-            ( paint position { finished | stroke = Painting finished.current.draft }, E.none )
+            case key of
+                " " ->
+                    if model.spaceHeld then
+                        ( model, E.none )
+
+                    else
+                        ( { finished | spaceHeld = True }, E.none )
+
+                "+" ->
+                    centeredZoom 1.25
+
+                "=" ->
+                    centeredZoom 1.25
+
+                "-" ->
+                    centeredZoom 0.8
+
+                "Home" ->
+                    ( { finished | canvasView = FitWorkspace }, measureViewport )
+
+                "ArrowLeft" ->
+                    pan { x = 48, y = 0 }
+
+                "ArrowRight" ->
+                    pan { x = -48, y = 0 }
+
+                "ArrowUp" ->
+                    pan { x = 0, y = 48 }
+
+                "ArrowDown" ->
+                    pan { x = 0, y = -48 }
+
+                _ ->
+                    ( model, E.none )
+
+        SpaceReleased ->
+            ( { model | spaceHeld = False }, E.none )
+
+        CanvasFocusLost ->
+            ( { model | spaceHeld = False } |> finishGesture, E.none )
+
+        WindowResized ->
+            ( model, measureViewport )
+
+        ViewportMeasured purpose result ->
+            case result of
+                Ok viewport ->
+                    let
+                        measured : Model
+                        measured =
+                            { model | viewport = Just viewport }
+                    in
+                    case purpose of
+                        RefreshLayout ->
+                            ( measured, E.none )
+
+                        ZoomAtPointer point delta ->
+                            let
+                                anchor : Point
+                                anchor =
+                                    { x = point.x - viewport.element.x - viewport.element.width / 2
+                                    , y = point.y - viewport.element.y - viewport.element.height / 2
+                                    }
+                            in
+                            ( zoomCanvas anchor (e ^ (negate (clamp -100 100 delta) * 0.002)) measured, E.none )
+
+                Err error ->
+                    ( { model | shared = Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared }, E.none )
+
+        TileMousePressed position ->
+            if usesHand model then
+                ( model, E.none )
+
+            else
+                let
+                    finished : Model
+                    finished =
+                        finishGesture model
+                in
+                ( paint position { finished | gesture = Painting finished.current.draft }, E.none )
 
         TileMouseEntered position buttons ->
-            case model.stroke of
+            case model.gesture of
                 Painting _ ->
                     if buttons == 1 then
                         ( paint position model, E.none )
 
                     else
-                        ( finishStroke model, E.none )
+                        ( finishGesture model, E.none )
 
-                Resting ->
+                _ ->
                     ( model, E.none )
 
         TileActivated position ->
-            let
-                painted : Model
-                painted =
-                    paint position (finishStroke model)
-            in
-            ( { painted | current = remember draft painted.current }, E.none )
+            if usesHand model then
+                ( model, E.none )
+
+            else
+                let
+                    painted : Model
+                    painted =
+                        paint position (finishGesture model)
+                in
+                ( { painted | current = remember draft painted.current }, E.none )
 
         MouseReleased ->
-            ( finishStroke model, E.none )
+            ( finishGesture model, E.none )
 
         UndoButtonClicked ->
             case current.undo of
@@ -771,6 +1078,7 @@ update msg model =
                             }
                             model
                             |> E.withOut
+                            |> E.and measureViewport
 
                     else
                         { model | saveState = editFailed "dimensions must be between 1 and 64" model.saveState }
@@ -796,6 +1104,7 @@ view model =
             , S.minH0
             , S.overflowHidden
             ]
+        , Ev.preventDefaultOn "keydown" canvasKeyDecoder
         ]
         [ H.div
             [ A.css
@@ -920,34 +1229,67 @@ toolbarActions model =
 
 workspace : Model -> Html Msg
 workspace model =
+    let
+        camera : Camera
+        camera =
+            canvasCamera model
+
+        transform : String
+        transform =
+            "translate(" ++ String.fromFloat camera.offset.x ++ "px, " ++ String.fromFloat camera.offset.y ++ "px) scale(" ++ String.fromFloat camera.zoom ++ ")"
+
+        panning : Bool
+        panning =
+            case model.gesture of
+                Panning _ ->
+                    True
+
+                _ ->
+                    False
+
+        hint : String
+        hint =
+            if usesHand model then
+                "drag to pan · choose a brush to paint"
+
+            else
+                "active brush · " ++ brushLabel model.brush ++ " · drag to paint"
+    in
     Card.toHtml Card.panel
         [ H.div
-            [ A.css
+            [ A.id canvasHtmlId
+            , A.tabindex 0
+            , A.attribute "aria-label" "map canvas · space and drag to pan · scroll to zoom · arrow keys to pan · home to fit"
+            , A.css
                 [ S.flex1
                 , S.minH0
-                , S.overflowAuto
+                , S.minW0
+                , S.relative
+                , S.row
+                , S.itemsCenter
+                , S.justifyCenter
+                , S.overflowHidden
+                , S.userSelectNone
                 , S.bgNightwood3
                 , S.indentStrong
-                , S.p3
+                , S.focusVisible
+                    [ S.outlineYellow5
+                    , S.outlineOffsetNeg3
+                    ]
+                , S.when (usesHand model) S.grabCursor
+                , S.when panning S.grabbingCursor
                 ]
+            , Ev.preventDefaultOn "mousedown" canvasPressDecoder
+            , Ev.preventDefaultOn "wheel" canvasWheelDecoder
+            , Ev.onBlur CanvasFocusLost
             ]
             [ H.div
                 [ A.css
-                    [ S.hFull
-                    , S.containerSize
+                    [ S.shrink0
+                    , S.transform transform
                     ]
                 ]
-                [ H.div
-                    [ A.css
-                        [ S.row
-                        , S.hFull
-                        , S.when (model.viewScale == FitWorkspace) S.itemsCenter
-                        , S.justifyCenter
-                        , S.when (model.viewScale /= FitWorkspace) S.minWFitContent
-                        ]
-                    ]
-                    [ Lazy.lazy2 board model.viewScale model.current.draft
-                    ]
+                [ Lazy.lazy board model.current.draft
                 ]
             ]
         , H.div
@@ -955,26 +1297,33 @@ workspace model =
                 [ S.row
                 , S.flexWrap
                 , S.g3
-                , S.itemsEnd
+                , S.itemsCenter
                 , S.shrink0
                 ]
             ]
-            [ select "map-editor-tile-size"
-                "view scale"
-                (viewScaleValue model.viewScale)
-                ZoomInputChanged
-                [ ( "fit", "fit to workspace" )
-                , ( "16", "small" )
-                , ( "32", "medium" )
-                , ( "48", "large" )
-                ]
+            [ Button.secondary "−" ZoomOutClicked
+                |> Button.accessibleLabel "zoom out"
+                |> Button.toHtml
+            , Button.secondary (String.fromInt (round (camera.zoom * 100)) ++ "%") ActualSizeClicked
+                |> Button.accessibleLabel "zoom to 100% · 32 pixels per tile"
+                |> Button.toHtml
+            , Button.secondary "+" ZoomInClicked
+                |> Button.accessibleLabel "zoom in"
+                |> Button.toHtml
+            , Button.secondary "fit map" FitMapClicked
+                |> Button.toHtml
             , H.p
                 [ A.css
                     [ S.m0
                     ]
                 ]
-                [ H.text ("active brush · " ++ brushLabel model.brush ++ " · click or drag to paint")
+                [ H.text hint ]
+            , H.p
+                [ A.css
+                    [ S.m0
+                    ]
                 ]
+                [ H.text "space + drag to pan · scroll to zoom" ]
             ]
         ]
 
@@ -1111,7 +1460,7 @@ paintingTools model =
                     else
                         initial
             in
-            Button.choice label (group == target) (BrushButtonClicked brush)
+            Button.choice label ((group == target) && (model.tool == PaintTool)) (BrushButtonClicked brush)
                 |> Button.toHtml
 
         brushes : List Brush
@@ -1160,7 +1509,9 @@ paintingTools model =
                     , S.g1
                     ]
                 ]
-                [ groupButton "terrain" TerrainBrushes (PaintTerrain Terrain.Forest)
+                [ Button.choice "hand · pan" (model.tool == HandTool) HandToolClicked
+                    |> Button.toHtml
+                , groupButton "terrain" TerrainBrushes (PaintTerrain Terrain.Forest)
                 , groupButton "starting units" UnitBrushes (PlaceUnit UnitKind.Infantry)
                 , groupButton "depots" DepotBrushes (PlaceDepot DepotKind.Supply)
                 ]
@@ -1257,7 +1608,7 @@ brushButton model brush =
     let
         button : Button.Button Msg
         button =
-            Button.choice (brushLabel brush) (model.brush == brush) (BrushButtonClicked brush)
+            Button.choice (brushLabel brush) ((model.brush == brush) && (model.tool == PaintTool)) (BrushButtonClicked brush)
 
         illustrated : Button.Button Msg
         illustrated =
@@ -1311,24 +1662,22 @@ brushPreview model brush =
         artwork
 
 
-board : ViewScale -> Definition -> Html Msg
-board scale draft =
+board : Definition -> Html Msg
+board draft =
     let
         tiles : Html Msg
         tiles =
             Lazy.lazy boardTiles draft
     in
     Svg.svg
-        [ SA.width (String.fromInt (draft.width * viewTileSize scale))
-        , SA.height (String.fromInt (draft.height * viewTileSize scale))
+        [ SA.width (String.fromInt (draft.width * 32))
+        , SA.height (String.fromInt (draft.height * 32))
         , SA.viewBox ("0 0 " ++ String.fromInt (draft.width * 16) ++ " " ++ String.fromInt (draft.height * 16))
         , A.attribute "aria-label" "editable battlefield"
         , A.css
             [ S.userSelectNone
             , S.block
             , S.shrink0
-            , S.when (scale == FitWorkspace)
-                (S.fitWithinContainer { width = draft.width, height = draft.height })
             ]
         ]
         [ tiles ]
@@ -1378,7 +1727,7 @@ tile draft map position =
             D.field "key" D.string
                 |> D.andThen
                     (\key ->
-                        if key == "Enter" || key == " " then
+                        if key == "Enter" then
                             D.succeed ( TileActivated position, True )
 
                         else
@@ -1537,12 +1886,34 @@ unitArt unit =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    case model.stroke of
-        Resting ->
-            Sub.none
+    let
+        gestures : Sub Msg
+        gestures =
+            case model.gesture of
+                Resting ->
+                    Sub.none
 
-        Painting _ ->
-            Sub.batch
-                [ Browser.Events.onMouseUp (D.succeed MouseReleased)
-                , Browser.Events.onVisibilityChange (always MouseReleased)
-                ]
+                _ ->
+                    Sub.batch
+                        [ Browser.Events.onMouseMove (D.map2 CanvasMouseMoved Point.decoder (D.field "buttons" D.int))
+                        , Browser.Events.onMouseUp (D.succeed MouseReleased)
+                        ]
+
+        releasedSpace : D.Decoder Msg
+        releasedSpace =
+            D.field "key" D.string
+                |> D.andThen
+                    (\key ->
+                        if key == " " then
+                            D.succeed SpaceReleased
+
+                        else
+                            D.fail "not space"
+                    )
+    in
+    Sub.batch
+        [ gestures
+        , Browser.Events.onKeyUp releasedSpace
+        , Browser.Events.onVisibilityChange (always CanvasFocusLost)
+        , Browser.Events.onResize (\_ _ -> WindowResized)
+        ]

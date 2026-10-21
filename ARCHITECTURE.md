@@ -108,7 +108,7 @@ terrain overrides. Lookup returns no tile outside the map; missing in-bounds
 coordinates fall back to the base tile. There is no stored dense grid. `Map::from_ascii` parses rectangular sketches
 with `#` for forests, `%` for hills, `^` for mountains, `~` for water, and spaces or `.` for plain. Spaces are
 preserved; malformed rows and unknown symbols return explicit errors.
-The nine built-in scenarios are authored in `maps/*.json`, with dimensions,
+The ten built-in scenarios are authored in `maps/*.json`, with dimensions,
 typed themes, sparse terrain placements, separate supply/fuel depot placements,
 and explicit starting units (stable IDs, player, kind, position, and facing).
 Map JSON enums use Rust variant spelling, such as `GreenForest`, `FieldGun`, and
@@ -127,7 +127,12 @@ Themes affect artwork only; movement, sight and scenario geometry remain separat
 load and failure dispatch; `EditableMap` owns the authoring data and its generated
 GraphQL boundary.
 The page keeps a draft, saved snapshot, and bounded undo/redo history per map;
-a drag is one history entry. Each page session retains drafts when switching maps.
+a paint drag is one history entry. Each page session retains drafts when switching maps.
+Canvas navigation is page-owned presentation state, separate from map documents
+and their undo histories. `CanvasView` distinguishes a responsive fit from a free
+`Camera`; `CanvasGesture` distinguishes painting (with its before snapshot) from panning
+(with its drag origin). Viewport measurements support fit and pointer-anchored
+zoom. The hand tool and temporary Space modifier preserve the selected brush.
 Saving carries the target map and submitted definition in `Saving PendingSave`.
 Other editor events remain active; only another save request is blocked. Responses
 update the submitted map's saved snapshot, preserving later draft edits and map
