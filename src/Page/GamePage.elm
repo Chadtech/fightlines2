@@ -2820,7 +2820,7 @@ loadingNotice model unit destination =
                 notice : String
                 notice =
                     if unit.kind == UnitKind.Truck then
-                        "this move will pick up " ++ Unit.label target ++ " into this truck. the passenger will hold position."
+                        "this move will pick up " ++ Unit.label target ++ " into this truck when both units reach the destination."
 
                     else
                         "this move will board " ++ Unit.label target ++ " when both units reach the destination."

@@ -108,7 +108,12 @@ revokeValidated units revokedIds drafts =
 
                 boardingTarget : Unit -> Maybe Unit
                 boardingTarget unit =
-                    PlannedTransport.loadingTarget units unit (PlannedOrder.destination plan) drafts
+                    if (unit.cargoCapacity > 0) && not (PlannedOrder.isMoving plan) then
+                        -- A waiting truck can still hold if an incoming passenger cancels.
+                        Nothing
+
+                    else
+                        PlannedTransport.loadingTarget units unit (PlannedOrder.destination plan) drafts
 
                 needsCrateExit : Bool
                 needsCrateExit =

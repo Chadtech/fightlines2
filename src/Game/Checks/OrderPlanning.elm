@@ -57,6 +57,7 @@ checks =
     case ( UnitId.parse "1", UnitId.parse "2", UnitId.parse "3" ) of
         ( Ok infantryId, Ok truckId, Ok passengerId ) ->
             planningChecks infantryId truckId passengerId
+                ++ mutualPickupChecks infantryId truckId passengerId
                 ++ transportInvariantChecks infantryId truckId passengerId
                 ++ dependencyInvariantChecks infantryId truckId passengerId
                 ++ directionPlanningChecks infantryId truckId
@@ -64,6 +65,137 @@ checks =
 
         _ ->
             [ "could not construct planning fixture IDs" ]
+
+
+mutualPickupChecks : UnitId -> UnitId -> UnitId -> List String
+mutualPickupChecks infantryId truckId gunId =
+    let
+        destination : Coordinate
+        destination =
+            { x = 2, y = 2 }
+
+        truck : Unit
+        truck =
+            unit truckId Kind.Truck (Location.OnMap { x = 3, y = 1 })
+
+        context : BoardFixture
+        context =
+            board
+                [ truck
+                , unit infantryId Kind.Infantry (Location.OnMap { x = 1, y = 1 })
+                , unit gunId Kind.FieldGun (Location.OnMap { x = 2, y = 1 })
+                ]
+
+        startMove : BoardFixture -> UnitId -> OrderPlanning.Model -> OrderPlanning.Model
+        startMove fixture id model =
+            model
+                |> OrderPlanning.selectUnit fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots id
+                |> IC.andThen (OrderPlanning.applyCommand fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.depots UnitCommand.Move)
+                |> fixtureValue
+
+        saveMove : BoardFixture -> UnitId -> OrderPlanning.Model -> OrderPlanning.Model
+        saveMove fixture id model =
+            startMove fixture id model
+                |> OrderPlanning.selectTile fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots destination
+                |> fixtureValue
+
+        passengerFirst : OrderPlanning.Model
+        passengerFirst =
+            saveMove context infantryId OrderPlanning.init
+
+        truckSecond : OrderPlanning.Model
+        truckSecond =
+            saveMove context truckId passengerFirst
+
+        rejectedPassenger : OrderPlanning.Model
+        rejectedPassenger =
+            saveMove context gunId passengerFirst
+
+        fieldGunFirst : OrderPlanning.Model
+        fieldGunFirst =
+            saveMove context gunId OrderPlanning.init
+
+        keyboardPickup : OrderPlanning.Model
+        keyboardPickup =
+            startMove context truckId fieldGunFirst
+                |> OrderPlanning.extendPath context.map context.units context.playerNumbers context.movementRules DirectionEnum.South
+                |> OrderPlanning.extendPath context.map context.units context.playerNumbers context.movementRules DirectionEnum.West
+                |> OrderPlanning.confirmPath context.map context.units context.playerNumbers context.movementRules context.depots
+                |> fixtureValue
+
+        fullContext : BoardFixture
+        fullContext =
+            board
+                [ truck
+                , unit infantryId Kind.Infantry (Location.OnMap { x = 1, y = 1 })
+                , unit gunId Kind.FieldGun (Location.Aboard truckId)
+                ]
+                |> (\fixture -> { fixture | units = List.map addFreight fixture.units })
+
+        addFreight : Unit -> Unit
+        addFreight candidate =
+            if candidate.id == truckId then
+                Unit.mapResources (\resources -> { resources | supplyCargo = [ { kind = DepotKind.Supply, current = 64, maximum = 64 } ] }) candidate
+
+            else
+                candidate
+
+        fullPickup : OrderPlanning.Model
+        fullPickup =
+            saveMove fullContext truckId (saveMove fullContext infantryId OrderPlanning.init)
+
+        attackOrder : PlannedOrder.PlannedOrder
+        attackOrder =
+            { unitId = infantryId
+            , action = PlannedOrder.AttackMove { move = { destination = destination, path = [ { x = 1, y = 1 }, { x = 1, y = 2 }, destination ], cost = 4 }, direction = DirectionEnum.South }
+            }
+
+        rejectedAttackPickup : OrderPlanning.Model
+        rejectedAttackPickup =
+            saveMove context truckId (OrderPlanning.setOrders [ attackOrder ] OrderPlanning.init)
+
+        revokedTruck : List PlannedOrder.PlannedOrder
+        revokedTruck =
+            OrderDependencies.revoke context.units [ truckId ] (OrderPlanning.orders truckSecond)
+                |> fixtureValue
+
+        revokedPassenger : List PlannedOrder.PlannedOrder
+        revokedPassenger =
+            OrderDependencies.revoke context.units [ infantryId ] (OrderPlanning.orders truckSecond)
+                |> fixtureValue
+    in
+    List.concat
+        [ expect "passenger-first pickup preserves the passenger route and reserves its berth"
+            (List.length (OrderPlanning.orders truckSecond)
+                == 2
+                && List.all (\order -> List.member order (OrderPlanning.orders truckSecond)) (OrderPlanning.orders passengerFirst)
+                && PlannedTransport.boardingPassengers context.units truckId (OrderPlanning.orders truckSecond)
+                == [ infantryId ]
+            )
+        , expect "keyboard confirmation lets a truck pick up a field gun at its saved destination"
+            (List.length (OrderPlanning.orders keyboardPickup)
+                == 2
+                && List.all (\order -> List.member order (OrderPlanning.orders keyboardPickup)) (OrderPlanning.orders fieldGunFirst)
+                && PlannedTransport.boardingPassengers context.units truckId (OrderPlanning.orders keyboardPickup)
+                == [ gunId ]
+            )
+        , expect "passengers cannot share a saved destination without a truck"
+            (OrderPlanning.orders rejectedPassenger
+                == OrderPlanning.orders passengerFirst
+                && OrderPlanning.destinationFeedback rejectedPassenger
+                == DestinationUnavailable
+            )
+        , expect "a full truck cannot claim an arriving passenger destination"
+            (OrderPlanning.destinationFeedback fullPickup == DestinationUnavailable)
+        , expect "trucks cannot board a passenger with an attack-move order"
+            (OrderPlanning.orders rejectedAttackPickup
+                == [ attackOrder ]
+                && OrderPlanning.destinationFeedback rejectedAttackPickup
+                == DestinationUnavailable
+            )
+        , expect "revoking either moving rendezvous partner clears dependent pickup orders"
+            (List.isEmpty revokedTruck && List.isEmpty revokedPassenger)
+        ]
 
 
 indirectPlanningChecks : UnitId -> UnitId -> List String
@@ -3890,8 +4022,12 @@ planningChecks infantryId truckId passengerId =
             )
         , expect "path confirmation saves the traced route and closes editing"
             (List.map PlannedOrder.path (OrderPlanning.orders saved) == [ [ { x = 1, y = 1 }, { x = 1, y = 2 } ] ] && OrderPlanning.pathPreview saved == Nothing)
-        , expect "another unit cannot claim a reserved destination and receives feedback"
-            (OrderPlanning.orders reserved == OrderPlanning.orders saved && OrderPlanning.destinationFeedback reserved == DestinationUnavailable)
+        , expect "a truck can pick up infantry at its saved destination without replacing its route"
+            (List.length (OrderPlanning.orders reserved)
+                == 2
+                && List.all (\order -> List.member order (OrderPlanning.orders reserved)) (OrderPlanning.orders saved)
+                && List.all (\order -> PlannedOrder.destination order == { x = 1, y = 2 }) (OrderPlanning.orders reserved)
+            )
         , expect "a truck can move onto a departing infantry square without changing its order"
             (List.length (OrderPlanning.orders enteringVacated) == 2 && List.all PlannedOrder.isMoving (OrderPlanning.orders enteringVacated))
         , expect "revoking a departure also revokes the move depending on its freed square"

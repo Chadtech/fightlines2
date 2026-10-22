@@ -1023,8 +1023,10 @@ exit leaves the passenger aboard.
 
 `GamePage` offers loading squares with movement destinations and saves the
 receiving unit's hold alongside a loading or unloading draft, preserving an
-already moving truck’s route. Destination occupancy projects moving trucks onto
-their planned arrival square. It reserves remaining berths across drafts;
+already moving unit’s route. Destination occupancy projects moving units onto
+their planned arrival squares, so either the truck or passenger can be planned first.
+Passengers board only with ordinary moves or holds. Remaining berths are reserved
+across drafts;
 revoking a truck’s order clears boarding moves that depend on it. The truck's status panel exposes cargo buttons;
 carried units have no independent commands. Saving a truck destination opens
 an unload checklist through `OrderPlanning.ChoosingPassengers`. Confirmation

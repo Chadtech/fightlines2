@@ -5,6 +5,7 @@
 - Unit can move onto truck destination to load, but truck cannot move onto unit destination to load
 
 ## Immediately
+- Double check performance
 - Need a way to see the moves in a turn in the replay view so I can know if a unit was combat ready or not.
 - reduce truck supply capacity
 - slightly reduce tank fuel consumption

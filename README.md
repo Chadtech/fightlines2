@@ -185,11 +185,11 @@ fuel and the per-turn movement budget.
 
 Trucks have two cargo berths shared by allied infantry, field guns, supply crates, and fuel drums; tanks cannot board.
 Loading is part of a move: move a truck onto a waiting unit, move a unit onto
-a waiting truck, or plan the truck’s move first and send units to its destination.
+a waiting truck, or plan either unit’s move first and send the other to its destination.
 Compatible occupied squares appear alongside ordinary movement choices. The route preview and saved order warn when the move will pick up or board a unit.
 Loading happens only at the destination, after paying the moving unit's
 usual movement costs. A waiting receiving unit gets a hold order automatically;
-a moving truck keeps its saved route. Multiple units may converge on the same
+an already moving unit keeps its saved route. Multiple units may converge on the same
 truck destination when its two berths can fit all incoming passengers, existing
 cargo, and planned crate loads. Unloading that turn does not free boarding space.
 Boarding requires both units to reach the destination alive; interrupted routes

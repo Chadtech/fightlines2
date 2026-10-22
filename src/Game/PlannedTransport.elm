@@ -35,8 +35,8 @@ import Util.List as ListUtil
 
 
 {-| Destination occupancy for one unit after accounting for saved orders.
-Moving trucks receive passengers at their arrival squares. Other departing units
-free their origins; saved destinations and passenger exits remain reserved.
+Moving units meet compatible boarding partners at their arrival squares.
+Departing units free their origins; saved destinations and passenger exits remain reserved.
 -}
 type alias Occupancy =
     { reserved : List Coordinate
@@ -130,12 +130,14 @@ isDismounting units unit =
     (unit.kind == Kind.Infantry) && Unit.onMap unit && wasAboard
 
 
-{-| Trucks receive boarding units at their planned destination. Other departing
-allies free their starting squares while their destinations remain reserved.
+{-| Trucks and passengers meet at their planned destinations, whichever is saved first.
+Departing allies free their starting squares while their destinations remain reserved.
 -}
 loadingTarget : List Unit -> Unit -> Coordinate -> List PlannedOrder -> Maybe Unit
 loadingTarget units mover destination drafts =
-    Unit.loadingTarget (destinationUnits units drafts) mover destination
+    destinationUnits units drafts
+        |> List.filter (canBoardWithOrder drafts)
+        |> (\targets -> Unit.loadingTarget targets mover destination)
 
 
 {-| Include arriving passengers and waiting pickups at the truck's destination.
@@ -372,7 +374,7 @@ destinationUnits units drafts =
             in
             case ListUtil.find departure drafts of
                 Just plan ->
-                    if unit.kind == Kind.Truck then
+                    if Unit.onMap unit then
                         Just (Unit.setOnMap (PlannedOrder.destination plan) unit)
 
                     else
@@ -384,9 +386,44 @@ destinationUnits units drafts =
     List.filterMap destinationUnit units
 
 
+{-| Passengers board only with ordinary movement and holds. Other commands
+keep their destination reserved, even when the unit could otherwise ride.
+-}
+canBoardWithOrder : List PlannedOrder -> Unit -> Bool
+canBoardWithOrder drafts unit =
+    case ListUtil.find (\order -> order.unitId == unit.id) drafts of
+        Nothing ->
+            True
+
+        Just order ->
+            case order.action of
+                PlannedOrder.Hold _ ->
+                    True
+
+                PlannedOrder.Move _ ->
+                    True
+
+                PlannedOrder.SupplyTransfer _ ->
+                    unit.kind == Kind.Truck
+
+                PlannedOrder.Unload _ ->
+                    unit.kind == Kind.Truck
+
+                _ ->
+                    False
+
+
 boardingSpace : List Unit -> Unit -> Unit -> List PlannedOrder -> Bool
-boardingSpace units mover truck drafts =
+boardingSpace units mover target drafts =
     let
+        truck : Unit
+        truck =
+            if mover.kind == Kind.Truck then
+                mover
+
+            else
+                target
+
         alreadyAboard : Int
         alreadyAboard =
             List.length
@@ -397,9 +434,26 @@ boardingSpace units mover truck drafts =
 
         incomingPassengers : Int
         incomingPassengers =
-            boardingPassengers units truck.id drafts
-                |> List.filter ((/=) mover.id)
+            let
+                boardsAtDestination : Unit -> Bool
+                boardsAtDestination passenger =
+                    Unit.mapPosition target
+                        |> Maybe.andThen (Unit.loadingTarget [ passenger ] truck)
+                        |> (/=) Nothing
+            in
+            destinationUnits units drafts
+                |> List.filter (canBoardWithOrder drafts)
+                |> List.filter (\passenger -> passenger.id /= mover.id)
+                |> List.filter boardsAtDestination
                 |> List.length
+
+        movingPassenger : Int
+        movingPassenger =
+            if mover.kind == Kind.Truck then
+                0
+
+            else
+                1
 
         plannedCrates : Int
         plannedCrates =
@@ -418,17 +472,17 @@ boardingSpace units mover truck drafts =
 
         fitsCargo : Bool
         fitsCargo =
-            alreadyAboard + Unit.crateCount truck + plannedCrates + incomingPassengers < truck.cargoCapacity
+            alreadyAboard + Unit.crateCount truck + plannedCrates + incomingPassengers + movingPassenger <= truck.cargoCapacity
 
         compatible : Bool
         compatible =
-            Unit.mapPosition truck
+            Unit.mapPosition target
                 |> Maybe.andThen
                     (\destination ->
                         loadingTarget units mover destination drafts
                     )
                 |> Maybe.map .id
-                |> (==) (Just truck.id)
+                |> (==) (Just target.id)
     in
     compatible && fitsCargo
 
