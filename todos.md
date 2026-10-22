@@ -2,10 +2,20 @@
 ## doing now
 
 ## Bugs
+- Unit can move onto truck destination to load, but truck cannot move onto unit destination to load
 
 ## Immediately
+- Need a way to see the moves in a turn in the replay view so I can know if a unit was combat ready or not.
+- reduce truck supply capacity
+- slightly reduce tank fuel consumption
+- if I select a unit in the replay mode, the unit should stay selected between turns
+- auto skip confirm with unplanned units
+- turn off fog of war in replay
+- When firing on a fog of war tile and no target can be confirmed, dont depict empty ground depict foggy ground with question marks
 - Attacking and destroying supply depots and supply crates
 - Pick up crates/drums already on the ground
+- Dont ask how much cargo to pick up if the truck is already full
+- Menu (settings, resign, go home)
 
 ## Soon
 - Hide map editor UI in Elm code if flag is not set
@@ -42,4 +52,4 @@
 - Aircraft carrier, carries planes
 - Submarine, stealthy slow ambush ship
 - Decoys, cheap replicas of units that can't move or do anything
-- Tank Hunter, a tank that is slower but has a bonus against tanks
+- Tank Destroyer, a tank that is slower but has a bonus against tanks

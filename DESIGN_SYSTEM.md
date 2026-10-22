@@ -100,8 +100,9 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   column at the right. Reserve inset green surfaces for editable controls.
   Label sides `player 1 (red)` and `player 2 (blue)` and place occupants according
   to their assigned side. The host’s side reads `human`; the host can select
-  `human`, `ai easy`, or `ai medium` for the other side. Easy uses the original
-  AI; Medium evaluates tactics using one-turn simulations. Keep these choices
+  `human`, `ai easy`, `ai medium`, or `ai hard` for the other side. Easy uses the original
+  AI; Medium evaluates tactics using one-turn simulations; Hard also tests advancing
+  enemy responses and revisits allied choices. Keep these choices
   in the existing controller selector. Disable that selector once a human joins.
   Guests see controller types as read-only text. Above the occupied count, show
   each member a `your side` select using the shared inset control. Explain that

@@ -16,11 +16,12 @@ type Controller
     = Human
     | Ai
     | AiMedium
+    | AiHard
 
 
 list : List Controller
 list =
-    [ Human, Ai, AiMedium ]
+    [ Human, Ai, AiMedium, AiHard ]
 
 
 decoder : Decoder Controller
@@ -37,6 +38,9 @@ decoder =
 
                     "AI_MEDIUM" ->
                         Decode.succeed AiMedium
+
+                    "AI_HARD" ->
+                        Decode.succeed AiHard
 
                     _ ->
                         Decode.fail ("Invalid Controller type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
@@ -56,6 +60,9 @@ toString enum____ =
 
         AiMedium ->
             "AI_MEDIUM"
+
+        AiHard ->
+            "AI_HARD"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -80,6 +87,9 @@ fromString enumString____ =
 
         "AI_MEDIUM" ->
             Just AiMedium
+
+        "AI_HARD" ->
+            Just AiHard
 
         _ ->
             Nothing

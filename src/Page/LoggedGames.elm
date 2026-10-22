@@ -262,6 +262,9 @@ playerLabel player =
 
                 Controller.AiMedium ->
                     "ai medium"
+
+                Controller.AiHard ->
+                    "ai hard"
     in
     PlayerNumber.label player.playerNumber ++ ": " ++ player.name ++ " (" ++ controller ++ ")"
 

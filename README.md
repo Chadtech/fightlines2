@@ -58,19 +58,37 @@ the right card; the cards stack on narrow screens. Each player can choose
 **your side**: **player 1 (red)** or **player 2 (blue)**. Choosing the other side
 swaps assignments with the opponent, including an AI. Hosting permissions stay
 with the host, and sides lock when the game starts.
-For a solo game, set the other side’s dropdown to **ai easy** or **ai medium**,
+For a solo game, set the other side’s dropdown to **ai easy**, **ai medium**, or **ai hard**,
 then choose **Start game**. The AI controls the other side and responds automatically when
 you submit
 a turn. It advances toward supply points, attacks visible enemies, uses field-gun
 indirect fire, and seeks supply or fuel depots when low. It follows normal fog,
-movement, resource, combat, and victory rules. **Easy** preserves the original AI.
+movement, resource, combat, and victory rules. **Easy** uses the original tactical policy.
 **Medium** compares candidate orders by simulating a turn through the normal game
 engine: it weighs damage and casualties, coordinates fire to avoid wasting shots,
 considers flanking routes, digs in to defend supply points, and balances advancing
 with resupply. It assumes visible enemies are healthy and supplied because their
 actual gauges are private, and models stationary enemy defenses rather than
-reading your orders. Both modes obey fog of war. Neither mode currently plans
-passenger transport or freight deliveries. Choose difficulty before starting.
+reading your orders. **Hard** tests each plan against both stationary defenses and
+an advancing opponent, favors plans with safer worst-case results, considers more
+approaches and short escape moves, and revisits allied orders to improve coordination.
+All three modes obey fog of war and use the same resources and rules as human
+players. Trucks compare fuel escorts, supply deliveries, and passenger transport
+by urgency, travel distance, and the time a ride would save. Supplies can go to
+infantry, field guns, tanks, or other trucks; fuel can go to either vehicle kind.
+Urgent shortages outrank preparing an escort for a healthy tank, and trucks avoid
+duplicating an assigned job. Trucks collect freight, return for more when empty,
+and replenish adjacent units through the normal resource rules. They can carry
+infantry and field guns toward supply points or fights, share useful rides, mix
+passengers with freight, and choose separate legal unload squares. Infantry can
+prepare an ambush after unloading; field guns act on the following turn. Transports
+avoid known enemy firing ranges and can unload early when threatened or immobile.
+Vehicles reserve fuel to reach a depot,
+ground fuel, or a planned fuel-truck rendezvous; low-fuel tanks seek the nearest
+reachable refill instead of always returning to base. This planning cannot
+guarantee arrival through enemy action or blocked routes. Deliberate freight
+unloading is not planned yet; trucks deliver by bringing carried stock into range.
+Choose difficulty before starting.
 Switching back to **human** reopens the second slot before starting; a joined
 human cannot be replaced.
 

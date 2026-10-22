@@ -127,6 +127,24 @@ pub struct UnloadOrderInput {
     destination: CoordinateInput,
 }
 
+impl UnloadOrderInput {
+    pub(crate) fn new(passenger: UnitId, destination: Coordinate) -> Self {
+        Self {
+            unit_id: passenger.to_string(),
+            destination: CoordinateInput {
+                x: destination.x(),
+                y: destination.y(),
+            },
+        }
+    }
+
+    pub(crate) fn destination_coordinate(&self) -> Result<Coordinate, &'static str> {
+        let x = u16::try_from(self.destination.x).map_err(|_| "unloading is outside the map.")?;
+        let y = u16::try_from(self.destination.y).map_err(|_| "unloading is outside the map.")?;
+        Ok(Coordinate::new(x, y))
+    }
+}
+
 #[derive(Clone, GraphQLInputObject, Serialize, Deserialize)]
 pub struct CrateUnloadInput {
     cargo_index: i32,
@@ -458,14 +476,12 @@ pub fn validate(
                         && unit.carrier_id() == Some(carrier)
                 })
                 .ok_or("only passengers aboard this truck can be unloaded.")?;
-            if passenger.kind() == UnitKind::Infantry {
-                let x = u16::try_from(exit.destination.x)
-                    .map_err(|_| "unloading is outside the map.")?;
-                let y = u16::try_from(exit.destination.y)
-                    .map_err(|_| "unloading is outside the map.")?;
-                if infantry_exits.insert(id, Coordinate::new(x, y)).is_some() {
-                    return Err("each passenger may only be unloaded once.");
-                }
+            if passenger.kind() == UnitKind::Infantry
+                && infantry_exits
+                    .insert(id, exit.destination_coordinate()?)
+                    .is_some()
+            {
+                return Err("each passenger may only be unloaded once.");
             }
         }
     }
@@ -756,11 +772,7 @@ pub fn validate(
                         && passenger.carrier_id() == Some(unit_id)
                 })
                 .ok_or("only passengers aboard this truck can be unloaded.")?;
-            let x =
-                u16::try_from(unload.destination.x).map_err(|_| "unloading is outside the map.")?;
-            let y =
-                u16::try_from(unload.destination.y).map_err(|_| "unloading is outside the map.")?;
-            let exit = Coordinate::new(x, y);
+            let exit = unload.destination_coordinate()?;
             if (exit.x() - destination.x()).abs() + (exit.y() - destination.y()).abs() != 1 {
                 return Err("unloading must end beside the truck's destination.");
             }
@@ -1493,7 +1505,7 @@ impl Turns {
     }
 }
 
-fn legal_unload(
+pub(crate) fn legal_unload(
     scenario: &Scenario,
     passenger: &Unit,
     destination: Coordinate,

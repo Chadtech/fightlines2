@@ -43,5 +43,19 @@ errorMessage error =
                         |> List.map .message
                         |> String.join " "
 
-        Graphql.Http.HttpError _ ->
-            "could not reach the server. check your connection and try again."
+        Graphql.Http.HttpError httpError ->
+            case httpError of
+                Graphql.Http.Timeout ->
+                    "the server took too long to respond. try again."
+
+                Graphql.Http.NetworkError ->
+                    "could not reach the server. check your connection and try again."
+
+                Graphql.Http.BadStatus metadata _ ->
+                    "the server returned http " ++ String.fromInt metadata.statusCode ++ ". try again."
+
+                Graphql.Http.BadPayload _ ->
+                    "the server returned an unexpected response. reload the page and try again."
+
+                Graphql.Http.BadUrl _ ->
+                    "the server address is invalid."

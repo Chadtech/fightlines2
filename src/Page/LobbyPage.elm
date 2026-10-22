@@ -745,6 +745,9 @@ controllerLabel controller =
         AiMedium ->
             "ai medium"
 
+        AiHard ->
+            "ai hard"
+
 
 startControlsView : Model -> Html Msg
 startControlsView model =

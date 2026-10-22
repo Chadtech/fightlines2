@@ -10,7 +10,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Write},
+    io::{self, BufReader, Write},
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -281,7 +281,7 @@ fn records(directory: &Path) -> io::Result<Vec<Record>> {
                 "missing or unexpected record at {expected}"
             )));
         }
-        let record: Record = serde_json::from_reader(File::open(path)?)
+        let record: Record = serde_json::from_reader(BufReader::new(File::open(path)?))
             .map_err(|error| io::Error::other(format!("{expected}: {error}")))?;
         if record.format_version != FORMAT_VERSION {
             return Err(io::Error::other(format!(
@@ -413,7 +413,12 @@ mod tests {
 
     #[test]
     fn recorded_players_accept_legacy_opponent_fields_and_write_controller() -> TestResult<()> {
-        for controller in [Controller::Human, Controller::Ai, Controller::AiMedium] {
+        for controller in [
+            Controller::Human,
+            Controller::Ai,
+            Controller::AiMedium,
+            Controller::AiHard,
+        ] {
             let current = json!({
                 "player_number": "Player1",
                 "name": "Recorded player",

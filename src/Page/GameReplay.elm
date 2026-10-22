@@ -1195,6 +1195,14 @@ controls model =
                 Nothing ->
                     Decode.fail "invalid replay turn"
 
+        loadingStatus : String
+        loadingStatus =
+            if busy then
+                "loading turn…"
+
+            else
+                ""
+
         feedback : Html Msg
         feedback =
             case model.request of
@@ -1209,13 +1217,11 @@ controls model =
                         ]
 
                 _ ->
-                    if busy then
-                        H.p
-                            [ Aria.role Aria.Status ]
-                            [ H.text "loading turn…" ]
-
-                    else
-                        H.text ""
+                    H.p
+                        [ Aria.role Aria.Status
+                        , A.css [ S.h6 ]
+                        ]
+                        [ H.text loadingStatus ]
 
         turnSelector : Html Msg
         turnSelector =
@@ -1316,7 +1322,9 @@ controls model =
                 ]
             , feedback
             ]
-        , H.map BattlefieldMsg (Battlefield.navigationControls (round (model.navigation.zoom * 100)))
+        , Battlefield.navigationControls (round (model.navigation.zoom * 100))
+            |> TurnControls.navigation
+            |> H.map BattlefieldMsg
         ]
 
 

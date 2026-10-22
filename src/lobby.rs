@@ -174,6 +174,7 @@ impl PlayerController {
             Self::Human(_) => Controller::Human,
             Self::Ai(Difficulty::Easy) => Controller::Ai,
             Self::Ai(Difficulty::Medium) => Controller::AiMedium,
+            Self::Ai(Difficulty::Hard) => Controller::AiHard,
         }
     }
 
@@ -192,6 +193,7 @@ pub enum Controller {
     /// The original Easy AI; retains the existing AI wire value.
     Ai,
     AiMedium,
+    AiHard,
 }
 
 #[derive(Clone)]
@@ -631,6 +633,7 @@ pub fn set_controller(
         Controller::Human => None,
         Controller::Ai => Some(Difficulty::Easy),
         Controller::AiMedium => Some(Difficulty::Medium),
+        Controller::AiHard => Some(Difficulty::Hard),
     };
     if let Some(difficulty) = difficulty {
         let player_number = vacant_side(&lobby.players)?;

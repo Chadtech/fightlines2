@@ -435,6 +435,7 @@ mod tests {
         );
         for (choice, expected) in [
             ("AI_MEDIUM", "AI_MEDIUM"),
+            ("AI_HARD", "AI_HARD"),
             ("AI", "AI"),
             ("AI_MEDIUM", "AI_MEDIUM"),
         ] {
@@ -473,8 +474,8 @@ mod tests {
                 .len(),
             1
         );
-        let medium = ai.replace("controller: AI", "controller: AI_MEDIUM");
-        let (selected, _) = execute!(&medium, host.clone());
+        let hard = ai.replace("controller: AI", "controller: AI_HARD");
+        let (selected, _) = execute!(&hard, host.clone());
         assert!(selected.get("errors").is_none());
         let (started, _) = execute!(
             format!("mutation {{ startGame(id: \"{id}\") {{ gameUrl }} }}"),
@@ -488,10 +489,7 @@ mod tests {
         );
         let (game, _) = execute!(&game_query, host.clone());
         assert_eq!(game["data"]["game"]["players"][1]["isAi"], true);
-        assert_eq!(
-            game["data"]["game"]["players"][1]["controller"],
-            "AI_MEDIUM"
-        );
+        assert_eq!(game["data"]["game"]["players"][1]["controller"], "AI_HARD");
         assert_eq!(game["data"]["game"]["players"][1]["isYou"], false);
         for number in 1..=3 {
             let (game, _) = execute!(&game_query, host.clone());
@@ -544,7 +542,7 @@ mod tests {
         );
         assert!(joined.get("errors").is_none());
         let change = format!(
-            "mutation {{ setLobbyController(id: \"{other_id}\", controller: AI_MEDIUM) {{ id }} }}"
+            "mutation {{ setLobbyController(id: \"{other_id}\", controller: AI_HARD) {{ id }} }}"
         );
         for cookie in [host, guest] {
             let (denied, _) = execute!(&change, cookie);
@@ -579,7 +577,8 @@ mod tests {
             None
         );
         assert!(outsider.get("errors").is_none());
-        for ai in [false, true] {
+        for controller in ["HUMAN", "AI_MEDIUM", "AI_HARD"] {
+            let ai = controller != "HUMAN";
             for host_side in [PlayerNumber::Player1, PlayerNumber::Player2] {
                 let side = match host_side {
                     PlayerNumber::Player1 => "PLAYER1",
@@ -613,7 +612,7 @@ mod tests {
                 let guest = if ai {
                     let (selected, _) = execute!(
                         format!(
-                            "mutation {{ setLobbyController(id: \"{id}\", controller: AI_MEDIUM) {{ {roster} }} }}"
+                            "mutation {{ setLobbyController(id: \"{id}\", controller: {controller}) {{ {roster} }} }}"
                         ),
                         host.clone()
                     );
@@ -628,7 +627,7 @@ mod tests {
                     );
                     assert_eq!(
                         selected["data"]["setLobbyController"]["players"][1]["controller"],
-                        "AI_MEDIUM"
+                        controller
                     );
                     // AI removal and replacement must retain the host's chosen side.
                     let (removed, _) = execute!(
@@ -650,7 +649,7 @@ mod tests {
                     );
                     let (selected, _) = execute!(
                         format!(
-                            "mutation {{ setLobbyController(id: \"{id}\", controller: AI_MEDIUM) {{ id }} }}"
+                            "mutation {{ setLobbyController(id: \"{id}\", controller: {controller}) {{ id }} }}"
                         ),
                         host.clone()
                     );
@@ -697,7 +696,7 @@ mod tests {
                             "mutation {{ setLobbyMap(id: \"{id}\", mapType: SUPPLY_POINT) {{ id }} }}"
                         ),
                         format!(
-                            "mutation {{ setLobbyController(id: \"{id}\", controller: AI_MEDIUM) {{ id }} }}"
+                            "mutation {{ setLobbyController(id: \"{id}\", controller: {controller}) {{ id }} }}"
                         ),
                     ] {
                         let (denied, _) = execute!(&query, guest.clone());
@@ -719,7 +718,7 @@ mod tests {
                     if ai {
                         assert_eq!(
                             chosen["data"]["setLobbySide"]["players"][1]["controller"],
-                            "AI_MEDIUM"
+                            controller
                         );
                     }
                 }

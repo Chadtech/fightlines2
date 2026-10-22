@@ -177,7 +177,7 @@ while reconnecting members can rejoin a full lobby.
 
 `PlayerController` distinguishes a human session from an AI without giving bots
 browser credentials. The host can call `setLobbyController(id, controller)` with
-`Human`, `Ai` (Easy), or `AiMedium` before starting. The AI controller owns its
+`Human`, `Ai` (Easy), `AiMedium`, or `AiHard` before starting. The AI controller owns its
 `ai::Difficulty`, which stays with the AI when players swap sides. Selecting AI
 fills the side opposite the host;
 selecting human removes the AI and opens that slot. A joined human cannot be
@@ -195,8 +195,8 @@ hidden enemy positions as planning inputs. Its basic policy advances toward cent
 points, engages visible enemies with attack moves or field-gun indirect fire,
 and seeks depots for low supplies or fuel. Weighted pathfinding respects terrain,
 resource limits, occupied allied squares, and destination reservations. Passengers
-hold; freight and transport planning are deferred. This policy remains unchanged
-as Easy. `ai/medium.rs` performs a bounded, deterministic one-turn search over
+hold. This tactical policy remains Easy. `ai/search.rs` performs bounded,
+deterministic one-turn searches over
 holds, ambushes, digging, indirect targets and affordable route prefixes. Each
 candidate uses `Turns::submit` for validation and resolution against assumed
 stationary enemy ambushes. Sequential planning includes earlier allied choices,
@@ -212,7 +212,45 @@ objective. Per-unit reverse searches are reused across candidate simulations;
 impassable objectives use the closest tiles in the unit's reachable terrain
 component. Route generation and resolution still handle occupancy and resources.
 Medium scouts the opposing half using public map geometry and keeps one infantry
-guarding the central supply point. Neither mode plans freight or transport.
+guarding the central supply point. Hard shares this search and its sanitized
+observation, but evaluates two enemy responses: stationary defenses and the Easy
+policy's advancing orders, computed on that sanitized board. It scores twice the
+worst response plus the mean response, considers six approaches per movement mode
+and up to four one-step escapes. When enemies are observed, it performs a second
+coordination pass with all other allied destinations reserved. These are same-turn counterfactuals, not
+knowledge of submitted human orders or a multi-turn search. Both responses use
+`Turns::submit`; there are no resource bonuses.
+All difficulties finish with `ai/logistics.rs` on the same projected observation.
+Empty trucks seek stocked depots or visible ground freight, explicitly load depot
+cargo within shared berth and stock limits, and carry it to planned allied
+destinations. Typed `TruckMission` bids compare proportionate resource shortages,
+critical supply/fuel urgency, travel distance, and existing freight. Fuel delivery
+can support either vehicle kind, while provisions can support any allied unit.
+Mission reservations prevent duplicate deliveries or pickups. Combat units critically low
+on supplies hold for an assigned delivery instead of spending their last provisions
+walking away. Normal settlement distributes carried stock without unloading.
+`ai/transport.rs` bids for rides that save time after accounting for pickup, terrain,
+travel, and unloading. It shares the search planner's fog-limited strategic goals,
+leaves active shooters and entrenched units fighting, and avoids observed enemies'
+direct firing ranges. Compatible passengers can share a rendezvous; freight and
+passengers share actual berths and cargo-dependent fuel costs. Trucks leave a berth
+when troops could need a lift. Carried passengers retain deployment priority over
+new jobs, except for the carrier's own provision needs. At arrival or emergency,
+the planner reserves separate exits using `turns::legal_unload`; infantry receive
+affordable post-dismount holds/ambushes, and guns retain aboard holds until the
+next turn. All boarding and unloading still resolve through ordinary `Turns`.
+The logistics pass
+then checks vehicle movement against the shortest passable fuel route to a depot,
+ground fuel, or a loaded truck's planned destination, accounting for the carrier's
+own fuel deficit. Unsafe sorties are replaced with an affordable return route or
+hold; low-fuel tanks prefer the nearest reachable refill over supply-seeking.
+Fuel distance counts traversed tiles, while per-turn affordability still uses
+terrain half-points, supplies, and cargo-dependent fuel costs. Return-distance
+estimates ignore temporary occupants, but actual logistics routes avoid observed
+units and allied destinations. A fuel-safety reroute discards dependent boarding
+or dismount commands. Combat or blocked arrivals can still disrupt a rendezvous.
+Maps without fuel sources retain ordinary movement. Deliberate freight unloading
+remains unplanned; delivery uses carried stock's normal adjacent distribution.
 When the human submits, the store prepares both submissions on copies using the
 normal `Turns::submit` validation and resolution path, then commits them together.
 An invalid human or AI submission leaves both the board and pending orders intact.

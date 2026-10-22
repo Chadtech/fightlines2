@@ -10,12 +10,15 @@ use crate::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-mod medium;
+mod logistics;
+mod search;
+mod transport;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Difficulty {
     Easy,
     Medium,
+    Hard,
 }
 
 pub fn plan_with_difficulty(
@@ -25,7 +28,8 @@ pub fn plan_with_difficulty(
 ) -> Result<Vec<MoveOrderInput>, &'static str> {
     match difficulty {
         Difficulty::Easy => plan(scenario, player),
-        Difficulty::Medium => medium::plan(scenario, player),
+        Difficulty::Medium => search::plan_medium(scenario, player),
+        Difficulty::Hard => search::plan_hard(scenario, player),
     }
 }
 
@@ -94,6 +98,7 @@ pub fn plan(
         }
         orders.push(order);
     }
+    logistics::support(&observed, player, &mut orders)?;
     Ok(orders)
 }
 
@@ -253,19 +258,46 @@ fn route(
         path.push(cursor);
     }
     path.reverse();
+    affordable_path(scenario, unit, &path, attack)
+}
+
+fn affordable_path(
+    scenario: &Scenario,
+    unit: &Unit,
+    path: &[Coordinate],
+    attack: bool,
+) -> Result<Vec<Coordinate>, &'static str> {
+    let origin = unit
+        .board_position()
+        .ok_or("the AI mover is not on the map.")?;
+    let rule = movement::rules()
+        .into_iter()
+        .find(|rule| rule.kind == unit.kind())
+        .ok_or("the AI unit has no movement rule.")?;
     let mut affordable = vec![origin];
+    let mut terrain_cost = 0;
     let combat = combat::rules(unit.kind());
     let firing_cost = if attack {
         combat.readiness_cost + combat.shot_cost
     } else {
         0
     };
-    for next in path.into_iter().skip(1) {
+    for next in path.iter().copied().skip(1) {
+        let terrain = scenario
+            .map
+            .tile_at(next)
+            .ok_or("the AI route leaves the map.")?;
+        let entry = rule
+            .terrain_costs
+            .iter()
+            .find(|entry| entry.terrain == terrain && entry.cost > 0)
+            .ok_or("the AI route crosses impassable terrain.")?;
+        terrain_cost += entry.cost;
         affordable.push(next);
         let movement_cost = unit.supplies().movement_cost(&scenario.map, &affordable);
         let fuel_cost = (affordable.len() - 1) as i32
             * unit.fuel_movement_per_tile(scenario.passenger_count(unit.unit_id()));
-        let over_budget = costs.get(&next).is_some_and(|cost| *cost > rule.budget);
+        let over_budget = terrain_cost > rule.budget;
         let over_supplies = movement_cost + firing_cost
             > (unit.supplies().current() - unit.supplies().upkeep_per_turn()).max(0);
         let over_fuel = unit.fuel().is_some_and(|fuel| fuel_cost > fuel.current);
@@ -288,7 +320,7 @@ mod tests {
     };
 
     #[test]
-    fn both_difficulties_keep_every_unit_on_its_water_island() -> TestResult {
+    fn all_difficulties_keep_every_unit_on_its_water_island() -> TestResult {
         for kind in [
             UnitKind::Infantry,
             UnitKind::Tank,
@@ -320,7 +352,7 @@ mod tests {
                 };
                 unit.move_to(Coordinate::new(x, 0));
             }
-            for difficulty in [Difficulty::Easy, Difficulty::Medium] {
+            for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
                 let inputs =
                     plan_with_difficulty(&scenario, PlayerNumber::Player1, difficulty).fixture()?;
                 let orders = turns::validate(&scenario, PlayerNumber::Player1, inputs).fixture()?;
