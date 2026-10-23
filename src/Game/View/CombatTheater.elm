@@ -28,6 +28,7 @@ import Game.TurnPlayback as TurnPlayback
 import Game.Unit as Unit exposing (Unit)
 import Game.View.CombatExplosion as CombatExplosion
 import Game.View.CombatFormation as CombatFormation
+import Game.View.CombatReadiness as CombatReadiness
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
@@ -651,6 +652,19 @@ unconfirmedFog =
 
 portrait : Map -> Panel -> CombatHealth -> Unit -> Html Msg
 portrait map panel health unit =
+    H.div
+        [ A.css
+            [ S.col
+            , S.g2
+            ]
+        ]
+        [ portraitScene map panel health unit
+        , CombatReadiness.toHtml unit.combatState
+        ]
+
+
+portraitScene : Map -> Panel -> CombatHealth -> Unit -> Html Msg
+portraitScene map panel health unit =
     let
         terrain : Terrain
         terrain =

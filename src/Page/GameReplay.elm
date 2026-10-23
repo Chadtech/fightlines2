@@ -31,6 +31,7 @@ import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Inspection as Inspection exposing (Inspection(..))
 import Game.LogId as GameLogId exposing (GameLogId)
 import Game.PlaybackPresentation as PlaybackPresentation
+import Game.RecordedOrder as RecordedOrder exposing (RecordedOrder)
 import Game.Turn as Turn
 import Game.TurnPlayback as TurnPlayback
 import Game.Unit as Unit exposing (Unit)
@@ -80,6 +81,7 @@ type alias RecordedTurn =
     { battlefield : BattlefieldSnapshot.Snapshot
     , frames : List TurnPlayback.Frame
     , resolution : Maybe Turn.Resolution
+    , orders : List RecordedOrder
     }
 
 
@@ -96,6 +98,8 @@ type alias Model =
     , battlefield : BattlefieldSnapshot.Snapshot
     , frames : List TurnPlayback.Frame
     , resolution : Maybe Turn.Resolution
+    , orders : List RecordedOrder
+    , showOrders : Bool
     , timeline : Timeline
     , inspection : Maybe Inspection
     , navigation : BattlefieldNavigation.Model
@@ -152,6 +156,7 @@ type Msg
     | ZoomOutKeyPressed
     | PlayClicked
     | PauseClicked
+    | ShowOrdersChanged Bool
     | PreviousClicked
     | NextClicked
     | TurnSelected Int
@@ -192,6 +197,8 @@ init shared id flags =
             , battlefield = flags.turn.battlefield
             , frames = flags.turn.frames
             , resolution = flags.turn.resolution
+            , orders = flags.turn.orders
+            , showOrders = False
             , timeline = Ready
             , inspection = Nothing
             , navigation = BattlefieldNavigation.init
@@ -339,6 +346,7 @@ recordedTurnSelection =
         |> SS.with BattlefieldSnapshot.selection
         |> SS.with (TurnPlayback.selection Unit.selection Coordinate.selection)
         |> SS.with (SnapshotApi.lastResolution Turn.resolutionSelection)
+        |> SS.with (SnapshotApi.replayOrders RecordedOrder.selection)
 
 
 loadTurn : Position -> Model -> ( Model, Eff Msg )
@@ -878,6 +886,10 @@ update msg model =
                 |> pause
                 |> E.withOut
 
+        ShowOrdersChanged enabled ->
+            { model | showOrders = enabled }
+                |> E.withOut
+
         PreviousClicked ->
             loadTurn
                 { turn = model.position.turn - 1
@@ -943,6 +955,7 @@ update msg model =
                             | battlefield = recorded.battlefield
                             , frames = recorded.frames
                             , resolution = recorded.resolution
+                            , orders = recorded.orders
                             , navigation = BattlefieldNavigation.finishReturn model.navigation
                             , position = position
                             , request = Idle
@@ -989,15 +1002,26 @@ ambushingUnits model =
 
 battlefieldPresentation : Model -> Battlefield.Presentation
 battlefieldPresentation model =
-    case playback model of
-        Just animation ->
-            Battlefield.Playing
-                { animation = animation
-                , loss = unitLoss model
-                }
+    let
+        visibleOrders : List RecordedOrder
+        visibleOrders =
+            if model.showOrders then
+                model.orders
 
-        Nothing ->
-            Battlefield.Viewing Battlefield.inspection
+            else
+                []
+
+        playing : Maybe Battlefield.PlaybackView
+        playing =
+            playback model |> Maybe.map playbackView
+
+        playbackView : TurnPlayback.Playback -> Battlefield.PlaybackView
+        playbackView animation =
+            { animation = animation
+            , loss = unitLoss model
+            }
+    in
+    Battlefield.Reviewing { playback = playing, orders = visibleOrders }
 
 
 battlefieldView : Model -> Html Msg
@@ -1340,6 +1364,12 @@ controls model =
                 }
                 |> Checkbox.disabled busy
                 |> Checkbox.toHtml [ H.text "fog of war" ]
+            , Checkbox.new
+                { label = "show orders"
+                , checked = model.showOrders
+                , onCheck = ShowOrdersChanged
+                }
+                |> Checkbox.toHtml [ H.text "show orders" ]
             , feedback
             ]
         , Battlefield.navigationControls (round (model.navigation.zoom * 100))

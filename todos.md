@@ -1,16 +1,6 @@
 # Todo
 
 # Done
-- Unit can move onto truck destination to load, but truck cannot move onto unit destination to load
-- Dont ask how much cargo to pick up if the truck is already full
-- Menu (settings, resign, go home)
-- Pick up crates/drums already on the ground
-- When firing on a fog of war tile and no target can be confirmed, dont depict empty ground depict foggy ground with question marks
-- turn off fog of war in replay
-- auto skip confirm with unplanned units
-- if I select a unit in the replay mode, the unit should stay selected between turns
-- slightly reduce tank fuel consumption
-- reduce truck supply capacity
 
 
 ## doing now
@@ -20,8 +10,7 @@
 
 
 ## Immediately
-- Double check performance
-- Need a way to see the moves in a turn in the replay view so I can know if a unit was combat ready or not.
+
 
 
 
@@ -30,7 +19,7 @@
 
 
 ## Soon
-- Roads, very fuel efficient paths
+
 - Hide map editor UI in Elm code if flag is not set
 - Good UI for truck cargo
 - Sound

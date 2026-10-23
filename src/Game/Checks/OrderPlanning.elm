@@ -4658,6 +4658,7 @@ unit id kind location =
     , kind = kind
     , direction = direction
     , destroyed = False
+    , combatState = Nothing
     , combatRules =
         { range = 1
         , indirectRange = 0

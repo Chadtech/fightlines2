@@ -831,3 +831,20 @@ zero shows the starting board. Include a checked-by-default `fog of war` checkbo
 below the turn and view selectors. Unchecking reveals the complete recorded
 board and playback; retain the setting across turn and player-view changes.
 Preserve combat/loss dialogs and the normal final reveal when fog is enabled.
+
+Place an unchecked `show orders` checkbox below `fog of war`. It toggles the
+selected turn's recorded routes during playback, pauses, and after completion,
+and retains its value across turn and player-view changes. Reuse gold movement
+routes and red attack routes; show stationary order labels, final facing, unload
+routes, indirect-fire targets, and `stopped` at interrupted destinations. Selecting
+a unit emphasizes its order and fades the others. Keep overlays passive so they
+do not intercept battlefield inspection. With fog enabled, show only the viewed
+player's orders; disabling fog shows both sides.
+
+Replay unit inspection and combat portraits show three text rows: `order`,
+`defense`, and `weapon`. Defense distinguishes ready, unready, and always-exposed
+units; weapon status distinguishes can fire, already fired, insufficient supplies,
+not ordered to fire, aboard transport, destroyed, and unarmed. Keep defensive
+readiness separate from permission to fire. Use the state before each volley in
+combat portraits and the displayed snapshot's state in the inspector. Conceal
+enemy readiness while fog is enabled, including in combat portraits.

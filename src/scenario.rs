@@ -253,6 +253,9 @@ pub enum Entrenchment {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Unit {
+    /// Response-only replay inspection; never changes saved authoritative state.
+    #[serde(skip)]
+    pub(crate) combat_state: Option<combat::CombatState>,
     entrenchment: Entrenchment,
     id: UnitId,
     player_number: PlayerNumber,
@@ -275,6 +278,9 @@ struct MovementCost {
 
 #[graphql_object]
 impl Unit {
+    pub fn combat_state(&self) -> Option<combat::CombatState> {
+        self.combat_state
+    }
     pub fn entrenchment(&self) -> Entrenchment {
         self.entrenchment
     }
@@ -417,6 +423,7 @@ impl Unit {
     /// Conceal private gauges on response copies, preserving authoritative resources.
     pub(crate) fn conceal_resources(&mut self) {
         self.resources_visible = false;
+        self.combat_state = None;
     }
 
     pub fn carrier_id(&self) -> Option<UnitId> {
@@ -604,6 +611,7 @@ impl Scenario {
             .units
             .iter()
             .map(|starting| Unit {
+                combat_state: None,
                 entrenchment: Entrenchment::Exposed,
                 id: UnitId(starting.id),
                 player_number: starting.player_number,

@@ -37,6 +37,7 @@ import Game.Map as Map exposing (Map)
 import Game.Movement as Movement
 import Game.PlannedOrder as PlannedOrder exposing (PlannedOrder)
 import Game.PlaybackPresentation as PlaybackPresentation
+import Game.RecordedOrder exposing (RecordedOrder)
 import Game.Supply as Supply
 import Game.TurnPlayback as TurnPlayback
 import Game.Unit as Unit exposing (Unit)
@@ -45,6 +46,7 @@ import Game.View.Ambush as Ambush
 import Game.View.CombatEffects as CombatEffects
 import Game.View.DepotStock as DepotStock
 import Game.View.MovementRoute as MovementRoute
+import Game.View.ReplayOrders as ReplayOrders
 import Game.View.RotationChoices as RotationChoices
 import Game.View.SupplyCrate as SupplyCrate
 import Game.View.TargetSight as TargetSight
@@ -170,6 +172,9 @@ interaction presentation =
         Playing _ ->
             Inspecting
 
+        Reviewing _ ->
+            Inspecting
+
 
 
 ----------------------------------------------------------------
@@ -198,6 +203,9 @@ savedOverlays presentation =
         Playing _ ->
             emptySavedOverlays
 
+        Reviewing _ ->
+            emptySavedOverlays
+
 
 playback : Presentation -> Maybe TurnPlayback.Playback
 playback presentation =
@@ -207,6 +215,9 @@ playback presentation =
 
         Playing view ->
             Just view.animation
+
+        Reviewing review ->
+            review.playback |> Maybe.map .animation
 
 
 rotationSelection : Interaction -> Maybe DirectionArgs
@@ -574,6 +585,13 @@ type alias Args =
 type Presentation
     = Viewing OrdersView
     | Playing PlaybackView
+    | Reviewing ReviewView
+
+
+type alias ReviewView =
+    { playback : Maybe PlaybackView
+    , orders : List RecordedOrder
+    }
 
 
 type alias OrdersView =
@@ -853,6 +871,12 @@ toSvg args =
                 Viewing _ ->
                     []
 
+                Reviewing review ->
+                    review.playback
+                        |> Maybe.andThen .loss
+                        |> Maybe.map lossSpotlight
+                        |> Maybe.withDefault []
+
         unitView : Unit -> Coordinate -> Svg Msg
         unitView unit position =
             let
@@ -1012,6 +1036,15 @@ toSvg args =
                 |> Maybe.map selectionMarker
                 |> Maybe.map List.singleton
                 |> Maybe.withDefault []
+
+        recordedOrders : Svg Msg
+        recordedOrders =
+            case args.presentation of
+                Reviewing review ->
+                    ReplayOrders.toSvg args.selectedUnitId review.orders
+
+                _ ->
+                    Svg.text ""
     in
     Svg.svg
         [ SA.viewBox
@@ -1042,6 +1075,7 @@ toSvg args =
                 args.units
             , facingCoverage
             , [ unloadOverlay, shotOverlay ]
+            , [ recordedOrders ]
             , selection
             , rotationOverlay
             , facingOverlay

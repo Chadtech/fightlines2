@@ -4,7 +4,7 @@ use crate::{
     scenario::{
         Direction, Entrenchment, HitPoints, PlayerNumber, Scenario, Unit, UnitId, UnitKind,
     },
-    turns::{FacingOrder, MoveOrder, TravelMode, TurnFrame},
+    turns::{FacingOrder, MoveOrder, TravelMode, TurnFrame, UnitOrderKind},
     visibility,
 };
 use juniper::{GraphQLEnum, GraphQLObject, graphql_object};
@@ -61,6 +61,85 @@ pub enum CombatKind {
     Ambush,
     AttackMove,
     IndirectFire,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
+pub enum DefenseReadiness {
+    Ready,
+    Unready,
+    Exposed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
+pub enum WeaponReadiness {
+    CanFire,
+    AlreadyFired,
+    InsufficientSupplies,
+    NotOrdered,
+    Aboard,
+    Destroyed,
+    Unarmed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLObject)]
+pub struct CombatState {
+    pub order: UnitOrderKind,
+    pub defense: DefenseReadiness,
+    pub weapon: WeaponReadiness,
+}
+
+fn weapon_readiness(unit: &Unit, fired: bool) -> WeaponReadiness {
+    if !unit.is_alive() {
+        WeaponReadiness::Destroyed
+    } else if unit.board_position().is_none() {
+        WeaponReadiness::Aboard
+    } else if rules(unit.kind()).range == 0 {
+        WeaponReadiness::Unarmed
+    } else if fired {
+        WeaponReadiness::AlreadyFired
+    } else if unit.supplies().current()
+        < unit.supplies().upkeep_per_turn() + rules(unit.kind()).shot_cost
+    {
+        WeaponReadiness::InsufficientSupplies
+    } else {
+        WeaponReadiness::CanFire
+    }
+}
+
+/// The same readiness decision drives damage and recorded-turn inspection.
+pub fn combat_state(unit: &Unit, order: UnitOrderKind, fired: bool) -> CombatState {
+    let availability = weapon_readiness(unit, fired);
+    let defense = match unit.kind() {
+        UnitKind::Truck | UnitKind::FieldGun => DefenseReadiness::Exposed,
+        UnitKind::Infantry | UnitKind::Tank => {
+            let prepared = match order {
+                UnitOrderKind::Ambush | UnitOrderKind::StandGround => true,
+                UnitOrderKind::AttackMove => availability == WeaponReadiness::CanFire || fired,
+                _ => false,
+            };
+            if prepared && unit.board_position().is_some() && unit.is_alive() {
+                DefenseReadiness::Ready
+            } else {
+                DefenseReadiness::Unready
+            }
+        }
+    };
+    let weapon = match order {
+        UnitOrderKind::Ambush | UnitOrderKind::AttackMove | UnitOrderKind::IndirectFire => {
+            availability
+        }
+        _ if availability == WeaponReadiness::CanFire
+            || availability == WeaponReadiness::InsufficientSupplies =>
+        {
+            WeaponReadiness::NotOrdered
+        }
+        _ => availability,
+    };
+    CombatState {
+        order,
+        defense,
+        weapon,
+    }
 }
 
 #[derive(Clone, Debug, GraphQLObject, Serialize, Deserialize)]
@@ -341,12 +420,7 @@ impl Combat {
     }
 
     fn can_fire(&self, unit: &Unit) -> bool {
-        let rule = rules(unit.kind());
-        unit.is_alive()
-            && unit.board_position().is_some()
-            && rule.range > 0
-            && !self.fired.contains(&unit.unit_id())
-            && unit.supplies().current() >= unit.supplies().upkeep_per_turn() + rule.shot_cost
+        weapon_readiness(unit, self.fired.contains(&unit.unit_id())) == WeaponReadiness::CanFire
     }
 
     /// Resolve against the pre-volley board so reciprocal fire is simultaneous.
@@ -354,15 +428,18 @@ impl Combat {
         let health = shooter.hit_points();
         let strength = f64::from(health.current()) / f64::from(health.maximum());
         // A prepared gun can fire, but its exposed crew cannot gain defensive readiness.
-        let defensively_ready = match target.kind() {
-            UnitKind::FieldGun | UnitKind::Truck => false,
-            UnitKind::Infantry | UnitKind::Tank => {
-                self.standing_ground.contains(&target.unit_id())
-                    || self.ambushers.contains(&target.unit_id())
-                    || (self.attack_movers.contains(&target.unit_id())
-                        && (self.can_fire(target) || self.fired.contains(&target.unit_id())))
-            }
+        let order = if self.standing_ground.contains(&target.unit_id()) {
+            UnitOrderKind::StandGround
+        } else if self.ambushers.contains(&target.unit_id()) {
+            UnitOrderKind::Ambush
+        } else if self.attack_movers.contains(&target.unit_id()) {
+            UnitOrderKind::AttackMove
+        } else {
+            UnitOrderKind::Hold
         };
+        let defensively_ready = combat_state(target, order, self.fired.contains(&target.unit_id()))
+            .defense
+            == DefenseReadiness::Ready;
         let matchup = match (shooter.kind(), target.kind()) {
             (UnitKind::Truck, _) => 0.0,
             (_, UnitKind::Truck) => 3.5,

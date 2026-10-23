@@ -29,6 +29,10 @@ type CombatRules
     = CombatRules
 
 
+type CombatState
+    = CombatState
+
+
 type Coordinate
     = Coordinate
 
@@ -111,6 +115,14 @@ type OnMap
 
 type PlayerView
     = PlayerView
+
+
+type RecordedOrder
+    = RecordedOrder
+
+
+type RecordedUnload
+    = RecordedUnload
 
 
 type ResourceStock

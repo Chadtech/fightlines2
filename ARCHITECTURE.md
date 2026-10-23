@@ -1114,6 +1114,25 @@ rules and coordinated SVG playback selectors also remain component-owned raw CSS
 
 ## Ambush orders and combat
 
+`combat::combat_state` shares the defensive-readiness and weapon-availability
+decisions between damage resolution and replay inspection. `Unit.combat_state`
+is optional response metadata and is skipped by archive serialization; live
+units leave it absent. `game_archive::review` reads accepted orders across all
+submissions for the selected turn, without validating them against changed rules
+or re-simulating recorded outcomes. It annotates recorded frame copies, tracking
+spent shots through volleys and indirect impacts. Theater units use their saved
+pre-volley resources; board units use post-volley resources. Fog projection removes
+enemy metadata as well as enemy orders. `GameSnapshot.replay_orders` is empty for
+live games and carries the filtered recorded orders for archive queries.
+
+`GameReplay` owns the `showOrders` toggle and loaded orders. The shared battlefield's
+`Reviewing` presentation combines optional playback with passive recorded-order
+overlays, without entering the planning presentation or changing unit facing.
+`Game.View.ReplayOrders` renders these through the existing movement-route artwork.
+`Game.View.CombatReadiness` displays the optional metadata in unit inspection and
+combat portraits. The server fills final-reveal units from their last recorded
+readiness so inspection survives terminal playback.
+
 `PlannedOrder.Ambush` owns stationary position and facing. The `ChoosingDirection` interaction owns the preview direction. The input boundary emits
 `MoveOrderInput.ambush` with `direction` and a single-coordinate path. Validation
 rejects absent facing, trucks, passengers, movement, unloading, receiving a load,

@@ -9,6 +9,7 @@ import Game.Unit.HitPoints exposing (HitPoints)
 import Game.Unit.Supplies exposing (Supplies)
 import Game.UnitKind as UnitKindUtil
 import Game.UnitResources as UnitResources exposing (UnitResources)
+import Game.View.CombatReadiness as CombatReadiness
 import Game.View.UnitSprite as UnitSprite
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
@@ -73,7 +74,8 @@ statusView playerName unit portraitActions =
 
         resourceContent : List (Html msg)
         resourceContent =
-            [ resourcesView unit.kind unit.resources
+            [ CombatReadiness.toHtml unit.combatState
+            , resourcesView unit.kind unit.resources
             ]
 
         content : List (Html msg)

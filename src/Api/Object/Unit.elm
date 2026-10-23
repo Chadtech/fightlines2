@@ -24,6 +24,13 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+combatState :
+    SelectionSet decodesTo Api.Object.CombatState
+    -> SelectionSet (Maybe decodesTo) Api.Object.Unit
+combatState object____ =
+    Object.selectionForCompositeField "combatState" [] object____ (Basics.identity >> Decode.nullable)
+
+
 entrenchment : SelectionSet Api.Enum.Entrenchment.Entrenchment Api.Object.Unit
 entrenchment =
     Object.selectionForField "Enum.Entrenchment.Entrenchment" "entrenchment" [] Api.Enum.Entrenchment.decoder

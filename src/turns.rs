@@ -59,6 +59,19 @@ pub enum TravelMode {
     AttackMove,
 }
 
+/// Read-only description of an accepted order, shared by replay and combat inspection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
+pub enum UnitOrderKind {
+    Hold,
+    Move,
+    Rotate,
+    AttackMove,
+    Ambush,
+    StandGround,
+    DigIn,
+    IndirectFire,
+}
+
 /// Validated facing/action. Arrival facing applies only after a completed route.
 #[derive(Clone, Copy, Debug)]
 pub enum FacingOrder {
@@ -150,7 +163,7 @@ impl UnloadOrderInput {
 #[derive(Clone, GraphQLInputObject, Serialize, Deserialize)]
 pub struct CrateUnloadInput {
     cargo_index: i32,
-    destination: CoordinateInput,
+    pub(crate) destination: CoordinateInput,
 }
 
 #[derive(Clone, Debug)]

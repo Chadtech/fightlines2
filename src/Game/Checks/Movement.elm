@@ -101,6 +101,7 @@ check rules fixture =
                 unit : Unit.Unit
                 unit =
                     { destroyed = False
+                    , combatState = Nothing
                     , combatRules =
                         { range = 1
                         , indirectRange = 0
@@ -273,6 +274,7 @@ traceChecks rules =
                 unit : Unit.Unit
                 unit =
                     { destroyed = False
+                    , combatState = Nothing
                     , combatRules =
                         { range = 1
                         , indirectRange = 0
@@ -640,6 +642,7 @@ reservationChecks rules =
                 unit : Unit.Unit
                 unit =
                     { destroyed = False
+                    , combatState = Nothing
                     , combatRules =
                         { range = 1
                         , indirectRange = 0
@@ -735,6 +738,7 @@ fuelChecks rules =
                 unit : Unit.Unit
                 unit =
                     { destroyed = False
+                    , combatState = Nothing
                     , combatRules =
                         { range = 1
                         , indirectRange = 0
@@ -926,6 +930,7 @@ supplyChecks rules =
                 unit : Unit.Unit
                 unit =
                     { destroyed = False
+                    , combatState = Nothing
                     , combatRules =
                         { range = 1
                         , indirectRange = 0
@@ -1161,6 +1166,7 @@ transportChecks rules =
                     , kind = UnitKind.Infantry
                     , direction = Just Direction.East
                     , destroyed = False
+                    , combatState = Nothing
                     , combatRules =
                         { range = 1
                         , indirectRange = 0

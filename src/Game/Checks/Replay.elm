@@ -16,6 +16,7 @@ import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Inspection exposing (Inspection(..))
 import Game.Map as Map
 import Game.PlaybackPresentation as PlaybackPresentation
+import Game.RecordedOrder exposing (RecordedOrder)
 import Game.Terrain as Terrain
 import Game.Turn as Turn
 import Game.TurnPlayback as TurnPlayback
@@ -60,6 +61,7 @@ type alias RecordedTurn =
     { battlefield : BattlefieldSnapshot.Snapshot
     , frames : List TurnPlayback.Frame
     , resolution : Maybe Turn.Resolution
+    , orders : List RecordedOrder
     }
 
 
@@ -216,6 +218,9 @@ checks shared =
             ( List.concat
                 [ lossFailures
                 , selectionChecks initial
+                , expect "order overlays start hidden" (not initial.showOrders)
+                , expect "order overlays toggle without changing playback" ((step (GameReplay.ShowOrdersChanged True) paused).showOrders && (step (GameReplay.ShowOrdersChanged True) paused).timeline == paused.timeline)
+                , expect "order overlay preference survives turn responses" (step (GameReplay.ShowOrdersChanged True) revealing |> step (GameReplay.TurnResponseReceived revealedPosition (Ok turn))).showOrders
                 , expect "replay starts with fog enabled" initial.position.fogOfWar
                 , expect "fog changes reload the same turn and keep the saved camera" (revealed.position == revealedPosition && revealed.navigation.offset == manual.navigation.offset && revealed.navigation.zoom == manual.navigation.zoom)
                 , expect "fog requests reject stale responses for the same turn and player" ((step (GameReplay.TurnResponseReceived (redTurn 1) (Ok turn)) revealing).position == manual.position)
@@ -279,6 +284,7 @@ selectionChecks initial =
                 turn =
                     { battlefield = { battlefield | units = [ movedUnit ] }
                     , frames = [ { firstFrame | units = [ unit ] }, { firstFrame | units = [ movedUnit ] } ]
+                    , orders = []
                     , resolution = Nothing
                     }
 
@@ -320,7 +326,7 @@ selectionChecks initial =
                 previous =
                     finished
                         |> step GameReplay.PreviousClicked
-                        |> step (GameReplay.TurnResponseReceived (position 0) (Ok { battlefield = opening.battlefield, frames = [], resolution = Nothing }))
+                        |> step (GameReplay.TurnResponseReceived (position 0) (Ok { battlefield = opening.battlefield, frames = [], resolution = Nothing, orders = [] }))
 
                 hidden : GameReplay.Model
                 hidden =
@@ -436,6 +442,7 @@ fixtureUnit id =
     , resources = Nothing
     , cargoCapacity = 0
     , destroyed = False
+    , combatState = Nothing
     , combatRules =
         { range = 1
         , indirectRange = 0
@@ -485,6 +492,7 @@ recordedTurn frames =
         , visibleTiles = []
         }
     , frames = frames
+    , orders = []
     , resolution = Nothing
     }
 

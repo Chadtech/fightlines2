@@ -1,4 +1,5 @@
 //! Read-only archive browsing, enabled explicitly with --game-logs.
+pub mod review;
 use crate::{
     game_log::{Archive, RecordedPlayer},
     graphql::Context,
@@ -252,14 +253,22 @@ pub fn turn(
     };
     let mut scenario = &archive.started.scenario;
     let mut outcome = None;
+    let orders = review::orders(&archive, turn_number)?;
     for submission in &archive.submissions {
         if let Some(resolution) = &submission.resolution {
             if resolution.turn_number > turn_number {
                 break;
             }
+            let mut resolution = resolution.clone();
+            if resolution.turn_number == turn_number {
+                review::inspect_resolution(&mut resolution, &orders);
+                if fog_of_war {
+                    review::conceal_enemy_states(&mut resolution, player);
+                }
+            }
             match &mut view {
                 ArchivedView::Player(observation) => {
-                    observation.resolve(&submission.scenario, player, resolution);
+                    observation.resolve(&submission.scenario, player, &resolution);
                 }
                 ArchivedView::Revealed(last_resolution) => {
                     *last_resolution = Some(resolution.clone());
@@ -269,14 +278,21 @@ pub fn turn(
             outcome = submission.outcome;
         }
     }
-    Ok(GameSnapshot::archived(
+    let mut snapshot = GameSnapshot::archived(
         &archive.started,
         scenario,
         view,
         outcome,
         player,
         turn_number + 1,
-    ))
+    );
+    snapshot.set_replay_orders(
+        orders
+            .into_iter()
+            .filter(|order| !fog_of_war || order.player_number == player)
+            .collect(),
+    );
+    Ok(snapshot)
 }
 
 pub async fn page(browser: web::Data<Browser>) -> actix_web::Result<NamedFile> {
@@ -498,7 +514,7 @@ mod tests {
             (1, "PLAYER1", ", fogOfWar: true", 1),
         ] {
             let query = format!(
-                r#"{{ loggedGames {{ __typename ... on LoggedGame {{ id name mapType startedAt players {{ name playerNumber controller }} turnCount status {{ kind winner }} }} ... on ArchiveReadError {{ id message }} }} loggedTurn(id: "{id}", turnNumber: {turn}, playerNumber: {player}{fog_argument}) {{ isMember submitted players {{ name playerNumber isAi controller }} visibleTiles {{ x y }} scenario {{ units {{ id resources {{ supplies {{ current }} }} }} depots {{ stock {{ current }} }} }} lastResolution {{ turnNumber frames {{ visibleTiles {{ x y }} units {{ id }} depots {{ stock {{ current }} }} }} }} }} }}"#
+                r#"{{ loggedGames {{ __typename ... on LoggedGame {{ id name mapType startedAt players {{ name playerNumber controller }} turnCount status {{ kind winner }} }} ... on ArchiveReadError {{ id message }} }} loggedTurn(id: "{id}", turnNumber: {turn}, playerNumber: {player}{fog_argument}) {{ isMember submitted players {{ name playerNumber isAi controller }} visibleTiles {{ x y }} replayOrders {{ unitId kind path {{ x y }} }} scenario {{ units {{ id combatState {{ order defense weapon }} resources {{ supplies {{ current }} }} }} depots {{ stock {{ current }} }} }} lastResolution {{ turnNumber reports {{ playerNumber }} frames {{ visibleTiles {{ x y }} units {{ id combatState {{ order defense weapon }} }} depots {{ stock {{ current }} }} }} }} }} }}"#
             );
             let request = test::TestRequest::post()
                 .uri("/graphql")
@@ -551,6 +567,41 @@ mod tests {
                 expected_units
             );
             let revealed = expected_units == 2;
+            let orders = result["data"]["loggedTurn"]["replayOrders"]
+                .as_array()
+                .fixture()?;
+            assert_eq!(
+                orders.len(),
+                if turn == 0 {
+                    0
+                } else if revealed {
+                    2
+                } else {
+                    1
+                }
+            );
+            if turn == 1 {
+                assert_eq!(
+                    result["data"]["loggedTurn"]["lastResolution"]["reports"],
+                    json!([{"playerNumber":player}])
+                );
+                for order in orders {
+                    assert_eq!(order["kind"], "HOLD");
+                    if !revealed {
+                        assert_eq!(order["unitId"], if player == "PLAYER1" { "1" } else { "2" });
+                    }
+                }
+                for unit in result["data"]["loggedTurn"]["scenario"]["units"]
+                    .as_array()
+                    .fixture()?
+                {
+                    assert_eq!(
+                        unit["combatState"],
+                        json!({"order":"HOLD", "defense":"UNREADY", "weapon":"NOT_ORDERED"})
+                    );
+                }
+            }
+
             let visible_tiles = result["data"]["loggedTurn"]["visibleTiles"]
                 .as_array()
                 .fixture()?;

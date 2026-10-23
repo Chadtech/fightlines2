@@ -20,6 +20,13 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+replayOrders :
+    SelectionSet decodesTo Api.Object.RecordedOrder
+    -> SelectionSet (List decodesTo) Api.Object.GameSnapshot
+replayOrders object____ =
+    Object.selectionForCompositeField "replayOrders" [] object____ (Basics.identity >> Decode.list)
+
+
 turnNumber : SelectionSet Int Api.Object.GameSnapshot
 turnNumber =
     Object.selectionForField "Int" "turnNumber" [] Decode.int

@@ -19,6 +19,11 @@ players, map, date, outcome, and completed turns. Choose **replay game** to insp
 the starting board, play/pause the game, jump between turns, or switch player views.
 **play** continues through the remaining recorded turns; choosing a turn or using
 **previous**/**next** plays that turn. Combat and loss dialogs use the usual controls.
+Replay inspection and combat portraits show the recorded order, defensive
+readiness, and weapon availability. Enable **show orders** to overlay the selected
+turn's routes, stationary orders, facing, unloads, targets, and interrupted moves.
+Selecting a unit emphasizes its order. Fog limits orders and readiness to the
+viewed player's units; disable **fog of war** to inspect both sides.
 These read-only pages work at the server's deployment address and are also enabled
 by `make dev`. When enabled, anyone who can reach the server can view recordings;
 operator password protection is not implemented yet.

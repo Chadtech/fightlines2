@@ -36,6 +36,7 @@ import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Api.Object
 import Api.Object.Unit as UnitApi
 import Game.CombatRules as CombatRules exposing (CombatRules)
+import Game.CombatState as CombatState exposing (CombatState)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.PlayerNumber as PlayerNumber
 import Game.SpriteFacing as SpriteFacing
@@ -56,6 +57,7 @@ import Util.List as ListUtil
 
 type alias Unit =
     { id : UnitId
+    , combatState : Maybe CombatState
     , playerNumber : PlayerNumber
     , kind : UnitKind
     , direction : Maybe Direction
@@ -79,6 +81,7 @@ selection : SelectionSet Unit Api.Object.Unit
 selection =
     SS.succeed Unit
         |> SS.with UnitId.selection
+        |> SS.with (UnitApi.combatState CombatState.selection)
         |> SS.with UnitApi.playerNumber
         |> SS.with UnitApi.kind
         |> SS.with UnitApi.direction

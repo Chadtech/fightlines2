@@ -1,6 +1,7 @@
 use crate::graphql::Context;
 use crate::{
     ai::{self, Difficulty},
+    game_archive::review::RecordedOrder,
     game_log::{Directory, GameLog, GameStarted, RecordedPlayer, Submission, SubmissionResult},
     lobby_id::LobbyId,
     lobby_name::LobbyName,
@@ -228,6 +229,7 @@ struct PlayerView {
 /// Stored game state remains in `Game`; viewer-specific flags are computed here.
 #[derive(GraphQLObject)]
 pub struct GameSnapshot {
+    replay_orders: Vec<RecordedOrder>,
     turn_number: i32,
     outcome: Option<GameOutcome>,
     submitted: bool,
@@ -350,6 +352,7 @@ fn game_view(game: &Game, session: &SessionToken) -> FieldResult<GameSnapshot> {
         player_number,
     );
     Ok(GameSnapshot {
+        replay_orders: Vec::new(),
         turn_number: game.turns.number,
         outcome: game.turns.outcome,
         submitted: game.turns.orders[index].is_some(),
@@ -437,6 +440,24 @@ fn observed_board(
 }
 
 impl GameSnapshot {
+    pub fn set_replay_orders(&mut self, orders: Vec<RecordedOrder>) {
+        self.replay_orders = orders;
+        if let Some(resolution) = &mut self.last_resolution {
+            let mut states = BTreeMap::new();
+            for frame in &mut resolution.frames {
+                for unit in &mut frame.units {
+                    if let Some(state) = unit.combat_state {
+                        states.insert(unit.unit_id(), state);
+                    } else {
+                        unit.combat_state = states.get(&unit.unit_id()).copied();
+                    }
+                }
+            }
+            for unit in &mut self.scenario.units {
+                unit.combat_state = states.get(&unit.unit_id()).copied();
+            }
+        }
+    }
     pub fn archived(
         started: &GameStarted,
         source: &Scenario,
@@ -456,6 +477,10 @@ impl GameSnapshot {
             ArchivedView::Revealed(mut last_resolution) => {
                 let visible = all_tiles(source);
                 if let Some(resolution) = &mut last_resolution {
+                    // The report remains viewer-specific even when the battlefield is revealed.
+                    resolution
+                        .reports
+                        .retain(|report| report.player_number == player);
                     for frame in &mut resolution.frames {
                         frame.visible_tiles = visible.clone();
                     }
@@ -468,6 +493,7 @@ impl GameSnapshot {
             }
         };
         Self {
+            replay_orders: Vec::new(),
             turn_number,
             outcome,
             submitted: true,
