@@ -238,7 +238,7 @@ view model =
                         ]
                     ]
                 ]
-                [ H.text "a turn based military strategy game centered around logistics, supply, and transportation" ]
+                [ H.text "a turn based strategy game based on logistics, supply, and transportation" ]
             ]
         , H.nav
             [ Aria.label "main navigation"
