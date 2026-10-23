@@ -11,6 +11,7 @@ module Game.OrderPlanning exposing
     , clearTargetPreview
     , commandGuideOpen
     , commandMenuUnit
+    , confirmGroundPickup
     , confirmPassengers
     , confirmPath
     , confirmUnloadPassengers
@@ -110,6 +111,7 @@ type Model
     = OrdinaryPlanning Drafts
     | ConfirmingSubmission Drafts
     | ChoosingCrates UnitId Depot Drafts
+    | ChoosingGroundFreight UnitId Supply.GroundCrate Drafts
     | ChoosingPassengers UnloadChoice
     | ChoosingExits UnloadPlanning
 
@@ -159,6 +161,9 @@ orders model =
         ChoosingCrates _ _ drafts ->
             drafts.orders
 
+        ChoosingGroundFreight _ _ drafts ->
+            drafts.orders
+
         ChoosingPassengers choice ->
             UnloadingTruck.toOrder choice.truck :: choice.otherOrders
 
@@ -186,6 +191,9 @@ selection model =
             drafts.selection
 
         ChoosingCrates id _ _ ->
+            Just (Inspecting (UnitInspection id))
+
+        ChoosingGroundFreight id _ _ ->
             Just (Inspecting (UnitInspection id))
 
         ChoosingPassengers choice ->
@@ -334,31 +342,35 @@ toggleUnloadCargo cargo checked model =
 
 
 confirmUnloadPassengers :
-    List Depot
+    List Unit
+    -> List Supply.GroundCrate
+    -> List Depot
     -> (UnloadPlanning -> InvariantCheck InvariantViolation (List Movement.Option))
     -> Model
     -> InvariantCheck InvariantViolation Model
-confirmUnloadPassengers depots exitOptions model =
+confirmUnloadPassengers units supplyCrates depots exitOptions model =
     case model of
         ChoosingPassengers choice ->
             UnloadPlanning.confirm exitOptions choice
-                |> IC.map (applyUnloadStep depots)
+                |> IC.map (applyUnloadStep units supplyCrates depots)
 
         _ ->
             IC.happy model
 
 
 saveUnloadDestination :
-    List Depot
+    List Unit
+    -> List Supply.GroundCrate
+    -> List Depot
     -> (UnloadPlanning -> InvariantCheck InvariantViolation (List Movement.Option))
     -> Coordinate
     -> Model
     -> InvariantCheck InvariantViolation Model
-saveUnloadDestination depots exitOptions destination model =
+saveUnloadDestination units supplyCrates depots exitOptions destination model =
     case model of
         ChoosingExits planning ->
             UnloadPlanning.saveDestination exitOptions destination planning
-                |> IC.map (applyUnloadStep depots)
+                |> IC.map (applyUnloadStep units supplyCrates depots)
 
         _ ->
             IC.happy model
@@ -412,11 +424,50 @@ dismissDialog model =
         ChoosingCrates _ _ drafts ->
             OrdinaryPlanning drafts
 
+        ChoosingGroundFreight _ _ drafts ->
+            OrdinaryPlanning drafts
+
         ChoosingPassengers _ ->
             setSelection (selection model) model
 
         _ ->
             model
+
+
+confirmGroundPickup : Model -> InvariantCheck InvariantViolation Model
+confirmGroundPickup model =
+    case model of
+        ChoosingGroundFreight id freight drafts ->
+            case ListUtil.find (\order -> order.unitId == id) drafts.orders of
+                Just order ->
+                    let
+                        pickup : PlannedOrder
+                        pickup =
+                            { unitId = id
+                            , action =
+                                PlannedOrder.SupplyTransfer
+                                    { route = PlannedOrder.path order
+                                    , destination = PlannedOrder.destination order
+                                    , passengers = PlannedOrder.unloads order
+                                    , handling = PlannedOrder.PickingUpGroundFreight freight.stock.kind
+                                    }
+                            }
+                    in
+                    OrdinaryPlanning
+                        { drafts
+                            | orders =
+                                pickup
+                                    :: List.filter
+                                        (\other -> other.unitId /= id)
+                                        drafts.orders
+                        }
+                        |> IC.happy
+
+                Nothing ->
+                    IC.violated (LoadingOrderNotFound id) model
+
+        _ ->
+            IC.happy model
 
 
 chooseUnloadSquare :
@@ -431,7 +482,9 @@ chooseUnloadSquare :
     -> InvariantCheck InvariantViolation Model
 chooseUnloadSquare map units playerNumbers movementRules supplyCrates depots destination model =
     model
-        |> saveUnloadDestination depots
+        |> saveUnloadDestination units
+            supplyCrates
+            depots
             (UnloadPlanning.availableOptions (unloadOptions map units playerNumbers movementRules supplyCrates))
             destination
         |> IC.map (promptDismountedCommands map units)
@@ -444,10 +497,29 @@ promptDismountedCommands map units original =
         model =
             case original of
                 OrdinaryPlanning drafts ->
-                    OrdinaryPlanning { drafts | orders = PlannedTransport.withoutStalePassengerHolds map units drafts.orders }
+                    OrdinaryPlanning
+                        { drafts
+                            | orders =
+                                PlannedTransport.withoutStalePassengerHolds map units drafts.orders
+                        }
 
                 ChoosingCrates id depot drafts ->
-                    ChoosingCrates id depot { drafts | orders = PlannedTransport.withoutStalePassengerHolds map units drafts.orders }
+                    ChoosingCrates
+                        id
+                        depot
+                        { drafts
+                            | orders =
+                                PlannedTransport.withoutStalePassengerHolds map units drafts.orders
+                        }
+
+                ChoosingGroundFreight id freight drafts ->
+                    ChoosingGroundFreight
+                        id
+                        freight
+                        { drafts
+                            | orders =
+                                PlannedTransport.withoutStalePassengerHolds map units drafts.orders
+                        }
 
                 _ ->
                     original
@@ -456,7 +528,10 @@ promptDismountedCommands map units original =
         OrdinaryPlanning _ ->
             case PlannedTransport.nextDismountedUnit map units (orders model) of
                 Just unit ->
-                    setUnitInteraction unit.id (CommandMenu (ChoosingCommand Nothing)) model
+                    setUnitInteraction
+                        unit.id
+                        (CommandMenu (ChoosingCommand Nothing))
+                        model
 
                 Nothing ->
                     model
@@ -470,18 +545,28 @@ applyCommand :
     -> List Unit
     -> List PlayerNumber
     -> List Movement.Rule
+    -> List Supply.GroundCrate
     -> List Depot
     -> UnitCommand.Command
     -> Model
     -> InvariantCheck InvariantViolation Model
-applyCommand map units playerNumbers movementRules depots command model =
+applyCommand map units playerNumbers movementRules supplyCrates depots command model =
     case ( selection model, hasDialog model ) of
         ( Just (UnitSelection { interaction }), False ) ->
             case interaction of
                 CommandMenu _ ->
                     case selectedUnit map units model of
                         Just unit ->
-                            applyUnitCommand map units playerNumbers movementRules depots command unit model
+                            applyUnitCommand
+                                map
+                                units
+                                playerNumbers
+                                movementRules
+                                supplyCrates
+                                depots
+                                command
+                                unit
+                                model
 
                         Nothing ->
                             missingSelectedUnit (selection model) model
@@ -820,12 +905,27 @@ selectTransportTile :
     -> Model
     -> InvariantCheck InvariantViolation Model
 selectTransportTile map units playerNumbers movementRules supplyCrates depots position model =
-    case unloadPlanning model of
-        Just _ ->
-            chooseUnloadSquare map units playerNumbers movementRules supplyCrates depots position model
+    if unloadPlanning model /= Nothing then
+        chooseUnloadSquare
+            map
+            units
+            playerNumbers
+            movementRules
+            supplyCrates
+            depots
+            position
+            model
 
-        _ ->
-            selectMovementTile map units playerNumbers movementRules depots position model
+    else
+        selectMovementTile
+            map
+            units
+            playerNumbers
+            movementRules
+            supplyCrates
+            depots
+            position
+            model
 
 
 previewTile :
@@ -904,13 +1004,22 @@ confirmPath :
     -> List Unit
     -> List PlayerNumber
     -> List Movement.Rule
+    -> List Supply.GroundCrate
     -> List Depot
     -> Model
     -> InvariantCheck InvariantViolation Model
-confirmPath map units playerNumbers movementRules depots model =
+confirmPath map units playerNumbers movementRules supplyCrates depots model =
     case pathPreview model of
         Just preview ->
-            selectMovementTile map units playerNumbers movementRules depots preview.destination model
+            selectMovementTile
+                map
+                units
+                playerNumbers
+                movementRules
+                supplyCrates
+                depots
+                preview.destination
+                model
 
         Nothing ->
             IC.happy model
@@ -1133,7 +1242,7 @@ confirmPassengers map units playerNumbers movementRules supplyCrates depots mode
                 confirmIfPossible : Bool -> InvariantCheck InvariantViolation Model
                 confirmIfPossible possible =
                     if possible then
-                        confirmUnloadPassengers depots (UnloadPlanning.availableOptions rawOptions) model
+                        confirmUnloadPassengers units supplyCrates depots (UnloadPlanning.availableOptions rawOptions) model
 
                     else
                         IC.happy model
@@ -1180,12 +1289,13 @@ applyUnitCommand :
     -> List Unit
     -> List PlayerNumber
     -> List Movement.Rule
+    -> List Supply.GroundCrate
     -> List Depot
     -> UnitCommand.Command
     -> Unit
     -> Model
     -> InvariantCheck InvariantViolation Model
-applyUnitCommand map units playerNumbers movementRules depots command unit model =
+applyUnitCommand map units playerNumbers movementRules supplyCrates depots command unit model =
     let
         canApply : Bool
         canApply =
@@ -1226,7 +1336,7 @@ applyUnitCommand map units playerNumbers movementRules depots command unit model
                     |> IC.happy
 
             UnitCommand.HoldPosition ->
-                holdPosition map units depots unit model
+                holdPosition map units supplyCrates depots unit model
 
             UnitCommand.DigIn ->
                 case Unit.mapPosition unit of
@@ -1296,40 +1406,75 @@ saveIndirectFire map units target model =
             missingSelectedUnit (selection model) model
 
 
-{-| A saved truck order enters loading only at its own depot destination.
+{-| A saved truck order offers the ground load or depot at its own destination.
+The truck must have a free berth after accounting for planned boarding.
 Crate unloading already owns freight handling and cannot combine with loading.
 -}
-offerCrateLoading : List Depot -> PlannedOrder -> Drafts -> Model
-offerCrateLoading depots order drafts =
+offerCrateLoading :
+    List Unit
+    -> List Supply.GroundCrate
+    -> List Depot
+    -> PlannedOrder
+    -> Drafts
+    -> Model
+offerCrateLoading units supplyCrates depots order drafts =
     let
         atDestination : Depot -> Bool
         atDestination depot =
             depot.position == PlannedOrder.destination order
 
+        hasCargoRoom : Bool
+        hasCargoRoom =
+            List.any
+                (\unit ->
+                    (unit.id == order.unitId)
+                        && (PlannedTransport.cargoRoom units unit drafts.orders > 0)
+                )
+                units
+
         destinationDepot : Maybe Depot
         destinationDepot =
             ListUtil.find atDestination depots
+
+        offerGroundOrDepot : Maybe Depot -> Model
+        offerGroundOrDepot depot =
+            case ListUtil.find (\freight -> freight.position == PlannedOrder.destination order) supplyCrates of
+                Just freight ->
+                    ChoosingGroundFreight order.unitId freight drafts
+
+                Nothing ->
+                    case depot of
+                        Just source ->
+                            ChoosingCrates order.unitId source drafts
+
+                        Nothing ->
+                            OrdinaryPlanning drafts
     in
     case order.action of
         PlannedOrder.SupplyTransfer _ ->
             OrdinaryPlanning drafts
 
         _ ->
-            case destinationDepot of
-                Just depot ->
-                    ChoosingCrates order.unitId depot drafts
+            if hasCargoRoom then
+                offerGroundOrDepot destinationDepot
 
-                Nothing ->
-                    OrdinaryPlanning drafts
+            else
+                OrdinaryPlanning drafts
 
 
-offerTruckLoading : List Depot -> Unit -> Model -> InvariantCheck InvariantViolation Model
-offerTruckLoading depots unit model =
+offerTruckLoading :
+    List Unit
+    -> List Supply.GroundCrate
+    -> List Depot
+    -> Unit
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+offerTruckLoading units supplyCrates depots unit model =
     case ( unit.kind, model ) of
         ( Kind.Truck, OrdinaryPlanning drafts ) ->
             case ListUtil.find (\order -> order.unitId == unit.id) drafts.orders of
                 Just order ->
-                    IC.happy (offerCrateLoading depots order drafts)
+                    IC.happy (offerCrateLoading units supplyCrates depots order drafts)
 
                 Nothing ->
                     IC.violated (LoadingOrderNotFound unit.id) model
@@ -1338,42 +1483,46 @@ offerTruckLoading depots unit model =
             IC.happy model
 
 
-applyUnloadStep : List Depot -> UnloadPlanning.Step -> Model
-applyUnloadStep depots step =
+applyUnloadStep : List Unit -> List Supply.GroundCrate -> List Depot -> UnloadPlanning.Step -> Model
+applyUnloadStep units supplyCrates depots step =
     case step of
         UnloadPlanning.ChoosingExit planning ->
             ChoosingExits planning
 
         UnloadPlanning.Finished truck otherOrders ->
-            finishUnloading depots
+            finishUnloading units
+                supplyCrates
+                depots
                 truck
                 otherOrders
                 (Just (Inspecting (UnitInspection (UnloadingTruck.unitId truck))))
 
 
-finishUnloading : List Depot -> UnloadingTruck -> List PlannedOrder -> Maybe Selection -> Model
-finishUnloading depots truck otherOrders selected =
+finishUnloading : List Unit -> List Supply.GroundCrate -> List Depot -> UnloadingTruck -> List PlannedOrder -> Maybe Selection -> Model
+finishUnloading units supplyCrates depots truck otherOrders selected =
     let
         order : PlannedOrder
         order =
             UnloadingTruck.toOrder truck
     in
-    offerCrateLoading depots
+    offerCrateLoading units
+        supplyCrates
+        depots
         order
         { orders = order :: otherOrders
         , selection = selected
         }
 
 
-skipUnloading : Map -> List Unit -> List Depot -> Model -> Model
-skipUnloading map units depots model =
+skipUnloading : Map -> List Unit -> List Supply.GroundCrate -> List Depot -> Model -> Model
+skipUnloading map units supplyCrates depots model =
     case model of
         ChoosingPassengers choice ->
-            finishUnloading depots choice.truck choice.otherOrders Nothing
+            finishUnloading units supplyCrates depots choice.truck choice.otherOrders Nothing
                 |> promptDismountedCommands map units
 
         ChoosingExits unloading ->
-            finishUnloading depots unloading.truck unloading.otherOrders Nothing
+            finishUnloading units supplyCrates depots unloading.truck unloading.otherOrders Nothing
                 |> promptDismountedCommands map units
 
         _ ->
@@ -1392,29 +1541,31 @@ startTruckUnload truck model =
 
 openUnloadPrompt :
     List Unit
+    -> List Supply.GroundCrate
     -> List Depot
     -> Unit
     -> Movement.Option
     -> Model
     -> InvariantCheck InvariantViolation Model
-openUnloadPrompt units depots truck move model =
+openUnloadPrompt units supplyCrates depots truck move model =
     if PlannedTransport.hasCargo units truck then
         model
             |> startUnload truck.id move
             |> IC.happy
 
     else
-        offerTruckLoading depots truck model
+        offerTruckLoading units supplyCrates depots truck model
 
 
 holdPosition :
     Map
     -> List Unit
+    -> List Supply.GroundCrate
     -> List Depot
     -> Unit
     -> Model
     -> InvariantCheck InvariantViolation Model
-holdPosition map units depots unit model =
+holdPosition map units supplyCrates depots unit model =
     case PlannedOrder.hold units unit of
         Just hold ->
             let
@@ -1434,7 +1585,7 @@ holdPosition map units depots unit model =
                     |> IC.map (startStationaryUnload unit.id (PlannedOrder.destination hold))
 
             else
-                next |> IC.andThen (offerTruckLoading depots unit)
+                next |> IC.andThen (offerTruckLoading units supplyCrates depots unit)
 
         Nothing ->
             IC.violated (CommandUnitHasNoPosition unit.id) model
@@ -1578,11 +1729,12 @@ selectMovementTile :
     -> List Unit
     -> List PlayerNumber
     -> List Movement.Rule
+    -> List Supply.GroundCrate
     -> List Depot
     -> Coordinate
     -> Model
     -> InvariantCheck InvariantViolation Model
-selectMovementTile map units playerNumbers movementRules depots position model =
+selectMovementTile map units playerNumbers movementRules supplyCrates depots position model =
     let
         notOwnUnit : () -> Model
         notOwnUnit _ =
@@ -1613,7 +1765,7 @@ selectMovementTile map units playerNumbers movementRules depots position model =
                                     offerToReceiver receiver =
                                         case receiver of
                                             Just target ->
-                                                offerTruckLoading depots target state
+                                                offerTruckLoading units supplyCrates depots target state
 
                                             Nothing ->
                                                 IC.happy state
@@ -1637,7 +1789,7 @@ selectMovementTile map units playerNumbers movementRules depots position model =
                                 |> IC.mapError TransportInvariantViolated
                                 |> IC.map saveOrders
                                 |> IC.andThen (finishUnitCommand map units)
-                                |> IC.andThen (openUnloadPrompt units depots unit move)
+                                |> IC.andThen (openUnloadPrompt units supplyCrates depots unit move)
                                 |> IC.andThen offerReceiverLoading
 
                     Nothing ->
@@ -1680,6 +1832,9 @@ hasDialog : Model -> Bool
 hasDialog model =
     case model of
         ChoosingCrates _ _ _ ->
+            True
+
+        ChoosingGroundFreight _ _ _ ->
             True
 
         _ ->

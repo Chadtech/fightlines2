@@ -2,6 +2,7 @@ module Game.PlannedTransport exposing
     ( InvariantViolation(..)
     , Occupancy
     , boardingPassengers
+    , cargoRoom
     , hasCargo
     , isDismounting
     , loadingTarget
@@ -169,6 +170,25 @@ boardingPassengers units truckId drafts =
         |> List.map .unitId
 
 
+{-| Shared berths available for freight after existing cargo and planned
+boarding. Passenger exits do not free berths for loading in the same turn.
+-}
+cargoRoom : List Unit -> Unit -> List PlannedOrder -> Int
+cargoRoom units truck drafts =
+    let
+        passengers : Int
+        passengers =
+            List.filter (\passenger -> Unit.carrierId passenger == Just truck.id) units
+                |> List.length
+
+        incoming : Int
+        incoming =
+            boardingPassengers units truck.id drafts
+                |> List.length
+    in
+    max 0 (truck.cargoCapacity - passengers - Unit.freightCount truck - incoming)
+
+
 receivingLoad : List Unit -> Unit -> List PlannedOrder -> Bool
 receivingLoad units unit drafts =
     let
@@ -205,11 +225,11 @@ hasCargo units truck =
         hasPassengers =
             List.any (\passenger -> Unit.carrierId passenger == Just truck.id) units
 
-        hasCrates : Bool
-        hasCrates =
-            Unit.crateCount truck > 0
+        hasFreight : Bool
+        hasFreight =
+            Unit.freightCount truck > 0
     in
-    hasPassengers || hasCrates
+    hasPassengers || hasFreight
 
 
 {-| Save the mover and its receiving order together. A broken required carrier
@@ -465,14 +485,19 @@ boardingSpace units mover target drafts =
         loadingCount order =
             case order.action of
                 PlannedOrder.SupplyTransfer plan ->
-                    PlannedOrder.loadingCrates plan
+                    PlannedOrder.loadingBerths plan
 
                 _ ->
                     0
 
         fitsCargo : Bool
         fitsCargo =
-            alreadyAboard + Unit.crateCount truck + plannedCrates + incomingPassengers + movingPassenger <= truck.cargoCapacity
+            alreadyAboard
+                + Unit.freightCount truck
+                + plannedCrates
+                + incomingPassengers
+                + movingPassenger
+                <= truck.cargoCapacity
 
         compatible : Bool
         compatible =

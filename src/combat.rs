@@ -2047,7 +2047,7 @@ mod tests {
         assert_eq!(units[0].hit_points().current(), 16);
         assert_eq!(units[1].hit_points().current(), 5);
         assert_eq!(units[0].supplies().current(), 172);
-        assert_eq!(units[1].supplies().current(), 180);
+        assert_eq!(units[1].supplies().current(), 183);
         assert!(
             result
                 .frames
@@ -2115,7 +2115,7 @@ mod tests {
             assert_eq!(target.hit_points().current(), if survived { 5 } else { 0 });
             assert_eq!(
                 target.fuel().fixture()?.current,
-                if survived { 112 } else { 120 }
+                if survived { 114 } else { 121 }
             );
             assert_eq!(
                 target.supplies().current(),
@@ -2165,7 +2165,7 @@ mod tests {
         assert!(result.stopped.contains(&orders[1].unit_id));
         let mover = result.frames.last().fixture()?.units.get(1).fixture()?;
         assert_eq!(mover.supplies().current(), 104);
-        assert_eq!(mover.fuel().fixture()?.current, 112);
+        assert_eq!(mover.fuel().fixture()?.current, 114);
         Ok(())
     }
 
@@ -2201,7 +2201,7 @@ mod tests {
             scenario.units[1].supplies().current()
         );
         assert_eq!(units[1].direction(), Some(Direction::South));
-        assert_eq!(units[1].fuel().fixture()?.current, 120);
+        assert_eq!(units[1].fuel().fixture()?.current, 121);
         assert_eq!(
             result.paths.get(&orders[1].unit_id).fixture()?,
             &vec![Coordinate::new(4, 2), Coordinate::new(4, 3)]

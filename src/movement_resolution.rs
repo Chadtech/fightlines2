@@ -852,7 +852,7 @@ mod tests {
                 .ok_or("missing attacker")?
                 .supplies()
                 .current(),
-            160
+            163
         );
         assert_eq!(
             units
@@ -947,7 +947,7 @@ mod tests {
                     .iter()
                     .find(|unit| unit.id() == attacker)
                     .ok_or("missing attacker")?;
-                let supplies = if attacker == "11" { 104 } else { 160 };
+                let supplies = if attacker == "11" { 104 } else { 163 };
                 assert_eq!(unit.supplies().current(), supplies);
                 assert_eq!(result.stopped.len(), 2);
             }

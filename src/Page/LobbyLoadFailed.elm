@@ -64,7 +64,7 @@ update msg model =
             E.navigate (Route.Lobby model.id)
 
         ReturnHomeButtonClicked ->
-            E.navigate Route.NewLobby
+            E.navigate Route.Home
 
 
 view : Model -> List (Html Msg)

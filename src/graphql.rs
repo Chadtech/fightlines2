@@ -64,8 +64,9 @@ impl Query {
         id: String,
         turn_number: i32,
         player_number: PlayerNumber,
+        #[graphql(default = true)] fog_of_war: bool,
     ) -> FieldResult<GameSnapshot> {
-        game_archive::turn(context, id, turn_number, player_number)
+        game_archive::turn(context, id, turn_number, player_number, fog_of_war)
     }
 
     fn maps(context: &Context) -> FieldResult<map_editor::MapCatalog> {

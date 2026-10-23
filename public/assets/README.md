@@ -6,6 +6,10 @@ are retained locally and ignored by Git; back them up separately. The scripts in
 `tools/` and `make sprites` can regenerate exports when the local `artwork/`
 directory is available. A fresh clone does not include that directory.
 
+- `fightlines-logo-v1.png`: transparent 2146 x 732 home-page wordmark, created
+  with built-in imagegen. Tall italic ivory lettering sits over a thick yellow
+  underline, with a flush g descender and a small explosion at the right.
+  Local approved variations and prompts are retained in `output/imagegen/`.
 - `misc_sheet.png`: 16 x 464 legacy atlas, with 16px cells. Selection corners
   use row 2. Copied from the original FightLines sprite sheet.
 - `terrain-grass-illustrated-v2.png`: opaque grass tile, rendered in each grass-map cell.

@@ -187,9 +187,20 @@ lossDialog config playback =
 
 combatOverlay : Bool -> Map -> Maybe TurnPlayback.Playback -> Html CombatTheater.Msg
 combatOverlay automaticallyClose map playback =
+    let
+        overlay : TurnPlayback.Playback -> Maybe (Html CombatTheater.Msg)
+        overlay animation =
+            TurnPlayback.panels animation
+                |> Maybe.map
+                    (CombatTheater.toHtml
+                        { automaticallyClose = automaticallyClose
+                        , visibleTiles = animation.current.visibleTiles
+                        }
+                        map
+                    )
+    in
     playback
-        |> Maybe.andThen TurnPlayback.panels
-        |> Maybe.map (CombatTheater.toHtml { automaticallyClose = automaticallyClose } map)
+        |> Maybe.andThen overlay
         |> Maybe.withDefault (H.text "")
 
 

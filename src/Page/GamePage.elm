@@ -83,6 +83,7 @@ import Game.View.Battlefield as Battlefield
         )
 import Game.View.BattlefieldInspection as BattlefieldInspection
 import Game.View.BattlefieldWorkspace as BattlefieldWorkspace
+import Game.View.Cargo as Cargo
 import Game.View.CombatTheater as CombatTheater
 import Game.View.CommandGuide as CommandGuide
 import Game.View.CommandMenu as CommandMenu
@@ -134,6 +135,7 @@ type alias Model =
     { currentTurn : CurrentTurn.Model
     , shared : Shared.Model
     , skipTurnIntroduction : Bool
+    , skipUnplannedUnitsWarning : Bool
     , skipUnitLossDialogs : Bool
     , automaticallyCloseCombatTheater : Bool
     , name : String
@@ -197,6 +199,7 @@ type Msg
     | BackToCommandsClicked
     | CargoUnitClicked UnitId
     | LoadCratesClicked UnitId Int
+    | GroundFreightPickupClicked
     | UnloadCrateToggled Int Bool
     | UnloadUnitToggled UnitId Bool
     | UnloadChoicesConfirmed
@@ -207,6 +210,7 @@ type Msg
     | SubmissionConfirmed
     | SubmitKeyPressed
     | SubmissionEnterPressed
+    | SkipUnplannedUnitsWarningChanged Bool
     | TurnControlsMsg TurnControls.Msg
     | SubmitResponseReceived Int (ApiRequest.Response Snapshot)
     | CurrentTurnMsg CurrentTurn.Msg
@@ -226,28 +230,14 @@ type alias Flags =
 init : Shared.Model -> Flags -> ( Model, Eff Msg )
 init shared flags =
     let
-        loadPreference : String -> ( Bool, Maybe Error )
-        loadPreference key =
-            case LocalStorage.get shared.localStorage key Decode.bool of
-                Ok saved ->
-                    ( Maybe.withDefault False saved, Nothing )
-
-                Err decodeError ->
-                    let
-                        error : Error
-                        error =
-                            Error.LocalStorageDecodeFailed
-                                { key = key
-                                , error = decodeError
-                                }
-                    in
-                    ( False, Just error )
-
         ( automaticallyCloseCombatTheater, maybeError ) =
             PlaybackPresentation.loadPreference PlaybackPresentation.AutomaticallyCloseCombat shared
 
         ( skipTurnIntroduction, introductionPreferenceError ) =
-            loadPreference turnIntroductionPreferenceKey
+            loadPreference turnIntroductionPreferenceKey shared
+
+        ( skipUnplannedUnitsWarning, submissionPreferenceError ) =
+            loadPreference unplannedUnitsWarningPreferenceKey shared
 
         ( skipLossDialogs, lossPreferenceError ) =
             PlaybackPresentation.loadPreference PlaybackPresentation.SkipLossDialogs shared
@@ -260,7 +250,9 @@ init shared flags =
                     |> Shared.addError maybeError
                     |> Shared.addError lossPreferenceError
                     |> Shared.addError introductionPreferenceError
+                    |> Shared.addError submissionPreferenceError
             , skipTurnIntroduction = skipTurnIntroduction
+            , skipUnplannedUnitsWarning = skipUnplannedUnitsWarning
             , skipUnitLossDialogs = skipLossDialogs
             , automaticallyCloseCombatTheater = automaticallyCloseCombatTheater
             , name = flags.snapshot.battlefield.name
@@ -313,29 +305,7 @@ load id =
 
 setShared : Shared.Model -> Model -> Model
 setShared shared model =
-    let
-        ( skipLossDialogs, lossError ) =
-            PlaybackPresentation.loadPreference PlaybackPresentation.SkipLossDialogs shared
-
-        ( automaticallyClose, combatError ) =
-            PlaybackPresentation.loadPreference PlaybackPresentation.AutomaticallyCloseCombat shared
-
-        refreshed : Model
-        refreshed =
-            { model
-                | shared = shared |> Shared.addError lossError |> Shared.addError combatError
-                , skipUnitLossDialogs = skipLossDialogs
-                , automaticallyCloseCombatTheater = automaticallyClose
-            }
-    in
-    case LocalStorage.get shared.localStorage turnIntroductionPreferenceKey Decode.bool of
-        Ok saved ->
-            { refreshed | skipTurnIntroduction = Maybe.withDefault False saved }
-
-        Err error ->
-            { refreshed
-                | shared = Shared.addError (Just (Error.LocalStorageDecodeFailed { key = turnIntroductionPreferenceKey, error = error })) refreshed.shared
-            }
+    { model | shared = shared }
 
 
 
@@ -349,6 +319,23 @@ turnIntroductionPreferenceKey =
     "skipTurnIntroduction"
 
 
+unplannedUnitsWarningPreferenceKey : String
+unplannedUnitsWarningPreferenceKey =
+    "skipUnplannedUnitsWarning"
+
+
+loadPreference : String -> Shared.Model -> ( Bool, Maybe Error )
+loadPreference key shared =
+    case LocalStorage.get shared.localStorage key Decode.bool of
+        Ok saved ->
+            ( Maybe.withDefault False saved, Nothing )
+
+        Err decodeError ->
+            ( False
+            , Just (Error.LocalStorageDecodeFailed { key = key, error = decodeError })
+            )
+
+
 showTurnIntroduction : Model -> Bool
 showTurnIntroduction model =
     (model.currentTurn.outcome /= Nothing || not model.skipTurnIntroduction)
@@ -357,7 +344,11 @@ showTurnIntroduction model =
 
 {-| Save the chosen load count on an existing truck order, retaining its route and passenger exits.
 -}
-saveCrateLoading : UnitId -> Int -> OrderPlanning.Model -> InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
+saveCrateLoading :
+    UnitId
+    -> Int
+    -> OrderPlanning.Model
+    -> InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
 saveCrateLoading id count state =
     let
         retainsOrder : PlannedOrder -> Bool
@@ -396,24 +387,6 @@ saveCrateLoading id count state =
 depotLoadingRoom : Model -> Unit -> Int
 depotLoadingRoom model unit =
     let
-        passengers : Int
-        passengers =
-            List.filter
-                (\passenger -> Unit.carrierId passenger == Just unit.id)
-                model.units
-                |> List.length
-
-        crates : Int
-        crates =
-            unit.resources
-                |> Maybe.map (.supplyCargo >> List.length)
-                |> Maybe.withDefault 0
-
-        incoming : Int
-        incoming =
-            PlannedTransport.boardingPassengers model.units unit.id (plannedOrders model)
-                |> List.length
-
         depot : Maybe Depot
         depot =
             plannedDepot model unit.id
@@ -433,7 +406,7 @@ depotLoadingRoom model unit =
     in
     min
         stockLimit
-        (max 0 (unit.cargoCapacity - passengers - crates - incoming))
+        (PlannedTransport.cargoRoom model.units unit (plannedOrders model))
 
 
 plannedDepot : Model -> UnitId -> Maybe Depot
@@ -685,6 +658,7 @@ applyCommand command model =
                 model.units
                 (ownPlayerNumbers model)
                 model.movementRules
+                (visibleSupplyCrates model)
                 model.depots
                 command
             )
@@ -1060,6 +1034,7 @@ confirmPath model =
                 model.units
                 (ownPlayerNumbers model)
                 model.movementRules
+                (visibleSupplyCrates model)
                 model.depots
             )
 
@@ -1125,11 +1100,19 @@ cargoDialogHtmlId phase =
         TurnLifecycle.Planning (OrderPlanning.ChoosingCrates _ _ _) ->
             Just loadCratesDialogHtmlId
 
+        TurnLifecycle.Planning (OrderPlanning.ChoosingGroundFreight _ _ _) ->
+            Just groundPickupDialogHtmlId
+
         TurnLifecycle.Planning (OrderPlanning.ChoosingPassengers _) ->
             Just unloadDialogHtmlId
 
         _ ->
             Nothing
+
+
+groundPickupDialogHtmlId : String
+groundPickupDialogHtmlId =
+    "ground-freight-pickup-dialog"
 
 
 loadCratesDialogHtmlId : String
@@ -1628,7 +1611,21 @@ update lobbyId msg model =
 
         UnloadSkipped ->
             model
-                |> mapPlanning (OrderPlanning.skipUnloading model.map model.units model.depots)
+                |> mapPlanning
+                    (OrderPlanning.skipUnloading
+                        model.map
+                        model.units
+                        (visibleSupplyCrates model)
+                        model.depots
+                    )
+                |> E.withOut
+
+        GroundFreightPickupClicked ->
+            model
+                |> mapCheckedPlanning
+                    (OrderPlanning.confirmGroundPickup
+                        >> IC.map (OrderPlanning.promptDismountedCommands model.map model.units)
+                    )
                 |> E.withOut
 
         LoadCratesClicked id count ->
@@ -1706,7 +1703,12 @@ update lobbyId msg model =
 
         BackToCommandsClicked ->
             model
-                |> mapCheckedPlanning (OrderPlanning.restoreCommands model.map model.units (ownPlayerNumbers model))
+                |> mapCheckedPlanning
+                    (OrderPlanning.restoreCommands
+                        model.map
+                        model.units
+                        (ownPlayerNumbers model)
+                    )
                 |> E.withOut
 
         ClearMoveClicked ->
@@ -1750,6 +1752,16 @@ update lobbyId msg model =
 
         SubmissionEnterPressed ->
             confirmSubmission lobbyId model
+
+        SkipUnplannedUnitsWarningChanged skip ->
+            ( { model | skipUnplannedUnitsWarning = skip }
+            , E.toJs
+                (ToJs.SetLocalStorage
+                    { key = unplannedUnitsWarningPreferenceKey
+                    , value = Encode.bool skip
+                    }
+                )
+            )
 
         SubmitResponseReceived turnNumber result ->
             case result of
@@ -1914,7 +1926,7 @@ requestSubmission lobbyId model =
     then
         model |> E.withOut
 
-    else if List.isEmpty (unitsWithoutOrders model) then
+    else if model.skipUnplannedUnitsWarning || List.isEmpty (unitsWithoutOrders model) then
         model
             |> submitTurn lobbyId
 
@@ -2641,10 +2653,8 @@ unitOrderView model unit =
                                         ++ String.fromInt supply.destination.x
                                         ++ ", "
                                         ++ String.fromInt supply.destination.y
-                                        ++ "): load "
-                                        ++ String.fromInt (PlannedOrder.loadingCrates supply)
-                                        ++ " · unload "
-                                        ++ String.fromInt (List.length (PlannedOrder.unloadingCrates supply))
+                                        ++ "): "
+                                        ++ freightHandlingSummary supply.handling
 
                                 PlannedOrder.IndirectFire fire ->
                                     "indirect fire: (" ++ String.fromInt fire.target.x ++ ", " ++ String.fromInt fire.target.y ++ ")"
@@ -2980,7 +2990,7 @@ unloadChecklist model choice =
                                     (\unit -> unit.id == UnloadingTruck.unitId choice.truck)
                                 |> Maybe.map
                                     (\truck ->
-                                        List.range 0 (Unit.crateCount truck - 1)
+                                        List.range 0 (Unit.freightCount truck - 1)
                                             |> List.any (UnloadCargo.Crate >> unavailable)
                                     )
                                 |> Maybe.withDefault False
@@ -3001,6 +3011,50 @@ unloadChecklist model choice =
             ]
     in
     Dialog.make unloadDialogHtmlId "unload" DialogDismissed content
+
+
+freightHandlingSummary : PlannedOrder.SupplyHandling -> String
+freightHandlingSummary handling =
+    case handling of
+        PlannedOrder.PickingUpGroundFreight kind ->
+            "pick up " ++ Supply.cargoLabel kind
+
+        PlannedOrder.LoadingCrates count ->
+            "load " ++ String.fromInt count
+
+        PlannedOrder.UnloadingCrates exits ->
+            "unload " ++ String.fromInt (List.length exits)
+
+
+groundPickupDialog : Supply.GroundCrate -> Dialog Msg
+groundPickupDialog freight =
+    let
+        label : String
+        label =
+            Supply.cargoLabel freight.stock.kind
+    in
+    Dialog.make groundPickupDialogHtmlId
+        ("pick up " ++ label)
+        DialogDismissed
+        [ H.p
+            []
+            [ H.text ("would you like this truck to pick up the " ++ label ++ " at its destination?")
+            ]
+        , Cargo.pickupPreview freight.stock
+        , H.form
+            [ A.attribute "method" "dialog"
+            , A.css
+                [ S.row
+                , S.flexWrap
+                , S.g3
+                ]
+            ]
+            [ Button.primary "pick up" GroundFreightPickupClicked
+                |> Button.toHtml
+            , Button.secondary "leave on ground" DialogDismissed
+                |> Button.toHtml
+            ]
+        ]
 
 
 depotLoadingDialog : Model -> UnitId -> Depot -> Dialog Msg
@@ -3355,6 +3409,9 @@ planningDialog model _ =
         TurnLifecycle.Planning (OrderPlanning.ChoosingCrates id depot _) ->
             Just (depotLoadingDialog model id depot)
 
+        TurnLifecycle.Planning (OrderPlanning.ChoosingGroundFreight _ freight _) ->
+            Just (groundPickupDialog freight)
+
         _ ->
             Nothing
 
@@ -3394,6 +3451,7 @@ submissionWarning model =
             , A.css
                 [ S.row
                 , S.flexWrap
+                , S.itemsCenter
                 , S.g3
                 ]
             ]
@@ -3401,6 +3459,13 @@ submissionWarning model =
                 |> Button.toHtml
             , Button.primary "submit anyway" SubmissionConfirmed
                 |> Button.toHtml
+            , Checkbox.new
+                { label = "skip this dialog"
+                , checked = model.skipUnplannedUnitsWarning
+                , onCheck = SkipUnplannedUnitsWarningChanged
+                }
+                |> Checkbox.toHtml
+                    [ H.text "skip this dialog" ]
             ]
         ]
 

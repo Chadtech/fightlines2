@@ -344,23 +344,23 @@ unloadChecks =
 
                 firstPassenger : Phase
                 firstPassenger =
-                    TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] exitOptions >> fixtureValue) checked
+                    TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] [] [] exitOptions >> fixtureValue) checked
 
                 rejectedFirstExit : Phase
                 rejectedFirstExit =
-                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] exitOptions { x = 9, y = 9 } >> fixtureValue) firstPassenger
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] [] [] exitOptions { x = 9, y = 9 } >> fixtureValue) firstPassenger
 
                 secondPassenger : Phase
                 secondPassenger =
-                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] exitOptions { x = 2, y = 2 } >> fixtureValue) rejectedFirstExit
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] [] [] exitOptions { x = 2, y = 2 } >> fixtureValue) rejectedFirstExit
 
                 rejectedExit : Phase
                 rejectedExit =
-                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] exitOptions { x = 2, y = 2 } >> fixtureValue) secondPassenger
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] [] [] exitOptions { x = 2, y = 2 } >> fixtureValue) secondPassenger
 
                 complete : Phase
                 complete =
-                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] exitOptions { x = 3, y = 1 } >> fixtureValue) rejectedExit
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] [] [] exitOptions { x = 3, y = 1 } >> fixtureValue) rejectedExit
 
                 completedOrder : PlannedOrder.PlannedOrder
                 completedOrder =
@@ -403,15 +403,15 @@ unloadChecks =
                     stationaryChecklist
                         |> TurnLifecycle.mapPlanning (OrderPlanning.toggleUnloadPassenger first True)
                         |> TurnLifecycle.mapPlanning (OrderPlanning.toggleUnloadPassenger second True)
-                        |> TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] stationaryOptions >> fixtureValue)
+                        |> TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] [] [] stationaryOptions >> fixtureValue)
 
                 stationarySecond : Phase
                 stationarySecond =
-                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] stationaryOptions { x = 0, y = 1 } >> fixtureValue) stationaryFirst
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] [] [] stationaryOptions { x = 0, y = 1 } >> fixtureValue) stationaryFirst
 
                 stationaryComplete : Phase
                 stationaryComplete =
-                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] stationaryOptions { x = 1, y = 2 } >> fixtureValue) stationarySecond
+                    TurnLifecycle.mapPlanning (OrderPlanning.saveUnloadDestination [] [] [] stationaryOptions { x = 1, y = 2 } >> fixtureValue) stationarySecond
 
                 stationaryOrder : PlannedOrder.PlannedOrder
                 stationaryOrder =
@@ -456,7 +456,7 @@ unloadChecks =
                 , expect "canceling stationary unloading discards the hold while proceeding keeps it"
                     (TurnLifecycle.orders (TurnLifecycle.mapPlanning OrderPlanning.dismissDialog stationaryChecklist)
                         == []
-                        && TurnLifecycle.orders (TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] stationaryOptions >> fixtureValue) stationaryChecklist)
+                        && TurnLifecycle.orders (TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] [] [] stationaryOptions >> fixtureValue) stationaryChecklist)
                         == [ stationaryHold ]
                     )
                 , expect "stationary unloading reserves each exit before choosing the next passenger"
@@ -482,7 +482,7 @@ unloadChecks =
                         == Planning (OrdinaryPlanning { orders = [], selection = Just (Inspecting (UnitInspection truck)) })
                     )
                 , expect "proceeding without passengers retains the move"
-                    (TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] exitOptions >> fixtureValue) checklist == ordinary)
+                    (TurnLifecycle.mapPlanning (OrderPlanning.confirmUnloadPassengers [] [] [] exitOptions >> fixtureValue) checklist == ordinary)
                 , expect "the next passenger cannot reuse an exit already saved"
                     reservesFirstExit
                 , expect "an unavailable exit cannot advance the workflow"

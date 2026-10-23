@@ -1,5 +1,6 @@
 port module Game.Checks.PlannedOrder exposing (main)
 
+import Api.Enum.DepotKind as DepotKind
 import Api.Enum.Direction as Direction
 import Api.InputObject
 import Game.PlannedOrder as PlannedOrder exposing (Action(..), PlannedOrder)
@@ -116,6 +117,19 @@ orderChecks unitId passengerId =
                     }
             }
 
+        pickupInput : Api.InputObject.MoveOrderInput
+        pickupInput =
+            PlannedOrder.toInput
+                { unitId = unitId
+                , action =
+                    SupplyTransfer
+                        { route = [ { x = 1, y = 1 }, { x = 2, y = 1 } ]
+                        , destination = { x = 2, y = 1 }
+                        , handling = PlannedOrder.PickingUpGroundFreight DepotKind.Fuel
+                        , passengers = []
+                        }
+                }
+
         indirectInput : Api.InputObject.MoveOrderInput
         indirectInput =
             PlannedOrder.toInput
@@ -134,7 +148,15 @@ orderChecks unitId passengerId =
                 }
     in
     List.concat
-        [ expect "digging serializes an exclusive stationary action"
+        [ expect "ground pickup serializes its resource without requesting depot loads"
+            (pickupInput.pickupGroundFreight
+                == Present DepotKind.Fuel
+                && pickupInput.loadCrates
+                == Present 0
+                && pickupInput.crateUnloads
+                == Present []
+            )
+        , expect "digging serializes an exclusive stationary action"
             ((PlannedOrder.toInput diggingIn).digIn
                 == Present True
                 && (PlannedOrder.toInput diggingIn).ambush
@@ -145,7 +167,8 @@ orderChecks unitId passengerId =
             )
         , expect "supply runs preserve movement, passenger exits, and original crate slots in submission"
             (PlannedOrder.toInput freight
-                == { loadCrates = Present 0
+                == { pickupGroundFreight = Absent
+                   , loadCrates = Present 0
                    , crateUnloads =
                         Present
                             [ { cargoIndex = 1
@@ -190,7 +213,8 @@ orderChecks unitId passengerId =
             )
         , expect "attack move preserves its route and sends its chosen final facing without unloading"
             (PlannedOrder.toInput attackMove
-                == { loadCrates = Present 0
+                == { pickupGroundFreight = Absent
+                   , loadCrates = Present 0
                    , crateUnloads = Present []
                    , attackMove = Present True
                    , digIn = Present False
@@ -225,13 +249,15 @@ orderChecks unitId passengerId =
                    , attackMove = Present False
                    , unloads = Present []
                    , loadCrates = Present 0
+                   , pickupGroundFreight = Absent
                    , crateUnloads = Present []
                    }
                 && not (PlannedOrder.isMoving standingGround)
             )
         , expect "ambush submission must carry combat readiness and chosen facing without movement"
             (PlannedOrder.toInput ambush
-                == { loadCrates = Present 0
+                == { pickupGroundFreight = Absent
+                   , loadCrates = Present 0
                    , crateUnloads = Present []
                    , attackMove = Present False
                    , digIn = Present False
@@ -251,7 +277,8 @@ orderChecks unitId passengerId =
             )
         , expect "hold submission must have one coordinate and no rotation or unloads"
             (PlannedOrder.toInput hold
-                == { loadCrates = Present 0
+                == { pickupGroundFreight = Absent
+                   , loadCrates = Present 0
                    , crateUnloads = Present []
                    , attackMove = Present False
                    , digIn = Present False
@@ -270,7 +297,8 @@ orderChecks unitId passengerId =
             )
         , expect "move submission must preserve the route and passenger exit without adding rotation"
             (PlannedOrder.toInput move
-                == { loadCrates = Present 0
+                == { pickupGroundFreight = Absent
+                   , loadCrates = Present 0
                    , crateUnloads = Present []
                    , attackMove = Present False
                    , digIn = Present False
@@ -302,7 +330,8 @@ orderChecks unitId passengerId =
             (not (PlannedOrder.isMoving hold) && not (PlannedOrder.isMoving ambush) && PlannedOrder.isMoving move && not (PlannedOrder.isMoving stationaryUnload))
         , expect "stationary trucks must retain their unload choices"
             (PlannedOrder.toInput stationaryUnload
-                == { loadCrates = Present 0
+                == { pickupGroundFreight = Absent
+                   , loadCrates = Present 0
                    , crateUnloads = Present []
                    , attackMove = Present False
                    , digIn = Present False

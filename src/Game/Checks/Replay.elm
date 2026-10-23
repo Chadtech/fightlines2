@@ -14,6 +14,7 @@ import Effect as E exposing (Eff)
 import Game.BattlefieldNavigation as BattlefieldNavigation
 import Game.BattlefieldSnapshot as BattlefieldSnapshot
 import Game.Coordinate as Coordinate exposing (Coordinate)
+import Game.Inspection exposing (Inspection(..))
 import Game.Map as Map
 import Game.PlaybackPresentation as PlaybackPresentation
 import Game.Turn as Turn
@@ -85,9 +86,9 @@ checks shared =
                 step msg model =
                     GameReplay.update msg model |> Tuple.first
 
-                redTurn : Int -> { turn : Int, player : PlayerNumber.PlayerNumber }
+                redTurn : Int -> { turn : Int, player : PlayerNumber.PlayerNumber, fogOfWar : Bool }
                 redTurn number =
-                    { turn = number, player = PlayerNumber.Player1 }
+                    { turn = number, player = PlayerNumber.Player1, fogOfWar = True }
 
                 tick : GameReplay.Model -> GameReplay.Model
                 tick =
@@ -160,9 +161,9 @@ checks shared =
                         |> step (GameReplay.TurnSelected 1)
                         |> step (GameReplay.TurnResponseReceived (redTurn 1) (Ok turn))
 
-                blue : { turn : Int, player : PlayerNumber.PlayerNumber }
+                blue : { turn : Int, player : PlayerNumber.PlayerNumber, fogOfWar : Bool }
                 blue =
-                    { turn = 1, player = PlayerNumber.Player2 }
+                    { turn = 1, player = PlayerNumber.Player2, fogOfWar = True }
 
                 switched : GameReplay.Model
                 switched =
@@ -180,6 +181,30 @@ checks shared =
                         |> step (GameReplay.TurnResponseReceived (redTurn 1) (Ok opening))
                         |> step (GameReplay.TurnResponseReceived (redTurn 2) (Ok turn))
 
+                revealedPosition : { turn : Int, player : PlayerNumber.PlayerNumber, fogOfWar : Bool }
+                revealedPosition =
+                    { turn = 1, player = PlayerNumber.Player1, fogOfWar = False }
+
+                revealing : GameReplay.Model
+                revealing =
+                    step (GameReplay.FogOfWarChanged False) manual
+
+                revealed : GameReplay.Model
+                revealed =
+                    step (GameReplay.TurnResponseReceived revealedPosition (Ok turn)) revealing
+
+                revealedBlue : GameReplay.Model
+                revealedBlue =
+                    revealed
+                        |> step (GameReplay.PlayerSelected PlayerNumber.Player2)
+                        |> step (GameReplay.TurnResponseReceived { blue | fogOfWar = False } (Ok turn))
+
+                refogged : GameReplay.Model
+                refogged =
+                    revealed
+                        |> step (GameReplay.FogOfWarChanged True)
+                        |> step (GameReplay.TurnResponseReceived (redTurn 1) (Ok turn))
+
                 ( lossFailures, lossEffects ) =
                     lossChecks initial
 
@@ -189,6 +214,14 @@ checks shared =
             in
             ( List.concat
                 [ lossFailures
+                , selectionChecks initial
+                , expect "replay starts with fog enabled" initial.position.fogOfWar
+                , expect "fog changes reload the same turn and keep the saved camera" (revealed.position == revealedPosition && revealed.navigation.offset == manual.navigation.offset && revealed.navigation.zoom == manual.navigation.zoom)
+                , expect "fog requests reject stale responses for the same turn and player" ((step (GameReplay.TurnResponseReceived (redTurn 1) (Ok turn)) revealing).position == manual.position)
+                , expect "changing player retains disabled fog" (revealedBlue.position == { blue | fogOfWar = False })
+                , expect "changing turns retains disabled fog" ((step GameReplay.NextClicked revealed |> step (GameReplay.TurnResponseReceived { revealedPosition | turn = 2 } (Ok turn))).position == { revealedPosition | turn = 2 })
+                , expect "fog can be restored to the original player projection" (refogged.position == redTurn 1 && refogged.battlefield == playing.battlefield)
+                , expect "loading prevents a second fog request" ((step (GameReplay.FogOfWarChanged False) loading).request == loading.request)
                 , expect "viewport measurement initializes the playback camera" (framed.timeline /= playing.timeline)
                 , expect "sprite timers and hover events do not initialize the playback camera" ((step GameReplay.AnimationTimerElapsed unframed).timeline == unframed.timeline && (step (GameReplay.BattlefieldMsg (Battlefield.MouseOverTile { x = 1, y = 1 })) unframed).timeline == unframed.timeline)
                 , expect "completed playback returns to the saved camera" (BattlefieldNavigation.returning finishedFirst.navigation && not (BattlefieldNavigation.returning (step GameReplay.CameraReturnFinished finishedFirst).navigation))
@@ -213,6 +246,109 @@ checks shared =
             )
 
 
+selectionChecks : GameReplay.Model -> List String
+selectionChecks initial =
+    case UnitId.parse "1" of
+        Err _ ->
+            [ "could not construct replay selection fixture ID" ]
+
+        Ok id ->
+            let
+                unit : Unit
+                unit =
+                    fixtureUnit id
+
+                movedUnit : Unit
+                movedUnit =
+                    { unit | location = Location.OnMap { x = 2, y = 1 } }
+
+                battlefield : BattlefieldSnapshot.Snapshot
+                battlefield =
+                    initial.battlefield
+
+                opening : GameReplay.Model
+                opening =
+                    { initial | battlefield = { battlefield | units = [ unit ] } }
+
+                firstFrame : TurnPlayback.Frame
+                firstFrame =
+                    frame []
+
+                turn : RecordedTurn
+                turn =
+                    { battlefield = { battlefield | units = [ movedUnit ] }
+                    , frames = [ { firstFrame | units = [ unit ] }, { firstFrame | units = [ movedUnit ] } ]
+                    , resolution = Nothing
+                    }
+
+                position : Int -> { turn : Int, player : PlayerNumber.PlayerNumber, fogOfWar : Bool }
+                position number =
+                    { turn = number, player = PlayerNumber.Player1, fogOfWar = True }
+
+                step : GameReplay.Msg -> GameReplay.Model -> GameReplay.Model
+                step msg model =
+                    GameReplay.update msg model |> Tuple.first
+
+                tick : GameReplay.Model -> GameReplay.Model
+                tick =
+                    step (GameReplay.PlaybackMsg (PlaybackPresentation.FrameElapsed 1000))
+
+                selected : GameReplay.Model
+                selected =
+                    step (GameReplay.BattlefieldMsg (Battlefield.ClickedUnit id { detail = 1 })) opening
+
+                playing : GameReplay.Model
+                playing =
+                    selected
+                        |> step GameReplay.NextClicked
+                        |> step (GameReplay.TurnResponseReceived (position 1) (Ok turn))
+
+                finished : GameReplay.Model
+                finished =
+                    tick playing
+
+                continuous : GameReplay.Model
+                continuous =
+                    selected
+                        |> step GameReplay.PlayClicked
+                        |> step (GameReplay.TurnResponseReceived (position 1) (Ok turn))
+                        |> tick
+                        |> step (GameReplay.TurnResponseReceived (position 2) (Ok turn))
+
+                previous : GameReplay.Model
+                previous =
+                    finished
+                        |> step GameReplay.PreviousClicked
+                        |> step (GameReplay.TurnResponseReceived (position 0) (Ok { battlefield = opening.battlefield, frames = [], resolution = Nothing }))
+
+                hidden : GameReplay.Model
+                hidden =
+                    finished
+                        |> step (GameReplay.TurnSelected 2)
+                        |> step (GameReplay.TurnResponseReceived (position 2) (Ok (recordedTurn [])))
+
+                returned : GameReplay.Model
+                returned =
+                    hidden
+                        |> step (GameReplay.TurnSelected 1)
+                        |> step (GameReplay.TurnResponseReceived (position 1) (Ok turn))
+
+                cleared : GameReplay.Model
+                cleared =
+                    finished
+                        |> step GameReplay.EscapePressed
+                        |> step GameReplay.NextClicked
+                        |> step (GameReplay.TurnResponseReceived (position 2) (Ok turn))
+            in
+            List.concat
+                [ expect "next turn retains the clicked unit through playback start and completion" (playing.inspection == Just (UnitInspection id) && finished.inspection == selected.inspection && finished.battlefield.units == [ movedUnit ])
+                , expect "continuous playback retains the same selected unit across turns" (continuous.inspection == selected.inspection)
+                , expect "previous turn and restarting playback retain unit selection" (previous.inspection == selected.inspection && (step GameReplay.PlayClicked finished).inspection == selected.inspection)
+                , expect "turn jumps retain unit identity without retaining unavailable unit data" (hidden.inspection == selected.inspection && hidden.battlefield.units == [] && returned.inspection == selected.inspection)
+                , expect "explicit deselection persists across turns" (cleared.inspection == Nothing && (step (GameReplay.BattlefieldMsg (Battlefield.PressedEnterOnUnit id)) selected).inspection == Nothing)
+                ]
+
+
 lossChecks : GameReplay.Model -> ( List String, Eff () )
 lossChecks initial =
     case ( UnitId.parse "1", UnitId.parse "2" ) of
@@ -230,9 +366,9 @@ lossChecks initial =
                 deaths =
                     { alive | units = List.map (Unit.setDestroyed True) living }
 
-                position : { turn : Int, player : PlayerNumber.PlayerNumber }
+                position : { turn : Int, player : PlayerNumber.PlayerNumber, fogOfWar : Bool }
                 position =
-                    { turn = 1, player = PlayerNumber.Player1 }
+                    { turn = 1, player = PlayerNumber.Player1, fogOfWar = True }
 
                 loading : GameReplay.Model
                 loading =

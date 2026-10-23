@@ -58,6 +58,7 @@ import Time
 import Util.List as ListUtil
 import View.Aria as Aria
 import View.Button as Button
+import View.Checkbox as Checkbox
 import View.Dialog as Dialog exposing (Dialog)
 import View.Select as Select
 
@@ -71,6 +72,7 @@ import View.Select as Select
 type alias Position =
     { turn : Int
     , player : PlayerNumber
+    , fogOfWar : Bool
     }
 
 
@@ -154,6 +156,7 @@ type Msg
     | NextClicked
     | TurnSelected Int
     | PlayerSelected PlayerNumber
+    | FogOfWarChanged Bool
     | RetryClicked
     | TurnResponseReceived Position (ApiRequest.Response RecordedTurn)
 
@@ -168,7 +171,7 @@ load : GameLogId -> Graphql.Http.Request Flags
 load id =
     SS.succeed Flags
         |> SS.with (Api.Query.loggedGame { id = GameLogId.toString id } LoggedGames.selection)
-        |> SS.with (turnSelection id { turn = 0, player = PlayerNumber.Player1 })
+        |> SS.with (turnSelection id { turn = 0, player = PlayerNumber.Player1, fogOfWar = True })
         |> ApiRequest.queryRequest
 
 
@@ -196,7 +199,7 @@ init shared id flags =
             , frame = AnimationFrame.first
             , skipUnitLossDialogs = skipLossDialogs
             , automaticallyCloseCombatTheater = automaticallyClose
-            , position = { turn = 0, player = PlayerNumber.Player1 }
+            , position = { turn = 0, player = PlayerNumber.Player1, fogOfWar = True }
             , request = Idle
             , playbackIntent = SingleTurnPlayback
             }
@@ -275,7 +278,6 @@ startTurnPlayback model =
                 ( started, dialogEffect ) =
                     { model
                         | timeline = Playing { animation = animation, paused = False, camera = Nothing }
-                        , inspection = Nothing
                         , viewport = Nothing
                     }
                         |> applyFrame first
@@ -313,7 +315,7 @@ loadNextTurn : Model -> ( Model, Eff Msg )
 loadNextTurn model =
     case ( model.playbackIntent, model.request ) of
         ( ContinuousPlayback, Idle ) ->
-            loadTurn { turn = model.position.turn + 1, player = model.position.player } model
+            loadTurn { turn = model.position.turn + 1, player = model.position.player, fogOfWar = model.position.fogOfWar } model
 
         _ ->
             model
@@ -326,6 +328,7 @@ turnSelection id position =
         { id = GameLogId.toString id
         , turnNumber = position.turn
         , playerNumber = position.player
+        , fogOfWar = position.fogOfWar
         }
         recordedTurnSelection
 
@@ -362,18 +365,7 @@ getShared model =
 
 setShared : Shared.Model -> Model -> Model
 setShared shared model =
-    let
-        ( skipLossDialogs, lossError ) =
-            PlaybackPresentation.loadPreference PlaybackPresentation.SkipLossDialogs shared
-
-        ( automaticallyClose, combatError ) =
-            PlaybackPresentation.loadPreference PlaybackPresentation.AutomaticallyCloseCombat shared
-    in
-    { model
-        | shared = shared |> Shared.addError lossError |> Shared.addError combatError
-        , skipUnitLossDialogs = skipLossDialogs
-        , automaticallyCloseCombatTheater = automaticallyClose
-    }
+    { model | shared = shared }
 
 
 applyFrame : TurnPlayback.Frame -> Model -> Model
@@ -874,6 +866,7 @@ update msg model =
                 loadTurn
                     { turn = 1
                     , player = model.position.player
+                    , fogOfWar = model.position.fogOfWar
                     }
                     { model | playbackIntent = ContinuousPlayback }
 
@@ -889,6 +882,7 @@ update msg model =
             loadTurn
                 { turn = model.position.turn - 1
                 , player = model.position.player
+                , fogOfWar = model.position.fogOfWar
                 }
                 { model | playbackIntent = SingleTurnPlayback }
 
@@ -896,6 +890,7 @@ update msg model =
             loadTurn
                 { turn = model.position.turn + 1
                 , player = model.position.player
+                , fogOfWar = model.position.fogOfWar
                 }
                 { model | playbackIntent = SingleTurnPlayback }
 
@@ -903,6 +898,7 @@ update msg model =
             loadTurn
                 { turn = turn
                 , player = model.position.player
+                , fogOfWar = model.position.fogOfWar
                 }
                 { model | playbackIntent = SingleTurnPlayback }
 
@@ -910,6 +906,15 @@ update msg model =
             loadTurn
                 { turn = model.position.turn
                 , player = player
+                , fogOfWar = model.position.fogOfWar
+                }
+                model
+
+        FogOfWarChanged enabled ->
+            loadTurn
+                { turn = model.position.turn
+                , player = model.position.player
+                , fogOfWar = enabled
                 }
                 model
 
@@ -938,7 +943,6 @@ update msg model =
                             | battlefield = recorded.battlefield
                             , frames = recorded.frames
                             , resolution = recorded.resolution
-                            , inspection = Nothing
                             , navigation = BattlefieldNavigation.finishReturn model.navigation
                             , position = position
                             , request = Idle
@@ -1114,6 +1118,15 @@ controls model =
         busy : Bool
         busy =
             isLoading model
+
+        fogOfWar : Bool
+        fogOfWar =
+            case model.request of
+                Loading position ->
+                    position.fogOfWar
+
+                _ ->
+                    model.position.fogOfWar
 
         playing : Bool
         playing =
@@ -1320,6 +1333,13 @@ controls model =
                 [ turnSelector
                 , playerSelector
                 ]
+            , Checkbox.new
+                { label = "fog of war"
+                , checked = fogOfWar
+                , onCheck = FogOfWarChanged
+                }
+                |> Checkbox.disabled busy
+                |> Checkbox.toHtml [ H.text "fog of war" ]
             , feedback
             ]
         , Battlefield.navigationControls (round (model.navigation.zoom * 100))

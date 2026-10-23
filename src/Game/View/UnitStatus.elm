@@ -447,7 +447,7 @@ roleText kind =
             "an armored ground unit."
 
         Kind.Truck ->
-            "a vehicle with two cargo berths shared by infantry, field guns, supply crates, and fuel drums. neutral freight refills nearby provisions or vehicle fuel. drive onto ground freight to collect it, or onto a depot to choose how many loads to take."
+            "a vehicle with two cargo berths shared by infantry, field guns, supply crates, and fuel drums. neutral freight refills nearby provisions or vehicle fuel. drive onto ground freight to choose whether to pick it up, or onto a depot to choose how many loads to take."
 
         Kind.FieldGun ->
             "a ground unit with a crew-operated gun."

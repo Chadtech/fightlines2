@@ -370,12 +370,14 @@ fn freight_plan(
         .ok_or("the AI truck has no destination.")?;
     let destination = Coordinate::new(destination.x as u16, destination.y as u16);
     if !carrying {
-        let pickup = usize::from(
-            scenario
-                .supply_crates
-                .iter()
-                .any(|cargo| cargo.position == destination),
-        );
+        if let Some(freight) = scenario
+            .supply_crates
+            .iter()
+            .find(|cargo| cargo.position == destination && cargo.stock.kind == resource)
+        {
+            order.pickup_ground_freight = Some(freight.stock.kind);
+        }
+        let pickup = usize::from(order.pickup_ground_freight.is_some());
         let mut room = (truck.cargo_capacity() as usize)
             .saturating_sub(supplies::occupied_berths(scenario, truck) + pickup);
         // When troops could use a lift, leave a berth for mixed freight/transport.
@@ -383,6 +385,7 @@ fn freight_plan(
             room = room.min(1);
         }
         if room > 0
+            && order.pickup_ground_freight.is_none()
             && let Some(depot) = scenario.depots.iter().find(|depot| {
                 depot.position == destination
                     && depot.kind == resource
@@ -700,34 +703,40 @@ mod tests {
     }
 
     #[test]
-    fn collects_ground_fuel_and_loads_partial_depot_stock() -> TestResult {
+    fn explicitly_collects_ground_fuel_or_loads_partial_depot_stock() -> TestResult {
         for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
-            let mut scenario = convoy_fixture(PlayerNumber::Player1)?;
-            scenario.depots.first_mut().fixture()?.stock.current = 19;
-            scenario.supply_crates.push(GroundSupplyCrate {
-                position: Coordinate::new(1, 1),
-                stock: CargoStock::new(DepotKind::Fuel, 23),
-            });
-            let orders =
-                ai::plan_with_difficulty(&scenario, PlayerNumber::Player1, difficulty).fixture()?;
-            let truck_order = orders.iter().find(|order| order.unit_id == "2").fixture()?;
-            assert_eq!(truck_order.load_crates, Some(1));
-            let mut turns = Turns::default();
-            resolve_turn(&mut scenario, &mut turns, PlayerNumber::Player1, difficulty)?;
-            let truck = scenario
-                .units
-                .iter()
-                .find(|unit| unit.kind() == UnitKind::Truck)
-                .fixture()?;
-            assert_eq!(truck.supply_cargo.len(), 2);
-            assert_eq!(
-                truck
-                    .supply_cargo
+            for ground_freight in [false, true] {
+                let mut scenario = convoy_fixture(PlayerNumber::Player1)?;
+                scenario.depots.first_mut().fixture()?.stock.current = 19;
+                if ground_freight {
+                    scenario.supply_crates.push(GroundSupplyCrate {
+                        position: Coordinate::new(1, 1),
+                        stock: CargoStock::new(DepotKind::Fuel, 23),
+                    });
+                }
+                let orders = ai::plan_with_difficulty(&scenario, PlayerNumber::Player1, difficulty)
+                    .fixture()?;
+                let truck_order = orders.iter().find(|order| order.unit_id == "2").fixture()?;
+                if ground_freight {
+                    assert_eq!(truck_order.pickup_ground_freight, Some(DepotKind::Fuel));
+                    assert_eq!(truck_order.load_crates, None);
+                } else {
+                    assert_eq!(truck_order.pickup_ground_freight, None);
+                    assert_eq!(truck_order.load_crates, Some(1));
+                }
+                let mut turns = Turns::default();
+                resolve_turn(&mut scenario, &mut turns, PlayerNumber::Player1, difficulty)?;
+                let truck = scenario
+                    .units
                     .iter()
-                    .map(|cargo| cargo.current)
-                    .sum::<i32>(),
-                42
-            );
+                    .find(|unit| unit.kind() == UnitKind::Truck)
+                    .fixture()?;
+                assert_eq!(truck.supply_cargo.len(), 1);
+                let stock = truck.supply_cargo.first().fixture()?;
+                assert_eq!(stock.kind, DepotKind::Fuel);
+                assert_eq!(stock.current, if ground_freight { 23 } else { 19 });
+                assert!(scenario.supply_crates.is_empty());
+            }
         }
         Ok(())
     }

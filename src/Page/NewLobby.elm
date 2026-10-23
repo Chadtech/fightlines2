@@ -234,11 +234,25 @@ view model =
 
                 Nothing ->
                     H.text ""
-          , H.a
-                [ A.href (Route.toString Route.LoggedGames)
-                , A.css [ S.link ]
+          , H.nav
+                [ Aria.label "lobby navigation"
+                , A.css
+                    [ S.row
+                    , S.g3
+                    , S.flexWrap
+                    ]
                 ]
-                [ H.text "logged games" ]
+                [ H.a
+                    [ A.href (Route.toString Route.Home)
+                    , A.css [ S.link ]
+                    ]
+                    [ H.text "home" ]
+                , H.a
+                    [ A.href (Route.toString Route.LoggedGames)
+                    , A.css [ S.link ]
+                    ]
+                    [ H.text "logged games" ]
+                ]
           ]
             |> Card.toHtml
                 (Card.compactForm

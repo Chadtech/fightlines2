@@ -61,7 +61,12 @@ continuous playback, pause, and inspection. Its timeline permits only `Ready`
 and `Playing`; it carries no live lifecycle or lobby ID and cannot submit orders.
 Each page owns its own `Shared.Model`.
 
-`BattlefieldSnapshot` selects viewer-projected board data without live turn
+Replay's turn request includes the fog checkbox state in its response correlation.
+`loggedTurn` defaults to player fog; disabling `fogOfWar` selects authoritative
+archived boards and frames with every map tile visible. This option belongs only
+to archive queries; live game projection keeps its player visibility rules.
+
+`BattlefieldSnapshot` selects board data without live turn
 status. Replay selects recorded frames and resolution separately and never reads
 `submitted` or `opponentSubmitted`. `Game.View.Battlefield` renders the board, fog,
 movement, facing, and targeting from resolved display inputs; it has no requests
@@ -221,8 +226,8 @@ coordination pass with all other allied destinations reserved. These are same-tu
 knowledge of submitted human orders or a multi-turn search. Both responses use
 `Turns::submit`; there are no resource bonuses.
 All difficulties finish with `ai/logistics.rs` on the same projected observation.
-Empty trucks seek stocked depots or visible ground freight, explicitly load depot
-cargo within shared berth and stock limits, and carry it to planned allied
+Empty trucks seek stocked depots or visible ground freight, explicitly request
+ground pickup or load depot cargo within shared berth and stock limits, and carry it to planned allied
 destinations. Typed `TruckMission` bids compare proportionate resource shortages,
 critical supply/fuel urgency, travel distance, and existing freight. Fuel delivery
 can support either vehicle kind, while provisions can support any allied unit.
@@ -302,12 +307,14 @@ navigation, and `Effect` translates page effects into commands.
 
 `NewLobby`, `JoinLobby`, `LobbyPage`, `LobbyLoadFailed`, `GamePage`, and
 `GameLoadFailed` own their page state and views.
+The `/` route renders the stateless `Page.Home` logo and play link; `Main`
+carries its shared state. The play link opens the creation form at `/new`.
 `LobbyPage.load` and `GamePage.load` define their initial requests. `Main` owns
 initial requests and dispatches failures, and initializes each loaded page only
 after a successful response. `LobbyPage` retains its loaded roster while polling.
 `LobbyLoadFailed` and `GameLoadFailed` own their error messages, views, and
 button updates. Retry navigates to the same lobby or game route so `Main` starts
-a fresh initial request; return home navigates to the creation page. `Main`
+a fresh initial request; return home navigates to the logo home page. `Main`
 maps each failure page's messages and effects, ignoring messages for a different
 page or ID. Page views return lists of HTML.
 
@@ -360,10 +367,14 @@ errors; new shared state starts with an empty list. Failed requests
 keep the previous remembered name, and storage notifications preserve active
 form edits. Game state is not persisted in local storage.
 
-`GamePage.Model` owns the `automaticallyCloseCombatTheater` Boolean. Its local
-helpers decode the stored preference during `init`, defaulting to false when
-absent. `GamePage.setShared` reloads it when shared storage changes, retaining
-decoder failures in `Shared.Model.errors`.
+`GamePage` and `GameReplay` read their saved preferences during `init`, defaulting
+to false when absent and retaining decoder failures in `Shared.Model.errors`.
+After initialization, each page's model is the source of truth for its preference
+Booleans. Checkbox events update the model immediately and save the value for
+future page initialization. `setShared` only replaces shared state; storage
+notifications do not overwrite the active page's preferences.
+
+`GamePage.Model` owns the `automaticallyCloseCombatTheater` Boolean.
 The theater checkbox updates the preference immediately and writes through the
 existing JavaScript effect. `GamePage` checks each panel's animation clock after
 playback ticks and uses the ordinary continuation transition when the final
@@ -876,7 +887,7 @@ model as part of that experiment rather than copying the old engine.
 ## Vehicle fuel
 
 Rust units carry optional `Fuel` state: tanks and trucks start at 128/128;
-infantry and field guns have none. One traversed path edge consumes eight fuel for
+infantry and field guns have none. One traversed path edge consumes seven fuel for
 tanks. Trucks spend two fuel plus two per occupied cargo slot at departure, counting
 passengers, supply crates, and fuel drums. Loading and unloading happen after travel,
 so they affect the next route. Fuel is independent of terrain movement points. Validation rejects paths exceeding
@@ -897,7 +908,7 @@ snapshot fuel values; it does not calculate resource outcomes.
 
 Every Rust unit carries `Supplies` with current and maximum quantities plus
 `upkeepPerTurn`, `movementPerTile`, and `roughTerrainSurcharge` rates. Infantry start at
-192/192; field guns start at 196/196; vehicles start at 128/128. All kinds have upkeep 4. Infantry spend 12 supplies per plain tile and 16 per hill, forest, or mountain tile and field guns spend 24 per tile;
+192/192; field guns start at 196/196; tanks start at 128/128; trucks start at 96/96. All kinds have upkeep 4. Infantry spend 9 supplies per plain or beach tile and 13 per hill, forest, or mountain tile and field guns spend 24 per tile;
 tanks and trucks spend fuel but no movement supplies. These are unit provisions, separate
 from fuel and carried supply crates.
 
@@ -1290,8 +1301,11 @@ rows from the selected physical tile. `Game.View.StockGauge` shares depot and fr
 stock presentation. Identity-keyed rows reset native disclosures when the inspected
 object changes; freight uses only projected current or remembered stock.
 
-`MoveOrderInput.loadCrates` requests a count and `crateUnloads` identifies original
-cargo slots and destinations. Validation checks truck ownership, shared passenger
+`MoveOrderInput.loadCrates` requests a count, `pickupGroundFreight` requests a
+visible ground load by resource kind at the route destination, and `crateUnloads`
+identifies original cargo slots and destinations. An absent pickup request leaves
+ground freight in place. Pickup reserves one shared berth and cannot combine
+with depot loading or freight unloading. Validation checks truck ownership, shared passenger
 capacity including incoming boarding orders, known depot availability, unique
 slots, adjacent exits, and reservations against the observed board. Unknown depot
 stock or concealed exit occupants do not leak through validation. Actual stock,
@@ -1318,8 +1332,13 @@ Crate unloading suppresses loading because those operations cannot combine.
 hover and selection events do not infer new logistics orders.
 Saving a truck destination on a depot opens the
 0/1/2 choice after cargo unloading choices. Dismissing keeps the route without
-loading. Depot loading requires the destination square itself. Trucks with room
-collect neutral ground crates at their actual final position, preserving stock.
+loading. Depot loading requires the destination square itself.
+`OrderPlanning.ChoosingGroundFreight` owns the corresponding ground-pickup choice.
+Confirmation saves `PickingUpGroundFreight` in the existing `SupplyTransfer` plan;
+dismissal keeps the route without pickup. Only currently visible ground freight
+is offered, and it takes precedence over a depot on the same tile. Resolution
+collects matching neutral freight only after arriving at the requested square
+with room, preserving its remaining stock. Incidental arrivals do not collect it.
 The shared unload checklist accepts typed passenger IDs and crate slots. Crates use
 the same sequential board picker with adjacent squares free of enemies and other
 crates, and mixed exits assemble a `SupplyTransfer` preserving passenger exits.
@@ -1371,7 +1390,8 @@ actions through `Dialog.announcement`, which owns wide modal placement. The
 introduction owns its animation styles, mounted once in the application shell;
 its shine animation has a separate name from the turn controls' shine. The page remembers `skipTurnIntroduction`
 through the existing local-storage effect, defaults it to false, records malformed
-values as shared errors, and refreshes it on shared-storage notifications.
+values as shared errors during initialization. The page model owns the value
+after initialization.
 
 `TurnResolution.reports` retains per-player own casualties and supply consumption.
 Resolution measures movement/readiness/firing spending before replenishment;
@@ -1476,7 +1496,10 @@ frame; a concealed gun remains absent even when its target is known.
 Theater controls, map peeks, spotlighting, and automatic closing share one playback
 clock; confirmed hits do not also open an impact-only scene. A known target of a
 concealed gun uses its own formation and health animation, headed `indirect fire`;
-only landings without a known target use empty terrain and uncertainty copy.
+only landings without a known target use terrain and uncertainty copy. The shared
+playback presentation passes the current frame's visible tiles to the theater;
+unconfirmed landings outside that mask show fog over the terrain with a question
+mark in both live games and recorded replay.
 Multiple unconfirmed landings at one observed target combine their health changes
 into one scene. Target health also identifies artillery deaths and carrier losses
 without revealing an attacker or origin. These casualties use the same

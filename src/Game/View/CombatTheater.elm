@@ -146,13 +146,19 @@ automaticCloseDelayMs =
     500
 
 
-toHtml : { automaticallyClose : Bool } -> Map -> Panel -> Html Msg
+toHtml :
+    { automaticallyClose : Bool
+    , visibleTiles : List Coordinate
+    }
+    -> Map
+    -> Panel
+    -> Html Msg
 toHtml config map panel =
-    Lazy.lazy3 theaterView config.automaticallyClose map panel
+    Lazy.lazy4 theaterView config.automaticallyClose config.visibleTiles map panel
 
 
-theaterView : Bool -> Map -> Panel -> Html Msg
-theaterView automaticallyClose map panel =
+theaterView : Bool -> List Coordinate -> Map -> Panel -> Html Msg
+theaterView automaticallyClose visibleTiles map panel =
     let
         portraits : List (Html Msg)
         portraits =
@@ -202,16 +208,16 @@ theaterView automaticallyClose map panel =
                         Just attacker ->
                             if attackerOnLeft panel then
                                 [ impactAttacker map panel attacker SpriteFacing.Right
-                                , impactTarget map panel impact SpriteFacing.Left
+                                , impactTarget visibleTiles map panel impact SpriteFacing.Left
                                 ]
 
                             else
-                                [ impactTarget map panel impact SpriteFacing.Right
+                                [ impactTarget visibleTiles map panel impact SpriteFacing.Right
                                 , impactAttacker map panel attacker SpriteFacing.Left
                                 ]
 
                         Nothing ->
-                            [ impactTarget map panel impact SpriteFacing.Left ]
+                            [ impactTarget visibleTiles map panel impact SpriteFacing.Left ]
 
         title : String
         title =
@@ -536,8 +542,8 @@ impactAttacker map panel attacker facing =
         )
 
 
-impactTarget : Map -> Panel -> IndirectImpact -> SpriteFacing -> Html Msg
-impactTarget map panel impact facing =
+impactTarget : List Coordinate -> Map -> Panel -> IndirectImpact -> SpriteFacing -> Html Msg
+impactTarget visibleTiles map panel impact facing =
     case impact.target of
         Just target ->
             let
@@ -553,11 +559,11 @@ impactTarget map panel impact facing =
                 )
 
         Nothing ->
-            impactScene map panel impact.destination
+            impactScene visibleTiles map panel impact.destination
 
 
-impactScene : Map -> Panel -> Coordinate -> Html Msg
-impactScene map panel position =
+impactScene : List Coordinate -> Map -> Panel -> Coordinate -> Html Msg
+impactScene visibleTiles map panel position =
     let
         burst : Int -> Float -> Maybe (Svg.Svg Msg)
         burst index startsAt =
@@ -588,12 +594,59 @@ impactScene map panel position =
             impactStarts panel
                 |> List.indexedMap burst
                 |> List.filterMap identity
+
+        concealed : Bool
+        concealed =
+            not (List.member position visibleTiles)
+
+        description : String
+        description =
+            if concealed then
+                "indirect fire impact; target outside sight; no confirmed target"
+
+            else
+                "indirect fire impact; no confirmed target"
+
+        content : List (Svg.Svg Msg)
+        content =
+            if concealed then
+                unconfirmedFog :: explosions
+
+            else
+                explosions
     in
     scene
         (Just (backdropPath map.theme (Map.terrainAt map position)))
         panel
-        "indirect fire impact; no confirmed target"
-        explosions
+        description
+        content
+
+
+unconfirmedFog : Svg.Svg Msg
+unconfirmedFog =
+    Svg.g
+        [ Aria.hidden True ]
+        [ Svg.rect
+            [ SA.x "-4"
+            , SA.y "-4"
+            , SA.width "104"
+            , SA.height "72"
+            , SA.fill S.gray3Str
+            , SA.opacity "0.8"
+            ]
+            []
+        , Svg.text_
+            [ SA.x "48"
+            , SA.y "32"
+            , SA.dy "0.35em"
+            , SA.textAnchor "middle"
+            , SA.fontSize "28"
+            , SA.fill S.gray5Str
+            , SA.stroke S.gray0Str
+            , SA.strokeWidth "0.5"
+            ]
+            [ Svg.text "?" ]
+        ]
 
 
 portrait : Map -> Panel -> CombatHealth -> Unit -> Html Msg

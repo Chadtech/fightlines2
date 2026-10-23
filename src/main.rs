@@ -121,6 +121,16 @@ async fn run() -> io::Result<()> {
             .app_data(schema.clone())
             .route("/graphql", web::post().to(graphql::handle))
             .route(
+                "/new",
+                web::get().to({
+                    let index = index.clone();
+                    move || {
+                        let index = index.clone();
+                        async move { NamedFile::open(index) }
+                    }
+                }),
+            )
+            .route(
                 "/lobby/{id}",
                 web::get().to({
                     let index = index.clone();

@@ -72,6 +72,16 @@ Text fields use `indentStrong`: dark gray0 top/left edges and lighter gray3
 bottom/right edges, retaining the shared 1px border width.
 Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion point visible.
 
+## Home page
+
+The home page is a large centered FightLines logo on the ordinary forest-green
+page background, with one quiet gold `play` link beneath it. Use the transparent
+`public/assets/fightlines-logo-v1.png` artwork, preserving its tall italic ivory
+lettering, thick yellow underline, flush g descender, and small explosion.
+The logo scales proportionally up to 80rem wide with viewport gutters. Its image
+supplies the accessible heading. Keep this page free of cards and extra copy;
+`play` opens the existing lobby creation form at `/new`.
+
 ## Cards, spacing, and layout
 
 - Pass title bars separately with `Card.withHeader (CardHeader.simple title)`;
@@ -162,11 +172,14 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
   alongside animation and preserve keyboard focus.
   Submitting with unassigned units opens a modal warning with keep planning and
   submit anyway actions; confirmation fills missing orders with holds.
+  Place a `skip this dialog` checkbox beside these actions and remember its
+  Boolean in local storage. Checking it leaves the current warning open for
+  confirmation; later submissions fill missing orders with holds directly.
 - Selected objects supply their own titles; omit a generic selection/status heading.
   Units show their type and owning player’s name on one line, spaced to opposite
   edges, above their illustration in a nightwood3
   inset screen, without position coordinates. Display
-  authoritative hit points (out of 16), supplies (out of 192 for infantry, 256 for field guns, 128 for vehicles), and fuel (out
+  authoritative hit points (out of 16), supplies (using each unit's authoritative maximum), and fuel (out
   of 128) (for tanks and trucks) as horizontal gauges with `current / maximum` labels. Use red1 below 25%, yellow4 from
   25–75%, and green1 (`#4BBF63`) above 75%; retain the numeric labels alongside color.
 - Stack complete inspection rows for the selected tile: unit and its actions,
@@ -568,13 +581,20 @@ asking `how many crates would you like to load?`, with compact `none`, `1`, and
 `2` buttons in a horizontal row. Omit counts that exceed stock or shared cargo
 room. Put depot stock above the question, then quantities and two quiet gold
 cargo fill bars below each numbered button. Partial cargo fills only part of
-its bar; omit separate full/partial explanations. Empty depots and full trucks
-show a short explanation. Unknown stock reads `stock outside sight`, shows `?`
+its bar; omit separate full/partial explanations. Empty depots show a short
+explanation. Full trucks skip the loading dialog. Unknown stock reads
+`stock outside sight`, shows `?`
 for quantities, and omits cargo fill bars. Give buttons descriptive accessible
 labels with their count and known quantity.
 Dismissal keeps the move without loading.
-Ground crates are neutral and trucks collect them by ending on their square
-with room aboard. Save the route first, then add unloading. These controls
+Ground crates and fuel drums are neutral. After saving a move or hold on visible
+ground freight with room aboard, show a native modal titled `pick up supply crate`
+or `pick up fuel drums`. Show the freight in an inset nightwood cargo box using
+the side panel's illustrated freight row, resource quantity, and gold fill bar, with a
+primary `pick up` button and secondary `leave on ground` button. Dismissal keeps
+the route and leaves the freight. Full trucks skip this choice. Offer ground
+pickup before depot loading when freight shares a depot square; a turn handles
+one freight action. Save the route first, then add unloading. These controls
 are absent in locked phases. A saved supply run shows its destination and load/unload
 counts alongside revoke. Planned crate exits use quiet gold dotted outlines.
 Ground crates use the illustrated neutral supply-box asset and support pointer and
@@ -711,7 +731,9 @@ with the observable firing gun beside the target terrain, the existing explosion
 animation, and theater controls. Preserve horizontal map order. If the firing gun
 is concealed, omit its portrait and origin. Show any observed target with its
 authoritative health transition and the `indirect fire` heading; preserve trench
-and taking-cover artwork. Use empty terrain only when no target is confirmed.
+and taking-cover artwork. When no target is confirmed outside sight, cover the
+target terrain with a fog overlay and a centered question mark. Keep clear terrain
+for unconfirmed landings on tiles within sight.
 Above the scene, explain that an enemy
 field gun fired from an unknown location at this space; for an observable gun, explain
 that a field gun fired indirectly at this space. For an observed target, state
@@ -753,5 +775,7 @@ submission controls with the game name, back link, previous/play/pause/next,
 turn and player-view selectors, and the existing camera controls. Keep order
 commands unavailable. Bound the replay control panel to 40% of viewport height,
 with internal scrolling when its controls wrap on narrow or short screens. Turn
-zero shows the starting board. Preserve normal
-fog, combat/loss dialogs, and final reveal while viewing a recording.
+zero shows the starting board. Include a checked-by-default `fog of war` checkbox
+below the turn and view selectors. Unchecking reveals the complete recorded
+board and playback; retain the setting across turn and player-view changes.
+Preserve combat/loss dialogs and the normal final reveal when fog is enabled.

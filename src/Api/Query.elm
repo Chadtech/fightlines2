@@ -43,6 +43,7 @@ type alias LoggedTurnRequiredArguments =
     { id : String
     , turnNumber : Int
     , playerNumber : Api.Enum.PlayerNumber.PlayerNumber
+    , fogOfWar : Bool
     }
 
 
@@ -51,7 +52,7 @@ loggedTurn :
     -> SelectionSet decodesTo Api.Object.GameSnapshot
     -> SelectionSet decodesTo RootQuery
 loggedTurn requiredArgs____ object____ =
-    Object.selectionForCompositeField "loggedTurn" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "turnNumber" requiredArgs____.turnNumber Encode.int, Argument.required "playerNumber" requiredArgs____.playerNumber (Encode.enum Api.Enum.PlayerNumber.toString) ] object____ Basics.identity
+    Object.selectionForCompositeField "loggedTurn" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "turnNumber" requiredArgs____.turnNumber Encode.int, Argument.required "playerNumber" requiredArgs____.playerNumber (Encode.enum Api.Enum.PlayerNumber.toString), Argument.required "fogOfWar" requiredArgs____.fogOfWar Encode.bool ] object____ Basics.identity
 
 
 maps :

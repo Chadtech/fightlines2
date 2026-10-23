@@ -22,7 +22,8 @@ import Url.Parser as P
 
 
 type Route
-    = NewLobby
+    = Home
+    | NewLobby
     | Lobby LobbyId
     | Game LobbyId
     | MapEditor
@@ -41,7 +42,8 @@ parser =
         [ P.map LoggedGames (P.s "logged-games")
         , P.map Replay (P.s "logged-games" </> P.custom "gameLogId" (GameLogId.parse >> Result.toMaybe))
         , P.map MapEditor (P.s "map-editor")
-        , P.map NewLobby P.top
+        , P.map Home P.top
+        , P.map NewLobby (P.s "new")
         , P.map Lobby (P.s "lobby" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe))
         , P.map Game (P.s "game" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe))
         ]
@@ -62,8 +64,11 @@ toString route =
                 MapEditor ->
                     [ "map-editor" ]
 
-                NewLobby ->
+                Home ->
                     []
+
+                NewLobby ->
+                    [ "new" ]
 
                 Lobby id ->
                     [ "lobby", LobbyId.toString id ]

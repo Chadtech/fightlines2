@@ -14,6 +14,7 @@ module Game.PlannedOrder exposing
     , hold
     , isAttackMove
     , isMoving
+    , loadingBerths
     , loadingCrates
     , path
     , toInput
@@ -21,6 +22,7 @@ module Game.PlannedOrder exposing
     , unloads
     )
 
+import Api.Enum.DepotKind exposing (DepotKind)
 import Api.Enum.Direction exposing (Direction)
 import Api.InputObject
 import Game.Coordinate as Coordinate exposing (Coordinate)
@@ -71,6 +73,7 @@ type alias SupplyPlan =
 type SupplyHandling
     = LoadingCrates Int
     | UnloadingCrates (List CrateUnload)
+    | PickingUpGroundFreight DepotKind
 
 
 type alias CrateUnload =
@@ -312,6 +315,13 @@ toInput order =
                             |> Maybe.map loadingCrates
                             |> Maybe.withDefault 0
                         )
+                , pickupGroundFreight =
+                    case supplyPlan order |> Maybe.map .handling of
+                        Just (PickingUpGroundFreight kind) ->
+                            OptionalArgument.Present kind
+
+                        _ ->
+                            OptionalArgument.Absent
                 , crateUnloads =
                     OptionalArgument.Present
                         (supplyPlan order
@@ -368,6 +378,21 @@ loadingCrates plan =
         UnloadingCrates _ ->
             0
 
+        PickingUpGroundFreight _ ->
+            0
+
+
+{-| Ground pickup reserves one berth just like a depot load.
+-}
+loadingBerths : SupplyPlan -> Int
+loadingBerths plan =
+    case plan.handling of
+        PickingUpGroundFreight _ ->
+            1
+
+        _ ->
+            loadingCrates plan
+
 
 unloadingCrates : SupplyPlan -> List CrateUnload
 unloadingCrates plan =
@@ -376,6 +401,9 @@ unloadingCrates plan =
             exits
 
         LoadingCrates _ ->
+            []
+
+        PickingUpGroundFreight _ ->
             []
 
 

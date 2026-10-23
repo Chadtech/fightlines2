@@ -1,7 +1,7 @@
 port module Game.Checks.OrderPlanning exposing (main)
 
 import Api.Enum.AmbushShape as AmbushShape
-import Api.Enum.DepotKind as DepotKind
+import Api.Enum.DepotKind as DepotKind exposing (DepotKind)
 import Api.Enum.Direction as DirectionEnum
 import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as Theme
@@ -26,7 +26,7 @@ import Game.OrderPlanning as OrderPlanning
 import Game.PlannedOrder as PlannedOrder
 import Game.PlannedTransport as PlannedTransport
 import Game.Selection exposing (CommandMenuState(..), Selection(..), UnitInteraction(..))
-import Game.Supply as Supply
+import Game.Supply as Supply exposing (CargoStock)
 import Game.TurnLifecycle as TurnLifecycle
 import Game.Unit as Unit exposing (Unit)
 import Game.Unit.Fuel as Fuel
@@ -57,6 +57,8 @@ checks =
     case ( UnitId.parse "1", UnitId.parse "2", UnitId.parse "3" ) of
         ( Ok infantryId, Ok truckId, Ok passengerId ) ->
             planningChecks infantryId truckId passengerId
+                ++ cargoLoadingChecks infantryId truckId passengerId
+                ++ groundPickupChecks infantryId truckId
                 ++ mutualPickupChecks infantryId truckId passengerId
                 ++ transportInvariantChecks infantryId truckId passengerId
                 ++ dependencyInvariantChecks infantryId truckId passengerId
@@ -65,6 +67,248 @@ checks =
 
         _ ->
             [ "could not construct planning fixture IDs" ]
+
+
+groundPickupChecks : UnitId -> UnitId -> List String
+groundPickupChecks infantryId truckId =
+    let
+        truck : Unit
+        truck =
+            unit truckId Kind.Truck (Location.OnMap { x = 3, y = 1 })
+
+        fixture : DepotKind -> BoardFixture
+        fixture kind =
+            let
+                base : BoardFixture
+                base =
+                    board [ truck ]
+            in
+            { base
+                | supplyCrates =
+                    [ { position = { x = 3, y = 1 }
+                      , stock = { kind = kind, current = 23, maximum = 256 }
+                      }
+                    ]
+            }
+
+        hold : BoardFixture -> UnitId -> OrderPlanning.Model
+        hold context id =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit context.map context.units context.playerNumbers context.movementRules context.supplyCrates context.depots id
+                |> IC.andThen (OrderPlanning.applyCommand context.map context.units context.playerNumbers context.movementRules context.supplyCrates context.depots UnitCommand.HoldPosition)
+                |> fixtureValue
+
+        asksFor : DepotKind -> OrderPlanning.Model -> Bool
+        asksFor kind state =
+            case state of
+                OrderPlanning.ChoosingGroundFreight id freight _ ->
+                    id == truckId && freight.stock.kind == kind && freight.stock.current == 23
+
+                _ ->
+                    False
+
+        checksFor : DepotKind -> List String
+        checksFor kind =
+            let
+                context : BoardFixture
+                context =
+                    fixture kind
+
+                pending : OrderPlanning.Model
+                pending =
+                    hold context truckId
+
+                confirmed : OrderPlanning.Model
+                confirmed =
+                    pending |> OrderPlanning.confirmGroundPickup |> fixtureValue
+
+                expected : PlannedOrder.PlannedOrder
+                expected =
+                    { unitId = truckId
+                    , action =
+                        PlannedOrder.SupplyTransfer
+                            { route = [ { x = 3, y = 1 } ]
+                            , destination = { x = 3, y = 1 }
+                            , handling = PlannedOrder.PickingUpGroundFreight kind
+                            , passengers = []
+                            }
+                    }
+
+                movingTruck : Unit
+                movingTruck =
+                    { truck | location = Location.OnMap { x = 2, y = 1 } }
+
+                movingContext : BoardFixture
+                movingContext =
+                    { context | units = [ movingTruck ] }
+
+                moving : OrderPlanning.Model
+                moving =
+                    OrderPlanning.init
+                        |> OrderPlanning.selectUnit movingContext.map movingContext.units movingContext.playerNumbers movingContext.movementRules movingContext.supplyCrates movingContext.depots truckId
+                        |> IC.andThen (OrderPlanning.applyCommand movingContext.map movingContext.units movingContext.playerNumbers movingContext.movementRules movingContext.supplyCrates movingContext.depots UnitCommand.Move)
+                        |> IC.andThen (OrderPlanning.selectTile movingContext.map movingContext.units movingContext.playerNumbers movingContext.movementRules movingContext.supplyCrates movingContext.depots { x = 3, y = 1 })
+                        |> fixtureValue
+
+                full : Unit
+                full =
+                    truck |> Unit.mapResources (\resources -> { resources | supplyCargo = List.repeat 2 { kind = kind, current = 8, maximum = 256 } })
+
+                fullContext : BoardFixture
+                fullContext =
+                    { context | units = [ full ] }
+
+                fullSkipped : OrderPlanning.Model
+                fullSkipped =
+                    hold fullContext truckId
+                        |> OrderPlanning.skipUnloading fullContext.map fullContext.units fullContext.supplyCrates fullContext.depots
+            in
+            List.concat
+                [ expect "holding on either kind of ground freight offers a pickup choice" (asksFor kind pending)
+                , expect "saving a truck route onto ground freight offers a pickup choice" (asksFor kind moving)
+                , expect "confirming ground pickup saves the resource and route" (OrderPlanning.orders confirmed == [ expected ])
+                , expect "declining ground pickup preserves the route without a freight order"
+                    (OrderPlanning.orders (OrderPlanning.dismissDialog pending)
+                        == [ { unitId = truckId, action = PlannedOrder.Hold { x = 3, y = 1 } } ]
+                    )
+                , expect "full trucks skip ground pickup after declining unloading" (not (asksFor kind fullSkipped))
+                , expect "ground pickup confirmation outside its stage is a no-op"
+                    (OrderPlanning.confirmGroundPickup confirmed |> fixtureValue |> (==) confirmed)
+                ]
+
+        nonTruck : BoardFixture
+        nonTruck =
+            let
+                base : BoardFixture
+                base =
+                    fixture DepotKind.Supply
+            in
+            { base | units = [ unit infantryId Kind.Infantry (Location.OnMap { x = 3, y = 1 }) ] }
+    in
+    checksFor DepotKind.Supply
+        ++ checksFor DepotKind.Fuel
+        ++ expect "infantry standing on ground freight do not get a truck pickup dialog"
+            (not (asksFor DepotKind.Supply (hold nonTruck infantryId)))
+
+
+cargoLoadingChecks : UnitId -> UnitId -> UnitId -> List String
+cargoLoadingChecks infantryId truckId passengerId =
+    let
+        freight : DepotKind -> CargoStock
+        freight kind =
+            { kind = kind
+            , current = 32
+            , maximum = 64
+            }
+
+        truck : List CargoStock -> Unit
+        truck cargo =
+            unit truckId Kind.Truck (Location.OnMap { x = 3, y = 1 })
+                |> Unit.mapResources (\resources -> { resources | supplyCargo = cargo })
+
+        context : DepotKind -> List Unit -> BoardFixture
+        context kind units =
+            let
+                fixture : BoardFixture
+                fixture =
+                    board units
+            in
+            { fixture
+                | depots = [ { kind = kind, position = { x = 3, y = 1 }, stock = Just { current = 256, maximum = 256 } } ]
+            }
+
+        hold : BoardFixture -> OrderPlanning.Model
+        hold fixture =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots truckId
+                |> IC.andThen (OrderPlanning.applyCommand fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots UnitCommand.HoldPosition)
+                |> fixtureValue
+
+        skipsLoading : OrderPlanning.Model -> Bool
+        skipsLoading model =
+            case model of
+                OrderPlanning.OrdinaryPlanning _ ->
+                    OrderPlanning.submissionDrafts model /= Nothing
+
+                _ ->
+                    False
+
+        fullTruckChecks : DepotKind -> List Unit -> List String
+        fullTruckChecks kind units =
+            let
+                fixture : BoardFixture
+                fixture =
+                    context kind units
+
+                checklist : OrderPlanning.Model
+                checklist =
+                    hold fixture
+
+                skipped : OrderPlanning.Model
+                skipped =
+                    OrderPlanning.skipUnloading fixture.map fixture.units fixture.supplyCrates fixture.depots checklist
+
+                confirmed : OrderPlanning.Model
+                confirmed =
+                    OrderPlanning.confirmPassengers fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots checklist
+                        |> fixtureValue
+            in
+            expect "full trucks skip depot loading after declining unloading and retain their hold"
+                (skipsLoading skipped
+                    && skipsLoading confirmed
+                    && OrderPlanning.orders skipped
+                    == OrderPlanning.orders confirmed
+                    && List.map .unitId (OrderPlanning.orders skipped)
+                    == [ truckId ]
+                )
+
+        arriving : BoardFixture -> OrderPlanning.Model
+        arriving fixture =
+            OrderPlanning.init
+                |> OrderPlanning.selectUnit fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots infantryId
+                |> IC.andThen (OrderPlanning.applyCommand fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots UnitCommand.Move)
+                |> IC.andThen (OrderPlanning.selectTile fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots { x = 3, y = 1 })
+                |> fixtureValue
+
+        reservedFixture : BoardFixture
+        reservedFixture =
+            context DepotKind.Supply
+                [ truck [ freight DepotKind.Fuel ]
+                , unit infantryId Kind.Infantry (Location.OnMap { x = 2, y = 1 })
+                ]
+
+        reserved : OrderPlanning.Model
+        reserved =
+            arriving reservedFixture
+
+        spareFixture : BoardFixture
+        spareFixture =
+            context DepotKind.Fuel [ truck [ freight DepotKind.Supply ] ]
+
+        spare : OrderPlanning.Model
+        spare =
+            OrderPlanning.skipUnloading spareFixture.map spareFixture.units spareFixture.supplyCrates spareFixture.depots (hold spareFixture)
+    in
+    List.concat
+        [ fullTruckChecks DepotKind.Supply [ truck [ freight DepotKind.Supply, freight DepotKind.Fuel ] ]
+        , fullTruckChecks DepotKind.Fuel [ truck [ freight DepotKind.Fuel ], unit infantryId Kind.Infantry (Location.Aboard truckId) ]
+        , fullTruckChecks DepotKind.Supply [ truck [], unit infantryId Kind.Infantry (Location.Aboard truckId), unit passengerId Kind.FieldGun (Location.Aboard truckId) ]
+        , expect "a passenger reserving the last berth skips depot loading and preserves both orders"
+            (skipsLoading reserved
+                && List.length (OrderPlanning.orders reserved)
+                == 2
+                && PlannedTransport.boardingPassengers reservedFixture.units truckId (OrderPlanning.orders reserved)
+                == [ infantryId ]
+            )
+        , expect "a truck with one free berth still offers depot loading"
+            (case spare of
+                OrderPlanning.ChoosingCrates id _ _ ->
+                    id == truckId
+
+                _ ->
+                    False
+            )
+        ]
 
 
 mutualPickupChecks : UnitId -> UnitId -> UnitId -> List String
@@ -90,7 +334,7 @@ mutualPickupChecks infantryId truckId gunId =
         startMove fixture id model =
             model
                 |> OrderPlanning.selectUnit fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots id
-                |> IC.andThen (OrderPlanning.applyCommand fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.depots UnitCommand.Move)
+                |> IC.andThen (OrderPlanning.applyCommand fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots UnitCommand.Move)
                 |> fixtureValue
 
         saveMove : BoardFixture -> UnitId -> OrderPlanning.Model -> OrderPlanning.Model
@@ -120,7 +364,7 @@ mutualPickupChecks infantryId truckId gunId =
             startMove context truckId fieldGunFirst
                 |> OrderPlanning.extendPath context.map context.units context.playerNumbers context.movementRules DirectionEnum.South
                 |> OrderPlanning.extendPath context.map context.units context.playerNumbers context.movementRules DirectionEnum.West
-                |> OrderPlanning.confirmPath context.map context.units context.playerNumbers context.movementRules context.depots
+                |> OrderPlanning.confirmPath context.map context.units context.playerNumbers context.movementRules context.supplyCrates context.depots
                 |> fixtureValue
 
         fullContext : BoardFixture
@@ -517,6 +761,7 @@ planningChecks infantryId truckId passengerId =
                         attackContext.units
                         attackContext.playerNumbers
                         attackContext.movementRules
+                        attackContext.supplyCrates
                         attackContext.depots
                         UnitCommand.AttackMove
                         >> fixtureValue
@@ -541,6 +786,7 @@ planningChecks infantryId truckId passengerId =
                 attackContext.units
                 attackContext.playerNumbers
                 attackContext.movementRules
+                attackContext.supplyCrates
                 attackContext.depots
                 >> fixtureValue
             )
@@ -609,6 +855,7 @@ planningChecks infantryId truckId passengerId =
                         lowSupplyContext.units
                         lowSupplyContext.playerNumbers
                         lowSupplyContext.movementRules
+                        lowSupplyContext.supplyCrates
                         lowSupplyContext.depots
                         UnitCommand.AttackMove
                         >> fixtureValue
@@ -644,6 +891,7 @@ planningChecks infantryId truckId passengerId =
                         context.units
                         context.playerNumbers
                         context.movementRules
+                        context.supplyCrates
                         context.depots
                         UnitCommand.AttackMove
                         >> fixtureValue
@@ -697,6 +945,7 @@ planningChecks infantryId truckId passengerId =
                         indirectContext.units
                         indirectContext.playerNumbers
                         indirectContext.movementRules
+                        indirectContext.supplyCrates
                         indirectContext.depots
                         UnitCommand.IndirectFire
                         >> fixtureValue
@@ -778,6 +1027,7 @@ planningChecks infantryId truckId passengerId =
                         outOfRangeContext.units
                         outOfRangeContext.playerNumbers
                         outOfRangeContext.movementRules
+                        outOfRangeContext.supplyCrates
                         outOfRangeContext.depots
                         UnitCommand.IndirectFire
                         >> fixtureValue
@@ -801,6 +1051,7 @@ planningChecks infantryId truckId passengerId =
                         context.units
                         context.playerNumbers
                         context.movementRules
+                        context.supplyCrates
                         context.depots
                         UnitCommand.DigIn
                         >> fixtureValue
@@ -824,6 +1075,7 @@ planningChecks infantryId truckId passengerId =
                         context.units
                         context.playerNumbers
                         context.movementRules
+                        context.supplyCrates
                         context.depots
                         UnitCommand.StandGround
                         >> fixtureValue
@@ -864,6 +1116,7 @@ planningChecks infantryId truckId passengerId =
                         context.units
                         context.playerNumbers
                         context.movementRules
+                        context.supplyCrates
                         context.depots
                         UnitCommand.Ambush
                         >> fixtureValue
@@ -895,6 +1148,7 @@ planningChecks infantryId truckId passengerId =
                         context.units
                         context.playerNumbers
                         context.movementRules
+                        context.supplyCrates
                         context.depots
                         UnitCommand.Ambush
                         >> fixtureValue
@@ -925,6 +1179,7 @@ planningChecks infantryId truckId passengerId =
                         context.units
                         context.playerNumbers
                         context.movementRules
+                        context.supplyCrates
                         context.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -943,6 +1198,7 @@ planningChecks infantryId truckId passengerId =
                 context.units
                 context.playerNumbers
                 context.movementRules
+                context.supplyCrates
                 context.depots
                 >> fixtureValue
             )
@@ -1004,6 +1260,7 @@ planningChecks infantryId truckId passengerId =
                         context.units
                         context.playerNumbers
                         context.movementRules
+                        context.supplyCrates
                         context.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1037,6 +1294,7 @@ planningChecks infantryId truckId passengerId =
                         context.units
                         context.playerNumbers
                         context.movementRules
+                        context.supplyCrates
                         context.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1085,6 +1343,7 @@ planningChecks infantryId truckId passengerId =
                         context.units
                         context.playerNumbers
                         context.movementRules
+                        context.supplyCrates
                         context.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1118,6 +1377,7 @@ planningChecks infantryId truckId passengerId =
                         context.units
                         context.playerNumbers
                         context.movementRules
+                        context.supplyCrates
                         context.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1190,6 +1450,7 @@ planningChecks infantryId truckId passengerId =
                         context.units
                         context.playerNumbers
                         context.movementRules
+                        context.supplyCrates
                         context.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1225,6 +1486,7 @@ planningChecks infantryId truckId passengerId =
                         context.units
                         context.playerNumbers
                         context.movementRules
+                        context.supplyCrates
                         context.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1287,6 +1549,7 @@ planningChecks infantryId truckId passengerId =
                         context.units
                         context.playerNumbers
                         context.movementRules
+                        context.supplyCrates
                         context.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1325,6 +1588,7 @@ planningChecks infantryId truckId passengerId =
                         chainContext.units
                         chainContext.playerNumbers
                         chainContext.movementRules
+                        chainContext.supplyCrates
                         chainContext.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1354,6 +1618,7 @@ planningChecks infantryId truckId passengerId =
                         chainContext.units
                         chainContext.playerNumbers
                         chainContext.movementRules
+                        chainContext.supplyCrates
                         chainContext.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1383,6 +1648,7 @@ planningChecks infantryId truckId passengerId =
                         chainContext.units
                         chainContext.playerNumbers
                         chainContext.movementRules
+                        chainContext.supplyCrates
                         chainContext.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1440,6 +1706,7 @@ planningChecks infantryId truckId passengerId =
                         rendezvousContext.units
                         rendezvousContext.playerNumbers
                         rendezvousContext.movementRules
+                        rendezvousContext.supplyCrates
                         rendezvousContext.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1469,6 +1736,7 @@ planningChecks infantryId truckId passengerId =
                         rendezvousContext.units
                         rendezvousContext.playerNumbers
                         rendezvousContext.movementRules
+                        rendezvousContext.supplyCrates
                         rendezvousContext.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1498,6 +1766,7 @@ planningChecks infantryId truckId passengerId =
                         rendezvousContext.units
                         rendezvousContext.playerNumbers
                         rendezvousContext.movementRules
+                        rendezvousContext.supplyCrates
                         rendezvousContext.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1531,6 +1800,7 @@ planningChecks infantryId truckId passengerId =
                         rendezvousContext.units
                         rendezvousContext.playerNumbers
                         rendezvousContext.movementRules
+                        rendezvousContext.supplyCrates
                         rendezvousContext.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1560,6 +1830,7 @@ planningChecks infantryId truckId passengerId =
                         rendezvousContext.units
                         rendezvousContext.playerNumbers
                         rendezvousContext.movementRules
+                        rendezvousContext.supplyCrates
                         rendezvousContext.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1618,6 +1889,7 @@ planningChecks infantryId truckId passengerId =
                         freightRendezvousContext.units
                         freightRendezvousContext.playerNumbers
                         freightRendezvousContext.movementRules
+                        freightRendezvousContext.supplyCrates
                         freightRendezvousContext.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1635,6 +1907,7 @@ planningChecks infantryId truckId passengerId =
                 |> OrderPlanning.skipUnloading
                     freightRendezvousContext.map
                     freightRendezvousContext.units
+                    freightRendezvousContext.supplyCrates
                     freightRendezvousContext.depots
                 |> (OrderPlanning.selectUnit
                         freightRendezvousContext.map
@@ -1651,6 +1924,7 @@ planningChecks infantryId truckId passengerId =
                         freightRendezvousContext.units
                         freightRendezvousContext.playerNumbers
                         freightRendezvousContext.movementRules
+                        freightRendezvousContext.supplyCrates
                         freightRendezvousContext.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1684,6 +1958,7 @@ planningChecks infantryId truckId passengerId =
                         freightRendezvousContext.units
                         freightRendezvousContext.playerNumbers
                         freightRendezvousContext.movementRules
+                        freightRendezvousContext.supplyCrates
                         freightRendezvousContext.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1737,6 +2012,7 @@ planningChecks infantryId truckId passengerId =
                         context.units
                         context.playerNumbers
                         context.movementRules
+                        context.supplyCrates
                         context.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1808,6 +2084,7 @@ planningChecks infantryId truckId passengerId =
                         cargoContext.units
                         cargoContext.playerNumbers
                         cargoContext.movementRules
+                        cargoContext.supplyCrates
                         cargoContext.depots
                         UnitCommand.HoldPosition
                         >> fixtureValue
@@ -1888,6 +2165,7 @@ planningChecks infantryId truckId passengerId =
                         cargoContext.units
                         cargoContext.playerNumbers
                         cargoContext.movementRules
+                        cargoContext.supplyCrates
                         cargoContext.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -1949,6 +2227,7 @@ planningChecks infantryId truckId passengerId =
                         twoInfantryContext.units
                         twoInfantryContext.playerNumbers
                         twoInfantryContext.movementRules
+                        twoInfantryContext.supplyCrates
                         twoInfantryContext.depots
                         UnitCommand.HoldPosition
                         >> fixtureValue
@@ -1993,6 +2272,7 @@ planningChecks infantryId truckId passengerId =
                         twoInfantryContext.units
                         twoInfantryContext.playerNumbers
                         twoInfantryContext.movementRules
+                        twoInfantryContext.supplyCrates
                         twoInfantryContext.depots
                         UnitCommand.HoldPosition
                         >> fixtureValue
@@ -2006,6 +2286,7 @@ planningChecks infantryId truckId passengerId =
                         twoInfantryContext.units
                         twoInfantryContext.playerNumbers
                         twoInfantryContext.movementRules
+                        twoInfantryContext.supplyCrates
                         twoInfantryContext.depots
                         UnitCommand.StandGround
                         >> fixtureValue
@@ -2026,6 +2307,7 @@ planningChecks infantryId truckId passengerId =
                         cargoContext.units
                         cargoContext.playerNumbers
                         cargoContext.movementRules
+                        cargoContext.supplyCrates
                         cargoContext.depots
                         UnitCommand.AttackMove
                         >> fixtureValue
@@ -2041,6 +2323,7 @@ planningChecks infantryId truckId passengerId =
                         cargoContext.units
                         cargoContext.playerNumbers
                         cargoContext.movementRules
+                        cargoContext.supplyCrates
                         cargoContext.depots
                         >> fixtureValue
                    )
@@ -2060,6 +2343,7 @@ planningChecks infantryId truckId passengerId =
                         cargoContext.units
                         cargoContext.playerNumbers
                         cargoContext.movementRules
+                        cargoContext.supplyCrates
                         cargoContext.depots
                         UnitCommand.HoldPosition
                         >> fixtureValue
@@ -2125,6 +2409,7 @@ planningChecks infantryId truckId passengerId =
                         mixedContext.units
                         mixedContext.playerNumbers
                         mixedContext.movementRules
+                        mixedContext.supplyCrates
                         mixedContext.depots
                         UnitCommand.HoldPosition
                         >> fixtureValue
@@ -2223,6 +2508,7 @@ planningChecks infantryId truckId passengerId =
                         crateOnlyContext.units
                         crateOnlyContext.playerNumbers
                         crateOnlyContext.movementRules
+                        crateOnlyContext.supplyCrates
                         crateOnlyContext.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -2283,6 +2569,7 @@ planningChecks infantryId truckId passengerId =
                         twoCrateContext.units
                         twoCrateContext.playerNumbers
                         twoCrateContext.movementRules
+                        twoCrateContext.supplyCrates
                         twoCrateContext.depots
                         UnitCommand.HoldPosition
                         >> fixtureValue
@@ -2359,6 +2646,7 @@ planningChecks infantryId truckId passengerId =
                         fuelContext.units
                         fuelContext.playerNumbers
                         fuelContext.movementRules
+                        fuelContext.supplyCrates
                         fuelContext.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -2398,6 +2686,7 @@ planningChecks infantryId truckId passengerId =
                         depotContext.units
                         depotContext.playerNumbers
                         depotContext.movementRules
+                        depotContext.supplyCrates
                         depotContext.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -2430,6 +2719,7 @@ planningChecks infantryId truckId passengerId =
                 depotContext.units
                 depotContext.playerNumbers
                 depotContext.movementRules
+                depotContext.supplyCrates
                 depotContext.depots
                 >> fixtureValue
             )
@@ -2453,6 +2743,7 @@ planningChecks infantryId truckId passengerId =
                         depotContext.units
                         depotContext.playerNumbers
                         depotContext.movementRules
+                        depotContext.supplyCrates
                         depotContext.depots
                         UnitCommand.Move
                         >> fixtureValue
@@ -2486,6 +2777,7 @@ planningChecks infantryId truckId passengerId =
                         depotContext.units
                         depotContext.playerNumbers
                         depotContext.movementRules
+                        depotContext.supplyCrates
                         depotContext.depots
                         UnitCommand.HoldPosition
                         >> fixtureValue
@@ -2517,6 +2809,7 @@ planningChecks infantryId truckId passengerId =
                         depotCargoContext.units
                         depotCargoContext.playerNumbers
                         depotCargoContext.movementRules
+                        depotCargoContext.supplyCrates
                         depotCargoContext.depots
                         UnitCommand.HoldPosition
                         >> fixtureValue
@@ -2587,6 +2880,7 @@ planningChecks infantryId truckId passengerId =
                         depotMixedContext.units
                         depotMixedContext.playerNumbers
                         depotMixedContext.movementRules
+                        depotMixedContext.supplyCrates
                         depotMixedContext.depots
                         UnitCommand.HoldPosition
                         >> fixtureValue
@@ -2657,6 +2951,7 @@ planningChecks infantryId truckId passengerId =
                         narrowContext.units
                         narrowContext.playerNumbers
                         narrowContext.movementRules
+                        narrowContext.supplyCrates
                         narrowContext.depots
                         UnitCommand.HoldPosition
                         >> fixtureValue
@@ -2694,6 +2989,7 @@ planningChecks infantryId truckId passengerId =
                         narrowCrateContext.units
                         narrowCrateContext.playerNumbers
                         narrowCrateContext.movementRules
+                        narrowCrateContext.supplyCrates
                         narrowCrateContext.depots
                         UnitCommand.HoldPosition
                         >> fixtureValue
@@ -2817,6 +3113,7 @@ planningChecks infantryId truckId passengerId =
                 missingContext.units
                 missingContext.playerNumbers
                 missingContext.movementRules
+                missingContext.supplyCrates
                 missingContext.depots
                 UnitCommand.Move
                 missingCommand
@@ -2858,6 +3155,7 @@ planningChecks infantryId truckId passengerId =
                     missingContext.units
                     missingContext.playerNumbers
                     missingContext.movementRules
+                    missingContext.supplyCrates
                     missingContext.depots
                     UnitCommand.Move
                 )
@@ -2939,6 +3237,7 @@ planningChecks infantryId truckId passengerId =
                 missingContext.units
                 missingContext.playerNumbers
                 missingContext.movementRules
+                missingContext.supplyCrates
                 missingContext.depots
                 moving
                 == IC.violated (OrderPlanning.PlanningUnitNotFound infantryId)
@@ -3056,6 +3355,7 @@ planningChecks infantryId truckId passengerId =
                     context.units
                     context.playerNumbers
                     context.movementRules
+                    context.supplyCrates
                     context.depots
                     UnitCommand.Move
                 , OrderPlanning.confirmPath
@@ -3063,6 +3363,7 @@ planningChecks infantryId truckId passengerId =
                     context.units
                     context.playerNumbers
                     context.movementRules
+                    context.supplyCrates
                     context.depots
                 , OrderPlanning.saveDirection context.map context.units context.playerNumbers DirectionEnum.North
                 , OrderPlanning.confirmPassengers
@@ -3109,6 +3410,7 @@ planningChecks infantryId truckId passengerId =
                 context.units
                 context.playerNumbers
                 context.movementRules
+                context.supplyCrates
                 context.depots
                 UnitCommand.Ambush
                 (fixtureValue
@@ -3163,6 +3465,7 @@ planningChecks infantryId truckId passengerId =
                 context.units
                 context.playerNumbers
                 context.movementRules
+                context.supplyCrates
                 context.depots
                 UnitCommand.HoldPosition
                 >> fixtureValue
@@ -3346,6 +3649,7 @@ planningChecks infantryId truckId passengerId =
                                 contextWithFreight.units
                                 contextWithFreight.playerNumbers
                                 contextWithFreight.movementRules
+                                contextWithFreight.supplyCrates
                                 contextWithFreight.depots
                                 UnitCommand.HoldPosition
                                 >> fixtureValue
@@ -3446,25 +3750,30 @@ planningChecks infantryId truckId passengerId =
             )
         , expect "loaded trucks offer unloading before depot loading"
             (OrderPlanning.unloadChoice depotChecklist /= Nothing)
-        , expect "confirming no unloads and skipping unloading offer depot loading"
-            (choosingCrates
-                ((OrderPlanning.confirmPassengers
-                    depotCargoContext.map
-                    depotCargoContext.units
-                    depotCargoContext.playerNumbers
-                    depotCargoContext.movementRules
-                    depotCargoContext.supplyCrates
-                    depotCargoContext.depots
-                    >> fixtureValue
-                 )
-                    depotChecklist
-                )
-                && choosingCrates
-                    (OrderPlanning.skipUnloading
+        , expect "full passenger trucks skip depot loading when unloading is declined"
+            (not
+                (choosingCrates
+                    ((OrderPlanning.confirmPassengers
                         depotCargoContext.map
                         depotCargoContext.units
+                        depotCargoContext.playerNumbers
+                        depotCargoContext.movementRules
+                        depotCargoContext.supplyCrates
                         depotCargoContext.depots
+                        >> fixtureValue
+                     )
                         depotChecklist
+                    )
+                )
+                && not
+                    (choosingCrates
+                        (OrderPlanning.skipUnloading
+                            depotCargoContext.map
+                            depotCargoContext.units
+                            depotCargoContext.supplyCrates
+                            depotCargoContext.depots
+                            depotChecklist
+                        )
                     )
             )
         , expect "canceling stationary unloading discards the hold without offering depot loading"
@@ -3505,6 +3814,7 @@ planningChecks infantryId truckId passengerId =
                                 moveContext.units
                                 moveContext.playerNumbers
                                 moveContext.movementRules
+                                moveContext.supplyCrates
                                 moveContext.depots
                                 UnitCommand.Move
                                 >> fixtureValue
@@ -3540,22 +3850,26 @@ planningChecks infantryId truckId passengerId =
                 == Nothing
                 && List.isEmpty (OrderPlanning.orders (OrderPlanning.setSelection Nothing exits))
             )
-        , expect "finishing or skipping remaining passenger exits preserves them before depot loading"
-            (choosingCrates depotCompleted
+        , expect "passenger exits preserve the plan without offering loading into occupied berths"
+            (not (choosingCrates depotCompleted)
                 && List.concatMap PlannedOrder.unloads (OrderPlanning.orders depotCompleted)
                 == List.concatMap PlannedOrder.unloads (OrderPlanning.orders completed)
-                && choosingCrates
-                    (OrderPlanning.skipUnloading
-                        depotCargoContext.map
-                        depotCargoContext.units
-                        depotCargoContext.depots
-                        depotFirstExit
+                && not
+                    (choosingCrates
+                        (OrderPlanning.skipUnloading
+                            depotCargoContext.map
+                            depotCargoContext.units
+                            depotCargoContext.supplyCrates
+                            depotCargoContext.depots
+                            depotFirstExit
+                        )
                     )
                 && List.concatMap PlannedOrder.unloads
                     (OrderPlanning.orders
                         (OrderPlanning.skipUnloading
                             depotCargoContext.map
                             depotCargoContext.units
+                            depotCargoContext.supplyCrates
                             depotCargoContext.depots
                             depotFirstExit
                         )
@@ -3647,6 +3961,7 @@ planningChecks infantryId truckId passengerId =
                     context.units
                     context.playerNumbers
                     context.movementRules
+                    context.supplyCrates
                     context.depots
                     UnitCommand.Ambush
                     >> fixtureValue

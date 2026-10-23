@@ -40,6 +40,7 @@ import Page.AppInitError as AppInitError
 import Page.GameLoadFailed as GameLoadFailed
 import Page.GamePage as GamePage
 import Page.GameReplay as GameReplay
+import Page.Home as Home
 import Page.JoinLobby as JoinLobby
 import Page.LobbyLoadFailed as LobbyLoadFailed
 import Page.LobbyPage as LobbyPage
@@ -73,6 +74,7 @@ import View.LoadingBar as LoadingBar
 type Page
     = AppInitError Decode.Error
     | StartingApp Shared.Model
+    | Home Shared.Model
     | NewLobby NewLobby.Model
     | LoadingLobby Shared.Model LobbyId
     | LobbyLoadFailed LobbyId LobbyLoadFailed.Model
@@ -198,6 +200,9 @@ getShared page =
         StartingApp shared ->
             Just shared
 
+        Home shared ->
+            Just shared
+
         NewLobby model ->
             Just model.shared
 
@@ -261,6 +266,9 @@ setShared shared page =
 
         StartingApp _ ->
             StartingApp shared
+
+        Home _ ->
+            Home shared
 
         NewLobby model ->
             NewLobby (NewLobby.setShared shared model)
@@ -361,6 +369,9 @@ handleRoute shared route page =
             , MapEditor.load
                 |> E.request MapEditorResponseReceived
             )
+
+        Just Route.Home ->
+            ( Home shared, E.none )
 
         Just Route.NewLobby ->
             ( NewLobby (NewLobby.init shared), E.none )
@@ -467,7 +478,7 @@ update msg page =
             ( page, E.none )
 
         ReturnHomeButtonClicked ->
-            ( page, E.navigate Route.NewLobby )
+            ( page, E.navigate Route.Home )
 
         LinkClicked request ->
             case request of
@@ -680,6 +691,9 @@ shell page =
                 StartingApp _ ->
                     []
 
+                Home _ ->
+                    Home.view
+
                 NewLobby model ->
                     List.map (H.map NewLobbyMsg) (NewLobby.view model)
 
@@ -819,7 +833,7 @@ loadFailure route error =
             ]
             [ H.text "logged games" ]
         , H.a
-            [ A.href (Route.toString Route.NewLobby)
+            [ A.href (Route.toString Route.Home)
             , A.css [ S.link ]
             ]
             [ H.text "home" ]

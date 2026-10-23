@@ -51,8 +51,8 @@ Each startup generates a fresh random seed and saves it in a private
 `game-logs/server-start-*.json` record. Set `FIGHTLINES_SEED` only to reproduce a
 specific seed for debugging; see [deployment](DEPLOYMENT.md#game-archives).
 
-Open http://127.0.0.1:8080, enter your user name and a lobby name, and choose
-**Create lobby**.
+Open http://127.0.0.1:8080 for the logo home page and choose **play**.
+On `/new`, enter your user name and a lobby name, and choose **Create lobby**.
 The lobby has setup controls in the left card and two numbered player slots in
 the right card; the cards stack on narrow screens. Each player can choose
 **your side**: **player 1 (red)** or **player 2 (blue)**. Choosing the other side
@@ -177,7 +177,7 @@ movement or boarding removes it, leaving no trench behind; a move blocked before
 departure preserves it. Infantry cannot dig on their unloading turn.
 
 Tanks and trucks start with 128/128 fuel. Each
-successfully traversed tile costs tanks 8 fuel. Trucks spend 2 fuel plus 2 per occupied
+successfully traversed tile costs tanks 7 fuel. Trucks spend 2 fuel plus 2 per occupied
 cargo slot (passenger, supply crate, or fuel drum) at departure, independently of
 terrain movement costs. Interrupted routes pay only for successfully traveled tiles; holds consume none.
 Neutral fuel depots refill living tanks and trucks at turn end from finite stocks. Movement previews and submitted paths must fit both remaining
@@ -261,12 +261,12 @@ sight. When a visible enemy moves into fog, it moves toward the edge of its last
 visible square and fades out; its hidden destination and remaining route stay concealed.
 Hidden positions and route segments are withheld from responses.
 
-Infantry start with 192/192 supplies; field guns start with 196/196; tanks and trucks
-start with 128/128. Every unit spends 4 supplies per resolved turn, even when holding or stopped
-by an encounter. Infantry spend 12 supplies per plain tile and 16 per hill, forest, or mountain tile;
+Infantry start with 192/192 supplies; field guns start with 196/196; tanks start
+with 128/128; trucks start with 96/96. Every unit spends 4 supplies per resolved turn, even when holding or stopped
+by an encounter. Infantry spend 9 supplies per plain or beach tile and 13 per hill, forest, or mountain tile;
 field guns spend 24 supplies per tile. Tanks and trucks use fuel
 for movement and spend no movement supplies. Movement reserves the turn's upkeep before spending
-supplies. Infantry need at least 16 supplies for a plain tile or 20 for hills, forest, or mountains; field guns need at least 28. Tank movement needs enough fuel but no additional supplies beyond upkeep.
+supplies. Infantry need at least 13 supplies for a plain or beach tile or 17 for hills, forest, or mountains; field guns need at least 28. Tank movement needs enough fuel but no additional supplies beyond upkeep.
 Units below these thresholds can still hold.
 Units die immediately when supplies reach zero after turn upkeep. A dead truck
 also loses its passengers. During playback, a skull and crossbones appears for 0.6 seconds, blinks away
@@ -293,9 +293,13 @@ buttons for the available loads. The depot stock appears above the choices;
 quantities and two cargo fill bars sit below each numbered button. Partial
 loads fill only part of a bar. Unavailable counts are omitted.
 Choosing none or dismissing the dialog keeps the move without loading. Holding on
-a depot also offers this choice. Trucks collect a neutral ground crate automatically
-when ending on its square with a free cargo berth; either player can collect it,
-and its remaining stock is preserved. Full trucks leave the crate on the ground.
+a depot also offers this choice. Trucks with no free cargo berths skip the loading
+dialog and keep their saved orders. Saving a truck move or hold on visible ground
+freight with a free cargo berth opens a **pick up supply crate** or **pick up fuel drums**
+dialog. Choose **pick up** to collect it when the turn resolves, or **leave on ground**
+to keep the route without collecting it. Escape also leaves it on the ground.
+Either player can collect neutral freight, and its remaining stock is preserved.
+Full trucks leave the freight on the ground.
 Loading is always explicit and shares cargo capacity with passengers. Each
 crate takes up to 256 supplies from the depot; the last crate may be partially
 filled. Moving or holding a loaded truck opens the shared **unload** checklist.
@@ -354,7 +358,10 @@ Escape or **keep planning** returns to planning.
 Give units a move, ambush, or **hold position** order. **submit turn**
 becomes primary when all units are ready. Submitting with unassigned units opens
 a warning: choose **keep planning** or **submit anyway**, which makes those
-units hold position. Submission locks your orders, and that
+units hold position. Check **skip this dialog** to remember the preference in this
+browser; future submissions let unassigned units hold without showing the warning.
+Checking the box still leaves the current turn waiting for **submit anyway**.
+Submission locks your orders, and that
 waiting state survives refresh. Once both players submit, the server moves the
 units and advances the turn. Units advance by whole squares on a shared timeline:
 arrival time is accumulated terrain movement cost divided by the unit's full

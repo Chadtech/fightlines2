@@ -1,4 +1,7 @@
-module Game.View.Cargo exposing (toHtml)
+module Game.View.Cargo exposing
+    ( pickupPreview
+    , toHtml
+    )
 
 import Css
 import Css.Global
@@ -13,6 +16,28 @@ import Style as S
 import Util.List as ListUtil
 import View.Aria as Aria
 import View.InfoMarker as InfoMarker
+
+
+{-| Show the available ground load using the same inset freight row as carried cargo.
+-}
+pickupPreview : Supply.CargoStock -> Html msg
+pickupPreview stock =
+    H.ul
+        [ Aria.label "freight available for pickup"
+        , A.css
+            [ S.bgNightwood3
+            , S.indentStrong
+            , S.listStyleNone
+            , Css.margin Css.zero
+            , Css.padding Css.zero
+            ]
+        ]
+        [ freightToHtml
+            { number = 1
+            , unload = Nothing
+            }
+            stock
+        ]
 
 
 toHtml :

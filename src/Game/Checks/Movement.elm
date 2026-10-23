@@ -7,7 +7,7 @@ import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as MapTheme
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing
-import Api.Enum.Terrain as Terrain
+import Api.Enum.Terrain as Terrain exposing (Terrain)
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Map as Map exposing (Map)
@@ -766,9 +766,9 @@ fuelChecks rules =
                                 }
                             , fuel =
                                 Just
-                                    { current = 20
+                                    { current = 14
                                     , maximum = 128
-                                    , movementPerTile = 8
+                                    , movementPerTile = 7
                                     , movementPerCargoSlot = 0
                                     }
                             }
@@ -789,7 +789,7 @@ fuelChecks rules =
                 emptyUnit : Unit.Unit
                 emptyUnit =
                     unit
-                        |> Unit.setResources (Maybe.map (\resources -> { resources | fuel = Just { current = 0, maximum = 128, movementPerTile = 8, movementPerCargoSlot = 0 } }) unit.resources)
+                        |> Unit.setResources (Maybe.map (\resources -> { resources | fuel = Just { current = 0, maximum = 128, movementPerTile = 7, movementPerCargoSlot = 0 } }) unit.resources)
 
                 traced : Maybe Movement.Option
                 traced =
@@ -857,7 +857,7 @@ fuelChecks rules =
                         map
                         units
                         (unit
-                            |> Unit.setResources (Maybe.map (\resources -> { resources | fuel = Just { current = 128, maximum = 128, movementPerTile = 8, movementPerCargoSlot = 0 } }) unit.resources)
+                            |> Unit.setResources (Maybe.map (\resources -> { resources | fuel = Just { current = 128, maximum = 128, movementPerTile = 7, movementPerCargoSlot = 0 } }) unit.resources)
                         )
                         |> List.all (\option -> option.cost <= 12)
                     )
@@ -960,6 +960,14 @@ supplyChecks rules =
                 roughTrace =
                     Movement.trace rules roughMap [ infantry ] infantry (Movement.start { x = 0, y = 0 }) { x = 1, y = 0 }
 
+                terrainSupplyCostMatches : ( Terrain, Int ) -> Bool
+                terrainSupplyCostMatches ( terrain, expected ) =
+                    Movement.supplyCost
+                        { map | baseTile = terrain }
+                        { supplies | movementPerTile = 9, roughTerrainSurcharge = 4 }
+                        [ { x = 0, y = 0 }, { x = 1, y = 0 } ]
+                        == expected
+
                 test : String -> Bool -> List String
                 test name passed =
                     if passed then
@@ -995,6 +1003,16 @@ supplyChecks rules =
                     )
                 , test "terrain supplies restrict otherwise reachable routes" (Movement.options [] rules roughMap [ infantry ] infantry |> List.all (\option -> List.length option.path <= 2))
                 , test "terrain supply cost is paid on entered squares" (Movement.supplyCost roughMap { supplies | movementPerTile = 3, roughTerrainSurcharge = 1 } [ { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 2, y = 0 } ] == 8)
+                , test "infantry movement supply costs match each passable terrain"
+                    (List.all
+                        terrainSupplyCostMatches
+                        [ ( Terrain.Plain, 9 )
+                        , ( Terrain.Beach, 9 )
+                        , ( Terrain.Hills, 13 )
+                        , ( Terrain.Forest, 13 )
+                        , ( Terrain.Mountains, 13 )
+                        ]
+                    )
                 , test "rough terrain trace extensions reserve upkeep" (roughTrace |> Maybe.andThen (\path -> Movement.trace rules roughMap [ infantry ] infantry path { x = 2, y = 0 }) |> (==) Nothing)
                 ]
 

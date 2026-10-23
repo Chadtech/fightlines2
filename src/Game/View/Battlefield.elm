@@ -1166,17 +1166,17 @@ boardDepot filter depot =
 boardUnit : Unit -> SpriteFacing -> String -> Bool -> Int -> Int -> Svg Msg
 boardUnit unit facing transform ordered passengerCount column =
     let
-        crateCount : Int
-        crateCount =
+        freightCount : Int
+        freightCount =
             if unit.kind == UnitKind.Truck then
-                Unit.crateCount unit
+                Unit.freightCount unit
 
             else
                 0
 
         cargoCount : Int
         cargoCount =
-            passengerCount + crateCount
+            passengerCount + freightCount
 
         freight : List Supply.CargoStock
         freight =
@@ -1195,7 +1195,7 @@ boardUnit unit facing transform ordered passengerCount column =
                     ++ ", passengers: "
                     ++ String.fromInt passengerCount
                     ++ ", freight: "
-                    ++ String.fromInt crateCount
+                    ++ String.fromInt freightCount
 
             else
                 Unit.label unit

@@ -1,8 +1,8 @@
 module Game.Unit exposing
     ( Unit
     , carrierId
-    , crateCount
     , faceDirection
+    , freightCount
     , fuelMovementPerTile
     , isDying
     , label
@@ -200,7 +200,7 @@ fuelMovementPerTile units unit =
 
         occupiedSlots : Int
         occupiedSlots =
-            passengers + crateCount unit
+            passengers + freightCount unit
     in
     unit.resources
         |> Maybe.andThen .fuel
@@ -240,7 +240,7 @@ loadingTarget units mover destination =
 
                         occupiedBerths : Int
                         occupiedBerths =
-                            List.length passengers + crateCount truck
+                            List.length passengers + freightCount truck
                     in
                     (truck.kind == UnitKind.Truck)
                         && (occupiedBerths < truck.cargoCapacity)
@@ -312,8 +312,10 @@ faceDirection direction unit =
         |> setSpriteFacing (SpriteFacing.turn direction unit.spriteFacing)
 
 
-crateCount : Unit -> Int
-crateCount unit =
+{-| Count carried supply crates and fuel drums, excluding passengers.
+-}
+freightCount : Unit -> Int
+freightCount unit =
     unit.resources
         |> Maybe.map (.supplyCargo >> List.length)
         |> Maybe.withDefault 0

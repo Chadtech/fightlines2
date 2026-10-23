@@ -463,8 +463,20 @@ supplyCost map supplies path =
                 Terrain.Plain ->
                     supplies.movementPerTile
 
-                _ ->
+                Terrain.Beach ->
+                    supplies.movementPerTile
+
+                Terrain.Hills ->
                     supplies.movementPerTile + supplies.roughTerrainSurcharge
+
+                Terrain.Forest ->
+                    supplies.movementPerTile + supplies.roughTerrainSurcharge
+
+                Terrain.Mountains ->
+                    supplies.movementPerTile + supplies.roughTerrainSurcharge
+
+                Terrain.Water ->
+                    supplies.movementPerTile
     in
     path
         |> List.drop 1

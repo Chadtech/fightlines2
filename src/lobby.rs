@@ -385,6 +385,18 @@ struct ObservedBoard {
     last_resolution: Option<TurnResolution>,
 }
 
+/// Replay can use the player's historical observation or the authoritative record.
+pub enum ArchivedView {
+    Player(visibility::PlayerObservation),
+    Revealed(Option<TurnResolution>),
+}
+
+fn all_tiles(source: &Scenario) -> Vec<Coordinate> {
+    (0..source.map.height())
+        .flat_map(|y| (0..source.map.width()).map(move |x| Coordinate::new(x as u16, y as u16)))
+        .collect()
+}
+
 /// Shared terminal reveal and fog projection for live and recorded boards.
 fn observed_board(
     source: &Scenario,
@@ -393,9 +405,7 @@ fn observed_board(
     player_number: PlayerNumber,
 ) -> ObservedBoard {
     let (scenario, visible) = if outcome.is_some() {
-        let visible: Vec<Coordinate> = (0..source.map.height())
-            .flat_map(|y| (0..source.map.width()).map(move |x| Coordinate::new(x as u16, y as u16)))
-            .collect();
+        let visible = all_tiles(source);
         (source.clone(), visible)
     } else {
         let visible = visibility::visible_tiles(source, player_number);
@@ -430,7 +440,7 @@ impl GameSnapshot {
     pub fn archived(
         started: &GameStarted,
         source: &Scenario,
-        observation: visibility::PlayerObservation,
+        view: ArchivedView,
         outcome: Option<GameOutcome>,
         player: PlayerNumber,
         turn_number: i32,
@@ -439,7 +449,24 @@ impl GameSnapshot {
             scenario,
             visible: visible_tiles,
             last_resolution,
-        } = observed_board(source, &observation, outcome, player);
+        } = match view {
+            ArchivedView::Player(observation) => {
+                observed_board(source, &observation, outcome, player)
+            }
+            ArchivedView::Revealed(mut last_resolution) => {
+                let visible = all_tiles(source);
+                if let Some(resolution) = &mut last_resolution {
+                    for frame in &mut resolution.frames {
+                        frame.visible_tiles = visible.clone();
+                    }
+                }
+                ObservedBoard {
+                    scenario: source.clone(),
+                    visible,
+                    last_resolution,
+                }
+            }
+        };
         Self {
             turn_number,
             outcome,
@@ -988,6 +1015,7 @@ mod tests {
                             attack_move: None,
                             unloads: None,
                             load_crates: None,
+                            pickup_ground_freight: None,
                             crate_unloads: None,
                         })
                     })

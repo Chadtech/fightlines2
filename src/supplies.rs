@@ -69,6 +69,10 @@ pub enum SupplyOrder {
     #[default]
     None,
     LoadCrates(usize),
+    PickUpGroundFreight {
+        position: Coordinate,
+        kind: DepotKind,
+    },
     UnloadCrates(Vec<CrateUnload>),
 }
 
@@ -76,6 +80,7 @@ impl SupplyOrder {
     pub fn loading_count(&self) -> usize {
         match self {
             Self::LoadCrates(count) => *count,
+            Self::PickUpGroundFreight { .. } => 1,
             Self::None | Self::UnloadCrates(_) => 0,
         }
     }
@@ -148,20 +153,25 @@ pub fn resolve_orders(scenario: &mut Scenario, orders: &[(UnitId, SupplyOrder)],
         };
         let room = (scenario.units[index].cargo_capacity() as usize)
             .saturating_sub(occupied_berths(scenario, &scenario.units[index]));
-        // Ground crates are neutral freight. Preserve the remaining stock when
-        // a truck ends its movement on one, sharing berths with passengers.
+        // Only collect the requested resource at the actual arrival square.
+        // Freight stays neutral and keeps its remaining stock.
         if room > 0
-            && let Some(crate_index) = scenario
-                .supply_crates
-                .iter()
-                .position(|supply_crate| supply_crate.position == origin)
+            && let SupplyOrder::PickUpGroundFreight { position, kind } = order
+            && origin == position
+            && let Some(crate_index) = scenario.supply_crates.iter().position(|supply_crate| {
+                supply_crate.position == origin && supply_crate.stock.kind == kind
+            })
         {
             let supply_crate = scenario.supply_crates.remove(crate_index);
             scenario.units[index].supply_cargo.push(supply_crate.stock);
         }
-        let room = (scenario.units[index].cargo_capacity() as usize)
-            .saturating_sub(occupied_berths(scenario, &scenario.units[index]));
-        for _ in 0..order.loading_count().min(room) {
+        let depot_loads = match order {
+            SupplyOrder::LoadCrates(count) => count,
+            SupplyOrder::None
+            | SupplyOrder::PickUpGroundFreight { .. }
+            | SupplyOrder::UnloadCrates(_) => 0,
+        };
+        for _ in 0..depot_loads.min(room) {
             let Some(depot) = scenario
                 .depots
                 .iter_mut()
@@ -178,7 +188,9 @@ pub fn resolve_orders(scenario: &mut Scenario, orders: &[(UnitId, SupplyOrder)],
         // Remove from the highest slot first so input slots keep their identity.
         let mut unloads = match order {
             SupplyOrder::UnloadCrates(unloads) => unloads,
-            SupplyOrder::None | SupplyOrder::LoadCrates(_) => Vec::new(),
+            SupplyOrder::None
+            | SupplyOrder::LoadCrates(_)
+            | SupplyOrder::PickUpGroundFreight { .. } => Vec::new(),
         };
         unloads.sort_by_key(|unload| std::cmp::Reverse(unload.cargo_index));
         for unload in unloads {
@@ -390,7 +402,17 @@ mod tests {
             .first_mut()
             .fixture()?
             .move_to(Coordinate::new(3, 1));
-        resolve_orders(&mut board, &[(truck_id, SupplyOrder::None)], 3);
+        resolve_orders(
+            &mut board,
+            &[(
+                truck_id,
+                SupplyOrder::PickUpGroundFreight {
+                    position: Coordinate::new(3, 1),
+                    kind: DepotKind::Fuel,
+                },
+            )],
+            3,
+        );
         assert!(board.supply_crates.is_empty());
         assert_eq!(
             board
@@ -774,7 +796,7 @@ mod tests {
                 .supply_cargo
                 .is_empty()
         );
-        assert_eq!(board.depots.get_mut(0).fixture()?.stock.current, 715);
+        assert_eq!(board.depots.get_mut(0).fixture()?.stock.current, 747);
         Ok(())
     }
 
@@ -843,7 +865,17 @@ mod tests {
                 position,
                 stock: CargoStock::supply(23),
             });
-            resolve_orders(&mut board, &[(id, SupplyOrder::None)], 1);
+            resolve_orders(
+                &mut board,
+                &[(
+                    id,
+                    SupplyOrder::PickUpGroundFreight {
+                        position,
+                        kind: DepotKind::Supply,
+                    },
+                )],
+                1,
+            );
             assert!(board.supply_crates.is_empty());
             assert_eq!(
                 board
@@ -856,6 +888,38 @@ mod tests {
                     .current,
                 23
             );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn ground_pickup_requires_confirmation_matching_resource_and_arrival() -> TestResult<()> {
+        for kind in [DepotKind::Supply, DepotKind::Fuel] {
+            for action in [
+                SupplyOrder::None,
+                SupplyOrder::PickUpGroundFreight {
+                    position: Coordinate::new(3, 1),
+                    kind,
+                },
+                SupplyOrder::PickUpGroundFreight {
+                    position: Coordinate::new(2, 1),
+                    kind: match kind {
+                        DepotKind::Supply => DepotKind::Fuel,
+                        DepotKind::Fuel => DepotKind::Supply,
+                    },
+                },
+            ] {
+                let mut board = board()?;
+                board.units.retain(|unit| unit.id() == "4");
+                let id = board.units.first().fixture()?.unit_id();
+                board.supply_crates.push(GroundSupplyCrate {
+                    position: Coordinate::new(2, 1),
+                    stock: CargoStock::new(kind, 23),
+                });
+                resolve_orders(&mut board, &[(id, action)], 1);
+                assert_eq!(board.supply_crates.len(), 1);
+                assert!(board.units.first().fixture()?.supply_cargo.is_empty());
+            }
         }
         Ok(())
     }
@@ -875,7 +939,17 @@ mod tests {
             position,
             stock: CargoStock::supply(23),
         });
-        resolve_orders(&mut board, &[(id, SupplyOrder::None)], 1);
+        resolve_orders(
+            &mut board,
+            &[(
+                id,
+                SupplyOrder::PickUpGroundFreight {
+                    position,
+                    kind: DepotKind::Supply,
+                },
+            )],
+            1,
+        );
         assert_eq!(board.supply_crates.first().fixture()?.stock.current, 23);
         board
             .units

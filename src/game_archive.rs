@@ -2,7 +2,7 @@
 use crate::{
     game_log::{Archive, RecordedPlayer},
     graphql::Context,
-    lobby::{Controller, GameSnapshot},
+    lobby::{ArchivedView, Controller, GameSnapshot},
     map_type::MapType,
     scenario::PlayerNumber,
     turns::GameOutcome,
@@ -238,13 +238,18 @@ pub fn turn(
     id: String,
     turn_number: i32,
     player: PlayerNumber,
+    fog_of_war: bool,
 ) -> FieldResult<GameSnapshot> {
     let browser = context.archives.browser()?;
     let archive = ArchiveId::parse(id)?.read(browser)?;
     if turn_number < 0 || turn_number > archive.turn_count() {
         return Err("this logged turn does not exist".into());
     }
-    let mut observation = PlayerObservation::new(&archive.started.scenario, player);
+    let mut view = if fog_of_war {
+        ArchivedView::Player(PlayerObservation::new(&archive.started.scenario, player))
+    } else {
+        ArchivedView::Revealed(None)
+    };
     let mut scenario = &archive.started.scenario;
     let mut outcome = None;
     for submission in &archive.submissions {
@@ -252,7 +257,14 @@ pub fn turn(
             if resolution.turn_number > turn_number {
                 break;
             }
-            observation.resolve(&submission.scenario, player, resolution);
+            match &mut view {
+                ArchivedView::Player(observation) => {
+                    observation.resolve(&submission.scenario, player, resolution);
+                }
+                ArchivedView::Revealed(last_resolution) => {
+                    *last_resolution = Some(resolution.clone());
+                }
+            }
             scenario = &submission.scenario;
             outcome = submission.outcome;
         }
@@ -260,7 +272,7 @@ pub fn turn(
     Ok(GameSnapshot::archived(
         &archive.started,
         scenario,
-        observation,
+        view,
         outcome,
         player,
         turn_number + 1,
@@ -378,7 +390,7 @@ mod tests {
         let mut scenario = MapDefinition::parse(r#"{
             "width": 7, "height": 3, "theme": "GreenForest",
             "features": [{"position": {"x": 4, "y": 1}, "terrain": "Forest"}],
-            "depots": [], "units": [
+            "depots": [{"position":{"x":6,"y":1},"kind":"Supply"}], "units": [
                 {"id":1,"position":{"x":0,"y":1},"playerNumber":"Player1","kind":"Infantry","direction":"East"},
                 {"id":2,"position":{"x":4,"y":1},"playerNumber":"Player2","kind":"Infantry","direction":"West"}
             ]
@@ -474,14 +486,19 @@ mod tests {
                 "<html>archive replay</html>"
             );
         }
-        for (turn, player, expected_units) in [
-            (0, "PLAYER1", 1),
-            (0, "PLAYER2", 1),
-            (1, "PLAYER1", 1),
-            (1, "PLAYER2", 1),
+        for (turn, player, fog_argument, expected_units) in [
+            (0, "PLAYER1", "", 1),
+            (0, "PLAYER2", "", 1),
+            (1, "PLAYER1", "", 1),
+            (1, "PLAYER2", "", 1),
+            (0, "PLAYER1", ", fogOfWar: false", 2),
+            (0, "PLAYER2", ", fogOfWar: false", 2),
+            (1, "PLAYER1", ", fogOfWar: false", 2),
+            (1, "PLAYER2", ", fogOfWar: false", 2),
+            (1, "PLAYER1", ", fogOfWar: true", 1),
         ] {
             let query = format!(
-                r#"{{ loggedGames {{ __typename ... on LoggedGame {{ id name mapType startedAt players {{ name playerNumber controller }} turnCount status {{ kind winner }} }} ... on ArchiveReadError {{ id message }} }} loggedTurn(id: "{id}", turnNumber: {turn}, playerNumber: {player}) {{ isMember submitted players {{ name playerNumber isAi controller }} scenario {{ units {{ id }} }} lastResolution {{ turnNumber frames {{ units {{ id }} }} }} }} }}"#
+                r#"{{ loggedGames {{ __typename ... on LoggedGame {{ id name mapType startedAt players {{ name playerNumber controller }} turnCount status {{ kind winner }} }} ... on ArchiveReadError {{ id message }} }} loggedTurn(id: "{id}", turnNumber: {turn}, playerNumber: {player}{fog_argument}) {{ isMember submitted players {{ name playerNumber isAi controller }} visibleTiles {{ x y }} scenario {{ units {{ id resources {{ supplies {{ current }} }} }} depots {{ stock {{ current }} }} }} lastResolution {{ turnNumber frames {{ visibleTiles {{ x y }} units {{ id }} depots {{ stock {{ current }} }} }} }} }} }}"#
             );
             let request = test::TestRequest::post()
                 .uri("/graphql")
@@ -533,6 +550,17 @@ mod tests {
                     .len(),
                 expected_units
             );
+            let revealed = expected_units == 2;
+            let visible_tiles = result["data"]["loggedTurn"]["visibleTiles"]
+                .as_array()
+                .fixture()?;
+            assert_eq!(visible_tiles.len() == 21, revealed);
+            let units = result["data"]["loggedTurn"]["scenario"]["units"]
+                .as_array()
+                .fixture()?;
+            assert!(units.iter().all(|unit| !unit["resources"].is_null()));
+            let stock = &result["data"]["loggedTurn"]["scenario"]["depots"][0]["stock"];
+            assert_eq!(stock.is_null(), !revealed && player == "PLAYER1");
             if turn == 1 {
                 let frames = result["data"]["loggedTurn"]["lastResolution"]["frames"]
                     .as_array()
@@ -541,7 +569,15 @@ mod tests {
                 assert!(frames.iter().all(|frame| {
                     frame["units"]
                         .as_array()
-                        .is_some_and(|units| units.len() == 1)
+                        .is_some_and(|units| units.len() == expected_units)
+                }));
+                assert!(frames.iter().all(|frame| {
+                    frame["visibleTiles"]
+                        .as_array()
+                        .is_some_and(|tiles| (tiles.len() == 21) == revealed)
+                }));
+                assert!(frames.iter().all(|frame| {
+                    frame["depots"][0]["stock"].is_null() == (!revealed && player == "PLAYER1")
                 }));
             }
         }

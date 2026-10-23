@@ -299,7 +299,7 @@ view model =
                     ]
                 ]
                 [ H.a
-                    [ A.href (Route.toString Route.NewLobby)
+                    [ A.href (Route.toString Route.Home)
                     , A.css [ S.link ]
                     ]
                     [ H.text "home" ]

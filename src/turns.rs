@@ -3,8 +3,8 @@ use crate::{
     map::Coordinate,
     movement, movement_resolution,
     scenario::{
-        Depot, Direction, Entrenchment, PlayerNumber, ResourceSettlement, Scenario, SpriteFacing,
-        Unit, UnitId, UnitKind,
+        Depot, DepotKind, Direction, Entrenchment, PlayerNumber, ResourceSettlement, Scenario,
+        SpriteFacing, Unit, UnitId, UnitKind,
     },
     supplies::{self, CrateUnload, GroundSupplyCrate, SupplyOrder},
 };
@@ -38,6 +38,8 @@ pub struct MoveOrderInput {
     /// Passenger destinations after this truck moves.
     pub(crate) unloads: Option<Vec<UnloadOrderInput>>,
     pub(crate) load_crates: Option<i32>,
+    /// Collect one ground load of this resource at the planned destination.
+    pub(crate) pickup_ground_freight: Option<DepotKind>,
     pub(crate) crate_unloads: Option<Vec<CrateUnloadInput>>,
 }
 
@@ -790,7 +792,8 @@ pub fn validate(
         let load_crates = usize::try_from(input.load_crates.unwrap_or_default())
             .map_err(|_| "crate count cannot be negative.")?;
         let crate_inputs = input.crate_unloads.unwrap_or_default();
-        let supply_action = load_crates > 0 || !crate_inputs.is_empty();
+        let supply_action =
+            load_crates > 0 || !crate_inputs.is_empty() || input.pickup_ground_freight.is_some();
         if supply_action
             && (unit.kind() != UnitKind::Truck
                 || unit.carrier_id().is_some()
@@ -803,6 +806,23 @@ pub fn validate(
         }
         if load_crates > 0 && !crate_inputs.is_empty() {
             return Err("choose loading or unloading crates for this turn.");
+        }
+        if let Some(kind) = input.pickup_ground_freight {
+            if load_crates > 0 || !crate_inputs.is_empty() {
+                return Err(
+                    "ground pickup cannot combine with depot loading or freight unloading.",
+                );
+            }
+            if supplies::occupied_berths(scenario, unit) >= unit.cargo_capacity() as usize {
+                return Err("the truck has no room for ground freight.");
+            }
+            if !planning_scenario
+                .supply_crates
+                .iter()
+                .any(|freight| freight.position == destination && freight.stock.kind == kind)
+            {
+                return Err("ground pickup requires matching visible freight at the destination.");
+            }
         }
         if load_crates > 0 {
             if load_crates + supplies::occupied_berths(scenario, unit)
@@ -852,7 +872,12 @@ pub fn validate(
             });
         }
         orders.push(MoveOrder {
-            supply: if load_crates > 0 {
+            supply: if let Some(kind) = input.pickup_ground_freight {
+                SupplyOrder::PickUpGroundFreight {
+                    position: destination,
+                    kind,
+                }
+            } else if load_crates > 0 {
                 SupplyOrder::LoadCrates(load_crates)
             } else if !crate_unloads.is_empty() {
                 SupplyOrder::UnloadCrates(crate_unloads)
@@ -1839,6 +1864,7 @@ mod tests {
                         unit_id: unit.id(),
                         unloads: None,
                         load_crates: None,
+                        pickup_ground_freight: None,
                         crate_unloads: None,
                         path: vec![CoordinateInput {
                             x: position.x(),
@@ -2095,7 +2121,7 @@ mod tests {
 
     #[test]
     fn attack_move_charges_readiness_each_turn_without_an_encounter() -> TestResult<()> {
-        for (attacker_id, movement_cost) in [("1", 3), ("11", 0)] {
+        for (attacker_id, movement_cost) in [("1", 9), ("11", 0)] {
             let mut scenario = Scenario::supply_point().fixture()?;
             scenario.map = Map::from_ascii(".....").fixture()?;
             scenario.depots.clear();
@@ -2132,7 +2158,7 @@ mod tests {
                     .fixture()?;
                 assert_eq!(
                     attacker.supplies().current(),
-                    128 - turn * (4 + 8 + movement_cost * 4)
+                    128 - turn * (4 + 8 + movement_cost)
                 );
                 assert!(
                     turns
@@ -2151,7 +2177,7 @@ mod tests {
                     .iter()
                     .find(|report| report.player_number == PlayerNumber::Player1)
                     .fixture()?;
-                assert_eq!(report.supplies_consumed, 4 + 8 + movement_cost * 4);
+                assert_eq!(report.supplies_consumed, 4 + 8 + movement_cost);
                 let defender = scenario
                     .units
                     .iter()
@@ -2232,7 +2258,7 @@ mod tests {
         let mut low_supplies = scenario.clone();
         low_supplies.units[0].spend_supplies(156);
         assert!(validate(&low_supplies, PlayerNumber::Player1, attack(&low_supplies)?).is_err());
-        for (sketch, required) in [("....", 48), (".%%.", 56), (".##.", 56)] {
+        for (sketch, required) in [("....", 42), (".%%.", 50), (".##.", 50)] {
             let mut terrain_scenario = scenario.clone();
             terrain_scenario.map = Map::from_ascii(sketch).fixture()?;
             terrain_scenario.units[0].set_supplies_for_test(required - 1);
@@ -2273,7 +2299,7 @@ mod tests {
                 .find(|unit| unit.id() == "6")
                 .fixture()?;
             assert_eq!(attacker.board_position(), Some(Coordinate::new(1, 0)));
-            assert_eq!(attacker.supplies().current(), 156);
+            assert_eq!(attacker.supplies().current(), 159);
             assert_eq!(target.hit_points().current(), 5);
             assert_eq!(target.supplies().current(), 188);
             assert_eq!(
@@ -2780,7 +2806,7 @@ mod tests {
             .fixture()?;
         assert_eq!(passenger.board_position(), Some(Coordinate::new(8, 8)));
         assert_eq!(passenger.hit_points().current(), 1);
-        assert_eq!(passenger.supplies().current(), 176);
+        assert_eq!(passenger.supplies().current(), 179);
         let gun = scenario
             .units
             .iter()
@@ -3231,8 +3257,8 @@ mod tests {
                 Coordinate::new(2, 7)
             );
         }
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 176);
-        assert_eq!(vehicle(&mut scenario, "2")?.supplies().current(), 164);
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 179);
+        assert_eq!(vehicle(&mut scenario, "2")?.supplies().current(), 170);
         assert_eq!(
             turns
                 .last_resolution
@@ -3261,7 +3287,7 @@ mod tests {
                 Coordinate::new(1, 8)
             );
         }
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 172);
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 175);
         assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 116);
         let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
         set_path(&mut player1, "1", &[(1, 8), (0, 8)])?;
@@ -3293,7 +3319,7 @@ mod tests {
                 .fixture()?,
             Coordinate::new(1, 7)
         );
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 156);
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 162);
 
         Ok(())
     }
@@ -3349,9 +3375,9 @@ mod tests {
             );
             assert_eq!(infantry.carrier_id(), None);
             let expected = 192
-                - 12
+                - 9
                 - 4
-                - if moving { 24 } else { 0 }
+                - if moving { 18 } else { 0 }
                 - if action == "hold" || action == "move" {
                     0
                 } else {
@@ -3554,7 +3580,7 @@ mod tests {
             vehicle(&mut scenario, "2")?.board_position(),
             Some(Coordinate::new(0, 9))
         );
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 176);
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 179);
         Ok(())
     }
 
@@ -3582,7 +3608,7 @@ mod tests {
             let infantry_id = infantry.unit_id();
             assert_eq!(infantry.board_position(), Some(Coordinate::new(0, 9)));
             assert_eq!(infantry.carrier_id(), None);
-            assert_eq!(infantry.supplies().current(), 164);
+            assert_eq!(infantry.supplies().current(), 170);
             assert_eq!(
                 vehicle(&mut scenario, "5")?.board_position(),
                 Some(Coordinate::new(0, 10))
@@ -3626,7 +3652,7 @@ mod tests {
             Some(Coordinate::new(0, 8))
         );
         assert_eq!(vehicle(&mut scenario, "2")?.carrier_id(), Some(truck));
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 176);
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 179);
         assert_eq!(vehicle(&mut scenario, "2")?.supplies().current(), 188);
         let events = &turns.last_resolution.as_ref().fixture()?.events;
         let movement_index = events
@@ -3953,13 +3979,11 @@ mod tests {
         scenario.depots.clear();
         let mut turns = Turns::default();
         for unit in &mut scenario.units {
-            let supplies = if unit.kind() == UnitKind::Infantry || unit.kind() == UnitKind::FieldGun
-            {
-                28
-            } else if unit.kind() == UnitKind::Tank {
-                20
-            } else {
-                12
+            let supplies = match unit.kind() {
+                UnitKind::Infantry => 22,
+                UnitKind::FieldGun => 28,
+                UnitKind::Tank => 20,
+                UnitKind::Truck => 12,
             };
             unit.set_supplies_for_test(supplies);
         }
@@ -3976,12 +4000,11 @@ mod tests {
             .submit(&mut scenario, PlayerNumber::Player1, number, vec![])
             .fixture()?;
         assert!(scenario.units.iter().all(|unit| unit.supplies().current()
-            == if unit.kind() == UnitKind::Infantry || unit.kind() == UnitKind::FieldGun {
-                28
-            } else if unit.kind() == UnitKind::Tank {
-                20
-            } else {
-                12
+            == match unit.kind() {
+                UnitKind::Infantry => 22,
+                UnitKind::FieldGun => 28,
+                UnitKind::Tank => 20,
+                UnitKind::Truck => 12,
             }));
         let player2 = holds(&scenario, PlayerNumber::Player2)?;
         turns
@@ -4023,14 +4046,14 @@ mod tests {
                 .all(|frame| !frame.units.iter().any(|unit| unit.id() == "6"))
         );
         for id in ["2", "6"] {
-            assert_eq!(vehicle(&mut scenario, id)?.supplies().current(), 24);
+            assert_eq!(vehicle(&mut scenario, id)?.supplies().current(), 18);
         }
         // The gun spends 24 walking supplies and 4 upkeep, exhausting its 28.
         assert!(!scenario.units.iter().any(|unit| unit.id() == "13"));
         assert_eq!(vehicle(&mut scenario, "4")?.supplies().current(), 8);
         assert_eq!(vehicle(&mut scenario, "11")?.supplies().current(), 16);
         assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 126);
-        assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 120);
+        assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 121);
 
         Ok(())
     }
@@ -4054,7 +4077,7 @@ mod tests {
         let tank = vehicle(&mut scenario, "11")?;
         assert_eq!(tank.board_position(), Some(Coordinate::new(5, 8)));
         assert_eq!(tank.supplies().current(), 1);
-        assert_eq!(tank.fuel().fixture()?.current, 120);
+        assert_eq!(tank.fuel().fixture()?.current, 121);
 
         Ok(())
     }
@@ -4109,15 +4132,15 @@ mod tests {
         let mut turns = Turns::default();
         resolve_holds(&mut scenario, &mut turns)?;
         for id in ["4", "5", "9"] {
-            assert_eq!(vehicle(&mut scenario, id)?.supplies().current(), 124);
+            assert_eq!(vehicle(&mut scenario, id)?.supplies().current(), 92);
         }
         vehicle(&mut scenario, "4")?.move_to(Coordinate::new(2, 8));
         vehicle(&mut scenario, "9")?.move_to(Coordinate::new(14, 8));
         resolve_holds(&mut scenario, &mut turns)?;
         for id in ["4", "9"] {
-            assert_eq!(vehicle(&mut scenario, id)?.supplies().current(), 124);
+            assert_eq!(vehicle(&mut scenario, id)?.supplies().current(), 92);
         }
-        assert_eq!(vehicle(&mut scenario, "5")?.supplies().current(), 124);
+        assert_eq!(vehicle(&mut scenario, "5")?.supplies().current(), 92);
 
         Ok(())
     }
@@ -4137,8 +4160,8 @@ mod tests {
         turns
             .submit(&mut scenario, PlayerNumber::Player2, 1, player2)
             .fixture()?;
-        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 176);
-        assert_eq!(vehicle(&mut scenario, "6")?.supplies().current(), 176);
+        assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 179);
+        assert_eq!(vehicle(&mut scenario, "6")?.supplies().current(), 179);
         assert_eq!(
             scenario
                 .physical_position(
@@ -4202,7 +4225,7 @@ mod tests {
                 vehicle(&mut scenario, "11")?.board_position(),
                 Some(Coordinate::new(1, 0))
             );
-            assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 120);
+            assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 121);
             assert_eq!(
                 vehicle(&mut scenario, "6")?.board_position(),
                 Some(Coordinate::new(2, 0))
@@ -4418,7 +4441,7 @@ mod tests {
     #[test]
     fn tank_paths_must_fit_remaining_fuel_even_with_movement_points_left() -> TestResult<()> {
         let mut scenario = Scenario::supply_point().fixture()?;
-        for _ in 0..7 {
+        for _ in 0..8 {
             vehicle(&mut scenario, "11")?.follow_path(
                 &[
                     Coordinate::new(4, 8),
@@ -4449,7 +4472,7 @@ mod tests {
         turns
             .submit(&mut scenario, PlayerNumber::Player2, 1, player2)
             .fixture()?;
-        assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 0);
+        assert_eq!(vehicle(&mut scenario, "11")?.fuel().fixture()?.current, 2);
         assert_eq!(
             scenario
                 .physical_position(
@@ -4574,7 +4597,7 @@ mod tests {
             let unit = vehicle(&mut scenario, id)?;
             assert_eq!(unit.board_position(), Some(position));
             assert_eq!(unit.fuel().fixture()?.current, 126);
-            assert_eq!(unit.supplies().current(), 124);
+            assert_eq!(unit.supplies().current(), 92);
         }
 
         Ok(())
@@ -4698,8 +4721,8 @@ mod tests {
                 Some(Coordinate::new(2, 0))
             );
             assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 122);
-            assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 164);
-            assert_eq!(vehicle(&mut scenario, "2")?.supplies().current(), 176);
+            assert_eq!(vehicle(&mut scenario, "1")?.supplies().current(), 170);
+            assert_eq!(vehicle(&mut scenario, "2")?.supplies().current(), 179);
             assert_eq!(
                 turns
                     .last_resolution
@@ -5153,8 +5176,8 @@ mod tests {
         );
         for (unit, original) in scenario.units.iter().zip(&initial.units) {
             let (position, supplies) = match unit.id().as_str() {
-                "1" => (Coordinate::new(3, 6), 176),
-                "6" => (Coordinate::new(4, 6), 176),
+                "1" => (Coordinate::new(3, 6), 179),
+                "6" => (Coordinate::new(4, 6), 179),
                 _ => (
                     original.board_position().fixture()?,
                     original.supplies().current() - 4,
@@ -5334,26 +5357,106 @@ mod tests {
     }
 
     #[test]
-    fn truck_moves_onto_ground_crate_and_collects_it_during_resolution() -> TestResult<()> {
+    fn truck_collects_ground_freight_only_when_requested() -> TestResult<()> {
+        for kind in [DepotKind::Supply, DepotKind::Fuel] {
+            for pickup in [None, Some(kind)] {
+                let mut scenario = Scenario::supply_point().fixture()?;
+                scenario.units.retain(|unit| {
+                    unit.id() == "4" || unit.player_number() == PlayerNumber::Player2
+                });
+                vehicle(&mut scenario, "4")?.move_to(Coordinate::new(3, 8));
+                let expected_stock = match kind {
+                    DepotKind::Supply => 23,
+                    DepotKind::Fuel => 23 - vehicle(&mut scenario, "4")?.fuel_movement_per_tile(0),
+                };
+                scenario.supply_crates.push(GroundSupplyCrate {
+                    position: Coordinate::new(4, 8),
+                    stock: supplies::CargoStock::new(kind, 23),
+                });
+                let mut first = holds(&scenario, PlayerNumber::Player1)?;
+                set_path(&mut first, "4", &[(3, 8), (4, 8)])?;
+                first
+                    .iter_mut()
+                    .find(|order| order.unit_id == "4")
+                    .fixture()?
+                    .pickup_ground_freight = pickup;
+                let second = holds(&scenario, PlayerNumber::Player2)?;
+                let mut turns = Turns::default();
+                turns.submit(&mut scenario, PlayerNumber::Player1, 1, first)?;
+                turns.submit(&mut scenario, PlayerNumber::Player2, 1, second)?;
+                let truck = vehicle(&mut scenario, "4")?;
+                assert_eq!(truck.board_position(), Some(Coordinate::new(4, 8)));
+                if pickup.is_some() {
+                    assert_eq!(
+                        truck.supply_cargo.first().fixture()?.current,
+                        expected_stock
+                    );
+                    assert_eq!(truck.supply_cargo.first().fixture()?.kind, kind);
+                    assert!(scenario.supply_crates.is_empty());
+                } else {
+                    assert!(truck.supply_cargo.is_empty());
+                    assert_eq!(scenario.supply_crates.len(), 1);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn ground_pickup_validates_resource_capacity_and_exclusive_freight_handling() -> TestResult<()>
+    {
         let mut scenario = Scenario::supply_point().fixture()?;
-        scenario
-            .units
-            .retain(|unit| unit.id() == "4" || unit.player_number() == PlayerNumber::Player2);
+        scenario.units.retain(|unit| {
+            unit.id() == "1" || unit.id() == "4" || unit.player_number() == PlayerNumber::Player2
+        });
         vehicle(&mut scenario, "4")?.move_to(Coordinate::new(3, 8));
         scenario.supply_crates.push(GroundSupplyCrate {
-            position: Coordinate::new(4, 8),
+            position: Coordinate::new(3, 8),
             stock: supplies::CargoStock::new(DepotKind::Supply, 23),
         });
-        let mut first = holds(&scenario, PlayerNumber::Player1)?;
-        set_path(&mut first, "4", &[(3, 8), (4, 8)])?;
-        let second = holds(&scenario, PlayerNumber::Player2)?;
-        let mut turns = Turns::default();
-        turns.submit(&mut scenario, PlayerNumber::Player1, 1, first)?;
-        turns.submit(&mut scenario, PlayerNumber::Player2, 1, second)?;
-        assert!(scenario.supply_crates.is_empty());
-        let truck = vehicle(&mut scenario, "4")?;
-        assert_eq!(truck.board_position(), Some(Coordinate::new(4, 8)));
-        assert_eq!(truck.supply_cargo.first().fixture()?.current, 23);
+        let mut own = holds(&scenario, PlayerNumber::Player1)?;
+        let truck_order = own
+            .iter_mut()
+            .find(|order| order.unit_id == "4")
+            .fixture()?;
+        truck_order.pickup_ground_freight = Some(DepotKind::Fuel);
+        assert!(validate(&scenario, PlayerNumber::Player1, own.clone()).is_err());
+        own.iter_mut()
+            .find(|order| order.unit_id == "4")
+            .fixture()?
+            .pickup_ground_freight = Some(DepotKind::Supply);
+        validate(&scenario, PlayerNumber::Player1, own.clone()).fixture()?;
+        own.iter_mut()
+            .find(|order| order.unit_id == "4")
+            .fixture()?
+            .load_crates = Some(1);
+        assert!(validate(&scenario, PlayerNumber::Player1, own.clone()).is_err());
+        own.iter_mut()
+            .find(|order| order.unit_id == "4")
+            .fixture()?
+            .load_crates = None;
+        vehicle(&mut scenario, "4")?.supply_cargo =
+            vec![supplies::CargoStock::new(DepotKind::Supply, 20)];
+        let truck_order = own
+            .iter_mut()
+            .find(|order| order.unit_id == "4")
+            .fixture()?;
+        truck_order.crate_unloads = Some(vec![CrateUnloadInput {
+            cargo_index: 0,
+            destination: CoordinateInput { x: 2, y: 8 },
+        }]);
+        assert!(validate(&scenario, PlayerNumber::Player1, own.clone()).is_err());
+        own.iter_mut()
+            .find(|order| order.unit_id == "4")
+            .fixture()?
+            .crate_unloads = None;
+        set_path(&mut own, "1", &[(3, 7), (3, 8)])?;
+        assert!(validate(&scenario, PlayerNumber::Player1, own.clone()).is_err());
+        vehicle(&mut scenario, "4")?.supply_cargo.clear();
+        validate(&scenario, PlayerNumber::Player1, own.clone()).fixture()?;
+        vehicle(&mut scenario, "4")?.supply_cargo =
+            vec![supplies::CargoStock::new(DepotKind::Supply, 20); 2];
+        assert!(validate(&scenario, PlayerNumber::Player1, own).is_err());
         Ok(())
     }
 

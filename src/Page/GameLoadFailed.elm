@@ -88,7 +88,7 @@ update msg model =
             E.navigate (Route.Game model.id)
 
         ReturnHomeButtonClicked ->
-            E.navigate Route.NewLobby
+            E.navigate Route.Home
 
 
 

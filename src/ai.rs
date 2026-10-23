@@ -114,6 +114,7 @@ fn hold(unit: &Unit, origin: Coordinate) -> MoveOrderInput {
         attack_move: None,
         unloads: None,
         load_crates: None,
+        pickup_ground_freight: None,
         crate_unloads: None,
     }
 }

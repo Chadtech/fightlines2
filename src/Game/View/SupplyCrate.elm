@@ -45,7 +45,7 @@ toHtml observation stock =
         description =
             "refills "
                 ++ Supply.resourceLabel stock.kind
-                ++ " on or beside this square before upkeep, while stock lasts. trucks with cargo room collect it by ending on its square."
+                ++ " on or beside this square before upkeep, while stock lasts. save a truck move or hold on this square to choose whether to pick it up, if there is cargo room."
 
         observationDetails : List (Html msg)
         observationDetails =
