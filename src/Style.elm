@@ -71,6 +71,7 @@ module Style exposing
     , defaultCursor
     , displayNone
     , evenChildren
+    , filter
     , firstChild
     , fitWithinContainer
     , fixed
@@ -141,6 +142,7 @@ module Style exposing
     , hideDetailsMarker
     , hover
     , hyphensAuto
+    , imageMask
     , imageRenderingAuto
     , importantIndent
     , importantOutdent
@@ -349,6 +351,7 @@ module Style exposing
     , setPrimaryColorVar
     , shadowMenu
     , shrink0
+    , softEdgeMask
     , squareBL
     , squareBR
     , tabularNums
@@ -2812,6 +2815,38 @@ inset0 =
 mixBlendScreen : Css.Style
 mixBlendScreen =
     Css.property "mix-blend-mode" "screen"
+
+
+filter : String -> Css.Style
+filter value =
+    Css.property "filter" value
+
+
+softEdgeMask : Css.Style
+softEdgeMask =
+    let
+        mask : String
+        mask =
+            "radial-gradient(ellipse closest-side, black 18%, transparent 100%)"
+    in
+    Css.batch
+        [ Css.property "-webkit-mask-image" mask
+        , Css.property "mask-image" mask
+        ]
+
+
+imageMask : String -> Css.Style
+imageMask source =
+    Css.batch
+        [ Css.property "-webkit-mask-image" ("url('" ++ source ++ "')")
+        , Css.property "mask-image" ("url('" ++ source ++ "')")
+        , Css.property "-webkit-mask-size" "contain"
+        , Css.property "mask-size" "contain"
+        , Css.property "-webkit-mask-position" "center"
+        , Css.property "mask-position" "center"
+        , Css.property "-webkit-mask-repeat" "no-repeat"
+        , Css.property "mask-repeat" "no-repeat"
+        ]
 
 
 lineHeight1 : Css.Style

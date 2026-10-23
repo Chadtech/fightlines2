@@ -167,8 +167,9 @@ prototype; do not update it unless the task explicitly requires that.
   corresponding page module or a dedicated failure-page module.
 - Give reusable components semantic variants or modifiers rather than arbitrary
   styling inputs. Never pass raw style lists into a view component. Prefer a
-  meaningful variant such as `Card.compactForm` over independently switchable
-  low-level layout flags.
+  meaningful variant such as `Card.panel` for bounded scrolling behavior over
+  independently switchable low-level layout flags. Keep width constraints and
+  placement in the caller's layout rather than introducing size-only variants.
 - Containers generally accept a `List (Html msg)` for content. Add separate
   content slots only for a structural reason. Put transformed content last in
   the argument order when it supports pipeline composition, such as

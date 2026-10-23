@@ -185,78 +185,85 @@ view model =
             , S.justifyCenter
             ]
         ]
-        [ [ H.p
-                []
-                [ H.text "create a lobby, then share its invite link."
+        [ H.div
+            [ A.css
+                [ S.wFull
+                , S.maxW96
                 ]
-          , H.form
-                [ Ev.onSubmit CreateButtonClicked
-                ]
-                [ H.fieldset
-                    [ A.disabled model.busy
-                    , A.css
-                        [ S.border0
-                        , S.col
-                        , S.g3
-                        ]
+            ]
+            [ [ H.p
+                    []
+                    [ H.text "create a lobby, then share its invite link."
                     ]
-                    [ H.label
-                        [ A.css
-                            [ S.col
-                            , S.g1
+              , H.form
+                    [ Ev.onSubmit CreateButtonClicked
+                    ]
+                    [ H.fieldset
+                        [ A.disabled model.busy
+                        , A.css
+                            [ S.border0
+                            , S.col
+                            , S.g3
                             ]
                         ]
-                        [ H.text "user name"
-                        , TextField.simple model.name NameInputChanged
-                            |> TextField.toHtml
-                        ]
-                    , H.label
-                        [ A.css
-                            [ S.col
-                            , S.g1
+                        [ H.label
+                            [ A.css
+                                [ S.col
+                                , S.g1
+                                ]
                             ]
+                            [ H.text "user name"
+                            , TextField.simple model.name NameInputChanged
+                                |> TextField.toHtml
+                            ]
+                        , H.label
+                            [ A.css
+                                [ S.col
+                                , S.g1
+                                ]
+                            ]
+                            [ H.text "lobby name"
+                            , TextField.simple model.lobbyName LobbyNameInputChanged
+                                |> TextField.toHtml
+                            ]
+                        , Button.primary "create lobby" CreateButtonClicked
+                            |> Button.toHtml
                         ]
-                        [ H.text "lobby name"
-                        , TextField.simple model.lobbyName LobbyNameInputChanged
-                            |> TextField.toHtml
-                        ]
-                    , Button.primary "create lobby" CreateButtonClicked
-                        |> Button.toHtml
                     ]
-                ]
-          , case model.error of
-                Just error ->
-                    H.p
-                        [ Aria.role Aria.Status
-                        ]
-                        [ H.text error
-                        ]
+              , case model.error of
+                    Just error ->
+                        H.p
+                            [ Aria.role Aria.Status
+                            ]
+                            [ H.text error
+                            ]
 
-                Nothing ->
-                    H.text ""
-          , H.nav
-                [ Aria.label "lobby navigation"
-                , A.css
-                    [ S.row
-                    , S.g3
-                    , S.flexWrap
+                    Nothing ->
+                        H.text ""
+              , H.nav
+                    [ Aria.label "lobby navigation"
+                    , A.css
+                        [ S.row
+                        , S.g3
+                        , S.flexWrap
+                        ]
                     ]
-                ]
-                [ H.a
-                    [ A.href (Route.toString Route.Home)
-                    , A.css [ S.link ]
+                    [ H.a
+                        [ A.href (Route.toString Route.Home)
+                        , A.css [ S.link ]
+                        ]
+                        [ H.text "home" ]
+                    , H.a
+                        [ A.href (Route.toString Route.LoggedGames)
+                        , A.css [ S.link ]
+                        ]
+                        [ H.text "logged games" ]
                     ]
-                    [ H.text "home" ]
-                , H.a
-                    [ A.href (Route.toString Route.LoggedGames)
-                    , A.css [ S.link ]
-                    ]
-                    [ H.text "logged games" ]
-                ]
-          ]
-            |> Card.toHtml
-                (Card.compactForm
-                    |> Card.withHeader (CardHeader.simple "start a lobby")
-                )
+              ]
+                |> Card.toHtml
+                    (Card.simple
+                        |> Card.withHeader (CardHeader.simple "start a lobby")
+                    )
+            ]
         ]
     ]

@@ -16,6 +16,7 @@ pub enum MapType {
     Ridgeway,
     ThreeCrossings,
     LakeOfPennsylvania,
+    ConvoyCountry,
 }
 
 impl MapType {
@@ -30,7 +31,8 @@ impl MapType {
             | Self::Crossroads
             | Self::Ridgeway
             | Self::ThreeCrossings
-            | Self::LakeOfPennsylvania => 2,
+            | Self::LakeOfPennsylvania
+            | Self::ConvoyCountry => 2,
         }
     }
 
@@ -59,6 +61,7 @@ impl MapType {
             Self::Ridgeway => Scenario::ridgeway(),
             Self::ThreeCrossings => Scenario::three_crossings(),
             Self::LakeOfPennsylvania => Scenario::lake_of_pennsylvania(),
+            Self::ConvoyCountry => Scenario::convoy_country(),
         }
     }
 }

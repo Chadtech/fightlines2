@@ -1,4 +1,9 @@
-use juniper::{GraphQLEnum, GraphQLObject, graphql_object};
+mod terrain;
+
+pub(crate) use terrain::TerrainValue;
+pub use terrain::{RoadShape, Terrain};
+
+use juniper::{GraphQLEnum, graphql_object};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -23,16 +28,6 @@ impl Coordinate {
     pub fn y(&self) -> i32 {
         i32::from(self.y)
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
-pub enum Terrain {
-    Plain,
-    Hills,
-    Forest,
-    Mountains,
-    Water,
-    Beach,
 }
 
 /// Appearance is independent of terrain movement and visibility rules.
@@ -193,10 +188,20 @@ impl Map {
     }
 }
 
-#[derive(GraphQLObject)]
 struct TerrainFeature {
     position: Coordinate,
     terrain: Terrain,
+}
+
+#[graphql_object]
+impl TerrainFeature {
+    fn position(&self) -> Coordinate {
+        self.position
+    }
+
+    fn terrain(&self) -> TerrainValue {
+        self.terrain.into()
+    }
 }
 
 #[graphql_object]
@@ -213,8 +218,8 @@ impl Map {
         self.theme
     }
 
-    fn base_tile(&self) -> Terrain {
-        self.base_tile
+    fn base_tile(&self) -> TerrainValue {
+        self.base_tile.into()
     }
 
     fn features(&self) -> Vec<TerrainFeature> {

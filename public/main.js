@@ -16,6 +16,7 @@ const app = Elm.Main.init({
   flags: {
     operatingSystem: navigator.userAgentData?.platform ?? navigator.userAgent,
     localStorage: getLocalStorage(),
+    seed: Math.floor(Math.random() * 0x80000000),
   },
 });
 

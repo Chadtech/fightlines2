@@ -466,11 +466,11 @@ fuelExplanation fuel =
             else
                 ""
     in
-    "each traversed tile uses "
+    "each traversed non-road tile uses "
         ++ String.fromInt fuel.movementPerTile
         ++ " fuel"
         ++ cargoCost
-        ++ ". loading and unloading happen after movement. holds and canceled moves use none. nearby fuel depots and ground or carried fuel drums refill vehicle tanks at turn end."
+        ++ ". roads use less fuel. loading and unloading happen after movement. holds and canceled moves use none. nearby fuel depots and ground or carried fuel drums refill vehicle tanks at turn end."
 
 
 unitTitle : Unit -> String

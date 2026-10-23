@@ -20,11 +20,12 @@ type MapType
     | Ridgeway
     | ThreeCrossings
     | LakeOfPennsylvania
+    | ConvoyCountry
 
 
 list : List MapType
 list =
-    [ SupplyPoint, ElAlamein, BloodGulch, Arabia, Sidewinder, BlackForest, Crossroads, Ridgeway, ThreeCrossings, LakeOfPennsylvania ]
+    [ SupplyPoint, ElAlamein, BloodGulch, Arabia, Sidewinder, BlackForest, Crossroads, Ridgeway, ThreeCrossings, LakeOfPennsylvania, ConvoyCountry ]
 
 
 decoder : Decoder MapType
@@ -62,6 +63,9 @@ decoder =
 
                     "LAKE_OF_PENNSYLVANIA" ->
                         Decode.succeed LakeOfPennsylvania
+
+                    "CONVOY_COUNTRY" ->
+                        Decode.succeed ConvoyCountry
 
                     _ ->
                         Decode.fail ("Invalid MapType type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
@@ -102,6 +106,9 @@ toString enum____ =
 
         LakeOfPennsylvania ->
             "LAKE_OF_PENNSYLVANIA"
+
+        ConvoyCountry ->
+            "CONVOY_COUNTRY"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -147,6 +154,9 @@ fromString enumString____ =
 
         "LAKE_OF_PENNSYLVANIA" ->
             Just LakeOfPennsylvania
+
+        "CONVOY_COUNTRY" ->
+            Just ConvoyCountry
 
         _ ->
             Nothing

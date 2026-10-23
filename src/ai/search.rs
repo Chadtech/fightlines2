@@ -864,6 +864,7 @@ mod tests {
             MapType::Ridgeway,
             MapType::ThreeCrossings,
             MapType::LakeOfPennsylvania,
+            MapType::ConvoyCountry,
         ] {
             let mut scenario = map.scenario().fixture()?;
             let mut turns = Turns::default();
@@ -945,6 +946,7 @@ mod tests {
             MapType::Ridgeway,
             MapType::ThreeCrossings,
             MapType::LakeOfPennsylvania,
+            MapType::ConvoyCountry,
         ] {
             let mut scenario = map.scenario().fixture()?;
             let mut turns = Turns::default();

@@ -35,3 +35,13 @@ terrainCosts :
     -> SelectionSet (List decodesTo) Api.Object.MovementRule
 terrainCosts object____ =
     Object.selectionForCompositeField "terrainCosts" [] object____ (Basics.identity >> Decode.list)
+
+
+roadFuelPerTile : SelectionSet Int Api.Object.MovementRule
+roadFuelPerTile =
+    Object.selectionForField "Int" "roadFuelPerTile" [] Decode.int
+
+
+roadFuelPerCargoSlot : SelectionSet Int Api.Object.MovementRule
+roadFuelPerCargoSlot =
+    Object.selectionForField "Int" "roadFuelPerCargoSlot" [] Decode.int

@@ -12,13 +12,13 @@ import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing exposing (SpriteFacing)
-import Api.Enum.Terrain as Terrain exposing (Terrain)
 import Api.Enum.UnitKind as UnitKind
 import Css
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.IndirectImpact as IndirectImpact exposing (Attacker, IndirectImpact)
 import Game.Map as Map exposing (Map)
+import Game.Terrain as Terrain exposing (Terrain)
 import Game.TurnPlayback as TurnPlayback
     exposing
         ( Encounter(..)
@@ -466,13 +466,13 @@ backdropPath theme terrain =
                 ( MapTheme.Desert, Terrain.Mountains ) ->
                     "desert-mountains"
 
-                ( MapTheme.GreenForest, Terrain.Plain ) ->
+                ( MapTheme.GreenForest, _ ) ->
                     "plains"
 
-                ( MapTheme.Snow, Terrain.Plain ) ->
+                ( MapTheme.Snow, _ ) ->
                     "tundra-plains"
 
-                ( MapTheme.Desert, Terrain.Plain ) ->
+                ( MapTheme.Desert, _ ) ->
                     "desert-plains"
     in
     "/assets/combat-backdrops-anime-v1/" ++ name ++ ".png"

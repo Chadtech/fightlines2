@@ -193,56 +193,63 @@ view model =
             , S.justifyCenter
             ]
         ]
-        [ [ H.p
-                []
-                [ H.text "enter your name to join this lobby."
+        [ H.div
+            [ A.css
+                [ S.wFull
+                , S.maxW96
                 ]
-          , if model.joiningClosed then
-                H.p
+            ]
+            [ [ H.p
                     []
-                    [ H.text "this game has started. joining is closed."
+                    [ H.text "enter your name to join this lobby."
                     ]
-
-            else
-                H.form
-                    [ Ev.onSubmit JoinButtonClicked
-                    , A.css
-                        [ S.col
-                        , S.g3
+              , if model.joiningClosed then
+                    H.p
+                        []
+                        [ H.text "this game has started. joining is closed."
                         ]
-                    ]
-                    [ H.label
-                        [ A.css
+
+                else
+                    H.form
+                        [ Ev.onSubmit JoinButtonClicked
+                        , A.css
                             [ S.col
-                            , S.g1
+                            , S.g3
                             ]
                         ]
-                        [ H.text "your name"
-                        , TextField.simple model.name NameInputChanged
-                            |> TextField.toHtml
+                        [ H.label
+                            [ A.css
+                                [ S.col
+                                , S.g1
+                                ]
+                            ]
+                            [ H.text "your name"
+                            , TextField.simple model.name NameInputChanged
+                                |> TextField.toHtml
+                            ]
+                        , H.fieldset
+                            [ A.disabled model.busy
+                            , A.css [ S.border0 ]
+                            ]
+                            [ Button.primary "join lobby" JoinButtonClicked
+                                |> Button.toHtml
+                            ]
                         ]
-                    , H.fieldset
-                        [ A.disabled model.busy
-                        , A.css [ S.border0 ]
-                        ]
-                        [ Button.primary "join lobby" JoinButtonClicked
-                            |> Button.toHtml
-                        ]
-                    ]
-          , case model.error of
-                Just error ->
-                    H.p
-                        [ Aria.role Aria.Status
-                        ]
-                        [ H.text error
-                        ]
+              , case model.error of
+                    Just error ->
+                        H.p
+                            [ Aria.role Aria.Status
+                            ]
+                            [ H.text error
+                            ]
 
-                Nothing ->
-                    H.text ""
-          ]
-            |> Card.toHtml
-                (Card.compactForm
-                    |> Card.withHeader (CardHeader.simple model.lobbyName)
-                )
+                    Nothing ->
+                        H.text ""
+              ]
+                |> Card.toHtml
+                    (Card.simple
+                        |> Card.withHeader (CardHeader.simple model.lobbyName)
+                    )
+            ]
         ]
     ]

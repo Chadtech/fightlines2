@@ -24,7 +24,9 @@ the design direction changes. User feedback takes precedence.
 - Casing is a presentation choice. Preserve the underlying spelling of player
   names, identifiers, and invite URLs; never lowercase stored data or link
   destinations to implement the visual rule.
-- All text stays at 1rem and normal weight (400), including headers and controls.
+- Interface text stays at 1rem and normal weight (400), including headers and
+  controls.
+  The home-page quotation is larger, as described below.
   Use placement, spacing, grouping, and color to distinguish roles.
 - Use Ubuntu Mono Regular at weight 400. The unmodified TrueType font is
   embedded as a data URL in `public/index.html`; its Ubuntu Font Licence 1.0
@@ -74,13 +76,49 @@ Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion poin
 
 ## Home page
 
-The home page is a large centered FightLines logo on the ordinary forest-green
-page background, with one quiet gold `play` link beneath it. Use the transparent
+The home page is a compact centered FightLines logo on the ordinary forest-green
+page background, with a compact menu card beneath it. Use the transparent
 `public/assets/fightlines-logo-v1.png` artwork, preserving its tall italic ivory
 lettering, thick yellow underline, flush g descender, and small explosion.
-The logo scales proportionally up to 80rem wide with viewport gutters. Its image
-supplies the accessible heading. Keep this page free of cards and extra copy;
-`play` opens the existing lobby creation form at `/new`.
+The logo scales proportionally up to 40rem wide with viewport gutters, centered
+slightly above the viewport midpoint with the menu beneath it. Its image
+supplies the accessible heading. The ordinary beveled card has no title bar
+and contains one full-width primary `play` button. Keep it at most 24rem wide with
+viewport gutters. The button opens the existing lobby creation form at `/new`.
+On entry, fade the logo in while lowering it from 2rem above its resting position
+over 900ms with an ease-out curve. Reduced motion shows it immediately in place.
+Omar Bradley's monochrome portrait sits behind the logo and navigation, fitted
+within the viewport and anchored to its far left edge. Composite the image at
+24% opacity over an opaque page-green backing, masking the whole group with the
+portrait's silhouette. This retains its subtle green tone while preventing
+screenshots from bleeding through his face and uniform; the surrounding cutout
+stays transparent.
+Its 1600ms fade begins at 1000ms, after the logo finishes. The decorative
+portrait ignores pointer input and is hidden from assistive technology. Reduced
+motion shows both images immediately.
+The quote “amateurs talk strategy. professionals talk logistics.” appears on the
+right at 1.5rem, with a 1rem “general omar bradley” attribution, and shares the
+portrait's fade timing. At widths of 720px and below, use 1.25rem for the quote.
+At widths of 1200px and below, place it below the menu to keep the logo and
+navigation clear. Reduced motion shows the quote immediately as well.
+
+After the portrait and quote finish, fade in the centered subtitle “a logistics
+and supply turn based strategy game” beneath the logo over 900ms, beginning at
+2700ms. Use ordinary 1rem gray4 text and reserve its space throughout the entrance
+so the layout stays still. Reduced motion shows the subtitle immediately.
+
+After the entrance finishes, three supplied battlefield screenshots emerge from
+the green background in a staggered 54-second cycle, beginning at 4, 22, and 40
+seconds. Each scene slowly rises and grows while fading in and out, with a quiet
+gap before the next reveal. Keep them monochrome green and dark, with broad
+elliptical feathering that completely dissolves their rectangular edges. Place
+each image by its center, randomly between 64–78% of viewport width and 42–58%
+of viewport height, with a slight random rotation. Pick fresh positions on entry
+and on each image's next cycle while it is invisible, so reveals stay near the
+right side without visibly jumping. Keep these center bounds on narrow screens too.
+Place them behind the portrait, logo, menu, and quotation; clip their drift to the
+viewport. They ignore pointer input and assistive technology. Reduced motion
+omits this decorative cycle and retains the original green background.
 
 ## Cards, spacing, and layout
 
@@ -89,6 +127,10 @@ supplies the accessible heading. Keep this page free of cards and extra copy;
 - Headers sit 2px from the card edges. `CardHeader`'s local `headerPadding` aligns their text
   with the body's `p3` inset while keeping vertical padding at `p1`.
 - Card bodies use `p3` padding and `g3` gaps. Headerless cards retain that layout.
+- Cards own their surface, body spacing, and optional header. Page containers
+  own width and placement; use `S.wFull` and `S.maxW96` on a surrounding element
+  for a 24rem card. `Card.panel` additionally fills a bounded layout slot, with
+  a fixed header and scrolling body when headered.
 - Labels sit above their fields with a smaller `g1` gap. Use larger gaps between
   groups and between fields and actions.
 - Buttons size to their labels and align to the start of the form.
@@ -118,10 +160,12 @@ supplies the accessible heading. Keep this page free of cards and extra copy;
   each member a `your side` select using the shared inset control. Explain that
   switching sides also moves the opponent. Keep host and own-player labels on
   their occupants when assignments change. Side changes lock at game start.
-- Use `Card.compactForm` for the centered creation form; it fills available
-  width up to 24rem. Preserve useful gutters and allow content to wrap.
-- Use a separate `Card.compactForm` join page for invite visitors. Show the name
-  field and join action before membership; show the roster, invite link, and
+- Use `Card.simple` for the centered creation form, inside a page-owned container
+  that fills available width up to 24rem. Preserve useful gutters and allow
+  content to wrap.
+- Use a separate join page for invite visitors with the same card and page-owned
+  width constraint. Show the name field and join action before membership;
+  show the roster, invite link, and
   waiting status or host controls only after joining. Keep the invite URL the
   same across both pages. The join form does not poll or disable the name field.
 
@@ -683,6 +727,14 @@ Keep the approved water animation beneath these static shore overlays. Shore
 artwork uses the tile's existing fog, dimming, and selection lifecycle.
 
 ## Development map editor
+
+Roads use the approved transparent straight, corner, T-junction, and crossroads
+sprites over the map's themed ground. Each authored road terrain selects a fixed
+sprite and rotation; battlefield rendering never infers its connections from
+neighbors. Keep the straight tile's narrow gravel shoulders and lane-marking
+alignment at junction exits. The editor offers one road brush, deriving and
+storing each orientation while painting or removing adjoining terrain. Board,
+editor previews, and terrain inspection share the same artwork and fog styling.
 
 Contain all editor content in beveled cards within the viewport; the page itself
 does not scroll. The top editor card contains map selection, undo/redo, the gold

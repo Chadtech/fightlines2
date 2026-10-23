@@ -68,6 +68,7 @@ import Game.Selection
         , UnitInteraction(..)
         )
 import Game.Supply as Supply
+import Game.Terrain as Terrain
 import Game.Turn as Turn
 import Game.TurnLifecycle as TurnLifecycle exposing (Phase)
 import Game.TurnPlayback as TurnPlayback
@@ -886,7 +887,7 @@ snapshotSelection =
         terrainCostSelection : SelectionSet Movement.TerrainCost Api.Object.TerrainMovementCost
         terrainCostSelection =
             SS.succeed Movement.TerrainCost
-                |> SS.with MovementCostApi.terrain
+                |> SS.with (SS.map Terrain.fromApi MovementCostApi.terrain)
                 |> SS.with MovementCostApi.cost
 
         movementRuleSelection : SelectionSet Movement.Rule Api.Object.MovementRule
@@ -895,6 +896,8 @@ snapshotSelection =
                 |> SS.with MovementRuleApi.kind
                 |> SS.with MovementRuleApi.budget
                 |> SS.with (MovementRuleApi.terrainCosts terrainCostSelection)
+                |> SS.with MovementRuleApi.roadFuelPerTile
+                |> SS.with MovementRuleApi.roadFuelPerCargoSlot
     in
     SS.succeed Snapshot
         |> SS.with BattlefieldSnapshot.selection

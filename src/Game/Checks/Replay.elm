@@ -6,7 +6,6 @@ import Api.Enum.MapTheme as MapTheme
 import Api.Enum.MapType as MapType
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing
-import Api.Enum.Terrain as Terrain
 import Api.Enum.UnitKind as Kind
 import Browser
 import Browser.Dom
@@ -17,6 +16,7 @@ import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Inspection exposing (Inspection(..))
 import Game.Map as Map
 import Game.PlaybackPresentation as PlaybackPresentation
+import Game.Terrain as Terrain
 import Game.Turn as Turn
 import Game.TurnPlayback as TurnPlayback
 import Game.Unit as Unit exposing (Unit)
@@ -31,6 +31,7 @@ import LocalStorage
 import OperatingSystem
 import Page.GameReplay as GameReplay
 import Page.LoggedGames as LoggedGames
+import Random
 import Shared
 
 
@@ -44,7 +45,7 @@ main =
             \_ url key ->
                 let
                     ( failures, effect ) =
-                        checks (Shared.init OperatingSystem.Unknown LocalStorage.test url key)
+                        checks (Shared.init (Random.initialSeed 0) OperatingSystem.Unknown LocalStorage.test url key)
                 in
                 ( (), Cmd.batch [ results failures, E.toCmd key effect ] )
         , update = \_ model -> ( model, Cmd.none )

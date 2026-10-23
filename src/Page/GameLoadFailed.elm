@@ -107,27 +107,34 @@ view model =
             , S.justifyCenter
             ]
         ]
-        [ [ H.p
-                [ Aria.role Aria.Status
+        [ H.div
+            [ A.css
+                [ S.wFull
+                , S.maxW96
                 ]
-                [ H.text model.error
-                ]
-          , H.div
-                [ A.css
-                    [ S.row
-                    , S.g2
-                    , S.flexWrap
+            ]
+            [ [ H.p
+                    [ Aria.role Aria.Status
                     ]
-                ]
-                [ Button.primary "return home" ReturnHomeButtonClicked
-                    |> Button.toHtml
-                , Button.secondary "retry" RetryButtonClicked
-                    |> Button.toHtml
-                ]
-          ]
-            |> Card.toHtml
-                (Card.compactForm
-                    |> Card.withHeader (CardHeader.simple "lobby unavailable")
-                )
+                    [ H.text model.error
+                    ]
+              , H.div
+                    [ A.css
+                        [ S.row
+                        , S.g2
+                        , S.flexWrap
+                        ]
+                    ]
+                    [ Button.primary "return home" ReturnHomeButtonClicked
+                        |> Button.toHtml
+                    , Button.secondary "retry" RetryButtonClicked
+                        |> Button.toHtml
+                    ]
+              ]
+                |> Card.toHtml
+                    (Card.simple
+                        |> Card.withHeader (CardHeader.simple "lobby unavailable")
+                    )
+            ]
         ]
     ]

@@ -296,8 +296,11 @@ fn affordable_path(
         terrain_cost += entry.cost;
         affordable.push(next);
         let movement_cost = unit.supplies().movement_cost(&scenario.map, &affordable);
-        let fuel_cost = (affordable.len() - 1) as i32
-            * unit.fuel_movement_per_tile(scenario.passenger_count(unit.unit_id()));
+        let fuel_cost = unit.fuel_movement_cost(
+            &scenario.map,
+            &affordable,
+            scenario.passenger_count(unit.unit_id()),
+        );
         let over_budget = terrain_cost > rule.budget;
         let over_supplies = movement_cost + firing_cost
             > (unit.supplies().current() - unit.supplies().upkeep_per_turn()).max(0);
@@ -381,6 +384,7 @@ mod tests {
             MapType::Ridgeway,
             MapType::ThreeCrossings,
             MapType::LakeOfPennsylvania,
+            MapType::ConvoyCountry,
         ] {
             let mut scenario = map.scenario().fixture()?;
             let mut turns = Turns::default();

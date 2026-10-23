@@ -8,7 +8,7 @@ use crate::{
     supplies,
     turns::MoveOrderInput,
 };
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy)]
 pub(super) struct Destination {
@@ -153,7 +153,7 @@ pub(super) fn blocked_tiles(
     Ok(blocked)
 }
 
-/// Shortest fuel distance counts traversed tiles, not terrain half-points.
+/// Cheapest fuel route accounts for road entry savings, not terrain half-points.
 /// Terrain still determines passability and the affordable per-turn prefix.
 pub(super) fn path_to(
     scenario: &Scenario,
@@ -167,8 +167,13 @@ pub(super) fn path_to(
         .find(|rule| rule.kind == unit.kind())
         .ok_or("the AI unit has no movement rule.")?;
     let mut parents = BTreeMap::from([(origin, origin)]);
-    let mut pending = VecDeque::from([origin]);
-    while let Some(position) = pending.pop_front() {
+    let mut costs = BTreeMap::from([(origin, 0)]);
+    let mut sequence = 0;
+    let mut pending = BTreeSet::from([(0, sequence, origin)]);
+    while let Some((cost, _, position)) = pending.pop_first() {
+        if costs.get(&position) != Some(&cost) {
+            continue;
+        }
         if distance(position, destination.position) <= destination.range {
             let mut path = vec![position];
             let mut cursor = position;
@@ -191,7 +196,7 @@ pub(super) fn path_to(
                 continue;
             }
             let next = Coordinate::new(x as u16, y as u16);
-            if blocked.contains(&next) || parents.contains_key(&next) {
+            if blocked.contains(&next) {
                 continue;
             }
             let passable = scenario.map.tile_at(next).is_some_and(|terrain| {
@@ -200,8 +205,18 @@ pub(super) fn path_to(
                     .any(|entry| entry.terrain == terrain && entry.cost > 0)
             });
             if passable {
-                parents.insert(next, position);
-                pending.push_back(next);
+                let fuel_cost = unit.fuel_movement_cost(
+                    &scenario.map,
+                    &[position, next],
+                    scenario.passenger_count(unit.unit_id()),
+                );
+                let next_cost = cost + fuel_cost.max(1);
+                if costs.get(&next).is_none_or(|known| next_cost < *known) {
+                    costs.insert(next, next_cost);
+                    parents.insert(next, position);
+                    sequence += 1;
+                    pending.insert((next_cost, sequence, next));
+                }
             }
         }
     }
@@ -482,8 +497,16 @@ fn fuel_sources(
             .iter()
             .find(|order| order.unit_id == truck.id())
             .ok_or("the AI truck has no order.")?;
-        let cost = order.path.len().saturating_sub(1) as i32
-            * truck.fuel_movement_per_tile(scenario.passenger_count(truck.unit_id()));
+        let path: Vec<_> = order
+            .path
+            .iter()
+            .map(|position| Coordinate::new(position.x as u16, position.y as u16))
+            .collect();
+        let cost = truck.fuel_movement_cost(
+            &scenario.map,
+            &path,
+            scenario.passenger_count(truck.unit_id()),
+        );
         let deficit = truck
             .fuel()
             .map_or(0, |fuel| fuel.maximum - fuel.current + cost);
@@ -520,12 +543,18 @@ fn protect_reserve(
     if vehicle.kind() == UnitKind::Truck && order.path.len() == 1 {
         return Ok(false);
     }
-    let per_tile = vehicle.fuel_movement_per_tile(scenario.passenger_count(vehicle.unit_id()));
-    let remaining = fuel.current - order.path.len().saturating_sub(1) as i32 * per_tile;
+    let passengers = scenario.passenger_count(vehicle.unit_id());
+    let planned_path: Vec<_> = order
+        .path
+        .iter()
+        .map(|position| Coordinate::new(position.x as u16, position.y as u16))
+        .collect();
+    let remaining =
+        fuel.current - vehicle.fuel_movement_cost(&scenario.map, &planned_path, passengers);
     let mut reserve = None;
     for source in &sources {
         if let Some(path) = path_to(scenario, vehicle, end, *source, &BTreeSet::new())? {
-            let cost = path.len().saturating_sub(1) as i32 * per_tile;
+            let cost = vehicle.fuel_movement_cost(&scenario.map, &path, passengers);
             reserve = Some(reserve.map_or(cost, |known: i32| known.min(cost)));
         }
     }
@@ -537,12 +566,18 @@ fn protect_reserve(
     let mut routes = Vec::new();
     for source in sources {
         if let Some(path) = path_to(scenario, vehicle, origin, source, &blocked)?
-            && path.len().saturating_sub(1) as i32 * per_tile <= fuel.current
+            && vehicle.fuel_movement_cost(&scenario.map, &path, passengers) <= fuel.current
         {
             routes.push(path);
         }
     }
-    routes.sort_by_key(|path| (path.len(), path.last().copied()));
+    routes.sort_by_key(|path| {
+        (
+            vehicle.fuel_movement_cost(&scenario.map, path, passengers),
+            path.len(),
+            path.last().copied(),
+        )
+    });
     let mut replacement = hold(vehicle, origin);
     if let Some(path) = routes.first() {
         replacement.path = affordable_path(scenario, vehicle, path, false)?
@@ -559,12 +594,52 @@ mod tests {
     use super::*;
     use crate::{
         ai::{self, Difficulty},
-        map_definition::MapDefinition,
+        map::{Coordinate, RoadShape, Terrain},
+        map_definition::{MapDefinition, TerrainPlacement},
         supplies::{CargoStock, GroundSupplyCrate},
         test_support::{FixtureValue, TestResult},
         turns::Turns,
         visibility,
     };
+
+    #[test]
+    fn fuel_routing_prefers_an_affordable_road_detour() -> TestResult {
+        let mut definition = MapDefinition::parse(r#"{
+            "width": 5, "height": 2, "theme": "GreenForest", "features": [], "depots": [],
+            "units": [
+                {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "Player1", "kind": "Truck"},
+                {"id": 2, "position": {"x": 4, "y": 1}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
+            ]
+        }"#).fixture()?;
+        for x in 0..5 {
+            definition.features.push(TerrainPlacement {
+                position: Coordinate::new(x, 1),
+                terrain: Terrain::Road(RoadShape::EastWest),
+            });
+        }
+        definition.features.push(TerrainPlacement {
+            position: Coordinate::new(4, 0),
+            terrain: Terrain::Road(RoadShape::NorthSouth),
+        });
+        let mut scenario = definition.scenario().fixture()?;
+        scenario.units.first_mut().fixture()?.set_fuel_for_test(6);
+        let truck = scenario.units.first().fixture()?;
+        let path = path_to(
+            &scenario,
+            truck,
+            Coordinate::new(0, 0),
+            Destination {
+                position: Coordinate::new(4, 0),
+                range: 0,
+            },
+            &BTreeSet::new(),
+        )?
+        .fixture()?;
+        assert_eq!(path.len(), 7);
+        assert_eq!(truck.fuel_movement_cost(&scenario.map, &path, 0), 6);
+        assert_eq!(affordable_path(&scenario, truck, &path, false)?, path);
+        Ok(())
+    }
 
     fn convoy_fixture(player: PlayerNumber) -> TestResult<Scenario> {
         let mut definition = MapDefinition::parse(r#"{

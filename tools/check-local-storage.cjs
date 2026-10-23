@@ -7,7 +7,7 @@ const vm = require('node:vm');
 
 const key = 'fightlines.localStorage';
 const source = readFileSync('public/main.js', 'utf8');
-function boot(initial, { readFails = false, writeFails = false } = {}) {
+function boot(initial, { readFails = false, writeFails = false, randomSample = 0.5 } = {}) {
   const stored = new Map(initial === undefined ? [] : [[key, initial]]);
   const messages = [];
   const warnings = [];
@@ -33,6 +33,7 @@ function boot(initial, { readFails = false, writeFails = false } = {}) {
       } };
     } } },
     navigator: { userAgent: 'test' },
+    Math: { floor: Math.floor, random: () => randomSample },
     localStorage: storage,
     addEventListener(name, handler) { events[name] = handler; },
     console: { warn(...args) { warnings.push(args); } },
@@ -41,6 +42,9 @@ function boot(initial, { readFails = false, writeFails = false } = {}) {
 }
 
 async function checkInterop() {
+  assert.equal(boot(undefined).flags.seed, 1073741824);
+  assert.equal(boot(undefined, { randomSample: 0 }).flags.seed, 0);
+  assert.equal(boot(undefined, { randomSample: 1 - Number.EPSILON }).flags.seed, 2147483647);
   for (const initial of [undefined, 'null', '[]', '42', '"text"', '{bad json']) {
     assert.equal(JSON.stringify(boot(initial).flags.localStorage), '{}');
   }
@@ -79,7 +83,7 @@ async function checkInterop() {
   assert.equal(blocked.stored.get(key), '{"count":1}');
   assert.equal(blocked.messages.length, 0);
   assert.equal(blocked.warnings.length, 1);
-  console.log('Local storage startup, writes, notifications, clearing, and failure handling passed.');
+  console.log('Startup random seed and local storage startup, writes, notifications, clearing, and failure handling passed.');
 }
 
 async function main() {

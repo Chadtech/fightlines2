@@ -1,7 +1,7 @@
 //! Map authoring resolvers. Filesystem access is enabled only with --map-editor.
 use crate::{
     graphql::Context,
-    map::{Coordinate, MapTheme, Terrain},
+    map::{Coordinate, MapTheme, TerrainValue},
     map_definition::{DepotPlacement, MapDefinition, TerrainPlacement, UnitPlacement},
     map_type::MapType,
     scenario::{DepotKind, Direction, PlayerNumber, UnitKind},
@@ -15,7 +15,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-pub const MAPS: [(MapType, &str); 10] = [
+pub const MAPS: [(MapType, &str); 11] = [
     (MapType::SupplyPoint, "supply-point"),
     (MapType::ElAlamein, "el-alamein"),
     (MapType::BloodGulch, "blood-gulch"),
@@ -26,6 +26,7 @@ pub const MAPS: [(MapType, &str); 10] = [
     (MapType::Ridgeway, "ridgeway"),
     (MapType::ThreeCrossings, "three-crossings"),
     (MapType::LakeOfPennsylvania, "lake-of-pennsylvania"),
+    (MapType::ConvoyCountry, "convoy-country"),
 ];
 
 pub struct Editor {
@@ -111,8 +112,8 @@ impl TerrainPlacement {
     fn position(&self) -> Coordinate {
         self.position
     }
-    fn terrain(&self) -> Terrain {
-        self.terrain
+    fn terrain(&self) -> TerrainValue {
+        self.terrain.into()
     }
 }
 #[graphql_object(context = Context)]
@@ -151,7 +152,7 @@ struct PositionInput {
 #[derive(GraphQLInputObject)]
 struct TerrainPlacementInput {
     position: PositionInput,
-    terrain: Terrain,
+    terrain: TerrainValue,
 }
 #[derive(GraphQLInputObject)]
 struct DepotPlacementInput {
@@ -200,7 +201,7 @@ impl MapDefinitionInput {
                 .map(|feature| {
                     Ok(TerrainPlacement {
                         position: feature.position.coordinate()?,
-                        terrain: feature.terrain,
+                        terrain: feature.terrain.into(),
                     })
                 })
                 .collect::<FieldResult<_>>()?,
@@ -349,7 +350,7 @@ mod tests {
                 .into_iter()
                 .map(|feature| TerrainPlacementInput {
                     position: position(feature.position),
-                    terrain: feature.terrain,
+                    terrain: feature.terrain.into(),
                 })
                 .collect(),
             depots: definition

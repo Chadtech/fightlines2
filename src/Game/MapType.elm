@@ -38,3 +38,6 @@ label mapType =
 
         Api.Enum.MapType.LakeOfPennsylvania ->
             "lake of pennsylvania"
+
+        Api.Enum.MapType.ConvoyCountry ->
+            "convoy country"

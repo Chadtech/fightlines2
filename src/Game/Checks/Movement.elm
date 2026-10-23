@@ -7,11 +7,13 @@ import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as MapTheme
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing
-import Api.Enum.Terrain as Terrain exposing (Terrain)
+import Api.Enum.Terrain as TerrainApi
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Map as Map exposing (Map)
 import Game.Movement as Movement
+import Game.Road as Road
+import Game.Terrain as Terrain exposing (Terrain)
 import Game.TerrainFeature as TerrainFeature
 import Game.Unit as Unit
 import Game.Unit.Fuel exposing (Fuel)
@@ -58,10 +60,12 @@ caseDecoder =
 
 ruleDecoder : Decoder Movement.Rule
 ruleDecoder =
-    D.map3 Movement.Rule
+    D.map5 Movement.Rule
         (D.field "kind" UnitKind.decoder)
         (D.field "budget" D.int)
-        (D.field "terrainCosts" (D.list (D.map2 Movement.TerrainCost (D.field "terrain" Terrain.decoder) (D.field "cost" D.int))))
+        (D.field "terrainCosts" (D.list (D.map2 Movement.TerrainCost (D.field "terrain" (D.map Terrain.fromApi TerrainApi.decoder)) (D.field "cost" D.int))))
+        (D.field "roadFuelPerTile" D.int)
+        (D.field "roadFuelPerCargoSlot" D.int)
 
 
 check : List Movement.Rule -> Case -> List String
@@ -451,6 +455,8 @@ targetSearchChecks unit =
         rule =
             { kind = unit.kind
             , budget = 12
+            , roadFuelPerTile = 5
+            , roadFuelPerCargoSlot = 0
             , terrainCosts =
                 [ { terrain = Terrain.Plain, cost = 2 }
                 , { terrain = Terrain.Forest, cost = 6 }
@@ -817,6 +823,41 @@ fuelChecks rules =
                 fullCargo =
                     [ loadedTruck, passenger ]
 
+                roadTruck : Unit.Unit
+                roadTruck =
+                    truck |> Unit.setResources (Maybe.map (\resources -> { resources | fuel = Just { current = 6, maximum = 128, movementPerTile = 2, movementPerCargoSlot = 2 } }) truck.resources)
+
+                roadMap : Map
+                roadMap =
+                    Map.fromFeatures
+                        { width = 5
+                        , height = 2
+                        , baseTile = Terrain.Plain
+                        , theme = MapTheme.GreenForest
+                        , features =
+                            { position = { x = 4, y = 0 }, terrain = Terrain.Road Road.NorthSouth }
+                                :: List.map (\x -> { position = { x = x, y = 1 }, terrain = Terrain.Road Road.EastWest }) (List.range 0 4)
+                        }
+
+                roadDestination : Coordinate
+                roadDestination =
+                    { x = 4, y = 0 }
+
+                roadRoute : Maybe Movement.Option
+                roadRoute =
+                    Movement.preview rules roadMap [ roadTruck ] roadTruck (Movement.start { x = 0, y = 0 }) roadDestination
+
+                roadTrace : Maybe Movement.Option
+                roadTrace =
+                    let
+                        extend : Coordinate -> Maybe Movement.Option -> Maybe Movement.Option
+                        extend position current =
+                            current |> Maybe.andThen (\option -> Movement.trace rules roadMap [ roadTruck ] roadTruck option position)
+                    in
+                    List.foldl extend
+                        (Just (Movement.start { x = 0, y = 0 }))
+                        [ { x = 0, y = 1 }, { x = 1, y = 1 }, { x = 2, y = 1 }, { x = 3, y = 1 }, { x = 4, y = 1 }, roadDestination ]
+
                 cargoTrace : Maybe Movement.Option
                 cargoTrace =
                     Movement.trace rules map fullCargo loadedTruck (Movement.start { x = 0, y = 0 }) { x = 0, y = 1 }
@@ -831,10 +872,16 @@ fuelChecks rules =
                         [ name ]
             in
             List.concat
-                [ test "empty trucks spend two fuel per tile" (Movement.tileLimit [ truck ] truck == Just 6)
-                , test "passengers add two fuel per tile" (Movement.tileLimit [ truck, passenger ] truck == Just 3)
-                , test "freight adds two fuel per tile" (Movement.tileLimit [ loadedTruck ] loadedTruck == Just 3)
-                , test "mixed full cargo spends six fuel per tile" (Movement.tileLimit fullCargo loadedTruck == Just 2)
+                [ test "fuel-limited search preserves a longer affordable road detour"
+                    (roadRoute |> Maybe.map (\option -> List.length option.path == 7) |> Maybe.withDefault False)
+                , test "road tracing spends the reduced fuel on every extension"
+                    (roadTrace |> Maybe.map (\option -> option.destination == roadDestination && List.length option.path == 7) |> Maybe.withDefault False)
+                , test "road savings do not make unaffordable plain steps reachable"
+                    (roadRoute |> Maybe.andThen (\option -> Movement.trace rules roadMap [ roadTruck ] roadTruck option { x = 3, y = 0 }) |> (==) Nothing)
+                , test "empty trucks can travel up to twelve road tiles" (Movement.tileLimit rules [ truck ] truck == Just 12)
+                , test "passengers add one road fuel per tile" (Movement.tileLimit rules [ truck, passenger ] truck == Just 6)
+                , test "freight adds one road fuel per tile" (Movement.tileLimit rules [ loadedTruck ] loadedTruck == Just 6)
+                , test "mixed full cargo spends three road fuel per tile" (Movement.tileLimit rules fullCargo loadedTruck == Just 4)
                 , test "loaded tracing accounts for fuel already spent" (cargoTrace |> Maybe.andThen (\path -> Movement.trace rules map fullCargo loadedTruck path { x = 2, y = 1 }) |> (==) Nothing)
                 , test "empty vehicles have no movement choices" (List.isEmpty (Movement.options [] rules map units emptyUnit))
                 , test "fuel bounds every returned path" (List.all (\option -> List.length option.path <= 3) reachable)
@@ -977,15 +1024,16 @@ supplyChecks rules =
                         [ name ]
             in
             List.concat
-                [ test "upkeep is reserved before walking" (Movement.tileLimit units exhausted == Just 0 && List.isEmpty (Movement.options [] rules map units exhausted))
+                [ test "upkeep is reserved before walking" (Movement.tileLimit rules units exhausted == Just 0 && List.isEmpty (Movement.options [] rules map units exhausted))
                 , test "field guns also need supplies after upkeep" (List.isEmpty (Movement.options [] rules map units fieldGun))
                 , test "field guns can move with exactly 28 supplies" (Movement.options [] rules map [ suppliedFieldGun ] suppliedFieldGun |> List.any (\option -> option.destination == { x = 1, y = 0 }))
                 , test "tracing reserves upkeep only once" (traced |> Maybe.map (\path -> List.length path.path == 3) |> Maybe.withDefault False)
                 , test "extending a trace cannot overspend supplies" (traced |> Maybe.andThen (\path -> Movement.trace rules map units unit path { x = 2, y = 1 }) |> (==) Nothing)
                 , test "backtracking refunds movement supplies" (traced |> Maybe.andThen (\path -> Movement.trace rules map units unit path { x = 0, y = 1 }) |> Maybe.andThen (\path -> Movement.trace rules map units unit path { x = 0, y = 2 }) |> Maybe.map (\path -> List.length path.path == 3) |> Maybe.withDefault False)
-                , test "vehicles use fuel rather than supplies for movement" (Movement.tileLimit units vehicle == Just 1 && not (List.isEmpty (Movement.options [] rules map units vehicle)))
+                , test "vehicles use fuel rather than supplies for movement" (Movement.tileLimit rules units vehicle == Just 1 && not (List.isEmpty (Movement.options [] rules map units vehicle)))
                 , test "empty supplies do not underflow the walking limit"
-                    (Movement.tileLimit units
+                    (Movement.tileLimit rules
+                        units
                         (unit
                             |> Unit.setResources (Maybe.map (\resources -> { resources | supplies = { supplies | current = 0 } }) unit.resources)
                         )

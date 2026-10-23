@@ -123,7 +123,8 @@ compiler success do not establish that these checks pass.
   existing buttons, selects, dialogs, info markers, and loading bars before
   building another local implementation.
 - [ ] Component APIs express semantic variants and modifiers, such as
-  `Card.compactForm` or `Button.Disabled`. Do not accept raw style lists or a
+  `Card.panel` for bounded scrolling behavior or `Button.Disabled`. Keep sizing
+  and placement in the caller's layout. Do not accept raw style lists or a
   collection of independently switchable layout flags.
 - [ ] Containers accept a content list; separate slots have a structural reason.
   Put transformed content last when that supports pipelines. Simple views

@@ -119,7 +119,32 @@ impl MapDefinition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{FixtureValue, TestResult};
+    use crate::{
+        map::RoadShape,
+        test_support::{FixtureValue, TestResult},
+    };
+
+    #[test]
+    fn explicit_road_variants_survive_map_json_and_scenario_loading() -> TestResult<()> {
+        for shape in RoadShape::ALL {
+            let road = Terrain::Road(shape);
+            let json = serde_json::json!({
+                "width": 3, "height": 2, "theme": "GreenForest",
+                "features": [{ "position": { "x": 1, "y": 0 }, "terrain": road }],
+                "depots": [],
+                "units": [
+                    { "id": 1, "position": { "x": 0, "y": 0 }, "playerNumber": "Player1", "kind": "Tank", "direction": "East" },
+                    { "id": 2, "position": { "x": 2, "y": 1 }, "playerNumber": "Player2", "kind": "Infantry", "direction": "West" }
+                ]
+            });
+            let definition = MapDefinition::parse(&json.to_string()).fixture()?;
+            let saved = serde_json::to_string(&definition)?;
+            let reloaded = MapDefinition::parse(&saved).fixture()?;
+            let scenario = reloaded.scenario().fixture()?;
+            assert_eq!(scenario.map.tile_at(Coordinate::new(1, 0)), Some(road));
+        }
+        Ok(())
+    }
 
     fn definition() -> TestResult<MapDefinition> {
         MapDefinition::parse(include_str!("../maps/supply-point.json")).fixture()

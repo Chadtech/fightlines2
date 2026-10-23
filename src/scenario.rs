@@ -2,6 +2,7 @@ use crate::{
     combat,
     map::{Coordinate, Map, MapError, Terrain},
     map_definition::MapDefinition,
+    movement,
     supplies::{self, CargoStock, GroundSupplyCrate, ResourceStock, SupplyRules},
 };
 use juniper::{GraphQLEnum, GraphQLObject, GraphQLUnion, graphql_object};
@@ -267,6 +268,11 @@ pub struct Unit {
     pub(crate) supply_cargo: Vec<CargoStock>,
 }
 
+struct MovementCost {
+    fuel: i32,
+    supplies: i32,
+}
+
 #[graphql_object]
 impl Unit {
     pub fn entrenchment(&self) -> Entrenchment {
@@ -491,15 +497,45 @@ impl Unit {
         })
     }
 
-    pub fn follow_terrain_path(&mut self, map: &Map, path: &[Coordinate], passenger_count: usize) {
-        let surcharge = self.supplies.movement_cost(map, path)
-            - path.len().saturating_sub(1) as i32 * self.supplies.movement_per_tile;
-        self.follow_path(path, passenger_count);
-        self.supplies.current -= surcharge;
+    pub fn fuel_movement_cost(
+        &self,
+        map: &Map,
+        path: &[Coordinate],
+        passenger_count: usize,
+    ) -> i32 {
+        let ordinary_cost = self.fuel_movement_per_tile(passenger_count);
+        let road_cost =
+            movement::road_fuel_cost(self.kind, passenger_count + self.supply_cargo.len());
+        path.iter()
+            .skip(1)
+            .map(|position| match map.tile_at(*position) {
+                Some(terrain) if terrain.is_road() => road_cost,
+                _ => ordinary_cost,
+            })
+            .sum()
     }
 
+    pub fn follow_terrain_path(&mut self, map: &Map, path: &[Coordinate], passenger_count: usize) {
+        let cost = MovementCost {
+            fuel: self.fuel_movement_cost(map, path, passenger_count),
+            supplies: self.supplies.movement_cost(map, path),
+        };
+        self.follow_path_with_costs(path, cost);
+    }
+
+    #[cfg(test)]
     pub fn follow_path(&mut self, path: &[Coordinate], passenger_count: usize) {
-        let fuel_per_tile = self.fuel_movement_per_tile(passenger_count);
+        let tiles = path.len().saturating_sub(1) as i32;
+        self.follow_path_with_costs(
+            path,
+            MovementCost {
+                fuel: tiles * self.fuel_movement_per_tile(passenger_count),
+                supplies: tiles * self.supplies.movement_per_tile,
+            },
+        );
+    }
+
+    fn follow_path_with_costs(&mut self, path: &[Coordinate], cost: MovementCost) {
         for step in path.windows(2) {
             if let Some(direction) = Direction::between(step[0], step[1]) {
                 if self.direction.is_some() {
@@ -509,10 +545,9 @@ impl Unit {
             }
         }
         if let Some(fuel) = &mut self.fuel {
-            fuel.current -= path.len().saturating_sub(1) as i32 * fuel_per_tile;
+            fuel.current -= cost.fuel;
         }
-        self.supplies.current -=
-            path.len().saturating_sub(1) as i32 * self.supplies.movement_per_tile;
+        self.supplies.current -= cost.supplies;
         if path.len() > 1
             && let Some(position) = path.last()
         {
@@ -530,11 +565,10 @@ impl Unit {
         initial: &Unit,
         passenger_count: usize,
     ) {
-        let removed_tiles = discarded_path.len().saturating_sub(1);
         self.supplies.current += self.supplies.movement_cost(map, discarded_path);
-        let fuel_per_tile = initial.fuel_movement_per_tile(passenger_count);
+        let refund = initial.fuel_movement_cost(map, discarded_path, passenger_count);
         if let Some(fuel) = &mut self.fuel {
-            fuel.current += removed_tiles as i32 * fuel_per_tile;
+            fuel.current += refund;
         }
         self.direction = initial.direction;
         self.sprite_facing = initial.sprite_facing;
@@ -732,6 +766,10 @@ impl Scenario {
         MapDefinition::parse(include_str!("../maps/lake-of-pennsylvania.json"))?.scenario()
     }
 
+    pub fn convoy_country() -> Result<Self, MapError> {
+        MapDefinition::parse(include_str!("../maps/convoy-country.json"))?.scenario()
+    }
+
     pub fn supply_point() -> Result<Self, MapError> {
         MapDefinition::parse(include_str!("../maps/supply-point.json"))?.scenario()
     }
@@ -739,9 +777,69 @@ impl Scenario {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
     use crate::map::MapTheme;
-    use crate::test_support::{FixtureValue, TestResult};
+    use crate::{
+        map::RoadShape,
+        test_support::{FixtureValue, TestResult},
+    };
+
+    #[test]
+    fn road_fuel_counts_cargo_and_refunds_only_discarded_terrain() -> TestResult<()> {
+        let fixture = MapDefinition::parse(r#"{
+            "width": 4, "height": 2, "theme": "GreenForest", "features": [], "depots": [],
+            "units": [
+                {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "Player1", "kind": "Tank", "direction": "East"},
+                {"id": 2, "position": {"x": 0, "y": 1}, "playerNumber": "Player1", "kind": "Truck"},
+                {"id": 3, "position": {"x": 3, "y": 1}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
+            ]
+        }"#).fixture()?.scenario().fixture()?;
+        let path = [
+            Coordinate::new(0, 0),
+            Coordinate::new(1, 0),
+            Coordinate::new(2, 0),
+        ];
+        for shape in RoadShape::ALL {
+            let road = Terrain::Road(shape);
+            let map =
+                Map::new(4, 2, Terrain::Plain, BTreeMap::from([(path[1], road)])).fixture()?;
+            for kind in [UnitKind::Tank, UnitKind::Truck] {
+                for passengers in 0..=2 {
+                    for freight in 0..=(2 - passengers) {
+                        let mut unit = fixture
+                            .units
+                            .iter()
+                            .find(|unit| unit.kind() == kind)
+                            .fixture()?
+                            .clone();
+                        unit.move_to(path[0]);
+                        unit.supply_cargo = vec![CargoStock::new(DepotKind::Supply, 256); freight];
+                        let slots = (passengers + freight) as i32;
+                        let (ordinary, road_cost) = match kind {
+                            UnitKind::Tank => (7, 5),
+                            UnitKind::Truck => (2 + 2 * slots, 1 + slots),
+                            _ => return Err("invalid road fixture kind".into()),
+                        };
+                        let initial = unit.clone();
+                        assert_eq!(unit.fuel_movement_cost(&map, &path[..1], passengers), 0);
+                        assert_eq!(
+                            unit.fuel_movement_cost(&map, &path, passengers),
+                            ordinary + road_cost
+                        );
+                        unit.follow_terrain_path(&map, &path, passengers);
+                        assert_eq!(unit.fuel().fixture()?.current, 128 - ordinary - road_cost);
+                        unit.take_damage(3);
+                        unit.retract_movement(&path[..2], &map, &path[1..], &initial, passengers);
+                        assert_eq!(unit.fuel().fixture()?.current, 128 - road_cost);
+                        assert_eq!(unit.hit_points().current(), 13);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn entrenchment_survives_holds_and_rotation_but_not_movement_or_boarding() -> TestResult<()> {
@@ -831,6 +929,7 @@ mod tests {
             crate::map_type::MapType::Ridgeway,
             crate::map_type::MapType::ThreeCrossings,
             crate::map_type::MapType::LakeOfPennsylvania,
+            crate::map_type::MapType::ConvoyCountry,
         ] {
             let scenario = map_type.scenario().fixture()?;
             let original_visibility =

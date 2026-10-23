@@ -3,10 +3,10 @@ module Game.TerrainFeature exposing
     , selection
     )
 
-import Api.Enum.Terrain exposing (Terrain)
 import Api.Object
 import Api.Object.TerrainFeature as FeatureApi
 import Game.Coordinate as Coordinate exposing (Coordinate)
+import Game.Terrain as Terrain exposing (Terrain)
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 
 
@@ -20,4 +20,4 @@ selection : SelectionSet TerrainFeature Api.Object.TerrainFeature
 selection =
     SS.succeed TerrainFeature
         |> SS.with (FeatureApi.position Coordinate.selection)
-        |> SS.with FeatureApi.terrain
+        |> SS.with (SS.map Terrain.fromApi FeatureApi.terrain)

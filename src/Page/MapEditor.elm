@@ -15,7 +15,6 @@ import Api.Enum.Direction as Direction exposing (Direction)
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
 import Api.Enum.MapType as MapType exposing (MapType)
 import Api.Enum.PlayerNumber as PlayerNumber exposing (PlayerNumber)
-import Api.Enum.Terrain as Terrain exposing (Terrain)
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Api.Object.MapCatalog as CatalogApi
 import Api.Query as Query
@@ -30,7 +29,8 @@ import Game.Camera exposing (Camera)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Map as Map exposing (Map)
 import Game.MapType as MapType
-import Game.Terrain as Terrain
+import Game.Road as Road
+import Game.Terrain as Terrain exposing (Terrain)
 import Game.UnitKind
 import Game.View.TerrainTile as TerrainTile
 import Graphql.Http
@@ -96,7 +96,8 @@ type alias Model =
 
 
 type Brush
-    = PaintTerrain Terrain
+    = PaintRoad
+    | PaintTerrain Terrain
     | PlaceUnit UnitKind
     | PlaceDepot DepotKind
     | EraseUnit
@@ -536,10 +537,18 @@ paint position model =
                 (\candidate -> inBounds candidate && not (List.member candidate originalTiles))
                 mirrored
 
-        draft : Definition
-        draft =
+        paintedDraft : Definition
+        paintedDraft =
             List.foldl (paintTile settings) current.draft originalTiles
                 |> (\painted -> List.foldl (paintTile reflectedSettings) painted mirroredTiles)
+
+        draft : Definition
+        draft =
+            if brushGroup model.brush == TerrainBrushes then
+                EditableMap.reconnectRoads (originalTiles ++ mirroredTiles) paintedDraft
+
+            else
+                paintedDraft
     in
     { model
         | current = { current | draft = draft }
@@ -603,6 +612,9 @@ paintTile settings position draft =
                 |> Maybe.withDefault nextId
     in
     case settings.brush of
+        PaintRoad ->
+            paintTile { settings | brush = PaintTerrain (Terrain.Road Road.NorthSouth) } position draft
+
         PaintTerrain terrain ->
             let
                 currentTerrain : Terrain
@@ -1067,15 +1079,23 @@ update msg model =
                             inside : { a | position : Coordinate } -> Bool
                             inside item =
                                 item.position.x < width && item.position.y < height
+
+                            croppedPositions : List Coordinate
+                            croppedPositions =
+                                draft.features
+                                    |> List.filter (not << inside)
+                                    |> List.map .position
                         in
                         applyEdit
-                            { draft
+                            ({ draft
                                 | width = width
                                 , height = height
                                 , features = List.filter inside draft.features
                                 , units = List.filter inside draft.units
                                 , depots = List.filter inside draft.depots
-                            }
+                             }
+                                |> EditableMap.reconnectRoads croppedPositions
+                            )
                             model
                             |> E.withOut
                             |> E.and measureViewport
@@ -1404,6 +1424,9 @@ select htmlId label value changed options =
 brushGroup : Brush -> BrushGroup
 brushGroup brush =
     case brush of
+        PaintRoad ->
+            TerrainBrushes
+
         PaintTerrain _ ->
             TerrainBrushes
 
@@ -1423,6 +1446,9 @@ brushGroup brush =
 brushLabel : Brush -> String
 brushLabel brush =
     case brush of
+        PaintRoad ->
+            "road"
+
         PaintTerrain terrain ->
             Terrain.label terrain
 
@@ -1467,7 +1493,7 @@ paintingTools model =
         brushes =
             case group of
                 TerrainBrushes ->
-                    List.map PaintTerrain Terrain.list
+                    List.map PaintTerrain Terrain.all ++ [ PaintRoad ]
 
                 UnitBrushes ->
                     List.map PlaceUnit UnitKind.list
@@ -1631,6 +1657,9 @@ brushPreview model brush =
         artwork : List (Svg Msg)
         artwork =
             case brush of
+                PaintRoad ->
+                    [ TerrainTile.toSvg { theme = model.current.draft.theme, terrain = Terrain.Road Road.EastSouthWest } ]
+
                 PaintTerrain terrain ->
                     [ TerrainTile.toSvg { theme = model.current.draft.theme, terrain = terrain }
                     ]

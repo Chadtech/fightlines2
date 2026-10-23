@@ -1,6 +1,5 @@
 module View.Card exposing
     ( Card
-    , compactForm
     , panel
     , simple
     , toHtml
@@ -27,20 +26,14 @@ type alias Card =
 
 type Variant
     = Simple
-    | CompactForm
     | Panel
 
 
+{-| An ordinary card surface. Its caller owns width and placement.
+-}
 simple : Card
 simple =
     { variant = Simple
-    , header = Nothing
-    }
-
-
-compactForm : Card
-compactForm =
-    { variant = CompactForm
     , header = Nothing
     }
 
@@ -62,6 +55,39 @@ withHeader header card =
 
 toHtml : Card -> List (Html msg) -> Html msg
 toHtml card content =
+    let
+        body : List (Html msg)
+        body =
+            case card.header of
+                Nothing ->
+                    content
+
+                Just header ->
+                    [ H.div
+                        [ A.css
+                            [ S.when (card.variant == Panel) S.shrink0
+                            , S.p2px
+                            ]
+                        ]
+                        [ CardHeader.toHtml header
+                        ]
+                    , H.div
+                        [ A.css
+                            [ S.col
+                            , S.g3
+                            , S.p3
+                            , S.when (card.variant == Panel)
+                                (S.batch
+                                    [ S.flex1
+                                    , S.minH0
+                                    , S.overflowAuto
+                                    ]
+                                )
+                            ]
+                        ]
+                        content
+                    ]
+    in
     H.article
         [ A.css
             [ S.bgGray1
@@ -81,41 +107,6 @@ toHtml card content =
                     , S.p3
                     ]
                 )
-            , S.when (card.variant == CompactForm)
-                (S.batch
-                    [ S.wFull
-                    , S.maxW96
-                    ]
-                )
             ]
         ]
-        (case card.header of
-            Nothing ->
-                content
-
-            Just header ->
-                [ H.div
-                    [ A.css
-                        [ S.when (card.variant == Panel) S.shrink0
-                        , S.p2px
-                        ]
-                    ]
-                    [ CardHeader.toHtml header
-                    ]
-                , H.div
-                    [ A.css
-                        [ S.col
-                        , S.g3
-                        , S.p3
-                        , S.when (card.variant == Panel)
-                            (S.batch
-                                [ S.flex1
-                                , S.minH0
-                                , S.overflowAuto
-                                ]
-                            )
-                        ]
-                    ]
-                    content
-                ]
-        )
+        body

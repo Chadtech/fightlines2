@@ -6,10 +6,10 @@ module Game.Shoreline exposing
     )
 
 import Api.Enum.Direction as Direction exposing (Direction)
-import Api.Enum.Terrain as Terrain exposing (Terrain)
 import Game.Coordinate exposing (Coordinate)
 import Game.Direction as Direction
 import Game.Map as Map exposing (Map)
+import Game.Terrain as Terrain exposing (Terrain)
 
 
 type Bank

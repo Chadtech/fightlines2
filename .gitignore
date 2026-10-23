@@ -23,6 +23,10 @@
 /public/assets/*
 !/public/assets/README.md
 !/public/assets/fightlines-logo-v1.png
+!/public/assets/omar-bradley-cutout-v1.png
+!/public/assets/home-battlefield-snow-v1.png
+!/public/assets/home-battlefield-desert-v1.png
+!/public/assets/home-battlefield-logistics-v1.png
 !/public/assets/misc_sheet.png
 !/public/assets/supply-depot-illustrated-v1.png
 !/public/assets/supply-crate-illustrated-v1.png
@@ -38,6 +42,8 @@
 !/public/assets/coast-illustrated-v1/*.png
 !/public/assets/coast-illustrated-v2/
 !/public/assets/coast-illustrated-v2/*.png
+!/public/assets/roads-illustrated-v1/
+!/public/assets/roads-illustrated-v1/*.png
 !/public/assets/terrain-hills-illustrated-v7.png
 !/public/assets/terrain-hills-snow-illustrated-v7.png
 !/public/assets/terrain-hills-desert-illustrated-v7.png

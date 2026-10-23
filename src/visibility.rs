@@ -120,7 +120,12 @@ pub(crate) fn clear_line(map: &Map, origin: Coordinate, target: Coordinate) -> b
     match origin_terrain {
         Some(Terrain::Mountains) => return true,
         Some(
-            Terrain::Hills | Terrain::Forest | Terrain::Plain | Terrain::Water | Terrain::Beach,
+            Terrain::Hills
+            | Terrain::Forest
+            | Terrain::Plain
+            | Terrain::Water
+            | Terrain::Beach
+            | Terrain::Road(_),
         )
         | None => {}
     }
@@ -137,7 +142,9 @@ pub(crate) fn clear_line(map: &Map, origin: Coordinate, target: Coordinate) -> b
         let blocking_terrain = match map.tile_at(position) {
             Some(Terrain::Mountains) => true,
             Some(Terrain::Hills | Terrain::Forest) => origin_terrain != Some(Terrain::Hills),
-            Some(Terrain::Plain | Terrain::Water | Terrain::Beach) | None => false,
+            Some(Terrain::Plain | Terrain::Water | Terrain::Beach | Terrain::Road(_)) | None => {
+                false
+            }
         };
         position != origin && position != target && blocking_terrain
     };

@@ -7,7 +7,6 @@ import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as MapTheme
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing
-import Api.Enum.Terrain as Terrain
 import Api.Enum.TurnEventKind as EventKind
 import Api.Enum.UnitKind as Kind
 import Game.Camera as Camera
@@ -17,6 +16,7 @@ import Game.Direction as Direction
 import Game.IndirectImpact as IndirectImpact exposing (IndirectImpact)
 import Game.Map as Map
 import Game.Shot as Shot exposing (Shot)
+import Game.Terrain as Terrain
 import Game.Turn as Turn
 import Game.TurnPlayback as TurnPlayback
 import Game.Unit as Unit exposing (Unit)

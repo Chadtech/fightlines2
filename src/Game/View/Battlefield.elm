@@ -81,6 +81,21 @@ import View.Button as Button
 ----------------------------------------------------------------
 
 
+type TerrainAppearance
+    = ClearTerrain
+    | FoggedTerrain
+    | DimmedTerrain
+    | FoggedDimmedTerrain
+
+
+type alias TerrainGroups =
+    { clear : List Coordinate
+    , fogged : List Coordinate
+    , dimmed : List Coordinate
+    , foggedDimmed : List Coordinate
+    }
+
+
 type alias UnloadRoute =
     { origin : Coordinate
     , direction : Direction
@@ -1264,8 +1279,8 @@ boardUnit unit facing transform ordered passengerCount column =
         ]
 
 
-boardTerrainTile : Map -> String -> Bool -> Int -> Int -> Svg Msg
-boardTerrainTile map filter visible x y =
+boardTerrainTile : Map -> Bool -> Int -> Int -> Svg Msg
+boardTerrainTile map visible x y =
     let
         position : Coordinate
         position =
@@ -1279,15 +1294,9 @@ boardTerrainTile map filter visible x y =
             else
                 [ HA.attribute "data-fog" "unseen"
                 ]
-
-        appearanceAttributes : List (Svg.Attribute Msg)
-        appearanceAttributes =
-            [ HA.style "filter" filter
-            , SA.pointerEvents "none"
-            ]
     in
     Svg.g
-        (appearanceAttributes ++ fogAttributes)
+        (SA.pointerEvents "none" :: fogAttributes)
         [ at position
             [ SvgLazy.lazy2 terrainArtwork map position
             ]
@@ -1301,39 +1310,53 @@ indirectTargets map origin range =
 
 boardTileFilter : Set Coordinate.Key -> Bool -> Set Coordinate.Key -> Maybe Coordinate -> Coordinate -> String
 boardTileFilter visiblePositions choosingDestination reachablePositions selected position =
+    boardTileAppearance visiblePositions choosingDestination reachablePositions selected position
+        |> terrainAppearanceFilter
+
+
+boardTileAppearance :
+    Set Coordinate.Key
+    -> Bool
+    -> Set Coordinate.Key
+    -> Maybe Coordinate
+    -> Coordinate
+    -> TerrainAppearance
+boardTileAppearance visiblePositions choosingDestination reachablePositions selected position =
     let
-        visibilityFilters : List String
-        visibilityFilters =
-            if Set.member (Coordinate.key position) visiblePositions then
-                []
-
-            else
-                [ "saturate(0.18) brightness(0.58)" ]
-
         unavailable : Bool
         unavailable =
             choosingDestination
                 && not (Set.member (Coordinate.key position) reachablePositions)
-                && selected
-                /= Just position
-
-        destinationFilters : List String
-        destinationFilters =
-            if unavailable then
-                [ "brightness(0.6)" ]
-
-            else
-                []
-
-        filters : List String
-        filters =
-            visibilityFilters ++ destinationFilters
+                && (selected /= Just position)
     in
-    if List.isEmpty filters then
-        "none"
+    case ( Set.member (Coordinate.key position) visiblePositions, unavailable ) of
+        ( True, False ) ->
+            ClearTerrain
 
-    else
-        String.join " " filters
+        ( False, False ) ->
+            FoggedTerrain
+
+        ( True, True ) ->
+            DimmedTerrain
+
+        ( False, True ) ->
+            FoggedDimmedTerrain
+
+
+terrainAppearanceFilter : TerrainAppearance -> String
+terrainAppearanceFilter appearance =
+    case appearance of
+        ClearTerrain ->
+            "none"
+
+        FoggedTerrain ->
+            "saturate(0.18) brightness(0.58)"
+
+        DimmedTerrain ->
+            "brightness(0.6)"
+
+        FoggedDimmedTerrain ->
+            "saturate(0.18) brightness(0.58) brightness(0.6)"
 
 
 {-| Unwrap interaction and selection before lazy boundaries. The input records
@@ -1387,6 +1410,11 @@ unselectedIndirectTerrain map visibleTiles origin range =
     terrainLayer map visibleTiles (indirectTargets map origin range) True Nothing
 
 
+{-| Terrain stays inside its cell, so equal appearances can share one filter
+without changing artwork order within a cell. Keep unit, depot, targeting and
+selection layers separate from these terrain-only groups. Coordinate keys retain
+unaffected tiles when visibility or destination availability changes.
+-}
 terrainLayer : Map -> List Coordinate -> List Coordinate -> Bool -> Maybe Coordinate -> Svg Msg
 terrainLayer map visibleTiles reachable choosingDestination selected =
     let
@@ -1398,18 +1426,52 @@ terrainLayer map visibleTiles reachable choosingDestination selected =
         reachablePositions =
             Set.fromList (List.map Coordinate.key reachable)
 
-        terrainFilter : Coordinate -> String
-        terrainFilter =
-            boardTileFilter visiblePositions choosingDestination reachablePositions selected
+        groupTile : Coordinate -> TerrainGroups -> TerrainGroups
+        groupTile position accumulated =
+            case boardTileAppearance visiblePositions choosingDestination reachablePositions selected position of
+                ClearTerrain ->
+                    { accumulated | clear = position :: accumulated.clear }
 
-        terrainTile : Coordinate -> Svg Msg
-        terrainTile position =
-            SvgLazy.lazy5 boardTerrainTile map (terrainFilter position) (Set.member (Coordinate.key position) visiblePositions) position.x position.y
+                FoggedTerrain ->
+                    { accumulated | fogged = position :: accumulated.fogged }
+
+                DimmedTerrain ->
+                    { accumulated | dimmed = position :: accumulated.dimmed }
+
+                FoggedDimmedTerrain ->
+                    { accumulated | foggedDimmed = position :: accumulated.foggedDimmed }
+
+        groups : TerrainGroups
+        groups =
+            List.foldl groupTile
+                { clear = []
+                , fogged = []
+                , dimmed = []
+                , foggedDimmed = []
+                }
+                (Map.positions map)
+
+        terrainGroup : TerrainAppearance -> List Coordinate -> Svg Msg
+        terrainGroup appearance positions =
+            let
+                terrainTile : Coordinate -> ( String, Svg Msg )
+                terrainTile position =
+                    ( String.fromInt position.x ++ "," ++ String.fromInt position.y
+                    , SvgLazy.lazy4 boardTerrainTile map (Set.member (Coordinate.key position) visiblePositions) position.x position.y
+                    )
+            in
+            SvgKeyed.node "g"
+                [ HA.style "filter" (terrainAppearanceFilter appearance) ]
+                (List.map terrainTile (List.reverse positions))
     in
     Svg.g
         [ HA.style "image-rendering" "auto"
         ]
-        (List.map terrainTile (Map.positions map))
+        [ terrainGroup ClearTerrain groups.clear
+        , terrainGroup FoggedTerrain groups.fogged
+        , terrainGroup DimmedTerrain groups.dimmed
+        , terrainGroup FoggedDimmedTerrain groups.foggedDimmed
+        ]
 
 
 {-| Keep neighboring-terrain artwork separate from fog and destination treatment.

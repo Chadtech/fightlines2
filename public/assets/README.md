@@ -10,9 +10,24 @@ directory is available. A fresh clone does not include that directory.
   with built-in imagegen. Tall italic ivory lettering sits over a thick yellow
   underline, with a flush g descender and a small explosion at the right.
   Local approved variations and prompts are retained in `output/imagegen/`.
+- `omar-bradley-cutout-v1.png`: transparent monochrome portrait extracted from
+  the supplied Omar Bradley photograph with built-in imagegen. The home page
+  displays it as subdued decoration after the logo enters. The source photograph,
+  generated master, and exact extraction prompt are retained locally in
+  `artwork/home/omar-bradley/`.
+- `home-battlefield-{snow,desert,logistics}-v1.png`: the three user-supplied
+  battlefield screenshots from October 14, 17, and 18, 2026, copied unchanged.
+  The home page applies a dark green monochrome filter, feathered mask, and slow
+  staggered drift/fade cycle in CSS after its entrance animation.
 - `misc_sheet.png`: 16 x 464 legacy atlas, with 16px cells. Selection corners
   use row 2. Copied from the original FightLines sprite sheet.
 - `terrain-grass-illustrated-v2.png`: opaque grass tile, rendered in each grass-map cell.
+- `roads-illustrated-v1/`: transparent straight, corner, T-junction, and crossroads
+  sprites over themed ground. Stored road terrain selects the sprite and a fixed
+  rotation. Junction arms reuse the approved straight sprite's shoulders and lane
+  markings. Built-in imagegen supplied the painted artwork; local masters and
+  prompts are in `artwork/terrain/illustrated/roads-v1/`. The terrain exporter copies
+  `straight.png`, `corner-v2.png`, `t-junction-v2.png`, and `crossroads-v2.png`.
 - `terrain-snow-plains-illustrated-v1.png`: opaque painted snow ground with cool
   blue-gray wind ripples, shallow drifts, and sparse exposed dormant grass and
   stones. Shared by snowy board tiles, editor previews, and terrain inspection,
@@ -30,8 +45,14 @@ directory is available. A fresh clone does not include that directory.
 - `terrain-water-illustrated-v1.png`: opaque 2048 × 1024 atlas with 32 frames
   in eight columns and four rows of 256px cells. The approved painted crest
   lifecycle rebuild forms, advances, breaks, and dissolves individual waves.
-  Board, editor, and inspector use a 1.92-second stepped loop with no theme filter;
-  reduced motion holds the first frame. `combat-backdrops-anime-v1/water.png`
+  Board, editor, and inspector animate the atlas with direct 1.92-second stepped
+  transforms, without inherited frame variables on the application shell.
+  `water-animation.js` aligns newly created sprites to an invisible CSS timeline;
+  it does not advance animation frames. Terrain tiles with matching fog and
+  destination-dimming treatment share a filter group; overlays retain their
+  separate appearance rules.
+  Combat/loss focus pauses sprites and timeline; reduced motion holds frame one.
+  `combat-backdrops-anime-v1/water.png`
   is the matching still for indirect-fire impacts. Local masters, generation
   prompts, and metadata live in `artwork/terrain/illustrated/water-v1/`;
   `tools/build-terrain-sprites.cjs` copies both runtime exports.

@@ -721,9 +721,11 @@ pub fn validate(
             return Err("movement exceeds the unit's budget.");
         }
         if let Some(fuel) = unit.fuel()
-            && (path.len() - 1)
-                * unit.fuel_movement_per_tile(scenario.passenger_count(unit.unit_id())) as usize
-                > fuel.current as usize
+            && unit.fuel_movement_cost(
+                &scenario.map,
+                &path,
+                scenario.passenger_count(unit.unit_id()),
+            ) > fuel.current
         {
             return Err("movement exceeds the unit's available fuel.");
         }
@@ -1569,6 +1571,7 @@ mod tests {
     use crate::{
         combat::CombatKind,
         map::{self, Map, Terrain},
+        map_definition::MapDefinition,
         scenario::DepotKind,
         test_support::{FixtureValue, TestResult},
         visibility,
@@ -4321,6 +4324,44 @@ mod tests {
         let id = UnitId::parse("1").fixture()?;
         assert!(observed.events.iter().all(|event| event.unit_id == id));
 
+        Ok(())
+    }
+
+    #[test]
+    fn road_orders_validate_and_resolve_with_exact_fuel() -> TestResult<()> {
+        for (kind, facing, required) in [("Tank", Some("East"), 10), ("Truck", None, 2)] {
+            let json = serde_json::json!({
+                "width": 5, "height": 2, "theme": "GreenForest", "depots": [],
+                "features": [
+                    {"position": {"x": 1, "y": 0}, "terrain": "RoadEastWest"},
+                    {"position": {"x": 2, "y": 0}, "terrain": "RoadEastWest"}
+                ],
+                "units": [
+                    {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "Player1", "kind": kind, "direction": facing},
+                    {"id": 2, "position": {"x": 4, "y": 1}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
+                ]
+            });
+            let mut scenario = MapDefinition::parse(&json.to_string())
+                .fixture()?
+                .scenario()
+                .fixture()?;
+            let mut turns = Turns::default();
+            vehicle(&mut scenario, "1")?.set_fuel_for_test(required - 1);
+            let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+            set_path(&mut orders, "1", &[(0, 0), (1, 0), (2, 0)])?;
+            assert_eq!(
+                turns.submit(&mut scenario, PlayerNumber::Player1, 1, orders),
+                Err("movement exceeds the unit's available fuel.")
+            );
+            assert!(turns.orders[0].is_none());
+            vehicle(&mut scenario, "1")?.set_fuel_for_test(required);
+            let mut orders = holds(&scenario, PlayerNumber::Player1)?;
+            set_path(&mut orders, "1", &[(0, 0), (1, 0), (2, 0)])?;
+            resolve_orders(&mut scenario, &mut turns, orders)?;
+            let unit = vehicle(&mut scenario, "1")?;
+            assert_eq!(unit.board_position(), Some(Coordinate::new(2, 0)));
+            assert_eq!(unit.fuel().fixture()?.current, 0);
+        }
         Ok(())
     }
 

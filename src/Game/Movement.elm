@@ -13,11 +13,11 @@ module Game.Movement exposing
     , trace
     )
 
-import Api.Enum.Terrain as Terrain exposing (Terrain)
 import Api.Enum.UnitKind exposing (UnitKind)
 import Dict exposing (Dict)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Map as Map exposing (Map)
+import Game.Terrain as Terrain exposing (Terrain)
 import Game.Unit as Unit exposing (Unit)
 import Game.Unit.Fuel as Fuel exposing (Fuel)
 import Game.Unit.Supplies as Supplies exposing (Supplies)
@@ -45,6 +45,21 @@ type alias Rule =
     { kind : UnitKind
     , budget : Int
     , terrainCosts : List TerrainCost
+    , roadFuelPerTile : Int
+    , roadFuelPerCargoSlot : Int
+    }
+
+
+type alias FuelBudget =
+    { current : Int
+    , ordinaryPerTile : Int
+    , roadPerTile : Int
+    }
+
+
+type alias ResourceLimit =
+    { tiles : Maybe Int
+    , fuel : Maybe FuelBudget
     }
 
 
@@ -103,57 +118,105 @@ affordableRoutes goal blocked rules map units unit =
         )
     of
         ( Just rule, Just origin ) ->
+            let
+                limit : ResourceLimit
+                limit =
+                    resourceLimit rule units unit
+            in
             search goal
-                (tileLimit units unit)
+                limit
                 unit
                 rule
                 map
                 blocked
                 [ start origin ]
-                (Dict.singleton (searchKey (tileLimit units unit) map unit (start origin)) 0)
+                (Dict.singleton (searchKey limit map unit (start origin)) 0)
                 []
                 |> List.filter (\option -> option.destination /= origin)
-                |> List.foldl cheapestDestination Dict.empty
+                |> List.foldl (cheapestDestination limit map) Dict.empty
                 |> Dict.values
 
         _ ->
             []
 
 
-{-| Reserve upkeep once; only walking units spend supplies per tile.
-Fuel and supplies bound tile count independently of terrain movement costs.
+{-| An upper bound using the cheapest exported fuel entry cost. Actual paths
+also track fuel and terrain supply expenditure independently.
 -}
-tileLimit : List Unit -> Unit -> Maybe Int
-tileLimit units unit =
+tileLimit : List Rule -> List Unit -> Unit -> Maybe Int
+tileLimit rules units unit =
+    rules
+        |> ListUtil.find (\rule -> rule.kind == unit.kind)
+        |> Maybe.andThen (\rule -> (resourceLimit rule units unit).tiles)
+
+
+resourceLimit : Rule -> List Unit -> Unit -> ResourceLimit
+resourceLimit rule units unit =
     let
         supplyLimit : Maybe Int
         supplyLimit =
+            unit.resources |> Maybe.andThen (.supplies >> Unit.supplyMovementLimit)
+
+        fuelBudget : Maybe FuelBudget
+        fuelBudget =
             unit.resources
-                |> Maybe.andThen (.supplies >> Unit.supplyMovementLimit)
+                |> Maybe.andThen .fuel
+                |> Maybe.map
+                    (\fuel ->
+                        { current = fuel.current
+                        , ordinaryPerTile = Unit.fuelMovementPerTile units unit
+                        , roadPerTile = rule.roadFuelPerTile + Unit.occupiedCargoSlots units unit * rule.roadFuelPerCargoSlot
+                        }
+                    )
 
         fuelLimit : Maybe Int
         fuelLimit =
-            unit.resources
-                |> Maybe.andThen .fuel
-                |> Maybe.map (\fuel -> fuel.current // Unit.fuelMovementPerTile units unit)
+            fuelBudget |> Maybe.map (\fuel -> fuel.current // max 1 (min fuel.ordinaryPerTile fuel.roadPerTile))
+
+        tiles : Maybe Int
+        tiles =
+            if Unit.carrierId unit /= Nothing then
+                Just (min 1 (Maybe.withDefault 1 supplyLimit))
+
+            else
+                case ( fuelLimit, supplyLimit ) of
+                    ( Just fuel, Just supplies ) ->
+                        Just (min fuel supplies)
+
+                    ( Just fuel, Nothing ) ->
+                        Just fuel
+
+                    ( Nothing, supplies ) ->
+                        supplies
     in
-    if Unit.carrierId unit /= Nothing then
-        Just (min 1 (Maybe.withDefault 1 supplyLimit))
-
-    else
-        case ( fuelLimit, supplyLimit ) of
-            ( Just fuel, Just supplies ) ->
-                Just (min fuel supplies)
-
-            ( Just fuel, Nothing ) ->
-                Just fuel
-
-            ( Nothing, supplies ) ->
-                supplies
+    { tiles = tiles, fuel = fuelBudget }
 
 
-cheapestDestination : Option -> Dict ( Int, Int ) Option -> Dict ( Int, Int ) Option
-cheapestDestination option best =
+fuelCost : ResourceLimit -> Map -> List Coordinate -> Int
+fuelCost limit map path =
+    let
+        entry : FuelBudget -> Coordinate -> Int
+        entry fuel position =
+            if Terrain.isRoad (Map.terrainAt map position) then
+                fuel.roadPerTile
+
+            else
+                fuel.ordinaryPerTile
+    in
+    limit.fuel
+        |> Maybe.map (\fuel -> List.drop 1 path |> List.map (entry fuel) |> List.sum)
+        |> Maybe.withDefault 0
+
+
+exceedsFuel : ResourceLimit -> Map -> List Coordinate -> Bool
+exceedsFuel limit map path =
+    limit.fuel
+        |> Maybe.map (\fuel -> fuelCost limit map path > fuel.current)
+        |> Maybe.withDefault False
+
+
+cheapestDestination : ResourceLimit -> Map -> Option -> Dict ( Int, Int ) Option -> Dict ( Int, Int ) Option
+cheapestDestination limit map option best =
     case Dict.get (key option.destination) best of
         Just previous ->
             let
@@ -161,7 +224,7 @@ cheapestDestination option best =
                 previousIsBetter =
                     previous.cost
                         < option.cost
-                        || (previous.cost == option.cost && List.length previous.path <= List.length option.path)
+                        || (previous.cost == option.cost && ( fuelCost limit map previous.path, List.length previous.path ) <= ( fuelCost limit map option.path, List.length option.path ))
             in
             if previousIsBetter then
                 best
@@ -173,10 +236,10 @@ cheapestDestination option best =
             Dict.insert (key option.destination) option best
 
 
-searchKey : Maybe Int -> Map -> Unit -> Option -> ( ( Int, Int ), ( Int, Int ) )
+searchKey : ResourceLimit -> Map -> Unit -> Option -> ( ( Int, Int ), ( Int, Int ) )
 searchKey limit map unit option =
     ( key option.destination
-    , ( limit |> Maybe.map (\_ -> List.length option.path - 1) |> Maybe.withDefault 0
+    , ( fuelCost limit map option.path
       , unit.resources |> Maybe.map (\resources -> supplyCost map resources.supplies option.path) |> Maybe.withDefault 0
       )
     )
@@ -196,14 +259,14 @@ neighbors position =
     ]
 
 
-{-| Search affordable routes. Keys include position, tiles traveled, and supply expenditure.
-Units without a resource movement limit use zero for the tile-count component.
-Keeping costs for each path length and supply expenditure preserves affordable routes.
+{-| Search affordable routes. Keys include position, fuel spent, and supply expenditure.
+Units without fuel use zero for the fuel component.
+Keeping distinct resource expenditures preserves affordable road detours.
 Costs are stored in half movement points, independently of fuel.
 -}
 search :
     SearchGoal
-    -> Maybe Int
+    -> ResourceLimit
     -> Unit
     -> Rule
     -> Map
@@ -236,7 +299,7 @@ search goal limit unit rule map blocked frontier costs reached =
             else
                 let
                     -- The accumulator pairs pending routes with their best movement costs.
-                    -- Dict keys are ((x, y), (tiles traveled, supplies spent)); keeping
+                    -- Dict keys are ((x, y), (fuel spent, supplies spent)); keeping
                     -- resource usage separate preserves routes that remain affordable.
                     visit :
                         Coordinate
@@ -314,11 +377,12 @@ search goal limit unit rule map blocked frontier costs reached =
 
                                         exceedsResources : Bool
                                         exceedsResources =
-                                            (limit
+                                            (limit.tiles
                                                 |> Maybe.map (\available -> List.length candidate.path - 1 > available)
                                                 |> Maybe.withDefault False
                                             )
                                                 || exceedsSupplies
+                                                || exceedsFuel limit map candidate.path
 
                                         alreadyReachedAtLowerOrEqualCost : Bool
                                         alreadyReachedAtLowerOrEqualCost =
@@ -430,7 +494,7 @@ trace rules map units unit current destination =
                     remainingUnit : Unit
                     remainingUnit =
                         unit
-                            |> Unit.mapResources (remainingResources (Unit.fuelMovementPerTile units unit) map current)
+                            |> Unit.mapResources (remainingResources (resourceLimit movementRule units unit) map current)
                             |> Unit.setOnMap current.destination
 
                     extendPath : Option -> Option
@@ -451,7 +515,7 @@ trace rules map units unit current destination =
                     remainingUnit
                     |> ListUtil.find (\option -> option.destination == destination)
                     |> Maybe.map extendPath
-                    |> Maybe.andThen (withinTileLimit units unit)
+                    |> Maybe.andThen (withinResources (resourceLimit movementRule units unit) map)
 
 
 supplyCost : Map -> Supplies -> List Coordinate -> Int
@@ -460,12 +524,6 @@ supplyCost map supplies path =
         entryCost : Coordinate -> Int
         entryCost position =
             case Map.terrainAt map position of
-                Terrain.Plain ->
-                    supplies.movementPerTile
-
-                Terrain.Beach ->
-                    supplies.movementPerTile
-
                 Terrain.Hills ->
                     supplies.movementPerTile + supplies.roughTerrainSurcharge
 
@@ -475,7 +533,7 @@ supplyCost map supplies path =
                 Terrain.Mountains ->
                     supplies.movementPerTile + supplies.roughTerrainSurcharge
 
-                Terrain.Water ->
+                _ ->
                     supplies.movementPerTile
     in
     path
@@ -484,20 +542,16 @@ supplyCost map supplies path =
         |> List.sum
 
 
-remainingResources : Int -> Map -> Option -> UnitResources -> UnitResources
-remainingResources fuelPerTile map current resources =
+remainingResources : ResourceLimit -> Map -> Option -> UnitResources -> UnitResources
+remainingResources limit map current resources =
     let
-        tiles : Int
-        tiles =
-            List.length current.path - 1
-
         supplies : Supplies
         supplies =
             resources.supplies
 
         remainingFuel : Fuel -> Fuel
         remainingFuel fuel =
-            Fuel.setCurrent (fuel.current - tiles * fuelPerTile) fuel
+            Fuel.setCurrent (fuel.current - fuelCost limit map current.path) fuel
     in
     { resources
         | fuel = Maybe.map remainingFuel resources.fuel
@@ -552,16 +606,16 @@ preview rules map units unit current destination =
                 |> Maybe.andThen (\origin -> trace rules map units unit (start origin) destination)
 
 
-withinTileLimit : List Unit -> Unit -> Option -> Maybe Option
-withinTileLimit units unit option =
+withinResources : ResourceLimit -> Map -> Option -> Maybe Option
+withinResources limit map option =
     let
         exceedsLimit : Bool
         exceedsLimit =
-            tileLimit units unit
-                |> Maybe.map (\limit -> List.length option.path - 1 > limit)
+            limit.tiles
+                |> Maybe.map (\available -> List.length option.path - 1 > available)
                 |> Maybe.withDefault False
     in
-    if exceedsLimit then
+    if exceedsLimit || exceedsFuel limit map option.path then
         Nothing
 
     else

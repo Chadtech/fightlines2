@@ -8,15 +8,16 @@ module Game.View.TerrainTile exposing
 
 import Api.Enum.Direction as Direction exposing (Direction)
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
-import Api.Enum.Terrain as Terrain exposing (Terrain)
 import Game.Coordinate exposing (Coordinate)
 import Game.Map as Map exposing (Map)
+import Game.Road as Road exposing (RoadShape)
 import Game.Shoreline as Shoreline
     exposing
         ( Bank(..)
         , Corner(..)
         , Transition(..)
         )
+import Game.Terrain as Terrain exposing (Terrain)
 import Game.View.Cliff as Cliff
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
@@ -48,6 +49,8 @@ beachCornerSteps =
 
 
 {-| Shared definitions are mounted once in the shell, including for inspector SVGs.
+The invisible water timeline has no changing or inherited values. The browser
+adapter aligns newly created direct transforms to it before their first paint.
 -}
 definitions : Html msg
 definitions =
@@ -70,7 +73,17 @@ definitions =
         ]
         [ Svg.defs
             []
-            [ Svg.clipPath
+            [ Svg.g
+                [ SA.id waterTimelineHtmlId
+                , A.css
+                    [ S.animation "fightlines-water-clock 1920ms steps(1, end) infinite"
+                    , S.reducedMotion
+                        [ S.animationNone
+                        ]
+                    ]
+                ]
+                []
+            , Svg.clipPath
                 [ SA.id beachSliceHtmlId
                 , SA.clipPathUnits "userSpaceOnUse"
                 ]
@@ -119,7 +132,17 @@ definitions =
         |> H.fromUnstyled
 
 
-{-| One inherited clock keeps newly painted tiles and inspection portraits in phase.
+waterFramesClass : String
+waterFramesClass =
+    "fightlines-water-frames"
+
+
+waterTimelineHtmlId : String
+waterTimelineHtmlId =
+    "fightlines-water-timeline"
+
+
+{-| Scope for pausing water during combat and loss focus.
 -}
 clockClass : String
 clockClass =
@@ -137,11 +160,11 @@ styles =
                     modBy 32 index
             in
             String.fromFloat (toFloat index * 100 / 32)
-                ++ "% { --fightlines-water-x: "
+                ++ "% { transform: translate("
                 ++ String.fromInt (-16 * modBy 8 frame)
-                ++ "px; --fightlines-water-y: "
+                ++ "px, "
                 ++ String.fromInt (-16 * (frame // 8))
-                ++ "px; }"
+                ++ "px); }"
 
         keyframes : String
         keyframes =
@@ -154,18 +177,13 @@ styles =
         [ H.text
             ("@keyframes fightlines-water-frames {"
                 ++ keyframes
-                ++ "} ."
+                ++ "} @keyframes fightlines-water-clock { from, to { opacity: 1; } } ."
                 ++ clockClass
-                ++ """ {
-                    animation: fightlines-water-frames 1920ms steps(1, end) infinite;
-                }
-                .fightlines-water-clock:has(.fightlines-combat-focus, .fightlines-death-focus) {
-                    animation-play-state: paused;
-                }
-                @media (prefers-reduced-motion: reduce) {
-                    .fightlines-water-clock { animation: none; }
-                }
-                """
+                ++ ":has(.fightlines-combat-focus, .fightlines-death-focus) :is(."
+                ++ waterFramesClass
+                ++ ", #"
+                ++ waterTimelineHtmlId
+                ++ ") { animation-play-state: paused; }"
             )
         ]
 
@@ -180,11 +198,15 @@ waterView =
         , SA.pointerEvents "none"
         ]
         [ Svg.image
-            [ SA.width "128"
+            [ SA.class waterFramesClass
+            , SA.width "128"
             , SA.height "64"
             , SA.xlinkHref "/assets/terrain-water-illustrated-v1.png"
             , A.css
-                [ S.transform "translate(var(--fightlines-water-x, 0px), var(--fightlines-water-y, 0px))"
+                [ S.animation (waterFramesClass ++ " 1920ms steps(1, end) infinite")
+                , S.reducedMotion
+                    [ S.animationNone
+                    ]
                 ]
             ]
             []
@@ -398,6 +420,9 @@ terrainView theme terrain =
                 Terrain.Mountains ->
                     Just (mountainPath theme)
 
+                _ ->
+                    Nothing
+
         featureFilter : String
         featureFilter =
             case terrain of
@@ -425,9 +450,18 @@ terrainView theme terrain =
                 _ ->
                     image { path = art.groundPath, filter = art.groundFilter }
 
+        roadImages : List (Svg msg)
+        roadImages =
+            case terrain of
+                Terrain.Road shape ->
+                    [ roadView shape ]
+
+                _ ->
+                    []
+
         images : List (Svg msg)
         images =
-            groundImage :: featureImages
+            groundImage :: featureImages ++ roadImages
     in
     Svg.g
         []
@@ -458,3 +492,47 @@ mountainPath theme =
 
         MapTheme.Desert ->
             "/assets/terrain-mountains-desert-illustrated-v1.png"
+
+
+roadView : RoadShape -> Svg msg
+roadView shape =
+    let
+        sprite : String -> Int -> Svg msg
+        sprite name degrees =
+            Svg.g
+                [ SA.transform ("rotate(" ++ String.fromInt degrees ++ " 8 8)") ]
+                [ image { path = "/assets/roads-illustrated-v1/" ++ name ++ ".png", filter = "none" } ]
+    in
+    case shape of
+        Road.NorthSouth ->
+            sprite "straight" 0
+
+        Road.EastWest ->
+            sprite "straight" 90
+
+        Road.NorthEast ->
+            sprite "corner" 0
+
+        Road.SouthEast ->
+            sprite "corner" 90
+
+        Road.SouthWest ->
+            sprite "corner" 180
+
+        Road.NorthWest ->
+            sprite "corner" 270
+
+        Road.EastSouthWest ->
+            sprite "t-junction" 0
+
+        Road.NorthSouthWest ->
+            sprite "t-junction" 90
+
+        Road.NorthEastWest ->
+            sprite "t-junction" 180
+
+        Road.NorthEastSouth ->
+            sprite "t-junction" 270
+
+        Road.Crossroads ->
+            sprite "crossroads" 0

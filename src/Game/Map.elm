@@ -8,11 +8,11 @@ module Game.Map exposing
     )
 
 import Api.Enum.MapTheme exposing (MapTheme)
-import Api.Enum.Terrain exposing (Terrain)
 import Api.Object
 import Api.Object.Map as MapApi
 import Dict exposing (Dict)
 import Game.Coordinate as Coordinate exposing (Coordinate)
+import Game.Terrain as Terrain exposing (Terrain)
 import Game.TerrainFeature as TerrainFeature exposing (TerrainFeature)
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import Size exposing (Size)
@@ -86,6 +86,6 @@ selection =
     SS.succeed Map
         |> SS.with MapApi.width
         |> SS.with MapApi.height
-        |> SS.with MapApi.baseTile
+        |> SS.with (SS.map Terrain.fromApi MapApi.baseTile)
         |> SS.with MapApi.theme
         |> SS.with (SS.map indexFeatures (MapApi.features TerrainFeature.selection))

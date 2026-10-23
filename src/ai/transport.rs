@@ -233,10 +233,9 @@ pub(super) fn pickups(
             continue;
         }
         let fuel = truck.fuel().ok_or("the AI truck has no fuel.")?;
-        let aboard_cost = truck.fuel_movement_per_tile(scenario.passenger_count(truck.unit_id()));
-        let pickup_fuel = approach.len().saturating_sub(1) as i32 * aboard_cost;
-        let ride_fuel =
-            ride.len().saturating_sub(1) as i32 * (aboard_cost + fuel.movement_per_cargo_slot);
+        let passengers = scenario.passenger_count(truck.unit_id());
+        let pickup_fuel = truck.fuel_movement_cost(&scenario.map, &approach, passengers);
+        let ride_fuel = truck.fuel_movement_cost(&scenario.map, &ride, passengers + 1);
         let carried_fuel: i32 = truck
             .supply_cargo
             .iter()
@@ -270,9 +269,9 @@ pub(super) fn pickups(
                 if passenger_orders.len() >= room {
                     break;
                 }
-                let additional_slots = passenger_orders.len() as i32 + 1;
-                let shared_ride_fuel = ride.len().saturating_sub(1) as i32
-                    * (aboard_cost + additional_slots * fuel.movement_per_cargo_slot);
+                let additional_slots = passenger_orders.len() + 1;
+                let shared_ride_fuel =
+                    truck.fuel_movement_cost(&scenario.map, &ride, passengers + additional_slots);
                 if pickup_fuel + shared_ride_fuel > fuel.current + carried_fuel {
                     break;
                 }
@@ -374,9 +373,33 @@ pub(super) fn deployment(
         .ok_or("the AI transport has no destination.")?;
     let end = Coordinate::new(end.x as u16, end.y as u16);
     let arrived = distance(end, destination.position) <= destination.range;
-    let stranded = truck.fuel().is_some_and(|fuel| {
-        fuel.current < truck.fuel_movement_per_tile(scenario.passenger_count(truck.unit_id()))
-    });
+    let truck_rule = movement::rules()
+        .into_iter()
+        .find(|rule| rule.kind == UnitKind::Truck)
+        .ok_or("the AI truck has no movement rule.")?;
+    let mut can_travel = false;
+    for (x, y) in [
+        (origin.x() - 1, origin.y()),
+        (origin.x() + 1, origin.y()),
+        (origin.x(), origin.y() - 1),
+        (origin.x(), origin.y() + 1),
+    ] {
+        if x < 0 || y < 0 {
+            continue;
+        }
+        let next = Coordinate::new(x as u16, y as u16);
+        let passable = scenario.map.tile_at(next).is_some_and(|terrain| {
+            truck_rule
+                .terrain_costs
+                .iter()
+                .any(|entry| entry.terrain == terrain && entry.cost > 0)
+        });
+        if passable && affordable_path(scenario, truck, &[origin, next], false)?.len() > 1 {
+            can_travel = true;
+            break;
+        }
+    }
+    let stranded = !can_travel;
     let emergency = threatened(scenario, truck, origin) || stranded || route.is_none();
     let mut passenger_orders = Vec::new();
     if arrived || emergency {

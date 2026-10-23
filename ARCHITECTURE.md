@@ -113,7 +113,7 @@ terrain overrides. Lookup returns no tile outside the map; missing in-bounds
 coordinates fall back to the base tile. There is no stored dense grid. `Map::from_ascii` parses rectangular sketches
 with `#` for forests, `%` for hills, `^` for mountains, `~` for water, and spaces or `.` for plain. Spaces are
 preserved; malformed rows and unknown symbols return explicit errors.
-The ten built-in scenarios are authored in `maps/*.json`, with dimensions,
+The eleven built-in scenarios are authored in `maps/*.json`, with dimensions,
 typed themes, sparse terrain placements, separate supply/fuel depot placements,
 and explicit starting units (stable IDs, player, kind, position, and facing).
 Map JSON enums use Rust variant spelling, such as `GreenForest`, `FieldGun`, and
@@ -307,8 +307,15 @@ navigation, and `Effect` translates page effects into commands.
 
 `NewLobby`, `JoinLobby`, `LobbyPage`, `LobbyLoadFailed`, `GamePage`, and
 `GameLoadFailed` own their page state and views.
-The `/` route renders the stateless `Page.Home` logo and play link; `Main`
-carries its shared state. The play link opens the creation form at `/new`.
+The `/` route renders the `Page.Home` logo and menu card. Its model owns shared
+state and the three decorative screenshot positions; `Main` maps its messages
+and effects. `Home.init` and each screenshot's CSS animation iteration choose
+positions synchronously with `Random.step`, consuming `Shared.Model.seed` and
+saving the successor through `Shared.setSeed`. Cycle changes happen while the
+image is invisible. Position centers stay toward the right side on every screen
+size. Bradley's portrait composites over a page-green backing masked to its
+silhouette, retaining its subdued tone while blocking screenshots behind it.
+`Home.update` also owns the play button's navigation to `/new`.
 `LobbyPage.load` and `GamePage.load` define their initial requests. `Main` owns
 initial requests and dispatches failures, and initializes each loaded page only
 after a successful response. `LobbyPage` retains its loaded roster while polling.
@@ -635,8 +642,13 @@ center, and reset restores the initial centered view. Camera changes never alter
 authoritative board coordinates or the selected tile.
 `Main` maps its messages with the originating lobby ID and subscribes only while
 the game page is active. A 400ms Elm timer cycles the four unit sprite frames.
-JavaScript passes the browser platform through the main app's flags. `Main`
-decodes it into `OperatingSystem` and stores it in `Shared.Model`, using `Unknown`
+JavaScript passes the browser platform and a random integer through the main app's
+flags. `Main` decodes the required integer into a `Random.Seed` with
+`Random.initialSeed`; every initialized `Shared.Model` carries this seed.
+Random consumers use `Random.step` and retain the returned seed through
+`Shared.setSeed`, including across page navigation, without random-generation
+effects. `Main` also decodes the platform into `OperatingSystem` and stores it in
+`Shared.Model`, using `Unknown`
 for unrecognized platform strings. Missing or malformed flags instead open an
 `AppInitError` page with decoder details in a read-only textarea; it has no shared
 state, subscriptions, or route handling. Pages expose keyboard commands through
@@ -888,9 +900,12 @@ model as part of that experiment rather than copying the old engine.
 
 Rust units carry optional `Fuel` state: tanks and trucks start at 128/128;
 infantry and field guns have none. One traversed path edge consumes seven fuel for
-tanks. Trucks spend two fuel plus two per occupied cargo slot at departure, counting
+tanks on non-road terrain, or five on roads. Trucks spend two fuel plus two per occupied cargo slot at departure, counting
 passengers, supply crates, and fuel drums. Loading and unloading happen after travel,
-so they affect the next route. Fuel is independent of terrain movement points. Validation rejects paths exceeding
+so they affect the next route. On roads, trucks spend one fuel plus one per occupied
+slot. Fuel is independent of terrain movement points, but depends on each entered
+tile. `Unit::fuel_movement_cost` is shared by validation, resolution, refunds, and
+AI planning; `movement.rs` exports road rates through `MovementRule`. Validation rejects paths exceeding
 available fuel before locking orders. Resolution consumes fuel only on
 successful movement. Fuel depots replenish living vehicles from finite stock at turn settlement. Interrupted routes pay only for
 traversed tiles; holds spend no fuel.
@@ -899,9 +914,9 @@ Snapshots expose current and maximum fuel, base consumption per tile, and the
 surcharge per occupied cargo slot through
 GraphQL. Elm selects it into
 `Unit`, displays the authoritative gauge and bounds both reachable paths and
-traced extensions by remaining fuel. Search tracks both terrain cost and path
-length so a shorter, more expensive route is retained when a cheaper detour
-exceeds fuel. Equal-cost routes favor fewer tiles. Playback uses the completed
+traced extensions by remaining fuel. Search keys retain both fuel and supply
+expenditure independently of terrain movement cost, preserving affordable road
+detours. Equal-movement-cost routes favor lower fuel spending, then fewer tiles. Playback uses the completed
 snapshot fuel values; it does not calculate resource outcomes.
 
 ## Unit supplies
@@ -1457,6 +1472,27 @@ land neighbor selects the visible south-facing wall; a southern land neighbor
 selects the thin rear rim. East/west sides and front/rear corners use dedicated
 artwork with horizontal mirroring, keeping the camera's southern viewpoint fixed.
 `Game.Checks.Shoreline` covers corners, map borders, mixed banks, and beach continuity.
+
+## Authored roads
+
+Rust and Elm model road terrain as `Road RoadShape` (`Terrain::Road(RoadShape)`
+in Rust). `RoadShape` has eleven explicit alternatives: two straights, four corners,
+four T-junctions, and crossroads. Flat terrain enums remain at the GraphQL and Rust
+serialization boundaries, preserving existing map JSON and archive values. Elm's
+`Game.Terrain` converts API values when reading maps and movement rules and when
+saving editor changes. All shapes have
+plain movement/supply costs, no cover, and no sight obstruction. Vehicle fuel
+savings depend on entering a road tile, without directional movement restrictions.
+`TerrainTile` maps the stored variant to one approved sprite and a fixed rotation;
+it never examines neighbors to choose a road shape. Theme ground, fog, and
+selection styling remain shared.
+
+Only authoring resolves neighbors. `Game.Road` maps cardinal connections to a
+`RoadShape`; `EditableMap.reconnectRoads` updates affected roads after terrain
+painting and cropping. `Page.MapEditor` offers a single road brush and includes
+neighbor changes in the same draft/undo gesture. Saved definitions contain the
+resolved variants. Unit/depot painting does not reshape roads; merely loading or
+rendering a map leaves authored orientation intact.
 
 ## Indirect fire
 

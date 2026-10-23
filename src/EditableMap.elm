@@ -6,6 +6,7 @@ module EditableMap exposing
     , map
     , name
     , namedSelection
+    , reconnectRoads
     , saveMutation
     )
 
@@ -14,7 +15,6 @@ import Api.Enum.Direction as Direction exposing (Direction)
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
 import Api.Enum.MapType as MapType exposing (MapType)
 import Api.Enum.PlayerNumber as PlayerNumber exposing (PlayerNumber)
-import Api.Enum.Terrain as Terrain exposing (Terrain)
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Api.InputObject as Input
 import Api.Mutation as Mutation
@@ -25,7 +25,10 @@ import Api.Object.NamedMap as NamedApi
 import Api.Object.TerrainPlacement as TerrainApi
 import Api.Object.UnitPlacement as UnitApi
 import Game.Coordinate as Coordinate exposing (Coordinate)
+import Game.Direction as Direction
 import Game.Map as Map exposing (Map)
+import Game.Road as Road
+import Game.Terrain as Terrain exposing (Terrain)
 import Game.TerrainFeature as TerrainFeature exposing (TerrainFeature)
 import Graphql.Operation exposing (RootMutation)
 import Graphql.OptionalArgument as Optional
@@ -74,6 +77,50 @@ map definition =
         }
 
 
+{-| Update only road cells touched by terrain painting or their neighbors.
+This belongs to authoring: saved maps already contain each explicit road shape.
+-}
+reconnectRoads : List Coordinate -> Definition -> Definition
+reconnectRoads changed definition =
+    let
+        board : Map
+        board =
+            map definition
+
+        affected : Coordinate -> Bool
+        affected position =
+            List.any (Coordinate.inRange position 1) changed
+
+        roadNeighbor : Coordinate -> Direction -> Bool
+        roadNeighbor position direction =
+            let
+                neighbor : Coordinate
+                neighbor =
+                    Direction.step position direction
+
+                inBounds : Bool
+                inBounds =
+                    (neighbor.x >= 0) && (neighbor.y >= 0) && (neighbor.x < board.width) && (neighbor.y < board.height)
+            in
+            inBounds && Terrain.isRoad (Map.terrainAt board neighbor)
+
+        reconnect : TerrainFeature -> TerrainFeature
+        reconnect feature =
+            if Terrain.isRoad feature.terrain && affected feature.position then
+                { feature
+                    | terrain =
+                        Direction.all
+                            |> List.filter (roadNeighbor feature.position)
+                            |> Road.fromConnections
+                            |> Terrain.Road
+                }
+
+            else
+                feature
+    in
+    { definition | features = List.map reconnect definition.features }
+
+
 namedSelection : SelectionSet NamedMap Api.Object.NamedMap
 namedSelection =
     SS.succeed NamedMap
@@ -96,7 +143,7 @@ terrainSelection : SelectionSet TerrainFeature Api.Object.TerrainPlacement
 terrainSelection =
     SS.succeed TerrainFeature
         |> SS.with (TerrainApi.position Coordinate.selection)
-        |> SS.with TerrainApi.terrain
+        |> SS.with (SS.map Terrain.fromApi TerrainApi.terrain)
 
 
 depotSelection : SelectionSet DepotPlacement Api.Object.DepotPlacement
@@ -149,7 +196,7 @@ terrainInput : TerrainFeature -> Input.TerrainPlacementInput
 terrainInput feature =
     Input.buildTerrainPlacementInput
         { position = positionInput feature.position
-        , terrain = feature.terrain
+        , terrain = Terrain.toApi feature.terrain
         }
 
 
@@ -210,3 +257,6 @@ name kind =
 
         MapType.LakeOfPennsylvania ->
             "lake-of-pennsylvania"
+
+        MapType.ConvoyCountry ->
+            "convoy-country"

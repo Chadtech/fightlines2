@@ -87,7 +87,23 @@ async function main() {
     assert(metadata.hasAlpha && !stats.isOpaque, `${kind} cliff needs transparent water`);
     await fs.copyFile(source, path.join(cliffExport, `cliff-${kind}.png`));
   }
-  console.log("Exported illustrated terrain, animated water, coastal cliffs and beaches.");
+  const roadDirectory = path.join(root, "artwork/terrain/illustrated/roads-v1");
+  const roadExport = path.join(root, "public/assets/roads-illustrated-v1");
+  await fs.mkdir(roadExport, { recursive: true });
+  for (const [source, target] of [
+    ["straight", "straight"],
+    ["corner-v2", "corner"],
+    ["t-junction-v2", "t-junction"],
+    ["crossroads-v2", "crossroads"],
+  ]) {
+    const file = path.join(roadDirectory, `${source}.png`);
+    const metadata = await sharp(file).metadata();
+    const stats = await sharp(file).stats();
+    assert.equal(metadata.width, metadata.height, `${source} road must be square`);
+    assert(metadata.hasAlpha && !stats.isOpaque, `${source} road needs transparent ground`);
+    await fs.copyFile(file, path.join(roadExport, `${target}.png`));
+  }
+  console.log("Exported illustrated terrain, roads, animated water, coastal cliffs and beaches.");
 }
 
 main().catch((error) => {

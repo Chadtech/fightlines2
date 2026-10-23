@@ -1,11 +1,26 @@
-use crate::{map::Terrain, scenario::UnitKind};
-use juniper::GraphQLObject;
+use crate::{
+    map::{RoadShape, Terrain, TerrainValue},
+    scenario::UnitKind,
+};
+use juniper::{GraphQLObject, graphql_object};
 
 /// Budgets and entry costs use half-points: two stored points equal one displayed point.
-#[derive(Clone, Debug, GraphQLObject)]
+#[derive(Clone, Debug)]
 pub struct TerrainMovementCost {
     pub(crate) terrain: Terrain,
     pub(crate) cost: i32,
+}
+
+/// Budgets and entry costs use half-points: two stored points equal one displayed point.
+#[graphql_object]
+impl TerrainMovementCost {
+    fn terrain(&self) -> TerrainValue {
+        self.terrain.into()
+    }
+
+    fn cost(&self) -> i32 {
+        self.cost
+    }
 }
 
 #[derive(Clone, Debug, GraphQLObject)]
@@ -13,6 +28,17 @@ pub struct MovementRule {
     pub(crate) kind: UnitKind,
     pub(crate) budget: i32,
     pub(crate) terrain_costs: Vec<TerrainMovementCost>,
+    pub(crate) road_fuel_per_tile: i32,
+    pub(crate) road_fuel_per_cargo_slot: i32,
+}
+
+/// Road entry consumes whole fuel quantities, including cargo at departure.
+pub fn road_fuel_cost(kind: UnitKind, occupied_slots: usize) -> i32 {
+    match kind {
+        UnitKind::Tank => 5,
+        UnitKind::Truck => 1 + occupied_slots as i32,
+        UnitKind::Infantry | UnitKind::FieldGun => 0,
+    }
 }
 
 pub fn rules() -> Vec<MovementRule> {
@@ -27,6 +53,8 @@ pub fn rules() -> Vec<MovementRule> {
     .map(|(kind, budget, costs)| MovementRule {
         kind,
         budget,
+        road_fuel_per_tile: road_fuel_cost(kind, 0),
+        road_fuel_per_cargo_slot: road_fuel_cost(kind, 1) - road_fuel_cost(kind, 0),
         terrain_costs: [
             Terrain::Plain,
             Terrain::Hills,
@@ -38,6 +66,10 @@ pub fn rules() -> Vec<MovementRule> {
         .into_iter()
         .zip(costs)
         .map(|(terrain, cost)| TerrainMovementCost { terrain, cost })
+        .chain(RoadShape::ALL.into_iter().map(|shape| TerrainMovementCost {
+            terrain: Terrain::Road(shape),
+            cost: 2,
+        }))
         .collect(),
     })
     .collect()
@@ -83,6 +115,18 @@ mod tests {
                 .find(|rule| rule.kind == kind)
                 .fixture()?;
             assert_eq!(rule.budget, fixture["budget"].as_i64().fixture()? as i32);
+            assert_eq!(
+                rule.road_fuel_per_tile,
+                fixture["roadFuelPerTile"].as_i64().fixture()? as i32
+            );
+            assert_eq!(
+                rule.road_fuel_per_cargo_slot,
+                fixture["roadFuelPerCargoSlot"].as_i64().fixture()? as i32
+            );
+            assert_eq!(
+                rule.terrain_costs.len(),
+                fixture["terrainCosts"].as_array().fixture()?.len()
+            );
             for (entry, expected) in rule
                 .terrain_costs
                 .iter()
@@ -96,6 +140,17 @@ mod tests {
                     "MOUNTAINS" => Terrain::Mountains,
                     "WATER" => Terrain::Water,
                     "BEACH" => Terrain::Beach,
+                    "ROAD_NORTH_SOUTH" => Terrain::Road(RoadShape::NorthSouth),
+                    "ROAD_EAST_WEST" => Terrain::Road(RoadShape::EastWest),
+                    "ROAD_NORTH_EAST" => Terrain::Road(RoadShape::NorthEast),
+                    "ROAD_SOUTH_EAST" => Terrain::Road(RoadShape::SouthEast),
+                    "ROAD_SOUTH_WEST" => Terrain::Road(RoadShape::SouthWest),
+                    "ROAD_NORTH_WEST" => Terrain::Road(RoadShape::NorthWest),
+                    "ROAD_NORTH_EAST_SOUTH" => Terrain::Road(RoadShape::NorthEastSouth),
+                    "ROAD_EAST_SOUTH_WEST" => Terrain::Road(RoadShape::EastSouthWest),
+                    "ROAD_NORTH_SOUTH_WEST" => Terrain::Road(RoadShape::NorthSouthWest),
+                    "ROAD_NORTH_EAST_WEST" => Terrain::Road(RoadShape::NorthEastWest),
+                    "ROAD_CROSSROADS" => Terrain::Road(RoadShape::Crossroads),
                     _ => return Err("unknown fixture terrain".into()),
                 };
                 assert_eq!(entry.terrain, terrain);

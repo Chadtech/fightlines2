@@ -3,10 +3,6 @@
 # Done
 - Unit can move onto truck destination to load, but truck cannot move onto unit destination to load
 - Dont ask how much cargo to pick up if the truck is already full
-
-
-
-## doing now
 - Menu (settings, resign, go home)
 - Pick up crates/drums already on the ground
 - When firing on a fog of war tile and no target can be confirmed, dont depict empty ground depict foggy ground with question marks
@@ -15,6 +11,10 @@
 - if I select a unit in the replay mode, the unit should stay selected between turns
 - slightly reduce tank fuel consumption
 - reduce truck supply capacity
+
+
+## doing now
+
 
 ## Bugs
 

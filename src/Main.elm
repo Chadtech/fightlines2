@@ -48,6 +48,7 @@ import Page.LoggedGames as LoggedGames
 import Page.MapEditor as MapEditor
 import Page.NewLobby as NewLobby
 import Ports.Js.From as FromJs
+import Random
 import Route
     exposing
         ( Route
@@ -74,7 +75,7 @@ import View.LoadingBar as LoadingBar
 type Page
     = AppInitError Decode.Error
     | StartingApp Shared.Model
-    | Home Shared.Model
+    | Home Home.Model
     | NewLobby NewLobby.Model
     | LoadingLobby Shared.Model LobbyId
     | LobbyLoadFailed LobbyId LobbyLoadFailed.Model
@@ -98,6 +99,7 @@ type Page
 type alias Flags =
     { operatingSystem : OperatingSystem
     , localStorage : LocalStorage
+    , seed : Random.Seed
     }
 
 
@@ -118,6 +120,7 @@ type Msg
     | ReplayResponseReceived GameLogId (Response GameReplay.Flags)
     | ReplayMsg GameLogId GameReplay.Msg
     | ReturnHomeButtonClicked
+    | HomeMsg Home.Msg
     | JsErrorReceived FromJs.Error
     | LocalStorageChanged LocalStorage
 
@@ -167,7 +170,7 @@ init value url key =
             let
                 shared : Shared.Model
                 shared =
-                    Shared.init flags.operatingSystem flags.localStorage url key
+                    Shared.init flags.seed flags.operatingSystem flags.localStorage url key
             in
             handleRoute
                 shared
@@ -180,9 +183,10 @@ init value url key =
 
 flagsDecoder : Decode.Decoder Flags
 flagsDecoder =
-    Decode.map2 Flags
+    Decode.map3 Flags
         (Decode.field "operatingSystem" OperatingSystem.decoder)
         (Decode.field "localStorage" LocalStorage.decoder)
+        (Decode.field "seed" (Decode.map Random.initialSeed Decode.int))
 
 
 
@@ -200,8 +204,8 @@ getShared page =
         StartingApp shared ->
             Just shared
 
-        Home shared ->
-            Just shared
+        Home model ->
+            Just model.shared
 
         NewLobby model ->
             Just model.shared
@@ -267,8 +271,8 @@ setShared shared page =
         StartingApp _ ->
             StartingApp shared
 
-        Home _ ->
-            Home shared
+        Home model ->
+            Home (Home.setShared shared model)
 
         NewLobby model ->
             NewLobby (NewLobby.setShared shared model)
@@ -371,7 +375,7 @@ handleRoute shared route page =
             )
 
         Just Route.Home ->
-            ( Home shared, E.none )
+            ( Home (Home.init shared), E.none )
 
         Just Route.NewLobby ->
             ( NewLobby (NewLobby.init shared), E.none )
@@ -479,6 +483,18 @@ update msg page =
 
         ReturnHomeButtonClicked ->
             ( page, E.navigate Route.Home )
+
+        HomeMsg homeMsg ->
+            case page of
+                Home model ->
+                    let
+                        ( nextModel, eff ) =
+                            Home.update homeMsg model
+                    in
+                    ( Home nextModel, E.map HomeMsg eff )
+
+                _ ->
+                    E.withOut page
 
         LinkClicked request ->
             case request of
@@ -691,8 +707,8 @@ shell page =
                 StartingApp _ ->
                     []
 
-                Home _ ->
-                    Home.view
+                Home model ->
+                    List.map (H.map HomeMsg) (Home.view model)
 
                 NewLobby model ->
                     List.map (H.map NewLobbyMsg) (NewLobby.view model)
@@ -786,6 +802,7 @@ shell page =
         shellContent =
             [ globalStyles
             , LoadingBar.styles
+            , Home.styles
             , TargetSight.styles
             , TerrainTile.styles
             , TerrainTile.definitions

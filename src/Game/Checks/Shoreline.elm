@@ -2,10 +2,10 @@ port module Game.Checks.Shoreline exposing (main)
 
 import Api.Enum.Direction as Direction
 import Api.Enum.MapTheme as MapTheme
-import Api.Enum.Terrain as Terrain
 import Game.Coordinate exposing (Coordinate)
 import Game.Map as Map exposing (Map)
 import Game.Shoreline as Shoreline exposing (Bank(..), Corner(..), Transition(..))
+import Game.Terrain as Terrain
 import Game.TerrainFeature exposing (TerrainFeature)
 import Platform
 

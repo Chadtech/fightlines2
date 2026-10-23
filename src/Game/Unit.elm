@@ -9,6 +9,7 @@ module Game.Unit exposing
     , loadingTarget
     , mapPosition
     , mapResources
+    , occupiedCargoSlots
     , onMap
     , physicalPosition
     , selection
@@ -193,19 +194,20 @@ supplyMovementLimit supplies =
 -}
 fuelMovementPerTile : List Unit -> Unit -> Int
 fuelMovementPerTile units unit =
+    unit.resources
+        |> Maybe.andThen .fuel
+        |> Maybe.map (\fuel -> fuel.movementPerTile + occupiedCargoSlots units unit * fuel.movementPerCargoSlot)
+        |> Maybe.withDefault 0
+
+
+occupiedCargoSlots : List Unit -> Unit -> Int
+occupiedCargoSlots units unit =
     let
         passengers : Int
         passengers =
             units |> List.filter (\passenger -> carrierId passenger == Just unit.id) |> List.length
-
-        occupiedSlots : Int
-        occupiedSlots =
-            passengers + freightCount unit
     in
-    unit.resources
-        |> Maybe.andThen .fuel
-        |> Maybe.map (\fuel -> fuel.movementPerTile + occupiedSlots * fuel.movementPerCargoSlot)
-        |> Maybe.withDefault 0
+    passengers + freightCount unit
 
 
 onMap : Unit -> Bool

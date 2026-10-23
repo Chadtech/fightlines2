@@ -27,8 +27,54 @@
         {
           "terrain": "BEACH",
           "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_SOUTH",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_EAST_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_EAST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_SOUTH_EAST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_SOUTH_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_EAST_SOUTH",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_EAST_SOUTH_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_SOUTH_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_EAST_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_CROSSROADS",
+          "cost": 2
         }
-      ]
+      ],
+      "roadFuelPerTile": 0,
+      "roadFuelPerCargoSlot": 0
     },
     {
       "kind": "TANK",
@@ -57,8 +103,54 @@
         {
           "terrain": "BEACH",
           "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_SOUTH",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_EAST_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_EAST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_SOUTH_EAST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_SOUTH_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_EAST_SOUTH",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_EAST_SOUTH_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_SOUTH_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_EAST_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_CROSSROADS",
+          "cost": 2
         }
-      ]
+      ],
+      "roadFuelPerTile": 5,
+      "roadFuelPerCargoSlot": 0
     },
     {
       "kind": "FIELD_GUN",
@@ -87,8 +179,54 @@
         {
           "terrain": "BEACH",
           "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_SOUTH",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_EAST_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_EAST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_SOUTH_EAST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_SOUTH_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_EAST_SOUTH",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_EAST_SOUTH_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_SOUTH_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_EAST_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_CROSSROADS",
+          "cost": 2
         }
-      ]
+      ],
+      "roadFuelPerTile": 0,
+      "roadFuelPerCargoSlot": 0
     },
     {
       "kind": "TRUCK",
@@ -117,8 +255,54 @@
         {
           "terrain": "BEACH",
           "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_SOUTH",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_EAST_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_EAST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_SOUTH_EAST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_SOUTH_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_EAST_SOUTH",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_EAST_SOUTH_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_SOUTH_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_NORTH_EAST_WEST",
+          "cost": 2
+        },
+        {
+          "terrain": "ROAD_CROSSROADS",
+          "cost": 2
         }
-      ]
+      ],
+      "roadFuelPerTile": 1,
+      "roadFuelPerCargoSlot": 1
     }
   ],
   "cases": [

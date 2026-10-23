@@ -7,7 +7,6 @@ import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as Theme
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing
-import Api.Enum.Terrain as Terrain
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Error
 import Game.CombatRules as CombatRules exposing (CombatRules)
@@ -27,6 +26,7 @@ import Game.PlannedOrder as PlannedOrder
 import Game.PlannedTransport as PlannedTransport
 import Game.Selection exposing (CommandMenuState(..), Selection(..), UnitInteraction(..))
 import Game.Supply as Supply exposing (CargoStock)
+import Game.Terrain as Terrain
 import Game.TurnLifecycle as TurnLifecycle
 import Game.Unit as Unit exposing (Unit)
 import Game.Unit.Fuel as Fuel
@@ -4617,7 +4617,7 @@ board units =
 
 movementRule : UnitKind -> Movement.Rule
 movementRule kind =
-    { kind = kind, budget = 12, terrainCosts = [ { terrain = Terrain.Plain, cost = 2 } ] }
+    { kind = kind, budget = 12, terrainCosts = [ { terrain = Terrain.Plain, cost = 2 } ], roadFuelPerTile = 5, roadFuelPerCargoSlot = 0 }
 
 
 unit : UnitId -> UnitKind -> Location -> Unit

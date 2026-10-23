@@ -176,10 +176,11 @@ automatic firing: choose ambush on later turns to intercept enemies. Successful
 movement or boarding removes it, leaving no trench behind; a move blocked before
 departure preserves it. Infantry cannot dig on their unloading turn.
 
-Tanks and trucks start with 128/128 fuel. Each
-successfully traversed tile costs tanks 7 fuel. Trucks spend 2 fuel plus 2 per occupied
-cargo slot (passenger, supply crate, or fuel drum) at departure, independently of
-terrain movement costs. Interrupted routes pay only for successfully traveled tiles; holds consume none.
+Tanks and trucks start with 128/128 fuel. Each successfully entered non-road tile
+costs tanks 7 fuel; road tiles cost 5. Trucks spend 2 fuel plus 2 per occupied
+cargo slot (passenger, supply crate, or fuel drum) on non-road tiles, or 1 plus 1
+per occupied slot on roads. Cargo is counted at departure. Fuel is separate from
+terrain movement points. Interrupted routes pay only for successfully traveled tiles; holds consume none.
 Neutral fuel depots refill living tanks and trucks at turn end from finite stocks. Movement previews and submitted paths must fit both remaining
 fuel and the per-turn movement budget.
 
@@ -401,6 +402,19 @@ The **water** terrain brush paints animated water. Infantry, tanks, trucks, and
 field guns cannot enter or cross it, unload onto it, or start there. Water leaves
 line of sight clear and uses the same artwork in every theme.
 
+The **road** brush connects adjacent road squares as you paint, choosing straights,
+corners, T-junctions, and crossroads. Replacing a road square with another terrain
+updates its neighbors. Mirroring, brush sizes, undo/redo, and resizing include
+these shape changes. Saved maps store explicit terrain values:
+`RoadNorthSouth`, `RoadEastWest`, `RoadNorthEast`, `RoadSouthEast`, `RoadSouthWest`,
+`RoadNorthWest`, `RoadNorthEastSouth`, `RoadEastSouthWest`, `RoadNorthSouthWest`,
+`RoadNorthEastWest`, and `RoadCrossroads`. The listed directions are the open exits.
+The game renders the stored shape without deriving road connections at runtime.
+Isolated tiles and dead ends use straight sprites. All road shapes allow entry
+from any adjacent land square, use plain movement and supply costs, and provide
+no cover or sight obstruction. Vehicle fuel savings apply when entering a road
+square; roads do not require units to follow their drawn exits.
+
 Rocky cliff banks and foam automatically follow land beside water, including
 corners. Paint **beach** to create a sandy shore with a gentle waterline instead.
 Beaches use plain movement and supply costs for all current units, allow ordinary
@@ -412,7 +426,7 @@ naval movement and landings are not implemented yet.
 New games on an editor-enabled server read those files immediately; existing
 games keep their initial board. Choose **play in new tab** to create a normal
 lobby and test the saved map. Rebuild the server to embed edits in production.
-The editor edits all ten built-in map choices.
+The editor edits all eleven built-in map choices.
 
 The page is absent and the `maps` and `saveMap` operations on `/graphql` are
 disabled unless the server starts with `--map-editor`. Editor requests require
@@ -497,11 +511,11 @@ available to inspect, and no further turns can be submitted. Digging in remains 
 
 The lobby host can choose **supply point**, **el alamein**, **blood gulch**,
 **arabia**, **sidewinder**, **black forest**, **crossroads**, **ridgeway**,
-**three crossings**, or **lake of pennsylvania**. Each map has its own starting
+**three crossings**, **lake of pennsylvania**, or **convoy country**. Each map has its own starting
 force, with full starting resources.
 El Alamein, Blood Gulch, and Arabia are 25 x 21 tiles; Sidewinder is 33 x 29,
 Black Forest is 33 x 25, Crossroads is 11 x 9, Ridgeway is 15 x 13,
-Three Crossings is 21 x 17, and Lake of Pennsylvania is 17 x 17.
+Three Crossings is 21 x 17, Lake of Pennsylvania is 17 x 17, and Convoy Country is 25 x 19.
 Counts below are per player:
 
 | Map | Infantry | Tanks | Field guns | Trucks | Total |
@@ -516,6 +530,7 @@ Counts below are per player:
 | Ridgeway | 3 | 1 | 1 | 1 | 6 |
 | Three Crossings | 3 | 2 | 1 | 2 | 8 |
 | Lake of Pennsylvania | 1 | 0 | 0 | 0 | 1 |
+| Convoy Country | 3 | 2 | 1 | 2 | 8 |
 
 Opposing formations face toward the battlefield. El Alamein staggers the eastern
 base three tiles south of the western base; other maps mirror their formations.
@@ -525,6 +540,22 @@ places infantry on the forward flanks, a tank on the central approach, and its
 gun and trucks near the base. Arabia puts a tank at the tip of a compact formation,
 three infantry across its front, and two guns behind them. Depot squares stay clear.
 
+- **Convoy Country**: a mirrored green battlefield built around fuel-efficient,
+  exposed roads and concealed woodland approaches. A direct east–west highway,
+  two road loops, and a central connecting road offer flexible convoy routes.
+  Hills overlook the approaches, and forest pockets beside the highway offer
+  ambush positions. The central crossroads has the only forward fuel depot;
+  home supply/fuel depots support both armies, while two supply caches sit in
+  the northern and southern woods. Infantry can infiltrate the woods; tanks and
+  loaded trucks trade fuel, time, and provisions for concealment. Two trucks per
+  side allow fuel deliveries, supply runs, passenger transport, and escorts.
+  For example, between the northern loop's two corner junctions, the road takes
+  14 steps and costs a tank 70 fuel or an empty truck 14. Going two tiles north,
+  across the continuous forest belt, and back south takes 18 steps: 17 forest
+  entries and one road entry, costing 124 tank fuel or 35 empty-truck fuel.
+  A truck carrying two cargo slots spends 42 versus 105. These are one-way
+  movement costs before replenishment; the forest route also slows vehicles
+  and consumes more provisions. Roads provide no cover or concealment.
 - **Lake of Pennsylvania**: a plain green starter board for editing, with one
   infantry per player and no terrain features or depots. Choose it in the map
   editor to paint terrain, place forces, resize, and save your own layout.

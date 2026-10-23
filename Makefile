@@ -21,6 +21,7 @@ check:
 	elm-format src --validate
 	node tools/check-movement.cjs
 	node tools/check-shoreline.cjs
+	node tools/check-roads.cjs
 	node tools/check-turns.cjs
 	node tools/check-orders.cjs
 	node tools/check-lifecycle.cjs
@@ -28,6 +29,7 @@ check:
 	node tools/check-planning.cjs
 	node tools/check-pointer.cjs
 	node tools/check-local-storage.cjs
+	node tools/check-home.cjs
 	$(MAKE) frontend
 	elm make src/Style.elm src/View/*.elm src/Game/View/*.elm --output=/dev/null
 

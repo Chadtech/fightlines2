@@ -1,9 +1,8 @@
 module Game.View.TerrainInfo exposing (toHtml)
 
-import Api.Enum.Terrain as Terrain exposing (Terrain)
 import Game.Coordinate exposing (Coordinate)
 import Game.Map as Map exposing (Map)
-import Game.Terrain as Terrain
+import Game.Terrain as Terrain exposing (Terrain)
 import Game.View.TerrainTile as TerrainTile
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
@@ -124,3 +123,6 @@ visibilityText terrain =
 
         Terrain.Beach ->
             "a sandy shore with a gentle water edge. all current units can cross it and unload here using ordinary plain movement and supply costs. it does not provide cover or block sight."
+
+        _ ->
+            "a paved road with ordinary plain movement and supply costs. vehicles use less fuel when entering road squares. roads provide no cover and do not block sight."

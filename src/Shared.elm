@@ -2,12 +2,14 @@ module Shared exposing
     ( Model
     , addError
     , init
+    , setSeed
     )
 
 import Browser.Navigation as Navigation
 import Error exposing (Error)
 import LocalStorage exposing (LocalStorage)
 import OperatingSystem exposing (OperatingSystem)
+import Random
 import Url
     exposing
         ( Url
@@ -22,15 +24,17 @@ type alias Model =
     , origin : String
     , operatingSystem : OperatingSystem
     , localStorage : LocalStorage
+    , seed : Random.Seed
     , errors : List Error
     }
 
 
-init : OperatingSystem -> LocalStorage -> Url -> Navigation.Key -> Model
-init operatingSystem localStorage url key =
+init : Random.Seed -> OperatingSystem -> LocalStorage -> Url -> Navigation.Key -> Model
+init seed operatingSystem localStorage url key =
     { key = key
     , operatingSystem = operatingSystem
     , localStorage = localStorage
+    , seed = seed
     , errors = []
     , origin =
         Url.toString
@@ -40,6 +44,11 @@ init operatingSystem localStorage url key =
                 , fragment = Nothing
             }
     }
+
+
+setSeed : Random.Seed -> Model -> Model
+setSeed seed model =
+    { model | seed = seed }
 
 
 addError : Maybe Error -> Model -> Model

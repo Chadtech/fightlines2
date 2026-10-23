@@ -14,11 +14,22 @@ type Terrain
     | Mountains
     | Water
     | Beach
+    | RoadNorthSouth
+    | RoadEastWest
+    | RoadNorthEast
+    | RoadSouthEast
+    | RoadSouthWest
+    | RoadNorthWest
+    | RoadNorthEastSouth
+    | RoadEastSouthWest
+    | RoadNorthSouthWest
+    | RoadNorthEastWest
+    | RoadCrossroads
 
 
 list : List Terrain
 list =
-    [ Plain, Hills, Forest, Mountains, Water, Beach ]
+    [ Plain, Hills, Forest, Mountains, Water, Beach, RoadNorthSouth, RoadEastWest, RoadNorthEast, RoadSouthEast, RoadSouthWest, RoadNorthWest, RoadNorthEastSouth, RoadEastSouthWest, RoadNorthSouthWest, RoadNorthEastWest, RoadCrossroads ]
 
 
 decoder : Decoder Terrain
@@ -44,6 +55,39 @@ decoder =
 
                     "BEACH" ->
                         Decode.succeed Beach
+
+                    "ROAD_NORTH_SOUTH" ->
+                        Decode.succeed RoadNorthSouth
+
+                    "ROAD_EAST_WEST" ->
+                        Decode.succeed RoadEastWest
+
+                    "ROAD_NORTH_EAST" ->
+                        Decode.succeed RoadNorthEast
+
+                    "ROAD_SOUTH_EAST" ->
+                        Decode.succeed RoadSouthEast
+
+                    "ROAD_SOUTH_WEST" ->
+                        Decode.succeed RoadSouthWest
+
+                    "ROAD_NORTH_WEST" ->
+                        Decode.succeed RoadNorthWest
+
+                    "ROAD_NORTH_EAST_SOUTH" ->
+                        Decode.succeed RoadNorthEastSouth
+
+                    "ROAD_EAST_SOUTH_WEST" ->
+                        Decode.succeed RoadEastSouthWest
+
+                    "ROAD_NORTH_SOUTH_WEST" ->
+                        Decode.succeed RoadNorthSouthWest
+
+                    "ROAD_NORTH_EAST_WEST" ->
+                        Decode.succeed RoadNorthEastWest
+
+                    "ROAD_CROSSROADS" ->
+                        Decode.succeed RoadCrossroads
 
                     _ ->
                         Decode.fail ("Invalid Terrain type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
@@ -72,6 +116,39 @@ toString enum____ =
 
         Beach ->
             "BEACH"
+
+        RoadNorthSouth ->
+            "ROAD_NORTH_SOUTH"
+
+        RoadEastWest ->
+            "ROAD_EAST_WEST"
+
+        RoadNorthEast ->
+            "ROAD_NORTH_EAST"
+
+        RoadSouthEast ->
+            "ROAD_SOUTH_EAST"
+
+        RoadSouthWest ->
+            "ROAD_SOUTH_WEST"
+
+        RoadNorthWest ->
+            "ROAD_NORTH_WEST"
+
+        RoadNorthEastSouth ->
+            "ROAD_NORTH_EAST_SOUTH"
+
+        RoadEastSouthWest ->
+            "ROAD_EAST_SOUTH_WEST"
+
+        RoadNorthSouthWest ->
+            "ROAD_NORTH_SOUTH_WEST"
+
+        RoadNorthEastWest ->
+            "ROAD_NORTH_EAST_WEST"
+
+        RoadCrossroads ->
+            "ROAD_CROSSROADS"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -105,6 +182,39 @@ fromString enumString____ =
 
         "BEACH" ->
             Just Beach
+
+        "ROAD_NORTH_SOUTH" ->
+            Just RoadNorthSouth
+
+        "ROAD_EAST_WEST" ->
+            Just RoadEastWest
+
+        "ROAD_NORTH_EAST" ->
+            Just RoadNorthEast
+
+        "ROAD_SOUTH_EAST" ->
+            Just RoadSouthEast
+
+        "ROAD_SOUTH_WEST" ->
+            Just RoadSouthWest
+
+        "ROAD_NORTH_WEST" ->
+            Just RoadNorthWest
+
+        "ROAD_NORTH_EAST_SOUTH" ->
+            Just RoadNorthEastSouth
+
+        "ROAD_EAST_SOUTH_WEST" ->
+            Just RoadEastSouthWest
+
+        "ROAD_NORTH_SOUTH_WEST" ->
+            Just RoadNorthSouthWest
+
+        "ROAD_NORTH_EAST_WEST" ->
+            Just RoadNorthEastWest
+
+        "ROAD_CROSSROADS" ->
+            Just RoadCrossroads
 
         _ ->
             Nothing
