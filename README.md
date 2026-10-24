@@ -369,7 +369,7 @@ plain rows of player names and statuses, and 26-pixel pan/zoom/reset controls.
 The roster can accommodate four rows; current games still have two players.
 Statuses say **planning** or **submitted plan**, and long names truncate with
 their full text available on hover. Controls wrap on narrower screens.
-The header and controls reserve their actual height above and below the map.
+The header floats over the map; only the bottom controls reserve their actual height.
 The submit button
 pulses gold when every unit has an order. An inset activity track stays
 beneath submit at all times, empty while idle, with a solid gray bar while waiting

@@ -658,8 +658,8 @@ The shared view accepts no parent-message mapping or page content. The page read
 its camera for command positioning and queries `active` and `suppressesClick`
 when handling previews and selection. `GamePage.keyCommands` retains keyboard
 priority across dialogs, command menus, movement, ambush and navigation.
-`BattlefieldWorkspace` reserves normal-flow space for a centered game header and
-bottom controls around the navigation surface. Its full-height right inspector
+`BattlefieldWorkspace` overlays a centered game header on the navigation surface
+and reserves normal-flow space for bottom controls. Its full-height right inspector
 appears only with a selection and overlays the map without changing its horizontal
 coordinate system. `GamePage.turnPanel` supplies compact horizontal game controls
 at the bottom-left edge, with submit, player statuses, and camera controls side by side.
@@ -1312,9 +1312,9 @@ projected indirect impacts. Encounter-only portrait positions never contribute.
 the camera is absent until the viewport has been measured. `GamePage` retains the
 battlefield size and right inspector inset, measured on initial render, playback
 start, layout changes, and window resize through `Effect.measure`.
-The navigation surface already excludes the header and rendered bottom controls,
-including responsive wrapping. `BattlefieldWorkspace.viewport` combines its size
-with the inspector's rendered width (zero when hidden). `Camera.frame` preserves
+The navigation surface excludes the rendered bottom controls, including responsive
+wrapping, while the header overlays it. `BattlefieldWorkspace.viewport` combines
+its size with the inspector's rendered width (zero when hidden). `Camera.frame` preserves
 the full navigation surface for board scaling, but fits and centers subjects in
 the clear area beside the inspector. It tests
 projected subject tiles against that view in pixels and leaves it unchanged when

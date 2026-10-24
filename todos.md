@@ -19,7 +19,14 @@
 - implement resign
 - Sound
 - Make maps not hardcoded
-
+- Validation errors on lobby name should show up as red
+- start button should disable if you are waiting on a human
+- Fortress backdrop
+- Investigate mutual direct combat
+- Death map animation seems to hang on last frame
+- Road backdrop makes tanks and field guns look small
+- No pagination in map list
+- Search field
 
 
 ## Soon

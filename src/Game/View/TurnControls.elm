@@ -84,11 +84,6 @@ panelView kind children =
 
 submit : Activity -> String -> Html Msg
 submit activity label =
-    Lazy.lazy2 submitView activity label
-
-
-submitView : Activity -> String -> Html Msg
-submitView activity label =
     let
         button : Button.Button Msg
         button =

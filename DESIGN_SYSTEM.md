@@ -63,7 +63,7 @@ edges (`outdentStrong`, reversed with `indentStrong` when pressed). Their faces
 brighten to gray2 on hover and press, with gray4 labels brightening to gray5.
 Disabled buttons retain their gray1 face and gray3 text.
 Regular buttons use 1rem horizontal and 0.75rem vertical padding.
-Use `Button.small` for compact controls such as the inspector's close action:
+Use `Button.small` for compact controls:
 0.25rem padding on every side with the normal text size and color variant.
 Use `Button.compact` for 1.625rem-high controls with no padding, and
 `Button.square` for matching 1.625rem-square icon controls. Camera group grids
@@ -194,8 +194,10 @@ omits this decorative cycle and retains the original green background.
 
 ## Game board
 
-- Center a compact header flush with the top edge. Place the existing FightLines
-  logo at 4rem wide in its center, with equal 4.5rem columns on either side.
+- Float a compact header over the battlefield, centered flush with the top edge.
+  Keep the surrounding area transparent and let map interaction reach it.
+  Place the existing FightLines logo at 4rem wide in its center, with equal
+  4.5rem columns on either side.
   Put a raised gray `menu` button on the left and a passive inset turn number
   on the right so their different roles are clear. Use 0.125rem vertical and
   0.625rem horizontal button padding with a 1.875rem minimum height.
@@ -204,7 +206,7 @@ omits this decorative cycle and retains the original green background.
   Keep settings and resign game disabled until implemented. Disable the menu
   during playback and other dialogs, and close it when new playback starts.
 - The game is a full-viewport workspace. Render the board directly on the page
-  background, without a containing card or border. Reserve the header and bottom
+  background, without a containing card or border. Reserve the bottom
   controls' natural height, then center the board at 92% of the remaining width
   or 98% of the remaining height, whichever is smaller. Allow it to pan freely.
 - Use a full-height right panel for selection details and unit-specific actions,
@@ -214,10 +216,10 @@ omits this decorative cycle and retains the original green background.
   is no selection, with no floating inspection hint. Overlay it on the battlefield
   so opening it does not shift the map sideways. Keep bottom controls clear of
   its width. On narrow screens, keep the centered header above the inspector
-  and start inspector content below it. Its footer says `esc to clear selection`
-  and provides a `close` button.
+  and start inspector content below it. Its footer contains a full-width secondary
+  `close` button, using regular padding to match the size of `revoke order`.
   Omit the roster and other floating cards.
-  Use gold primary buttons for every action button in this panel, including
+  Use gold primary buttons for unit actions in this panel, including
   back to commands, revoke order, and skip remaining cargo.
   Place revoke order directly below the unit portrait, spanning the available
   panel content width, before resource gauges.

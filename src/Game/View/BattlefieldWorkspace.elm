@@ -44,8 +44,8 @@ inspectorWidth =
     "min(15.5rem, 45vw)"
 
 
-{-| The controls and header sit outside the navigation surface. The inspector
-occludes its right edge without changing the map's coordinate system.
+{-| The controls sit below the navigation surface. The header and inspector
+overlay it without changing the map's coordinate system.
 -}
 viewport :
     { battlefield : Browser.Dom.Element
@@ -113,9 +113,12 @@ toHtml model =
                     H.div
                         [ A.attribute "data-loss-dim" ""
                         , A.css
-                            [ S.row
+                            [ S.absolute
+                            , S.top0
+                            , S.selfCenter
+                            , S.maxWFull
+                            , S.row
                             , S.justifyCenter
-                            , S.shrink0
                             , S.z3
                             ]
                         ]
@@ -192,22 +195,15 @@ toHtml model =
             [ model.inspection
             , H.footer
                 [ A.css
-                    [ S.row
-                    , S.itemsCenter
-                    , S.justifySpaceBetween
-                    , S.flexWrap
-                    , S.g2
+                    [ S.col
                     , S.borderT
                     , S.borderGray2
                     , S.pt3
                     , S.shrink0
                     ]
                 ]
-                [ H.span
-                    []
-                    [ H.text "esc to clear selection" ]
-                , Button.secondary "close" model.onCloseInspection
-                    |> Button.small
+                [ Button.secondary "close" model.onCloseInspection
+                    |> Button.fullWidth
                     |> Button.toHtml
                 ]
             ]
