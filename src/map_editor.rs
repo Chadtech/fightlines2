@@ -3,7 +3,7 @@ use crate::{
     graphql::Context,
     map::{Coordinate, MapTheme, TerrainValue},
     map_definition::{DepotPlacement, MapDefinition, TerrainPlacement, UnitPlacement},
-    map_type::MapType,
+    map_type::{MAPS, MapType},
     scenario::{DepotKind, Direction, PlayerNumber, UnitKind},
 };
 use actix_files::NamedFile;
@@ -14,20 +14,6 @@ use std::{
     path::PathBuf,
     sync::{Arc, Mutex},
 };
-
-pub const MAPS: [(MapType, &str); 11] = [
-    (MapType::SupplyPoint, "supply-point"),
-    (MapType::ElAlamein, "el-alamein"),
-    (MapType::BloodGulch, "blood-gulch"),
-    (MapType::Arabia, "arabia"),
-    (MapType::Sidewinder, "sidewinder"),
-    (MapType::BlackForest, "black-forest"),
-    (MapType::Crossroads, "crossroads"),
-    (MapType::Ridgeway, "ridgeway"),
-    (MapType::ThreeCrossings, "three-crossings"),
-    (MapType::LakeOfPennsylvania, "lake-of-pennsylvania"),
-    (MapType::ConvoyCountry, "convoy-country"),
-];
 
 pub struct Editor {
     pub directory: PathBuf,

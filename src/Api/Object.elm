@@ -41,6 +41,14 @@ type Depot
     = Depot
 
 
+type DepotHp
+    = DepotHp
+
+
+type DepotImpact
+    = DepotImpact
+
+
 type DepotPlacement
     = DepotPlacement
 

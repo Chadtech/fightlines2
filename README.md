@@ -113,6 +113,8 @@ join and lobby headers.
 
 The initial map type is **supply point**. Joined players see the selected map;
 only the host can change it before starting. The game retains that selection.
+The lobby loads its ordered map options from the backend; the editor lists the
+maps returned in its catalog.
 The scenario is a 17 x 17 plain map with mirrored starting forces, 60 forest tiles, and 42 hill tiles,
 three neutral supply depots (one near each starting area and one at the exact center), and three infantry,
 one tank, two field guns, and two trucks per player. Player 1 has red units;
@@ -179,7 +181,7 @@ ground, and facing changes; infantry and field guns do very little damage to
 them, while tanks retain their devastating damage. Entrenchment grants no
 automatic firing: choose ambush on later turns to intercept enemies. Successful
 movement or boarding removes it, leaving no trench behind; a move blocked before
-departure preserves it. Infantry cannot dig on their unloading turn.
+departure preserves it. Infantry cannot dig on roads or on their unloading turn.
 
 Tanks and trucks start with 128/128 fuel. Each successfully entered non-road tile
 costs tanks 7 fuel; road tiles cost 5. Trucks spend 2 fuel plus 2 per occupied
@@ -477,6 +479,9 @@ is concealed on the battlefield. Before the exchange, playback freezes the battl
 animations. The two participants are spotlighted for 300ms while every other tile
 darkens, then one ambush card pops open with enlarged sprites facing each other.
 Each participant stands on the backdrop matching its occupied terrain and the map's theme.
+Depot tiles use a shared industrial loading-yard backdrop for supply and fuel
+depots, with a snowy variant on snow maps. Entrenched infantry retain their
+trench interior.
 Infantry uses eight smaller, staggered figures at full health, with one figure
 removed for every two HP lost. Partially intact figures remain visible. Other
 unit kinds use four figures at 13–16 HP, three at 9–12, two at 5–8, one at
@@ -741,6 +746,18 @@ theater scenes currently reuse the corresponding hill backdrops. Existing map
 layouts are unchanged; place mountains with `^` in a scenario's ASCII sketch.
 
 ### Indirect fire
+
+Depots can be destroyed by indirect fire or infantry sabotage. Fuel depots have
+1 HP; supply depots have 3 HP. Every shell removes one HP, independently of the
+normal damage to a unit occupying that tile. Ordinary direct
+combat damages only units. Ground supply crates and fuel drums are unaffected.
+
+Infantry already standing on a surviving depot can choose **sabotage**, spending
+the whole turn and normal supply upkeep without moving or firing. If they survive
+combat, they destroy the depot and its stock before loading or replenishment.
+Infantry cannot sabotage during a dismount. Destruction has no blast damage;
+tanks cannot sabotage. Destroyed depots remain passable and inspectable, with no
+refilling or freight loading. Fog retains the last observed depot condition.
 
 Only on-board field guns can choose **indirect fire**. Select any tile within a
 9-tile circular radius, including fog-covered and occupied tiles. Intervening

@@ -743,6 +743,7 @@ applyTurnSnapshot snapshot currentTurn model =
             frame =
                 TurnPlayback.initial snapshot.playbackFrames
                     { departures = []
+                    , sabotages = []
                     , indirectImpacts = []
                     , shots = []
                     , durationMs = 180
@@ -1067,7 +1068,7 @@ focusAdjacentCommand orderCommands current model =
             let
                 commands : List UnitCommand.MenuOption
                 commands =
-                    UnitCommand.enabledOptions unit
+                    UnitCommand.enabledOptions model.map model.depots unit
                         |> orderCommands
 
                 adjacent : Maybe UnitCommand.MenuOption
@@ -2152,7 +2153,7 @@ battlefieldView model =
             , frame = model.frame
             , selected = selectedPosition model
             , selectedUnitId = selectedUnit model |> Maybe.map .id
-            , ambushing = List.filter (unitIsAmbushing model) model.units |> List.map .id
+            , facingUnits = List.filter (unitShowsFacing model) model.units |> List.map .id
             , presentation = presentation
             }
 
@@ -2336,6 +2337,7 @@ commandMenu model =
             case Unit.physicalPosition model.units unit of
                 Just position ->
                     CommandMenu.toHtml
+                        model.depots
                         model.map
                         (BattlefieldNavigation.camera model.navigation)
                         position
@@ -2494,6 +2496,7 @@ movementView model =
                     else if choosingStandGround model then
                         [ H.p [] [ H.text "choose a stand ground direction on the map, or press an arrow key / wasd" ]
                         , H.p [] [ H.text "combat ready when attacked; does not fire" ]
+                        , H.p [] [ H.text ("supplies: normal upkeep + " ++ String.fromInt unit.combatRules.readinessCost ++ " readiness") ]
                         , Button.primary "back to commands" BackToCommandsClicked
                             |> Button.toHtml
                         ]
@@ -2665,6 +2668,9 @@ unitOrderView model unit =
                                 PlannedOrder.StandGround facing ->
                                     "stand ground: " ++ Direction.label facing.direction
 
+                                PlannedOrder.Sabotage _ ->
+                                    "sabotage"
+
                                 PlannedOrder.DigIn _ ->
                                     "dig in"
 
@@ -2750,34 +2756,39 @@ choosingStandGround model =
             False
 
 
-unitIsAmbushing : Model -> Unit -> Bool
-unitIsAmbushing model unit =
+unitShowsFacing : Model -> Unit -> Bool
+unitShowsFacing model unit =
     let
-        previewingAmbush : Bool
-        previewingAmbush =
-            choosingAmbush model && Maybe.map .unitId (rotationSelection model) == Just unit.id
+        previewingFacing : Bool
+        previewingFacing =
+            (choosingAmbush model || choosingStandGround model)
+                && (Maybe.map .unitId (rotationSelection model) == Just unit.id)
 
-        ambushOrder : PlannedOrder -> Bool
-        ambushOrder order =
+        stationaryFacingOrder : PlannedOrder -> Bool
+        stationaryFacingOrder order =
             case order.action of
                 PlannedOrder.Ambush _ ->
+                    order.unitId == unit.id
+
+                PlannedOrder.StandGround _ ->
                     order.unitId == unit.id
 
                 _ ->
                     False
 
-        ambushEvent : Turn.Event -> Bool
-        ambushEvent event =
-            event.unitId == unit.id && event.kind == TurnEventKind.Ambush
+        stationaryFacingEvent : Turn.Event -> Bool
+        stationaryFacingEvent event =
+            (event.unitId == unit.id)
+                && List.member event.kind [ TurnEventKind.Ambush, TurnEventKind.StandGround ]
     in
     case model.currentTurn.phase of
         TurnLifecycle.Playing _ ->
             model.currentTurn.resolution
-                |> Maybe.map (\resolution -> List.any ambushEvent resolution.events)
+                |> Maybe.map (\resolution -> List.any stationaryFacingEvent resolution.events)
                 |> Maybe.withDefault False
 
         _ ->
-            previewingAmbush || List.any ambushOrder (plannedOrders model)
+            previewingFacing || List.any stationaryFacingOrder (plannedOrders model)
 
 
 ambushCosts : Unit -> PlannedOrder -> List (Html Msg)
@@ -2785,6 +2796,11 @@ ambushCosts unit order =
     case order.action of
         PlannedOrder.IndirectFire _ ->
             indirectFireDetails unit
+
+        PlannedOrder.Sabotage _ ->
+            [ H.p [] [ H.text "destroys the depot after combat if this infantry survives; no movement or firing" ]
+            , H.p [] [ H.text "supplies: normal upkeep" ]
+            ]
 
         PlannedOrder.DigIn _ ->
             [ H.p [] [ H.text "entrenched after this turn; no movement or firing while digging" ]

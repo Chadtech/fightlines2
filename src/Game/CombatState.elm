@@ -44,6 +44,9 @@ orderLabel order =
         OrderKind.StandGround ->
             "stand ground"
 
+        OrderKind.Sabotage ->
+            "sabotage"
+
         OrderKind.DigIn ->
             "dig in"
 

@@ -103,7 +103,13 @@ remain strings.
 `MapType` is a Rust enum exposed as a GraphQL enum. A lobby defaults to
 `SupplyPoint`; only its host can update it through `setLobbyMap`. Starting
 carries the selected type into the game, where it cannot be changed. Elm keeps
-the generated enum typed and uses `MapType.label` for display. Changing the host’s dropdown selection immediately saves it through `setLobbyMap`;
+the generated enum typed and derives display labels from its schema names.
+`map_type::MAPS` owns the ordered server catalog shared by game loading, the editor,
+and the public `mapOptions` query. `LobbyPage.load` selects the lobby snapshot and
+map options together; its `Flags` decomposes these into page-owned fields. Polls
+and mutations select only the recurring lobby `Snapshot`. The editor builds its
+options from the loaded catalog, preserving its order while switching drafts.
+Changing the host’s dropdown selection immediately saves it through `setLobbyMap`;
 lobby polling updates the authoritative map without replacing the local selection.
 Starting also saves the current selection before requesting `startGame`; a failed
 save leaves the lobby open and shows the error.
@@ -425,7 +431,8 @@ Live game data operations use `POST /graphql`; the former `/api/*` endpoints are
 removed. Frontend URLs such as `/lobby/<id>` and `/game/<id>` still serve the
 application.
 
-Queries are `health`, `lobby(id)`, `game(id)`, and `maps`. Mutations are
+Queries include `health`, `lobby(id)`, `game(id)`, `mapOptions`, and `maps`.
+`mapOptions` returns playable map types without editor access. Mutations are
 `createLobby(name, lobbyName)`, `joinLobby(id, name)`,
 `setLobbyMap(id, mapType)`, `setLobbyController(id, controller)`, `startGame(id)`, and
 `submitTurn(id, turnNumber, orders)`, and `saveMap(mapType, definition)`.
@@ -675,7 +682,7 @@ the individual page's view content.
 terrain, depots, units, and an inset SVG selection square are separate layers. Player 2's
 infantry, tanks and field guns initially face west and player 1's east. Trucks have no direction or facing marker. Movement updates stored direction
 from the last successfully traversed path edge; units that never move preserve it. `Game.View.UnitFacing` overlays illustrated red striking arrows at tile edges
-only for ambush previews, saved orders, and ambush events during playback,
+for ambush and stand-ground previews, saved orders, and their events during playback,
 using each unit's direction, with selected-unit brightness and a synchronized
 two-second opacity pulse. Component-owned styles keep the markers steady for
 reduced-motion preferences. Markers do not receive pointer events or appear in
@@ -1203,8 +1210,12 @@ casualty; authoritative damage calculations remain unchanged. Combat focus holds
 pair in a 300ms spotlight stage followed by a panel stage that waits for Enter without
 advancing movement interpolation or revealing the volley. `GamePage` freezes idle/interface animation and renders `Game.View.CombatTheater`
 as one ambush card with inward-facing formations and a brief CSS expansion.
-`Game.View.CombatTheater` receives the immutable map and chooses each participant's backdrop
-from its on-board position, terrain, and map theme. `Game.View.CombatFormation` maps
+`Game.View.CombatTheater` receives the immutable map and the current playback
+frame's projected depots. It chooses each participant's backdrop from its
+on-board position, using the shared industrial yard on depot tiles (with its
+snowy variant on snow maps) and terrain and map theme elsewhere. Empty
+indirect-fire impacts use the same selection; entrenched infantry retain their
+trench interior. `Game.View.CombatFormation` maps
 authoritative before/after health to staggered figures for every unit kind and
 represents every two HP with one smaller infantry figure (up to eight), and
 every four HP with one figure for other kinds, then sequences individual
@@ -1246,9 +1257,15 @@ can kill it, so its simultaneous shot retains a living formation and observable
 participants stay on the held board until their lethal pair. This presentation sequence does not change simultaneous resolution. This permits enemy health inside the
 encounter card without exposing enemy supplies or fuel through `Unit.resources`.
 Panel state owns its capped presentation clock and `CardVisible | SeeingMap`
-mode. Its 3000ms capped clock allows the 200ms opening expansion, a one-second
+mode. Its 6000ms capped clock allows the 200ms opening expansion, a one-second
 anticipation beat, up to eight staggered infantry casualties, and the automatic-close pause
-to finish. The clock sequences individual figure explosions and removal, without HP bars; Continue/Enter
+to finish, including a subsequent depot strike. When an indirect impact includes depot
+damage, the theater finishes the participant hits, then replaces their scenes with
+one centered depot map sprite. After a short anticipation, the building receives its
+own impact; a destroyed depot adopts the board's faded sprite and red cross.
+Both stages derive from the same panel clock and projected impact data. Automatic
+close waits until the depot strike settles. The clock sequences individual figure
+explosions and removal, without HP bars; Continue/Enter
 or the saved automatic-close preference advances the pair. SeeingMap hides the card completely and restores the board
 spotlight with repeating shine. Mouse release restores the card even outside the button.
 `TurnPlayback.focusPositions` derives camera subjects from projected battlefield
@@ -1299,6 +1316,8 @@ checked after simultaneous arrivals, includes concealed enemies, and interrupts
 the target's remaining movement. Both participants stop their remaining routes.
 `Combat.engage_contacts` rechecks cardinal adjacency after interrupted allied
 passage retracts movement, before direct shots or field-gun contact interceptions.
+An ally still traveling through the shared square does not force that retreat;
+stationary allies and allies whose movement has stopped do.
 Opposing attack movers fire simultaneously; other orders do not gain automatic
 return fire. Only successful edges spend movement
 resources. Attack move and ambush both spend 8 readiness supplies per turn,
@@ -1308,6 +1327,20 @@ with an `attack move` heading and the usual fog-safe encounter portraits.
 
 
 ## Finite supply sources and replenishment
+
+`Depot.damage` counts shell damage against 1 HP for fuel and 3 HP
+for supply depots. `DepotHp` exports current and maximum HP through `Depot.hp`,
+separately from unit HP. `Combat::bombard` applies one hit per fired shell
+independently of unit engagements and records `IndirectImpact.depot` transitions. Ground freight
+is unaffected. `FacingOrder::Sabotage` is validated as a whole-turn action for
+infantry already on a surviving depot; surviving saboteurs destroy it after combat,
+before freight handling and replenishment. Sabotage costs only upkeep, grants no
+readiness, and cannot combine with dismounting, boarding, movement, or firing.
+Destroyed depots retain their locations and empty stocks, but cannot distribute
+resources or load cargo. `PlayerObservation` remembers only observed structural
+damage in fog; current stocks retain their separate visibility gate. Successful
+sabotage positions are recorded in shared frames and projected through tile sight.
+Archive fields default to intact depots and no sabotage effects for old recordings.
 
 `supplies.rs` owns `ResourceStock`, typed `CargoStock`, `GroundSupplyCrate`, validated `SupplyOrder`,
 loading/unloading, and end-of-turn distribution. `Scenario` owns finite depot

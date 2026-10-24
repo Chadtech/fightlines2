@@ -577,7 +577,7 @@ type alias Args =
     , frame : AnimationFrame.Frame
     , selected : Maybe Coordinate
     , selectedUnitId : Maybe UnitId
-    , ambushing : List UnitId
+    , facingUnits : List UnitId
     , presentation : Presentation
     }
 
@@ -823,7 +823,7 @@ toSvg args =
                             |> StyledSvg.toUnstyled
                         ]
             in
-            if List.member unit.id args.ambushing then
+            if List.member unit.id args.facingUnits then
                 Unit.mapPosition unit |> Maybe.map markerAt
 
             else
@@ -1002,7 +1002,7 @@ toSvg args =
 
         playbackImpacts : TurnPlayback.Playback -> Svg Msg
         playbackImpacts playing =
-            CombatEffects.impacts (TurnPlayback.visibleIndirectImpacts playing) args.units (TurnPlayback.visibleShots playing)
+            CombatEffects.impacts (TurnPlayback.visibleIndirectImpacts playing ++ playing.current.sabotages) args.units (TurnPlayback.visibleShots playing)
 
         shotOverlay : Svg Msg
         shotOverlay =
@@ -1177,17 +1177,44 @@ boardCrate filter visible crate =
 
 boardDepot : String -> Depot -> Svg Msg
 boardDepot filter depot =
+    let
+        opacity : String
+        opacity =
+            if Depot.isDestroyed depot then
+                "0.25"
+
+            else
+                "1"
+
+        destructionMark : Svg Msg
+        destructionMark =
+            if Depot.isDestroyed depot then
+                Svg.path
+                    [ SA.d "M 4,4 L 12,12 M 12,4 L 4,12"
+                    , SA.stroke S.red1Str
+                    , SA.strokeWidth "1.5"
+                    , HA.style "filter" filter
+                    , SA.pointerEvents "none"
+                    , Aria.svgHidden True
+                    ]
+                    []
+
+            else
+                Svg.text ""
+    in
     at depot.position
         [ Svg.image
             [ SA.width "16"
             , SA.height "16"
             , SA.xlinkHref (Depot.image depot)
+            , SA.opacity opacity
             , HA.style "filter" filter
             , HA.style "image-rendering" "auto"
             , SA.pointerEvents "none"
             , Aria.svgHidden True
             ]
             []
+        , destructionMark
         , Svg.rect
             [ SA.width "16"
             , SA.height "16"

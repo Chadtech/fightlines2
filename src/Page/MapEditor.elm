@@ -77,6 +77,7 @@ type alias Document =
 
 type alias Model =
     { shared : Shared.Model
+    , mapOptions : List MapType
     , current : Document
     , others : List Document
     , brush : Brush
@@ -201,6 +202,7 @@ type Msg
 init : Shared.Model -> Flags -> ( Model, Eff Msg )
 init shared flags =
     ( { shared = shared
+      , mapOptions = List.map .mapType (flags.first :: flags.rest)
       , current = document flags.first
       , others = List.map document flags.rest
       , brush = PaintTerrain Terrain.Forest
@@ -1217,7 +1219,7 @@ toolbarActions model =
             "map"
             (EditableMap.name model.current.mapType)
             MapInputChanged
-            (List.map (\kind -> ( EditableMap.name kind, MapType.label kind )) MapType.list)
+            (List.map (\kind -> ( EditableMap.name kind, MapType.label kind )) model.mapOptions)
         , H.div
             [ A.css
                 [ S.row

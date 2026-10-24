@@ -2,7 +2,8 @@
 use crate::{
     map::{Coordinate, Terrain},
     scenario::{
-        Direction, Entrenchment, HitPoints, PlayerNumber, Scenario, Unit, UnitId, UnitKind,
+        DepotHp, DepotKind, Direction, Entrenchment, HitPoints, PlayerNumber, Scenario, Unit,
+        UnitId, UnitKind,
     },
     turns::{FacingOrder, MoveOrder, TravelMode, TurnFrame, UnitOrderKind},
     visibility,
@@ -274,6 +275,8 @@ fn attack_aspect(unit: &Unit, opponent: &Unit) -> AttackAspect {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndirectImpact {
+    #[serde(default)]
+    pub depot: Option<DepotImpact>,
     pub attacker: Option<IndirectFireAttacker>,
     pub player_number: PlayerNumber,
     pub destination: Coordinate,
@@ -282,6 +285,9 @@ pub struct IndirectImpact {
 
 #[graphql_object]
 impl IndirectImpact {
+    fn depot(&self) -> Option<&DepotImpact> {
+        self.depot.as_ref()
+    }
     fn attacker(&self) -> Option<&IndirectFireAttacker> {
         self.attacker.as_ref()
     }
@@ -297,6 +303,13 @@ impl IndirectImpact {
     fn target(&self) -> Option<&IndirectFireTarget> {
         self.target.as_ref()
     }
+}
+
+#[derive(Clone, Debug, GraphQLObject, Serialize, Deserialize)]
+pub struct DepotImpact {
+    pub kind: DepotKind,
+    pub before: DepotHp,
+    pub after: DepotHp,
 }
 
 #[derive(Clone, Debug, GraphQLObject, Serialize, Deserialize)]
@@ -635,6 +648,7 @@ impl Combat {
             }
         }
         frames.push(TurnFrame {
+            sabotages: Vec::new(),
             departures: Vec::new(),
             indirect_impacts: Vec::new(),
             depots: board.depots.clone(),
@@ -650,6 +664,7 @@ impl Combat {
         let casualty_pause = !dead_carriers.is_empty() || has_bombardment;
         // Clear shots while preserving enough time to read the exchange and death marker.
         frames.push(TurnFrame {
+            sabotages: Vec::new(),
             departures: Vec::new(),
             indirect_impacts: Vec::new(),
             depots: board.depots.clone(),
@@ -877,6 +892,7 @@ impl Combat {
                 continue;
             };
             impacts.push(IndirectImpact {
+                depot: None,
                 attacker: Some(IndirectFireAttacker {
                     unit: theater_participant(shooter),
                     health: shooter.hit_points(),
@@ -918,6 +934,23 @@ impl Combat {
                 });
             }
         }
+        // A shell hits infrastructure independently of any unit sharing its tile.
+        // Freight is deliberately unaffected, and a destroyed depot has no blast radius.
+        for impact in &mut impacts {
+            if let Some(depot) = board
+                .depots
+                .iter_mut()
+                .find(|depot| depot.position == impact.destination && !depot.is_destroyed())
+            {
+                let before = depot.hit_points();
+                depot.take_structural_hit();
+                impact.depot = Some(DepotImpact {
+                    kind: depot.kind,
+                    before,
+                    after: depot.hit_points(),
+                });
+            }
+        }
         for launch in &misses {
             self.fire(board, *launch);
         }
@@ -925,6 +958,7 @@ impl Combat {
         self.volley(board, &engagements, frames);
         if engagements.is_empty() && !misses.is_empty() {
             frames.push(TurnFrame {
+                sabotages: Vec::new(),
                 departures: Vec::new(),
                 indirect_impacts: Vec::new(),
                 depots: board.depots.clone(),
@@ -935,6 +969,7 @@ impl Combat {
                 shots: Vec::new(),
             });
             frames.push(TurnFrame {
+                sabotages: Vec::new(),
                 departures: Vec::new(),
                 indirect_impacts: Vec::new(),
                 depots: board.depots.clone(),

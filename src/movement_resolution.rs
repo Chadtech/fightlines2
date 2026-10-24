@@ -55,6 +55,7 @@ pub struct MovementResolution {
 
 fn frame(board: &Scenario, duration_ms: i32) -> TurnFrame {
     TurnFrame {
+        sabotages: Vec::new(),
         departures: Vec::new(),
         indirect_impacts: Vec::new(),
         depots: board.depots.clone(),
@@ -467,8 +468,8 @@ fn resolve_arrivals(
                 result.stopped.extend([id, target.unit_id()]);
             }
         }
-        // A contact can interrupt passage through an allied square. Retreat before
-        // combat so its contact check uses the final, unoccupied positions.
+        // Retreat from settled allies before combat, but preserve contact while
+        // a passing ally still has movement scheduled to leave the shared square.
         let participants: BTreeSet<_> = contacts
             .iter()
             .flat_map(|(attacker, target)| [*attacker, *target])
@@ -479,12 +480,19 @@ fn resolve_arrivals(
                 .iter()
                 .find(|unit| unit.unit_id() == id)
                 .ok_or(ResolutionError::MissingUnit)?;
-            let shared = board.units.iter().any(|other| {
+            let shared_with_settled_unit = board.units.iter().any(|other| {
+                let departing_ally = other.player_number() == unit.player_number()
+                    && !result.stopped.contains(&other.unit_id())
+                    && orders.iter().any(|order| {
+                        order.unit_id == other.unit_id()
+                            && order.path.last() != other.board_position().as_ref()
+                    });
                 other.is_alive()
                     && other.unit_id() != id
                     && other.board_position() == unit.board_position()
+                    && !departing_ally
             });
-            if !shared {
+            if !shared_with_settled_unit {
                 continue;
             }
             let path = result
@@ -542,7 +550,9 @@ mod tests {
     use crate::{
         combat::CombatKind,
         map::{Map, Terrain},
+        map_definition::MapDefinition,
         scenario::UnitKind,
+        test_support::{FixtureValue, TestResult},
         turns::MoveOrder,
     };
 
@@ -863,6 +873,117 @@ mod tests {
                 .current(),
             192
         );
+        Ok(())
+    }
+
+    #[test]
+    fn attack_move_keeps_contact_while_an_allied_truck_passes() -> TestResult<()> {
+        let scenario = MapDefinition::parse(
+            r#"{
+                "width": 8, "height": 2, "theme": "GreenForest", "features": [], "depots": [],
+                "units": [
+                    {"id": 1, "position": {"x": 1, "y": 1}, "playerNumber": "Player1", "kind": "Tank", "direction": "East"},
+                    {"id": 2, "position": {"x": 0, "y": 1}, "playerNumber": "Player1", "kind": "Truck"},
+                    {"id": 3, "position": {"x": 4, "y": 0}, "playerNumber": "Player2", "kind": "Truck"}
+                ]
+            }"#,
+        )
+        .fixture()?
+        .scenario()
+        .fixture()?;
+        for passing in [true, false] {
+            let mut truck_path = vec![
+                Coordinate::new(0, 1),
+                Coordinate::new(1, 1),
+                Coordinate::new(2, 1),
+            ];
+            if passing {
+                truck_path.push(Coordinate::new(2, 0));
+            }
+            let mut orders = Vec::new();
+            for (id, path, travel) in [
+                (
+                    "1",
+                    (1..=7).map(|x| Coordinate::new(x, 1)).collect(),
+                    turns::TravelMode::AttackMove,
+                ),
+                ("2", truck_path.clone(), turns::TravelMode::Normal),
+                (
+                    "3",
+                    vec![
+                        Coordinate::new(4, 0),
+                        Coordinate::new(4, 1),
+                        Coordinate::new(3, 1),
+                        Coordinate::new(2, 1),
+                    ],
+                    turns::TravelMode::Normal,
+                ),
+            ] {
+                orders.push(MoveOrder {
+                    supply: crate::supplies::SupplyOrder::default(),
+                    travel,
+                    facing: FacingOrder::Unchanged,
+                    unit_id: UnitId::parse(id).fixture()?,
+                    path,
+                    unloads: Vec::new(),
+                });
+            }
+            for turn in [1, 2] {
+                let result = resolve(&scenario, &orders, turn)?;
+                let expected_tank_path = if passing {
+                    vec![Coordinate::new(1, 1), Coordinate::new(2, 1)]
+                } else {
+                    vec![Coordinate::new(1, 1)]
+                };
+                assert_eq!(path(&result, "1")?, expected_tank_path);
+                assert_eq!(path(&result, "2")?, truck_path);
+                let shots: Vec<_> = result
+                    .frames
+                    .iter()
+                    .flat_map(|frame| &frame.shots)
+                    .collect();
+                assert_eq!(shots.len(), usize::from(passing));
+                if passing {
+                    let shot = shots.first().fixture()?;
+                    assert_eq!(shot.kind, CombatKind::AttackMove);
+                    assert_eq!(shot.origin, Coordinate::new(2, 1));
+                    assert_eq!(shot.destination, Coordinate::new(3, 1));
+                    assert!(shot.target_health.after.current() < 16);
+                    let tank = result
+                        .frames
+                        .last()
+                        .fixture()?
+                        .units
+                        .iter()
+                        .find(|unit| unit.id() == "1")
+                        .fixture()?;
+                    assert_eq!(tank.fuel().fixture()?.current, 121);
+                }
+                let final_units: Vec<_> = result
+                    .frames
+                    .last()
+                    .fixture()?
+                    .units
+                    .iter()
+                    .filter(|unit| unit.is_alive())
+                    .collect();
+                let occupied: BTreeSet<_> = final_units
+                    .iter()
+                    .filter_map(|unit| unit.board_position())
+                    .collect();
+                assert_eq!(occupied.len(), final_units.len());
+                let reversed = resolve(
+                    &scenario,
+                    &orders.iter().rev().cloned().collect::<Vec<_>>(),
+                    turn,
+                )?;
+                assert_eq!(result.paths, reversed.paths);
+                assert_eq!(
+                    serde_json::to_value(&result.frames)?,
+                    serde_json::to_value(&reversed.frames)?
+                );
+            }
+        }
         Ok(())
     }
 

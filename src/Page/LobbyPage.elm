@@ -70,6 +70,12 @@ import View.Select as Select
 
 
 type alias Flags =
+    { lobby : Snapshot
+    , mapOptions : List MapType
+    }
+
+
+type alias Snapshot =
     { id : LobbyId
     , name : String
     , mapType : MapType
@@ -98,6 +104,7 @@ type alias Model =
     , isHost : Bool
     , isMember : Bool
     , gameUrl : Maybe String
+    , mapOptions : List MapType
     , selectedMapType : MapType
     , requestStatus : RequestStatus
     , refreshing : Bool
@@ -141,16 +148,16 @@ type Msg
     = SideInputChanged PlayerNumber
     | ControllerInputChanged Controller
     | MapInputChanged MapType
-    | MapResponseReceived (Response Flags)
+    | MapResponseReceived (Response Snapshot)
     | StartButtonClicked
-    | StartMapResponseReceived (Response Flags)
+    | StartMapResponseReceived (Response Snapshot)
     | RetryButtonClicked
     | CopyLinkButtonClicked
     | CopyLinkResultReceived CopyResult
     | CopyFeedbackElapsed
     | PollTimerElapsed Time.Posix
-    | LobbyResponseReceived PollRevision (Response Flags)
-    | ActionResponseReceived (Response Flags)
+    | LobbyResponseReceived PollRevision (Response Snapshot)
+    | ActionResponseReceived (Response Snapshot)
 
 
 
@@ -174,33 +181,45 @@ setShared shared model =
 
 init : Shared.Model -> Flags -> ( Model, Eff Msg )
 init shared flags =
-    ( { shared = shared
-      , id = flags.id
-      , name = flags.name
-      , mapType = flags.mapType
-      , selectedMapType = flags.mapType
-      , players = flags.players
-      , isHost = flags.isHost
-      , isMember = flags.isMember
-      , gameUrl = flags.gameUrl
-      , requestStatus = Idle
-      , refreshing = False
-      , pollRevision = PollRevision 0
-      , error = Nothing
-      , actionError = Nothing
-      , copyStatus = CopyIdle
-      }
+    let
+        lobby : Snapshot
+        lobby =
+            flags.lobby
+
+        model : Model
+        model =
+            { shared = shared
+            , id = lobby.id
+            , name = lobby.name
+            , mapType = lobby.mapType
+            , selectedMapType = lobby.mapType
+            , mapOptions = flags.mapOptions
+            , players = lobby.players
+            , isHost = lobby.isHost
+            , isMember = lobby.isMember
+            , gameUrl = lobby.gameUrl
+            , requestStatus = Idle
+            , refreshing = False
+            , pollRevision = PollRevision 0
+            , error = Nothing
+            , actionError = Nothing
+            , copyStatus = CopyIdle
+            }
+    in
+    ( model
     , gameNavigation
-        { isMember = flags.isMember
-        , gameUrl = flags.gameUrl
+        { isMember = lobby.isMember
+        , gameUrl = lobby.gameUrl
         }
-        flags.id
+        lobby.id
     )
 
 
 load : LobbyId -> Graphql.Http.Request Flags
 load id =
-    Api.Query.lobby { id = LobbyId.toString id } flagsSelection
+    SS.succeed Flags
+        |> SS.with (Api.Query.lobby { id = LobbyId.toString id } snapshotSelection)
+        |> SS.with Api.Query.mapOptions
         |> ApiRequest.queryRequest
 
 
@@ -210,25 +229,25 @@ load id =
 ----------------------------------------------------------------
 
 
-start : LobbyId -> Graphql.Http.Request Flags
+start : LobbyId -> Graphql.Http.Request Snapshot
 start id =
-    Api.Mutation.startGame { id = LobbyId.toString id } flagsSelection
+    Api.Mutation.startGame { id = LobbyId.toString id } snapshotSelection
         |> ApiRequest.mutationRequest
 
 
-saveMap : Model -> Graphql.Http.Request Flags
+saveMap : Model -> Graphql.Http.Request Snapshot
 saveMap model =
     Api.Mutation.setLobbyMap
         { id = LobbyId.toString model.id
         , mapType = model.selectedMapType
         }
-        flagsSelection
+        snapshotSelection
         |> ApiRequest.mutationRequest
 
 
-flagsSelection : SelectionSet Flags Api.Object.Snapshot
-flagsSelection =
-    SS.succeed Flags
+snapshotSelection : SelectionSet Snapshot Api.Object.Snapshot
+snapshotSelection =
+    SS.succeed Snapshot
         |> SS.with (Snapshot.id |> SS.mapOrFail LobbyId.parse)
         |> SS.with Snapshot.name
         |> SS.with Snapshot.mapType
@@ -287,7 +306,7 @@ update msg model =
                     { id = LobbyId.toString model.id
                     , playerNumber = playerNumber
                     }
-                    flagsSelection
+                    snapshotSelection
                     |> ApiRequest.mutationRequest
                     |> E.request ActionResponseReceived
                 )
@@ -310,7 +329,7 @@ update msg model =
                     { id = LobbyId.toString model.id
                     , controller = controller
                     }
-                    flagsSelection
+                    snapshotSelection
                     |> ApiRequest.mutationRequest
                     |> E.request ActionResponseReceived
                 )
@@ -331,12 +350,12 @@ update msg model =
 
         MapResponseReceived result ->
             case result of
-                Ok flags ->
+                Ok snapshot ->
                     { model
                         | requestStatus = Idle
                         , actionError = Nothing
                     }
-                        |> receive flags
+                        |> receive snapshot
 
                 Err error ->
                     ( { model
@@ -371,9 +390,9 @@ update msg model =
 
         StartMapResponseReceived result ->
             case result of
-                Ok flags ->
+                Ok snapshot ->
                     ( { model
-                        | mapType = flags.mapType
+                        | mapType = snapshot.mapType
                       }
                     , E.request ActionResponseReceived (start model.id)
                     )
@@ -422,11 +441,11 @@ update msg model =
 
             else
                 case result of
-                    Ok flags ->
+                    Ok snapshot ->
                         { model
                             | refreshing = False
                         }
-                            |> receive flags
+                            |> receive snapshot
 
                     Err error ->
                         { model
@@ -437,12 +456,12 @@ update msg model =
 
         ActionResponseReceived result ->
             case result of
-                Ok flags ->
+                Ok snapshot ->
                     { model
                         | requestStatus = Idle
                         , actionError = Nothing
                     }
-                        |> receive flags
+                        |> receive snapshot
 
                 Err error ->
                     ( { model
@@ -482,27 +501,30 @@ refresh model =
         ( { model
             | refreshing = True
           }
-        , E.request (LobbyResponseReceived model.pollRevision) (load model.id)
+        , E.request (LobbyResponseReceived model.pollRevision)
+            (Api.Query.lobby { id = LobbyId.toString model.id } snapshotSelection
+                |> ApiRequest.queryRequest
+            )
         )
 
 
-receive : Flags -> Model -> ( Model, Eff Msg )
-receive flags model =
+receive : Snapshot -> Model -> ( Model, Eff Msg )
+receive snapshot model =
     ( { model
-        | id = flags.id
-        , name = flags.name
-        , mapType = flags.mapType
-        , players = flags.players
-        , isHost = flags.isHost
-        , isMember = flags.isMember
-        , gameUrl = flags.gameUrl
+        | id = snapshot.id
+        , name = snapshot.name
+        , mapType = snapshot.mapType
+        , players = snapshot.players
+        , isHost = snapshot.isHost
+        , isMember = snapshot.isMember
+        , gameUrl = snapshot.gameUrl
         , error = Nothing
       }
     , gameNavigation
-        { isMember = flags.isMember
-        , gameUrl = flags.gameUrl
+        { isMember = snapshot.isMember
+        , gameUrl = snapshot.gameUrl
         }
-        flags.id
+        snapshot.id
     )
 
 
@@ -709,7 +731,7 @@ mapView model =
                 { htmlId = "map-type"
                 , disabled = isBusy model
                 , selected = model.selectedMapType
-                , options = List.map mapOption Api.Enum.MapType.list
+                , options = List.map mapOption model.mapOptions
                 , toValue = Api.Enum.MapType.toString
                 , decoder = Api.Enum.MapType.decoder
                 , onChange = MapInputChanged

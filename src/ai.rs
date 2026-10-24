@@ -110,6 +110,7 @@ fn hold(unit: &Unit, origin: Coordinate) -> MoveOrderInput {
         ambush: None,
         stand_ground: None,
         dig_in: None,
+        sabotage: None,
         indirect_fire: None,
         attack_move: None,
         unloads: None,
@@ -161,7 +162,11 @@ fn resource_target(scenario: &Scenario, unit: &Unit, origin: Coordinate) -> Opti
         .depots
         .iter()
         // Unknown stock is not knowledge of an empty or full source.
-        .filter(|depot| depot.kind == kind && (!depot.stock_visible || depot.stock.current > 0))
+        .filter(|depot| {
+            !depot.is_destroyed()
+                && depot.kind == kind
+                && (!depot.stock_visible || depot.stock.current > 0)
+        })
         .map(|depot| depot.position)
         .min_by_key(|position| (distance(origin, *position), *position))
 }
@@ -174,7 +179,7 @@ fn objective(scenario: &Scenario, origin: Coordinate) -> Coordinate {
     scenario
         .depots
         .iter()
-        .filter(|depot| depot.kind == DepotKind::Supply)
+        .filter(|depot| !depot.is_destroyed() && depot.kind == DepotKind::Supply)
         .map(|depot| depot.position)
         .min_by_key(|position| {
             (

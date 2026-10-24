@@ -7,6 +7,7 @@ module Game.View.CommandMenu exposing
 import Css
 import Game.Camera as Camera exposing (Camera)
 import Game.Coordinate as Coordinate exposing (Coordinate)
+import Game.Depot exposing (Depot)
 import Game.Map as Map exposing (Map)
 import Game.Unit as Unit exposing (Unit)
 import Game.UnitCommand as Command exposing (Command, MenuOption(..))
@@ -31,13 +32,20 @@ type Msg
     | ArrowedDownCommandMenu MenuOption
 
 
-toHtml : Map -> Camera -> Coordinate -> Unit -> Html Msg
-toHtml map camera position unit =
-    Lazy.lazy5 commandsView map camera.offset camera.zoom position unit
+toHtml : List Depot -> Map -> Camera -> Coordinate -> Unit -> Html Msg
+toHtml depots map camera position unit =
+    Lazy.lazy6 commandsView depots map camera.offset camera.zoom position unit
 
 
-commandsView : Map -> Point -> Float -> Coordinate -> Unit -> Html Msg
-commandsView map offset zoom position unit =
+commandsView :
+    List Depot
+    -> Map
+    -> Point
+    -> Float
+    -> Coordinate
+    -> Unit
+    -> Html Msg
+commandsView depots map offset zoom position unit =
     let
         camera : Camera
         camera =
@@ -81,11 +89,19 @@ commandsView map offset zoom position unit =
         constrainedOffset : String -> String -> String -> String
         constrainedOffset viewportSize origin preferred =
             -- Transform percentages measure the menu itself, including wrapped content.
-            "clamp(calc(0.5rem - " ++ origin ++ "), " ++ preferred ++ ", calc(" ++ viewportSize ++ " - " ++ origin ++ " - 100% - 0.5rem))"
+            "clamp(calc(0.5rem - "
+                ++ origin
+                ++ "), "
+                ++ preferred
+                ++ ", calc("
+                ++ viewportSize
+                ++ " - "
+                ++ origin
+                ++ " - 100% - 0.5rem))"
 
         commands : List Command
         commands =
-            Command.available unit
+            Command.available depots unit
     in
     H.section
         [ Aria.label "unit commands"
@@ -146,7 +162,7 @@ commandsView map offset zoom position unit =
                 , S.shrink0
                 ]
             ]
-            (List.map (commandButton unit) commands)
+            (List.map (commandButton map depots unit) commands)
         , cancelRow
         ]
 
@@ -214,7 +230,10 @@ headerButtonStyles =
 
 commandHtmlId : Command -> String
 commandHtmlId command =
-    "unit-command-" ++ Command.assetName command ++ "-" ++ String.replace " " "-" (Command.label command)
+    "unit-command-"
+        ++ Command.assetName command
+        ++ "-"
+        ++ String.replace " " "-" (Command.label command)
 
 
 optionHtmlId : MenuOption -> String
@@ -250,20 +269,25 @@ cancelRow =
         ]
 
 
-commandButton : Unit -> Command -> Html Msg
-commandButton unit command =
+commandButton : Map -> List Depot -> Unit -> Command -> Html Msg
+commandButton map depots unit command =
     let
         implemented : Bool
         implemented =
-            Command.canUse unit command
+            Command.canUse map depots unit command
 
         title : String
         title =
             if implemented then
                 Command.label command
 
+            else if command == Command.Sabotage then
+                "requires infantry already on an operational depot and enough supplies for upkeep"
+
             else if command == Command.DigIn then
-                "requires stationary, unentrenched infantry and " ++ String.fromInt unit.combatRules.digInCost ++ " supplies plus upkeep"
+                "requires stationary, unentrenched infantry off roads and "
+                    ++ String.fromInt unit.combatRules.digInCost
+                    ++ " supplies plus upkeep"
 
             else if command == Command.IndirectFire then
                 "not enough supplies for readiness and one shell"

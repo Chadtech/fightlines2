@@ -12,6 +12,9 @@ module Game.UnitCommand exposing
 
 import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.UnitKind as Kind
+import Game.Depot as Depot exposing (Depot)
+import Game.Map as Map exposing (Map)
+import Game.Terrain as Terrain
 import Game.Unit as Unit exposing (Unit)
 import Game.Unit.Location as Location
 import Game.UnitResources as UnitResources exposing (UnitResources)
@@ -23,6 +26,7 @@ type Command
     | Move
     | AttackMove
     | IndirectFire
+    | Sabotage
     | DigIn
     | Ambush
 
@@ -34,23 +38,23 @@ type MenuOption
 
 all : List Command
 all =
-    [ Move, HoldPosition, Ambush, StandGround, AttackMove, IndirectFire, DigIn ]
+    [ Move, HoldPosition, Ambush, StandGround, AttackMove, IndirectFire, DigIn, Sabotage ]
 
 
-enabledOptions : Unit -> List MenuOption
-enabledOptions unit =
+enabledOptions : Map -> List Depot -> Unit -> List MenuOption
+enabledOptions map depots unit =
     let
         commands : List MenuOption
         commands =
-            available unit
-                |> List.filter (canUse unit)
+            available depots unit
+                |> List.filter (canUse map depots unit)
                 |> List.map CommandOption
     in
     commands ++ [ CancelOption ]
 
 
-available : Unit -> List Command
-available unit =
+available : List Depot -> Unit -> List Command
+available depots unit =
     if Unit.carrierId unit /= Nothing then
         []
 
@@ -58,6 +62,7 @@ available unit =
         case unit.kind of
             Kind.Infantry ->
                 [ Move, HoldPosition, Ambush, StandGround, AttackMove, DigIn ]
+                    ++ sabotageCommands depots unit
 
             Kind.Tank ->
                 [ Move, HoldPosition, Ambush, StandGround, AttackMove ]
@@ -90,6 +95,9 @@ isImplemented command =
         HoldPosition ->
             True
 
+        Sabotage ->
+            True
+
         DigIn ->
             True
 
@@ -111,6 +119,9 @@ label command =
 
         IndirectFire ->
             "indirect fire"
+
+        Sabotage ->
+            "sabotage"
 
         DigIn ->
             "dig in"
@@ -137,6 +148,9 @@ assetName command =
         IndirectFire ->
             "indirect-fire"
 
+        Sabotage ->
+            "sabotage"
+
         DigIn ->
             "dig-in"
 
@@ -144,19 +158,38 @@ assetName command =
             "ambush"
 
 
-canUse : Unit -> Command -> Bool
-canUse unit command =
-    if command == DigIn then
+canUse : Map -> List Depot -> Unit -> Command -> Bool
+canUse map depots unit command =
+    if command == Sabotage then
         let
             affordable : Bool
             affordable =
                 unit.resources
-                    |> Maybe.map (\resources -> resources.supplies.current >= resources.supplies.upkeepPerTurn + unit.combatRules.digInCost)
+                    |> Maybe.map
+                        (\resources ->
+                            resources.supplies.current >= resources.supplies.upkeepPerTurn
+                        )
+                    |> Maybe.withDefault False
+        in
+        List.member Sabotage (sabotageCommands depots unit) && affordable
+
+    else if command == DigIn then
+        let
+            affordable : Bool
+            affordable =
+                unit.resources
+                    |> Maybe.map
+                        (\resources ->
+                            resources.supplies.current >= resources.supplies.upkeepPerTurn + unit.combatRules.digInCost
+                        )
                     |> Maybe.withDefault False
         in
         case unit.location of
-            Location.OnMap _ ->
-                (unit.kind == Kind.Infantry) && (unit.entrenchment == Entrenchment.Exposed) && affordable
+            Location.OnMap position ->
+                (unit.kind == Kind.Infantry)
+                    && (unit.entrenchment == Entrenchment.Exposed)
+                    && affordable
+                    && not (Terrain.isRoad (Map.terrainAt map position))
 
             Location.Aboard _ ->
                 False
@@ -187,7 +220,8 @@ canUse unit command =
             affordable : Bool
             affordable =
                 unit.resources
-                    |> Maybe.map (\resources -> resources.supplies.current >= resources.supplies.upkeepPerTurn + unit.combatRules.readinessCost)
+                    |> Maybe.map
+                        (\resources -> resources.supplies.current >= resources.supplies.upkeepPerTurn + unit.combatRules.readinessCost)
                     |> Maybe.withDefault False
         in
         unit.direction /= Nothing && Unit.onMap unit && affordable
@@ -197,10 +231,43 @@ canUse unit command =
             affordable : Bool
             affordable =
                 unit.resources
-                    |> Maybe.map (\resources -> resources.supplies.current >= resources.supplies.upkeepPerTurn + resources.supplies.movementPerTile + unit.combatRules.readinessCost + unit.combatRules.shotCost)
+                    |> Maybe.map
+                        (\resources ->
+                            let
+                                cost =
+                                    resources.supplies.upkeepPerTurn
+                                        + resources.supplies.movementPerTile
+                                        + unit.combatRules.readinessCost
+                                        + unit.combatRules.shotCost
+                            in
+                            resources.supplies.current >= cost
+                        )
                     |> Maybe.withDefault False
         in
         Unit.onMap unit && affordable
 
     else
         isImplemented command
+
+
+sabotageCommands : List Depot -> Unit -> List Command
+sabotageCommands depots unit =
+    case unit.location of
+        Location.OnMap position ->
+            let
+                survivingDepot : Depot -> Bool
+                survivingDepot depot =
+                    (depot.position == position) && not (Depot.isDestroyed depot)
+
+                eligible : Bool
+                eligible =
+                    (unit.kind == Kind.Infantry) && List.any survivingDepot depots
+            in
+            if eligible then
+                [ Sabotage ]
+
+            else
+                []
+
+        _ ->
+            []

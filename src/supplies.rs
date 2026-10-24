@@ -172,11 +172,9 @@ pub fn resolve_orders(scenario: &mut Scenario, orders: &[(UnitId, SupplyOrder)],
             | SupplyOrder::UnloadCrates(_) => 0,
         };
         for _ in 0..depot_loads.min(room) {
-            let Some(depot) = scenario
-                .depots
-                .iter_mut()
-                .find(|depot| origin == depot.position && depot.stock.current > 0)
-            else {
+            let Some(depot) = scenario.depots.iter_mut().find(|depot| {
+                origin == depot.position && !depot.is_destroyed() && depot.stock.current > 0
+            }) else {
                 break;
             };
             let amount = depot.stock.current.min(rules().crate_capacity);
@@ -218,6 +216,9 @@ pub fn resolve_orders(scenario: &mut Scenario, orders: &[(UnitId, SupplyOrder)],
 /// is filled to its own capacity, even when several sources overlap.
 pub fn replenish(scenario: &mut Scenario, turn_number: i32) {
     for index in 0..scenario.depots.len() {
+        if scenario.depots[index].is_destroyed() {
+            continue;
+        }
         let origin = scenario.depots[index].position;
         let mut stock = scenario.depots[index].stock.clone();
         distribute(
@@ -372,6 +373,7 @@ mod tests {
                 maximum: 1024,
             },
             stock_visible: true,
+            damage: 0,
         });
         resolve_orders(&mut board, &[(truck_id, SupplyOrder::LoadCrates(2))], 1);
         assert_eq!(board.depots.first().fixture()?.stock.current, 0);
@@ -518,6 +520,7 @@ mod tests {
                 maximum: 1024,
             },
             stock_visible: true,
+            damage: 0,
         });
         for unit in &mut board.units {
             unit.set_fuel_for_test(0);
@@ -587,6 +590,7 @@ mod tests {
             position: Coordinate::new(8, 8),
             stock: ResourceStock::depot(),
             stock_visible: true,
+            damage: 0,
         }];
         board
             .units
@@ -766,6 +770,7 @@ mod tests {
             position: Coordinate::new(1, 1),
             stock: ResourceStock::depot(),
             stock_visible: true,
+            damage: 0,
         });
         board
             .units
@@ -819,6 +824,7 @@ mod tests {
                 maximum: 64,
             },
             stock_visible: true,
+            damage: 0,
         });
         resolve_orders(&mut board, &[(truck_id, SupplyOrder::LoadCrates(2))], 1);
         assert_eq!(board.depots.get_mut(0).fixture()?.stock.current, 0);
@@ -964,6 +970,7 @@ mod tests {
             position: Coordinate::new(2, 0),
             stock: ResourceStock::depot(),
             stock_visible: true,
+            damage: 0,
         });
         resolve_orders(&mut board, &[(id, SupplyOrder::LoadCrates(1))], 1);
         assert!(
@@ -1071,12 +1078,14 @@ mod visibility_tests {
                 position: Coordinate::new(1, 0),
                 stock: ResourceStock::depot(),
                 stock_visible: true,
+                damage: 0,
             },
             Depot {
                 kind: DepotKind::Fuel,
                 position: Coordinate::new(19, 0),
                 stock: ResourceStock::depot(),
                 stock_visible: true,
+                damage: 0,
             },
         ];
         board.supply_crates = vec![

@@ -103,12 +103,18 @@ exports both the depot and crate, preserving transparency and aspect ratio.
 
 ## Illustrated command experiment
 
-`commands-anime-v1/` contains eight transparent 128px command icons, displayed at
+`commands-anime-v1/` contains nine transparent 128px command icons, displayed at
 1.875rem. The original SVG comparison source is preserved locally in `artwork/commands/`.
 Ambush depicts a concealed field gun and is offered only to field guns.
 Built-in imagegen produced the high-detail 1980s military anime illustrations;
 local masters and exact prompts are in `artwork/commands/anime-v1/`.
 Run `node tools/build-command-icons.cjs` to export those local masters again.
+
+The sabotage icon depicts bundled red demolition charges and an olive-green
+detonator with a brass plunger. Built-in imagegen produced its transparent
+1980s military anime illustration on October 23, 2026. Its local master and exact
+prompt are `artwork/commands/anime-v1/sabotage.png` and `sabotage-prompt.md`.
+The infantry sabotage command uses this asset in the command menu and guide.
 
 The rotate icon was generated with built-in imagegen on October 10, 2026: a
 simple circular clockwise arrow with textured golden metal, beveled edges,
@@ -151,15 +157,47 @@ The active masters are `neutral-v4-loader-inside.png`, `red-v2-crew.png`, and
 Run `node tools/build-field-gun-portraits.cjs`, also included in `make sprites`,
 to regenerate the exports without changing their aspect ratio.
 
-`combat-backdrops-anime-v1/` contains twelve opaque 1536 x 1024 painted 1980s
+`combat-backdrops-anime-v1/` contains fourteen opaque 1536 x 1024 painted 1980s
 anime backdrops. Forest, hills, mountains, and plains each have green, snow, and desert
 variants. Snow plains use `tundra-plains.png`. Forest clearings are enclosed by
 nearby trees; hill firing ledges sit among local ground contours. All provide
 open footing for staggered unit formations. Mountain scenes place the firing
 ledge among steep rocky peaks, with matching snow and desert variants.
 
-`View.CombatTheater` selects scenery using each participant's occupied terrain
-and the map theme. Local masters and generation/edit prompts are under
+`road.png` is an additional opaque 1536 x 1024 backdrop shared by all road shapes
+on grass and desert maps. It looks across an empty sunbaked Los Angeles/Phoenix-style
+freeway, with worn lane markings, nearby concrete barriers, and minimal distant
+scenery. Built-in imagegen created it on October 23, 2026, using the plains and
+desert-hills backdrops as style references. Its local master and exact generation
+prompt are `artwork/combat/backdrops/anime-v1/road.png` and `road-prompt.txt`.
+`snowy-road.png` preserves that composition for snow maps, adding settled snow
+on the concrete barriers and shoulders, packed snow and slush across the lanes,
+and cool winter shading. Built-in imagegen created this seasonal edit using
+`road.png` as the target and `snowy-hills.png` as a snow-palette reference.
+The local master and exact edit prompt are in the same source directory as
+`snowy-road.png` and `snowy-road-prompt.txt`.
+
+`depot.png` is an opaque 1536 x 1024 industrial loading yard shared by supply
+and fuel depot tiles on grass and desert maps. Warehouses, wooden crates, drums,
+and storage tanks line the rear against open sky, with no distant terrain,
+leaving open concrete for unit formations.
+Built-in imagegen created it on October 23, 2026. Its local master and exact
+generation prompt are `artwork/combat/backdrops/anime-v1/depot.png` and
+`depot-prompt.txt`. The final built-in imagegen edit removed the background hills
+and vegetation; its exact prompt is `depot-no-terrain-prompt.txt`, alongside the
+master. The combat theater also uses it for empty indirect-fire
+impacts on depot tiles; entrenched infantry keep their trench interior.
+
+`snowy-depot.png` preserves that industrial composition for snow maps, adding
+settled snow on roofs, crates, tanks, and ledges, with packed snow and icy patches
+across the open yard. The buildings meet the sky directly, with no distant
+terrain or vegetation. Built-in imagegen made this seasonal edit from `depot.png`
+using `snowy-road.png` as a winter palette reference. Its local master and exact
+edit prompt are `artwork/combat/backdrops/anime-v1/snowy-depot.png` and
+`snowy-depot-prompt.txt`.
+
+`Game.View.CombatTheater` selects scenery using each participant's occupied depot
+or terrain and the map theme. Local masters and generation/edit prompts are under
 `artwork/combat/backdrops/anime-v1/`. Export them with
 `node tools/build-combat-backdrops.cjs`, also included in `make sprites`.
 

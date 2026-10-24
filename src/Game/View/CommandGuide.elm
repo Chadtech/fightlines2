@@ -113,7 +113,10 @@ description command =
             "send infantry or a tank along a route prepared to fight enemies it encounters. choose the route first, then choose the final facing at its destination. on arrival, attack an enemy one square ahead in that direction. the red arrow shows the chosen facing, and enemy squares can be destinations. combat can interrupt the route. readiness, firing, and normal upkeep spend supplies. infantry movement spends supplies; tank movement spends fuel. attack move does not load or unload cargo."
 
         IndirectFire ->
-            "keep a field gun stationary and select any tile within its indirect range, including fog. one shell lands after movement and unloading, hitting whoever occupies that tile, including allies. terrain does not block the shot. empty tiles waste ammunition; unseen hits stay unconfirmed. readiness, firing, and normal upkeep spend supplies."
+            "keep a field gun stationary and select any tile within its indirect range, including fog. one shell lands after movement and unloading, hitting whoever occupies that tile, including allies, and removing one hp from its depot. fuel depots have one hp and supply depots three. crates and drums are unaffected. terrain does not block the shot. empty tiles waste ammunition; unseen hits stay unconfirmed. readiness, firing, and normal upkeep spend supplies."
+
+        Sabotage ->
+            "infantry already standing on an operational depot spend the whole turn sabotaging it. if they survive combat, the depot and its remaining stock are destroyed before replenishment. sabotage costs normal upkeep and does not damage units or freight. moving, firing, and sabotage cannot be combined."
 
         DigIn ->
-            "infantry spend their whole turn and a substantial supply cost plus normal upkeep digging in. protection begins at turn end. entrenched infantry take very little damage from infantry and field guns, but remain vulnerable to tanks. choose ambush on later turns to fire. moving or boarding a truck removes entrenchment and leaves nothing behind."
+            "infantry off roads spend their whole turn and a substantial supply cost plus normal upkeep digging in. protection begins at turn end. entrenched infantry take very little damage from infantry and field guns, but remain vulnerable to tanks. choose ambush on later turns to fire. moving or boarding a truck removes entrenchment and leaves nothing behind."

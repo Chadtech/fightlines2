@@ -42,6 +42,10 @@ orderChecks unitId passengerId =
         diggingIn =
             { unitId = unitId, action = DigIn { x = 1, y = 1 } }
 
+        sabotaging : PlannedOrder
+        sabotaging =
+            { unitId = unitId, action = Sabotage { x = 1, y = 1 } }
+
         standingGround : PlannedOrder
         standingGround =
             { unitId = unitId, action = StandGround { position = { x = 1, y = 1 }, direction = Direction.West } }
@@ -148,7 +152,23 @@ orderChecks unitId passengerId =
                 }
     in
     List.concat
-        [ expect "ground pickup serializes its resource without requesting depot loads"
+        [ expect "sabotage serializes an exclusive stationary action"
+            ((PlannedOrder.toInput sabotaging).sabotage
+                == Present True
+                && (PlannedOrder.toInput sabotaging).digIn
+                == Present False
+                && (PlannedOrder.toInput sabotaging).ambush
+                == Present False
+                && (PlannedOrder.toInput sabotaging).attackMove
+                == Present False
+                && (PlannedOrder.toInput sabotaging).indirectFire
+                == Absent
+                && PlannedOrder.path sabotaging
+                == [ { x = 1, y = 1 } ]
+                && not (PlannedOrder.isMoving sabotaging)
+                && List.isEmpty (PlannedOrder.unloads sabotaging)
+            )
+        , expect "ground pickup serializes its resource without requesting depot loads"
             (pickupInput.pickupGroundFreight
                 == Present DepotKind.Fuel
                 && pickupInput.loadCrates
@@ -180,6 +200,7 @@ orderChecks unitId passengerId =
                             ]
                    , attackMove = Present False
                    , digIn = Present False
+                   , sabotage = Present False
                    , standGround = Present False
                    , ambush = Present False
                    , unitId = UnitId.toString unitId
@@ -218,6 +239,7 @@ orderChecks unitId passengerId =
                    , crateUnloads = Present []
                    , attackMove = Present True
                    , digIn = Present False
+                   , sabotage = Present False
                    , standGround = Present False
                    , ambush = Present False
                    , unitId = UnitId.toString unitId
@@ -244,6 +266,7 @@ orderChecks unitId passengerId =
                    , indirectFire = Absent
                    , direction = Present Direction.West
                    , digIn = Present False
+                   , sabotage = Present False
                    , standGround = Present True
                    , ambush = Present False
                    , attackMove = Present False
@@ -261,6 +284,7 @@ orderChecks unitId passengerId =
                    , crateUnloads = Present []
                    , attackMove = Present False
                    , digIn = Present False
+                   , sabotage = Present False
                    , standGround = Present False
                    , ambush = Present True
                    , unitId = UnitId.toString unitId
@@ -282,6 +306,7 @@ orderChecks unitId passengerId =
                    , crateUnloads = Present []
                    , attackMove = Present False
                    , digIn = Present False
+                   , sabotage = Present False
                    , standGround = Present False
                    , ambush = Present False
                    , unitId = UnitId.toString unitId
@@ -302,6 +327,7 @@ orderChecks unitId passengerId =
                    , crateUnloads = Present []
                    , attackMove = Present False
                    , digIn = Present False
+                   , sabotage = Present False
                    , standGround = Present False
                    , ambush = Present False
                    , unitId = UnitId.toString unitId
@@ -335,6 +361,7 @@ orderChecks unitId passengerId =
                    , crateUnloads = Present []
                    , attackMove = Present False
                    , digIn = Present False
+                   , sabotage = Present False
                    , standGround = Present False
                    , ambush = Present False
                    , unitId = UnitId.toString unitId

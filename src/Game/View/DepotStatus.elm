@@ -21,23 +21,27 @@ depotView depot =
     let
         stock : Html msg
         stock =
-            case depot.stock of
-                Just level ->
-                    StockGauge.toHtml
-                        { label = Depot.resourceLabel depot
-                        , accessibleLabel = "depot " ++ Depot.resourceLabel depot
-                        , description = Depot.stockDescription depot
-                        }
-                        level
+            if Depot.isDestroyed depot then
+                H.p [] [ H.text "destroyed · no replenishment or freight loading" ]
 
-                Nothing ->
-                    H.p
-                        [ A.css
-                            [ S.textGray4
+            else
+                case depot.stock of
+                    Just level ->
+                        StockGauge.toHtml
+                            { label = Depot.resourceLabel depot
+                            , accessibleLabel = "depot " ++ Depot.resourceLabel depot
+                            , description = Depot.stockDescription depot
+                            }
+                            level
+
+                    Nothing ->
+                        H.p
+                            [ A.css
+                                [ S.textGray4
+                                ]
                             ]
-                        ]
-                        [ H.text "stock outside sight"
-                        ]
+                            [ H.text "stock outside sight"
+                            ]
     in
     H.div
         [ A.css
@@ -93,6 +97,11 @@ depotView depot =
                 ]
                 []
             ]
+        , StockGauge.hp
+            { accessibleLabel = "depot hp"
+            , description = "each shell removes one hp. infantry on this depot can destroy it in one turn with sabotage. the condition shown in fog was last observed."
+            }
+            depot.hp
         , stock
         ]
 

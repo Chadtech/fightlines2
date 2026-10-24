@@ -16,7 +16,8 @@ import Api.Enum.UnitKind as UnitKind
 import Css
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
 import Game.Coordinate as Coordinate exposing (Coordinate)
-import Game.IndirectImpact as IndirectImpact exposing (Attacker, IndirectImpact)
+import Game.Depot as Depot exposing (Depot)
+import Game.IndirectImpact as IndirectImpact exposing (Attacker, DepotImpact, IndirectImpact)
 import Game.Map as Map exposing (Map)
 import Game.Terrain as Terrain exposing (Terrain)
 import Game.TurnPlayback as TurnPlayback
@@ -50,6 +51,18 @@ type Msg
     | SeeMapPressed
     | SeeMapReleased
     | AutomaticallyCloseChanged Bool
+
+
+type alias Scenery =
+    { map : Map
+    , depots : List Depot
+    }
+
+
+type alias DepotDamage =
+    { depot : Depot
+    , elapsed : Float
+    }
 
 
 styles : Html msg
@@ -103,21 +116,20 @@ Keeping the map button held always keeps the encounter open.
 readyToAutomaticallyClose : Panel -> Bool
 readyToAutomaticallyClose panel =
     let
-        lastImpact : Float
-        lastImpact =
-            impactStarts panel
-                |> List.maximum
-                |> Maybe.withDefault 1200
-
         animationEndsAt : Float
         animationEndsAt =
-            lastImpact + impactContactDelayMs + rumbleDurationMs
+            case depotSceneStartsAt panel of
+                Just startsAt ->
+                    startsAt + depotImpactStartsAt + impactContactDelayMs + rumbleDurationMs
+
+                Nothing ->
+                    participantsEndAt panel
     in
     (panel.mapView == CardVisible) && (panel.elapsed >= animationEndsAt + automaticCloseDelayMs)
 
 
-impactStarts : Panel -> List Float
-impactStarts panel =
+participantImpactStarts : Panel -> List Float
+participantImpactStarts panel =
     case panel.encounter of
         Exchange exchange ->
             CombatFormation.impactStarts exchange.attacker.kind exchange.attackerHealth
@@ -130,6 +142,81 @@ impactStarts panel =
 
                 Nothing ->
                     [ 1200, 1330, 1460, 1590 ]
+
+
+participantsEndAt : Panel -> Float
+participantsEndAt panel =
+    participantImpactStarts panel
+        |> List.maximum
+        |> Maybe.withDefault 1200
+        |> (+) (impactContactDelayMs + rumbleDurationMs)
+
+
+{-| Finish the participant hits before cutting to the building as a whole.
+The depot scene uses the same panel clock, including during map peeks.
+-}
+depotSceneStartsAt : Panel -> Maybe Float
+depotSceneStartsAt panel =
+    case panel.encounter of
+        Impact impact ->
+            impact.depot |> Maybe.map (\_ -> participantsEndAt panel + 350)
+
+        Exchange _ ->
+            Nothing
+
+
+depotDamageAt : Panel -> Maybe DepotDamage
+depotDamageAt panel =
+    case ( panel.encounter, depotSceneStartsAt panel ) of
+        ( Impact impact, Just startsAt ) ->
+            let
+                elapsed : Float
+                elapsed =
+                    panel.elapsed - startsAt
+
+                building : DepotImpact -> DepotDamage
+                building damage =
+                    let
+                        hp : Depot.Hp
+                        hp =
+                            if elapsed >= depotImpactStartsAt + CombatExplosion.spriteDisappearsAt then
+                                damage.after
+
+                            else
+                                damage.before
+                    in
+                    { depot =
+                        { kind = damage.kind
+                        , position = impact.destination
+                        , stock = Nothing
+                        , hp = hp
+                        }
+                    , elapsed = elapsed
+                    }
+            in
+            if elapsed >= 0 then
+                Maybe.map building impact.depot
+
+            else
+                Nothing
+
+        _ ->
+            Nothing
+
+
+impactStarts : Panel -> List Float
+impactStarts panel =
+    case ( depotSceneStartsAt panel, depotDamageAt panel ) of
+        ( Just startsAt, Just _ ) ->
+            [ startsAt + depotImpactStartsAt ]
+
+        _ ->
+            participantImpactStarts panel
+
+
+depotImpactStartsAt : Float
+depotImpactStartsAt =
+    700
 
 
 impactContactDelayMs : Float
@@ -151,18 +238,25 @@ toHtml :
     { automaticallyClose : Bool
     , visibleTiles : List Coordinate
     }
+    -> List Depot
     -> Map
     -> Panel
     -> Html Msg
-toHtml config map panel =
-    Lazy.lazy4 theaterView config.automaticallyClose config.visibleTiles map panel
+toHtml config depots map panel =
+    Lazy.lazy5 theaterView config.automaticallyClose config.visibleTiles depots map panel
 
 
-theaterView : Bool -> List Coordinate -> Map -> Panel -> Html Msg
-theaterView automaticallyClose visibleTiles map panel =
+theaterView : Bool -> List Coordinate -> List Depot -> Map -> Panel -> Html Msg
+theaterView automaticallyClose visibleTiles depots map panel =
     let
-        portraits : List (Html Msg)
-        portraits =
+        scenery : Scenery
+        scenery =
+            { map = map
+            , depots = depots
+            }
+
+        participantPortraits : List (Html Msg)
+        participantPortraits =
             case panel.encounter of
                 Exchange exchange ->
                     let
@@ -177,7 +271,7 @@ theaterView automaticallyClose visibleTiles map panel =
                         attackerView : SpriteFacing -> Html Msg
                         attackerView facing =
                             portrait
-                                map
+                                scenery
                                 panel
                                 exchange.attackerHealth
                                 (attacker
@@ -187,7 +281,7 @@ theaterView automaticallyClose visibleTiles map panel =
                         targetView : SpriteFacing -> Html Msg
                         targetView facing =
                             portrait
-                                map
+                                scenery
                                 panel
                                 exchange.targetHealth
                                 (target
@@ -205,20 +299,46 @@ theaterView automaticallyClose visibleTiles map panel =
                         ]
 
                 Impact impact ->
+                    let
+                        impactTargetFromFacing : SpriteFacing -> Html Msg
+                        impactTargetFromFacing =
+                            impactTarget
+                                visibleTiles
+                                scenery
+                                panel
+                                impact
+                    in
                     case impact.attacker of
                         Just attacker ->
+                            let
+                                impactAttackerFromFacing : SpriteFacing -> Html Msg
+                                impactAttackerFromFacing =
+                                    impactAttacker
+                                        scenery
+                                        panel
+                                        attacker
+                            in
                             if attackerOnLeft panel then
-                                [ impactAttacker map panel attacker SpriteFacing.Right
-                                , impactTarget visibleTiles map panel impact SpriteFacing.Left
+                                [ impactAttackerFromFacing SpriteFacing.Right
+                                , impactTargetFromFacing SpriteFacing.Left
                                 ]
 
                             else
-                                [ impactTarget visibleTiles map panel impact SpriteFacing.Right
-                                , impactAttacker map panel attacker SpriteFacing.Left
+                                [ impactTargetFromFacing SpriteFacing.Right
+                                , impactAttackerFromFacing SpriteFacing.Left
                                 ]
 
                         Nothing ->
-                            [ impactTarget visibleTiles map panel impact SpriteFacing.Left ]
+                            [ impactTargetFromFacing SpriteFacing.Left ]
+
+        portraits : List (Html Msg)
+        portraits =
+            case depotDamageAt panel of
+                Just damage ->
+                    [ depotScene scenery panel damage ]
+
+                Nothing ->
+                    participantPortraits
 
         title : String
         title =
@@ -267,27 +387,43 @@ theaterView automaticallyClose visibleTiles map panel =
                                         " a unit was hit at this space."
 
                                 Nothing ->
-                                    " no target or damage could be confirmed."
+                                    if impact.depot == Nothing then
+                                        " no target or damage could be confirmed."
+
+                                    else
+                                        ""
+
+                        depotOutcome : String
+                        depotOutcome =
+                            case depotDamageAt panel of
+                                Just damage ->
+                                    if Depot.isDestroyed damage.depot then
+                                        " the depot was destroyed."
+
+                                    else if damage.elapsed < depotImpactStartsAt then
+                                        " the shell also struck the depot."
+
+                                    else
+                                        " the depot was damaged."
+
+                                Nothing ->
+                                    ""
                     in
                     H.p
                         []
-                        [ H.text (source ++ outcome) ]
+                        [ H.text (source ++ outcome ++ depotOutcome) ]
 
                 Exchange _ ->
                     H.text ""
 
         sceneColumns : Css.Style
         sceneColumns =
-            case panel.encounter of
-                Impact impact ->
-                    case impact.attacker of
-                        Just _ ->
-                            S.gridCols2
+            case portraits of
+                [ _ ] ->
+                    -- Match one column of the paired layout, including its S.g3 gap.
+                    Css.property "grid-template-columns" "minmax(0, calc((100% - 0.75rem) / 2))"
 
-                        Nothing ->
-                            S.gridCols1
-
-                Exchange _ ->
+                _ ->
                     S.gridCols2
 
         card : Card.Card
@@ -369,6 +505,7 @@ theaterView automaticallyClose visibleTiles map panel =
                         [ A.css
                             [ S.grid
                             , S.g3
+                            , S.justifyCenter
                             , sceneColumns
                             ]
                         ]
@@ -428,12 +565,37 @@ seeMapKey message =
         |> Decode.map handled
 
 
+backdropAt : Scenery -> Coordinate -> String
+backdropAt scenery position =
+    let
+        atPosition : Depot -> Bool
+        atPosition depot =
+            depot.position == position
+    in
+    if List.any atPosition scenery.depots then
+        case scenery.map.theme of
+            MapTheme.Snow ->
+                "/assets/combat-backdrops-anime-v1/snowy-depot.png"
+
+            _ ->
+                "/assets/combat-backdrops-anime-v1/depot.png"
+
+    else
+        backdropPath scenery.map.theme (Map.terrainAt scenery.map position)
+
+
 backdropPath : MapTheme -> Terrain -> String
 backdropPath theme terrain =
     let
         name : String
         name =
             case ( theme, terrain ) of
+                ( MapTheme.Snow, Terrain.Road _ ) ->
+                    "snowy-road"
+
+                ( _, Terrain.Road _ ) ->
+                    "road"
+
                 ( _, Terrain.Water ) ->
                     "water"
 
@@ -528,14 +690,14 @@ rumbleTransform panel =
         |> Maybe.withDefault "none"
 
 
-impactAttacker : Map -> Panel -> Attacker -> SpriteFacing -> Html Msg
-impactAttacker map panel attacker facing =
+impactAttacker : Scenery -> Panel -> Attacker -> SpriteFacing -> Html Msg
+impactAttacker scenery panel attacker facing =
     let
         unit : Unit
         unit =
             attacker.unit
     in
-    portrait map
+    portrait scenery
         panel
         { before = attacker.health, after = attacker.health }
         (unit
@@ -543,8 +705,8 @@ impactAttacker map panel attacker facing =
         )
 
 
-impactTarget : List Coordinate -> Map -> Panel -> IndirectImpact -> SpriteFacing -> Html Msg
-impactTarget visibleTiles map panel impact facing =
+impactTarget : List Coordinate -> Scenery -> Panel -> IndirectImpact -> SpriteFacing -> Html Msg
+impactTarget visibleTiles scenery panel impact facing =
     case impact.target of
         Just target ->
             let
@@ -552,7 +714,7 @@ impactTarget visibleTiles map panel impact facing =
                 unit =
                     target.unit
             in
-            portrait map
+            portrait scenery
                 panel
                 target.health
                 (unit
@@ -560,11 +722,11 @@ impactTarget visibleTiles map panel impact facing =
                 )
 
         Nothing ->
-            impactScene visibleTiles map panel impact.destination
+            impactScene visibleTiles scenery panel impact.destination
 
 
-impactScene : List Coordinate -> Map -> Panel -> Coordinate -> Html Msg
-impactScene visibleTiles map panel position =
+impactScene : List Coordinate -> Scenery -> Panel -> Coordinate -> Html Msg
+impactScene visibleTiles scenery panel position =
     let
         burst : Int -> Float -> Maybe (Svg.Svg Msg)
         burst index startsAt =
@@ -617,10 +779,95 @@ impactScene visibleTiles map panel position =
                 explosions
     in
     scene
-        (Just (backdropPath map.theme (Map.terrainAt map position)))
+        (Just (backdropAt scenery position))
         panel
         description
         content
+
+
+depotScene : Scenery -> Panel -> DepotDamage -> Html Msg
+depotScene scenery panel damage =
+    let
+        age : Float
+        age =
+            damage.elapsed - depotImpactStartsAt
+
+        destroyed : Bool
+        destroyed =
+            Depot.isDestroyed damage.depot
+
+        opacity : String
+        opacity =
+            if destroyed then
+                "0.25"
+
+            else
+                "1"
+
+        destructionMark : List (Svg.Svg Msg)
+        destructionMark =
+            if destroyed then
+                [ Svg.path
+                    [ SA.d "M 36,20 L 60,44 M 60,20 L 36,44"
+                    , SA.stroke S.red1Str
+                    , SA.strokeWidth "4.5"
+                    ]
+                    []
+                ]
+
+            else
+                []
+
+        explosion : List (Svg.Svg Msg)
+        explosion =
+            if (age >= 0) && (age < CombatExplosion.durationMs) then
+                [ Svg.g
+                    [ SA.transform "translate(48 32) scale(2.2)" ]
+                    [ CombatExplosion.toSvg SpriteFacing.Left age ]
+                ]
+
+            else
+                []
+
+        artwork : List (Svg.Svg Msg)
+        artwork =
+            [ Svg.image
+                [ SA.x "24"
+                , SA.y "8"
+                , SA.width "48"
+                , SA.height "48"
+                , SA.xlinkHref (Depot.image damage.depot)
+                , SA.opacity opacity
+                ]
+                []
+            ]
+                ++ destructionMark
+                ++ explosion
+
+        description : String
+        description =
+            Depot.label damage.depot ++ "; struck by indirect fire"
+    in
+    H.div
+        [ A.attribute "data-depot-damage" ""
+        , A.css
+            [ S.row
+            , S.justifyCenter
+            ]
+        ]
+        [ H.div
+            [ A.css
+                [ S.wFull
+                , S.maxW128
+                ]
+            ]
+            [ scene
+                (Just (backdropAt scenery damage.depot.position))
+                panel
+                description
+                artwork
+            ]
+        ]
 
 
 unconfirmedFog : Svg.Svg Msg
@@ -650,27 +897,27 @@ unconfirmedFog =
         ]
 
 
-portrait : Map -> Panel -> CombatHealth -> Unit -> Html Msg
-portrait map panel health unit =
+portrait : Scenery -> Panel -> CombatHealth -> Unit -> Html Msg
+portrait scenery panel health unit =
     H.div
         [ A.css
             [ S.col
             , S.g2
             ]
         ]
-        [ portraitScene map panel health unit
+        [ portraitScene scenery panel health unit
         , CombatReadiness.toHtml unit.combatState
         ]
 
 
-portraitScene : Map -> Panel -> CombatHealth -> Unit -> Html Msg
-portraitScene map panel health unit =
+portraitScene : Scenery -> Panel -> CombatHealth -> Unit -> Html Msg
+portraitScene scenery panel health unit =
     let
-        terrain : Terrain
-        terrain =
+        path : String
+        path =
             Unit.mapPosition unit
-                |> Maybe.map (Map.terrainAt map)
-                |> Maybe.withDefault map.baseTile
+                |> Maybe.map (backdropAt scenery)
+                |> Maybe.withDefault (backdropPath scenery.map.theme scenery.map.baseTile)
 
         description : String
         description =
@@ -749,7 +996,7 @@ portraitScene map panel health unit =
 
     else
         scene
-            (Just (backdropPath map.theme terrain))
+            (Just path)
             panel
             description
             (CombatFormation.toSvg panel.elapsed health unit)

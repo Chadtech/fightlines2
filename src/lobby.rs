@@ -414,6 +414,7 @@ fn observed_board(
         let visible = visibility::visible_tiles(source, player_number);
         let mut scenario = visibility::observed_scenario(source, player_number, &visible);
         scenario.supply_crates = observation.supply_crates.clone();
+        observation.apply_depot_memory(&mut scenario.depots);
         (scenario, visible.into_iter().collect())
     };
     let mut last_resolution = observation.last_resolution.clone();
@@ -422,6 +423,7 @@ fn observed_board(
     {
         // Lift fog only after the original, viewer-specific final turn has played.
         resolution.frames.push(TurnFrame {
+            sabotages: Vec::new(),
             departures: Vec::new(),
             indirect_impacts: Vec::new(),
             depots: scenario.depots.clone(),
@@ -1037,6 +1039,7 @@ mod tests {
                             ambush: None,
                             stand_ground: None,
                             dig_in: None,
+                            sabotage: None,
                             indirect_fire: None,
                             attack_move: None,
                             unloads: None,

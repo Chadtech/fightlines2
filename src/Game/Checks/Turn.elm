@@ -2,6 +2,7 @@ port module Game.Checks.Turn exposing (main)
 
 import Api.Enum.AmbushShape as AmbushShape
 import Api.Enum.CombatKind as CombatKind
+import Api.Enum.DepotKind as DepotKind
 import Api.Enum.Direction as Direction
 import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as MapTheme
@@ -217,6 +218,7 @@ playbackChecks first second =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , sabotages = []
             , indirectImpacts = []
             , shots = []
             , durationMs = 180
@@ -233,6 +235,7 @@ playbackChecks first second =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , sabotages = []
             , indirectImpacts = []
             , shots = []
             , durationMs = 180
@@ -257,6 +260,7 @@ playbackChecks first second =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , sabotages = []
             , indirectImpacts = []
             , shots = []
             , durationMs = 180
@@ -349,7 +353,7 @@ playbackChecks first second =
         , expect "camera subjects include only the projected fog departure"
             (Maybe.map TurnPlayback.focusPositions departing == Just (List.map .position (TurnPlayback.movingPositions departing)))
         , expect "camera frames projected indirect impacts even without a hit"
-            (TurnPlayback.focusPositions { sharedPlayback | current = { firstFrame | indirectImpacts = [ { destination = { x = 8, y = 9 }, attacker = Nothing, target = Nothing } ] }, remaining = [] } == [ { x = 8, y = 9 } ])
+            (TurnPlayback.focusPositions { sharedPlayback | current = { firstFrame | indirectImpacts = [ { destination = { x = 8, y = 9 }, attacker = Nothing, target = Nothing, depot = Nothing } ] }, remaining = [] } == [ { x = 8, y = 9 } ])
         , expect "all simultaneous arrivals interpolate using server frame duration"
             (TurnPlayback.movingPositions timedHalfway == [ { unitId = first, position = { x = 0.5, y = 0 } }, { unitId = second, position = { x = 1.5, y = 1 } } ])
         , expect "only the first unit interpolates during its route"
@@ -627,6 +631,7 @@ transportPlaybackChecks passengerId truckId =
                     { depots = []
                     , supplyCrates = []
                     , departures = []
+                    , sabotages = []
                     , indirectImpacts = []
                     , shots = []
                     , durationMs = 180
@@ -637,6 +642,7 @@ transportPlaybackChecks passengerId truckId =
                     [ { depots = []
                       , supplyCrates = []
                       , departures = []
+                      , sabotages = []
                       , indirectImpacts = []
                       , shots = []
                       , durationMs = 180
@@ -750,6 +756,7 @@ spriteFacingChecks id =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , sabotages = []
             , indirectImpacts = []
             , shots = []
             , durationMs = 180
@@ -886,6 +893,7 @@ combatPlaybackChecks first second =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , sabotages = []
             , indirectImpacts = []
             , shots = []
             , durationMs = 180
@@ -1004,7 +1012,11 @@ combatPlaybackChecks first second =
             let
                 landing : TurnPlayback.Frame
                 landing =
-                    { before | units = [ attacker ], indirectImpacts = [ { destination = shot.destination, attacker = Nothing, target = Nothing }, { destination = shot.destination, attacker = Nothing, target = Nothing } ] }
+                    { before
+                        | units = [ attacker ]
+                        , sabotages = []
+                        , indirectImpacts = [ { destination = shot.destination, attacker = Nothing, target = Nothing, depot = Nothing }, { destination = shot.destination, attacker = Nothing, target = Nothing, depot = Nothing } ]
+                    }
 
                 focus : Maybe TurnPlayback.Playback
                 focus =
@@ -1037,6 +1049,7 @@ combatPlaybackChecks first second =
                     { destination = shot.destination
                     , attacker = Just { unit = attacker, health = shot.attackerHealth.before }
                     , target = Nothing
+                    , depot = Nothing
                     }
 
                 knownLanding : TurnPlayback.Frame
@@ -1058,7 +1071,8 @@ combatPlaybackChecks first second =
 
                 observedTarget : IndirectImpact
                 observedTarget =
-                    { destination = shot.destination
+                    { depot = Nothing
+                    , destination = shot.destination
                     , attacker = Nothing
                     , target =
                         Just
@@ -1078,6 +1092,7 @@ combatPlaybackChecks first second =
                                 [ target
                                     |> Unit.setDestroyed destroyed
                                 ]
+                            , sabotages = []
                             , indirectImpacts = impacts
                           }
                         ]
@@ -1096,6 +1111,55 @@ combatPlaybackChecks first second =
                 combined =
                     showTarget [ observedTarget, laterImpact ] True |> Maybe.andThen TurnPlayback.panels
 
+                depotHit : IndirectImpact
+                depotHit =
+                    { observedTarget | depot = Just { kind = DepotKind.Supply, before = { current = 3, maximum = 3 }, after = { current = 2, maximum = 3 } } }
+
+                depotLanding : TurnPlayback.Frame
+                depotLanding =
+                    { confirmed | indirectImpacts = [ depotHit ] }
+
+                depotPanel : Maybe TurnPlayback.Panel
+                depotPanel =
+                    TurnPlayback.start [ before, depotLanding ]
+                        |> Maybe.andThen (TurnPlayback.tick 180 >> Tuple.first)
+                        |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+                        |> Maybe.andThen TurnPlayback.panels
+
+                depotReady : Float -> TurnPlayback.MapView -> Bool
+                depotReady elapsed mapView =
+                    CombatTheater.readyToAutomaticallyClose
+                        { encounter = TurnPlayback.Impact depotHit
+                        , elapsed = elapsed
+                        , mapView = mapView
+                        }
+
+                lethalDepotHit : IndirectImpact
+                lethalDepotHit =
+                    { depotHit
+                        | target =
+                            laterImpact.target
+                                |> Maybe.map (\observed -> { observed | health = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } } })
+                        , depot = Just { kind = DepotKind.Fuel, before = { current = 1, maximum = 1 }, after = { current = 0, maximum = 1 } }
+                    }
+
+                lethalDepotShown : Maybe TurnPlayback.Playback
+                lethalDepotShown =
+                    showTarget [ lethalDepotHit ] True
+
+                depotHeld : Maybe TurnPlayback.Playback
+                depotHeld =
+                    lethalDepotShown |> Maybe.andThen (TurnPlayback.tick 6000 >> Tuple.first)
+
+                showsDepotAndUnit : TurnPlayback.Panel -> Bool
+                showsDepotAndUnit panel =
+                    case panel.encounter of
+                        TurnPlayback.Impact impact ->
+                            impact.depot == depotHit.depot && impact.target == observedTarget.target
+
+                        _ ->
+                            False
+
                 targetHealth : TurnPlayback.Panel -> Maybe CombatHealth
                 targetHealth panel =
                     case panel.encounter of
@@ -1108,22 +1172,49 @@ combatPlaybackChecks first second =
                 ready : Float -> Bool
                 ready elapsed =
                     CombatTheater.readyToAutomaticallyClose
-                        { encounter = TurnPlayback.Impact { destination = shot.destination, attacker = Nothing, target = Nothing }
+                        { encounter = TurnPlayback.Impact { destination = shot.destination, attacker = Nothing, target = Nothing, depot = Nothing }
                         , elapsed = elapsed
                         , mapView = TurnPlayback.CardVisible
                         }
             in
-            expect "known indirect attacker is retained alongside an unconfirmed landing"
-                (Maybe.andThen TurnPlayback.activeEncounter knownShown
-                    == Just (TurnPlayback.Impact knownImpact)
-                    && Maybe.map TurnPlayback.focusPositions knownShown
-                    == Just [ { x = 2, y = 2 }, { x = 3, y = 2 } ]
-                    && CombatTheater.attackerOnLeft knownPanel
-                    && not (CombatTheater.attackerOnLeft { knownPanel | encounter = TurnPlayback.Impact { knownImpact | destination = { x = 1, y = 2 } } })
-                )
+            expect "a shell hitting a depot and its occupant retains both damage results in one encounter"
+                (Maybe.map showsDepotAndUnit depotPanel == Just True)
+                ++ expect "depot damage finishes after the occupant animation and before automatic close"
+                    (not (depotReady 3469 TurnPlayback.CardVisible)
+                        && depotReady 3470 TurnPlayback.CardVisible
+                        && not (depotReady 6000 TurnPlayback.SeeingMap)
+                    )
+                ++ expect "lethal infantry and depot strikes both fit within the panel clock"
+                    (Maybe.andThen TurnPlayback.panels depotHeld
+                        |> Maybe.map CombatTheater.readyToAutomaticallyClose
+                        |> (==) (Just True)
+                    )
+                ++ expect "automatic close waits for the depot even after all infantry casualties finish"
+                    (Maybe.andThen TurnPlayback.panels lethalDepotShown
+                        |> Maybe.map
+                            (\panel ->
+                                not (CombatTheater.readyToAutomaticallyClose { panel | elapsed = 3949 })
+                                    && CombatTheater.readyToAutomaticallyClose { panel | elapsed = 3950 }
+                            )
+                        |> (==) (Just True)
+                    )
+                ++ expect "continuing after a depot strike preserves the occupant casualty acknowledgment"
+                    (depotHeld
+                        |> Maybe.andThen TurnPlayback.continueCombat
+                        |> Maybe.map (.animation >> TurnPlayback.losses >> List.map .cause)
+                        |> (==) (Just [ TurnPlayback.ConcealedIndirectFire ])
+                    )
+                ++ expect "known indirect attacker is retained alongside an unconfirmed landing"
+                    (Maybe.andThen TurnPlayback.activeEncounter knownShown
+                        == Just (TurnPlayback.Impact knownImpact)
+                        && Maybe.map TurnPlayback.focusPositions knownShown
+                        == Just [ { x = 2, y = 2 }, { x = 3, y = 2 } ]
+                        && CombatTheater.attackerOnLeft knownPanel
+                        && not (CombatTheater.attackerOnLeft { knownPanel | encounter = TurnPlayback.Impact { knownImpact | destination = { x = 1, y = 2 } } })
+                    )
                 ++ expect "unconfirmed indirect impacts open a theater without invented combatants"
                     (Maybe.andThen TurnPlayback.activeEncounter shown
-                        == Just (TurnPlayback.Impact { destination = shot.destination, attacker = Nothing, target = Nothing })
+                        == Just (TurnPlayback.Impact { destination = shot.destination, attacker = Nothing, target = Nothing, depot = Nothing })
                         && Maybe.andThen TurnPlayback.combat shown
                         == Nothing
                         && Maybe.andThen TurnPlayback.panels shown
@@ -1481,6 +1572,7 @@ combatDeathChecks first second =
                 before =
                     { units = [ attacker, target, other ]
                     , departures = []
+                    , sabotages = []
                     , indirectImpacts = []
                     , shots = []
                     , durationMs = 0
@@ -1596,7 +1688,8 @@ combatDeathChecks first second =
                             , other
                             ]
                         , shots = []
-                        , indirectImpacts = [ { destination = { x = 3, y = 2 }, attacker = Nothing, target = Just { unit = target, health = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } } } } ]
+                        , sabotages = []
+                        , indirectImpacts = [ { destination = { x = 3, y = 2 }, attacker = Nothing, depot = Nothing, target = Just { unit = target, health = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } } } } ]
                     }
 
                 shellDeath : Maybe { animation : TurnPlayback.Playback, frame : TurnPlayback.Frame }
@@ -1882,6 +1975,7 @@ deathPlaybackChecks id =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , sabotages = []
             , indirectImpacts = []
             , shots = []
             , durationMs = 180
@@ -1898,6 +1992,7 @@ deathPlaybackChecks id =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , sabotages = []
             , indirectImpacts = []
             , shots = []
             , durationMs = 1400
@@ -1983,6 +2078,7 @@ deathFocusChecks first second =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , sabotages = []
             , indirectImpacts = []
             , shots = []
             , durationMs = 450
@@ -2289,6 +2385,7 @@ carrierLossEventChecks first second =
                     { units = [ passenger, independent, truck, otherPassenger ]
                     , durationMs = 1400
                     , departures = []
+                    , sabotages = []
                     , indirectImpacts = []
                     , shots = []
                     , visibleTiles = [ { x = 2, y = 2 }, { x = 3, y = 2 } ]

@@ -989,11 +989,11 @@ inspectionPosition model =
             selectedUnit model |> Maybe.andThen (Unit.physicalPosition model.battlefield.units)
 
 
-ambushingUnits : Model -> List UnitId
-ambushingUnits model =
+facingUnits : Model -> List UnitId
+facingUnits model =
     if isPlaying model then
         model.resolution
-            |> Maybe.map (.events >> List.filter (\event -> event.kind == TurnEventKind.Ambush) >> List.map .unitId)
+            |> Maybe.map (.events >> List.filter (\event -> List.member event.kind [ TurnEventKind.Ambush, TurnEventKind.StandGround ]) >> List.map .unitId)
             |> Maybe.withDefault []
 
     else
@@ -1050,7 +1050,7 @@ battlefieldView model =
             , frame = model.frame
             , selected = inspectionPosition model
             , selectedUnitId = selectedUnit model |> Maybe.map .id
-            , ambushing = ambushingUnits model
+            , facingUnits = facingUnits model
             , presentation = presentation
             }
 

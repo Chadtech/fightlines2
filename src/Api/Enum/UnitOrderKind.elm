@@ -17,12 +17,13 @@ type UnitOrderKind
     | Ambush
     | StandGround
     | DigIn
+    | Sabotage
     | IndirectFire
 
 
 list : List UnitOrderKind
 list =
-    [ Hold, Move, Rotate, AttackMove, Ambush, StandGround, DigIn, IndirectFire ]
+    [ Hold, Move, Rotate, AttackMove, Ambush, StandGround, DigIn, Sabotage, IndirectFire ]
 
 
 decoder : Decoder UnitOrderKind
@@ -51,6 +52,9 @@ decoder =
 
                     "DIG_IN" ->
                         Decode.succeed DigIn
+
+                    "SABOTAGE" ->
+                        Decode.succeed Sabotage
 
                     "INDIRECT_FIRE" ->
                         Decode.succeed IndirectFire
@@ -85,6 +89,9 @@ toString enum____ =
 
         DigIn ->
             "DIG_IN"
+
+        Sabotage ->
+            "SABOTAGE"
 
         IndirectFire ->
             "INDIRECT_FIRE"
@@ -124,6 +131,9 @@ fromString enumString____ =
 
         "DIG_IN" ->
             Just DigIn
+
+        "SABOTAGE" ->
+            Just Sabotage
 
         "INDIRECT_FIRE" ->
             Just IndirectFire

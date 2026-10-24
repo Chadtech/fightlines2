@@ -59,6 +59,7 @@ type alias Frame =
     , units : List Unit
     , departures : List Departure
     , indirectImpacts : List IndirectImpact
+    , sabotages : List Coordinate
     , shots : List Shot
     , visibleTiles : List Coordinate
     , depots : List Depot
@@ -449,15 +450,28 @@ Confirmed indirect shots already have their own exchange at the same landing.
 encounters : Frame -> List Encounter
 encounters frame =
     let
-        unconfirmed : IndirectImpact -> Bool
-        unconfirmed impact =
+        needsImpactScene : IndirectImpact -> Bool
+        needsImpactScene impact =
             let
                 confirmsLanding : Shot -> Bool
                 confirmsLanding shot =
                     (shot.kind == CombatKind.IndirectFire)
                         && (shot.destination == impact.destination)
             in
-            not (List.any confirmsLanding frame.shots)
+            (impact.depot /= Nothing) || not (List.any confirmsLanding frame.shots)
+
+        needsExchange : CombatExchange -> Bool
+        needsExchange exchange =
+            let
+                sharesDepotImpact : IndirectImpact -> Bool
+                sharesDepotImpact impact =
+                    (impact.depot /= Nothing) && (Unit.mapPosition exchange.target == Just impact.destination)
+
+                includesDepotDamage : Bool
+                includesDepotDamage =
+                    (exchange.kind == CombatKind.IndirectFire) && List.any sharesDepotImpact frame.indirectImpacts
+            in
+            not includesDepotDamage
 
         unique : IndirectImpact -> List IndirectImpact -> List IndirectImpact
         unique impact impacts =
@@ -465,7 +479,19 @@ encounters frame =
                 merge : IndirectImpact -> IndirectImpact
                 merge existing =
                     if existing.destination == impact.destination then
-                        { existing | target = combineImpactTargets existing.target impact.target }
+                        { existing
+                            | target = combineImpactTargets existing.target impact.target
+                            , depot =
+                                case ( existing.depot, impact.depot ) of
+                                    ( Just earlier, Just later ) ->
+                                        Just { earlier | after = later.after }
+
+                                    ( Nothing, later ) ->
+                                        later
+
+                                    ( earlier, Nothing ) ->
+                                        earlier
+                        }
 
                     else
                         existing
@@ -476,10 +502,13 @@ encounters frame =
             else
                 impacts ++ [ impact ]
     in
-    List.map Exchange (exchanges frame)
+    List.map Exchange
+        (exchanges frame
+            |> List.filter needsExchange
+        )
         ++ (frame.indirectImpacts
-                |> List.filter unconfirmed
                 |> List.foldl unique []
+                |> List.filter needsImpactScene
                 |> List.map Impact
            )
 
@@ -688,6 +717,7 @@ selection unit coordinate =
                         )
                     )
                 |> SS.with (FrameApi.indirectImpacts IndirectImpact.selection)
+                |> SS.with (FrameApi.sabotages Coordinate.selection)
                 |> SS.with (FrameApi.shots Shot.selection)
                 |> SS.with (FrameApi.visibleTiles coordinate)
                 |> SS.with (FrameApi.depots Depot.selection)
@@ -845,8 +875,8 @@ tickCombat delta focus playback =
                         Spotlighting (elapsed + delta)
 
                 ShowingPanels panel ->
-                    -- Four staggered impacts, camera settling, and the automatic-close delay fit within this clock.
-                    ShowingPanels { panel | elapsed = min 3000 (panel.elapsed + delta) }
+                    -- Allow staggered unit casualties followed by a depot strike and automatic-close pause.
+                    ShowingPanels { panel | elapsed = min 6000 (panel.elapsed + delta) }
     in
     ( Just { playback | presentation = Combat { focus | stage = stage } }
     , focus.before
@@ -1057,6 +1087,7 @@ presentationFrame playing next =
                     unit
     in
     { departures = playing.current.departures
+    , sabotages = playing.current.sabotages
     , indirectImpacts = playing.current.indirectImpacts
     , depots = playing.current.depots
     , supplyCrates = playing.current.supplyCrates
@@ -1261,6 +1292,7 @@ focusPositions playback =
                 feedback =
                     participants playback.current combatantIds
                         ++ List.map (.destination >> point) playback.current.indirectImpacts
+                        ++ List.map point playback.current.sabotages
                         ++ casualtyPositions
             in
             if List.isEmpty feedback then

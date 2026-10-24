@@ -556,7 +556,7 @@ update msg page =
                     if id == currentId then
                         case result of
                             Ok flags ->
-                                if flags.isMember then
+                                if flags.lobby.isMember then
                                     LobbyPage.init shared flags
                                         |> Tuple.mapFirst (Lobby id)
                                         |> Tuple.mapSecond (E.map (LobbyMsg id))
@@ -565,9 +565,9 @@ update msg page =
                                     ( JoinLobby id
                                         (JoinLobby.init
                                             shared
-                                            { id = flags.id
-                                            , lobbyName = flags.name
-                                            , gameUrl = flags.gameUrl
+                                            { id = flags.lobby.id
+                                            , lobbyName = flags.lobby.name
+                                            , gameUrl = flags.lobby.gameUrl
                                             }
                                         )
                                     , E.none

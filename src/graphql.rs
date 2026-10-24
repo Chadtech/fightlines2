@@ -3,7 +3,7 @@ use crate::{
     lobby::{self, GameSnapshot, Snapshot, Store},
     lobby_id::LobbyId,
     map_editor,
-    map_type::MapType,
+    map_type::{self, MapType},
     scenario::PlayerNumber,
     session_token::SessionToken,
 };
@@ -71,6 +71,11 @@ impl Query {
 
     fn maps(context: &Context) -> FieldResult<map_editor::MapCatalog> {
         map_editor::maps(context)
+    }
+
+    /// Playable maps in the order offered by the server. Available without editor access.
+    fn map_options() -> Vec<MapType> {
+        map_type::MAPS.iter().map(|(kind, _)| *kind).collect()
     }
 
     fn health() -> bool {
@@ -228,6 +233,36 @@ mod tests {
     use serde_json::{Value, json};
 
     const FIELDS: &str = "id name mapType players { name isHost } isHost isMember gameUrl";
+
+    #[actix_web::test]
+    async fn map_options_are_public_and_match_the_server_catalog() -> TestResult<()> {
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(Store::new(crate::seed::Seed::new([0; 32]))))
+                .app_data(web::Data::new(schema()))
+                .route("/graphql", web::post().to(handle)),
+        )
+        .await;
+        // No session, editor mode, or localhost access is needed to list playable maps.
+        let request = test::TestRequest::post()
+            .uri("/graphql")
+            .peer_addr("192.0.2.1:1234".parse()?)
+            .set_json(json!({"query": "{ mapOptions __type(name: \"MapType\") { enumValues { name } } }"}))
+            .to_request();
+        let body: Value = test::call_and_read_body_json(&app, request).await;
+        assert!(body.get("errors").is_none(), "{body}");
+        let options: Vec<MapType> = map_type::MAPS.iter().map(|(kind, _)| *kind).collect();
+        let expected: juniper::InputValue = juniper::ToInputValue::to_input_value(&options);
+        assert_eq!(body["data"]["mapOptions"], serde_json::to_value(expected)?);
+        assert!(options.contains(&MapType::default()));
+        let values = body["data"]["mapOptions"].as_array().fixture()?;
+        let enum_values = body["data"]["__type"]["enumValues"].as_array().fixture()?;
+        for value in values {
+            assert_eq!(values.iter().filter(|option| *option == value).count(), 1);
+            assert!(enum_values.iter().any(|entry| &entry["name"] == value));
+        }
+        Ok(())
+    }
 
     #[actix_web::test]
     async fn game_archives_replay_human_and_ai_turns_and_preserve_state_on_disk_failure()

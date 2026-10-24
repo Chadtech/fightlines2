@@ -20,6 +20,13 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+hp :
+    SelectionSet decodesTo Api.Object.DepotHp
+    -> SelectionSet decodesTo Api.Object.Depot
+hp object____ =
+    Object.selectionForCompositeField "hp" [] object____ Basics.identity
+
+
 kind : SelectionSet Api.Enum.DepotKind.DepotKind Api.Object.Depot
 kind =
     Object.selectionForField "Enum.DepotKind.DepotKind" "kind" [] Api.Enum.DepotKind.decoder

@@ -3,7 +3,7 @@
 use super::{coordinate_input, distance, facing, hold, objective, resource_target, route};
 use crate::{
     combat,
-    map::Coordinate,
+    map::{Coordinate, Terrain},
     movement,
     scenario::{Direction, Entrenchment, PlayerNumber, Scenario, Unit, UnitId, UnitKind},
     supplies::ResourceStock,
@@ -303,6 +303,7 @@ fn candidates(
     if unit.kind() == UnitKind::Infantry
         && unit.entrenchment() == Entrenchment::Exposed
         && available >= rules.dig_in_cost
+        && !scenario.map.tile_at(origin).is_some_and(Terrain::is_road)
     {
         let mut order = hold(unit, origin);
         order.dig_in = Some(true);
@@ -536,6 +537,7 @@ mod tests {
     use super::*;
     use crate::{
         ai::{self, Difficulty},
+        map::{Map, RoadShape},
         map_definition::MapDefinition,
         map_type::MapType,
         test_support::{FixtureValue, TestResult},
@@ -647,6 +649,44 @@ mod tests {
             )
             .fixture()?;
             assert_eq!(format!("{original:?}"), format!("{other:?}"));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn road_candidates_exclude_digging_and_planners_still_submit_legal_orders() -> TestResult {
+        let initial = MapDefinition::parse(
+            r#"{
+                "width": 5, "height": 3, "theme": "GreenForest",
+                "features": [], "depots": [],
+                "units": [
+                    {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "Player1", "kind": "Infantry", "direction": "East"},
+                    {"id": 2, "position": {"x": 4, "y": 2}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
+                ]
+            }"#,
+        )
+        .fixture()?
+        .scenario()
+        .fixture()?;
+        for shape in RoadShape::ALL {
+            let mut scenario = initial.clone();
+            scenario.map = Map::new(5, 3, Terrain::Road(shape), BTreeMap::new()).fixture()?;
+            let unit = scenario.units.first().fixture()?;
+            let goal = StrategicGoal::new(&scenario, unit).fixture()?;
+            let orders = candidates(
+                &scenario,
+                unit,
+                &BTreeSet::new(),
+                &goal,
+                Tactics::Stationary,
+            )
+            .fixture()?;
+            assert!(orders.iter().all(|order| order.dig_in != Some(true)));
+            for planner in [plan_medium, plan_hard] {
+                let orders = planner(&scenario, PlayerNumber::Player1).fixture()?;
+                assert!(orders.iter().all(|order| order.dig_in != Some(true)));
+                turns::validate(&scenario, PlayerNumber::Player1, orders).fixture()?;
+            }
         }
         Ok(())
     }

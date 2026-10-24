@@ -7,6 +7,7 @@ import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as Theme
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing
+import Api.Enum.Terrain as TerrainApi
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Error
 import Game.CombatRules as CombatRules exposing (CombatRules)
@@ -64,9 +65,118 @@ checks =
                 ++ dependencyInvariantChecks infantryId truckId passengerId
                 ++ directionPlanningChecks infantryId truckId
                 ++ indirectPlanningChecks infantryId truckId
+                ++ sabotagePlanningChecks infantryId truckId
+                ++ diggingTerrainChecks infantryId
 
         _ ->
             [ "could not construct planning fixture IDs" ]
+
+
+diggingTerrainChecks : UnitId -> List String
+diggingTerrainChecks infantryId =
+    let
+        infantry : Unit
+        infantry =
+            unit infantryId Kind.Infantry (Location.OnMap { x = 1, y = 1 })
+
+        base : BoardFixture
+        base =
+            board [ infantry ]
+
+        checkTerrain : Bool -> Terrain.Terrain -> List String
+        checkTerrain allowed terrain =
+            let
+                context : BoardFixture
+                context =
+                    { base
+                        | map = Map.fromFeatures { width = 7, height = 7, baseTile = Terrain.Plain, theme = Theme.GreenForest, features = [ { position = { x = 1, y = 1 }, terrain = terrain } ] }
+                    }
+
+                selected : OrderPlanning.Model
+                selected =
+                    OrderPlanning.selectUnit context.map context.units context.playerNumbers context.movementRules [] [] infantryId OrderPlanning.init
+                        |> fixtureValue
+
+                applied : OrderPlanning.Model
+                applied =
+                    OrderPlanning.applyCommand context.map context.units context.playerNumbers context.movementRules [] [] UnitCommand.DigIn selected
+                        |> fixtureValue
+            in
+            List.concat
+                [ expect "dig in availability respects every road shape and preserves other land"
+                    (UnitCommand.canUse context.map [] infantry UnitCommand.DigIn == allowed)
+                , expect "keyboard command navigation excludes digging on roads"
+                    (List.member (UnitCommand.CommandOption UnitCommand.DigIn) (UnitCommand.enabledOptions context.map [] infantry) == allowed)
+                , expect "applying dig in on roads leaves planning unchanged"
+                    (if allowed then
+                        OrderPlanning.orders applied == [ { unitId = infantryId, action = PlannedOrder.DigIn { x = 1, y = 1 } } ]
+
+                     else
+                        applied == selected
+                    )
+                ]
+
+        roads : List Terrain.Terrain
+        roads =
+            TerrainApi.list |> List.map Terrain.fromApi |> List.filter Terrain.isRoad
+
+        land : List Terrain.Terrain
+        land =
+            [ Terrain.Plain, Terrain.Hills, Terrain.Forest, Terrain.Mountains, Terrain.Beach ]
+    in
+    List.concatMap (checkTerrain False) roads
+        ++ List.concatMap (checkTerrain True) land
+
+
+sabotagePlanningChecks : UnitId -> UnitId -> List String
+sabotagePlanningChecks infantryId truckId =
+    let
+        infantry : Unit
+        infantry =
+            unit infantryId Kind.Infantry (Location.OnMap { x = 1, y = 1 })
+
+        depot : Depot
+        depot =
+            { kind = DepotKind.Supply, position = { x = 1, y = 1 }, stock = Just { current = 128, maximum = 1024 }, hp = { current = 3, maximum = 3 } }
+
+        context : BoardFixture
+        context =
+            board [ infantry ]
+
+        selected : OrderPlanning.Model
+        selected =
+            OrderPlanning.selectUnit context.map context.units context.playerNumbers context.movementRules [] [ depot ] infantryId OrderPlanning.init
+                |> fixtureValue
+
+        saved : OrderPlanning.Model
+        saved =
+            OrderPlanning.applyCommand context.map context.units context.playerNumbers context.movementRules [] [ depot ] UnitCommand.Sabotage selected
+                |> fixtureValue
+
+        blocked : List Unit
+        blocked =
+            [ infantry |> Unit.setLocation (Location.dismounting depot.position)
+            , infantry |> Unit.setLocation (Location.Aboard truckId)
+            , infantry |> Unit.setKind Kind.Tank
+            , infantry |> Unit.setKind Kind.FieldGun
+            , infantry |> Unit.mapResources (\resources -> { resources | supplies = Game.Unit.Supplies.setCurrent 0 resources.supplies })
+            ]
+    in
+    List.concat
+        [ expect "sabotage is offered only to infantry already on an operational depot"
+            (List.member UnitCommand.Sabotage (UnitCommand.available [ depot ] infantry)
+                && not (List.member UnitCommand.Sabotage (UnitCommand.available [] infantry))
+                && not (UnitCommand.canUse context.map [ { depot | hp = { current = 0, maximum = 3 } } ] infantry UnitCommand.Sabotage)
+                && List.all (\candidate -> not (UnitCommand.canUse context.map [ depot ] candidate UnitCommand.Sabotage)) blocked
+            )
+        , expect "sabotage saves a revocable stationary order and closes commands"
+            (OrderPlanning.orders saved
+                == [ { unitId = infantryId, action = PlannedOrder.Sabotage depot.position } ]
+                && OrderPlanning.commandMenuUnit context.map context.units saved
+                == Nothing
+                && List.isEmpty (OrderPlanning.orders (OrderPlanning.revokeSelectedOrder context.map context.units context.playerNumbers saved |> fixtureValue))
+            )
+        ]
 
 
 groundPickupChecks : UnitId -> UnitId -> List String
@@ -212,9 +322,18 @@ cargoLoadingChecks infantryId truckId passengerId =
                 fixture : BoardFixture
                 fixture =
                     board units
+
+                maximumHp : Int
+                maximumHp =
+                    case kind of
+                        DepotKind.Supply ->
+                            3
+
+                        DepotKind.Fuel ->
+                            1
             in
             { fixture
-                | depots = [ { kind = kind, position = { x = 3, y = 1 }, stock = Just { current = 256, maximum = 256 } } ]
+                | depots = [ { kind = kind, position = { x = 3, y = 1 }, stock = Just { current = 256, maximum = 256 }, hp = { current = maximumHp, maximum = maximumHp } } ]
             }
 
         hold : BoardFixture -> OrderPlanning.Model
@@ -1233,7 +1352,7 @@ planningChecks infantryId truckId passengerId =
         crateChoice : OrderPlanning.Model
         crateChoice =
             OrderPlanning.ChoosingCrates truckId
-                { kind = DepotKind.Supply, position = { x = 3, y = 1 }, stock = Nothing }
+                { kind = DepotKind.Supply, position = { x = 3, y = 1 }, stock = Nothing, hp = { current = 3, maximum = 3 } }
                 { orders = OrderPlanning.orders saved
                 , selection = Just (Inspecting (UnitInspection truckId))
                 }
@@ -2619,8 +2738,8 @@ planningChecks infantryId truckId passengerId =
         depotContext =
             { context
                 | depots =
-                    [ { kind = DepotKind.Supply, position = { x = 3, y = 1 }, stock = Just { current = 256, maximum = 256 } }
-                    , { kind = DepotKind.Supply, position = { x = 4, y = 1 }, stock = Nothing }
+                    [ { kind = DepotKind.Supply, position = { x = 3, y = 1 }, stock = Just { current = 256, maximum = 256 }, hp = { current = 3, maximum = 3 } }
+                    , { kind = DepotKind.Supply, position = { x = 4, y = 1 }, stock = Nothing, hp = { current = 3, maximum = 3 } }
                     ]
             }
 
@@ -3922,7 +4041,8 @@ planningChecks infantryId truckId passengerId =
             (OrderPlanning.pathPreview lowSupplyAttack |> Maybe.map (\option -> option.path == [ { x = 1, y = 1 }, { x = 2, y = 1 } ]) |> Maybe.withDefault False)
         , expect "attack move command requires readiness supplies before walking"
             (not
-                (UnitCommand.canUse
+                (UnitCommand.canUse context.map
+                    []
                     (lowSupplyInfantry
                         |> Unit.setResources (Maybe.map (\resources -> { resources | supplies = { current = 5, maximum = 64, upkeepPerTurn = 1, roughTerrainSurcharge = 0, movementPerTile = 1 } }) lowSupplyInfantry.resources)
                     )
@@ -4186,17 +4306,19 @@ planningChecks infantryId truckId passengerId =
                     )
             )
         , expect "indirect fire excludes other kinds, passengers, and insufficient supplies"
-            (not (UnitCommand.canUse infantry UnitCommand.IndirectFire)
-                && not (UnitCommand.canUse truck UnitCommand.IndirectFire)
+            (not (UnitCommand.canUse context.map [] infantry UnitCommand.IndirectFire)
+                && not (UnitCommand.canUse context.map [] truck UnitCommand.IndirectFire)
                 && not
-                    (UnitCommand.canUse
+                    (UnitCommand.canUse context.map
+                        []
                         (fieldGun
                             |> Unit.setLocation (Location.Aboard truckId)
                         )
                         UnitCommand.IndirectFire
                     )
                 && not
-                    (UnitCommand.canUse
+                    (UnitCommand.canUse context.map
+                        []
                         (insufficientReadiness
                             |> Unit.setKind Kind.FieldGun
                         )
@@ -4227,30 +4349,32 @@ planningChecks infantryId truckId passengerId =
             )
         , expect "dig in excludes entrenched infantry, dismounts, field guns, trucks and insufficient supplies"
             (not
-                (UnitCommand.canUse
+                (UnitCommand.canUse context.map
+                    []
                     (infantry
                         |> Unit.setEntrenchment Entrenchment.Entrenched
                     )
                     UnitCommand.DigIn
                 )
                 && not
-                    (UnitCommand.canUse
+                    (UnitCommand.canUse context.map
+                        []
                         (infantry
                             |> Unit.setLocation (Location.dismounting { x = 1, y = 1 })
                         )
                         UnitCommand.DigIn
                     )
-                && not (UnitCommand.canUse insufficientReadiness UnitCommand.DigIn)
-                && not (UnitCommand.canUse fieldGun UnitCommand.DigIn)
-                && not (UnitCommand.canUse truck UnitCommand.DigIn)
-                && not (List.member UnitCommand.DigIn (UnitCommand.available fieldGun))
+                && not (UnitCommand.canUse context.map [] insufficientReadiness UnitCommand.DigIn)
+                && not (UnitCommand.canUse context.map [] fieldGun UnitCommand.DigIn)
+                && not (UnitCommand.canUse context.map [] truck UnitCommand.DigIn)
+                && not (List.member UnitCommand.DigIn (UnitCommand.available [] fieldGun))
             )
         , expect "stand ground requires readiness supplies and excludes trucks and passengers"
-            (not (UnitCommand.canUse insufficientReadiness UnitCommand.StandGround)
-                && not (List.member UnitCommand.StandGround (UnitCommand.available truck))
+            (not (UnitCommand.canUse context.map [] insufficientReadiness UnitCommand.StandGround)
+                && not (List.member UnitCommand.StandGround (UnitCommand.available [] truck))
                 && not
                     (List.member UnitCommand.StandGround
-                        (UnitCommand.available
+                        (UnitCommand.available []
                             (infantry
                                 |> Unit.setLocation (Location.Aboard truckId)
                             )

@@ -148,33 +148,28 @@ inspectionRow label contents =
 
 footer : Bool -> Html msg
 footer hasSelection =
-    let
-        hint : String
-        hint =
-            if not hasSelection then
-                "select a unit, depot or tile to inspect"
+    if hasSelection then
+        H.text ""
 
-            else
-                "esc to clear selection"
-    in
-    H.footer
-        [ A.css
-            [ S.col
-            , S.g3
-            , S.shrink0
-            ]
-        ]
-        [ H.p
+    else
+        H.footer
             [ A.css
-                [ S.borderT
-                , S.borderGray2
-                , S.pt3
-                , S.textGray4
+                [ S.col
+                , S.g3
+                , S.shrink0
                 ]
             ]
-            [ H.text hint
+            [ H.p
+                [ A.css
+                    [ S.borderT
+                    , S.borderGray2
+                    , S.pt3
+                    , S.textGray4
+                    ]
+                ]
+                [ H.text "select a unit, depot or tile to inspect"
+                ]
             ]
-        ]
 
 
 terrainView : Contents msg -> Html msg

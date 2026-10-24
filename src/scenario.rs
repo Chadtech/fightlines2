@@ -366,6 +366,44 @@ pub struct Depot {
     pub(crate) stock: ResourceStock,
     /// Fog projection gate: known depot positions remain visible, but unseen stock is withheld.
     pub(crate) stock_visible: bool,
+    /// Structural shell hits, independent of unit combat damage. Old archives start intact.
+    #[serde(default)]
+    pub(crate) damage: i32,
+}
+
+#[derive(Clone, Copy, Debug, GraphQLObject, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DepotHp {
+    pub current: i32,
+    pub maximum: i32,
+}
+
+impl Depot {
+    pub fn hit_points(&self) -> DepotHp {
+        let maximum = match self.kind {
+            DepotKind::Fuel => 1,
+            DepotKind::Supply => 3,
+        };
+        DepotHp {
+            current: (maximum - self.damage).max(0),
+            maximum,
+        }
+    }
+
+    pub fn is_destroyed(&self) -> bool {
+        self.hit_points().current == 0
+    }
+
+    pub fn take_structural_hit(&mut self) {
+        self.damage = (self.damage + 1).min(self.hit_points().maximum);
+        if self.is_destroyed() {
+            self.stock.current = 0;
+        }
+    }
+
+    pub fn sabotage(&mut self) {
+        self.damage = self.hit_points().maximum;
+        self.stock.current = 0;
+    }
 }
 
 /// Supplies actually charged during resource settlement, before casualty cleanup.
@@ -638,6 +676,7 @@ impl Scenario {
                 position: starting.position,
                 stock: ResourceStock::depot(),
                 stock_visible: true,
+                damage: 0,
             })
             .collect();
         Ok(Self {
@@ -1263,6 +1302,9 @@ impl Scenario {
 
 #[graphql_object]
 impl Depot {
+    fn hp(&self) -> DepotHp {
+        self.hit_points()
+    }
     fn kind(&self) -> DepotKind {
         self.kind
     }

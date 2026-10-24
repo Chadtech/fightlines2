@@ -227,36 +227,6 @@ unitInput unit =
 
 name : MapType -> String
 name kind =
-    case kind of
-        MapType.SupplyPoint ->
-            "supply-point"
-
-        MapType.ElAlamein ->
-            "el-alamein"
-
-        MapType.BloodGulch ->
-            "blood-gulch"
-
-        MapType.Arabia ->
-            "arabia"
-
-        MapType.Sidewinder ->
-            "sidewinder"
-
-        MapType.BlackForest ->
-            "black-forest"
-
-        MapType.Crossroads ->
-            "crossroads"
-
-        MapType.Ridgeway ->
-            "ridgeway"
-
-        MapType.ThreeCrossings ->
-            "three-crossings"
-
-        MapType.LakeOfPennsylvania ->
-            "lake-of-pennsylvania"
-
-        MapType.ConvoyCountry ->
-            "convoy-country"
+    MapType.toString kind
+        |> String.replace "_" "-"
+        |> String.toLower

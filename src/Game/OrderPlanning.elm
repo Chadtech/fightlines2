@@ -1301,8 +1301,8 @@ applyUnitCommand map units playerNumbers movementRules supplyCrates depots comma
         canApply =
             isOwnUnit playerNumbers unit
                 && not (PlannedTransport.receivingLoad units unit (orders model))
-                && List.member command (UnitCommand.available unit)
-                && UnitCommand.canUse unit command
+                && List.member command (UnitCommand.available depots unit)
+                && UnitCommand.canUse map depots unit command
     in
     if canApply then
         case command of
@@ -1338,26 +1338,11 @@ applyUnitCommand map units playerNumbers movementRules supplyCrates depots comma
             UnitCommand.HoldPosition ->
                 holdPosition map units supplyCrates depots unit model
 
+            UnitCommand.Sabotage ->
+                saveStationaryCommand map units unit PlannedOrder.Sabotage model
+
             UnitCommand.DigIn ->
-                case Unit.mapPosition unit of
-                    Just position ->
-                        let
-                            planned : PlannedOrder
-                            planned =
-                                { unitId = unit.id
-                                , action = PlannedOrder.DigIn position
-                                }
-
-                            otherOrders : List PlannedOrder
-                            otherOrders =
-                                List.filter (\other -> other.unitId /= unit.id) (orders model)
-                        in
-                        model
-                            |> setOrders (planned :: otherOrders)
-                            |> finishUnitCommand map units
-
-                    Nothing ->
-                        IC.violated (CommandUnitHasNoPosition unit.id) model
+                saveStationaryCommand map units unit PlannedOrder.DigIn model
 
     else
         IC.happy model
@@ -1421,7 +1406,7 @@ offerCrateLoading units supplyCrates depots order drafts =
     let
         atDestination : Depot -> Bool
         atDestination depot =
-            depot.position == PlannedOrder.destination order
+            (depot.position == PlannedOrder.destination order) && not (Depot.isDestroyed depot)
 
         hasCargoRoom : Bool
         hasCargoRoom =
@@ -1846,3 +1831,30 @@ movePurpose model =
     movementPlanning model
         |> Maybe.map .purpose
         |> Maybe.withDefault NormalMove
+
+
+saveStationaryCommand :
+    Map
+    -> List Unit
+    -> Unit
+    -> (Coordinate -> PlannedOrder.Action)
+    -> Model
+    -> InvariantCheck InvariantViolation Model
+saveStationaryCommand map units unit action model =
+    case Unit.mapPosition unit of
+        Just position ->
+            let
+                planned : PlannedOrder
+                planned =
+                    { unitId = unit.id, action = action position }
+
+                otherOrders : List PlannedOrder
+                otherOrders =
+                    List.filter (\other -> other.unitId /= unit.id) (orders model)
+            in
+            model
+                |> setOrders (planned :: otherOrders)
+                |> finishUnitCommand map units
+
+        Nothing ->
+            IC.violated (CommandUnitHasNoPosition unit.id) model

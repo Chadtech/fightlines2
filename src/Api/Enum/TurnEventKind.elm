@@ -15,11 +15,12 @@ type TurnEventKind
     | Unload
     | Hold
     | MovementStopped
+    | Sabotage
 
 
 list : List TurnEventKind
 list =
-    [ Move, Ambush, StandGround, Load, Unload, Hold, MovementStopped ]
+    [ Move, Ambush, StandGround, Load, Unload, Hold, MovementStopped, Sabotage ]
 
 
 decoder : Decoder TurnEventKind
@@ -48,6 +49,9 @@ decoder =
 
                     "MOVEMENT_STOPPED" ->
                         Decode.succeed MovementStopped
+
+                    "SABOTAGE" ->
+                        Decode.succeed Sabotage
 
                     _ ->
                         Decode.fail ("Invalid TurnEventKind type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
@@ -79,6 +83,9 @@ toString enum____ =
 
         MovementStopped ->
             "MOVEMENT_STOPPED"
+
+        Sabotage ->
+            "SABOTAGE"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -115,6 +122,9 @@ fromString enumString____ =
 
         "MOVEMENT_STOPPED" ->
             Just MovementStopped
+
+        "SABOTAGE" ->
+            Just Sabotage
 
         _ ->
             Nothing

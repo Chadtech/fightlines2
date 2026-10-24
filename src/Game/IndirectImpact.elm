@@ -1,17 +1,21 @@
 module Game.IndirectImpact exposing
     ( Attacker
+    , DepotImpact
     , IndirectImpact
     , Target
     , destroyedUnitId
     , selection
     )
 
+import Api.Enum.DepotKind exposing (DepotKind)
 import Api.Object
+import Api.Object.DepotImpact as DepotImpactApi
 import Api.Object.IndirectFireAttacker as AttackerApi
 import Api.Object.IndirectFireTarget as TargetApi
 import Api.Object.IndirectImpact as ImpactApi
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
 import Game.Coordinate as Coordinate exposing (Coordinate)
+import Game.Depot as Depot
 import Game.Unit as Unit exposing (Unit)
 import Game.Unit.HitPoints as HitPoints exposing (HitPoints)
 import Game.UnitId as UnitId exposing (UnitId)
@@ -22,6 +26,14 @@ type alias IndirectImpact =
     { destination : Coordinate
     , attacker : Maybe Attacker
     , target : Maybe Target
+    , depot : Maybe DepotImpact
+    }
+
+
+type alias DepotImpact =
+    { kind : DepotKind
+    , before : Depot.Hp
+    , after : Depot.Hp
     }
 
 
@@ -55,6 +67,15 @@ selection =
                     |> SS.with (TargetApi.health CombatHealth.selection)
                 )
             )
+        |> SS.with (ImpactApi.depot depotSelection)
+
+
+depotSelection : SelectionSet DepotImpact Api.Object.DepotImpact
+depotSelection =
+    SS.succeed DepotImpact
+        |> SS.with DepotImpactApi.kind
+        |> SS.with (DepotImpactApi.before Depot.hpSelection)
+        |> SS.with (DepotImpactApi.after Depot.hpSelection)
 
 
 destroyedUnitId : IndirectImpact -> Maybe UnitId

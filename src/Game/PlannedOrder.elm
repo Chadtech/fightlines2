@@ -41,6 +41,7 @@ type alias PlannedOrder =
 type Action
     = Hold Coordinate
     | DigIn Coordinate
+    | Sabotage Coordinate
     | Move MovePlan
     | AttackMove AttackPlan
     | Ambush Rotation
@@ -132,6 +133,9 @@ destination order =
         StandGround facing ->
             facing.position
 
+        Sabotage position ->
+            position
+
         DigIn position ->
             position
 
@@ -162,6 +166,9 @@ path order =
 
         StandGround facing ->
             [ facing.position ]
+
+        Sabotage position ->
+            [ position ]
 
         DigIn position ->
             [ position ]
@@ -197,6 +204,9 @@ unloads order =
         AttackMove _ ->
             []
 
+        Sabotage _ ->
+            []
+
         DigIn _ ->
             []
 
@@ -224,6 +234,9 @@ isMoving order =
 
         AttackMove attack ->
             List.length attack.move.path > 1
+
+        Sabotage _ ->
+            False
 
         DigIn _ ->
             False
@@ -281,6 +294,9 @@ toInput order =
                 StandGround facing ->
                     OptionalArgument.Present facing.direction
 
+                Sabotage _ ->
+                    OptionalArgument.Absent
+
                 DigIn _ ->
                     OptionalArgument.Absent
 
@@ -306,6 +322,7 @@ toInput order =
                 , direction = direction
                 , indirectFire = indirectTarget order
                 , digIn = OptionalArgument.Present (isDiggingIn order)
+                , sabotage = OptionalArgument.Present (isSabotaging order)
                 , standGround = OptionalArgument.Present (isStandingGround order)
                 , ambush = OptionalArgument.Present (isAmbush order)
                 , attackMove = OptionalArgument.Present (isAttackMove order)
@@ -431,6 +448,16 @@ isDiggingIn : PlannedOrder -> Bool
 isDiggingIn order =
     case order.action of
         DigIn _ ->
+            True
+
+        _ ->
+            False
+
+
+isSabotaging : PlannedOrder -> Bool
+isSabotaging order =
+    case order.action of
+        Sabotage _ ->
             True
 
         _ ->

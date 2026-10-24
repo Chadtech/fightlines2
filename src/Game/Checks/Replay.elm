@@ -502,6 +502,7 @@ frame visible =
     { durationMs = 180
     , units = []
     , departures = []
+    , sabotages = []
     , indirectImpacts = []
     , shots = []
     , visibleTiles = visible

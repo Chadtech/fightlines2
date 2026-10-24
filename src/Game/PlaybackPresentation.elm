@@ -196,6 +196,7 @@ combatOverlay automaticallyClose map playback =
                         { automaticallyClose = automaticallyClose
                         , visibleTiles = animation.current.visibleTiles
                         }
+                        animation.current.depots
                         map
                     )
     in

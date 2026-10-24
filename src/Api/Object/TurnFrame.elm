@@ -19,6 +19,15 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+{-| Successful demolitions; hidden depot tiles are removed during projection.
+-}
+sabotages :
+    SelectionSet decodesTo Api.Object.Coordinate
+    -> SelectionSet (List decodesTo) Api.Object.TurnFrame
+sabotages object____ =
+    Object.selectionForCompositeField "sabotages" [] object____ (Basics.identity >> Decode.list)
+
+
 {-| Observed exits toward fog; never contains a hidden destination or route.
 -}
 departures :

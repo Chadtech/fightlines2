@@ -1,4 +1,4 @@
-use crate::{map::MapError, map_definition::MapDefinition, map_editor, scenario::Scenario};
+use crate::{map::MapError, map_definition::MapDefinition, scenario::Scenario};
 use juniper::GraphQLEnum;
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +19,20 @@ pub enum MapType {
     ConvoyCountry,
 }
 
+pub const MAPS: [(MapType, &str); 11] = [
+    (MapType::SupplyPoint, "supply-point"),
+    (MapType::ElAlamein, "el-alamein"),
+    (MapType::BloodGulch, "blood-gulch"),
+    (MapType::Arabia, "arabia"),
+    (MapType::Sidewinder, "sidewinder"),
+    (MapType::BlackForest, "black-forest"),
+    (MapType::Crossroads, "crossroads"),
+    (MapType::Ridgeway, "ridgeway"),
+    (MapType::ThreeCrossings, "three-crossings"),
+    (MapType::LakeOfPennsylvania, "lake-of-pennsylvania"),
+    (MapType::ConvoyCountry, "convoy-country"),
+];
+
 impl MapType {
     pub fn player_count(self) -> usize {
         match self {
@@ -38,7 +52,7 @@ impl MapType {
 
     pub fn scenario(self) -> Result<Scenario, MapError> {
         if std::env::args().any(|argument| argument == "--map-editor") {
-            let name = map_editor::MAPS
+            let name = MAPS
                 .iter()
                 .find(|(kind, _)| *kind == self)
                 .map(|(_, name)| *name)

@@ -1,6 +1,6 @@
 use crate::{
     combat::{self, IndirectImpact, Shot},
-    map::Coordinate,
+    map::{Coordinate, Terrain},
     movement, movement_resolution,
     scenario::{
         Depot, DepotKind, Direction, Entrenchment, PlayerNumber, ResourceSettlement, Scenario,
@@ -31,6 +31,8 @@ pub struct MoveOrderInput {
     pub(crate) stand_ground: Option<bool>,
     /// Infantry spend the turn preparing persistent protection.
     pub(crate) dig_in: Option<bool>,
+    /// Infantry already on a depot spend the whole turn destroying it.
+    pub(crate) sabotage: Option<bool>,
     /// Stationary field-gun shell aimed at a tile, independently of sight.
     pub(crate) indirect_fire: Option<CoordinateInput>,
     /// Move until contact, then fire at the encountered enemy.
@@ -69,6 +71,7 @@ pub enum UnitOrderKind {
     Ambush,
     StandGround,
     DigIn,
+    Sabotage,
     IndirectFire,
 }
 
@@ -77,6 +80,7 @@ pub enum UnitOrderKind {
 pub enum FacingOrder {
     Unchanged,
     DigIn,
+    Sabotage,
     AfterMove(Direction),
     Ambush(Direction),
     StandGround(Direction),
@@ -84,10 +88,22 @@ pub enum FacingOrder {
 }
 
 impl FacingOrder {
+    pub fn is_sabotaging(self) -> bool {
+        match self {
+            Self::Sabotage => true,
+            Self::DigIn
+            | Self::Unchanged
+            | Self::AfterMove(_)
+            | Self::Ambush(_)
+            | Self::StandGround(_)
+            | Self::IndirectFire(_) => false,
+        }
+    }
     pub fn is_digging_in(self) -> bool {
         match self {
             Self::DigIn => true,
-            Self::Unchanged
+            Self::Sabotage
+            | Self::Unchanged
             | Self::AfterMove(_)
             | Self::Ambush(_)
             | Self::StandGround(_)
@@ -98,7 +114,8 @@ impl FacingOrder {
     pub fn indirect_target(self) -> Option<Coordinate> {
         match self {
             Self::IndirectFire(target) => Some(target),
-            Self::DigIn
+            Self::Sabotage
+            | Self::DigIn
             | Self::Unchanged
             | Self::AfterMove(_)
             | Self::Ambush(_)
@@ -108,7 +125,11 @@ impl FacingOrder {
 
     pub fn direction(self) -> Option<Direction> {
         match self {
-            Self::DigIn | Self::Unchanged | Self::AfterMove(_) | Self::IndirectFire(_) => None,
+            Self::Sabotage
+            | Self::DigIn
+            | Self::Unchanged
+            | Self::AfterMove(_)
+            | Self::IndirectFire(_) => None,
             Self::Ambush(direction) | Self::StandGround(direction) => Some(direction),
         }
     }
@@ -116,7 +137,8 @@ impl FacingOrder {
     pub fn is_standing_ground(self) -> bool {
         match self {
             Self::StandGround(_) => true,
-            Self::DigIn
+            Self::Sabotage
+            | Self::DigIn
             | Self::Unchanged
             | Self::AfterMove(_)
             | Self::Ambush(_)
@@ -127,7 +149,8 @@ impl FacingOrder {
     pub fn is_ambush(self) -> bool {
         match self {
             Self::Ambush(_) => true,
-            Self::DigIn
+            Self::Sabotage
+            | Self::DigIn
             | Self::Unchanged
             | Self::AfterMove(_)
             | Self::StandGround(_)
@@ -181,6 +204,7 @@ pub enum TurnEventKind {
     Unload,
     Hold,
     MovementStopped,
+    Sabotage,
 }
 
 /// Ordered presentation events. Future attacks and interruptions belong here;
@@ -243,6 +267,9 @@ impl UnitDeparture {
 
 #[derive(Clone, Debug, GraphQLObject, Serialize, Deserialize)]
 pub struct TurnFrame {
+    /// Successful demolitions; hidden depot tiles are removed during projection.
+    #[serde(default)]
+    pub sabotages: Vec<Coordinate>,
     /// Observed exits toward fog; never contains a hidden destination or route.
     pub departures: Vec<UnitDeparture>,
     pub indirect_impacts: Vec<IndirectImpact>,
@@ -408,7 +435,8 @@ pub(crate) fn planned_loads(scenario: &Scenario, orders: &[MoveOrder]) -> Vec<Pl
         order.travel == TravelMode::Normal
             && match order.facing {
                 FacingOrder::Unchanged => true,
-                FacingOrder::DigIn
+                FacingOrder::Sabotage
+                | FacingOrder::DigIn
                 | FacingOrder::AfterMove(_)
                 | FacingOrder::Ambush(_)
                 | FacingOrder::StandGround(_)
@@ -578,6 +606,39 @@ pub fn validate(
         {
             return Err("movement must start at the unit's current position.");
         }
+        let sabotage = input.sabotage == Some(true);
+        if sabotage {
+            let position = unit
+                .board_position()
+                .ok_or("sabotage requires infantry already on a depot.")?;
+            if unit.kind() != UnitKind::Infantry || starts_at_exit.is_some() {
+                return Err("only infantry already on the map can sabotage.");
+            }
+            if !planning_scenario
+                .depots
+                .iter()
+                .any(|depot| depot.position == position && !depot.is_destroyed())
+            {
+                return Err("sabotage requires an intact depot beneath the infantry.");
+            }
+            if path.len() != 1
+                || input.direction.is_some()
+                || input.ambush == Some(true)
+                || input.stand_ground == Some(true)
+                || input.attack_move == Some(true)
+                || input.dig_in == Some(true)
+                || input.indirect_fire.is_some()
+                || !input.unloads.as_ref().is_none_or(Vec::is_empty)
+                || input.load_crates.is_some_and(|count| count != 0)
+                || input.pickup_ground_freight.is_some()
+                || !input.crate_unloads.as_ref().is_none_or(Vec::is_empty)
+            {
+                return Err("sabotage takes the whole turn without other actions.");
+            }
+            if unit.supplies().current() < unit.supplies().upkeep_per_turn() {
+                return Err("not enough supplies for sabotage upkeep.");
+            }
+        }
         let dig_in = input.dig_in == Some(true);
         if dig_in {
             if unit.kind() != UnitKind::Infantry
@@ -588,6 +649,11 @@ pub fn validate(
             }
             if unit.entrenchment() == Entrenchment::Entrenched {
                 return Err("this infantry is already entrenched.");
+            }
+            if unit.board_position().is_some_and(|position| {
+                scenario.map.tile_at(position).is_some_and(Terrain::is_road)
+            }) {
+                return Err("infantry cannot dig in on roads.");
             }
             if path.len() != 1
                 || input.direction.is_some()
@@ -848,7 +914,7 @@ pub fn validate(
             let nearby: Vec<_> = planning_scenario
                 .depots
                 .iter()
-                .filter(|depot| destination == depot.position)
+                .filter(|depot| destination == depot.position && !depot.is_destroyed())
                 .collect();
             let unknown_stock = nearby.iter().any(|depot| !depot.stock_visible);
             let known_stock: i32 = nearby.iter().map(|depot| depot.stock.current).sum();
@@ -904,7 +970,9 @@ pub fn validate(
             } else {
                 TravelMode::Normal
             },
-            facing: if dig_in {
+            facing: if sabotage {
+                FacingOrder::Sabotage
+            } else if dig_in {
                 FacingOrder::DigIn
             } else if let Some(target) = indirect_fire {
                 FacingOrder::IndirectFire(target)
@@ -1220,6 +1288,8 @@ impl Turns {
                 let conflict = conflicts.contains(&order.unit_id);
                 let kind = if conflict {
                     TurnEventKind::MovementStopped
+                } else if order.facing.is_sabotaging() {
+                    TurnEventKind::Sabotage
                 } else if order.facing.is_standing_ground() {
                     TurnEventKind::StandGround
                 } else if order.facing.is_ambush() {
@@ -1308,6 +1378,7 @@ impl Turns {
                 });
                 unit.board(truck);
                 frames.push(TurnFrame {
+                    sabotages: Vec::new(),
                     departures: Vec::new(),
                     indirect_impacts: Vec::new(),
                     depots: scenario.depots.clone(),
@@ -1371,6 +1442,7 @@ impl Turns {
                         combat.activate(scenario, std::slice::from_ref(command));
                     }
                     frames.push(TurnFrame {
+                        sabotages: Vec::new(),
                         departures: Vec::new(),
                         indirect_impacts: Vec::new(),
                         depots: scenario.depots.clone(),
@@ -1442,6 +1514,8 @@ impl Turns {
                             TurnEventKind::MovementStopped
                         } else if order.facing.is_ambush() {
                             TurnEventKind::Ambush
+                        } else if order.facing.is_sabotaging() {
+                            TurnEventKind::Sabotage
                         } else if order.facing.is_standing_ground() {
                             TurnEventKind::StandGround
                         } else if order.path.len() > 1 {
@@ -1467,6 +1541,39 @@ impl Turns {
                 frames.extend(action.frames);
             }
             combat.finish(scenario, &mut combat_stopped, &mut frames);
+            let mut sabotages = Vec::new();
+            for order in orders.iter().filter(|order| order.facing.is_sabotaging()) {
+                let position = scenario
+                    .units
+                    .iter()
+                    .find(|unit| unit.unit_id() == order.unit_id && unit.is_alive())
+                    .and_then(Unit::board_position);
+                if let Some(depot) = scenario
+                    .depots
+                    .iter_mut()
+                    .find(|depot| Some(depot.position) == position && !depot.is_destroyed())
+                {
+                    depot.sabotage();
+                    sabotages.push(depot.position);
+                }
+            }
+            if !sabotages.is_empty() {
+                frames.push(TurnFrame {
+                    sabotages,
+                    departures: Vec::new(),
+                    indirect_impacts: Vec::new(),
+                    depots: scenario.depots.clone(),
+                    supply_crates: scenario.supply_crates.clone(),
+                    shots: Vec::new(),
+                    units: scenario.units.clone(),
+                    visible_tiles: Vec::new(),
+                    duration_ms: 180,
+                });
+                let mut pause = frames.last().cloned().ok_or("missing sabotage frame")?;
+                pause.sabotages.clear();
+                pause.duration_ms = 1000;
+                frames.push(pause);
+            }
             for unit in &mut scenario.units {
                 unit.finish_firing_reveal(combat.has_fired_directly(unit.unit_id()));
             }
@@ -1512,6 +1619,7 @@ impl Turns {
                     .any(|frame| !frame.indirect_impacts.is_empty());
             if settlement_pause {
                 frames.push(TurnFrame {
+                    sabotages: Vec::new(),
                     departures: Vec::new(),
                     indirect_impacts: Vec::new(),
                     depots: scenario.depots.clone(),
@@ -1523,6 +1631,7 @@ impl Turns {
                 });
             }
             frames.push(TurnFrame {
+                sabotages: Vec::new(),
                 departures: Vec::new(),
                 indirect_impacts: Vec::new(),
                 depots: scenario.depots.clone(),
@@ -1583,7 +1692,7 @@ mod tests {
     use super::*;
     use crate::{
         combat::CombatKind,
-        map::{self, Map, Terrain},
+        map::{self, Map, RoadShape},
         map_definition::MapDefinition,
         scenario::DepotKind,
         test_support::{FixtureValue, TestResult},
@@ -1874,6 +1983,7 @@ mod tests {
                         ambush: None,
                         stand_ground: None,
                         dig_in: None,
+                        sabotage: None,
                         indirect_fire: None,
                         attack_move: None,
                         direction: None,
@@ -2960,6 +3070,48 @@ mod tests {
                 assert_eq!(survivor.fixture()?.entrenchment(), Entrenchment::Entrenched);
             } else {
                 assert!(survivor.is_none());
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn digging_rejects_every_road_shape_and_preserves_other_land() -> TestResult<()> {
+        let initial = MapDefinition::parse(
+            r#"{
+                "width": 3, "height": 3, "theme": "GreenForest",
+                "features": [], "depots": [],
+                "units": [
+                    {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "Player1", "kind": "Infantry", "direction": "East"},
+                    {"id": 2, "position": {"x": 2, "y": 2}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
+                ]
+            }"#,
+        )
+        .fixture()?
+        .scenario()
+        .fixture()?;
+        let terrains = [
+            Terrain::Plain,
+            Terrain::Hills,
+            Terrain::Forest,
+            Terrain::Mountains,
+            Terrain::Beach,
+        ]
+        .into_iter()
+        .chain(RoadShape::ALL.into_iter().map(Terrain::Road));
+        for terrain in terrains {
+            let mut scenario = initial.clone();
+            scenario.map = Map::new(3, 3, terrain, BTreeMap::new()).fixture()?;
+            let mut inputs = holds(&scenario, PlayerNumber::Player1)?;
+            inputs.first_mut().fixture()?.dig_in = Some(true);
+            let mut turns = Turns::default();
+            let result = turns.submit(&mut scenario, PlayerNumber::Player1, 1, inputs);
+            if terrain.is_road() {
+                assert_eq!(result, Err("infantry cannot dig in on roads."));
+                assert!(turns.orders.iter().all(Option::is_none));
+                assert_eq!(scenario.units, initial.units);
+            } else {
+                result?;
             }
         }
         Ok(())
@@ -5667,6 +5819,255 @@ mod tests {
             .fixture()?
             .move_to(Coordinate::new(9, 1));
         Ok(scenario)
+    }
+
+    fn depot_fixture(kind: DepotKind, position: Coordinate) -> Depot {
+        Depot {
+            kind,
+            position,
+            stock: supplies::ResourceStock::depot(),
+            stock_visible: true,
+            damage: 0,
+        }
+    }
+
+    #[test]
+    fn depot_shell_hits_destroy_stock_at_the_kind_threshold_and_leave_freight() -> TestResult<()> {
+        for (kind, hits) in [(DepotKind::Fuel, 1), (DepotKind::Supply, 3)] {
+            for freight_kind in [DepotKind::Fuel, DepotKind::Supply] {
+                let mut scenario = bombardment_fixture()?;
+                let position = Coordinate::new(9, 1);
+                scenario
+                    .units
+                    .last_mut()
+                    .fixture()?
+                    .move_to(Coordinate::new(19, 1));
+                scenario.depots.push(depot_fixture(kind, position));
+                let freight = GroundSupplyCrate {
+                    position,
+                    stock: supplies::CargoStock::new(freight_kind, 128),
+                };
+                scenario.supply_crates.push(freight.clone());
+                let mut turns = Turns::default();
+                for hit in 1..=hits {
+                    let mut first = holds(&scenario, PlayerNumber::Player1)?;
+                    first.first_mut().fixture()?.indirect_fire =
+                        Some(CoordinateInput { x: 9, y: 1 });
+                    let second = holds(&scenario, PlayerNumber::Player2)?;
+                    let number = turns.number;
+                    turns.submit(&mut scenario, PlayerNumber::Player1, number, first)?;
+                    turns.submit(&mut scenario, PlayerNumber::Player2, number, second)?;
+                    let depot = scenario.depots.first().fixture()?;
+                    assert_eq!(depot.hit_points().current, hits - hit);
+                    assert_eq!(depot.is_destroyed(), hit == hits);
+                    assert_eq!(depot.stock.current, if hit == hits { 0 } else { 1024 });
+                    assert_eq!(scenario.supply_crates, vec![freight.clone()]);
+                    let impact = turns
+                        .last_resolution
+                        .as_ref()
+                        .fixture()?
+                        .frames
+                        .iter()
+                        .flat_map(|frame| &frame.indirect_impacts)
+                        .next()
+                        .fixture()?;
+                    assert_eq!(impact.depot.as_ref().fixture()?.after.current, hits - hit);
+                    assert!(impact.target.is_none());
+                    let visible = visibility::visible_tiles(&scenario, PlayerNumber::Player1);
+                    let projected = visibility::observed_resolution(
+                        &scenario,
+                        PlayerNumber::Player1,
+                        &visible,
+                        turns.last_resolution.as_ref().fixture()?,
+                    );
+                    assert!(
+                        projected
+                            .frames
+                            .iter()
+                            .flat_map(|frame| &frame.indirect_impacts)
+                            .all(|impact| impact.depot.is_none())
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn ordinary_direct_fire_at_an_occupant_leaves_its_depot_untouched() -> TestResult<()> {
+        let mut scenario = bombardment_fixture()?;
+        scenario
+            .units
+            .first_mut()
+            .fixture()?
+            .move_to(Coordinate::new(6, 1));
+        scenario
+            .depots
+            .push(depot_fixture(DepotKind::Fuel, Coordinate::new(9, 1)));
+        let mut first = holds(&scenario, PlayerNumber::Player1)?;
+        first.first_mut().fixture()?.ambush = Some(true);
+        first.first_mut().fixture()?.direction = Some(Direction::East);
+        let second = holds(&scenario, PlayerNumber::Player2)?;
+        let mut turns = Turns::default();
+        turns.submit(&mut scenario, PlayerNumber::Player1, 1, first)?;
+        turns.submit(&mut scenario, PlayerNumber::Player2, 1, second)?;
+        assert!(
+            turns
+                .last_resolution
+                .as_ref()
+                .fixture()?
+                .frames
+                .iter()
+                .any(|frame| !frame.shots.is_empty())
+        );
+        assert_eq!(scenario.depots.first().fixture()?.hit_points().current, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn sabotage_survives_combat_or_fails_with_its_infantry_and_never_blasts_units() -> TestResult<()>
+    {
+        for entrenched in [false, true] {
+            let mut scenario = bombardment_fixture()?;
+            let position = Coordinate::new(9, 1);
+            scenario
+                .depots
+                .push(depot_fixture(DepotKind::Supply, position));
+            let infantry = scenario.units.last_mut().fixture()?;
+            let id = infantry.unit_id();
+            if entrenched {
+                infantry.dig_in();
+            }
+            let mut first = holds(&scenario, PlayerNumber::Player1)?;
+            first.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 9, y: 1 });
+            let mut second = holds(&scenario, PlayerNumber::Player2)?;
+            second.first_mut().fixture()?.sabotage = Some(true);
+            let mut turns = Turns::default();
+            turns.submit(&mut scenario, PlayerNumber::Player1, 1, first)?;
+            turns.submit(&mut scenario, PlayerNumber::Player2, 1, second)?;
+            let survivor = scenario.units.iter().find(|unit| unit.unit_id() == id);
+            let depot = scenario.depots.first().fixture()?;
+            assert_eq!(depot.is_destroyed(), entrenched);
+            if entrenched {
+                assert_eq!(survivor.fixture()?.hit_points().current(), 14);
+                assert_eq!(depot.stock.current, 0);
+            } else {
+                assert!(survivor.is_none());
+                assert_eq!(depot.hit_points().current, 2);
+            }
+            let sabotages: Vec<_> = turns
+                .last_resolution
+                .as_ref()
+                .fixture()?
+                .frames
+                .iter()
+                .flat_map(|frame| &frame.sabotages)
+                .copied()
+                .collect();
+            assert_eq!(
+                sabotages,
+                if entrenched {
+                    vec![position]
+                } else {
+                    Vec::new()
+                }
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn sabotage_destroys_either_depot_before_replenishment_for_only_normal_upkeep() -> TestResult<()>
+    {
+        for kind in [DepotKind::Fuel, DepotKind::Supply] {
+            let mut scenario = bombardment_fixture()?;
+            scenario
+                .depots
+                .push(depot_fixture(kind, Coordinate::new(9, 1)));
+            let infantry = scenario.units.last_mut().fixture()?;
+            infantry.set_supplies_for_test(100);
+            let supplies = infantry.supplies();
+            let id = infantry.unit_id();
+            let first = holds(&scenario, PlayerNumber::Player1)?;
+            let mut second = holds(&scenario, PlayerNumber::Player2)?;
+            second.first_mut().fixture()?.sabotage = Some(true);
+            let mut turns = Turns::default();
+            turns.submit(&mut scenario, PlayerNumber::Player1, 1, first)?;
+            turns.submit(&mut scenario, PlayerNumber::Player2, 1, second)?;
+            assert!(scenario.depots.first().fixture()?.is_destroyed());
+            assert_eq!(
+                scenario
+                    .units
+                    .iter()
+                    .find(|unit| unit.unit_id() == id)
+                    .fixture()?
+                    .supplies()
+                    .current(),
+                supplies.current() - supplies.upkeep_per_turn()
+            );
+            let inputs = holds(&scenario, PlayerNumber::Player2)?;
+            let mut repeated = inputs;
+            repeated.first_mut().fixture()?.sabotage = Some(true);
+            assert!(validate(&scenario, PlayerNumber::Player2, repeated).is_err());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn sabotage_rejects_other_actions_and_ineligible_units_without_mutating_the_board()
+    -> TestResult<()> {
+        for action in 0..13 {
+            let mut scenario = bombardment_fixture()?;
+            scenario
+                .depots
+                .push(depot_fixture(DepotKind::Supply, Coordinate::new(9, 1)));
+            let mut inputs = holds(&scenario, PlayerNumber::Player2)?;
+            let input = inputs.first_mut().fixture()?;
+            input.sabotage = Some(true);
+            match action {
+                0 => input.dig_in = Some(true),
+                1 => input.ambush = Some(true),
+                2 => input.stand_ground = Some(true),
+                3 => input.attack_move = Some(true),
+                4 => input.indirect_fire = Some(CoordinateInput { x: 1, y: 1 }),
+                5 => input.direction = Some(Direction::West),
+                6 => input.path.push(CoordinateInput { x: 8, y: 1 }),
+                7 => input.load_crates = Some(1),
+                8 => input.pickup_ground_freight = Some(DepotKind::Supply),
+                9 => scenario.depots.clear(),
+                10 => scenario
+                    .units
+                    .last_mut()
+                    .fixture()?
+                    .set_supplies_for_test(0),
+                11 => {
+                    let mut tank = Scenario::supply_point()
+                        .fixture()?
+                        .units
+                        .into_iter()
+                        .find(|unit| {
+                            unit.kind() == UnitKind::Tank
+                                && unit.player_number() == PlayerNumber::Player2
+                        })
+                        .fixture()?;
+                    tank.move_to(Coordinate::new(9, 1));
+                    input.unit_id = tank.id();
+                    *scenario.units.last_mut().fixture()? = tank;
+                }
+                _ => scenario
+                    .units
+                    .last_mut()
+                    .fixture()?
+                    .board(UnitId::parse("4").fixture()?),
+            }
+            let before = scenario.clone();
+            assert!(
+                validate(&scenario, PlayerNumber::Player2, inputs).is_err(),
+                "accepted action {action}"
+            );
+            assert_eq!(scenario, before);
+        }
+        Ok(())
     }
 
     #[test]

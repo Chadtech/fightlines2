@@ -4,7 +4,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const sharp = require('sharp');
 const root = path.resolve(__dirname, '..');
-const names = ['forest', 'snowy-forest', 'desert-forest', 'plains', 'desert-plains', 'tundra-plains', 'hills', 'snowy-hills', 'desert-hills', 'mountains', 'snowy-mountains', 'desert-mountains'];
+const names = ['forest', 'snowy-forest', 'desert-forest', 'plains', 'desert-plains', 'tundra-plains', 'hills', 'snowy-hills', 'desert-hills', 'mountains', 'snowy-mountains', 'desert-mountains', 'road', 'snowy-road', 'depot', 'snowy-depot'];
 
 async function main() {
   const destination = path.join(root, 'public/assets/combat-backdrops-anime-v1');

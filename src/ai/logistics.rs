@@ -227,7 +227,11 @@ fn pickup_targets(scenario: &Scenario, kind: DepotKind) -> Vec<Destination> {
     scenario
         .depots
         .iter()
-        .filter(|depot| depot.kind == kind && (!depot.stock_visible || depot.stock.current > 0))
+        .filter(|depot| {
+            !depot.is_destroyed()
+                && depot.kind == kind
+                && (!depot.stock_visible || depot.stock.current > 0)
+        })
         .map(|depot| Destination {
             position: depot.position,
             range: 0,
@@ -402,7 +406,8 @@ fn freight_plan(
         if room > 0
             && order.pickup_ground_freight.is_none()
             && let Some(depot) = scenario.depots.iter().find(|depot| {
-                depot.position == destination
+                !depot.is_destroyed()
+                    && depot.position == destination
                     && depot.kind == resource
                     && (!depot.stock_visible || depot.stock.current > 0)
             })

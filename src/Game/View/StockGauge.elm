@@ -1,12 +1,25 @@
-module Game.View.StockGauge exposing (toHtml)
+module Game.View.StockGauge exposing (hp, toHtml)
 
 import Css
+import Game.Depot as Depot
 import Game.Supply as Supply
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
 import View.Aria as Aria
 import View.InfoMarker as InfoMarker
+
+
+type GaugeKind
+    = ResourceStock
+    | DepotHp
+
+
+type alias Description =
+    { label : String
+    , accessibleLabel : String
+    , description : String
+    }
 
 
 summaryStyles : List Css.Style
@@ -20,14 +33,22 @@ summaryStyles =
     ]
 
 
-toHtml :
-    { label : String
-    , accessibleLabel : String
-    , description : String
-    }
-    -> Supply.Stock
-    -> Html msg
-toHtml config stock =
+toHtml : Description -> Supply.Stock -> Html msg
+toHtml =
+    gauge ResourceStock
+
+
+hp : { accessibleLabel : String, description : String } -> Depot.Hp -> Html msg
+hp config =
+    gauge DepotHp
+        { label = "hp"
+        , accessibleLabel = config.accessibleLabel
+        , description = config.description
+        }
+
+
+gauge : GaugeKind -> Description -> { current : Int, maximum : Int } -> Html msg
+gauge kind config stock =
     let
         fraction : Float
         fraction =
@@ -46,7 +67,7 @@ toHtml config stock =
 
         notice : List (Html msg)
         notice =
-            if fraction <= 0.25 then
+            if (kind == ResourceStock) && (fraction <= 0.25) then
                 let
                     label : String
                     label =

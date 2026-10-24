@@ -526,8 +526,19 @@ participants in gold with a brief moving shine. Direction markers live in a fina
 overlay above depots, units, ambush coverage, and direction-selection sectors.
 A dim overlay then covers the workspace while one beveled card headed `ambush`
 shows inward-facing formations on the illustrated backdrop matching each
-combatant's terrain and map theme. Omit
-visible unit/player labels. The western participant appears left, facing right; the eastern participant appears right, facing left. For a vertical encounter, the northern participant appears left.
+combatant's terrain and map theme. Road terrain uses a sunbaked freeway backdrop
+on grass and desert maps, with a matching snowy variant on snow maps. Both look
+across the lanes with nearby concrete barriers and minimal distant scenery.
+Supply and fuel depot tiles use a shared industrial yard, with a snowy variant
+on snow maps. Both show warehouses, crates, drums, and storage tanks against
+open sky, with no distant terrain. Leave the paved yard open for the formations,
+with packed snow in the winter variant. Use the same yard for indirect-fire impacts on depots;
+entrenched infantry retain their trench interior.
+Omit visible unit/player labels. The western participant appears
+left, facing right; the eastern participant appears right, facing left. For a
+vertical encounter, the northern participant appears left.
+When only one scene is shown, center it at the same width and aspect ratio as
+one scene in the paired layout, including concealed-gun impacts and depot damage.
 The card opens with a 200ms expansion and slight overshoot. Every unit kind
 uses staggered figures. Infantry has eight smaller figures at full health, each
 representing two HP. Other kinds have four figures at 13–16 HP, three at 9–12,
@@ -689,12 +700,32 @@ below the numbered buttons. Fuel freight uses the red three-drum stack in ground
 with a red drum badge on trucks. Mixed supply/fuel freight uses separate
 lower-left badges and shares the same capacity and unloading rules.
 
+## Depot destruction and sabotage
+
+Infantry already occupying a surviving depot also receive a `sabotage` command
+with the transparent illustrated red demolition charge and brass-plunger icon.
+Its saved order retains revoke and explains the whole-turn action, normal upkeep,
+and completion after combat if the infantry survives. Hide it away from depots,
+on destroyed depots, and during dismounting; disable it when upkeep is unaffordable.
+Depot inspectors show HP separately from resource stock. Fuel depots start at
+1 HP and supply depots at 3 HP. Destroyed depots show a faded building and red cross, remain inspectable, and explain that replenishment
+and loading have stopped. Fog retains the last observed condition. Shell impacts
+show the attacker and occupant hit first, then replace those scenes with one
+centered depot map sprite taking its own strike. Use the building sprite to make
+clear that the whole depot is hit; omit the depot HP text from the theater.
+Destroyed depots fade and receive the same red cross as on the board. Automatic
+close waits for this follow-up strike to settle. Sabotage uses the existing map burst
+without damaging units or freight.
+
 ## Stand ground
 
 Stand ground opens the same cardinal direction picker as ambush. Pointer hover
-previews facing; a click or arrow/WASD key saves the chosen direction. Show the saved order, revoke action, defensive readiness explanation, and
-normal upkeep plus readiness supply cost in the inspector. Disable it when
-readiness plus upkeep is unaffordable. It has no firing-area or ambush marker.
+previews facing with the same illustrated direction arrow; a click or arrow/WASD
+key saves the chosen direction. Keep the arrow on saved orders and during playback,
+including logged replays. Show the saved order, revoke action, defensive readiness
+explanation, and normal upkeep plus readiness supply cost in the inspector,
+including the cost while choosing direction. Disable it when readiness plus upkeep
+is unaffordable. It has no firing-area highlight because it does not fire.
 
 ## Mountain terrain
 
@@ -796,8 +827,8 @@ indirect fire as their cause without an attacker portrait or location.
 ## Infantry digging and entrenchment
 
 Enable the existing `dig in` menu action only for unentrenched infantry that
-can afford the server-provided digging cost plus upkeep. Keep it disabled during
-a planned dismount. Saving shows `dig in`, its supply cost, the end-of-turn
+can afford the server-provided digging cost plus upkeep. Keep it disabled on roads
+and during a planned dismount. Saving shows `dig in`, its supply cost, the end-of-turn
 completion, and the standard revoke action. Infantry cannot fire while digging.
 An entrenched unit uses its approved red or blue dug-in sprite on the board,
 in the inspector, with existing facing mirroring. In the combat theater, replace

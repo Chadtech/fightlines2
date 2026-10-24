@@ -81,6 +81,8 @@ impl RecordedOrder {
             UnitOrderKind::Ambush
         } else if input.stand_ground == Some(true) {
             UnitOrderKind::StandGround
+        } else if input.sabotage == Some(true) {
+            UnitOrderKind::Sabotage
         } else if input.dig_in == Some(true) {
             UnitOrderKind::DigIn
         } else if input.indirect_fire.is_some() {
