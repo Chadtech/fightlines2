@@ -62,7 +62,11 @@ import Api.Enum.Direction exposing (Direction)
 import Api.Enum.PlayerNumber exposing (PlayerNumber)
 import Api.Enum.UnitKind as Kind
 import Game.Coordinate as Coordinate exposing (Coordinate)
-import Game.Depot as Depot exposing (Depot)
+import Game.Depot as Depot
+    exposing
+        ( Depot
+        , LoadingSource
+        )
 import Game.DestinationFeedback exposing (DestinationFeedback(..))
 import Game.DirectionPlanning as DirectionPlanning
 import Game.IndirectFirePlanning as IndirectFirePlanning exposing (IndirectFirePlanning)
@@ -110,7 +114,7 @@ only other units' orders; dialogs and board inspection are derived from the stag
 type Model
     = OrdinaryPlanning Drafts
     | ConfirmingSubmission Drafts
-    | ChoosingCrates UnitId Depot Drafts
+    | ChoosingCrates UnitId LoadingSource Drafts
     | ChoosingGroundFreight UnitId Supply.GroundCrate Drafts
     | ChoosingPassengers UnloadChoice
     | ChoosingExits UnloadPlanning
@@ -1406,24 +1410,29 @@ offerCrateLoading units supplyCrates depots order drafts =
     let
         atDestination : Depot -> Bool
         atDestination depot =
-            (depot.position == PlannedOrder.destination order) && not (Depot.isDestroyed depot)
+            depot.position == PlannedOrder.destination order
+
+        hasFreeBerth : Unit -> Bool
+        hasFreeBerth unit =
+            (unit.id == order.unitId)
+                && (PlannedTransport.cargoRoom units unit drafts.orders > 0)
 
         hasCargoRoom : Bool
         hasCargoRoom =
-            List.any
-                (\unit ->
-                    (unit.id == order.unitId)
-                        && (PlannedTransport.cargoRoom units unit drafts.orders > 0)
-                )
-                units
+            List.any hasFreeBerth units
 
-        destinationDepot : Maybe Depot
+        destinationDepot : Maybe LoadingSource
         destinationDepot =
             ListUtil.find atDestination depots
+                |> Maybe.andThen Depot.loadingSource
 
-        offerGroundOrDepot : Maybe Depot -> Model
+        atGroundDestination : Supply.GroundCrate -> Bool
+        atGroundDestination freight =
+            freight.position == PlannedOrder.destination order
+
+        offerGroundOrDepot : Maybe LoadingSource -> Model
         offerGroundOrDepot depot =
-            case ListUtil.find (\freight -> freight.position == PlannedOrder.destination order) supplyCrates of
+            case ListUtil.find atGroundDestination supplyCrates of
                 Just freight ->
                     ChoosingGroundFreight order.unitId freight drafts
 

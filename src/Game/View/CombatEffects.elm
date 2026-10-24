@@ -203,25 +203,15 @@ impacts landings units shots =
             )
                 |> List.foldl unique []
 
-        shooters : List Coordinate
-        shooters =
-            shots
-                |> List.filter (.attacker >> observed)
-                |> List.map .origin
-                |> List.foldl unique []
-                |> List.filter (\position -> not (List.member position targets))
-
-        burst : Float -> Coordinate -> Svg msg
-        burst size position =
+        burst : Coordinate -> Svg msg
+        burst position =
             Svg.g
                 [ SA.transform
                     ("translate("
                         ++ String.fromInt (position.x * 16 + 8)
                         ++ " "
                         ++ String.fromInt (position.y * 16 + 8)
-                        ++ ") scale("
-                        ++ String.fromFloat size
-                        ++ ")"
+                        ++ ") scale(0.8)"
                     )
                 ]
                 [ explosion
@@ -229,17 +219,9 @@ impacts landings units shots =
 
         explosions : List (Svg msg)
         explosions =
-            List.map (burst 0.8) targets
-
-        flashes : List (Svg msg)
-        flashes =
-            List.map (burst 0.4) shooters
-
-        content : List (Svg msg)
-        content =
-            explosions ++ flashes
+            List.map burst targets
     in
-    if List.isEmpty content then
+    if List.isEmpty explosions then
         Svg.text ""
 
     else
@@ -247,7 +229,7 @@ impacts landings units shots =
             [ SA.pointerEvents "none"
             , Aria.svgLabel "combat impact"
             ]
-            content
+            explosions
 
 
 explosion : Svg msg

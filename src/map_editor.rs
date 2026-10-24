@@ -2,13 +2,13 @@
 use crate::{
     graphql::Context,
     map::{Coordinate, MapTheme, TerrainValue},
-    map_definition::{DepotPlacement, MapDefinition, TerrainPlacement, UnitPlacement},
+    map_definition::{DepotPlacement, MapDefinition, NamedMap, TerrainPlacement, UnitPlacement},
     map_type::{MAPS, MapType},
-    scenario::{DepotKind, Direction, PlayerNumber, UnitKind},
+    scenario::{BuildingKind, Direction, PlayerNumber, UnitKind},
 };
 use actix_files::NamedFile;
 use actix_web::{HttpRequest, web};
-use juniper::{FieldResult, GraphQLInputObject, GraphQLObject, graphql_object};
+use juniper::{FieldResult, GraphQLInputObject, GraphQLObject};
 use std::{
     fs,
     path::PathBuf,
@@ -59,75 +59,9 @@ impl Access {
 
 #[derive(GraphQLObject)]
 #[graphql(context = Context)]
-pub struct NamedMap {
-    map_type: MapType,
-    definition: MapDefinition,
-}
-
-#[derive(GraphQLObject)]
-#[graphql(context = Context)]
 pub struct MapCatalog {
     first: NamedMap,
     rest: Vec<NamedMap>,
-}
-
-#[graphql_object(context = Context)]
-impl MapDefinition {
-    fn width(&self) -> i32 {
-        i32::from(self.width)
-    }
-    fn height(&self) -> i32 {
-        i32::from(self.height)
-    }
-    fn theme(&self) -> MapTheme {
-        self.theme
-    }
-    fn features(&self) -> &[TerrainPlacement] {
-        &self.features
-    }
-    fn depots(&self) -> &[DepotPlacement] {
-        &self.depots
-    }
-    fn units(&self) -> &[UnitPlacement] {
-        &self.units
-    }
-}
-
-#[graphql_object(context = Context)]
-impl TerrainPlacement {
-    fn position(&self) -> Coordinate {
-        self.position
-    }
-    fn terrain(&self) -> TerrainValue {
-        self.terrain.into()
-    }
-}
-#[graphql_object(context = Context)]
-impl DepotPlacement {
-    fn position(&self) -> Coordinate {
-        self.position
-    }
-    fn kind(&self) -> DepotKind {
-        self.kind
-    }
-}
-#[graphql_object(context = Context)]
-impl UnitPlacement {
-    fn id(&self) -> i32 {
-        i32::from(self.id)
-    }
-    fn position(&self) -> Coordinate {
-        self.position
-    }
-    fn player_number(&self) -> PlayerNumber {
-        self.player_number
-    }
-    fn kind(&self) -> UnitKind {
-        self.kind
-    }
-    fn direction(&self) -> Option<Direction> {
-        self.direction
-    }
 }
 
 #[derive(GraphQLInputObject)]
@@ -143,7 +77,7 @@ struct TerrainPlacementInput {
 #[derive(GraphQLInputObject)]
 struct DepotPlacementInput {
     position: PositionInput,
-    kind: DepotKind,
+    kind: BuildingKind,
 }
 #[derive(GraphQLInputObject)]
 struct UnitPlacementInput {
@@ -155,6 +89,7 @@ struct UnitPlacementInput {
 }
 #[derive(GraphQLInputObject)]
 pub struct MapDefinitionInput {
+    description: String,
     width: i32,
     height: i32,
     theme: MapTheme,
@@ -178,6 +113,7 @@ impl PositionInput {
 impl MapDefinitionInput {
     fn definition(self) -> FieldResult<MapDefinition> {
         Ok(MapDefinition {
+            description: self.description,
             width: unsigned(self.width, "width")?,
             height: unsigned(self.height, "height")?,
             theme: self.theme,
@@ -306,7 +242,7 @@ mod tests {
     use serde_json::{Value, json};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-    const SAVE: &str = "mutation Save($definition: MapDefinitionInput!, $kind: MapType!) { saveMap(mapType: $kind, definition: $definition) { mapType definition { theme width } } }";
+    const SAVE: &str = "mutation Save($definition: MapDefinitionInput!, $kind: MapType!) { saveMap(mapType: $kind, definition: $definition) { mapType definition { description theme width depots { kind } } } }";
 
     fn store() -> web::Data<crate::lobby::Store> {
         web::Data::new(crate::lobby::Store::new(crate::seed::Seed::new([0; 32])))
@@ -328,6 +264,7 @@ mod tests {
             y: coordinate.y(),
         };
         let input = MapDefinitionInput {
+            description: definition.description,
             width: i32::from(definition.width),
             height: i32::from(definition.height),
             theme: definition.theme,
@@ -415,7 +352,8 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn shared_endpoint_keeps_game_queries_available_and_checks_editor_reads() {
+    async fn shared_endpoint_keeps_game_queries_available_and_checks_editor_reads() -> TestResult<()>
+    {
         let app = test::init_service(
             App::new()
                 .app_data(store())
@@ -428,7 +366,7 @@ mod tests {
         .await;
         for (query, peer, success) in [
             (
-                "{ health maps { first { mapType definition { width units { playerNumber direction } } } rest { mapType } } }",
+                "{ health maps { first { mapType definition { description width units { playerNumber direction } } } rest { mapType definition { description } } } }",
                 Ipv4Addr::LOCALHOST,
                 true,
             ),
@@ -460,6 +398,14 @@ mod tests {
                     Some(MAPS.len() - 1)
                 );
                 assert_eq!(body["data"]["health"], json!(true));
+                let maps = &body["data"]["maps"];
+                let rest = maps["rest"].as_array().ok_or("missing map catalog")?;
+                for map in std::iter::once(&maps["first"]).chain(rest) {
+                    let description = map["definition"]["description"]
+                        .as_str()
+                        .ok_or("missing map description")?;
+                    assert!(!description.trim().is_empty(), "{map}");
+                }
             } else if !success {
                 assert_eq!(
                     body["errors"][0]["message"],
@@ -467,6 +413,7 @@ mod tests {
                 );
             }
         }
+        Ok(())
     }
 
     #[actix_web::test]
@@ -533,6 +480,8 @@ mod tests {
             assert_eq!(fs::read_to_string(&destination)?, original);
         }
         let mut definition = valid;
+        definition["depots"] = json!([{"position": {"x": 0, "y": 0}, "kind": "FORTRESS"}]);
+        definition["description"] = json!("a custom battlefield description");
         definition["theme"] = json!("SNOW");
         let request = test::TestRequest::post()
             .uri("/graphql")
@@ -547,6 +496,19 @@ mod tests {
         assert!(body.get("errors").is_none(), "{body}");
         let saved: Value = serde_json::from_str(&fs::read_to_string(&destination)?)?;
         assert_eq!(saved["theme"], json!("Snow"));
+        assert_eq!(
+            body["data"]["saveMap"]["definition"]["depots"],
+            json!([{ "kind": "FORTRESS" }])
+        );
+        assert_eq!(
+            saved["depots"],
+            json!([{"position": {"x": 0, "y": 0}, "kind": "Fortress"}])
+        );
+        assert_eq!(saved["description"], definition["description"]);
+        assert_eq!(
+            body["data"]["saveMap"]["definition"]["description"],
+            definition["description"]
+        );
         assert_eq!(
             body["data"]["saveMap"]["definition"]["theme"],
             json!("SNOW")

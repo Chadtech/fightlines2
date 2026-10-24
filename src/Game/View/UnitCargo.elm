@@ -4,7 +4,7 @@ module Game.View.UnitCargo exposing
     , toSvg
     )
 
-import Api.Enum.DepotKind as Kind exposing (DepotKind)
+import Api.Enum.ResourceKind as Kind exposing (ResourceKind)
 import Game.Supply as Supply
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
@@ -192,7 +192,7 @@ freightToSvg cargo =
 freightView : List Supply.CargoStock -> Svg msg
 freightView cargo =
     let
-        count : DepotKind -> Int
+        count : ResourceKind -> Int
         count kind =
             cargo
                 |> List.filter (\stock -> stock.kind == kind)

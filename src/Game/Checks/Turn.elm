@@ -1,8 +1,8 @@
 port module Game.Checks.Turn exposing (main)
 
 import Api.Enum.AmbushShape as AmbushShape
+import Api.Enum.BuildingKind as BuildingKind
 import Api.Enum.CombatKind as CombatKind
-import Api.Enum.DepotKind as DepotKind
 import Api.Enum.Direction as Direction
 import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as MapTheme
@@ -1113,7 +1113,20 @@ combatPlaybackChecks first second =
 
                 depotHit : IndirectImpact
                 depotHit =
-                    { observedTarget | depot = Just { kind = DepotKind.Supply, before = { current = 3, maximum = 3 }, after = { current = 2, maximum = 3 } } }
+                    { observedTarget
+                        | depot =
+                            Just
+                                { kind = BuildingKind.Supply
+                                , before =
+                                    { current = 3
+                                    , maximum = 3
+                                    }
+                                , after =
+                                    { current = 2
+                                    , maximum = 3
+                                    }
+                                }
+                    }
 
                 depotLanding : TurnPlayback.Frame
                 depotLanding =
@@ -1140,7 +1153,18 @@ combatPlaybackChecks first second =
                         | target =
                             laterImpact.target
                                 |> Maybe.map (\observed -> { observed | health = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } } })
-                        , depot = Just { kind = DepotKind.Fuel, before = { current = 1, maximum = 1 }, after = { current = 0, maximum = 1 } }
+                        , depot =
+                            Just
+                                { kind = BuildingKind.Fuel
+                                , before =
+                                    { current = 1
+                                    , maximum = 1
+                                    }
+                                , after =
+                                    { current = 0
+                                    , maximum = 1
+                                    }
+                                }
                     }
 
                 lethalDepotShown : Maybe TurnPlayback.Playback
@@ -1699,6 +1723,91 @@ combatDeathChecks first second =
                         |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
                         |> Maybe.andThen TurnPlayback.continueCombat
 
+                firingGun : Unit
+                firingGun =
+                    target |> Unit.setKind Kind.FieldGun
+
+                gunMiss : IndirectImpact
+                gunMiss =
+                    { destination =
+                        { x = 5
+                        , y = 4
+                        }
+                    , attacker =
+                        Just
+                            { unit = firingGun
+                            , health =
+                                { current = 16
+                                , maximum = 16
+                                }
+                            }
+                    , target = Nothing
+                    , depot = Nothing
+                    }
+
+                gunKill : Shot
+                gunKill =
+                    let
+                        hit : Shot
+                        hit =
+                            lethalShot firingGun
+                    in
+                    { hit
+                        | kind = CombatKind.IndirectFire
+                        , damage = 16
+                        , targetHealth =
+                            { before =
+                                { current = 16
+                                , maximum = 16
+                                }
+                            , after =
+                                { current = 0
+                                , maximum = 16
+                                }
+                            }
+                    }
+
+                bombardment : List Shot -> List IndirectImpact -> Maybe TurnPlayback.Playback
+                bombardment shots impacts =
+                    TurnPlayback.start
+                        [ { before
+                            | units =
+                                [ attacker
+                                , firingGun
+                                ]
+                          }
+                        , { volley
+                            | units = [ attacker, firingGun |> Unit.setDestroyed True ]
+                            , shots = shots
+                            , indirectImpacts = impacts
+                          }
+                        , cleanup
+                        ]
+                        |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+                        |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+
+                mixedBombardment : Maybe TurnPlayback.Playback
+                mixedBombardment =
+                    bombardment [ gunKill ] [ gunMiss ]
+
+                afterGunMiss : Maybe TurnPlayback.Playback
+                afterGunMiss =
+                    mixedBombardment
+                        |> Maybe.andThen TurnPlayback.continueCombat
+                        |> Maybe.andThen (.animation >> TurnPlayback.tick 300 >> Tuple.first)
+
+                concealedGunKill : IndirectImpact
+                concealedGunKill =
+                    { destination = gunKill.destination
+                    , attacker = Nothing
+                    , target =
+                        Just
+                            { unit = firingGun
+                            , health = gunKill.targetHealth
+                            }
+                    , depot = Nothing
+                    }
+
                 shellCarrierDeath : Maybe TurnPlayback.LossEvent
                 shellCarrierDeath =
                     let
@@ -1859,6 +1968,50 @@ combatDeathChecks first second =
                     (Maybe.map (.animation >> TurnPlayback.losses >> List.map .cause) shellDeath == Just [ TurnPlayback.ConcealedIndirectFire ])
                 , expect "concealed artillery deaths pause at their own impact scene"
                     (Maybe.map (.frame >> dyingIds) shellDeath == Just [ second ])
+                , expect "a gun's simultaneous miss appears before the confirmed hit that destroys it"
+                    (Maybe.andThen TurnPlayback.activeEncounter mixedBombardment == Just (TurnPlayback.Impact gunMiss))
+                , expect "merged landings retain the firing dependency of every observable gun"
+                    (bombardment [ gunKill ]
+                        [ { gunMiss
+                            | attacker =
+                                Just
+                                    { unit = other
+                                    , health =
+                                        { current = 16
+                                        , maximum = 16
+                                        }
+                                    }
+                          }
+                        , gunMiss
+                        ]
+                        |> Maybe.andThen TurnPlayback.activeEncounter
+                        |> (==)
+                            (Just
+                                (TurnPlayback.Impact
+                                    { gunMiss
+                                        | attacker =
+                                            Just
+                                                { unit = other
+                                                , health =
+                                                    { current = 16
+                                                    , maximum = 16
+                                                    }
+                                                }
+                                    }
+                                )
+                            )
+                    )
+                , expect "continuing the gun's shot opens its destruction with the gun still on the board"
+                    ((Maybe.andThen TurnPlayback.combat afterGunMiss |> Maybe.map (.target >> .id))
+                        == Just second
+                        && (Maybe.andThen TurnPlayback.continueCombat afterGunMiss |> Maybe.map (.frame >> dyingIds))
+                        == Just [ second ]
+                    )
+                , expect "a concealed gun's lethal impact waits for the victim's simultaneous miss"
+                    (bombardment [] [ concealedGunKill, gunMiss ]
+                        |> Maybe.andThen TurnPlayback.activeEncounter
+                        |> (==) (Just (TurnPlayback.Impact gunMiss))
+                    )
                 , expect "passengers share their carrier's concealed artillery loss event"
                     (Maybe.map (.loss >> .cause) shellCarrierDeath
                         == Just TurnPlayback.ConcealedIndirectFire
@@ -2458,11 +2611,23 @@ cameraChecks =
 
         viewport : Camera.Viewport
         viewport =
-            { size = { x = 1000, y = 600 }, bottomInset = 0 }
+            { size =
+                { x = 1000
+                , y = 600
+                }
+            , bottomInset = 0
+            , rightInset = 0
+            }
 
         withControls : Camera.Viewport
         withControls =
             { viewport | bottomInset = 150 }
+
+        withInspector : Camera.Viewport
+        withInspector =
+            { viewport
+                | rightInset = 248
+            }
 
         overview : Camera.Camera
         overview =
@@ -2500,9 +2665,23 @@ cameraChecks =
         fittedAboveControls =
             Camera.frame withControls map group zoomed
 
+        besideInspector : Camera.Camera
+        besideInspector =
+            Camera.frame withInspector map offscreen zoomed
+
+        fittedBesideInspector : Camera.Camera
+        fittedBesideInspector =
+            Camera.frame withInspector map group zoomed
+
         narrowViewport : Camera.Viewport
         narrowViewport =
-            { size = { x = 320, y = 900 }, bottomInset = 340 }
+            { size =
+                { x = 320
+                , y = 900
+                }
+            , bottomInset = 340
+            , rightInset = 144
+            }
 
         narrowFit : Camera.Camera
         narrowFit =
@@ -2513,7 +2692,7 @@ cameraChecks =
             let
                 tilePixels : Float
                 tilePixels =
-                    min (0.8 * view.size.x) (0.76 * view.size.y) * camera.zoom / 17
+                    min (0.92 * view.size.x) (0.98 * view.size.y) * camera.zoom / 17
 
                 tileIsClear : Point -> Bool
                 tileIsClear position =
@@ -2527,7 +2706,7 @@ cameraChecks =
                             view.size.y / 2 + camera.offset.y + (position.y - 8.5) * tilePixels
                     in
                     (left >= 0)
-                        && (left + tilePixels <= view.size.x)
+                        && (left + tilePixels <= view.size.x - view.rightInset)
                         && (top >= 0)
                         && (top + tilePixels <= view.size.y - view.bottomInset)
             in
@@ -2555,7 +2734,19 @@ cameraChecks =
         , expect "distant simultaneous subjects fit together without repeated reframing"
             (fitted.zoom < zoomed.zoom && Camera.frame viewport map group fitted == fitted)
         , expect "narrow viewport uses its horizontal bounds"
-            (Camera.frame { size = { x = 320, y = 900 }, bottomInset = 0 } map group zoomed /= zoomed)
+            (Camera.frame
+                { size =
+                    { x = 320
+                    , y = 900
+                    }
+                , bottomInset = 0
+                , rightInset = 0
+                }
+                map
+                group
+                zoomed
+                /= zoomed
+            )
         , expect "a southern tile covered by controls pans into the clear area without changing zoom"
             (not (tilesClearPanels withControls southernUnit overview)
                 && tilesClearPanels withControls southernUnit aboveControls
@@ -2572,5 +2763,14 @@ cameraChecks =
         , expect "wrapped controls and a narrow battlefield keep every subject clear of both panels"
             (tilesClearPanels narrowViewport group narrowFit
                 && (Camera.frame narrowViewport map group narrowFit == narrowFit)
+            )
+        , expect "an eastern subject pans clear of the inspector without unnecessary zoom"
+            (tilesClearPanels withInspector offscreen besideInspector
+                && (besideInspector.zoom == zoomed.zoom)
+                && (Camera.frame withInspector map offscreen besideInspector == besideInspector)
+            )
+        , expect "simultaneous subjects fit beside the inspector and keep the full viewport coordinate system"
+            (tilesClearPanels withInspector group fittedBesideInspector
+                && (Camera.frame withInspector map group fittedBesideInspector == fittedBesideInspector)
             )
         ]

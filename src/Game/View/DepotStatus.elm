@@ -1,7 +1,9 @@
 module Game.View.DepotStatus exposing (toHtml)
 
+import Api.Enum.BuildingKind as BuildingKind
 import Css
 import Game.Depot as Depot exposing (Depot)
+import Game.Supply as Supply
 import Game.View.StockGauge as StockGauge
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
@@ -19,22 +21,38 @@ toHtml depot =
 depotView : Depot -> Html msg
 depotView depot =
     let
-        stock : Html msg
-        stock =
-            if Depot.isDestroyed depot then
-                H.p [] [ H.text "destroyed · no replenishment or freight loading" ]
+        status : Html msg
+        status =
+            if depot.kind == BuildingKind.Fortress then
+                if Depot.isDestroyed depot then
+                    H.p
+                        []
+                        [ H.text "destroyed · no defense bonus"
+                        ]
+
+                else
+                    H.p
+                        []
+                        [ H.text "occupying units take 75% less damage · minimum 1 hp per hit"
+                        ]
+
+            else if Depot.isDestroyed depot then
+                H.p
+                    []
+                    [ H.text "destroyed · no replenishment or freight loading"
+                    ]
 
             else
-                case depot.stock of
-                    Just level ->
+                case ( Depot.resourceKind depot, depot.stock ) of
+                    ( Just kind, Just level ) ->
                         StockGauge.toHtml
-                            { label = Depot.resourceLabel depot
-                            , accessibleLabel = "depot " ++ Depot.resourceLabel depot
-                            , description = Depot.stockDescription depot
+                            { label = Supply.resourceLabel kind
+                            , accessibleLabel = Depot.label depot ++ " " ++ Supply.resourceLabel kind
+                            , description = Depot.stockDescription kind
                             }
                             level
 
-                    Nothing ->
+                    _ ->
                         H.p
                             [ A.css
                                 [ S.textGray4
@@ -98,11 +116,11 @@ depotView depot =
                 []
             ]
         , StockGauge.hp
-            { accessibleLabel = "depot hp"
-            , description = "each shell removes one hp. infantry on this depot can destroy it in one turn with sabotage. the condition shown in fog was last observed."
+            { accessibleLabel = Depot.label depot ++ " hp"
+            , description = "each shell removes one hp. occupying infantry can destroy this building in one turn with sabotage. the condition shown in fog was last observed."
             }
             depot.hp
-        , stock
+        , status
         ]
 
 

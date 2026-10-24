@@ -2,6 +2,7 @@ module Game.View.TerrainTile exposing
     ( clockClass
     , definitions
     , onMap
+    , stillOnMap
     , styles
     , toSvg
     )
@@ -188,8 +189,38 @@ styles =
         ]
 
 
-waterView : Svg msg
-waterView =
+type WaterMotion
+    = AnimatedWater
+    | StillWater
+
+
+waterView : WaterMotion -> Svg msg
+waterView motion =
+    let
+        motionAttributes : List (Svg.Attribute msg)
+        motionAttributes =
+            case motion of
+                AnimatedWater ->
+                    [ SA.class waterFramesClass
+                    , A.css
+                        [ S.animation (waterFramesClass ++ " 1920ms steps(1, end) infinite")
+                        , S.reducedMotion
+                            [ S.animationNone
+                            ]
+                        ]
+                    ]
+
+                StillWater ->
+                    []
+
+        imageAttributes : List (Svg.Attribute msg)
+        imageAttributes =
+            [ SA.width "128"
+            , SA.height "64"
+            , SA.xlinkHref "/assets/terrain-water-illustrated-v1.png"
+            ]
+                ++ motionAttributes
+    in
     Svg.svg
         [ SA.width "16"
         , SA.height "16"
@@ -198,17 +229,7 @@ waterView =
         , SA.pointerEvents "none"
         ]
         [ Svg.image
-            [ SA.class waterFramesClass
-            , SA.width "128"
-            , SA.height "64"
-            , SA.xlinkHref "/assets/terrain-water-illustrated-v1.png"
-            , A.css
-                [ S.animation (waterFramesClass ++ " 1920ms steps(1, end) infinite")
-                , S.reducedMotion
-                    [ S.animationNone
-                    ]
-                ]
-            ]
+            imageAttributes
             []
         ]
 
@@ -258,13 +279,25 @@ image config =
 -}
 toSvg : { theme : MapTheme, terrain : Terrain } -> Svg msg
 toSvg config =
-    Lazy.lazy2 terrainView config.theme config.terrain
+    Lazy.lazy3 terrainView AnimatedWater config.theme config.terrain
 
 
 {-| Neighbor-aware artwork shared by live games, replays, authoring and inspection.
 -}
 onMap : Map -> Coordinate -> Svg msg
-onMap map position =
+onMap =
+    onMapWithMotion AnimatedWater
+
+
+{-| Catalog previews keep the first water frame without starting animation clocks.
+-}
+stillOnMap : Map -> Coordinate -> Svg msg
+stillOnMap =
+    onMapWithMotion StillWater
+
+
+onMapWithMotion : WaterMotion -> Map -> Coordinate -> Svg msg
+onMapWithMotion motion map position =
     let
         shore : List (Svg msg)
         shore =
@@ -273,7 +306,7 @@ onMap map position =
 
         artwork : List (Svg msg)
         artwork =
-            toSvg { theme = map.theme, terrain = Map.terrainAt map position } :: shore
+            Lazy.lazy3 terrainView motion map.theme (Map.terrainAt map position) :: shore
     in
     Svg.g
         [ SA.pointerEvents "none" ]
@@ -392,8 +425,8 @@ cornerRotation corner =
             270
 
 
-terrainView : MapTheme -> Terrain -> Svg msg
-terrainView theme terrain =
+terrainView : WaterMotion -> MapTheme -> Terrain -> Svg msg
+terrainView motion theme terrain =
     let
         art : Appearance
         art =
@@ -442,7 +475,7 @@ terrainView theme terrain =
         groundImage =
             case terrain of
                 Terrain.Water ->
-                    waterView
+                    waterView motion
 
                 Terrain.Beach ->
                     image { path = "/assets/coast-illustrated-v1/beach.png", filter = "none" }

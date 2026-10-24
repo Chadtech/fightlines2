@@ -13,11 +13,11 @@ import Effect as E
         )
 import Game.LogId as GameLogId exposing (GameLogId)
 import Game.View.CombatEffects as CombatEffects
+import Game.View.CombatExplosion as CombatExplosion
 import Game.View.CombatTheater as CombatTheater
 import Game.View.DepotStock as DepotStock
 import Game.View.TargetSight as TargetSight
 import Game.View.TerrainTile as TerrainTile
-import Game.View.TurnControls as TurnControls
 import Game.View.TurnIntroduction as TurnIntroduction
 import Game.View.UnitCargo as UnitCargo
 import Game.View.UnitDeath as UnitDeath
@@ -77,7 +77,7 @@ type Page
     | StartingApp Shared.Model
     | Home Home.Model
     | NewLobby NewLobby.Model
-    | LoadingLobby Shared.Model LobbyId
+    | LoadingLobby Shared.Model LobbyId LobbyPage.Location
     | LobbyLoadFailed LobbyId LobbyLoadFailed.Model
     | JoinLobby LobbyId JoinLobby.Model
     | Lobby LobbyId LobbyPage.Model
@@ -97,7 +97,8 @@ type Page
 
 
 type alias Flags =
-    { operatingSystem : OperatingSystem
+    { isProduction : Bool
+    , operatingSystem : OperatingSystem
     , localStorage : LocalStorage
     , seed : Random.Seed
     }
@@ -108,8 +109,8 @@ type Msg
     | RouteReceived (Maybe Route)
     | NewLobbyMsg NewLobby.Msg
     | JoinLobbyMsg LobbyId JoinLobby.Msg
-    | LobbyMsg LobbyId LobbyPage.Msg
-    | LobbyResponseReceived LobbyId (Response LobbyPage.Flags)
+    | LobbyMsg LobbyId LobbyPage.Location LobbyPage.Msg
+    | LobbyResponseReceived LobbyId LobbyPage.Location (Response LobbyPage.Flags)
     | LobbyLoadFailedMsg LobbyId LobbyLoadFailed.Msg
     | GameMsg LobbyId GamePage.Msg
     | GameResponseReceived LobbyId (Response GamePage.Flags)
@@ -170,7 +171,7 @@ init value url key =
             let
                 shared : Shared.Model
                 shared =
-                    Shared.init flags.seed flags.operatingSystem flags.localStorage url key
+                    Shared.init flags.isProduction flags.seed flags.operatingSystem flags.localStorage url key
             in
             handleRoute
                 shared
@@ -183,7 +184,8 @@ init value url key =
 
 flagsDecoder : Decode.Decoder Flags
 flagsDecoder =
-    Decode.map3 Flags
+    Decode.map4 Flags
+        (Decode.field "isProduction" Decode.bool)
         (Decode.field "operatingSystem" OperatingSystem.decoder)
         (Decode.field "localStorage" LocalStorage.decoder)
         (Decode.field "seed" (Decode.map Random.initialSeed Decode.int))
@@ -210,7 +212,7 @@ getShared page =
         NewLobby model ->
             Just model.shared
 
-        LoadingLobby shared _ ->
+        LoadingLobby shared _ _ ->
             Just shared
 
         LobbyLoadFailed _ model ->
@@ -277,8 +279,8 @@ setShared shared page =
         NewLobby model ->
             NewLobby (NewLobby.setShared shared model)
 
-        LoadingLobby _ id ->
-            LoadingLobby shared id
+        LoadingLobby _ id location ->
+            LoadingLobby shared id location
 
         LobbyLoadFailed id model ->
             LobbyLoadFailed id (LobbyLoadFailed.setShared shared model)
@@ -339,10 +341,10 @@ mapShared transform page =
             page
 
 
-loadLobby : Shared.Model -> LobbyId -> ( Page, Eff Msg )
-loadLobby shared id =
-    ( LoadingLobby shared id
-    , E.request (LobbyResponseReceived id) (LobbyPage.load id)
+loadLobby : LobbyPage.Location -> Shared.Model -> LobbyId -> ( Page, Eff Msg )
+loadLobby location shared id =
+    ( LoadingLobby shared id location
+    , E.request (LobbyResponseReceived id location) (LobbyPage.load id)
     )
 
 
@@ -363,16 +365,28 @@ handleRoute : Shared.Model -> Maybe Route -> Page -> ( Page, Eff Msg )
 handleRoute shared route page =
     case route of
         Just Route.LoggedGames ->
-            ( LoadingLoggedGames shared, E.request LoggedGamesResponseReceived LoggedGames.load )
+            if shared.isProduction then
+                ( NotFound shared, E.none )
+
+            else
+                ( LoadingLoggedGames shared, E.request LoggedGamesResponseReceived LoggedGames.load )
 
         Just (Route.Replay id) ->
-            ( LoadingReplay shared id, E.request (ReplayResponseReceived id) (GameReplay.load id) )
+            if shared.isProduction then
+                ( NotFound shared, E.none )
+
+            else
+                ( LoadingReplay shared id, E.request (ReplayResponseReceived id) (GameReplay.load id) )
 
         Just Route.MapEditor ->
-            ( LoadingMapEditor shared
-            , MapEditor.load
-                |> E.request MapEditorResponseReceived
-            )
+            if shared.isProduction then
+                ( NotFound shared, E.none )
+
+            else
+                ( LoadingMapEditor shared
+                , MapEditor.load
+                    |> E.request MapEditorResponseReceived
+                )
 
         Just Route.Home ->
             ( Home (Home.init shared), E.none )
@@ -381,7 +395,10 @@ handleRoute shared route page =
             ( NewLobby (NewLobby.init shared), E.none )
 
         Just (Route.Lobby id) ->
-            loadLobby shared id
+            loadLobby LobbyPage.LobbySetup shared id
+
+        Just (Route.LobbyMaps id) ->
+            loadLobby LobbyPage.MapLibrary shared id
 
         Just (Route.Game id) ->
             loadGame shared id
@@ -536,13 +553,18 @@ update msg page =
                 _ ->
                     ( page, E.none )
 
-        LobbyMsg id pageMsg ->
+        LobbyMsg id location pageMsg ->
             case page of
                 Lobby currentId model ->
-                    if id == currentId then
+                    let
+                        belongsToCurrentLocation : Bool
+                        belongsToCurrentLocation =
+                            (id == currentId) && (location == LobbyPage.currentLocation model)
+                    in
+                    if belongsToCurrentLocation then
                         LobbyPage.update pageMsg model
                             |> Tuple.mapFirst (Lobby id)
-                            |> Tuple.mapSecond (E.map (LobbyMsg id))
+                            |> Tuple.mapSecond (E.map (LobbyMsg id location))
 
                     else
                         ( page, E.none )
@@ -550,16 +572,21 @@ update msg page =
                 _ ->
                     ( page, E.none )
 
-        LobbyResponseReceived id result ->
+        LobbyResponseReceived id location result ->
             case page of
-                LoadingLobby shared currentId ->
-                    if id == currentId then
+                LoadingLobby shared currentId currentLocation ->
+                    let
+                        belongsToCurrentLocation : Bool
+                        belongsToCurrentLocation =
+                            (id == currentId) && (location == currentLocation)
+                    in
+                    if belongsToCurrentLocation then
                         case result of
                             Ok flags ->
                                 if flags.lobby.isMember then
-                                    LobbyPage.init shared flags
+                                    LobbyPage.init location shared flags
                                         |> Tuple.mapFirst (Lobby id)
-                                        |> Tuple.mapSecond (E.map (LobbyMsg id))
+                                        |> Tuple.mapSecond (E.map (LobbyMsg id location))
 
                                 else
                                     ( JoinLobby id
@@ -574,7 +601,7 @@ update msg page =
                                     )
 
                             Err error ->
-                                ( LobbyLoadFailed id (LobbyLoadFailed.init shared id error), E.none )
+                                ( LobbyLoadFailed id (LobbyLoadFailed.init shared id location error), E.none )
 
                     else
                         ( page, E.none )
@@ -713,7 +740,7 @@ shell page =
                 NewLobby model ->
                     List.map (H.map NewLobbyMsg) (NewLobby.view model)
 
-                LoadingLobby _ _ ->
+                LoadingLobby _ _ _ ->
                     [ [ H.p
                             [ Aria.role Aria.Status
                             ]
@@ -730,7 +757,7 @@ shell page =
                     List.map (H.map (JoinLobbyMsg id)) (JoinLobby.view model)
 
                 Lobby id model ->
-                    List.map (H.map (LobbyMsg id)) (LobbyPage.view model)
+                    List.map (H.map (LobbyMsg id (LobbyPage.currentLocation model))) (LobbyPage.view model)
 
                 LoadingGame _ _ ->
                     [ [ H.p
@@ -809,11 +836,13 @@ shell page =
             , UnitFacing.styles
             , UnitCargo.styles
             , UnitWarnings.styles
+            , CombatExplosion.styles
+            , CombatExplosion.preload
             , UnitDeath.styles
             , CombatTheater.styles
             , CombatEffects.styles
             , DepotStock.styles
-            , TurnControls.styles
+            , Button.styles
             , TurnIntroduction.styles
             ]
                 ++ content
@@ -880,7 +909,7 @@ pageSubscriptions shared page =
         [ case page of
             Lobby id model ->
                 LobbyPage.subscriptions model
-                    |> Sub.map (LobbyMsg id)
+                    |> Sub.map (LobbyMsg id (LobbyPage.currentLocation model))
 
             MapEditor model ->
                 MapEditor.subscriptions model |> Sub.map MapEditorMsg
@@ -921,8 +950,8 @@ keyCommands page =
 listeners : Page -> FromJs.Listener Msg
 listeners page =
     case page of
-        Lobby id _ ->
-            LobbyPage.listeners |> FromJs.map (LobbyMsg id)
+        Lobby id model ->
+            LobbyPage.listeners |> FromJs.map (LobbyMsg id (LobbyPage.currentLocation model))
 
         _ ->
             FromJs.none

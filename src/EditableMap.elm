@@ -10,7 +10,7 @@ module EditableMap exposing
     , saveMutation
     )
 
-import Api.Enum.DepotKind as DepotKind exposing (DepotKind)
+import Api.Enum.BuildingKind as BuildingKind exposing (BuildingKind)
 import Api.Enum.Direction as Direction exposing (Direction)
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
 import Api.Enum.MapType as MapType exposing (MapType)
@@ -36,7 +36,8 @@ import Graphql.SelectionSet as SS exposing (SelectionSet)
 
 
 type alias Definition =
-    { width : Int
+    { description : String
+    , width : Int
     , height : Int
     , theme : MapTheme
     , features : List TerrainFeature
@@ -47,7 +48,7 @@ type alias Definition =
 
 type alias DepotPlacement =
     { position : Coordinate
-    , kind : DepotKind
+    , kind : BuildingKind
     }
 
 
@@ -131,6 +132,7 @@ namedSelection =
 definitionSelection : SelectionSet Definition Api.Object.MapDefinition
 definitionSelection =
     SS.succeed Definition
+        |> SS.with DefinitionApi.description
         |> SS.with DefinitionApi.width
         |> SS.with DefinitionApi.height
         |> SS.with DefinitionApi.theme
@@ -183,7 +185,8 @@ positionInput position =
 definitionInput : Definition -> Input.MapDefinitionInput
 definitionInput definition =
     Input.buildMapDefinitionInput
-        { width = definition.width
+        { description = definition.description
+        , width = definition.width
         , height = definition.height
         , theme = definition.theme
         , features = List.map terrainInput definition.features

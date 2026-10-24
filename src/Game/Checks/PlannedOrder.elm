@@ -1,7 +1,7 @@
 port module Game.Checks.PlannedOrder exposing (main)
 
-import Api.Enum.DepotKind as DepotKind
 import Api.Enum.Direction as Direction
+import Api.Enum.ResourceKind as ResourceKind
 import Api.InputObject
 import Game.PlannedOrder as PlannedOrder exposing (Action(..), PlannedOrder)
 import Game.UnitId as UnitId exposing (UnitId)
@@ -129,7 +129,7 @@ orderChecks unitId passengerId =
                     SupplyTransfer
                         { route = [ { x = 1, y = 1 }, { x = 2, y = 1 } ]
                         , destination = { x = 2, y = 1 }
-                        , handling = PlannedOrder.PickingUpGroundFreight DepotKind.Fuel
+                        , handling = PlannedOrder.PickingUpGroundFreight ResourceKind.Fuel
                         , passengers = []
                         }
                 }
@@ -170,7 +170,7 @@ orderChecks unitId passengerId =
             )
         , expect "ground pickup serializes its resource without requesting depot loads"
             (pickupInput.pickupGroundFreight
-                == Present DepotKind.Fuel
+                == Present ResourceKind.Fuel
                 && pickupInput.loadCrates
                 == Present 0
                 && pickupInput.crateUnloads

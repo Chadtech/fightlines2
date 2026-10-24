@@ -582,7 +582,7 @@ fn observed_frames(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scenario::DepotKind;
+    use crate::scenario::{BuildingKind, ResourceKind};
     use crate::supplies::CargoStock;
     use crate::test_support::{FixtureValue, TestResult};
     use crate::turns::{TurnEvent, TurnEventKind};
@@ -601,12 +601,23 @@ mod tests {
     }
 
     #[test]
-    fn depot_destruction_is_discovered_and_remembered_without_leaking_hidden_frames()
+    fn building_destruction_is_discovered_and_remembered_without_leaking_hidden_frames()
     -> TestResult<()> {
+        for kind in [
+            BuildingKind::Supply,
+            BuildingKind::Fuel,
+            BuildingKind::Fortress,
+        ] {
+            check_building_destruction_memory(kind)?;
+        }
+        Ok(())
+    }
+
+    fn check_building_destruction_memory(kind: BuildingKind) -> TestResult<()> {
         let mut board = scenario(UnitKind::Infantry, "............")?;
         let position = Coordinate::new(7, 0);
         board.depots = vec![Depot {
-            kind: DepotKind::Supply,
+            kind,
             position,
             stock: crate::supplies::ResourceStock::depot(),
             stock_visible: true,
@@ -676,7 +687,7 @@ mod tests {
 
     #[test]
     fn freight_memory_refreshes_only_in_sight_for_each_player() -> TestResult<()> {
-        for kind in [DepotKind::Supply, DepotKind::Fuel] {
+        for kind in [ResourceKind::Supply, ResourceKind::Fuel] {
             let mut board = scenario(UnitKind::Truck, "........")?;
             let origin = Coordinate::new(0, 0);
             let unseen = Coordinate::new(7, 0);
@@ -752,7 +763,7 @@ mod tests {
             // A newly observed replacement carries its new kind and stock.
             board.supply_crates.push(GroundSupplyCrate {
                 position: origin,
-                stock: CargoStock::new(DepotKind::Fuel, 40),
+                stock: CargoStock::new(ResourceKind::Fuel, 40),
             });
             resolve(&mut observation, &board, vec![frame(&board)]);
             assert_eq!(observation.supply_crates, board.supply_crates);
@@ -863,7 +874,8 @@ mod tests {
         let unit_count = board.units.len();
         for unit in &mut board.units {
             if unit.kind() == UnitKind::Truck {
-                unit.supply_cargo.push(CargoStock::new(DepotKind::Fuel, 64));
+                unit.supply_cargo
+                    .push(CargoStock::new(ResourceKind::Fuel, 64));
             }
         }
         for unit in &mut board.units {

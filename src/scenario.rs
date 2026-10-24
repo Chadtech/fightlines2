@@ -353,15 +353,33 @@ impl Unit {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
-/// A neutral resource building, separate from terrain and units.
-pub enum DepotKind {
+/// Resource identity for ground freight, truck cargo, and replenishment.
+pub enum ResourceKind {
     Supply,
     Fuel,
 }
 
+/// Neutral buildings share damage, fog memory, and sabotage rules.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
+pub enum BuildingKind {
+    Supply,
+    Fuel,
+    Fortress,
+}
+
+impl BuildingKind {
+    pub fn resource_kind(self) -> Option<ResourceKind> {
+        match self {
+            Self::Supply => Some(ResourceKind::Supply),
+            Self::Fuel => Some(ResourceKind::Fuel),
+            Self::Fortress => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Depot {
-    pub(crate) kind: DepotKind,
+    pub(crate) kind: BuildingKind,
     pub(crate) position: Coordinate,
     pub(crate) stock: ResourceStock,
     /// Fog projection gate: known depot positions remain visible, but unseen stock is withheld.
@@ -378,10 +396,28 @@ pub struct DepotHp {
 }
 
 impl Depot {
+    pub fn new(kind: BuildingKind, position: Coordinate) -> Self {
+        let stock = match kind.resource_kind() {
+            Some(_) => ResourceStock::depot(),
+            None => ResourceStock {
+                current: 0,
+                maximum: 0,
+            },
+        };
+        Self {
+            kind,
+            position,
+            stock,
+            stock_visible: true,
+            damage: 0,
+        }
+    }
+
     pub fn hit_points(&self) -> DepotHp {
         let maximum = match self.kind {
-            DepotKind::Fuel => 1,
-            DepotKind::Supply => 3,
+            BuildingKind::Fuel => 1,
+            BuildingKind::Supply => 3,
+            BuildingKind::Fortress => 8,
         };
         DepotHp {
             current: (maximum - self.damage).max(0),
@@ -671,13 +707,7 @@ impl Scenario {
         let depots = definition
             .depots
             .iter()
-            .map(|starting| Depot {
-                kind: starting.kind,
-                position: starting.position,
-                stock: ResourceStock::depot(),
-                stock_visible: true,
-                damage: 0,
-            })
+            .map(|starting| Depot::new(starting.kind, starting.position))
             .collect();
         Ok(Self {
             map,
@@ -772,51 +802,12 @@ impl Scenario {
         }
     }
 
+    #[cfg(test)]
     pub fn el_alamein() -> Result<Self, MapError> {
         MapDefinition::parse(include_str!("../maps/el-alamein.json"))?.scenario()
     }
 
-    pub fn blood_gulch() -> Result<Self, MapError> {
-        MapDefinition::parse(include_str!("../maps/blood-gulch.json"))?.scenario()
-    }
-
-    pub fn arabia() -> Result<Self, MapError> {
-        MapDefinition::parse(include_str!("../maps/arabia.json"))?.scenario()
-    }
-
-    /// Snowy horseshoe: a long open loop, wooded shortcut, and two deep rear depots.
-    pub fn sidewinder() -> Result<Self, MapError> {
-        MapDefinition::parse(include_str!("../maps/sidewinder.json"))?.scenario()
-    }
-
-    /// Two large supplied clearings separated by thick forest and a single narrow passage.
-    pub fn black_forest() -> Result<Self, MapError> {
-        MapDefinition::parse(include_str!("../maps/black-forest.json"))?.scenario()
-    }
-
-    /// Compact mirrored skirmish with wooded flanks and a shared central supply depot.
-    pub fn crossroads() -> Result<Self, MapError> {
-        MapDefinition::parse(include_str!("../maps/crossroads.json"))?.scenario()
-    }
-
-    /// Mixed arms on three open approaches divided by wooded ridges.
-    pub fn ridgeway() -> Result<Self, MapError> {
-        MapDefinition::parse(include_str!("../maps/ridgeway.json"))?.scenario()
-    }
-
-    /// Three land crossings over a broad river, with a supplied central island.
-    pub fn three_crossings() -> Result<Self, MapError> {
-        MapDefinition::parse(include_str!("../maps/three-crossings.json"))?.scenario()
-    }
-
-    pub fn lake_of_pennsylvania() -> Result<Self, MapError> {
-        MapDefinition::parse(include_str!("../maps/lake-of-pennsylvania.json"))?.scenario()
-    }
-
-    pub fn convoy_country() -> Result<Self, MapError> {
-        MapDefinition::parse(include_str!("../maps/convoy-country.json"))?.scenario()
-    }
-
+    #[cfg(test)]
     pub fn supply_point() -> Result<Self, MapError> {
         MapDefinition::parse(include_str!("../maps/supply-point.json"))?.scenario()
     }
@@ -862,7 +853,8 @@ mod tests {
                             .fixture()?
                             .clone();
                         unit.move_to(path[0]);
-                        unit.supply_cargo = vec![CargoStock::new(DepotKind::Supply, 256); freight];
+                        unit.supply_cargo =
+                            vec![CargoStock::new(ResourceKind::Supply, 256); freight];
                         let slots = (passengers + freight) as i32;
                         let (ordinary, road_cost) = match kind {
                             UnitKind::Tank => (7, 5),
@@ -969,7 +961,6 @@ mod tests {
             crate::map_type::MapType::SupplyPoint,
             crate::map_type::MapType::ElAlamein,
             crate::map_type::MapType::BloodGulch,
-            crate::map_type::MapType::Arabia,
             crate::map_type::MapType::Sidewinder,
             crate::map_type::MapType::BlackForest,
             crate::map_type::MapType::Crossroads,
@@ -977,6 +968,9 @@ mod tests {
             crate::map_type::MapType::ThreeCrossings,
             crate::map_type::MapType::LakeOfPennsylvania,
             crate::map_type::MapType::ConvoyCountry,
+            crate::map_type::MapType::Tobruk,
+            crate::map_type::MapType::BastionPass,
+            crate::map_type::MapType::WinterFront,
         ] {
             let scenario = map_type.scenario().fixture()?;
             let original_visibility =
@@ -1305,13 +1299,13 @@ impl Depot {
     fn hp(&self) -> DepotHp {
         self.hit_points()
     }
-    fn kind(&self) -> DepotKind {
+    fn kind(&self) -> BuildingKind {
         self.kind
     }
     fn position(&self) -> Coordinate {
         self.position
     }
     fn stock(&self) -> Option<&ResourceStock> {
-        self.stock_visible.then_some(&self.stock)
+        (self.kind.resource_kind().is_some() && self.stock_visible).then_some(&self.stock)
     }
 }

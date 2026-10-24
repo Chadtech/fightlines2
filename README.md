@@ -98,8 +98,11 @@ Switching back to **human** reopens the second slot before starting; a joined
 human cannot be replaced.
 
 For a human opponent, share the invite link with another player, who enters a name and chooses
-**Join lobby**. The host selects a map, which immediately saves and shares the selection with
-the other player, then chooses **Start game**.
+**Join lobby**. The host chooses **choose map** to open a separate library screen.
+Each map has a thumbnail; selecting one shows a larger preview, dimensions, theme,
+and description. Choose **use this map** to save the selection and return to the
+lobby, where the other player sees the updated map. **back to lobby** and browser
+back discard the preview. The host then chooses **Start game**.
 Joined browsers navigate to the game page within about two seconds. The initial
 scenario requires exactly two players; a third player cannot join.
 
@@ -115,7 +118,15 @@ The initial map type is **supply point**. Joined players see the selected map;
 only the host can change it before starting. The game retains that selection.
 The lobby loads its ordered map options from the backend; the editor lists the
 maps returned in its catalog.
-The scenario is a 17 x 17 plain map with mirrored starting forces, 60 forest tiles, and 42 hill tiles,
+
+**Tobruk** adapts Battlefield 1942's asymmetric desert assault to a 29 × 21 board.
+Player 1 (red) attacks from the southwest with five tanks; player 2 (blue)
+defends six garrisoned fortresses in two staggered lines before the eastern harbor.
+Broken ridges separate the approaches, with a southern road for flanking and
+supply caches behind the defensive positions. It uses the normal elimination
+victory rules. The layout and forces remain editable in the map editor.
+
+The default supply point scenario is a 17 x 17 plain map with mirrored starting forces, 60 forest tiles, and 42 hill tiles,
 three neutral supply depots (one near each starting area and one at the exact center), and three infantry,
 one tank, two field guns, and two trucks per player. Player 1 has red units;
 player 2 has blue units. Either participant can control either starting army.
@@ -277,10 +288,11 @@ for movement and spend no movement supplies. Movement reserves the turn's upkeep
 supplies. Infantry need at least 13 supplies for a plain or beach tile or 17 for hills, forest, or mountains; field guns need at least 28. Tank movement needs enough fuel but no additional supplies beyond upkeep.
 Units below these thresholds can still hold.
 Units die immediately when supplies reach zero after turn upkeep. A dead truck
-also loses its passengers. During playback, a skull and crossbones appears for 0.6 seconds, blinks away
-for 0.2 seconds, then returns for 0.6 seconds before dead units vanish; reduced-motion mode shows a steady marker.
-Other sprites and interface animations pause during death feedback, and later
-movement resumes after the death marker clears.
+also loses its passengers. During playback, the unit vanishes beneath the combat
+theater's illustrated explosion: its sprite disappears at 50ms and the blast
+clears at 100ms. Reduced-motion mode briefly shows a steady impact and removes
+the sprite without fading. Other sprites and interface animations pause during
+death feedback; movement resumes after the existing casualty pause.
 
 Depots start with 1024 finite supplies. Ground supply crates hold up to 256.
 At the end of each turn, after movement, transport, and combat, depots and ground
@@ -348,11 +360,17 @@ list with the chosen order and **revoke order**. Revoking returns to the command
 Escape clears selection without removing saved orders. Orders remain editable
 until the turn is submitted.
 
-The compact bottom-left control strip sits flush with the screen edges, with
-the turn number above **submit turn**, every player’s name and status in the
-middle in an inset panel, and pan/zoom/reset controls alongside. Names and statuses
-occupy equal-width columns; statuses say **planning** or **submitted plan**. Pan arrows form a directional pad beside stacked zoom
-and reset controls. Controls wrap on narrower screens. The submit button
+The centered top header contains a small FightLines logo between the raised
+**menu** button and an inset turn number. The inspector stays hidden until an
+object is selected, then opens over the right edge at full height. Closing it
+or pressing Escape clears selection without shifting the map sideways.
+The compact bottom-left control strip keeps a large **submit turn** button,
+plain rows of player names and statuses, and 26-pixel pan/zoom/reset controls.
+The roster can accommodate four rows; current games still have two players.
+Statuses say **planning** or **submitted plan**, and long names truncate with
+their full text available on hover. Controls wrap on narrower screens.
+The header and controls reserve their actual height above and below the map.
+The submit button
 pulses gold when every unit has an order. An inset activity track stays
 beneath submit at all times, empty while idle, with a solid gray bar while waiting
 for the other player. It sweeps smoothly left to right, fully exiting the
@@ -433,7 +451,7 @@ naval movement and landings are not implemented yet.
 New games on an editor-enabled server read those files immediately; existing
 games keep their initial board. Choose **play in new tab** to create a normal
 lobby and test the saved map. Rebuild the server to embed edits in production.
-The editor edits all eleven built-in map choices.
+The editor edits every map in the server catalog.
 
 The page is absent and the `maps` and `saveMap` operations on `/graphql` are
 disabled unless the server starts with `--map-editor`. Editor requests require
@@ -501,10 +519,10 @@ leave the button to restore the card. Your saved pan and zoom return when
 playback finishes. Concealed enemies
 remain absent from the battlefield and do not influence this camera framing.
 Reciprocal shots share one display; overlapping ambushes show successive health losses, carrying remaining health into the next pair;
-after each lethal pair, the card closes for its casualties’ skull pause, then
-those units disappear before the next theater opens. Reciprocal casualties share
-that pause. After all pairs, playback shows quick firing flashes and small target
-explosions and updated health before movement resumes. There are no connecting
+after each lethal pair, the card closes and its casualties vanish in quick
+explosions before the next theater opens. Reciprocal casualties share the existing
+pause. After all pairs, playback shows small target explosions and updated health
+before movement resumes. Attackers have no firing flash. There are no connecting
 shot lines or floating damage numbers. Reduced-motion mode uses steady highlights and impact marks.
 Hidden participants never appear in the panels.
 Destroyed units are removed before the next planning turn;
@@ -520,12 +538,16 @@ available to inspect, and no further turns can be submitted. Digging in remains 
 ## Maps
 
 The lobby host can choose **supply point**, **el alamein**, **blood gulch**,
-**arabia**, **sidewinder**, **black forest**, **crossroads**, **ridgeway**,
-**three crossings**, **lake of pennsylvania**, or **convoy country**. Each map has its own starting
+**sidewinder**, **black forest**, **crossroads**, **ridgeway**,
+**three crossings**, **lake of pennsylvania**, **convoy country**, **bastion pass**,
+or **winter front**. Each map has its own starting
 force, with full starting resources.
-El Alamein, Blood Gulch, and Arabia are 25 x 21 tiles; Sidewinder is 33 x 29,
+Each `maps/*.json` definition includes a `description` shown with its preview in
+the map library. The editor API preserves this text when saving battlefield edits.
+El Alamein and Blood Gulch are 25 x 21 tiles; Sidewinder is 33 x 29,
 Black Forest is 33 x 25, Crossroads is 11 x 9, Ridgeway is 15 x 13,
-Three Crossings is 21 x 17, Lake of Pennsylvania is 17 x 17, and Convoy Country is 25 x 19.
+Three Crossings is 21 x 17, Lake of Pennsylvania is 17 x 17, Convoy Country is 25 x 19,
+and Bastion Pass is 25 x 21. Winter Front uses the maximum 64 x 64 board.
 Counts below are per player:
 
 | Map | Infantry | Tanks | Field guns | Trucks | Total |
@@ -533,7 +555,6 @@ Counts below are per player:
 | Supply Point | 3 | 1 | 2 | 2 | 8 |
 | El Alamein | 5 | 6 | 2 | 4 | 17 |
 | Blood Gulch | 6 | 1 | 1 | 2 | 10 |
-| Arabia | 3 | 1 | 2 | 0 | 6 |
 | Sidewinder | 6 | 2 | 2 | 2 | 12 |
 | Black Forest | 10 | 1 | 6 | 2 | 19 |
 | Crossroads | 2 | 1 | 0 | 1 | 4 |
@@ -541,15 +562,34 @@ Counts below are per player:
 | Three Crossings | 3 | 2 | 1 | 2 | 8 |
 | Lake of Pennsylvania | 1 | 0 | 0 | 0 | 1 |
 | Convoy Country | 3 | 2 | 1 | 2 | 8 |
+| Bastion Pass | 5 | 2 | 2 | 2 | 11 |
+| Winter Front | 64 | 24 | 16 | 24 | 128 |
 
 Opposing formations face toward the battlefield. El Alamein staggers the eastern
 base three tiles south of the western base; other maps mirror their formations.
 El Alamein spreads tanks in two columns across the northern and southern
 approaches, screened by infantry with guns and trucks behind them. Blood Gulch
 places infantry on the forward flanks, a tank on the central approach, and its
-gun and trucks near the base. Arabia puts a tank at the tip of a compact formation,
-three infantry across its front, and two guns behind them. Depot squares stay clear.
+gun and trucks near the base. Depot squares stay clear.
 
+- **Winter Front**: a vast snowy battlefield with the maximum 256 starting units,
+  organized into four combined-arms groups per side. Four broad causeways cross
+  a winding river; alpine lakes have both sandy beaches and rocky cliff banks.
+  Snowy plains, forests, hills, and mountain passes surround a connected road
+  network containing all eleven road shapes. Mirrored supply lines include
+  32 supply depots, 16 fuel depots, and 16 fortresses across the whole map.
+  Infantry start in eight forward bastions; eight more strongpoints guard the
+  crossings. Trucks support long supply runs, fuel deliveries, and troop transport.
+  The layout and forces remain freely editable in the map editor.
+- **Bastion Pass**: a mirrored green mountain pass built around seven fortresses.
+  Each side starts with infantry occupying two rear bastions; three empty
+  strongpoints sit on the northern, central, and southern road approaches.
+  Wooded flanks and infantry-only mountain routes offer ways around the guns.
+  Two field guns and two tanks per side support assaults, while infantry can
+  occupy a fortress for protection or spend a later turn sabotaging it.
+  Fortresses supply no resources: four rear supply depots, two rear fuel depots,
+  and two contested forward supply caches make deliveries and interdiction useful.
+  Fortress squares use plain ground, allowing their infantry occupants to dig in.
 - **Convoy Country**: a mirrored green battlefield built around fuel-efficient,
   exposed roads and concealed woodland approaches. A direct east–west highway,
   two road loops, and a central connecting road offer flexible convoy routes.
@@ -597,11 +637,6 @@ three infantry across its front, and two guns behind them. Depot squares stay cl
   Forest patches along the walls provide concealed hiding spots. Two additional
   neutral depots sit on the northern and southern flanks of the middle field,
   roughly where the original map's teleporter exits are, for four depots total.
-- **Arabia**: a fixed, irregular scattering of small tree and hill clusters
-  across mostly open desert-themed ground. Each player starts in an open clearing
-  with a nearby neutral depot and full provisions. Its layout is fixed
-  across games; terrain is not generated randomly at game start.
-
 - **Sidewinder**: a snowy horseshoe inspired by Halo, with a depot at the dead
   end of each two-tile-wide northern base corridor. The depot corridors sit beside a
   short, clear-ground shortcut that bends through the central woods, with trees
@@ -620,7 +655,7 @@ three infantry across its front, and two guns behind them. Depot squares stay cl
 
 Map themes (green forest, desert, and snow) change the appearance of ground,
 hills, and forests without changing terrain types, movement costs, or sight.
-Arabia and El Alamein use the desert theme; Supply Point and Blood Gulch use
+El Alamein uses the desert theme; Supply Point and Blood Gulch use
 green forest, as does Black Forest. Sidewinder uses dedicated textured snow ground
 and snowy hill artwork, with brightened, desaturated forests. Ridges use the
 existing traversable hill rules. Supply depots provide finite provision stocks for automatic
@@ -647,9 +682,19 @@ Ordinary `make run` keeps the normal lobby workflow.
 
 ```sh
 make sprites # Optional: re-export sprites using locally retained source artwork
-make build   # Generate the API client and build the frontend and backend
+make build   # Generate the API client and build the production frontend and backend
 make check   # Check formatting, lint, test, and compile
 ```
+
+`make build` defaults to `PRODUCTION=true` for hosting. `make dev`, `make editor`,
+and `make logs` use `PRODUCTION=false`; standalone `make frontend` and `make run`
+also default to non-production. Override a command explicitly with
+`PRODUCTION=true` or `PRODUCTION=false` when needed.
+The generated `public/build-config.js` passes a required `isProduction` Boolean
+through JavaScript startup flags into `Shared.Model`. Production frontends treat
+`/map-editor`, `/logged-games`, and individual archive replay URLs as missing
+pages, without requesting their data. Live-game turn playback remains available.
+Rebuild with `make frontend` to restore the development views.
 
 Builds use the committed runtime sprites and desert SVG in `public/assets/`. Source artwork,
 experiments and older exports are kept locally and ignored by Git. `make sprites`
@@ -709,8 +754,8 @@ unit stays highlighted while the rest of the map and controls darken. The dialog
 identifies the attack type and responsible player's unit, supply exhaustion, or a
 lost carrier. A destroyed truck and its lost passengers share one dialog and
 one **continue** action; unrelated losses have separate dialogs. The adjacent
-**skip this dialog** checkbox remembers your preference and preserves the brief
-timed skull feedback while skipping future dialogs.
+**skip this dialog** checkbox remembers your preference and preserves the quick
+explosion and sprite disappearance while skipping future dialogs.
 
 Fuel depots are available for manual map placement and start with 1024 fuel.
 They refill vehicles on their square or one cardinally adjacent square up to
@@ -747,14 +792,22 @@ layouts are unchanged; place mountains with `^` in a scenario's ASCII sketch.
 
 ### Indirect fire
 
-Depots can be destroyed by indirect fire or infantry sabotage. Fuel depots have
-1 HP; supply depots have 3 HP. Every shell removes one HP, independently of the
+Depots and fortresses can be destroyed by indirect fire or infantry sabotage.
+Fuel depots have 1 HP, supply depots 3 HP, and fortresses 8 HP.
+Every shell removes one HP, independently of the
 normal damage to a unit occupying that tile. Ordinary direct
 combat damages only units. Ground supply crates and fuel drums are unaffected.
 
-Infantry already standing on a surviving depot can choose **sabotage**, spending
+Fortresses protect any unit occupying their square, reducing incoming direct
+and indirect damage by 75%, rounded with a minimum of 1 HP per hit. The bonus
+stacks with terrain and entrenchment, applies to either player, and stops when
+the fortress is destroyed. Adjacent units receive no bonus. Fortresses provide
+no supplies, fuel, or loadable freight. Place them with the **fortress** brush in
+the map editor's **buildings** group; depots use that group too.
+
+Infantry already standing on a surviving depot or fortress can choose **sabotage**, spending
 the whole turn and normal supply upkeep without moving or firing. If they survive
-combat, they destroy the depot and its stock before loading or replenishment.
+combat, they destroy the building and any stock before loading or replenishment.
 Infantry cannot sabotage during a dismount. Destruction has no blast damage;
 tanks cannot sabotage. Destroyed depots remain passable and inspectable, with no
 refilling or freight loading. Fog retains the last observed depot condition.

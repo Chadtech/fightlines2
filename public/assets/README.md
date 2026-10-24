@@ -34,7 +34,7 @@ directory is available. A fresh clone does not include that directory.
   without a brightness filter. Built-in imagegen produced the master and exact
   prompt in `artwork/terrain/illustrated/snow-v1/`; the terrain exporter copies it.
 - `terrain-desert.svg`: editable sandy floor used under every desert-themed cell,
-  including Arabia and El Alamein.
+  including El Alamein.
 - `terrain-hills-illustrated-v7.png`, `terrain-hills-snow-illustrated-v7.png`, and
   `terrain-hills-desert-illustrated-v7.png`: transparent green, snow, and desert hill
   overlays, generated with built-in imagegen on October 14, 2026. Each fills its
@@ -76,6 +76,29 @@ directory is available. A fresh clone does not include that directory.
   `artwork/terrain/illustrated/coast-v2/`. The terrain exporter copies all five.
 - `supply-depot-illustrated-v1.png`: neutral concrete building with a rounded
   barrel-vault roof, in a transparent 256px square cell with a 232px footprint.
+- `destroyed-depot-illustrated-v1.png`: shared wreckage for destroyed supply and
+  fuel depots: a dark blast crater ringed by shattered concrete and twisted steel,
+  with no recognizable original building. Built-in imagegen matched the depots'
+  elevated front view and painted anime style. The revised wreckage follows four
+  broken sides and corners of a square foundation instead of an oval rim.
+  Exported in a transparent 256px square cell with 232px bounds, anchored to the
+  bottom so its front edge rests on the intact depots' foundation line. Map,
+  inspector, and depot strike scenes use the same sprite. The local master and
+  exact edit prompt are `artwork/buildings/illustrated/destroyed-depot-v2.png`
+  and `destroyed-depot-v2-prompt.txt`; the v1 runtime filename remains stable.
+- `fortress-illustrated-v2.png`: neutral reinforced-concrete fortress with thick
+  solid sloping walls and an open roof fighting deck, protected by angular
+  concrete battlements with open-topped firing gaps. Built-in imagegen
+  matched the depots' slightly elevated front view and painted anime style.
+  Used on the battlefield, in inspection and combat, and by the editor in a transparent 256px square cell
+  with artwork fitted within 232px bounds. The local master and exact prompt are
+  `artwork/buildings/illustrated/fortress-front-v2.png` and
+  `fortress-front-v2-prompt.txt`. The earlier export with enclosed firing slits is
+  archived locally at
+  `artwork/buildings/illustrated/retired/fortress-illustrated-v1.png`, alongside
+  the ignored v1 master and prompt in the parent directory. These comparison
+  files stay out of Git and the public assets. The building exporter exports
+  the v2 master; only v2 is used in gameplay.
 - `supply-crate-illustrated-v1.png`: three closed wooden military supply boxes,
   two on the ground and one of equal size on top, almost directly seen from the
   side with shallow visible tops. The stack fills a nearly square silhouette.
@@ -99,7 +122,8 @@ October 12, 2026. Its construction uses ordinary planks and wooden braces,
 with small nail heads as the only metal.
 Its local master and exact prompt are in `artwork/supplies/illustrated/`.
 `node tools/build-building-sprites.cjs` (also included in `make sprites`)
-exports both the depot and crate, preserving transparency and aspect ratio.
+exports intact depots, shared destroyed-depot wreckage, and freight, preserving
+transparency and aspect ratio.
 
 ## Illustrated command experiment
 
@@ -124,8 +148,9 @@ and open center are transparent.
 ## Illustrated death marker
 
 `death-skull-illustrated-v1.png` is a transparent 256px cell containing a detailed
-1980s anime-style skull and crossbones. Turn playback flashes it three times
-over an exhausted unit before removal. Built-in imagegen produced the local
+1980s anime-style skull and crossbones retained as legacy artwork. Map casualties
+now reuse the six `combat-impact-side-anime-v2` explosion frames, with the sprite
+vanishing beneath the blast. Built-in imagegen produced the local skull
 master and prompt in `artwork/effects/illustrated/`. Run
 `node tools/build-effect-sprites.cjs` (also included in `make sprites`) to export it.
 

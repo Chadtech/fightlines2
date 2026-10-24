@@ -22,8 +22,8 @@ module Game.PlannedOrder exposing
     , unloads
     )
 
-import Api.Enum.DepotKind exposing (DepotKind)
 import Api.Enum.Direction exposing (Direction)
+import Api.Enum.ResourceKind exposing (ResourceKind)
 import Api.InputObject
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Movement as Movement
@@ -74,7 +74,7 @@ type alias SupplyPlan =
 type SupplyHandling
     = LoadingCrates Int
     | UnloadingCrates (List CrateUnload)
-    | PickingUpGroundFreight DepotKind
+    | PickingUpGroundFreight ResourceKind
 
 
 type alias CrateUnload =

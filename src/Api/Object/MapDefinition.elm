@@ -20,6 +20,11 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+description : SelectionSet String Api.Object.MapDefinition
+description =
+    Object.selectionForField "String" "description" [] Decode.string
+
+
 width : SelectionSet Int Api.Object.MapDefinition
 width =
     Object.selectionForField "Int" "width" [] Decode.int

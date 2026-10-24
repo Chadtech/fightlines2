@@ -2,9 +2,9 @@
 -- https://github.com/dillonkearns/elm-graphql
 
 
-module Api.Object.DepotImpact exposing (..)
+module Api.Object.BuildingImpact exposing (..)
 
-import Api.Enum.DepotKind
+import Api.Enum.BuildingKind
 import Api.InputObject
 import Api.Interface
 import Api.Object
@@ -20,20 +20,20 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
-kind : SelectionSet Api.Enum.DepotKind.DepotKind Api.Object.DepotImpact
+kind : SelectionSet Api.Enum.BuildingKind.BuildingKind Api.Object.BuildingImpact
 kind =
-    Object.selectionForField "Enum.DepotKind.DepotKind" "kind" [] Api.Enum.DepotKind.decoder
+    Object.selectionForField "Enum.BuildingKind.BuildingKind" "kind" [] Api.Enum.BuildingKind.decoder
 
 
 before :
     SelectionSet decodesTo Api.Object.DepotHp
-    -> SelectionSet decodesTo Api.Object.DepotImpact
+    -> SelectionSet decodesTo Api.Object.BuildingImpact
 before object____ =
     Object.selectionForCompositeField "before" [] object____ Basics.identity
 
 
 after :
     SelectionSet decodesTo Api.Object.DepotHp
-    -> SelectionSet decodesTo Api.Object.DepotImpact
+    -> SelectionSet decodesTo Api.Object.BuildingImpact
 after object____ =
     Object.selectionForCompositeField "after" [] object____ Basics.identity

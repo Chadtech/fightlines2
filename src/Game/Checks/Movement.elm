@@ -1,11 +1,11 @@
 port module Game.Checks.Movement exposing (main)
 
 import Api.Enum.AmbushShape as AmbushShape
-import Api.Enum.DepotKind as DepotKind
 import Api.Enum.Direction as Direction
 import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as MapTheme
 import Api.Enum.PlayerNumber as PlayerNumber
+import Api.Enum.ResourceKind as ResourceKind
 import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.Terrain as TerrainApi
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
@@ -821,7 +821,20 @@ fuelChecks rules =
                 loadedTruck : Unit.Unit
                 loadedTruck =
                     truck
-                        |> Unit.setResources (Maybe.map (\resources -> { resources | supplyCargo = [ { kind = DepotKind.Supply, current = 256, maximum = 256 } ] }) truck.resources)
+                        |> Unit.setResources
+                            (Maybe.map
+                                (\resources ->
+                                    { resources
+                                        | supplyCargo =
+                                            [ { kind = ResourceKind.Supply
+                                              , current = 256
+                                              , maximum = 256
+                                              }
+                                            ]
+                                    }
+                                )
+                                truck.resources
+                            )
 
                 fullCargo : List Unit.Unit
                 fullCargo =

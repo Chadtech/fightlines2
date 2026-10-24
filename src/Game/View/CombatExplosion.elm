@@ -1,5 +1,7 @@
 module Game.View.CombatExplosion exposing
-    ( durationMs
+    ( casualtyAnimationAttribute
+    , durationMs
+    , mapToSvg
     , preload
     , spriteDisappearsAt
     , spriteOpacity
@@ -8,8 +10,10 @@ module Game.View.CombatExplosion exposing
     )
 
 import Api.Enum.SpriteFacing as SpriteFacing exposing (SpriteFacing)
+import Css
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
+import Style as S
 import Svg.Styled as Svg exposing (Svg)
 import Svg.Styled.Attributes as SA
 import View.Aria as Aria
@@ -20,12 +24,17 @@ durationMs =
     100
 
 
+casualtyAnimationAttribute : String
+casualtyAnimationAttribute =
+    "data-casualty-animation"
+
+
 framePath : Int -> String
 framePath index =
     "/assets/combat-impact-side-anime-v2/frame-" ++ String.fromInt index ++ ".png"
 
 
-{-| Fetch every frame during the anticipation beat, before the fast strike.
+{-| Fetch every frame at startup for both map casualties and theater strikes.
 -}
 preload : Html msg
 preload =
@@ -62,6 +71,12 @@ styles =
     H.node "style"
         []
         [ H.text """
+            @keyframes fightlines-map-explosion {
+                0% { opacity: 1;
+                }
+                100% { opacity: 0;
+                }
+            }
             .fightlines-theater-explosion-still { display: none; }
             @media (prefers-reduced-motion: reduce) {
                 .fightlines-theater-explosion-frame { display: none; }
@@ -79,7 +94,8 @@ toSvg facing elapsed =
     let
         frame : Int
         frame =
-            [ 10, 20, 50, 80, 90 ]
+            frameStarts
+                |> List.drop 1
                 |> List.filter (\startsAt -> elapsed >= startsAt)
                 |> List.length
 
@@ -125,3 +141,71 @@ toSvg facing elapsed =
         [ image "fightlines-theater-explosion-frame" frame
         , image "fightlines-theater-explosion-still" 3
         ]
+
+
+frameStarts : List Float
+frameStarts =
+    [ 0, 10, 20, 50, 80, 90 ]
+
+
+{-| Play once when a map casualty appears, even while a loss dialog holds the
+playback clock. Reuse the theater frames and timing, then leave the tile empty.
+-}
+mapToSvg : SpriteFacing -> Svg msg
+mapToSvg facing =
+    let
+        frame : Float -> Float -> Svg msg
+        frame startsAt endsAt =
+            Svg.g
+                [ A.attribute casualtyAnimationAttribute ""
+                , A.css
+                    [ S.opacity 0
+                    , S.animation
+                        ("fightlines-map-explosion "
+                            ++ String.fromFloat (endsAt - startsAt)
+                            ++ "ms steps(1, end) "
+                            ++ String.fromFloat startsAt
+                            ++ "ms forwards"
+                        )
+                    , S.reducedMotion
+                        [ S.displayNone
+                        ]
+                    ]
+                ]
+                [ toSvg facing startsAt
+                ]
+
+        frameEnds : List Float
+        frameEnds =
+            List.drop 1 frameStarts ++ [ durationMs ]
+
+        frames : List (Svg msg)
+        frames =
+            List.map2 frame frameStarts frameEnds
+
+        still : Svg msg
+        still =
+            Svg.g
+                [ A.attribute casualtyAnimationAttribute ""
+                , A.css
+                    [ S.displayNone
+                    , S.opacity 0
+                    , S.animation ("fightlines-map-explosion " ++ String.fromFloat durationMs ++ "ms steps(1, end) forwards")
+                    , S.reducedMotion
+                        [ Css.display Css.inline
+                        ]
+                    ]
+                ]
+                [ toSvg facing 50
+                ]
+
+        content : List (Svg msg)
+        content =
+            frames ++ [ still ]
+    in
+    Svg.g
+        [ SA.transform "translate(8 8) scale(0.75)"
+        , SA.pointerEvents "none"
+        , Aria.hidden True
+        ]
+        content

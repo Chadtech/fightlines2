@@ -12,13 +12,13 @@ module Page.GamePage exposing
     , view
     )
 
-import Api.Enum.DepotKind as DepotKind
 import Api.Enum.Direction as DirectionEnum exposing (Direction)
 import Api.Enum.MapType
     exposing
         ( MapType
         )
 import Api.Enum.PlayerNumber as PlayerNumberEnum exposing (PlayerNumber)
+import Api.Enum.ResourceKind as ResourceKind
 import Api.Enum.TurnEventKind as TurnEventKind
 import Api.Enum.UnitKind as UnitKind
 import Api.Mutation
@@ -43,7 +43,11 @@ import Game.Camera as Camera
 import Game.CombatRules as CombatRules
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.CurrentTurn as CurrentTurn
-import Game.Depot as Depot exposing (Depot)
+import Game.Depot as Depot
+    exposing
+        ( Depot
+        , LoadingSource
+        )
 import Game.DestinationFeedback exposing (DestinationFeedback(..))
 import Game.Direction as Direction
 import Game.DirectionPlanning as DirectionPlanning
@@ -76,7 +80,11 @@ import Game.Unit as Unit exposing (Unit)
 import Game.UnitCommand as UnitCommand
 import Game.UnitId as UnitId exposing (UnitId)
 import Game.UnloadCargo as UnloadCargo exposing (UnloadCargo)
-import Game.UnloadPlanning exposing (UnloadChoice, UnloadPlanning)
+import Game.UnloadPlanning
+    exposing
+        ( UnloadChoice
+        , UnloadPlanning
+        )
 import Game.UnloadingTruck as UnloadingTruck
 import Game.View.Battlefield as Battlefield
     exposing
@@ -88,6 +96,7 @@ import Game.View.Cargo as Cargo
 import Game.View.CombatTheater as CombatTheater
 import Game.View.CommandGuide as CommandGuide
 import Game.View.CommandMenu as CommandMenu
+import Game.View.GameMenu as GameMenu
 import Game.View.MovementRoute as MovementRoute
 import Game.View.RotationChoices as RotationChoices
 import Game.View.TurnControls as TurnControls
@@ -152,6 +161,7 @@ type alias Model =
     , navigation : BattlefieldNavigation.Model
     , battlefieldViewport : Maybe Camera.Viewport
     , frame : AnimationFrame.Frame
+    , menuOpen : Bool
     }
 
 
@@ -173,12 +183,13 @@ type alias RotationSelection =
 
 type Msg
     = BattlefieldSizeReceived (Result Browser.Dom.Error Browser.Dom.Element)
-    | GameControlsSizeReceived Browser.Dom.Element (Result Browser.Dom.Error Browser.Dom.Element)
+    | InspectorSizeReceived Browser.Dom.Element (Result Browser.Dom.Error Browser.Dom.Element)
     | CameraReturnFinished
     | WindowResized
     | BattlefieldMsg Battlefield.Msg
     | BattlefieldNavigationMsg BattlefieldNavigation.Msg
     | CommandMenuMsg CommandMenu.Msg
+    | GameMenuMsg GameMenu.Msg
     | PreviousCommandPressed
     | NextCommandPressed
     | CommandFocusCompleted
@@ -206,6 +217,7 @@ type Msg
     | UnloadChoicesConfirmed
     | UnloadSkipped
     | InspectClicked
+    | InspectorCloseClicked
     | EscapePressed
     | DialogDismissed
     | SubmissionConfirmed
@@ -269,6 +281,7 @@ init shared flags =
             , navigation = BattlefieldNavigation.init
             , battlefieldViewport = Nothing
             , frame = AnimationFrame.first
+            , menuOpen = False
             }
 
         eff : Eff Msg
@@ -483,7 +496,12 @@ isChoosingUnload model =
 
 dismissDialog : Model -> Model
 dismissDialog model =
-    if showTurnIntroduction model then
+    if model.menuOpen then
+        { model
+            | menuOpen = False
+        }
+
+    else if showTurnIntroduction model then
         { model | currentTurn = CurrentTurn.acknowledgeIntroduction model.currentTurn }
 
     else
@@ -509,6 +527,11 @@ commandGuideOpen model =
 hasDialog : Model -> Bool
 hasDialog model =
     dialog model /= Nothing
+
+
+canOpenMenu : Model -> Bool
+canOpenMenu model =
+    not (hasDialog model) && (playback model == Nothing)
 
 
 plannedOrders : Model -> List PlannedOrder
@@ -541,7 +564,10 @@ logNewLossError model =
 
 activeDialogHtmlId : Model -> Maybe String
 activeDialogHtmlId model =
-    if commandGuideOpen model then
+    if model.menuOpen then
+        Just GameMenu.dialogHtmlId
+
+    else if commandGuideOpen model then
         Just CommandGuide.dialogHtmlId
 
     else if showTurnIntroduction model then
@@ -1407,6 +1433,34 @@ playbackCamera model =
             Nothing
 
 
+turnActivity : Model -> TurnControls.Activity
+turnActivity model =
+    let
+        submitLocked : Bool
+        submitLocked =
+            planningLocked model || isChoosingUnload model || choosingDirection model
+    in
+    case model.currentTurn.phase of
+        TurnLifecycle.Submitting _ ->
+            TurnControls.Submitting
+
+        TurnLifecycle.WaitingForOpponent _ ->
+            TurnControls.Waiting
+
+        TurnLifecycle.Playing _ ->
+            TurnControls.Playing
+
+        TurnLifecycle.Planning _ ->
+            if submitLocked then
+                TurnControls.Locked
+
+            else if readyToSubmit model then
+                TurnControls.Ready
+
+            else
+                TurnControls.Planning
+
+
 superUpdate : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 superUpdate lobbyId msg model =
     case update lobbyId msg model of
@@ -1416,13 +1470,33 @@ superUpdate lobbyId msg model =
                 playbackStarted =
                     (playback model == Nothing) && (playback updated /= Nothing)
 
+                layoutChanged : Bool
+                layoutChanged =
+                    ((currentSelection model == Nothing) /= (currentSelection updated == Nothing))
+                        || (turnActivity model /= turnActivity updated)
+                        || (model.currentTurn.error /= updated.currentTurn.error)
+                        || (model.currentTurn.outcome /= updated.currentTurn.outcome)
+                        || (model.players /= updated.players)
+
+                viewportChanged : Bool
+                viewportChanged =
+                    playbackStarted || layoutChanged
+
+                withMenu : Model
+                withMenu =
+                    { updated
+                        | menuOpen = updated.menuOpen && not playbackStarted && not (showTurnIntroduction updated)
+                    }
+
                 next : Model
                 next =
-                    if playbackStarted then
-                        { updated | battlefieldViewport = Nothing }
+                    if viewportChanged then
+                        { withMenu
+                            | battlefieldViewport = Nothing
+                        }
 
                     else
-                        updatePlaybackCamera updated
+                        updatePlaybackCamera withMenu
 
                 playbackFinished : Bool
                 playbackFinished =
@@ -1430,11 +1504,16 @@ superUpdate lobbyId msg model =
 
                 cameraEffect : Eff Msg
                 cameraEffect =
-                    if playbackStarted then
-                        Battlefield.measure BattlefieldSizeReceived
-
-                    else if playbackFinished then
+                    if playbackFinished then
                         E.after PlaybackPresentation.cameraPanDurationMs CameraReturnFinished
+
+                    else
+                        E.none
+
+                viewportEffect : Eff Msg
+                viewportEffect =
+                    if viewportChanged then
+                        Battlefield.measure BattlefieldSizeReceived
 
                     else
                         E.none
@@ -1449,7 +1528,7 @@ superUpdate lobbyId msg model =
 
                 combinedEffect : Eff Msg
                 combinedEffect =
-                    E.batch [ effect, cameraEffect ]
+                    E.batch [ effect, cameraEffect, viewportEffect ]
 
                 previousDialogHtmlId : Maybe String
                 previousDialogHtmlId =
@@ -1479,6 +1558,29 @@ superUpdate lobbyId msg model =
 update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 update lobbyId msg model =
     case msg of
+        GameMenuMsg GameMenu.OpenClicked ->
+            if canOpenMenu model then
+                E.withOut
+                    { model
+                        | menuOpen = True
+                    }
+
+            else
+                E.withOut model
+
+        GameMenuMsg GameMenu.CloseClicked ->
+            ( { model
+                | menuOpen = False
+              }
+            , E.focus
+                { htmlId = GameMenu.buttonHtmlId
+                }
+                (GameMenuMsg GameMenu.FocusReturned)
+            )
+
+        GameMenuMsg GameMenu.FocusReturned ->
+            E.withOut model
+
         BattlefieldMsg boardMsg ->
             E.withOut (handleBattlefieldMsg boardMsg model)
 
@@ -1489,24 +1591,22 @@ update lobbyId msg model =
         BattlefieldSizeReceived result ->
             case result of
                 Ok battlefield ->
-                    ( model, E.measure TurnControls.htmlId (GameControlsSizeReceived battlefield) )
+                    ( model, E.measure BattlefieldWorkspace.inspectorHtmlId (InspectorSizeReceived battlefield) )
 
                 Err error ->
                     { model | shared = Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared }
                         |> E.withOut
 
-        GameControlsSizeReceived battlefield result ->
+        InspectorSizeReceived battlefield result ->
             case result of
-                Ok controls ->
+                Ok inspector ->
                     let
                         viewport : Camera.Viewport
                         viewport =
-                            { size = { x = battlefield.element.width, y = battlefield.element.height }
-                            , bottomInset =
-                                clamp 0
-                                    battlefield.element.height
-                                    (battlefield.element.y + battlefield.element.height - controls.element.y)
-                            }
+                            BattlefieldWorkspace.viewport
+                                { battlefield = battlefield
+                                , inspector = inspector
+                                }
                     in
                     { model | battlefieldViewport = Just viewport }
                         |> E.withOut
@@ -1721,6 +1821,11 @@ update lobbyId msg model =
                 |> E.withOut
 
         InspectClicked ->
+            model
+                |> clearSelection
+                |> E.withOut
+
+        InspectorCloseClicked ->
             model
                 |> clearSelection
                 |> E.withOut
@@ -2314,9 +2419,17 @@ view model =
         , combat = combatEncounter model /= Nothing
         , dying = deathInFocus model
         , battlefield = battlefieldView model
+        , header =
+            GameMenu.panel
+                { enabled = canOpenMenu model
+                , turnNumber = displayedTurnNumber model
+                }
+                |> H.map GameMenuMsg
+                |> Just
         , controls = turnPanel model
         , inspection = selectionView model
         , hasSelection = currentSelection model /= Nothing
+        , onCloseInspection = InspectorCloseClicked
         , combatOverlay = PlaybackPresentation.combatOverlay model.automaticallyCloseCombatTheater model.map (playback model) |> H.map CombatTheaterMsg
         }
 
@@ -2798,8 +2911,14 @@ ambushCosts unit order =
             indirectFireDetails unit
 
         PlannedOrder.Sabotage _ ->
-            [ H.p [] [ H.text "destroys the depot after combat if this infantry survives; no movement or firing" ]
-            , H.p [] [ H.text "supplies: normal upkeep" ]
+            [ H.p
+                []
+                [ H.text "destroys the depot or fortress after combat if this infantry survives; no movement or firing"
+                ]
+            , H.p
+                []
+                [ H.text "supplies: normal upkeep"
+                ]
             ]
 
         PlannedOrder.DigIn _ ->
@@ -3076,8 +3195,8 @@ groundPickupDialog freight =
         ]
 
 
-depotLoadingDialog : Model -> UnitId -> Depot -> Dialog Msg
-depotLoadingDialog model id depot =
+depotLoadingDialog : Model -> UnitId -> LoadingSource -> Dialog Msg
+depotLoadingDialog model id source =
     let
         truck : Maybe Unit
         truck =
@@ -3091,24 +3210,24 @@ depotLoadingDialog model id depot =
 
         cargoLabel : String
         cargoLabel =
-            Supply.cargoPlural depot.kind
+            Supply.cargoPlural source.kind
 
         question : String
         question =
-            case depot.kind of
-                DepotKind.Supply ->
+            case source.kind of
+                ResourceKind.Supply ->
                     "how many crates would you like to load?"
 
-                DepotKind.Fuel ->
+                ResourceKind.Fuel ->
                     "how many drum loads should this truck take?"
 
         stock : Maybe Supply.Stock
         stock =
-            depot.stock
+            source.stock
 
         resourceLabel : String
         resourceLabel =
-            Depot.resourceLabel depot
+            Supply.resourceLabel source.kind
 
         stockLabel : String
         stockLabel =
@@ -3150,15 +3269,15 @@ depotLoadingDialog model id depot =
 
                 cargoName : String
                 cargoName =
-                    case depot.kind of
-                        DepotKind.Supply ->
+                    case source.kind of
+                        ResourceKind.Supply ->
                             if count == 1 then
                                 "supply crate"
 
                             else
                                 "supply crates"
 
-                        DepotKind.Fuel ->
+                        ResourceKind.Fuel ->
                             if count == 1 then
                                 "fuel drum"
 
@@ -3334,16 +3453,26 @@ depotLoadingDialog model id depot =
         content
 
 
-{-| Dialogs derive from the command guide, turn introduction, playback loss, or the active planning workflow.
+{-| Dialogs derive from the game menu, command guide, turn introduction, playback loss, or the active planning workflow.
 -}
 dialog : Model -> Maybe (Dialog Msg)
 dialog model =
     MaybeUtil.lazyFirst
-        [ commandGuideDialog model
+        [ gameMenuDialog model
+        , commandGuideDialog model
         , introductionDialog model
         , lossDialog model
         , planningDialog model
         ]
+
+
+gameMenuDialog : Model -> () -> Maybe (Dialog Msg)
+gameMenuDialog model _ =
+    if model.menuOpen then
+        Just (Dialog.map GameMenuMsg GameMenu.dialog)
+
+    else
+        Nothing
 
 
 commandGuideDialog : Model -> () -> Maybe (Dialog Msg)
@@ -3425,8 +3554,8 @@ planningDialog model _ =
         TurnLifecycle.Planning (OrderPlanning.ChoosingPassengers choice) ->
             Just (unloadChecklist model choice)
 
-        TurnLifecycle.Planning (OrderPlanning.ChoosingCrates id depot _) ->
-            Just (depotLoadingDialog model id depot)
+        TurnLifecycle.Planning (OrderPlanning.ChoosingCrates id source _) ->
+            Just (depotLoadingDialog model id source)
 
         TurnLifecycle.Planning (OrderPlanning.ChoosingGroundFreight _ freight _) ->
             Just (groundPickupDialog freight)
@@ -3525,66 +3654,30 @@ turnPanel model =
                     else
                         "planning"
 
-        submitLocked : Bool
-        submitLocked =
-            planningLocked model || isChoosingUnload model || choosingDirection model
-
-        activity : TurnControls.Activity
-        activity =
-            case model.currentTurn.phase of
-                TurnLifecycle.Submitting _ ->
-                    TurnControls.Submitting
-
-                TurnLifecycle.WaitingForOpponent _ ->
-                    TurnControls.Waiting
-
-                TurnLifecycle.Playing _ ->
-                    TurnControls.Playing
-
-                TurnLifecycle.Planning _ ->
-                    if submitLocked then
-                        TurnControls.Locked
-
-                    else if readyToSubmit model then
-                        TurnControls.Ready
-
-                    else
-                        TurnControls.Planning
-
-        displayedTurnNumber : Int
-        displayedTurnNumber =
-            if model.currentTurn.outcome /= Nothing then
-                model.currentTurn.number - 1
-
-            else
-                model.currentTurn.number
-
         zoomPercent : Int
         zoomPercent =
             round ((BattlefieldNavigation.camera model.navigation).zoom * 100)
     in
     TurnControls.panel
-        [ Lazy.lazy3 turnSubmit displayedTurnNumber activity submitLabel
+        [ Lazy.lazy2 turnSubmit (turnActivity model) submitLabel
         , Lazy.lazy5 turnFeedback model.players ownStatus opponentStatus model.currentTurn.outcome model.currentTurn.error
-        , TurnControls.navigation (Lazy.lazy viewControls zoomPercent)
+        , Lazy.lazy viewControls zoomPercent
         ]
 
 
-turnSubmit : Int -> TurnControls.Activity -> String -> Html Msg
-turnSubmit number activity submitLabel =
-    H.div
-        [ A.css
-            [ S.col
-            , S.g2
-            , S.shrink0
-            ]
-        ]
-        [ H.p
-            []
-            [ H.text ("turn " ++ String.fromInt number) ]
-        , TurnControls.submit activity submitLabel
-            |> H.map TurnControlsMsg
-        ]
+displayedTurnNumber : Model -> Int
+displayedTurnNumber model =
+    if model.currentTurn.outcome /= Nothing then
+        model.currentTurn.number - 1
+
+    else
+        model.currentTurn.number
+
+
+turnSubmit : TurnControls.Activity -> String -> Html Msg
+turnSubmit activity submitLabel =
+    TurnControls.submit activity submitLabel
+        |> H.map TurnControlsMsg
 
 
 turnFeedback :
@@ -3644,7 +3737,6 @@ turnFeedback players ownStatus opponentStatus outcome error =
                     , A.css
                         [ S.col
                         , S.listNone
-                        , S.g2
                         ]
                     ]
                     (List.map playerRow players)

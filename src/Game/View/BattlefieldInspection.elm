@@ -1,10 +1,10 @@
 module Game.View.BattlefieldInspection exposing
     ( cargo
-    , footer
     , toHtml
     )
 
 import Api.Enum.PlayerNumber exposing (PlayerNumber)
+import Css
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Depot as Depot exposing (Depot)
 import Game.Map as Map exposing (Map)
@@ -138,38 +138,14 @@ inspectionRow label contents =
             [ S.col
             , S.g3
             , S.shrink0
-            , S.borderB
-            , S.borderGray2
-            , S.pb2
+            , Css.pseudoClass "not(:last-child)"
+                [ S.borderB
+                , S.borderGray2
+                , S.pb2
+                ]
             ]
         ]
         contents
-
-
-footer : Bool -> Html msg
-footer hasSelection =
-    if hasSelection then
-        H.text ""
-
-    else
-        H.footer
-            [ A.css
-                [ S.col
-                , S.g3
-                , S.shrink0
-                ]
-            ]
-            [ H.p
-                [ A.css
-                    [ S.borderT
-                    , S.borderGray2
-                    , S.pt3
-                    , S.textGray4
-                    ]
-                ]
-                [ H.text "select a unit, depot or tile to inspect"
-                ]
-            ]
 
 
 terrainView : Contents msg -> Html msg

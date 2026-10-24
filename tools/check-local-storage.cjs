@@ -7,7 +7,7 @@ const vm = require('node:vm');
 
 const key = 'fightlines.localStorage';
 const source = readFileSync('public/main.js', 'utf8');
-function boot(initial, { readFails = false, writeFails = false, randomSample = 0.5 } = {}) {
+function boot(initial, { readFails = false, writeFails = false, randomSample = 0.5, build } = {}) {
   const stored = new Map(initial === undefined ? [] : [[key, initial]]);
   const messages = [];
   const warnings = [];
@@ -25,6 +25,7 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
     },
   };
   vm.runInNewContext(source, {
+    FIGHTLINES_BUILD: build,
     Elm: { Main: { init(options) {
       flags = options.flags;
       return { ports: {
@@ -42,6 +43,10 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
 }
 
 async function checkInterop() {
+  for (const isProduction of [false, true]) {
+    assert.equal(boot(undefined, { build: { isProduction } }).flags.isProduction, isProduction);
+  }
+  assert.equal(boot(undefined).flags.isProduction, undefined);
   assert.equal(boot(undefined).flags.seed, 1073741824);
   assert.equal(boot(undefined, { randomSample: 0 }).flags.seed, 0);
   assert.equal(boot(undefined, { randomSample: 1 - Number.EPSILON }).flags.seed, 2147483647);

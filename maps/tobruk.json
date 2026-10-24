@@ -1,0 +1,2472 @@
+{
+  "description": "inspired by battlefield 1942's tobruk. player 1 (red) attacks from the southwest with more armor; player 2 (blue) holds six occupied fortresses in two staggered defensive lines before the eastern harbor. broken desert ridges divide the approaches, while a southern bypass offers a flank. supply caches sustain the lines and trucks keep the assault moving. uses normal elimination victory rules.",
+  "width": 29,
+  "height": 21,
+  "theme": "Desert",
+  "features": [
+    {
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 3,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 5,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 7,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 12,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 15,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 16,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 17,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 18,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 20,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 21,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 22,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 23,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 25,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 26,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 27,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 0
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 1
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 1
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 1
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 3,
+        "y": 1
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 1
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 5,
+        "y": 1
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 1
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 7,
+        "y": 1
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 1
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 1
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 1
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 1
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 12,
+        "y": 1
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 1
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 1
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 15,
+        "y": 1
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 16,
+        "y": 1
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 17,
+        "y": 1
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 18,
+        "y": 1
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 1
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 20,
+        "y": 1
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 21,
+        "y": 1
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 22,
+        "y": 1
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 23,
+        "y": 1
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 1
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 25,
+        "y": 1
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 26,
+        "y": 1
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 27,
+        "y": 1
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 1
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 2
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 2
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 2
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 3,
+        "y": 2
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 2
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 5,
+        "y": 2
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 2
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 7,
+        "y": 2
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 2
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 2
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 18,
+        "y": 2
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 25,
+        "y": 2
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 26,
+        "y": 2
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 27,
+        "y": 2
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 2
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 3
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 3
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 3
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 3,
+        "y": 3
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 3
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 5,
+        "y": 3
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 3
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 3
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 18,
+        "y": 3
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 3
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 20,
+        "y": 3
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 27,
+        "y": 3
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 3
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 4
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 4
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 4
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 3,
+        "y": 4
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 4
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 4
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 4
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 18,
+        "y": 4
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 4
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 20,
+        "y": 4
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 21,
+        "y": 4
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 22,
+        "y": 4
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 23,
+        "y": 4
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 4
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 4
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 5
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 5
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 5
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 7,
+        "y": 5
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 5
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 5
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 5
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 5
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 12,
+        "y": 5
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 5
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 20,
+        "y": 5
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 21,
+        "y": 5
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 22,
+        "y": 5
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 23,
+        "y": 5
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 5
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 25,
+        "y": 5
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 26,
+        "y": 5
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 6
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 5,
+        "y": 6
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 6
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 7,
+        "y": 6
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 6
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 6
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 12,
+        "y": 6
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 6
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 15,
+        "y": 6
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 16,
+        "y": 6
+      },
+      "terrain": "RoadSouthEast"
+    },
+    {
+      "position": {
+        "x": 17,
+        "y": 6
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 18,
+        "y": 6
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 6
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 25,
+        "y": 6
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 26,
+        "y": 6
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 27,
+        "y": 6
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 7
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 3,
+        "y": 7
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 5,
+        "y": 7
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 12,
+        "y": 7
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 7
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 7
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 16,
+        "y": 7
+      },
+      "terrain": "RoadNorthSouth"
+    },
+    {
+      "position": {
+        "x": 26,
+        "y": 7
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 27,
+        "y": 7
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 7
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 8
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 8
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 8
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 16,
+        "y": 8
+      },
+      "terrain": "RoadNorthSouth"
+    },
+    {
+      "position": {
+        "x": 18,
+        "y": 8
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 27,
+        "y": 8
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 8
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 9
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 9
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 9
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 15,
+        "y": 9
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 16,
+        "y": 9
+      },
+      "terrain": "RoadNorthSouth"
+    },
+    {
+      "position": {
+        "x": 18,
+        "y": 9
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 9
+      },
+      "terrain": "RoadSouthEast"
+    },
+    {
+      "position": {
+        "x": 25,
+        "y": 9
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 26,
+        "y": 9
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 27,
+        "y": 9
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 9
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 10
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 10
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 3,
+        "y": 10
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 10
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 16,
+        "y": 10
+      },
+      "terrain": "RoadNorthEastSouth"
+    },
+    {
+      "position": {
+        "x": 17,
+        "y": 10
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 18,
+        "y": 10
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 10
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 20,
+        "y": 10
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 21,
+        "y": 10
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 22,
+        "y": 10
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 23,
+        "y": 10
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 10
+      },
+      "terrain": "RoadNorthWest"
+    },
+    {
+      "position": {
+        "x": 27,
+        "y": 10
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 10
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 11
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 11
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 3,
+        "y": 11
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 16,
+        "y": 11
+      },
+      "terrain": "RoadNorthSouth"
+    },
+    {
+      "position": {
+        "x": 18,
+        "y": 11
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 27,
+        "y": 11
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 11
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 12
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 12
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 12
+      },
+      "terrain": "RoadSouthEast"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 12
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 12,
+        "y": 12
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 12
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 12
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 15,
+        "y": 12
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 16,
+        "y": 12
+      },
+      "terrain": "RoadNorthWest"
+    },
+    {
+      "position": {
+        "x": 18,
+        "y": 12
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 12
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 13
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 13
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 13
+      },
+      "terrain": "RoadNorthSouth"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 13
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 20,
+        "y": 13
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 26,
+        "y": 13
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 27,
+        "y": 13
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 13
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 14
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 14
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 14
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 7,
+        "y": 14
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 8,
+        "y": 14
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 9,
+        "y": 14
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 14
+      },
+      "terrain": "RoadNorthSouthWest"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 14
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 15,
+        "y": 14
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 14
+      },
+      "terrain": "RoadNorthSouth"
+    },
+    {
+      "position": {
+        "x": 20,
+        "y": 14
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 23,
+        "y": 14
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 14
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 25,
+        "y": 14
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 26,
+        "y": 14
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 27,
+        "y": 14
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 14
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 15
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 15
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 15
+      },
+      "terrain": "RoadNorthSouth"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 15
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 15
+      },
+      "terrain": "RoadNorthSouth"
+    },
+    {
+      "position": {
+        "x": 20,
+        "y": 15
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 21,
+        "y": 15
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 22,
+        "y": 15
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 23,
+        "y": 15
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 15
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 25,
+        "y": 15
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 26,
+        "y": 15
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 27,
+        "y": 15
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 15
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 16
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 16
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 16
+      },
+      "terrain": "RoadNorthSouth"
+    },
+    {
+      "position": {
+        "x": 18,
+        "y": 16
+      },
+      "terrain": "RoadSouthEast"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 16
+      },
+      "terrain": "RoadNorthWest"
+    },
+    {
+      "position": {
+        "x": 20,
+        "y": 16
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 21,
+        "y": 16
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 22,
+        "y": 16
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 23,
+        "y": 16
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 16
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 25,
+        "y": 16
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 26,
+        "y": 16
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 27,
+        "y": 16
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 16
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 17
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 2,
+        "y": 17
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 17
+      },
+      "terrain": "RoadNorthSouth"
+    },
+    {
+      "position": {
+        "x": 12,
+        "y": 17
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 17
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 15,
+        "y": 17
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 18,
+        "y": 17
+      },
+      "terrain": "RoadNorthSouth"
+    },
+    {
+      "position": {
+        "x": 20,
+        "y": 17
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 21,
+        "y": 17
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 22,
+        "y": 17
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 23,
+        "y": 17
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 17
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 25,
+        "y": 17
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 26,
+        "y": 17
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 27,
+        "y": 17
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 17
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 10,
+        "y": 18
+      },
+      "terrain": "RoadNorthEast"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 18
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 12,
+        "y": 18
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 18
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 18
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 15,
+        "y": 18
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 16,
+        "y": 18
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 17,
+        "y": 18
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 18,
+        "y": 18
+      },
+      "terrain": "RoadNorthWest"
+    },
+    {
+      "position": {
+        "x": 21,
+        "y": 18
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 22,
+        "y": 18
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 23,
+        "y": 18
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 18
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 25,
+        "y": 18
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 26,
+        "y": 18
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 27,
+        "y": 18
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 18
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 11,
+        "y": 19
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 12,
+        "y": 19
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 19
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 19
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 19
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 25,
+        "y": 19
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 26,
+        "y": 19
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 27,
+        "y": 19
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 19
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 13,
+        "y": 20
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 20
+      },
+      "terrain": "Mountains"
+    },
+    {
+      "position": {
+        "x": 15,
+        "y": 20
+      },
+      "terrain": "Hills"
+    },
+    {
+      "position": {
+        "x": 26,
+        "y": 20
+      },
+      "terrain": "Beach"
+    },
+    {
+      "position": {
+        "x": 27,
+        "y": 20
+      },
+      "terrain": "Water"
+    },
+    {
+      "position": {
+        "x": 28,
+        "y": 20
+      },
+      "terrain": "Water"
+    }
+  ],
+  "depots": [
+    {
+      "position": {
+        "x": 14,
+        "y": 8
+      },
+      "kind": "Fortress"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 12
+      },
+      "kind": "Fortress"
+    },
+    {
+      "position": {
+        "x": 14,
+        "y": 16
+      },
+      "kind": "Fortress"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 6
+      },
+      "kind": "Fortress"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 10
+      },
+      "kind": "Fortress"
+    },
+    {
+      "position": {
+        "x": 19,
+        "y": 14
+      },
+      "kind": "Fortress"
+    },
+    {
+      "position": {
+        "x": 5,
+        "y": 14
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 15,
+        "y": 8
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 15,
+        "y": 16
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 20,
+        "y": 6
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 20,
+        "y": 14
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 24,
+        "y": 9
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 6,
+        "y": 15
+      },
+      "kind": "Fuel"
+    },
+    {
+      "position": {
+        "x": 25,
+        "y": 8
+      },
+      "kind": "Fuel"
+    }
+  ],
+  "units": [
+    {
+      "id": 1,
+      "position": {
+        "x": 9,
+        "y": 10
+      },
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
+    },
+    {
+      "id": 2,
+      "position": {
+        "x": 9,
+        "y": 12
+      },
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
+    },
+    {
+      "id": 3,
+      "position": {
+        "x": 9,
+        "y": 14
+      },
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
+    },
+    {
+      "id": 4,
+      "position": {
+        "x": 9,
+        "y": 16
+      },
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
+    },
+    {
+      "id": 5,
+      "position": {
+        "x": 9,
+        "y": 18
+      },
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
+    },
+    {
+      "id": 6,
+      "position": {
+        "x": 7,
+        "y": 18
+      },
+      "playerNumber": "Player1",
+      "kind": "Infantry",
+      "direction": "East"
+    },
+    {
+      "id": 7,
+      "position": {
+        "x": 8,
+        "y": 11
+      },
+      "playerNumber": "Player1",
+      "kind": "Tank",
+      "direction": "East"
+    },
+    {
+      "id": 8,
+      "position": {
+        "x": 8,
+        "y": 14
+      },
+      "playerNumber": "Player1",
+      "kind": "Tank",
+      "direction": "East"
+    },
+    {
+      "id": 9,
+      "position": {
+        "x": 8,
+        "y": 17
+      },
+      "playerNumber": "Player1",
+      "kind": "Tank",
+      "direction": "East"
+    },
+    {
+      "id": 10,
+      "position": {
+        "x": 6,
+        "y": 12
+      },
+      "playerNumber": "Player1",
+      "kind": "Tank",
+      "direction": "East"
+    },
+    {
+      "id": 11,
+      "position": {
+        "x": 6,
+        "y": 16
+      },
+      "playerNumber": "Player1",
+      "kind": "Tank",
+      "direction": "East"
+    },
+    {
+      "id": 12,
+      "position": {
+        "x": 5,
+        "y": 12
+      },
+      "playerNumber": "Player1",
+      "kind": "FieldGun",
+      "direction": "East"
+    },
+    {
+      "id": 13,
+      "position": {
+        "x": 5,
+        "y": 16
+      },
+      "playerNumber": "Player1",
+      "kind": "FieldGun",
+      "direction": "East"
+    },
+    {
+      "id": 14,
+      "position": {
+        "x": 4,
+        "y": 13
+      },
+      "playerNumber": "Player1",
+      "kind": "Truck",
+      "direction": null
+    },
+    {
+      "id": 15,
+      "position": {
+        "x": 4,
+        "y": 15
+      },
+      "playerNumber": "Player1",
+      "kind": "Truck",
+      "direction": null
+    },
+    {
+      "id": 16,
+      "position": {
+        "x": 4,
+        "y": 17
+      },
+      "playerNumber": "Player1",
+      "kind": "Truck",
+      "direction": null
+    },
+    {
+      "id": 17,
+      "position": {
+        "x": 14,
+        "y": 8
+      },
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
+    },
+    {
+      "id": 18,
+      "position": {
+        "x": 14,
+        "y": 12
+      },
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
+    },
+    {
+      "id": 19,
+      "position": {
+        "x": 14,
+        "y": 16
+      },
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
+    },
+    {
+      "id": 20,
+      "position": {
+        "x": 19,
+        "y": 10
+      },
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
+    },
+    {
+      "id": 21,
+      "position": {
+        "x": 23,
+        "y": 8
+      },
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
+    },
+    {
+      "id": 22,
+      "position": {
+        "x": 24,
+        "y": 11
+      },
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
+    },
+    {
+      "id": 23,
+      "position": {
+        "x": 19,
+        "y": 6
+      },
+      "playerNumber": "Player2",
+      "kind": "FieldGun",
+      "direction": "West"
+    },
+    {
+      "id": 24,
+      "position": {
+        "x": 19,
+        "y": 14
+      },
+      "playerNumber": "Player2",
+      "kind": "FieldGun",
+      "direction": "West"
+    },
+    {
+      "id": 25,
+      "position": {
+        "x": 24,
+        "y": 7
+      },
+      "playerNumber": "Player2",
+      "kind": "FieldGun",
+      "direction": "West"
+    },
+    {
+      "id": 26,
+      "position": {
+        "x": 22,
+        "y": 9
+      },
+      "playerNumber": "Player2",
+      "kind": "Tank",
+      "direction": "West"
+    },
+    {
+      "id": 27,
+      "position": {
+        "x": 25,
+        "y": 9
+      },
+      "playerNumber": "Player2",
+      "kind": "Tank",
+      "direction": "West"
+    },
+    {
+      "id": 28,
+      "position": {
+        "x": 25,
+        "y": 7
+      },
+      "playerNumber": "Player2",
+      "kind": "Truck",
+      "direction": null
+    },
+    {
+      "id": 29,
+      "position": {
+        "x": 26,
+        "y": 10
+      },
+      "playerNumber": "Player2",
+      "kind": "Truck",
+      "direction": null
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 use crate::{
     map::{Coordinate, Terrain},
     scenario::{
-        DepotHp, DepotKind, Direction, Entrenchment, HitPoints, PlayerNumber, Scenario, Unit,
+        BuildingKind, DepotHp, Direction, Entrenchment, HitPoints, PlayerNumber, Scenario, Unit,
         UnitId, UnitKind,
     },
     turns::{FacingOrder, MoveOrder, TravelMode, TurnFrame, UnitOrderKind},
@@ -276,7 +276,7 @@ fn attack_aspect(unit: &Unit, opponent: &Unit) -> AttackAspect {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IndirectImpact {
     #[serde(default)]
-    pub depot: Option<DepotImpact>,
+    pub depot: Option<BuildingImpact>,
     pub attacker: Option<IndirectFireAttacker>,
     pub player_number: PlayerNumber,
     pub destination: Coordinate,
@@ -285,7 +285,7 @@ pub struct IndirectImpact {
 
 #[graphql_object]
 impl IndirectImpact {
-    fn depot(&self) -> Option<&DepotImpact> {
+    fn depot(&self) -> Option<&BuildingImpact> {
         self.depot.as_ref()
     }
     fn attacker(&self) -> Option<&IndirectFireAttacker> {
@@ -306,8 +306,8 @@ impl IndirectImpact {
 }
 
 #[derive(Clone, Debug, GraphQLObject, Serialize, Deserialize)]
-pub struct DepotImpact {
-    pub kind: DepotKind,
+pub struct BuildingImpact {
+    pub kind: BuildingKind,
     pub before: DepotHp,
     pub after: DepotHp,
 }
@@ -521,6 +521,12 @@ impl Combat {
         } else {
             1.0
         };
+        let fortified = board.depots.iter().any(|depot| {
+            depot.kind == BuildingKind::Fortress
+                && !depot.is_destroyed()
+                && Some(depot.position) == target.board_position()
+        });
+        let fortification = if fortified { 0.25 } else { 1.0 };
         let damage = f64::from(rules(shooter.kind()).damage)
             * strength.powi(2)
             * matchup
@@ -530,6 +536,9 @@ impl Combat {
             * cover
             * ambush
             * entrenchment;
+        // Apply fortress cover to the bounded hit so even the heaviest weapon
+        // cannot bypass the bonus by exceeding the ordinary maximum damage.
+        let damage = damage.min(f64::from(target.hit_points().maximum())) * fortification;
         // Round once, after every factor. A living armed shooter still inflicts a hit.
         if shooter.is_alive() && shooter.kind() != UnitKind::Truck {
             (damage.round() as i32).clamp(1, target.hit_points().maximum())
@@ -944,7 +953,7 @@ impl Combat {
             {
                 let before = depot.hit_points();
                 depot.take_structural_hit();
-                impact.depot = Some(DepotImpact {
+                impact.depot = Some(BuildingImpact {
                     kind: depot.kind,
                     before,
                     after: depot.hit_points(),
@@ -1007,7 +1016,7 @@ mod tests {
     use crate::{
         map::{Map, Terrain},
         movement_resolution,
-        scenario::PlayerNumber,
+        scenario::{Depot, PlayerNumber},
         test_support::{FixtureValue, TestResult},
     };
 
@@ -1111,6 +1120,139 @@ mod tests {
                 assert_eq!(tank_hit.damage, 16);
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn intact_fortresses_protect_each_occupant_from_every_attack_kind() -> TestResult<()> {
+        for target_kind in [
+            UnitKind::Infantry,
+            UnitKind::Tank,
+            UnitKind::FieldGun,
+            UnitKind::Truck,
+        ] {
+            for attack in [
+                CombatKind::Ambush,
+                CombatKind::AttackMove,
+                CombatKind::IndirectFire,
+            ] {
+                let position = Coordinate::new(4, 3);
+                let (mut board, orders) = fixture(UnitKind::FieldGun, target_kind, position)?;
+                board.depots.clear();
+                let combat = Combat::prepare(&mut board, &orders);
+                let damage = |board: &Scenario| -> TestResult<i32> {
+                    Ok(combat.damage(
+                        board,
+                        board.units.first().fixture()?,
+                        board.units.get(1).fixture()?,
+                        attack,
+                    ))
+                };
+                let exposed = damage(&board)?;
+                board
+                    .depots
+                    .push(Depot::new(BuildingKind::Fortress, position));
+                assert_eq!(damage(&board)?, 4, "{target_kind:?} {attack:?}");
+                board.depots.first_mut().fixture()?.position = Coordinate::new(4, 4);
+                assert_eq!(
+                    damage(&board)?,
+                    exposed,
+                    "adjacent units receive no protection"
+                );
+                board.depots.first_mut().fixture()?.position = position;
+                board.depots.first_mut().fixture()?.sabotage();
+                assert_eq!(
+                    damage(&board)?,
+                    exposed,
+                    "destroyed fortresses provide no protection"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_fortress_protects_during_its_last_shell_hit_but_not_the_next_volley() -> TestResult<()> {
+        let position = Coordinate::new(4, 3);
+        let (mut board, mut orders) = fixture(UnitKind::FieldGun, UnitKind::Infantry, position)?;
+        board.depots = vec![Depot {
+            damage: 7,
+            ..Depot::new(BuildingKind::Fortress, position)
+        }];
+        orders.first_mut().fixture()?.facing = FacingOrder::IndirectFire(position);
+        let mut frames = Vec::new();
+        Combat::prepare(&mut board, &orders).bombard(&mut board, &mut frames);
+        assert!(board.depots.first().fixture()?.is_destroyed());
+        assert_eq!(board.units.get(1).fixture()?.hit_points().current(), 12);
+        assert_eq!(
+            frames
+                .iter()
+                .flat_map(|frame| &frame.shots)
+                .next()
+                .fixture()?
+                .damage,
+            4
+        );
+        let impact = frames
+            .iter()
+            .flat_map(|frame| &frame.indirect_impacts)
+            .next()
+            .fixture()?
+            .depot
+            .as_ref()
+            .fixture()?;
+        assert_eq!(impact.before.current, 1);
+        assert_eq!(impact.after.current, 0);
+        frames.clear();
+        Combat::prepare(&mut board, &orders).bombard(&mut board, &mut frames);
+        assert_eq!(
+            frames
+                .iter()
+                .flat_map(|frame| &frame.shots)
+                .next()
+                .fixture()?
+                .damage,
+            16
+        );
+        assert!(!board.units.get(1).fixture()?.is_alive());
+        Ok(())
+    }
+
+    #[test]
+    fn fortress_cover_stacks_with_entrenchment_and_keeps_the_minimum_hit() -> TestResult<()> {
+        let position = Coordinate::new(4, 3);
+        let (mut board, orders) = fixture(UnitKind::Infantry, UnitKind::Infantry, position)?;
+        board.depots = vec![Depot::new(BuildingKind::Fortress, position)];
+        let combat = Combat::prepare(&mut board, &orders);
+        assert_eq!(
+            combat.damage(
+                &board,
+                board.units.first().fixture()?,
+                board.units.get(1).fixture()?,
+                CombatKind::Ambush
+            ),
+            3
+        );
+        board.units.get_mut(1).fixture()?.dig_in();
+        assert_eq!(
+            combat.damage(
+                &board,
+                board.units.first().fixture()?,
+                board.units.get(1).fixture()?,
+                CombatKind::Ambush
+            ),
+            1
+        );
+        board.depots.first_mut().fixture()?.sabotage();
+        assert_eq!(
+            combat.damage(
+                &board,
+                board.units.first().fixture()?,
+                board.units.get(1).fixture()?,
+                CombatKind::Ambush
+            ),
+            2
+        );
         Ok(())
     }
 

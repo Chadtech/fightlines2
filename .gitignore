@@ -1,6 +1,7 @@
 /target/
 /elm-stuff/
 /public/elm.js
+/public/build-config.js
 /node_modules/
 /output/
 /old
@@ -29,6 +30,8 @@
 !/public/assets/home-battlefield-logistics-v1.png
 !/public/assets/misc_sheet.png
 !/public/assets/supply-depot-illustrated-v1.png
+!/public/assets/destroyed-depot-illustrated-v1.png
+!/public/assets/fortress-illustrated-v2.png
 !/public/assets/supply-crate-illustrated-v1.png
 !/public/assets/death-skull-illustrated-v1.png
 !/public/assets/attack-marker-illustrated-v1.png

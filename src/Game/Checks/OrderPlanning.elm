@@ -1,11 +1,12 @@
 port module Game.Checks.OrderPlanning exposing (main)
 
 import Api.Enum.AmbushShape as AmbushShape
-import Api.Enum.DepotKind as DepotKind exposing (DepotKind)
+import Api.Enum.BuildingKind as BuildingKind exposing (BuildingKind)
 import Api.Enum.Direction as DirectionEnum
 import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as Theme
 import Api.Enum.PlayerNumber as PlayerNumber
+import Api.Enum.ResourceKind as ResourceKind exposing (ResourceKind)
 import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.Terrain as TerrainApi
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
@@ -137,7 +138,21 @@ sabotagePlanningChecks infantryId truckId =
 
         depot : Depot
         depot =
-            { kind = DepotKind.Supply, position = { x = 1, y = 1 }, stock = Just { current = 128, maximum = 1024 }, hp = { current = 3, maximum = 3 } }
+            { kind = BuildingKind.Supply
+            , position =
+                { x = 1
+                , y = 1
+                }
+            , stock =
+                Just
+                    { current = 128
+                    , maximum = 1024
+                    }
+            , hp =
+                { current = 3
+                , maximum = 3
+                }
+            }
 
         context : BoardFixture
         context =
@@ -161,6 +176,27 @@ sabotagePlanningChecks infantryId truckId =
             , infantry |> Unit.setKind Kind.FieldGun
             , infantry |> Unit.mapResources (\resources -> { resources | supplies = Game.Unit.Supplies.setCurrent 0 resources.supplies })
             ]
+
+        fortress : Depot
+        fortress =
+            { depot
+                | kind = BuildingKind.Fortress
+                , stock = Nothing
+                , hp =
+                    { current = 8
+                    , maximum = 8
+                    }
+            }
+
+        fortressSelected : OrderPlanning.Model
+        fortressSelected =
+            OrderPlanning.selectUnit context.map context.units context.playerNumbers context.movementRules [] [ fortress ] infantryId OrderPlanning.init
+                |> fixtureValue
+
+        fortressSaved : OrderPlanning.Model
+        fortressSaved =
+            OrderPlanning.applyCommand context.map context.units context.playerNumbers context.movementRules [] [ fortress ] UnitCommand.Sabotage fortressSelected
+                |> fixtureValue
     in
     List.concat
         [ expect "sabotage is offered only to infantry already on an operational depot"
@@ -168,6 +204,26 @@ sabotagePlanningChecks infantryId truckId =
                 && not (List.member UnitCommand.Sabotage (UnitCommand.available [] infantry))
                 && not (UnitCommand.canUse context.map [ { depot | hp = { current = 0, maximum = 3 } } ] infantry UnitCommand.Sabotage)
                 && List.all (\candidate -> not (UnitCommand.canUse context.map [ depot ] candidate UnitCommand.Sabotage)) blocked
+            )
+        , expect "intact fortresses support the same exclusive sabotage order"
+            (UnitCommand.canUse context.map [ fortress ] infantry UnitCommand.Sabotage
+                && not
+                    (UnitCommand.canUse context.map
+                        [ { fortress
+                            | hp =
+                                { current = 0
+                                , maximum = 8
+                                }
+                          }
+                        ]
+                        infantry
+                        UnitCommand.Sabotage
+                    )
+                && OrderPlanning.orders fortressSaved
+                == [ { unitId = infantryId
+                     , action = PlannedOrder.Sabotage fortress.position
+                     }
+                   ]
             )
         , expect "sabotage saves a revocable stationary order and closes commands"
             (OrderPlanning.orders saved
@@ -186,7 +242,7 @@ groundPickupChecks infantryId truckId =
         truck =
             unit truckId Kind.Truck (Location.OnMap { x = 3, y = 1 })
 
-        fixture : DepotKind -> BoardFixture
+        fixture : ResourceKind -> BoardFixture
         fixture kind =
             let
                 base : BoardFixture
@@ -208,7 +264,7 @@ groundPickupChecks infantryId truckId =
                 |> IC.andThen (OrderPlanning.applyCommand context.map context.units context.playerNumbers context.movementRules context.supplyCrates context.depots UnitCommand.HoldPosition)
                 |> fixtureValue
 
-        asksFor : DepotKind -> OrderPlanning.Model -> Bool
+        asksFor : ResourceKind -> OrderPlanning.Model -> Bool
         asksFor kind state =
             case state of
                 OrderPlanning.ChoosingGroundFreight id freight _ ->
@@ -217,7 +273,7 @@ groundPickupChecks infantryId truckId =
                 _ ->
                     False
 
-        checksFor : DepotKind -> List String
+        checksFor : ResourceKind -> List String
         checksFor kind =
             let
                 context : BoardFixture
@@ -291,20 +347,20 @@ groundPickupChecks infantryId truckId =
             let
                 base : BoardFixture
                 base =
-                    fixture DepotKind.Supply
+                    fixture ResourceKind.Supply
             in
             { base | units = [ unit infantryId Kind.Infantry (Location.OnMap { x = 3, y = 1 }) ] }
     in
-    checksFor DepotKind.Supply
-        ++ checksFor DepotKind.Fuel
+    checksFor ResourceKind.Supply
+        ++ checksFor ResourceKind.Fuel
         ++ expect "infantry standing on ground freight do not get a truck pickup dialog"
-            (not (asksFor DepotKind.Supply (hold nonTruck infantryId)))
+            (not (asksFor ResourceKind.Supply (hold nonTruck infantryId)))
 
 
 cargoLoadingChecks : UnitId -> UnitId -> UnitId -> List String
 cargoLoadingChecks infantryId truckId passengerId =
     let
-        freight : DepotKind -> CargoStock
+        freight : ResourceKind -> CargoStock
         freight kind =
             { kind = kind
             , current = 32
@@ -316,7 +372,7 @@ cargoLoadingChecks infantryId truckId passengerId =
             unit truckId Kind.Truck (Location.OnMap { x = 3, y = 1 })
                 |> Unit.mapResources (\resources -> { resources | supplyCargo = cargo })
 
-        context : DepotKind -> List Unit -> BoardFixture
+        context : BuildingKind -> List Unit -> BoardFixture
         context kind units =
             let
                 fixture : BoardFixture
@@ -326,14 +382,40 @@ cargoLoadingChecks infantryId truckId passengerId =
                 maximumHp : Int
                 maximumHp =
                     case kind of
-                        DepotKind.Supply ->
+                        BuildingKind.Supply ->
                             3
 
-                        DepotKind.Fuel ->
+                        BuildingKind.Fuel ->
                             1
+
+                        BuildingKind.Fortress ->
+                            8
+
+                stock : Maybe Supply.Stock
+                stock =
+                    if kind == BuildingKind.Fortress then
+                        Nothing
+
+                    else
+                        Just
+                            { current = 256
+                            , maximum = 256
+                            }
             in
             { fixture
-                | depots = [ { kind = kind, position = { x = 3, y = 1 }, stock = Just { current = 256, maximum = 256 }, hp = { current = maximumHp, maximum = maximumHp } } ]
+                | depots =
+                    [ { kind = kind
+                      , position =
+                            { x = 3
+                            , y = 1
+                            }
+                      , stock = stock
+                      , hp =
+                            { current = maximumHp
+                            , maximum = maximumHp
+                            }
+                      }
+                    ]
             }
 
         hold : BoardFixture -> OrderPlanning.Model
@@ -352,7 +434,7 @@ cargoLoadingChecks infantryId truckId passengerId =
                 _ ->
                     False
 
-        fullTruckChecks : DepotKind -> List Unit -> List String
+        fullTruckChecks : BuildingKind -> List Unit -> List String
         fullTruckChecks kind units =
             let
                 fixture : BoardFixture
@@ -391,8 +473,8 @@ cargoLoadingChecks infantryId truckId passengerId =
 
         reservedFixture : BoardFixture
         reservedFixture =
-            context DepotKind.Supply
-                [ truck [ freight DepotKind.Fuel ]
+            context BuildingKind.Supply
+                [ truck [ freight ResourceKind.Fuel ]
                 , unit infantryId Kind.Infantry (Location.OnMap { x = 2, y = 1 })
                 ]
 
@@ -402,16 +484,22 @@ cargoLoadingChecks infantryId truckId passengerId =
 
         spareFixture : BoardFixture
         spareFixture =
-            context DepotKind.Fuel [ truck [ freight DepotKind.Supply ] ]
+            context BuildingKind.Fuel [ truck [ freight ResourceKind.Supply ] ]
 
         spare : OrderPlanning.Model
         spare =
             OrderPlanning.skipUnloading spareFixture.map spareFixture.units spareFixture.supplyCrates spareFixture.depots (hold spareFixture)
+
+        fortressFixture : BoardFixture
+        fortressFixture =
+            context BuildingKind.Fortress [ truck [] ]
     in
     List.concat
-        [ fullTruckChecks DepotKind.Supply [ truck [ freight DepotKind.Supply, freight DepotKind.Fuel ] ]
-        , fullTruckChecks DepotKind.Fuel [ truck [ freight DepotKind.Fuel ], unit infantryId Kind.Infantry (Location.Aboard truckId) ]
-        , fullTruckChecks DepotKind.Supply [ truck [], unit infantryId Kind.Infantry (Location.Aboard truckId), unit passengerId Kind.FieldGun (Location.Aboard truckId) ]
+        [ fullTruckChecks BuildingKind.Supply [ truck [ freight ResourceKind.Supply, freight ResourceKind.Fuel ] ]
+        , expect "empty trucks holding on fortresses never offer freight loading"
+            (skipsLoading (hold fortressFixture))
+        , fullTruckChecks BuildingKind.Fuel [ truck [ freight ResourceKind.Fuel ], unit infantryId Kind.Infantry (Location.Aboard truckId) ]
+        , fullTruckChecks BuildingKind.Supply [ truck [], unit infantryId Kind.Infantry (Location.Aboard truckId), unit passengerId Kind.FieldGun (Location.Aboard truckId) ]
         , expect "a passenger reserving the last berth skips depot loading and preserves both orders"
             (skipsLoading reserved
                 && List.length (OrderPlanning.orders reserved)
@@ -498,7 +586,18 @@ mutualPickupChecks infantryId truckId gunId =
         addFreight : Unit -> Unit
         addFreight candidate =
             if candidate.id == truckId then
-                Unit.mapResources (\resources -> { resources | supplyCargo = [ { kind = DepotKind.Supply, current = 64, maximum = 64 } ] }) candidate
+                Unit.mapResources
+                    (\resources ->
+                        { resources
+                            | supplyCargo =
+                                [ { kind = ResourceKind.Supply
+                                  , current = 64
+                                  , maximum = 64
+                                  }
+                                ]
+                        }
+                    )
+                    candidate
 
             else
                 candidate
@@ -1352,7 +1451,9 @@ planningChecks infantryId truckId passengerId =
         crateChoice : OrderPlanning.Model
         crateChoice =
             OrderPlanning.ChoosingCrates truckId
-                { kind = DepotKind.Supply, position = { x = 3, y = 1 }, stock = Nothing, hp = { current = 3, maximum = 3 } }
+                { kind = ResourceKind.Supply
+                , stock = Nothing
+                }
                 { orders = OrderPlanning.orders saved
                 , selection = Just (Inspecting (UnitInspection truckId))
                 }
@@ -1972,7 +2073,7 @@ planningChecks infantryId truckId passengerId =
                 addCrate resources =
                     { resources
                         | supplyCargo =
-                            [ { kind = DepotKind.Supply
+                            [ { kind = ResourceKind.Supply
                               , current = 64
                               , maximum = 64
                               }
@@ -2497,7 +2598,7 @@ planningChecks infantryId truckId passengerId =
                             (\resources ->
                                 { resources
                                     | supplyCargo =
-                                        [ { kind = DepotKind.Supply
+                                        [ { kind = ResourceKind.Supply
                                           , current = 48
                                           , maximum = 64
                                           }
@@ -2653,11 +2754,11 @@ planningChecks infantryId truckId passengerId =
                             (\resources ->
                                 { resources
                                     | supplyCargo =
-                                        [ { kind = DepotKind.Supply
+                                        [ { kind = ResourceKind.Supply
                                           , current = 48
                                           , maximum = 64
                                           }
-                                        , { kind = DepotKind.Supply
+                                        , { kind = ResourceKind.Supply
                                           , current = 16
                                           , maximum = 64
                                           }
@@ -2726,7 +2827,7 @@ planningChecks infantryId truckId passengerId =
                             , y = 2
                             }
                       , stock =
-                            { kind = DepotKind.Supply
+                            { kind = ResourceKind.Supply
                             , current = 32
                             , maximum = 64
                             }
@@ -2738,14 +2839,47 @@ planningChecks infantryId truckId passengerId =
         depotContext =
             { context
                 | depots =
-                    [ { kind = DepotKind.Supply, position = { x = 3, y = 1 }, stock = Just { current = 256, maximum = 256 }, hp = { current = 3, maximum = 3 } }
-                    , { kind = DepotKind.Supply, position = { x = 4, y = 1 }, stock = Nothing, hp = { current = 3, maximum = 3 } }
+                    [ { kind = BuildingKind.Supply
+                      , position =
+                            { x = 3
+                            , y = 1
+                            }
+                      , stock =
+                            Just
+                                { current = 256
+                                , maximum = 256
+                                }
+                      , hp =
+                            { current = 3
+                            , maximum = 3
+                            }
+                      }
+                    , { kind = BuildingKind.Supply
+                      , position =
+                            { x = 4
+                            , y = 1
+                            }
+                      , stock = Nothing
+                      , hp =
+                            { current = 3
+                            , maximum = 3
+                            }
+                      }
                     ]
             }
 
         fuelContext : BoardFixture
         fuelContext =
-            { depotContext | depots = List.map (\depot -> { depot | kind = DepotKind.Fuel }) depotContext.depots }
+            { depotContext
+                | depots =
+                    List.map
+                        (\depot ->
+                            { depot
+                                | kind = BuildingKind.Fuel
+                            }
+                        )
+                        depotContext.depots
+            }
 
         fuelMove : OrderPlanning.Model
         fuelMove =
@@ -3028,9 +3162,9 @@ planningChecks infantryId truckId passengerId =
         choosingCrates : OrderPlanning.Model -> Bool
         choosingCrates state =
             case state of
-                OrderPlanning.ChoosingCrates id depot _ ->
+                OrderPlanning.ChoosingCrates id source _ ->
                     (id == truckId)
-                        && List.member depot (depotContext.depots ++ fuelContext.depots)
+                        && List.member source (List.filterMap Depot.loadingSource (depotContext.depots ++ fuelContext.depots))
 
                 _ ->
                     False
@@ -3128,7 +3262,18 @@ planningChecks infantryId truckId passengerId =
         scarceCrateContext =
             { mixedContext
                 | map = Map.fromFeatures { width = 4, height = 2, baseTile = mixedContext.map.baseTile, theme = mixedContext.map.theme, features = [] }
-                , supplyCrates = [ { position = { x = 3, y = 0 }, stock = { kind = DepotKind.Supply, current = 64, maximum = 64 } } ]
+                , supplyCrates =
+                    [ { position =
+                            { x = 3
+                            , y = 0
+                            }
+                      , stock =
+                            { kind = ResourceKind.Supply
+                            , current = 64
+                            , maximum = 64
+                            }
+                      }
+                    ]
             }
 
         scarceCrateExits : OrderPlanning.Model

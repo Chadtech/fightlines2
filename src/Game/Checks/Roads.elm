@@ -35,7 +35,8 @@ expect label passed =
 
 definition : List Coordinate -> Definition
 definition positions =
-    { width = 3
+    { description = "road authoring fixture"
+    , width = 3
     , height = 3
     , theme = MapTheme.GreenForest
     , features = List.map (\position -> { position = position, terrain = Terrain.Road Road.NorthSouth }) positions

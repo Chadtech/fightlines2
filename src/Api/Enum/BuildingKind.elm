@@ -2,24 +2,25 @@
 -- https://github.com/dillonkearns/elm-graphql
 
 
-module Api.Enum.DepotKind exposing (..)
+module Api.Enum.BuildingKind exposing (..)
 
 import Json.Decode as Decode exposing (Decoder)
 
 
-{-| A neutral resource building, separate from terrain and units.
+{-| Neutral buildings share damage, fog memory, and sabotage rules.
 -}
-type DepotKind
+type BuildingKind
     = Supply
     | Fuel
+    | Fortress
 
 
-list : List DepotKind
+list : List BuildingKind
 list =
-    [ Supply, Fuel ]
+    [ Supply, Fuel, Fortress ]
 
 
-decoder : Decoder DepotKind
+decoder : Decoder BuildingKind
 decoder =
     Decode.string
         |> Decode.andThen
@@ -31,14 +32,17 @@ decoder =
                     "FUEL" ->
                         Decode.succeed Fuel
 
+                    "FORTRESS" ->
+                        Decode.succeed Fortress
+
                     _ ->
-                        Decode.fail ("Invalid DepotKind type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
+                        Decode.fail ("Invalid BuildingKind type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
             )
 
 
 {-| Convert from the union type representing the Enum to a string that the GraphQL server will recognize.
 -}
-toString : DepotKind -> String
+toString : BuildingKind -> String
 toString enum____ =
     case enum____ of
         Supply ->
@@ -46,6 +50,9 @@ toString enum____ =
 
         Fuel ->
             "FUEL"
+
+        Fortress ->
+            "FORTRESS"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -59,7 +66,7 @@ This is the inverse of the Enum `toString` function. So you can call `toString` 
 This can be useful for generating Strings to use for <select> menus to check which item was selected.
 
 -}
-fromString : String -> Maybe DepotKind
+fromString : String -> Maybe BuildingKind
 fromString enumString____ =
     case enumString____ of
         "SUPPLY" ->
@@ -67,6 +74,9 @@ fromString enumString____ =
 
         "FUEL" ->
             Just Fuel
+
+        "FORTRESS" ->
+            Just Fortress
 
         _ ->
             Nothing

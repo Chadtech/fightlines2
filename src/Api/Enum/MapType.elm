@@ -13,7 +13,6 @@ type MapType
     = SupplyPoint
     | ElAlamein
     | BloodGulch
-    | Arabia
     | Sidewinder
     | BlackForest
     | Crossroads
@@ -21,11 +20,14 @@ type MapType
     | ThreeCrossings
     | LakeOfPennsylvania
     | ConvoyCountry
+    | Tobruk
+    | BastionPass
+    | WinterFront
 
 
 list : List MapType
 list =
-    [ SupplyPoint, ElAlamein, BloodGulch, Arabia, Sidewinder, BlackForest, Crossroads, Ridgeway, ThreeCrossings, LakeOfPennsylvania, ConvoyCountry ]
+    [ SupplyPoint, ElAlamein, BloodGulch, Sidewinder, BlackForest, Crossroads, Ridgeway, ThreeCrossings, LakeOfPennsylvania, ConvoyCountry, Tobruk, BastionPass, WinterFront ]
 
 
 decoder : Decoder MapType
@@ -42,9 +44,6 @@ decoder =
 
                     "BLOOD_GULCH" ->
                         Decode.succeed BloodGulch
-
-                    "ARABIA" ->
-                        Decode.succeed Arabia
 
                     "SIDEWINDER" ->
                         Decode.succeed Sidewinder
@@ -67,6 +66,15 @@ decoder =
                     "CONVOY_COUNTRY" ->
                         Decode.succeed ConvoyCountry
 
+                    "TOBRUK" ->
+                        Decode.succeed Tobruk
+
+                    "BASTION_PASS" ->
+                        Decode.succeed BastionPass
+
+                    "WINTER_FRONT" ->
+                        Decode.succeed WinterFront
+
                     _ ->
                         Decode.fail ("Invalid MapType type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
             )
@@ -85,9 +93,6 @@ toString enum____ =
 
         BloodGulch ->
             "BLOOD_GULCH"
-
-        Arabia ->
-            "ARABIA"
 
         Sidewinder ->
             "SIDEWINDER"
@@ -109,6 +114,15 @@ toString enum____ =
 
         ConvoyCountry ->
             "CONVOY_COUNTRY"
+
+        Tobruk ->
+            "TOBRUK"
+
+        BastionPass ->
+            "BASTION_PASS"
+
+        WinterFront ->
+            "WINTER_FRONT"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -134,9 +148,6 @@ fromString enumString____ =
         "BLOOD_GULCH" ->
             Just BloodGulch
 
-        "ARABIA" ->
-            Just Arabia
-
         "SIDEWINDER" ->
             Just Sidewinder
 
@@ -157,6 +168,15 @@ fromString enumString____ =
 
         "CONVOY_COUNTRY" ->
             Just ConvoyCountry
+
+        "TOBRUK" ->
+            Just Tobruk
+
+        "BASTION_PASS" ->
+            Just BastionPass
+
+        "WINTER_FRONT" ->
+            Just WinterFront
 
         _ ->
             Nothing

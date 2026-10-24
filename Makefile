@@ -1,5 +1,8 @@
 .PHONY: build frontend generate-api sprites check run dev editor logs
 
+PRODUCTION ?= false
+
+build: PRODUCTION = true
 build: frontend
 	cargo build --locked
 
@@ -12,6 +15,7 @@ sprites:
 	npm run build-sprites
 
 frontend: generate-api
+	node tools/build-config.cjs $(PRODUCTION)
 	elm make src/Main.elm --output=public/elm.js
 
 check:
@@ -32,6 +36,8 @@ check:
 	node tools/check-home.cjs
 	$(MAKE) frontend
 	elm make src/Style.elm src/View/*.elm src/Game/View/*.elm --output=/dev/null
+
+dev editor logs: PRODUCTION = false
 
 run: frontend
 	cargo run --locked -p fightlines-server

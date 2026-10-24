@@ -21,7 +21,7 @@ import Json.Decode as Decode
 
 
 depot :
-    SelectionSet decodesTo Api.Object.DepotImpact
+    SelectionSet decodesTo Api.Object.BuildingImpact
     -> SelectionSet (Maybe decodesTo) Api.Object.IndirectImpact
 depot object____ =
     Object.selectionForCompositeField "depot" [] object____ (Basics.identity >> Decode.nullable)

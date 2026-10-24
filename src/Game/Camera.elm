@@ -17,12 +17,13 @@ type alias Camera =
     }
 
 
-{-| Keep the full container size for board scaling; the bottom controls obscure
-part of that container without changing its coordinate system.
+{-| Keep the full navigation surface for board scaling. Insets describe
+overlays without changing the camera's coordinate system.
 -}
 type alias Viewport =
     { size : Point
     , bottomInset : Float
+    , rightInset : Float
     }
 
 
@@ -30,7 +31,7 @@ type alias Viewport =
 -}
 boardWidth : String
 boardWidth =
-    "min(80cqw, 76cqh)"
+    "min(92cqw, 98cqh)"
 
 
 anchor : Camera -> Point -> { x : String, y : String }
@@ -110,7 +111,11 @@ frame viewport map positions camera =
 
                 boardPixels : Float
                 boardPixels =
-                    min (0.8 * viewport.size.x) (0.76 * viewport.size.y)
+                    min (0.92 * viewport.size.x) (0.98 * viewport.size.y)
+
+                visibleWidth : Float
+                visibleWidth =
+                    max 1 (viewport.size.x - viewport.rightInset)
 
                 visibleHeight : Float
                 visibleHeight =
@@ -140,14 +145,14 @@ frame viewport map positions camera =
                 zoom =
                     min camera.zoom
                         (min
-                            (viewport.size.x * width / (boardPixels * (bounds.right - bounds.left + 3)))
+                            (visibleWidth * width / (boardPixels * (bounds.right - bounds.left + 3)))
                             (visibleHeight * width / (boardPixels * (bounds.bottom - bounds.top + 3)))
                         )
 
                 subjectsVisible : Bool
                 subjectsVisible =
                     (left >= -viewport.size.x / 2)
-                        && (right <= viewport.size.x / 2)
+                        && (right <= viewport.size.x / 2 - viewport.rightInset)
                         && (top >= -viewport.size.y / 2)
                         && (bottom <= viewport.size.y / 2 - viewport.bottomInset)
             in
@@ -158,7 +163,7 @@ frame viewport map positions camera =
                 { zoom = zoom
                 , offset =
                     { x =
-                        -(bounds.left + bounds.right + 1 - width) / 2 * boardPixels * zoom / width
+                        -(bounds.left + bounds.right + 1 - width) / 2 * boardPixels * zoom / width - viewport.rightInset / 2
                     , y =
                         -(bounds.top + bounds.bottom + 1 - toFloat map.height) / 2 * boardPixels * zoom / width - viewport.bottomInset / 2
                     }

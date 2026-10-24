@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const sharp = require("sharp");
 const root = path.resolve(__dirname, "..");
 
-async function exportSprite({ sourcePath, outputPath, name }) {
+async function exportSprite({ sourcePath, outputPath, name, position = "centre" }) {
   const source = path.join(root, sourcePath);
   const metadata = await sharp(source).metadata();
   const stats = await sharp(source).stats();
@@ -12,7 +12,7 @@ async function exportSprite({ sourcePath, outputPath, name }) {
   assert(metadata.hasAlpha && !stats.isOpaque, `${name} needs transparent edges`);
   const input = await sharp(source)
     .trim({ background: "#00000000", threshold: 1 })
-    .resize(232, 232, { fit: "contain", kernel: "lanczos3", background: "#00000000" })
+    .resize(232, 232, { fit: "contain", position, kernel: "lanczos3", background: "#00000000" })
     .png().toBuffer();
   await sharp({ create: {
     width: 256, height: 256, channels: 4,
@@ -37,6 +37,17 @@ async function main() {
     sourcePath: "artwork/buildings/illustrated/fuel-depot-side-v4.png",
     outputPath: "public/assets/fuel-depot-illustrated-v4.png",
     name: "fuel depot",
+  });
+  await exportSprite({
+    sourcePath: "artwork/buildings/illustrated/destroyed-depot-v2.png",
+    outputPath: "public/assets/destroyed-depot-illustrated-v1.png",
+    name: "destroyed depot",
+    position: "bottom",
+  });
+  await exportSprite({
+    sourcePath: "artwork/buildings/illustrated/fortress-front-v2.png",
+    outputPath: "public/assets/fortress-illustrated-v2.png",
+    name: "fortress",
   });
   await exportSprite({
     sourcePath: "artwork/supplies/illustrated/supply-crate-stack-side-v4.png",

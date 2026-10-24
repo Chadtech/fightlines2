@@ -62,6 +62,7 @@ module Style exposing
     , col
     , colReverse
     , colorTransition2
+    , columnGap6
     , containerInlineSize
     , containerSize
     , contentEmpty
@@ -107,6 +108,7 @@ module Style exposing
     , grid
     , gridCols1
     , gridCols2
+    , gridColumns
     , gridColumnsRem
     , gridRowsRem
     , grow
@@ -130,6 +132,7 @@ module Style exposing
     , h5
     , h6
     , h64
+    , h6p5
     , h72
     , h75Viewport
     , h7p5
@@ -212,6 +215,7 @@ module Style exposing
     , minH24
     , minH32
     , minH36
+    , minH6
     , minH76
     , minH96
     , minHFullViewport
@@ -222,6 +226,7 @@ module Style exposing
     , minW36
     , minW40
     , minW56Clamped
+    , minW6p5
     , minW72
     , minWFitContent
     , mixBlendScreen
@@ -422,11 +427,14 @@ module Style exposing
     , w52
     , w6
     , w64
+    , w66
+    , w6p5
     , w72
     , w7p5
     , w8
     , w96
     , wAuto
+    , wFitContent
     , wFull
     , wFullViewport
     , when
@@ -480,14 +488,29 @@ gridRowsRem count size =
     Css.property "grid-template-rows" ("repeat(" ++ String.fromInt count ++ ", " ++ String.fromFloat size ++ "rem)")
 
 
+gridColumns : String -> Css.Style
+gridColumns columns =
+    Css.property "grid-template-columns" columns
+
+
 gridColumnsRem : Int -> Float -> Css.Style
 gridColumnsRem count size =
     Css.property "grid-template-columns" ("repeat(" ++ String.fromInt count ++ ", " ++ String.fromFloat size ++ "rem)")
 
 
+h6p5 : Css.Style
+h6p5 =
+    Css.height (Css.rem 1.625)
+
+
 h11 : Css.Style
 h11 =
     Css.height (Css.rem 2.75)
+
+
+minW6p5 : Css.Style
+minW6p5 =
+    Css.minWidth (Css.rem 1.625)
 
 
 minW11 : Css.Style
@@ -1175,6 +1198,21 @@ w196 =
     Css.width s192
 
 
+wFitContent : Css.Style
+wFitContent =
+    Css.property "width" "fit-content"
+
+
+w6p5 : Css.Style
+w6p5 =
+    Css.width (Css.rem 1.625)
+
+
+w66 : Css.Style
+w66 =
+    Css.width (Css.rem 16.5)
+
+
 wFull : Css.Style
 wFull =
     Css.width <| Css.pct 100
@@ -1395,6 +1433,11 @@ wAuto =
 minH0 : Css.Style
 minH0 =
     Css.minHeight Css.zero
+
+
+minH6 : Css.Style
+minH6 =
+    Css.minHeight (Css.rem 1.5)
 
 
 minH14 : Css.Style
@@ -1815,6 +1858,11 @@ g4 =
 g8 : Css.Style
 g8 =
     Css.property "gap" "2rem"
+
+
+columnGap6 : Css.Style
+columnGap6 =
+    Css.property "column-gap" "1.5rem"
 
 
 bgNone : Css.Style

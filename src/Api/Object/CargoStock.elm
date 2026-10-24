@@ -4,7 +4,7 @@
 
 module Api.Object.CargoStock exposing (..)
 
-import Api.Enum.DepotKind
+import Api.Enum.ResourceKind
 import Api.InputObject
 import Api.Interface
 import Api.Object
@@ -20,9 +20,9 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
-kind : SelectionSet Api.Enum.DepotKind.DepotKind Api.Object.CargoStock
+kind : SelectionSet Api.Enum.ResourceKind.ResourceKind Api.Object.CargoStock
 kind =
-    Object.selectionForField "Enum.DepotKind.DepotKind" "kind" [] Api.Enum.DepotKind.decoder
+    Object.selectionForField "Enum.ResourceKind.ResourceKind" "kind" [] Api.Enum.ResourceKind.decoder
 
 
 current : SelectionSet Int Api.Object.CargoStock

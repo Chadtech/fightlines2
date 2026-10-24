@@ -14,6 +14,7 @@ function getLocalStorage() {
 
 const app = Elm.Main.init({
   flags: {
+    isProduction: globalThis.FIGHTLINES_BUILD?.isProduction,
     operatingSystem: navigator.userAgentData?.platform ?? navigator.userAgent,
     localStorage: getLocalStorage(),
     seed: Math.floor(Math.random() * 0x80000000),

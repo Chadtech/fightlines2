@@ -12,7 +12,15 @@ at `/game/00000000000000000000000000000000`. Use `make run` for ordinary play
 and omit `--dev-game` and `--map-editor` on hosted servers. The fixture is absent
 by default; the flag does not alter authorization for normal games.
 
-Build the Elm frontend before starting the Rust server. Serve it behind an
+Run `make build` before hosting to build the server and generate
+the frontend's production flag. This frontend treats the map editor, logged-game
+list, and archive replay routes as missing pages, including navigation within the
+app. This target defaults to `PRODUCTION=true`; `make dev`, `make editor`, and
+`make logs` use `false`. Rebuilding with standalone `make frontend` also defaults
+to `false` and restores these development routes. Command-line assignments such
+as `make build PRODUCTION=false` override these defaults. The flag controls
+frontend availability; continue to omit `--map-editor` and `--game-logs` on public
+servers to disable their server routes and GraphQL operations. Serve behind an
 HTTPS reverse proxy for internet hosting.
 
 Frontend pages and assets use `Cache-Control: no-cache` so browsers revalidate
@@ -23,8 +31,8 @@ responses use `no-store`.
 - `FIGHTLINES_FRONTEND_DIR`: frontend asset directory; defaults to this
   checkout's `public/`. Set it explicitly when moving the executable
   to another machine, and include `index.html`, `main.js`,
-  the generated `elm.js`, and the `assets/` directory containing the sprite
-  sheets.
+  the generated `build-config.js` and `elm.js`, and the `assets/` directory
+  containing the sprite sheets.
 - `FIGHTLINES_SEED`: optional debugging override for the initial token-generation
   seed, exactly 64 hexadecimal characters (32 bytes). When unset, each startup
   obtains a fresh 256-bit seed from the operating system. Empty or malformed
@@ -128,7 +136,7 @@ reads require loopback clients; saves additionally require a matching localhost
 Origin. Do not enable this flag on hosted servers. Production serves no editor
 page and rejects authoring operations, including with the same frontend bundle.
 
-The editor writes only the six known `maps/*.json` files in the source checkout,
+The editor writes only the catalog's known `maps/*.json` files in the source checkout,
 using validation and atomic replacement. Editor-enabled servers read the current
 files when starting a new game. Production embeds those files at compile time,
 so deploy a rebuilt Rust executable after map edits. No map directory is needed

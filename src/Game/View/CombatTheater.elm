@@ -17,7 +17,7 @@ import Css
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Depot as Depot exposing (Depot)
-import Game.IndirectImpact as IndirectImpact exposing (Attacker, DepotImpact, IndirectImpact)
+import Game.IndirectImpact as IndirectImpact exposing (Attacker, BuildingImpact, IndirectImpact)
 import Game.Map as Map exposing (Map)
 import Game.Terrain as Terrain exposing (Terrain)
 import Game.TurnPlayback as TurnPlayback
@@ -174,7 +174,7 @@ depotDamageAt panel =
                 elapsed =
                     panel.elapsed - startsAt
 
-                building : DepotImpact -> DepotDamage
+                building : BuildingImpact -> DepotDamage
                 building damage =
                     let
                         hp : Depot.Hp
@@ -466,9 +466,7 @@ theaterView automaticallyClose visibleTiles depots map panel =
             , S.p3
             ]
         ]
-        [ CombatExplosion.styles
-        , CombatExplosion.preload
-        , H.div
+        [ H.div
             [ Aria.hidden True
             , A.css
                 [ S.absolute
@@ -792,32 +790,6 @@ depotScene scenery panel damage =
         age =
             damage.elapsed - depotImpactStartsAt
 
-        destroyed : Bool
-        destroyed =
-            Depot.isDestroyed damage.depot
-
-        opacity : String
-        opacity =
-            if destroyed then
-                "0.25"
-
-            else
-                "1"
-
-        destructionMark : List (Svg.Svg Msg)
-        destructionMark =
-            if destroyed then
-                [ Svg.path
-                    [ SA.d "M 36,20 L 60,44 M 60,20 L 36,44"
-                    , SA.stroke S.red1Str
-                    , SA.strokeWidth "4.5"
-                    ]
-                    []
-                ]
-
-            else
-                []
-
         explosion : List (Svg.Svg Msg)
         explosion =
             if (age >= 0) && (age < CombatExplosion.durationMs) then
@@ -837,11 +809,9 @@ depotScene scenery panel damage =
                 , SA.width "48"
                 , SA.height "48"
                 , SA.xlinkHref (Depot.image damage.depot)
-                , SA.opacity opacity
                 ]
                 []
             ]
-                ++ destructionMark
                 ++ explosion
 
         description : String

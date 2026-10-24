@@ -35,6 +35,7 @@ import View.CardHeader as CardHeader
 type alias Model =
     { shared : Shared.Model
     , id : LobbyId
+    , location : LobbyPage.Location
     , error : String
     }
 
@@ -44,10 +45,11 @@ type Msg
     | ReturnHomeButtonClicked
 
 
-init : Shared.Model -> LobbyId -> Graphql.Http.Error LobbyPage.Flags -> Model
-init shared id error =
+init : Shared.Model -> LobbyId -> LobbyPage.Location -> Graphql.Http.Error LobbyPage.Flags -> Model
+init shared id location error =
     { shared = shared
     , id = id
+    , location = location
     , error = ApiRequest.errorMessage error
     }
 
@@ -61,7 +63,12 @@ update : Msg -> Model -> Eff Msg
 update msg model =
     case msg of
         RetryButtonClicked ->
-            E.navigate (Route.Lobby model.id)
+            case model.location of
+                LobbyPage.LobbySetup ->
+                    E.navigate (Route.Lobby model.id)
+
+                LobbyPage.MapLibrary ->
+                    E.navigate (Route.LobbyMaps model.id)
 
         ReturnHomeButtonClicked ->
             E.navigate Route.Home

@@ -1,4 +1,5 @@
 {
+  "description": "a grassy canyon enclosed by mountains, with hill spurs, scattered woods, and winding roads around the flanks. supply depots draw fighting toward the northern and southern approaches, while both bases provide supply and fuel.",
   "width": 25,
   "height": 21,
   "theme": "GreenForest",
@@ -2156,6 +2157,20 @@
   "depots": [
     {
       "position": {
+        "x": 21,
+        "y": 10
+      },
+      "kind": "Fortress"
+    },
+    {
+      "position": {
+        "x": 3,
+        "y": 10
+      },
+      "kind": "Fortress"
+    },
+    {
+      "position": {
         "x": 23,
         "y": 10
       },
@@ -2198,6 +2213,46 @@
     }
   ],
   "units": [
+    {
+      "id": 23,
+      "position": {
+        "x": 19,
+        "y": 13
+      },
+      "playerNumber": "Player2",
+      "kind": "Infantry",
+      "direction": "West"
+    },
+    {
+      "id": 22,
+      "position": {
+        "x": 21,
+        "y": 8
+      },
+      "playerNumber": "Player2",
+      "kind": "FieldGun",
+      "direction": "West"
+    },
+    {
+      "id": 18,
+      "position": {
+        "x": 21,
+        "y": 12
+      },
+      "playerNumber": "Player2",
+      "kind": "Tank",
+      "direction": "West"
+    },
+    {
+      "id": 21,
+      "position": {
+        "x": 3,
+        "y": 8
+      },
+      "playerNumber": "Player1",
+      "kind": "Tank",
+      "direction": "East"
+    },
     {
       "id": 1,
       "position": {
@@ -2259,16 +2314,6 @@
       "direction": "East"
     },
     {
-      "id": 7,
-      "position": {
-        "x": 3,
-        "y": 10
-      },
-      "playerNumber": "Player1",
-      "kind": "Tank",
-      "direction": "East"
-    },
-    {
       "id": 8,
       "position": {
         "x": 3,
@@ -2297,16 +2342,6 @@
       "playerNumber": "Player1",
       "kind": "Truck",
       "direction": null
-    },
-    {
-      "id": 11,
-      "position": {
-        "x": 19,
-        "y": 7
-      },
-      "playerNumber": "Player2",
-      "kind": "Infantry",
-      "direction": "West"
     },
     {
       "id": 12,
@@ -2356,26 +2391,6 @@
       },
       "playerNumber": "Player2",
       "kind": "Infantry",
-      "direction": "West"
-    },
-    {
-      "id": 17,
-      "position": {
-        "x": 21,
-        "y": 10
-      },
-      "playerNumber": "Player2",
-      "kind": "Tank",
-      "direction": "West"
-    },
-    {
-      "id": 18,
-      "position": {
-        "x": 21,
-        "y": 12
-      },
-      "playerNumber": "Player2",
-      "kind": "FieldGun",
       "direction": "West"
     },
     {

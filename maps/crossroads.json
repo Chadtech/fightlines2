@@ -1,4 +1,5 @@
 {
+  "description": "a small battlefield with a shared central supply depot, wooded flanks, and nearby scouting hills. a light force of infantry, a tank, and a truck per side keeps the fighting close, with home supply and fuel depots supporting short transport runs.",
   "width": 11,
   "height": 9,
   "theme": "GreenForest",

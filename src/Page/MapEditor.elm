@@ -10,7 +10,7 @@ module Page.MapEditor exposing
     , view
     )
 
-import Api.Enum.DepotKind as DepotKind exposing (DepotKind)
+import Api.Enum.BuildingKind as BuildingKind exposing (BuildingKind)
 import Api.Enum.Direction as Direction exposing (Direction)
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
 import Api.Enum.MapType as MapType exposing (MapType)
@@ -27,11 +27,13 @@ import Effect as E exposing (Eff)
 import Error
 import Game.Camera exposing (Camera)
 import Game.Coordinate as Coordinate exposing (Coordinate)
+import Game.Depot as Depot
 import Game.Map as Map exposing (Map)
 import Game.MapType as MapType
 import Game.Road as Road
 import Game.Terrain as Terrain exposing (Terrain)
 import Game.UnitKind
+import Game.View.MapPreview as MapPreview
 import Game.View.TerrainTile as TerrainTile
 import Graphql.Http
 import Graphql.SelectionSet as SS
@@ -50,7 +52,6 @@ import View.Card as Card
 import View.CardHeader as CardHeader
 import View.Checkbox as Checkbox
 import View.Select as Select
-import View.Sprite as Sprite
 import View.TextField as TextField
 
 
@@ -100,7 +101,7 @@ type Brush
     = PaintRoad
     | PaintTerrain Terrain
     | PlaceUnit UnitKind
-    | PlaceDepot DepotKind
+    | PlaceDepot BuildingKind
     | EraseUnit
     | EraseDepot
 
@@ -1457,17 +1458,14 @@ brushLabel brush =
         PlaceUnit kind ->
             Game.UnitKind.label kind
 
-        PlaceDepot DepotKind.Supply ->
-            "supply depot"
-
-        PlaceDepot DepotKind.Fuel ->
-            "fuel depot"
+        PlaceDepot kind ->
+            Depot.kindLabel kind
 
         EraseUnit ->
             "erase unit"
 
         EraseDepot ->
-            "erase depot"
+            "erase building"
 
 
 paintingTools : Model -> Html Msg
@@ -1503,8 +1501,9 @@ paintingTools model =
                            ]
 
                 DepotBrushes ->
-                    [ PlaceDepot DepotKind.Supply
-                    , PlaceDepot DepotKind.Fuel
+                    [ PlaceDepot BuildingKind.Supply
+                    , PlaceDepot BuildingKind.Fuel
+                    , PlaceDepot BuildingKind.Fortress
                     , EraseDepot
                     ]
 
@@ -1541,7 +1540,7 @@ paintingTools model =
                     |> Button.toHtml
                 , groupButton "terrain" TerrainBrushes (PaintTerrain Terrain.Forest)
                 , groupButton "starting units" UnitBrushes (PlaceUnit UnitKind.Infantry)
-                , groupButton "depots" DepotBrushes (PlaceDepot DepotKind.Supply)
+                , groupButton "buildings" DepotBrushes (PlaceDepot BuildingKind.Supply)
                 ]
             , H.div
                 [ A.css
@@ -1667,11 +1666,26 @@ brushPreview model brush =
                     ]
 
                 PlaceUnit kind ->
-                    [ unitArt { id = 0, position = { x = 0, y = 0 }, playerNumber = model.playerNumber, kind = kind, direction = Just model.facing }
+                    [ MapPreview.unitToSvg
+                        { id = 0
+                        , position =
+                            { x = 0
+                            , y = 0
+                            }
+                        , playerNumber = model.playerNumber
+                        , kind = kind
+                        , direction = Just model.facing
+                        }
                     ]
 
                 PlaceDepot kind ->
-                    [ depotArt { position = { x = 0, y = 0 }, kind = kind }
+                    [ MapPreview.depotToSvg
+                        { position =
+                            { x = 0
+                            , y = 0
+                            }
+                        , kind = kind
+                        }
                     ]
 
                 EraseUnit ->
@@ -1735,11 +1749,11 @@ tile draft map position =
 
         objects : List (Svg Msg)
         objects =
-            List.filter (\depot -> depot.position == position) draft.depots |> List.map depotArt
+            List.filter (\depot -> depot.position == position) draft.depots |> List.map MapPreview.depotToSvg
 
         units : List (Svg Msg)
         units =
-            List.filter (\unit -> unit.position == position) draft.units |> List.map unitArt
+            List.filter (\unit -> unit.position == position) draft.units |> List.map MapPreview.unitToSvg
 
         pressed : D.Decoder ( Msg, Bool )
         pressed =
@@ -1774,8 +1788,8 @@ tile draft map position =
                 ++ " · "
                 ++ Terrain.label terrain
 
-        objectLabels : List String
-        objectLabels =
+        unitLabels : List String
+        unitLabels =
             List.filter (\unit -> unit.position == position) draft.units
                 |> List.map
                     (\unit ->
@@ -1783,6 +1797,16 @@ tile draft map position =
                             ++ " "
                             ++ Game.UnitKind.label unit.kind
                     )
+
+        buildingLabels : List String
+        buildingLabels =
+            draft.depots
+                |> List.filter (\depot -> depot.position == position)
+                |> List.map (.kind >> Depot.kindLabel)
+
+        objectLabels : List String
+        objectLabels =
+            buildingLabels ++ unitLabels
 
         accessibleLabel : String
         accessibleLabel =
@@ -1828,85 +1852,6 @@ tile draft map position =
             )
         ]
         content
-
-
-depotArt : EditableMap.DepotPlacement -> Svg Msg
-depotArt depot =
-    let
-        path : String
-        path =
-            case depot.kind of
-                DepotKind.Supply ->
-                    "/assets/supply-depot-illustrated-v1.png"
-
-                DepotKind.Fuel ->
-                    "/assets/fuel-depot-illustrated-v4.png"
-    in
-    Svg.image
-        [ SA.xlinkHref path
-        , SA.width "16"
-        , SA.height "16"
-        , SA.pointerEvents "none"
-        ]
-        []
-
-
-unitArt : EditableMap.UnitPlacement -> Svg Msg
-unitArt unit =
-    let
-        baseRow : Int
-        baseRow =
-            case unit.kind of
-                UnitKind.Infantry ->
-                    0
-
-                UnitKind.Tank ->
-                    3
-
-                UnitKind.Truck ->
-                    6
-
-                UnitKind.FieldGun ->
-                    9
-
-        playerRow : Int
-        playerRow =
-            case unit.playerNumber of
-                PlayerNumber.Player1 ->
-                    0
-
-                PlayerNumber.Player2 ->
-                    1
-
-        transform : String
-        transform =
-            case unit.direction of
-                Just Direction.East ->
-                    ""
-
-                Just Direction.West ->
-                    "translate(16 0) scale(-1 1)"
-
-                _ ->
-                    case unit.playerNumber of
-                        PlayerNumber.Player1 ->
-                            ""
-
-                        PlayerNumber.Player2 ->
-                            "translate(16 0) scale(-1 1)"
-    in
-    Svg.g
-        [ SA.transform transform
-        , SA.pointerEvents "none"
-        ]
-        [ Sprite.toSvg
-            { path = "/assets/units_illustrated-v4.png"
-            , sheetWidth = 64
-            , sheetHeight = 192
-            , column = 0
-            , row = baseRow + playerRow
-            }
-        ]
 
 
 

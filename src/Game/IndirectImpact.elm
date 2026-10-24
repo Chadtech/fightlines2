@@ -1,15 +1,15 @@
 module Game.IndirectImpact exposing
     ( Attacker
-    , DepotImpact
+    , BuildingImpact
     , IndirectImpact
     , Target
     , destroyedUnitId
     , selection
     )
 
-import Api.Enum.DepotKind exposing (DepotKind)
+import Api.Enum.BuildingKind exposing (BuildingKind)
 import Api.Object
-import Api.Object.DepotImpact as DepotImpactApi
+import Api.Object.BuildingImpact as BuildingImpactApi
 import Api.Object.IndirectFireAttacker as AttackerApi
 import Api.Object.IndirectFireTarget as TargetApi
 import Api.Object.IndirectImpact as ImpactApi
@@ -26,12 +26,12 @@ type alias IndirectImpact =
     { destination : Coordinate
     , attacker : Maybe Attacker
     , target : Maybe Target
-    , depot : Maybe DepotImpact
+    , depot : Maybe BuildingImpact
     }
 
 
-type alias DepotImpact =
-    { kind : DepotKind
+type alias BuildingImpact =
+    { kind : BuildingKind
     , before : Depot.Hp
     , after : Depot.Hp
     }
@@ -67,15 +67,15 @@ selection =
                     |> SS.with (TargetApi.health CombatHealth.selection)
                 )
             )
-        |> SS.with (ImpactApi.depot depotSelection)
+        |> SS.with (ImpactApi.depot buildingSelection)
 
 
-depotSelection : SelectionSet DepotImpact Api.Object.DepotImpact
-depotSelection =
-    SS.succeed DepotImpact
-        |> SS.with DepotImpactApi.kind
-        |> SS.with (DepotImpactApi.before Depot.hpSelection)
-        |> SS.with (DepotImpactApi.after Depot.hpSelection)
+buildingSelection : SelectionSet BuildingImpact Api.Object.BuildingImpact
+buildingSelection =
+    SS.succeed BuildingImpact
+        |> SS.with BuildingImpactApi.kind
+        |> SS.with (BuildingImpactApi.before Depot.hpSelection)
+        |> SS.with (BuildingImpactApi.after Depot.hpSelection)
 
 
 destroyedUnitId : IndirectImpact -> Maybe UnitId

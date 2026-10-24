@@ -8,7 +8,7 @@ use crate::{
     combat,
     map::Coordinate,
     movement,
-    scenario::{DepotKind, Entrenchment, Scenario, Unit, UnitKind},
+    scenario::{Entrenchment, ResourceKind, Scenario, Unit, UnitKind},
     supplies,
     turns::{self, MoveOrderInput, UnloadOrderInput},
 };
@@ -138,7 +138,7 @@ pub(super) fn pickups(
             eligible(unit, truck)
                 && !assigned.contains(&TruckMission::Transport(unit.unit_id()))
                 && !assigned.contains(&TruckMission::Deliver {
-                    resource: DepotKind::Supply,
+                    resource: ResourceKind::Supply,
                     recipient: unit.unit_id(),
                 })
         })
@@ -213,7 +213,7 @@ pub(super) fn pickups(
         let provisions: i32 = truck
             .supply_cargo
             .iter()
-            .filter(|cargo| cargo.kind == DepotKind::Supply)
+            .filter(|cargo| cargo.kind == ResourceKind::Supply)
             .map(|cargo| cargo.current)
             .sum();
         let travel_upkeep =
@@ -239,7 +239,7 @@ pub(super) fn pickups(
         let carried_fuel: i32 = truck
             .supply_cargo
             .iter()
-            .filter(|cargo| cargo.kind == DepotKind::Fuel)
+            .filter(|cargo| cargo.kind == ResourceKind::Fuel)
             .map(|cargo| cargo.current)
             .sum();
         if pickup_fuel + ride_fuel > fuel.current + carried_fuel {
@@ -262,7 +262,7 @@ pub(super) fn pickups(
                     && unit.unit_id() != passenger.unit_id()
                     && !assigned.contains(&TruckMission::Transport(unit.unit_id()))
                     && !assigned.contains(&TruckMission::Deliver {
-                        resource: DepotKind::Supply,
+                        resource: ResourceKind::Supply,
                         recipient: unit.unit_id(),
                     })
             }) {
@@ -585,7 +585,7 @@ mod tests {
                 .find(|unit| unit.kind() == UnitKind::Truck)
                 .fixture()?
                 .supply_cargo
-                .push(CargoStock::new(DepotKind::Fuel, 256));
+                .push(CargoStock::new(ResourceKind::Fuel, 256));
             let mut turns = Turns::default();
             let orders =
                 ai::plan_with_difficulty(&scenario, PlayerNumber::Player1, difficulty).fixture()?;
@@ -796,7 +796,7 @@ mod tests {
             .find(|unit| unit.id() == "4")
             .fixture()?
             .supply_cargo
-            .push(CargoStock::new(DepotKind::Fuel, 68));
+            .push(CargoStock::new(ResourceKind::Fuel, 68));
         for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
             let mut board = scenario.clone();
             let orders =
@@ -857,7 +857,7 @@ mod tests {
         let mut donor = extra.units.first().fixture()?.clone();
         donor
             .supply_cargo
-            .push(CargoStock::new(DepotKind::Supply, 256));
+            .push(CargoStock::new(ResourceKind::Supply, 256));
         scenario.units.push(donor);
         for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
             let mut board = scenario.clone();

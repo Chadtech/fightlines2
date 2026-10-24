@@ -63,7 +63,18 @@ edges (`outdentStrong`, reversed with `indentStrong` when pressed). Their faces
 brighten to gray2 on hover and press, with gray4 labels brightening to gray5.
 Disabled buttons retain their gray1 face and gray3 text.
 Regular buttons use 1rem horizontal and 0.75rem vertical padding.
-Use `Button.large` for prominent actions such as submitting a turn: 1.5rem horizontal
+Use `Button.small` for compact controls such as the inspector's close action:
+0.25rem padding on every side with the normal text size and color variant.
+Use `Button.compact` for 1.625rem-high controls with no padding, and
+`Button.square` for matching 1.625rem-square icon controls. Camera group grids
+and spacing belong directly on their containing elements.
+Use `Button.tall` for a prominent action in a narrow column: 0.5rem horizontal
+and 0.75rem vertical padding with a 3.5rem minimum height. The turn submit button
+uses this size at full width. `Button.attention` adds the ready pulse and shine;
+`Button.highlighted` retains gold text while waiting. `Main` mounts `Button.styles`
+once for the animation keyframes. Apply these through the button API rather than
+parent or descendant selectors.
+Use `Button.large` for roomy prominent actions: 1.5rem horizontal
 and 1rem vertical padding with a 3.5rem minimum height, retaining the normal text
 size and color variant.
 The primary button uses the original yellow palette shifted up one step in all
@@ -138,10 +149,22 @@ omits this decorative cycle and retains the original green background.
   and `p3`/`g3` are 0.75rem. `p2px` is a literal 2px inset.
 - The joined lobby is a top-aligned, full-width workspace with two cards side
   by side. The left card takes 44% of the row and has the lobby name at the left
-  of its title bar and `game lobby` at the right. Its body contains map selection,
-  the invite link with `copy link`, and the left-aligned `start game` action.
+  of its title bar and `game lobby` at the right. Its body contains the selected
+  map's name and thumbnail, a host-only `choose map` button, the invite link with
+  `copy link`, and the left-aligned `start game` action.
   The right card is headed `players`. Stack the cards below 720px and allow the
   page to scroll. Keep creation and joining as centered compact forms.
+- `choose map` opens a separate full-width library screen at `/lobby/:id/maps`,
+  using one card headed `choose map` with the lobby name as its caption. Put
+  `back to lobby` at the top, six thumbnail choices and pagination in the left
+  column, and the selected map's large preview, dimensions, theme, starting-player
+  legend, and description in the right column. Stack these below 720px. Thumbnails
+  use the actual terrain, buildings, and starting units with still water. A checked,
+  inset row indicates the previewed map. Keep the saved lobby map visible in a
+  footer beside the gold `use this map` action. Browsing does not save; applying
+  returns to the lobby, while back navigation discards the preview. Disable
+  duplicate saves and show failures on the library screen without losing the
+  preview. Guests see the saved map in the lobby and have no change-map action.
 - Keep `start game` visible for the host and disable it until both slots are
   filled or while a request is pending. Show `waiting for another player` beside it
   when the human slot is empty; omit routine readiness or success text.
@@ -171,39 +194,54 @@ omits this decorative cycle and retains the original green background.
 
 ## Game board
 
+- Center a compact header flush with the top edge. Place the existing FightLines
+  logo at 4rem wide in its center, with equal 4.5rem columns on either side.
+  Put a raised gray `menu` button on the left and a passive inset turn number
+  on the right so their different roles are clear. Use 0.125rem vertical and
+  0.625rem horizontal button padding with a 1.875rem minimum height.
+  Open a centered native menu dialog
+  with a primary `resume game` action; Escape also returns to the battlefield.
+  Keep settings and resign game disabled until implemented. Disable the menu
+  during playback and other dialogs, and close it when new playback starts.
 - The game is a full-viewport workspace. Render the board directly on the page
-  background, without a containing card or border. Center it initially at 80% of the battlefield width
-  or 76vh, whichever is smaller, and allow it to pan freely.
+  background, without a containing card or border. Reserve the header and bottom
+  controls' natural height, then center the board at 92% of the remaining width
+  or 98% of the remaining height, whichever is smaller. Allow it to pan freely.
 - Use a full-height right panel for selection details and unit-specific actions,
   with a warm gray body and an outset bevel only
-  on its left edge. Place selection at the top. The panel is 18rem wide, capped at
-  45vw on narrow screens, and scrolls when needed. Reserve its width beside the
-  battlefield. Keep the panel present when selection clears: leave its main area
-  blank and place a quiet inspection hint against the lower edge. With a selection,
-  the footer says esc to clear selection. Omit the roster and other floating cards.
+  on its left edge. Place selection at the top. The panel is 15.5rem wide, capped
+  at 45vw on narrow screens, and scrolls when needed. Hide it entirely when there
+  is no selection, with no floating inspection hint. Overlay it on the battlefield
+  so opening it does not shift the map sideways. Keep bottom controls clear of
+  its width. On narrow screens, keep the centered header above the inspector
+  and start inspector content below it. Its footer says `esc to clear selection`
+  and provides a `close` button.
+  Omit the roster and other floating cards.
   Use gold primary buttons for every action button in this panel, including
   back to commands, revoke order, and skip remaining cargo.
   Place revoke order directly below the unit portrait, spanning the available
   panel content width, before resource gauges.
 - The bottom-left control panel is flush with the screen's bottom and left edges,
-  overlaying the battlefield without reducing its height. It is a short horizontal
-  strip up to 64rem wide, capped by the battlefield width, with a bevel on its top
-  and right edges. Put the turn number above submit on the left, list every
-  player’s name and status in the middle, and place pan/zoom/reset alongside.
-  Inset the player list into a nightwood depression, show names without an own-player
-  suffix, and align names and statuses in two equal-width columns. Status text
+  reserving its actual height below the battlefield. Use a short horizontal strip
+  sized to its content, capped by the available width, with a bevel on its top
+  and right edges, 0.5rem vertical padding and 0.75rem horizontal padding.
+  Keep the large submit button on the left, list every player's name and status
+  in the middle, and place pan/zoom/reset alongside with 1.5rem between groups.
+  Use plain compact roster rows in a 16.5rem area, allowing four player rows
+  without a separate inset surface. Show names without an own-player suffix,
+  truncate long names with their full text available on hover, and reserve 14ch
+  for each status. Status text
   is `planning` or `submitted plan`.
-  Stretch the player depression to fill the available height of its control row.
   Omit bullets, put a red or blue team swatch to the left of each name, and omit
   a separator before the camera controls.
   Arrange pan arrows as a directional pad, with up and down above
-  and below left/right. Stack zoom and reset beside the pad, using matching
-  three-row grids with equal row heights so both control groups align.
-  Use 2.75rem square pan and zoom buttons with matching rows and 0.25rem gaps.
-  Center the pan label and zoom percentage in equal-width middle cells; let reset
+  and below left/right. Stack zoom and reset beside the pad.
+  Use 1.625rem square pan and zoom buttons with 2px gaps.
+  Center the pan label and zoom percentage in their middle cells; let reset
   span the zoom group's full width. Wrap camera controls below when space is
   limited; use natural
-  height rather than reserving empty space. Longer feedback scrolls within the status area.
+  height rather than reserving empty space. Longer feedback scrolls within the
+  control strip, which is capped at half the viewport height.
   Submit becomes gold with a gentle brightness pulse and sweeping highlight when every
   on-board unit has an explicit order. Keep it enabled while planning and disable
   it while orders are locked. Submitted turns retain gold text. Always show a
@@ -476,9 +514,12 @@ absent fuel, healthy resources, and dying units show no warning badges.
 
 Each observable unit loss pauses playback and opens a beveled `unit lost` dialog
 below the battlefield. Darken the other map tiles and surrounding controls while
-leaving the casualty's physical tile illuminated with a gold outline and its
-steady illustrated skull marker. Passengers focus their carrier's tile. Freeze
-unit and interface animations and block battlefield interaction during the dialog.
+leaving the casualty's physical tile illuminated with a gold outline. Replace the
+unit with the theater's six-frame illustrated explosion over 100ms, fading its
+sprite beneath the blast from 20ms to 50ms. The explosion plays once, including
+while the dialog holds playback, and leaves the tile empty. Passengers focus their
+carrier's tile without separate sprites or explosions. Freeze surrounding unit
+and interface animations and block battlefield interaction during the dialog.
 
 Name the lost unit and show whether the lethal shot was an `ambush` or `attack move`,
 alongside the attacker portrait, type, and owning player's name. Supply exhaustion
@@ -493,12 +534,14 @@ Keep `continue` and the skip checkbox available so playback can proceed.
 Place `continue` and the `skip this dialog` checkbox together below all information.
 The checkbox defaults to unchecked and remembers its Boolean in local storage.
 Checking it dismisses the current dialog and skips future loss dialogs, preserving
-the existing timed skull feedback. Continue acknowledges one loss event. A carrier and its lost passengers share
-one dialog naming every casualty and showing the carrier’s cause once; independent
+the quick explosion and disappearance. Continue acknowledges one loss event.
+A carrier and its lost passengers share one dialog naming every casualty and
+showing the carrier’s cause once; independent
 simultaneous losses appear in sequence. Enter activates the focused action, and Escape continues.
 After acknowledgment, keep the existing server-timed casualty pause before removing
 the unit and resuming movement. Long animation ticks stop at unacknowledged losses.
-Reduced-motion mode retains a steady marker and highlight.
+Reduced-motion mode briefly shows a steady peak-impact frame, removes the sprite
+at 50ms without fading, and retains the tile highlight.
 
 ## Ambush planning and playback
 
@@ -513,10 +556,10 @@ visible while planning. The right panel explains range, damage, and separate
 readiness/firing supply costs, then shows the saved direction and revoke action.
 Insufficient readiness supplies disable the command with an explanatory tooltip.
 
-Server-projected volleys render quick expanding bursts on target units and smaller
-firing flashes on shooters, without connecting lines or floating damage numbers.
-Combat deaths reuse the existing skull marker; public destroyed state
-supports observable enemy deaths without exposing their resource gauges.
+Server-projected volleys render quick expanding bursts on target units, without
+attacker flashes, connecting lines, or floating damage numbers.
+Combat deaths reuse the theater explosion and quick sprite removal; public
+destroyed state supports observable enemy deaths without exposing their resource gauges.
 
 Every volley involving your units opens the theater, including concealed enemy
 combatants. Encounter portraits do not add concealed units to the battlefield.
@@ -575,8 +618,8 @@ including when another visible unit starts moving or combat begins. When action
 leaves the viewport, pan with a 1.2-second ease-in-out transition and pause
 playback until the camera settles. Include one tile of breathing room when
 reframing; reduce zoom only when simultaneous subjects cannot fit together.
-Keep subject tiles above the bottom controls and beside the right panel; use
-the controls' actual height, including when they wrap, to frame the clear area.
+Keep subject tiles in the navigation surface between the header and bottom
+controls, and clear of the inspector's measured width when it is open.
 Track interpolated visible movement so a route leaving the view can trigger a
 necessary pan. Idle frames retain the last playback view. Combat, casualty
 pauses, and projected indirect-fire impacts use the same visibility rule.
@@ -584,8 +627,8 @@ Ease back to the saved pan and zoom when playback finishes. Reduced motion makes
 camera changes immediate. Concealed combatants remain absent from the
 battlefield and do not affect camera framing.
 Combine reciprocal shots into one display. After continuing each theater, show
-its casualties’ skull markers for the server-provided death pause, then remove
-those units before the next theater.
+its casualties vanishing in quick explosions. Keep the server-provided death
+pause on the cleared tiles, then remove those units before the next theater.
 Reciprocal casualties share a pause. Reveal the remaining volley map feedback
 after all pairs have appeared, then resume the server timeline.
 The combat overlay blocks battlefield interaction and camera shortcuts. Reduced
@@ -702,18 +745,30 @@ lower-left badges and shares the same capacity and unloading rules.
 
 ## Depot destruction and sabotage
 
+Fortresses use `fortress-illustrated-v2.png`, with solid concrete walls and an
+open roof fighting deck. Place them from the editor's `buildings` group alongside
+supply and fuel depots. Reuse building selection, inspector, HP gauge, shell
+impacts, sabotage animation, fog memory, and destroyed-building wreckage.
+Show `8 / 8` HP initially and explain the 75% damage reduction for occupying
+units, with a minimum 1 HP per hit. Show no resource stock bar, gauge, or loading
+dialog. The destroyed inspector reads `destroyed · no defense bonus`.
+
 Infantry already occupying a surviving depot also receive a `sabotage` command
 with the transparent illustrated red demolition charge and brass-plunger icon.
 Its saved order retains revoke and explains the whole-turn action, normal upkeep,
 and completion after combat if the infantry survives. Hide it away from depots,
 on destroyed depots, and during dismounting; disable it when upkeep is unaffordable.
 Depot inspectors show HP separately from resource stock. Fuel depots start at
-1 HP and supply depots at 3 HP. Destroyed depots show a faded building and red cross, remain inspectable, and explain that replenishment
-and loading have stopped. Fog retains the last observed condition. Shell impacts
+1 HP and supply depots at 3 HP. Both destroyed depot kinds use the same illustrated
+crater and building wreckage at full opacity. Give the wreckage a square foundation
+footprint and anchor its front edge near the bottom of the sprite cell. Depots
+remain inspectable and explain that replenishment and loading have stopped.
+Fog retains the last observed condition
+and its normal artwork filter. Shell impacts
 show the attacker and occupant hit first, then replace those scenes with one
 centered depot map sprite taking its own strike. Use the building sprite to make
 clear that the whole depot is hit; omit the depot HP text from the theater.
-Destroyed depots fade and receive the same red cross as on the board. Automatic
+Destroyed depots switch to the same wreckage sprite as on the board. Automatic
 close waits for this follow-up strike to settle. Sabotage uses the existing map burst
 without damaging units or freight.
 

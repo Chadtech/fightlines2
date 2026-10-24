@@ -2,6 +2,7 @@ use crate::{
     game_archive,
     lobby::{self, GameSnapshot, Snapshot, Store},
     lobby_id::LobbyId,
+    map_definition::NamedMap,
     map_editor,
     map_type::{self, MapType},
     scenario::PlayerNumber,
@@ -78,6 +79,22 @@ impl Query {
         map_type::MAPS.iter().map(|(kind, _)| *kind).collect()
     }
 
+    /// Public authored layouts, shared by map previews and game creation.
+    fn map_previews() -> FieldResult<Vec<NamedMap>> {
+        map_type::MAPS
+            .iter()
+            .map(|(map_type, name)| {
+                let definition = map_type
+                    .definition()
+                    .map_err(|error| format!("could not load {name}: {error}"))?;
+                Ok(NamedMap {
+                    map_type: *map_type,
+                    definition,
+                })
+            })
+            .collect()
+    }
+
     fn health() -> bool {
         true
     }
@@ -103,7 +120,7 @@ impl Mutation {
         context: &Context,
         map_type: MapType,
         definition: map_editor::MapDefinitionInput,
-    ) -> FieldResult<map_editor::NamedMap> {
+    ) -> FieldResult<NamedMap> {
         map_editor::save_map(context, map_type, definition)
     }
 
@@ -260,6 +277,50 @@ mod tests {
         for value in values {
             assert_eq!(values.iter().filter(|option| *option == value).count(), 1);
             assert!(enum_values.iter().any(|entry| &entry["name"] == value));
+        }
+        Ok(())
+    }
+
+    #[actix_web::test]
+    async fn map_previews_are_public_and_match_current_definitions() -> TestResult<()> {
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(Store::new(crate::seed::Seed::new([0; 32]))))
+                .app_data(web::Data::new(schema()))
+                .route("/graphql", web::post().to(handle)),
+        )
+        .await;
+        let request = test::TestRequest::post()
+            .uri("/graphql")
+            .peer_addr("192.0.2.1:1234".parse()?)
+            .set_json(json!({"query": "{ mapPreviews { mapType definition { description width height theme features { position { x y } terrain } depots { position { x y } kind } units { id position { x y } playerNumber kind direction } } } }"}))
+            .to_request();
+        let body: Value = test::call_and_read_body_json(&app, request).await;
+        assert!(body.get("errors").is_none(), "{body}");
+        let previews = body["data"]["mapPreviews"].as_array().fixture()?;
+        assert_eq!(previews.len(), map_type::MAPS.len());
+        for (preview, (kind, _)) in previews.iter().zip(map_type::MAPS) {
+            let definition = kind.definition().fixture()?;
+            let map_type: juniper::InputValue = juniper::ToInputValue::to_input_value(&kind);
+            assert_eq!(preview["mapType"], serde_json::to_value(map_type)?);
+            assert_eq!(preview["definition"]["description"], definition.description);
+            assert_eq!(preview["definition"]["width"], definition.width);
+            assert_eq!(preview["definition"]["height"], definition.height);
+            assert_eq!(
+                preview["definition"]["features"]
+                    .as_array()
+                    .fixture()?
+                    .len(),
+                definition.features.len()
+            );
+            assert_eq!(
+                preview["definition"]["depots"].as_array().fixture()?.len(),
+                definition.depots.len()
+            );
+            assert_eq!(
+                preview["definition"]["units"].as_array().fixture()?.len(),
+                definition.units.len()
+            );
         }
         Ok(())
     }

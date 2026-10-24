@@ -1,0 +1,130 @@
+module Game.View.GameMenu exposing
+    ( Msg(..)
+    , buttonHtmlId
+    , dialog
+    , dialogHtmlId
+    , panel
+    )
+
+import Css
+import Css.Global
+import Html.Styled as H exposing (Html)
+import Html.Styled.Attributes as A
+import Style as S
+import View.Aria as Aria
+import View.Button as Button
+import View.Dialog as Dialog exposing (Dialog)
+
+
+
+----------------------------------------------------------------
+-- TYPES --
+----------------------------------------------------------------
+
+
+type Msg
+    = OpenClicked
+    | CloseClicked
+    | FocusReturned
+
+
+
+----------------------------------------------------------------
+-- VIEW --
+----------------------------------------------------------------
+
+
+buttonHtmlId : String
+buttonHtmlId =
+    "game-menu-button"
+
+
+dialogHtmlId : String
+dialogHtmlId =
+    "game-menu"
+
+
+panel : { enabled : Bool, turnNumber : Int } -> Html Msg
+panel config =
+    let
+        button : Button.Button Msg
+        button =
+            if config.enabled then
+                Button.secondary "menu" OpenClicked
+
+            else
+                Button.disabled "menu"
+
+        turnLabel : String
+        turnLabel =
+            "turn " ++ String.fromInt config.turnNumber
+    in
+    H.section
+        [ Aria.label "game header"
+        , A.css
+            [ S.bgGray1
+            , S.outdent
+            , Css.borderTop Css.zero
+            , S.grid
+            , Css.property "grid-template-columns" "4.5rem 6rem 4.5rem"
+            , S.itemsCenter
+            , S.g2
+            , Css.padding2 (Css.rem 0.25) (Css.rem 0.375)
+            , S.maxWFull
+            , Css.Global.children
+                [ Css.Global.button
+                    [ Css.padding2 (Css.rem 0.125) (Css.rem 0.625)
+                    , Css.minHeight (Css.rem 1.875)
+                    ]
+                ]
+            ]
+        ]
+        [ button
+            |> Button.fullWidth
+            |> Button.withHtmlId buttonHtmlId
+            |> Button.toHtml
+        , H.img
+            [ A.src "/assets/fightlines-logo-v1.png"
+            , A.alt "fightlines"
+            , A.css
+                [ S.block
+                , S.w16
+                , S.hAuto
+                , Css.property "justify-self" "center"
+                ]
+            ]
+            []
+        , H.span
+            [ Aria.role Aria.Status
+            , A.title turnLabel
+            , A.css
+                [ S.bgNightwood3
+                , S.textGray5
+                , S.indentStrong
+                , S.tabularNums
+                , S.textAlignCenter
+                , S.textEllipsis
+                , Css.padding2 (Css.rem 0.125) (Css.rem 0.25)
+                , Css.minHeight (Css.rem 1.875)
+                ]
+            ]
+            [ H.text turnLabel
+            ]
+        ]
+
+
+dialog : Dialog Msg
+dialog =
+    Dialog.make dialogHtmlId
+        "menu"
+        CloseClicked
+        [ Button.primary "resume game" CloseClicked
+            |> Button.fullWidth
+            |> Button.toHtml
+        , Button.disabled "settings"
+            |> Button.fullWidth
+            |> Button.toHtml
+        , Button.disabled "resign game"
+            |> Button.fullWidth
+            |> Button.toHtml
+        ]

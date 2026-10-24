@@ -13,7 +13,7 @@ module Game.Supply exposing
     , stockSelection
     )
 
-import Api.Enum.DepotKind as Kind exposing (DepotKind)
+import Api.Enum.ResourceKind as Kind exposing (ResourceKind)
 import Api.Object
 import Api.Object.CargoStock as CargoApi
 import Api.Object.GroundSupplyCrate as CrateApi
@@ -30,7 +30,7 @@ type alias Stock =
 
 
 type alias CargoStock =
-    { kind : DepotKind
+    { kind : ResourceKind
     , current : Int
     , maximum : Int
     }
@@ -77,7 +77,7 @@ cargoSelection =
         |> SS.with CargoApi.maximum
 
 
-cargoLabel : DepotKind -> String
+cargoLabel : ResourceKind -> String
 cargoLabel kind =
     case kind of
         Kind.Supply ->
@@ -87,7 +87,7 @@ cargoLabel kind =
             "fuel drums"
 
 
-cargoPlural : DepotKind -> String
+cargoPlural : ResourceKind -> String
 cargoPlural kind =
     case kind of
         Kind.Supply ->
@@ -97,7 +97,7 @@ cargoPlural kind =
             "fuel drums"
 
 
-resourceLabel : DepotKind -> String
+resourceLabel : ResourceKind -> String
 resourceLabel kind =
     case kind of
         Kind.Supply ->
@@ -107,7 +107,7 @@ resourceLabel kind =
             "fuel"
 
 
-cargoImage : DepotKind -> String
+cargoImage : ResourceKind -> String
 cargoImage kind =
     case kind of
         Kind.Supply ->

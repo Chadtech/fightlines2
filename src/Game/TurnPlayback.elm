@@ -501,16 +501,103 @@ encounters frame =
 
             else
                 impacts ++ [ impact ]
-    in
-    List.map Exchange
-        (exchanges frame
-            |> List.filter needsExchange
-        )
-        ++ (frame.indirectImpacts
+
+        combatEncounters : List Encounter
+        combatEncounters =
+            exchanges frame
+                |> List.filter needsExchange
+                |> List.map Exchange
+
+        impactEncounters : List Encounter
+        impactEncounters =
+            frame.indirectImpacts
                 |> List.foldl unique []
                 |> List.filter needsImpactScene
                 |> List.map Impact
-           )
+    in
+    orderEncounters frame (combatEncounters ++ impactEncounters)
+
+
+{-| Impact-only shells belong to the same simultaneous volley as confirmed hits.
+Show a gun's outgoing encounter before a scene that destroys it, including when
+several landings merge into one scene. Only projected firing identities are used.
+Keep the existing order where possible; simultaneous cycles retain stable order.
+-}
+orderEncounters : Frame -> List Encounter -> List Encounter
+orderEncounters frame pending =
+    let
+        attackers : Encounter -> List UnitId
+        attackers encounter =
+            case encounter of
+                Exchange exchange ->
+                    let
+                        samePair : Shot -> Bool
+                        samePair shot =
+                            ((shot.attacker.id == exchange.attacker.id)
+                                && (shot.target.id == exchange.target.id)
+                            )
+                                || ((shot.attacker.id == exchange.target.id)
+                                        && (shot.target.id == exchange.attacker.id)
+                                   )
+                    in
+                    frame.shots |> List.filter samePair |> List.map (.attacker >> .id)
+
+                Impact impact ->
+                    let
+                        sameDestination : IndirectImpact -> Bool
+                        sameDestination landing =
+                            landing.destination == impact.destination
+                    in
+                    frame.indirectImpacts
+                        |> List.filter sameDestination
+                        |> List.filterMap (.attacker >> Maybe.map (.unit >> .id))
+
+        canPresent : Encounter -> Bool
+        canPresent candidate =
+            let
+                casualties : List UnitId
+                casualties =
+                    encounterCasualties candidate
+
+                isCasualty : UnitId -> Bool
+                isCasualty id =
+                    List.member id casualties
+
+                stillFiring : Encounter -> Bool
+                stillFiring other =
+                    (other /= candidate)
+                        && List.any isCasualty (attackers other)
+            in
+            not (List.any stillFiring pending)
+    in
+    case ListUtil.find canPresent pending of
+        Just next ->
+            next :: orderEncounters frame (List.filter ((/=) next) pending)
+
+        Nothing ->
+            pending
+
+
+encounterCasualties : Encounter -> List UnitId
+encounterCasualties encounter =
+    case encounter of
+        Exchange exchange ->
+            let
+                casualty : Unit -> CombatHealth -> Maybe UnitId
+                casualty unit health =
+                    if health.after.current == 0 then
+                        Just unit.id
+
+                    else
+                        Nothing
+            in
+            List.filterMap identity
+                [ casualty exchange.attacker exchange.attackerHealth
+                , casualty exchange.target exchange.targetHealth
+                ]
+
+        Impact impact ->
+            IndirectImpact.destroyedUnitId impact |> Maybe.map List.singleton |> Maybe.withDefault []
 
 
 {-| Several concealed guns can hit the same observed unit in one volley. Its
@@ -952,16 +1039,7 @@ exchangeDeathFrame projected focus =
     let
         casualties : List UnitId
         casualties =
-            case focus.encounter of
-                Exchange exchange ->
-                    [ ( exchange.attacker.id, exchange.attackerHealth.after.current )
-                    , ( exchange.target.id, exchange.targetHealth.after.current )
-                    ]
-                        |> List.filter (\( _, health ) -> health == 0)
-                        |> List.map Tuple.first
-
-                Impact impact ->
-                    IndirectImpact.destroyedUnitId impact |> Maybe.map List.singleton |> Maybe.withDefault []
+            encounterCasualties focus.encounter
 
         before : Frame
         before =

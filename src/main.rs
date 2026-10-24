@@ -141,6 +141,16 @@ async fn run() -> io::Result<()> {
                 }),
             )
             .route(
+                "/lobby/{id}/maps",
+                web::get().to({
+                    let index = index.clone();
+                    move || {
+                        let index = index.clone();
+                        async move { NamedFile::open(index) }
+                    }
+                }),
+            )
+            .route(
                 "/game/{id}",
                 web::get().to(move || {
                     let index = index.clone();

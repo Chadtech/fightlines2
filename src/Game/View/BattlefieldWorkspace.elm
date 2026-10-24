@@ -1,10 +1,17 @@
-module Game.View.BattlefieldWorkspace exposing (toHtml)
+module Game.View.BattlefieldWorkspace exposing
+    ( inspectorHtmlId
+    , toHtml
+    , viewport
+    )
 
-import Game.View.BattlefieldInspection as BattlefieldInspection
+import Browser.Dom
+import Css
+import Game.Camera as Camera
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
 import View.Aria as Aria
+import View.Button as Button
 
 
 
@@ -17,11 +24,41 @@ type alias Contents msg =
     { loss : Bool
     , combat : Bool
     , dying : Bool
+    , header : Maybe (Html msg)
     , battlefield : Html msg
     , controls : Html msg
     , inspection : Html msg
     , hasSelection : Bool
+    , onCloseInspection : msg
     , combatOverlay : Html msg
+    }
+
+
+inspectorHtmlId : String
+inspectorHtmlId =
+    "game-inspector"
+
+
+inspectorWidth : String
+inspectorWidth =
+    "min(15.5rem, 45vw)"
+
+
+{-| The controls and header sit outside the navigation surface. The inspector
+occludes its right edge without changing the map's coordinate system.
+-}
+viewport :
+    { battlefield : Browser.Dom.Element
+    , inspector : Browser.Dom.Element
+    }
+    -> Camera.Viewport
+viewport measured =
+    { size =
+        { x = measured.battlefield.element.width
+        , y = measured.battlefield.element.height
+        }
+    , bottomInset = 0
+    , rightInset = measured.inspector.element.width
     }
 
 
@@ -34,24 +71,16 @@ type alias Contents msg =
 toHtml : Contents msg -> List (Html msg)
 toHtml model =
     let
-        hasUnitLoss : Bool
-        hasUnitLoss =
-            model.loss
-
-        hasCombatEncounter : Bool
-        hasCombatEncounter =
-            model.combat
-
         interactionBlocked : Bool
         interactionBlocked =
-            hasCombatEncounter || hasUnitLoss
+            model.combat || model.loss
 
         animationClass : String
         animationClass =
-            if hasUnitLoss then
+            if model.loss then
                 "fightlines-death-focus fightlines-loss-focus"
 
-            else if hasCombatEncounter then
+            else if model.combat then
                 "fightlines-combat-focus"
 
             else if model.dying then
@@ -68,6 +97,33 @@ toHtml model =
             else
                 []
 
+        hasHeader : Bool
+        hasHeader =
+            case model.header of
+                Just _ ->
+                    True
+
+                Nothing ->
+                    False
+
+        header : Html msg
+        header =
+            case model.header of
+                Just content ->
+                    H.div
+                        [ A.attribute "data-loss-dim" ""
+                        , A.css
+                            [ S.row
+                            , S.justifyCenter
+                            , S.shrink0
+                            , S.z3
+                            ]
+                        ]
+                        [ content ]
+
+                Nothing ->
+                    H.text ""
+
         workspaceAttributes : List (H.Attribute msg)
         workspaceAttributes =
             [ A.class animationClass
@@ -77,47 +133,83 @@ toHtml model =
                 , S.bottom0
                 , S.left0
                 , S.right0
-                , S.row
+                , S.col
                 ]
             ]
     in
     [ H.div
         (workspaceAttributes ++ combatAttributes)
-        [ H.div
+        [ header
+        , H.div
             [ A.css
                 [ S.relative
                 , S.flex1
                 , S.minW0
-                , S.hFull
-                , S.col
+                , S.minH0
+                , S.row
                 ]
             ]
-            [ model.battlefield
-            , H.div
-                [ A.attribute "data-loss-dim" ""
-                ]
-                [ model.controls
-                ]
-            ]
-        , H.aside
+            [ model.battlefield ]
+        , H.div
             [ A.attribute "data-loss-dim" ""
+            , A.css
+                [ S.shrink0
+                , S.maxWFull
+                , Css.maxHeight (Css.vh 50)
+                , S.overflowAuto
+                , S.when model.hasSelection
+                    (Css.property "max-width" ("calc(100% - " ++ inspectorWidth ++ ")"))
+                ]
+            ]
+            [ model.controls ]
+        , H.aside
+            [ A.id inspectorHtmlId
+            , A.hidden (not model.hasSelection)
+            , A.attribute "data-loss-dim" ""
             , Aria.label "game panel"
             , A.css
-                [ S.bgGray1
+                [ S.absolute
+                , S.right0
+                , S.top0
+                , S.bottom0
+                , S.z2
+                , S.bgGray1
                 , S.outdentLeft
                 , S.col
                 , S.justifySpaceBetween
                 , S.g3
                 , S.p3
-                , S.shrink0
-                , S.hFull
                 , S.overflowAuto
                 , S.wrapAnywhere
-                , S.widthMinRemVw 18 45
+                , S.widthValue inspectorWidth
+                , S.when hasHeader
+                    (S.belowWidth 767
+                        [ Css.paddingTop (Css.rem 3.25) ]
+                    )
+                , S.when (not model.hasSelection) S.displayNone
                 ]
             ]
             [ model.inspection
-            , BattlefieldInspection.footer model.hasSelection
+            , H.footer
+                [ A.css
+                    [ S.row
+                    , S.itemsCenter
+                    , S.justifySpaceBetween
+                    , S.flexWrap
+                    , S.g2
+                    , S.borderT
+                    , S.borderGray2
+                    , S.pt3
+                    , S.shrink0
+                    ]
+                ]
+                [ H.span
+                    []
+                    [ H.text "esc to clear selection" ]
+                , Button.secondary "close" model.onCloseInspection
+                    |> Button.small
+                    |> Button.toHtml
+                ]
             ]
         ]
     , model.combatOverlay

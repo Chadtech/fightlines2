@@ -4,7 +4,7 @@ use super::{affordable_path, coordinate_input, distance, hold, transport};
 use crate::{
     map::Coordinate,
     movement,
-    scenario::{DepotKind, PlayerNumber, Scenario, Unit, UnitId, UnitKind},
+    scenario::{PlayerNumber, ResourceKind, Scenario, Unit, UnitId, UnitKind},
     supplies,
     turns::MoveOrderInput,
 };
@@ -20,7 +20,7 @@ pub(super) struct Destination {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum TruckMission {
     Deliver {
-        resource: DepotKind,
+        resource: ResourceKind,
         recipient: UnitId,
     },
     Transport(UnitId),
@@ -223,13 +223,13 @@ pub(super) fn path_to(
     Ok(None)
 }
 
-fn pickup_targets(scenario: &Scenario, kind: DepotKind) -> Vec<Destination> {
+fn pickup_targets(scenario: &Scenario, kind: ResourceKind) -> Vec<Destination> {
     scenario
         .depots
         .iter()
         .filter(|depot| {
             !depot.is_destroyed()
-                && depot.kind == kind
+                && depot.kind.resource_kind() == Some(kind)
                 && (!depot.stock_visible || depot.stock.current > 0)
         })
         .map(|depot| Destination {
@@ -256,7 +256,7 @@ fn freight_plans(
     assigned: &[TruckMission],
 ) -> Result<Vec<TruckPlan>, &'static str> {
     let mut plans = Vec::new();
-    for resource in [DepotKind::Fuel, DepotKind::Supply] {
+    for resource in [ResourceKind::Fuel, ResourceKind::Supply] {
         let carrying = truck
             .supply_cargo
             .iter()
@@ -280,11 +280,11 @@ fn freight_plans(
                 continue;
             }
             let (current, maximum) = match resource {
-                DepotKind::Supply => (
+                ResourceKind::Supply => (
                     recipient.supplies().current(),
                     recipient.supplies().maximum(),
                 ),
-                DepotKind::Fuel => match recipient.fuel() {
+                ResourceKind::Fuel => match recipient.fuel() {
                     Some(fuel) => (fuel.current, fuel.maximum),
                     None => continue,
                 },
@@ -292,7 +292,7 @@ fn freight_plans(
             let deficit = (maximum - current) * 100 / maximum;
             // Healthy tanks still benefit from a prepared escort. Otherwise,
             // proportionate shortages decide who needs a delivery most urgently.
-            let escort = if resource == DepotKind::Fuel && recipient.kind() == UnitKind::Tank {
+            let escort = if resource == ResourceKind::Fuel && recipient.kind() == UnitKind::Tank {
                 30
             } else {
                 0
@@ -320,7 +320,7 @@ fn freight_plan(
     scenario: &Scenario,
     truck: &Unit,
     orders: &[MoveOrderInput],
-    resource: DepotKind,
+    resource: ResourceKind,
     recipient: &Unit,
     score: i32,
 ) -> Result<Option<TruckPlan>, &'static str> {
@@ -334,7 +334,7 @@ fn freight_plan(
     let recipient_origin = recipient
         .board_position()
         .ok_or("the AI recipient is not on the map.")?;
-    let waiting_for_supplies = resource == DepotKind::Supply
+    let waiting_for_supplies = resource == ResourceKind::Supply
         // A carrier may already own boarding or dismount dependencies. Keep
         // its planned route intact and deliver to that rendezvous.
         && recipient.kind() != UnitKind::Truck
@@ -408,7 +408,7 @@ fn freight_plan(
             && let Some(depot) = scenario.depots.iter().find(|depot| {
                 !depot.is_destroyed()
                     && depot.position == destination
-                    && depot.kind == resource
+                    && depot.kind.resource_kind() == Some(resource)
                     && (!depot.stock_visible || depot.stock.current > 0)
             })
         {
@@ -446,7 +446,7 @@ fn provisions_plan(
         || truck
             .supply_cargo
             .iter()
-            .any(|cargo| cargo.kind == DepotKind::Supply && cargo.current > 0)
+            .any(|cargo| cargo.kind == ResourceKind::Supply && cargo.current > 0)
     {
         return Ok(None);
     }
@@ -455,7 +455,7 @@ fn provisions_plan(
         .ok_or("the AI truck is not on the map.")?;
     let blocked = blocked_tiles(scenario, truck, orders)?;
     let mut routes = Vec::new();
-    for mut target in pickup_targets(scenario, DepotKind::Supply) {
+    for mut target in pickup_targets(scenario, ResourceKind::Supply) {
         target.range = 1;
         if let Some(path) = path_to(scenario, truck, origin, target, &blocked)? {
             routes.push(path);
@@ -483,7 +483,7 @@ fn fuel_sources(
     vehicle: &Unit,
     orders: &[MoveOrderInput],
 ) -> Result<Vec<Destination>, &'static str> {
-    let mut sources = pickup_targets(scenario, DepotKind::Fuel);
+    let mut sources = pickup_targets(scenario, ResourceKind::Fuel);
     for source in &mut sources {
         source.range = 1;
     }
@@ -495,7 +495,7 @@ fn fuel_sources(
         let stock: i32 = truck
             .supply_cargo
             .iter()
-            .filter(|cargo| cargo.kind == DepotKind::Fuel)
+            .filter(|cargo| cargo.kind == ResourceKind::Fuel)
             .map(|cargo| cargo.current)
             .sum();
         let order = orders
@@ -736,7 +736,7 @@ mod tests {
                             && unit
                                 .supply_cargo
                                 .iter()
-                                .any(|cargo| cargo.kind == DepotKind::Fuel)
+                                .any(|cargo| cargo.kind == ResourceKind::Fuel)
                     });
                     assert!(
                         tank.fuel().fixture()?.current > 0,
@@ -791,14 +791,14 @@ mod tests {
                 if ground_freight {
                     scenario.supply_crates.push(GroundSupplyCrate {
                         position: Coordinate::new(1, 1),
-                        stock: CargoStock::new(DepotKind::Fuel, 23),
+                        stock: CargoStock::new(ResourceKind::Fuel, 23),
                     });
                 }
                 let orders = ai::plan_with_difficulty(&scenario, PlayerNumber::Player1, difficulty)
                     .fixture()?;
                 let truck_order = orders.iter().find(|order| order.unit_id == "2").fixture()?;
                 if ground_freight {
-                    assert_eq!(truck_order.pickup_ground_freight, Some(DepotKind::Fuel));
+                    assert_eq!(truck_order.pickup_ground_freight, Some(ResourceKind::Fuel));
                     assert_eq!(truck_order.load_crates, None);
                 } else {
                     assert_eq!(truck_order.pickup_ground_freight, None);
@@ -813,7 +813,7 @@ mod tests {
                     .fixture()?;
                 assert_eq!(truck.supply_cargo.len(), 1);
                 let stock = truck.supply_cargo.first().fixture()?;
-                assert_eq!(stock.kind, DepotKind::Fuel);
+                assert_eq!(stock.kind, ResourceKind::Fuel);
                 assert_eq!(stock.current, if ground_freight { 23 } else { 19 });
                 assert!(scenario.supply_crates.is_empty());
             }
@@ -886,7 +886,7 @@ mod tests {
         assert!(!visibility::visible_tiles(&scenario, PlayerNumber::Player1).contains(&hidden));
         changed.supply_crates.push(GroundSupplyCrate {
             position: hidden,
-            stock: CargoStock::new(DepotKind::Fuel, 256),
+            stock: CargoStock::new(ResourceKind::Fuel, 256),
         });
         for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
             let original =
@@ -914,7 +914,7 @@ mod tests {
             truck.set_supplies_for_test(8);
             truck
                 .supply_cargo
-                .push(CargoStock::new(DepotKind::Fuel, 256));
+                .push(CargoStock::new(ResourceKind::Fuel, 256));
             let mut turns = Turns::default();
             resolve_turn(&mut scenario, &mut turns, PlayerNumber::Player1, difficulty)?;
             let truck = scenario
@@ -930,7 +930,7 @@ mod tests {
                 truck
                     .supply_cargo
                     .iter()
-                    .any(|cargo| cargo.kind == DepotKind::Fuel && cargo.current > 0)
+                    .any(|cargo| cargo.kind == ResourceKind::Fuel && cargo.current > 0)
             );
         }
         Ok(())

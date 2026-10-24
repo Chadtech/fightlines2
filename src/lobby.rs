@@ -956,7 +956,7 @@ mod tests {
     use super::*;
     use crate::{
         map_definition::MapDefinition,
-        scenario::{DepotKind, UnitKind},
+        scenario::{ResourceKind, UnitKind},
         supplies::{CargoStock, GroundSupplyCrate},
         test_support::{FixtureValue, TestResult},
         turns::CoordinateInput,
@@ -987,7 +987,7 @@ mod tests {
             let hidden = Coordinate::new(4, 1);
             game.scenario.supply_crates = vec![GroundSupplyCrate {
                 position: hidden,
-                stock: CargoStock::new(DepotKind::Fuel, 100),
+                stock: CargoStock::new(ResourceKind::Fuel, 100),
             }];
             for unit in &mut game.scenario.units {
                 let survives = match outcome {

@@ -398,6 +398,7 @@ viewportAttributes view =
         [ S.relative
         , S.flex1
         , S.minW0
+        , S.minH0
         , S.hFull
         , S.row
         , S.itemsCenter
@@ -461,6 +462,9 @@ navigationControls zoomPercent =
         [ Aria.label "view controls"
         , A.css
             [ S.row
+            , S.shrink0
+            , S.minW0
+            , S.maxWFull
             , S.flexWrap
             , S.itemsCenter
             , S.g3
@@ -470,17 +474,20 @@ navigationControls zoomPercent =
             [ Aria.role Aria.Group
             , Aria.label "pan map"
             , A.css
-                [ S.col
+                [ S.grid
                 , S.itemsCenter
-                , S.g1
+                , S.justifyItemsCenter
+                , S.g0p5
                 ]
             ]
             [ panButton "↑" "pan up" PanUpClicked
             , H.div
                 [ A.css
-                    [ S.row
+                    [ S.grid
+                    , S.gridColumnsRem 3 1.625
                     , S.itemsCenter
-                    , S.g1
+                    , S.justifyItemsCenter
+                    , S.g0p5
                     ]
                 ]
                 [ panButton "←" "pan left" PanLeftClicked
@@ -495,32 +502,36 @@ navigationControls zoomPercent =
             [ Aria.role Aria.Group
             , Aria.label "zoom map"
             , A.css
-                [ S.col
+                [ S.grid
                 , S.itemsCenter
+                , S.justifyItemsCenter
                 , S.g1
                 ]
             ]
-            [ H.span
-                []
-                [ H.text "zoom" ]
-            , H.div
+            [ H.div
                 [ A.css
-                    [ S.row
+                    [ S.grid
+                    , S.gridColumns "1.625rem 4ch 1.625rem"
                     , S.itemsCenter
-                    , S.g2
+                    , S.justifyItemsCenter
+                    , S.g0p5
                     ]
                 ]
                 [ Button.secondary "−" ZoomOutClicked
                     |> Button.accessibleLabel "zoom out"
+                    |> Button.square
                     |> Button.toHtml
                 , H.span
                     []
                     [ H.text (String.fromInt zoomPercent ++ "%") ]
                 , Button.secondary "+" ZoomInClicked
                     |> Button.accessibleLabel "zoom in"
+                    |> Button.square
                     |> Button.toHtml
                 ]
             , Button.secondary "reset view" ResetViewClicked
+                |> Button.compact
+                |> Button.fullWidth
                 |> Button.toHtml
             ]
         ]
@@ -530,6 +541,7 @@ panButton : String -> String -> Msg -> Html Msg
 panButton arrow label msg =
     Button.secondary arrow msg
         |> Button.accessibleLabel label
+        |> Button.square
         |> Button.toHtml
 
 
@@ -822,8 +834,12 @@ toSvg args =
                         [ UnitFacing.toSvg (selected == Just position) (previewedUnit unit)
                             |> StyledSvg.toUnstyled
                         ]
+
+                showFacing : Bool
+                showFacing =
+                    List.member unit.id args.facingUnits && not (Unit.isDying unit)
             in
-            if List.member unit.id args.facingUnits then
+            if showFacing then
                 Unit.mapPosition unit |> Maybe.map markerAt
 
             else
@@ -1177,44 +1193,17 @@ boardCrate filter visible crate =
 
 boardDepot : String -> Depot -> Svg Msg
 boardDepot filter depot =
-    let
-        opacity : String
-        opacity =
-            if Depot.isDestroyed depot then
-                "0.25"
-
-            else
-                "1"
-
-        destructionMark : Svg Msg
-        destructionMark =
-            if Depot.isDestroyed depot then
-                Svg.path
-                    [ SA.d "M 4,4 L 12,12 M 12,4 L 4,12"
-                    , SA.stroke S.red1Str
-                    , SA.strokeWidth "1.5"
-                    , HA.style "filter" filter
-                    , SA.pointerEvents "none"
-                    , Aria.svgHidden True
-                    ]
-                    []
-
-            else
-                Svg.text ""
-    in
     at depot.position
         [ Svg.image
             [ SA.width "16"
             , SA.height "16"
             , SA.xlinkHref (Depot.image depot)
-            , SA.opacity opacity
             , HA.style "filter" filter
             , HA.style "image-rendering" "auto"
             , SA.pointerEvents "none"
             , Aria.svgHidden True
             ]
             []
-        , destructionMark
         , Svg.rect
             [ SA.width "16"
             , SA.height "16"
@@ -1295,49 +1284,64 @@ boardUnit unit facing transform ordered passengerCount column =
 
             else
                 "none"
+
+        artwork : List (Svg Msg)
+        artwork =
+            if Unit.isDying unit then
+                [ UnitDeath.toSvg column unit
+                    |> StyledSvg.toUnstyled
+                ]
+
+            else
+                [ Svg.g
+                    [ HA.style "filter" spriteFilter
+                    ]
+                    [ unit
+                        |> Unit.setSpriteFacing facing
+                        |> UnitSprite.toSvg
+                            column
+                        |> StyledSvg.toUnstyled
+                    ]
+                , UnitCargo.toSvg passengerCount
+                    |> StyledSvg.toUnstyled
+                , UnitCargo.freightToSvg freight
+                    |> StyledSvg.toUnstyled
+                , UnitWarnings.toSvg unit
+                    |> StyledSvg.toUnstyled
+                ]
+
+        hitTarget : Svg Msg
+        hitTarget =
+            Svg.rect
+                [ SA.width "16"
+                , SA.height "16"
+                , SA.fill "transparent"
+                , HA.attribute "tabindex" "0"
+                , Aria.svgRole Aria.Button
+                , Aria.svgLabel accessibleLabel
+                , Ev.onMouseOver (MouseOverUnit unit.id)
+                , Ev.on "focus" (Decode.succeed (FocusedBoardUnit unit.id))
+                , Ev.on "blur" (Decode.succeed TargetPreviewLeft)
+                , onClickWithDetail (ClickedUnit unit.id)
+                , onMapActivationKeyDown
+                    { pressedEnter = PressedEnterOnUnit unit.id
+                    , pressedSpace = PressedSpaceOnUnit unit.id
+                    }
+                ]
+                [ Svg.title
+                    []
+                    [ Svg.text accessibleLabel
+                    ]
+                ]
+
+        children : List (Svg Msg)
+        children =
+            artwork ++ [ hitTarget ]
     in
     Svg.g
         [ SA.transform transform
         ]
-        [ Svg.g
-            [ HA.style "filter" spriteFilter
-            ]
-            [ unit
-                |> Unit.setSpriteFacing facing
-                |> UnitSprite.toSvg
-                    column
-                |> StyledSvg.toUnstyled
-            ]
-        , UnitCargo.toSvg passengerCount
-            |> StyledSvg.toUnstyled
-        , UnitCargo.freightToSvg freight
-            |> StyledSvg.toUnstyled
-        , UnitWarnings.toSvg unit
-            |> StyledSvg.toUnstyled
-        , UnitDeath.toSvg unit
-            |> StyledSvg.toUnstyled
-        , Svg.rect
-            [ SA.width "16"
-            , SA.height "16"
-            , SA.fill "transparent"
-            , HA.attribute "tabindex" "0"
-            , Aria.svgRole Aria.Button
-            , Aria.svgLabel accessibleLabel
-            , Ev.onMouseOver (MouseOverUnit unit.id)
-            , Ev.on "focus" (Decode.succeed (FocusedBoardUnit unit.id))
-            , Ev.on "blur" (Decode.succeed TargetPreviewLeft)
-            , onClickWithDetail (ClickedUnit unit.id)
-            , onMapActivationKeyDown
-                { pressedEnter = PressedEnterOnUnit unit.id
-                , pressedSpace = PressedSpaceOnUnit unit.id
-                }
-            ]
-            [ Svg.title
-                []
-                [ Svg.text accessibleLabel
-                ]
-            ]
-        ]
+        children
 
 
 boardTerrainTile : Map -> Bool -> Int -> Int -> Svg Msg

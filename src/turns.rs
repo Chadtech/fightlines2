@@ -3,7 +3,7 @@ use crate::{
     map::{Coordinate, Terrain},
     movement, movement_resolution,
     scenario::{
-        Depot, DepotKind, Direction, Entrenchment, PlayerNumber, ResourceSettlement, Scenario,
+        Depot, Direction, Entrenchment, PlayerNumber, ResourceKind, ResourceSettlement, Scenario,
         SpriteFacing, Unit, UnitId, UnitKind,
     },
     supplies::{self, CrateUnload, GroundSupplyCrate, SupplyOrder},
@@ -41,7 +41,7 @@ pub struct MoveOrderInput {
     pub(crate) unloads: Option<Vec<UnloadOrderInput>>,
     pub(crate) load_crates: Option<i32>,
     /// Collect one ground load of this resource at the planned destination.
-    pub(crate) pickup_ground_freight: Option<DepotKind>,
+    pub(crate) pickup_ground_freight: Option<ResourceKind>,
     pub(crate) crate_unloads: Option<Vec<CrateUnloadInput>>,
 }
 
@@ -610,7 +610,7 @@ pub fn validate(
         if sabotage {
             let position = unit
                 .board_position()
-                .ok_or("sabotage requires infantry already on a depot.")?;
+                .ok_or("sabotage requires infantry already on a depot or fortress.")?;
             if unit.kind() != UnitKind::Infantry || starts_at_exit.is_some() {
                 return Err("only infantry already on the map can sabotage.");
             }
@@ -619,7 +619,7 @@ pub fn validate(
                 .iter()
                 .any(|depot| depot.position == position && !depot.is_destroyed())
             {
-                return Err("sabotage requires an intact depot beneath the infantry.");
+                return Err("sabotage requires an intact depot or fortress beneath the infantry.");
             }
             if path.len() != 1
                 || input.direction.is_some()
@@ -914,7 +914,11 @@ pub fn validate(
             let nearby: Vec<_> = planning_scenario
                 .depots
                 .iter()
-                .filter(|depot| destination == depot.position && !depot.is_destroyed())
+                .filter(|depot| {
+                    destination == depot.position
+                        && !depot.is_destroyed()
+                        && depot.kind.resource_kind().is_some()
+                })
                 .collect();
             let unknown_stock = nearby.iter().any(|depot| !depot.stock_visible);
             let known_stock: i32 = nearby.iter().map(|depot| depot.stock.current).sum();
@@ -1694,7 +1698,7 @@ mod tests {
         combat::CombatKind,
         map::{self, Map, RoadShape},
         map_definition::MapDefinition,
-        scenario::DepotKind,
+        scenario::BuildingKind,
         test_support::{FixtureValue, TestResult},
         visibility,
     };
@@ -3765,7 +3769,7 @@ mod tests {
             .fixture()?;
             let truck = vehicle(&mut scenario, "5")?;
             truck.move_to(Coordinate::new(0, 9));
-            truck.supply_cargo = vec![supplies::CargoStock::new(DepotKind::Fuel, 256); freight];
+            truck.supply_cargo = vec![supplies::CargoStock::new(ResourceKind::Fuel, 256); freight];
             vehicle(&mut scenario, "6")?.move_to(Coordinate::new(0, 11));
             let mut orders = infantry_dismount_inputs(&scenario)?;
             set_path(&mut orders, "5", &[(0, 9), (0, 10), (0, 11)])?;
@@ -4534,7 +4538,7 @@ mod tests {
     fn truck_fuel_counts_passengers_and_both_freight_kinds_at_departure() -> TestResult<()> {
         for passengers in 0..=2 {
             for freight in 0..=(2 - passengers) {
-                for kind in [DepotKind::Supply, DepotKind::Fuel] {
+                for kind in [ResourceKind::Supply, ResourceKind::Fuel] {
                     let mut scenario = Scenario::supply_point().fixture()?;
                     scenario.depots.clear();
                     let carrier = UnitId::parse("4").fixture()?;
@@ -4615,7 +4619,7 @@ mod tests {
         let mut scenario = Scenario::supply_point().fixture()?;
         scenario
             .depots
-            .retain(|depot| depot.kind == DepotKind::Supply);
+            .retain(|depot| depot.kind == BuildingKind::Supply);
         for _ in 0..32 {
             vehicle(&mut scenario, "4")?.follow_path(
                 &[
@@ -4699,7 +4703,7 @@ mod tests {
     fn arriving_and_holding_near_fuel_depots_refills_after_movement() -> TestResult<()> {
         let mut scenario = Scenario::supply_point().fixture()?;
         let mut fuel_depot = scenario.depots.first().fixture()?.clone();
-        fuel_depot.kind = DepotKind::Fuel;
+        fuel_depot.kind = BuildingKind::Fuel;
         fuel_depot.position = Coordinate::new(1, 8);
         scenario.depots.push(fuel_depot);
         let mut turns = Turns::default();
@@ -4717,7 +4721,7 @@ mod tests {
             scenario
                 .depots
                 .iter()
-                .find(|depot| depot.kind == DepotKind::Fuel
+                .find(|depot| depot.kind == BuildingKind::Fuel
                     && depot.position == Coordinate::new(1, 8))
                 .fixture()?
                 .stock
@@ -4731,7 +4735,7 @@ mod tests {
             scenario
                 .depots
                 .iter()
-                .find(|depot| depot.kind == DepotKind::Fuel
+                .find(|depot| depot.kind == BuildingKind::Fuel
                     && depot.position == Coordinate::new(1, 8))
                 .fixture()?
                 .stock
@@ -4746,7 +4750,7 @@ mod tests {
         let mut scenario = Scenario::supply_point().fixture()?;
         scenario
             .depots
-            .retain(|depot| depot.kind == DepotKind::Supply);
+            .retain(|depot| depot.kind == BuildingKind::Supply);
         let mut turns = Turns::default();
         let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
         set_path(&mut player1, "4", &[(2, 7), (2, 8)])?;
@@ -4983,7 +4987,7 @@ mod tests {
                 Conflict::ExistingFreight | Conflict::UnloadingFreight => {
                     vehicle(&mut scenario, "4")?
                         .supply_cargo
-                        .push(supplies::CargoStock::new(DepotKind::Supply, 64));
+                        .push(supplies::CargoStock::new(ResourceKind::Supply, 64));
                 }
                 Conflict::AttackMove | Conflict::ThirdPassenger => {}
             }
@@ -5494,7 +5498,7 @@ mod tests {
                     vehicle(&mut scenario, "4")?.move_to(Coordinate::new(1, 1));
                     vehicle(&mut scenario, "4")?
                         .supply_cargo
-                        .push(supplies::CargoStock::new(DepotKind::Supply, 64));
+                        .push(supplies::CargoStock::new(ResourceKind::Supply, 64));
                     if passenger {
                         vehicle(&mut scenario, "1")?.board(UnitId::parse("4").fixture()?);
                     } else {
@@ -5546,7 +5550,7 @@ mod tests {
         scenario.units.retain(|unit| unit.id() == "4");
         let truck = vehicle(&mut scenario, "4")?;
         truck.move_to(Coordinate::new(1, 1));
-        truck.supply_cargo = vec![supplies::CargoStock::new(DepotKind::Supply, 64); 2];
+        truck.supply_cargo = vec![supplies::CargoStock::new(ResourceKind::Supply, 64); 2];
         let mut own = holds(&scenario, PlayerNumber::Player1)?;
         own.first_mut().fixture()?.crate_unloads = Some(vec![
             CrateUnloadInput {
@@ -5564,7 +5568,7 @@ mod tests {
 
     #[test]
     fn truck_collects_ground_freight_only_when_requested() -> TestResult<()> {
-        for kind in [DepotKind::Supply, DepotKind::Fuel] {
+        for kind in [ResourceKind::Supply, ResourceKind::Fuel] {
             for pickup in [None, Some(kind)] {
                 let mut scenario = Scenario::supply_point().fixture()?;
                 scenario.units.retain(|unit| {
@@ -5572,8 +5576,10 @@ mod tests {
                 });
                 vehicle(&mut scenario, "4")?.move_to(Coordinate::new(3, 8));
                 let expected_stock = match kind {
-                    DepotKind::Supply => 23,
-                    DepotKind::Fuel => 23 - vehicle(&mut scenario, "4")?.fuel_movement_per_tile(0),
+                    ResourceKind::Supply => 23,
+                    ResourceKind::Fuel => {
+                        23 - vehicle(&mut scenario, "4")?.fuel_movement_per_tile(0)
+                    }
                 };
                 scenario.supply_crates.push(GroundSupplyCrate {
                     position: Coordinate::new(4, 8),
@@ -5618,19 +5624,19 @@ mod tests {
         vehicle(&mut scenario, "4")?.move_to(Coordinate::new(3, 8));
         scenario.supply_crates.push(GroundSupplyCrate {
             position: Coordinate::new(3, 8),
-            stock: supplies::CargoStock::new(DepotKind::Supply, 23),
+            stock: supplies::CargoStock::new(ResourceKind::Supply, 23),
         });
         let mut own = holds(&scenario, PlayerNumber::Player1)?;
         let truck_order = own
             .iter_mut()
             .find(|order| order.unit_id == "4")
             .fixture()?;
-        truck_order.pickup_ground_freight = Some(DepotKind::Fuel);
+        truck_order.pickup_ground_freight = Some(ResourceKind::Fuel);
         assert!(validate(&scenario, PlayerNumber::Player1, own.clone()).is_err());
         own.iter_mut()
             .find(|order| order.unit_id == "4")
             .fixture()?
-            .pickup_ground_freight = Some(DepotKind::Supply);
+            .pickup_ground_freight = Some(ResourceKind::Supply);
         validate(&scenario, PlayerNumber::Player1, own.clone()).fixture()?;
         own.iter_mut()
             .find(|order| order.unit_id == "4")
@@ -5642,7 +5648,7 @@ mod tests {
             .fixture()?
             .load_crates = None;
         vehicle(&mut scenario, "4")?.supply_cargo =
-            vec![supplies::CargoStock::new(DepotKind::Supply, 20)];
+            vec![supplies::CargoStock::new(ResourceKind::Supply, 20)];
         let truck_order = own
             .iter_mut()
             .find(|order| order.unit_id == "4")
@@ -5661,7 +5667,7 @@ mod tests {
         vehicle(&mut scenario, "4")?.supply_cargo.clear();
         validate(&scenario, PlayerNumber::Player1, own.clone()).fixture()?;
         vehicle(&mut scenario, "4")?.supply_cargo =
-            vec![supplies::CargoStock::new(DepotKind::Supply, 20); 2];
+            vec![supplies::CargoStock::new(ResourceKind::Supply, 20); 2];
         assert!(validate(&scenario, PlayerNumber::Player1, own).is_err());
         Ok(())
     }
@@ -5670,13 +5676,13 @@ mod tests {
     fn fuel_depots_allow_fuel_drum_loading() -> TestResult<()> {
         let mut scenario = Scenario::supply_point().fixture()?;
         let mut fuel_depot = scenario.depots.first().fixture()?.clone();
-        fuel_depot.kind = DepotKind::Fuel;
+        fuel_depot.kind = BuildingKind::Fuel;
         fuel_depot.position = Coordinate::new(1, 8);
         scenario.depots.push(fuel_depot);
         let position = scenario
             .depots
             .iter()
-            .find(|depot| depot.kind == DepotKind::Fuel)
+            .find(|depot| depot.kind == BuildingKind::Fuel)
             .fixture()?
             .position;
         vehicle(&mut scenario, "4")?.move_to(position);
@@ -5763,7 +5769,7 @@ mod tests {
         vehicle(&mut scenario, "4")?.move_to(Coordinate::new(2, 0));
         vehicle(&mut scenario, "4")?
             .supply_cargo
-            .push(supplies::CargoStock::new(DepotKind::Supply, 64));
+            .push(supplies::CargoStock::new(ResourceKind::Supply, 64));
         vehicle(&mut scenario, "9")?.move_to(Coordinate::new(2, 1));
         let mut first = holds(&scenario, PlayerNumber::Player1)?;
         first.first_mut().fixture()?.crate_unloads = Some(vec![CrateUnloadInput {
@@ -5821,20 +5827,14 @@ mod tests {
         Ok(scenario)
     }
 
-    fn depot_fixture(kind: DepotKind, position: Coordinate) -> Depot {
-        Depot {
-            kind,
-            position,
-            stock: supplies::ResourceStock::depot(),
-            stock_visible: true,
-            damage: 0,
-        }
-    }
-
     #[test]
     fn depot_shell_hits_destroy_stock_at_the_kind_threshold_and_leave_freight() -> TestResult<()> {
-        for (kind, hits) in [(DepotKind::Fuel, 1), (DepotKind::Supply, 3)] {
-            for freight_kind in [DepotKind::Fuel, DepotKind::Supply] {
+        for (kind, hits) in [
+            (BuildingKind::Fuel, 1),
+            (BuildingKind::Supply, 3),
+            (BuildingKind::Fortress, 8),
+        ] {
+            for freight_kind in [ResourceKind::Fuel, ResourceKind::Supply] {
                 let mut scenario = bombardment_fixture()?;
                 let position = Coordinate::new(9, 1);
                 scenario
@@ -5842,7 +5842,7 @@ mod tests {
                     .last_mut()
                     .fixture()?
                     .move_to(Coordinate::new(19, 1));
-                scenario.depots.push(depot_fixture(kind, position));
+                scenario.depots.push(Depot::new(kind, position));
                 let freight = GroundSupplyCrate {
                     position,
                     stock: supplies::CargoStock::new(freight_kind, 128),
@@ -5850,6 +5850,8 @@ mod tests {
                 scenario.supply_crates.push(freight.clone());
                 let mut turns = Turns::default();
                 for hit in 1..=hits {
+                    let gun = scenario.units.first_mut().fixture()?;
+                    gun.set_supplies_for_test(gun.supplies().maximum());
                     let mut first = holds(&scenario, PlayerNumber::Player1)?;
                     first.first_mut().fixture()?.indirect_fire =
                         Some(CoordinateInput { x: 9, y: 1 });
@@ -5860,7 +5862,12 @@ mod tests {
                     let depot = scenario.depots.first().fixture()?;
                     assert_eq!(depot.hit_points().current, hits - hit);
                     assert_eq!(depot.is_destroyed(), hit == hits);
-                    assert_eq!(depot.stock.current, if hit == hits { 0 } else { 1024 });
+                    let expected_stock = if hit == hits || kind.resource_kind().is_none() {
+                        0
+                    } else {
+                        1024
+                    };
+                    assert_eq!(depot.stock.current, expected_stock);
                     assert_eq!(scenario.supply_crates, vec![freight.clone()]);
                     let impact = turns
                         .last_resolution
@@ -5903,7 +5910,7 @@ mod tests {
             .move_to(Coordinate::new(6, 1));
         scenario
             .depots
-            .push(depot_fixture(DepotKind::Fuel, Coordinate::new(9, 1)));
+            .push(Depot::new(BuildingKind::Fuel, Coordinate::new(9, 1)));
         let mut first = holds(&scenario, PlayerNumber::Player1)?;
         first.first_mut().fixture()?.ambush = Some(true);
         first.first_mut().fixture()?.direction = Some(Direction::East);
@@ -5932,7 +5939,7 @@ mod tests {
             let position = Coordinate::new(9, 1);
             scenario
                 .depots
-                .push(depot_fixture(DepotKind::Supply, position));
+                .push(Depot::new(BuildingKind::Supply, position));
             let infantry = scenario.units.last_mut().fixture()?;
             let id = infantry.unit_id();
             if entrenched {
@@ -5977,13 +5984,45 @@ mod tests {
     }
 
     #[test]
-    fn sabotage_destroys_either_depot_before_replenishment_for_only_normal_upkeep() -> TestResult<()>
-    {
-        for kind in [DepotKind::Fuel, DepotKind::Supply] {
+    fn fortress_loading_is_rejected_and_never_creates_freight() -> TestResult<()> {
+        let definition = MapDefinition::parse(r#"{
+            "width": 3, "height": 2, "theme": "GreenForest", "features": [],
+            "depots": [{"position": {"x": 0, "y": 0}, "kind": "Fortress"}],
+            "units": [
+                {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "Player1", "kind": "Truck", "direction": null},
+                {"id": 2, "position": {"x": 2, "y": 1}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
+            ]
+        }"#).fixture()?;
+        let mut scenario = definition.scenario().fixture()?;
+        let mut inputs = holds(&scenario, PlayerNumber::Player1)?;
+        inputs.first_mut().fixture()?.load_crates = Some(1);
+        let before = scenario.clone();
+        assert_eq!(
+            validate(&scenario, PlayerNumber::Player1, inputs).err(),
+            Some("loading cargo requires a stocked depot at the destination.")
+        );
+        assert_eq!(scenario, before);
+        // Resolution also rejects a building with no resource identity even if
+        // a restored archive were to contain an obsolete nonzero stock.
+        scenario.depots.first_mut().fixture()?.stock = supplies::ResourceStock::depot();
+        let id = scenario.units.first().fixture()?.unit_id();
+        supplies::resolve_orders(&mut scenario, &[(id, SupplyOrder::LoadCrates(1))], 1);
+        assert!(scenario.units.first().fixture()?.supply_cargo.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn sabotage_destroys_each_building_before_replenishment_for_only_normal_upkeep()
+    -> TestResult<()> {
+        for kind in [
+            BuildingKind::Fuel,
+            BuildingKind::Supply,
+            BuildingKind::Fortress,
+        ] {
             let mut scenario = bombardment_fixture()?;
             scenario
                 .depots
-                .push(depot_fixture(kind, Coordinate::new(9, 1)));
+                .push(Depot::new(kind, Coordinate::new(9, 1)));
             let infantry = scenario.units.last_mut().fixture()?;
             infantry.set_supplies_for_test(100);
             let supplies = infantry.supplies();
@@ -6020,7 +6059,7 @@ mod tests {
             let mut scenario = bombardment_fixture()?;
             scenario
                 .depots
-                .push(depot_fixture(DepotKind::Supply, Coordinate::new(9, 1)));
+                .push(Depot::new(BuildingKind::Supply, Coordinate::new(9, 1)));
             let mut inputs = holds(&scenario, PlayerNumber::Player2)?;
             let input = inputs.first_mut().fixture()?;
             input.sabotage = Some(true);
@@ -6033,7 +6072,7 @@ mod tests {
                 5 => input.direction = Some(Direction::West),
                 6 => input.path.push(CoordinateInput { x: 8, y: 1 }),
                 7 => input.load_crates = Some(1),
-                8 => input.pickup_ground_freight = Some(DepotKind::Supply),
+                8 => input.pickup_ground_freight = Some(ResourceKind::Supply),
                 9 => scenario.depots.clear(),
                 10 => scenario
                     .units

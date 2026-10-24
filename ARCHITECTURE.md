@@ -105,21 +105,35 @@ remain strings.
 carries the selected type into the game, where it cannot be changed. Elm keeps
 the generated enum typed and derives display labels from its schema names.
 `map_type::MAPS` owns the ordered server catalog shared by game loading, the editor,
-and the public `mapOptions` query. `LobbyPage.load` selects the lobby snapshot and
-map options together; its `Flags` decomposes these into page-owned fields. Polls
-and mutations select only the recurring lobby `Snapshot`. The editor builds its
-options from the loaded catalog, preserving its order while switching drafts.
-Changing the host’s dropdown selection immediately saves it through `setLobbyMap`;
-lobby polling updates the authoritative map without replacing the local selection.
-Starting also saves the current selection before requesting `startGame`; a failed
-save leaves the lobby open and shows the error.
+and the public `mapOptions` and `mapPreviews` queries. `mapPreviews` returns authored
+`NamedMap` definitions, including descriptions and starting placements; it exposes
+no live game state and does not require editor access. `MapType::definition` reads
+the same compiled-in source files as game creation, or the current source files
+when running with `--map-editor`. Shared definition GraphQL objects live with
+`map_definition.rs`; editor-only reads and writes remain gated in `map_editor.rs`.
+
+`LobbyPage.load` selects the lobby snapshot and map previews together. The page
+owns setup and library screens; `Main` correlates initial requests with both the
+lobby ID and destination. `/lobby/:id/maps` opens the host's library, while guests
+return to the ordinary lobby. The library owns a local preview and pagination;
+only **use this map** calls `setLobbyMap`. Successful saves return to the lobby;
+failed saves preserve the preview and display the error. Back navigation discards
+the preview. Polls update the authoritative lobby map without changing what the
+host is previewing. Starting uses the saved map directly.
+
+`Game.View.MapPreview` renders inert authored layouts with shared terrain and
+placement artwork. Water previews hold their first frame. The map editor shares
+the building and starting-unit renderers. `Game.View.MapChoice` owns selectable
+thumbnail rows, while `LobbyPage` owns their layout, details, paging, and effects.
+The editor builds its options from its loaded catalog, preserving their order
+while switching drafts.
 
 `map.rs` stores width/height, a base terrain tile, and a `BTreeMap` of coordinate
 terrain overrides. Lookup returns no tile outside the map; missing in-bounds
 coordinates fall back to the base tile. There is no stored dense grid. `Map::from_ascii` parses rectangular sketches
 with `#` for forests, `%` for hills, `^` for mountains, `~` for water, and spaces or `.` for plain. Spaces are
 preserved; malformed rows and unknown symbols return explicit errors.
-The eleven built-in scenarios are authored in `maps/*.json`, with dimensions,
+The built-in scenarios are authored in `maps/*.json`, with dimensions,
 typed themes, sparse terrain placements, separate supply/fuel depot placements,
 and explicit starting units (stable IDs, player, kind, position, and facing).
 Map JSON enums use Rust variant spelling, such as `GreenForest`, `FieldGun`, and
@@ -129,7 +143,8 @@ Unlisted terrain tiles are implicitly `Plain`; explicit plain placements use
 `map_definition.rs` validates dimensions, bounds, unique terrain and depot
 positions, unit IDs and occupancy, mountain and water passability, facing, and a force for
 each player. `Scenario::from_definition` initializes resources using ordinary
-rules. The named constructors embed JSON at compile time; the ASCII parser
+rules. `MapType::definition` owns the compiled-in JSON selection shared by
+previews and game creation; the ASCII parser
 remains available to tests for concise fixtures. Initial layouts and deployments
 were preserved during migration, including ElAlamein's asymmetric eastern base.
 Themes affect artwork only; movement, sight and scenario geometry remain separate.
@@ -310,6 +325,17 @@ and page dispatch. `Main.init` returns an effect and handles the initial route
 directly after decoding flags; the `Browser.application` boundary converts
 effects to commands. `Route` parses typed lobby/game routes, `Shared` owns
 navigation, and `Effect` translates page effects into commands.
+
+`make frontend` generates `public/build-config.js` from `PRODUCTION`.
+`make build` defaults to `true` and passes it to its frontend prerequisite;
+`make dev`, `make editor`, and `make logs` use `false`. Standalone frontend and
+run commands default to `false`; command-line assignments override these defaults.
+`index.html` loads the config before `main.js`, which passes its `isProduction`
+Boolean through the required startup flags into `Shared.Model`. `Main.handleRoute`
+treats editor, archive-list, and archive-replay routes as `NotFound` in production
+before starting requests. This build setting persists across page navigation;
+local storage does not control it. Server editor and archive access still use
+their independent opt-in flags.
 
 `NewLobby`, `JoinLobby`, `LobbyPage`, `LobbyLoadFailed`, `GamePage`, and
 `GameLoadFailed` own their page state and views.
@@ -632,12 +658,15 @@ The shared view accepts no parent-message mapping or page content. The page read
 its camera for command positioning and queries `active` and `suppressesClick`
 when handling previews and selection. `GamePage.keyCommands` retains keyboard
 priority across dialogs, command menus, movement, ambush and navigation.
-The board appears beside a
-full-height right panel containing selection details and resolution information.
-`GamePage.turnPanel` overlays compact horizontal game controls at the battlefield's
-bottom-left edge, with submit, turn status, and camera controls side by side.
-`Game.View.TurnControls` owns the responsive surface and activity animations; the page
-maps its existing lifecycle to the component's presentation variants. Narrow
+`BattlefieldWorkspace` reserves normal-flow space for a centered game header and
+bottom controls around the navigation surface. Its full-height right inspector
+appears only with a selection and overlays the map without changing its horizontal
+coordinate system. `GamePage.turnPanel` supplies compact horizontal game controls
+at the bottom-left edge, with submit, player statuses, and camera controls side by side.
+`Game.View.TurnControls` owns the responsive surface and maps lifecycle activity
+to the button's size and emphasis modifiers. `View.Button` owns button styling
+and animations; `Main` mounts its keyframes once. `Battlefield.navigationControls`
+owns its pan/zoom grids directly, without descendant selectors. Narrow
 layouts wrap the camera controls below without reserving a fixed panel height.
 The gesture transitions from idle to pressed to panning, then retains click
 suppression after release until a fresh press or viewport reset. Zoom and lost
@@ -941,17 +970,20 @@ including holds and interrupted movement. Units at zero supplies are removed
 immediately, along with passengers of exhausted carriers. `finish_turn_resources`
 returns a presentation snapshot with zero supplies and health for dead units.
 When deaths occur, resolution adds that snapshot followed by the authoritative
-surviving units with a 1400ms transition. `Game.View.UnitDeath` shows a skull and
-crossbones for 600ms, hides it for 200ms, then shows it for another 600ms until
-removal (steady throughout under reduced motion).
+surviving units with a 1400ms transition. `Game.View.UnitDeath` replaces the map
+sprite with `CombatExplosion.mapToSvg`: the theater's six illustrated frames over
+100ms, with the sprite fading from 20ms to removal at 50ms. Mount-triggered CSS
+runs this one-shot effect even while a loss dialog holds the playback clock;
+the casualty's tile is then empty through the remaining pause. Reduced motion
+uses a brief steady peak-impact frame and sprite removal without fading.
 `GamePage` freezes its sprite clock while an on-board death is visible, and
 `Game.View.UnitDeath` pauses surrounding CSS animations through the game root's
 death-focus class. `TurnPlayback.start` omits previously presented casualties
-from later frames, so combat death markers clear after the server's pause
+from later frames, so combat casualties clear after the server's pause
 before subsequent movement resumes. Server visibility and timing remain intact.
 Frame visibility filtering also applies to deaths, concealing hidden enemies.
 Enemy casualties hidden in their first death frame stay omitted through cleanup,
-even if later movement or a firing reveal exposes their tile. Combat skulls and
+even if later movement or a firing reveal exposes their tile. Combat explosions and
 loss notices require a casualty in the projected death frame; encounter portraits
 never supply an otherwise concealed death.
 Nearby depots and crates replenish provisions before upkeep.
@@ -1195,7 +1227,7 @@ observed exchange retains its sight mask briefly when a volley kills the observe
 so mutual destruction remains visible without revealing later movement. Resources
 stay concealed for enemies; the public `Unit.destroyed` flag permits visible death
 markers without exposing resource quantities through unit snapshots. Elm replays projected frames and
-draws firing flashes, target explosions, and death feedback without connecting
+draws target explosions and death feedback without connecting
 lines, floating damage numbers, or calculating combat outcomes.
 
 `TurnPlayback.Presentation` separates ordinary battlefield playback from combat
@@ -1233,15 +1265,15 @@ appears and settling over 160ms. Each scene moves its backdrop, figures, and
 impact overlays together; backdrop overscan prevents exposed edges. Reduced
 motion disables the shake.
 Reduced motion substitutes a steady peak-impact frame. `Game.View.CombatEffects`
-owns the board spotlight, shine, firing flashes, and target explosions.
+owns the board spotlight, shine, and target explosions.
 Spotlight coordinates and camera subjects resolve encounter IDs against projected
-battlefield units; map flashes and explosions also require a projected participant.
+battlefield units; target explosions also require a projected participant.
 Encounter-only portraits never create map effects at concealed positions. Projected
 indirect-fire landings retain their tile feedback even without a known target.
 Continuing a lethal pair enters a `Deaths` presentation stage using that pair’s
 authoritative after-health. Only its visible casualties and carrier passengers
-receive skull feedback; concealed portraits stay off the board. The server’s
-post-volley duration supplies the pause. Playback removes these casualties from
+receive the quick explosion and disappearance; concealed portraits stay off the
+board. The server’s post-volley duration supplies the pause. Playback removes these casualties from
 the held board and volley before opening the next pair, so later theaters and
 map feedback cannot resurrect them. Reciprocal casualties share one pause.
 After the last pair, playback reveals the remaining volley feedback and restarts
@@ -1254,7 +1286,10 @@ Projected `Shot.attackerHealth` and `Shot.targetHealth` carry authoritative befo
 and after hit points for each pair, including concealed enemies. Rust sequences health losses across pairs within a simultaneous volley; reciprocal shots share a single transition.
 For chains of encounters, a unit's outgoing pair is shown before another pair
 can kill it, so its simultaneous shot retains a living formation and observable
-participants stay on the held board until their lethal pair. This presentation sequence does not change simultaneous resolution. This permits enemy health inside the
+participants stay on the held board until their lethal pair. Elm applies the same
+firing-before-destruction ordering across confirmed exchanges and impact-only
+scenes, including every observable gun contributing to merged landings. This
+presentation sequence does not change simultaneous resolution. This permits enemy health inside the
 encounter card without exposing enemy supplies or fuel through `Unit.resources`.
 Panel state owns its capped presentation clock and `CardVisible | SeeingMap`
 mode. Its 6000ms capped clock allows the 200ms opening expansion, a one-second
@@ -1262,7 +1297,9 @@ anticipation beat, up to eight staggered infantry casualties, and the automatic-
 to finish, including a subsequent depot strike. When an indirect impact includes depot
 damage, the theater finishes the participant hits, then replaces their scenes with
 one centered depot map sprite. After a short anticipation, the building receives its
-own impact; a destroyed depot adopts the board's faded sprite and red cross.
+own impact; a destroyed depot adopts the board's shared crater-and-wreckage sprite.
+`Depot.image` chooses this asset from projected HP for both depot kinds, including
+inspector portraits; the board retains its normal fog filter and hit targets.
 Both stages derive from the same panel clock and projected impact data. Automatic
 close waits until the depot strike settles. The clock sequences individual figure
 explosions and removal, without HP bars; Continue/Enter
@@ -1273,11 +1310,13 @@ units during combat and casualty pauses, held movement origins, and
 projected indirect impacts. Encounter-only portrait positions never contribute.
 `TurnLifecycle.Playing` owns its optional playback camera and remaining pan time;
 the camera is absent until the viewport has been measured. `GamePage` retains the
-battlefield size and bottom control inset, measured on initial render, playback
-start, and window resize through `Effect.measure`. The battlefield already excludes
-the right panel. The bottom inset uses the rendered controls' top edge, including
-their responsive wrapping. `Camera.frame` preserves the full battlefield size for
-board scaling, but fits and centers subjects in the clear area above the controls. It tests
+battlefield size and right inspector inset, measured on initial render, playback
+start, layout changes, and window resize through `Effect.measure`.
+The navigation surface already excludes the header and rendered bottom controls,
+including responsive wrapping. `BattlefieldWorkspace.viewport` combines its size
+with the inspector's rendered width (zero when hidden). `Camera.frame` preserves
+the full navigation surface for board scaling, but fits and centers subjects in
+the clear area beside the inspector. It tests
 projected subject tiles against that view in pixels and leaves it unchanged when
 they fit. Clipped subjects trigger a pan with one tile of padding and a zoom
 reduction only when needed to fit the group. The board eases necessary changes
@@ -1329,7 +1368,7 @@ with an `attack move` heading and the usual fog-safe encounter portraits.
 ## Finite supply sources and replenishment
 
 `Depot.damage` counts shell damage against 1 HP for fuel and 3 HP
-for supply depots. `DepotHp` exports current and maximum HP through `Depot.hp`,
+for supply depots, or 8 HP for fortresses. `DepotHp` exports current and maximum HP through `Depot.hp`,
 separately from unit HP. `Combat::bombard` applies one hit per fired shell
 independently of unit engagements and records `IndirectImpact.depot` transitions. Ground freight
 is unaffected. `FacingOrder::Sabotage` is validated as a whole-turn action for
@@ -1341,6 +1380,19 @@ resources or load cargo. `PlayerObservation` remembers only observed structural
 damage in fog; current stocks retain their separate visibility gate. Successful
 sabotage positions are recorded in shared frames and projected through tile sight.
 Archive fields default to intact depots and no sabotage effects for old recordings.
+
+`BuildingKind::Fortress` shares placement, damage, destruction, sabotage, and fog
+memory with depots. `ResourceKind` separately represents supply/fuel freight and
+pickup inputs, preserving their serialized spelling in existing archives.
+`BuildingKind::resource_kind` returns no resource for a fortress: it initializes
+with zero stock, exposes no GraphQL stock, never replenishes, and cannot load
+cargo. AI resource planning also uses this conversion. The editor offers all
+three building kinds in its buildings group and saves fortresses as `Fortress`.
+`Combat::damage` applies an intact fortress's 0.25 multiplier only to a unit
+on that square. It stacks with other cover, caps the ordinary hit before applying
+the fortress bonus, and rounds once with the existing one-HP minimum. Simultaneous
+shells use the pre-volley protection even when they destroy the fortress; subsequent
+volleys receive no bonus. Direct fire damages occupants only.
 
 `supplies.rs` owns `ResourceStock`, typed `CargoStock`, `GroundSupplyCrate`, validated `SupplyOrder`,
 loading/unloading, and end-of-turn distribution. `Scenario` owns finite depot
@@ -1392,7 +1444,9 @@ and fuel drums use the same distribution algorithm to refill vehicle fuel instea
 
 `PlannedOrder.SupplyTransfer` owns the truck route, load count, crate exits, and
 existing passenger unloads. `OrderPlanning.ChoosingCrates` owns the depot-loading
-dialog and the saved drafts. `OrderPlanning` enters that choice directly when
+dialog and the saved drafts. Its `Depot.LoadingSource` carries a required resource
+kind and optional observed stock, so fortresses cannot enter that workflow.
+`OrderPlanning` enters that choice directly when
 saving a truck move or hold, completing passenger exits, or skipping unloading.
 Crate unloading suppresses loading because those operations cannot combine.
 `GamePage.update` opens the native cargo dialog only when its identity changes;
@@ -1430,8 +1484,8 @@ its existing playing state. The skip preference selects ordinary timed playback.
 `GamePage` loads and saves `skipUnitLossDialogs` through the existing local-storage
 boundary. It derives the active dialog from playback and opens it through the native
 modal port when the casualty changes. `Game.View.UnitDeath` owns its information, actions,
-steady marker, and board spotlight; `View.Dialog.atBottom` supplies native
-focus trapping with lower-screen placement and a transparent backdrop.
+explosion, sprite disappearance, and board spotlight; `View.Dialog.atBottom`
+supplies native focus trapping with lower-screen placement and a transparent backdrop.
 
 `UnitLoss.resolve` combines projected losses with the page's roster lookup for
 both dialog rendering and update-time error reporting. `GamePage.superUpdate`
@@ -1472,7 +1526,8 @@ report exposes the opponent's supply spending or unseen supply deaths. Elm
 decodes at most one report into `Turn.Resolution`, retains it with the existing
 turn state, and shows it on the introduction after playback, including on reload.
 
-`DepotKind` distinguishes `Supply` and `Fuel` buildings through GraphQL and Elm.
+`BuildingKind` distinguishes `Supply`, `Fuel`, and `Fortress` buildings through
+GraphQL and Elm.
 `ResourceStock` is the shared finite quantity for depots and supply crates.
 Fuel depots can be authored in map layouts with 1024 starting stock; existing
 layouts retain only their supply depots. Fuel recipients are living vehicles on the depot or one cardinally adjacent tile;

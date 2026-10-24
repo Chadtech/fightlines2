@@ -144,7 +144,7 @@ fn plan(
         }
     }
     for depot in &mut observed.depots {
-        if !depot.stock_visible {
+        if !depot.stock_visible && depot.kind.resource_kind().is_some() {
             depot.stock = ResourceStock::depot();
         }
     }
@@ -897,7 +897,6 @@ mod tests {
             MapType::SupplyPoint,
             MapType::ElAlamein,
             MapType::BloodGulch,
-            MapType::Arabia,
             MapType::Sidewinder,
             MapType::BlackForest,
             MapType::Crossroads,
@@ -905,6 +904,7 @@ mod tests {
             MapType::ThreeCrossings,
             MapType::LakeOfPennsylvania,
             MapType::ConvoyCountry,
+            MapType::BastionPass,
         ] {
             let mut scenario = map.scenario().fixture()?;
             let mut turns = Turns::default();
@@ -979,7 +979,6 @@ mod tests {
             MapType::SupplyPoint,
             MapType::ElAlamein,
             MapType::BloodGulch,
-            MapType::Arabia,
             MapType::Sidewinder,
             MapType::BlackForest,
             MapType::Crossroads,
@@ -987,6 +986,7 @@ mod tests {
             MapType::ThreeCrossings,
             MapType::LakeOfPennsylvania,
             MapType::ConvoyCountry,
+            MapType::BastionPass,
         ] {
             let mut scenario = map.scenario().fixture()?;
             let mut turns = Turns::default();

@@ -1,14 +1,20 @@
 //! Editable scenario data. Resources are initialized by the ordinary game rules.
 use crate::{
-    map::{Coordinate, Map, MapError, MapTheme, Terrain},
-    scenario::{DepotKind, Direction, PlayerNumber, Scenario, UnitKind},
+    graphql::Context,
+    map::{Coordinate, Map, MapError, MapTheme, Terrain, TerrainValue},
+    map_type::MapType,
+    scenario::{BuildingKind, Direction, PlayerNumber, Scenario, UnitKind},
 };
+use juniper::{GraphQLObject, graphql_object};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MapDefinition {
+    /// Selection copy; older definitions without metadata remain loadable.
+    #[serde(default)]
+    pub description: String,
     pub width: u16,
     pub height: u16,
     pub theme: MapTheme,
@@ -28,7 +34,7 @@ pub struct TerrainPlacement {
 #[serde(deny_unknown_fields)]
 pub struct DepotPlacement {
     pub position: Coordinate,
-    pub kind: DepotKind,
+    pub kind: BuildingKind,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -40,6 +46,75 @@ pub struct UnitPlacement {
     pub player_number: PlayerNumber,
     pub kind: UnitKind,
     pub direction: Option<Direction>,
+}
+
+#[derive(GraphQLObject)]
+#[graphql(context = Context)]
+pub struct NamedMap {
+    pub map_type: MapType,
+    pub definition: MapDefinition,
+}
+
+#[graphql_object(context = Context)]
+impl MapDefinition {
+    fn description(&self) -> &str {
+        &self.description
+    }
+    fn width(&self) -> i32 {
+        i32::from(self.width)
+    }
+    fn height(&self) -> i32 {
+        i32::from(self.height)
+    }
+    fn theme(&self) -> MapTheme {
+        self.theme
+    }
+    fn features(&self) -> &[TerrainPlacement] {
+        &self.features
+    }
+    fn depots(&self) -> &[DepotPlacement] {
+        &self.depots
+    }
+    fn units(&self) -> &[UnitPlacement] {
+        &self.units
+    }
+}
+
+#[graphql_object(context = Context)]
+impl TerrainPlacement {
+    fn position(&self) -> Coordinate {
+        self.position
+    }
+    fn terrain(&self) -> TerrainValue {
+        self.terrain.into()
+    }
+}
+#[graphql_object(context = Context)]
+impl DepotPlacement {
+    fn position(&self) -> Coordinate {
+        self.position
+    }
+    fn kind(&self) -> BuildingKind {
+        self.kind
+    }
+}
+#[graphql_object(context = Context)]
+impl UnitPlacement {
+    fn id(&self) -> i32 {
+        i32::from(self.id)
+    }
+    fn position(&self) -> Coordinate {
+        self.position
+    }
+    fn player_number(&self) -> PlayerNumber {
+        self.player_number
+    }
+    fn kind(&self) -> UnitKind {
+        self.kind
+    }
+    fn direction(&self) -> Option<Direction> {
+        self.direction
+    }
 }
 
 impl MapDefinition {
@@ -123,6 +198,47 @@ mod tests {
         map::RoadShape,
         test_support::{FixtureValue, TestResult},
     };
+
+    #[test]
+    fn fortresses_round_trip_with_eight_hp_and_no_resource_stock() -> TestResult<()> {
+        let json = serde_json::json!({
+            "width": 3, "height": 2, "theme": "GreenForest", "features": [],
+            "depots": [{"position": {"x": 1, "y": 0}, "kind": "Fortress"}],
+            "units": [
+                {"id": 1, "position": {"x": 1, "y": 0}, "playerNumber": "Player1", "kind": "Infantry", "direction": "East"},
+                {"id": 2, "position": {"x": 2, "y": 1}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
+            ]
+        });
+        let definition = MapDefinition::parse(&json.to_string()).fixture()?;
+        let saved = serde_json::to_string(&definition)?;
+        let mut scenario = MapDefinition::parse(&saved)
+            .fixture()?
+            .scenario()
+            .fixture()?;
+        let fortress = scenario.depots.first().fixture()?;
+        assert_eq!(fortress.kind, BuildingKind::Fortress);
+        assert_eq!(fortress.hit_points().current, 8);
+        assert_eq!(fortress.hit_points().maximum, 8);
+        assert_eq!(fortress.stock.current, 0);
+        assert_eq!(fortress.stock.maximum, 0);
+        assert!(fortress.kind.resource_kind().is_none());
+        let infantry = scenario.units.first_mut().fixture()?;
+        infantry.set_supplies_for_test(100);
+        let upkeep = infantry.supplies().upkeep_per_turn();
+        scenario.finish_turn_resources(1);
+        assert_eq!(
+            scenario.units.first().fixture()?.supplies().current(),
+            100 - upkeep
+        );
+        // Building positions share the existing occupancy validation.
+        let mut overlapping = definition;
+        overlapping.depots.push(DepotPlacement {
+            position: Coordinate::new(1, 0),
+            kind: BuildingKind::Supply,
+        });
+        assert!(overlapping.scenario().is_err());
+        Ok(())
+    }
 
     #[test]
     fn explicit_road_variants_survive_map_json_and_scenario_loading() -> TestResult<()> {

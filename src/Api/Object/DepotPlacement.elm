@@ -4,7 +4,7 @@
 
 module Api.Object.DepotPlacement exposing (..)
 
-import Api.Enum.DepotKind
+import Api.Enum.BuildingKind
 import Api.InputObject
 import Api.Interface
 import Api.Object
@@ -27,6 +27,6 @@ position object____ =
     Object.selectionForCompositeField "position" [] object____ Basics.identity
 
 
-kind : SelectionSet Api.Enum.DepotKind.DepotKind Api.Object.DepotPlacement
+kind : SelectionSet Api.Enum.BuildingKind.BuildingKind Api.Object.DepotPlacement
 kind =
-    Object.selectionForField "Enum.DepotKind.DepotKind" "kind" [] Api.Enum.DepotKind.decoder
+    Object.selectionForField "Enum.BuildingKind.BuildingKind" "kind" [] Api.Enum.BuildingKind.decoder

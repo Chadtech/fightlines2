@@ -25,6 +25,7 @@ type Route
     = Home
     | NewLobby
     | Lobby LobbyId
+    | LobbyMaps LobbyId
     | Game LobbyId
     | MapEditor
     | LoggedGames
@@ -44,6 +45,7 @@ parser =
         , P.map MapEditor (P.s "map-editor")
         , P.map Home P.top
         , P.map NewLobby (P.s "new")
+        , P.map LobbyMaps (P.s "lobby" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe) </> P.s "maps")
         , P.map Lobby (P.s "lobby" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe))
         , P.map Game (P.s "game" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe))
         ]
@@ -72,6 +74,9 @@ toString route =
 
                 Lobby id ->
                     [ "lobby", LobbyId.toString id ]
+
+                LobbyMaps id ->
+                    [ "lobby", LobbyId.toString id, "maps" ]
 
                 Game id ->
                     [ "game", LobbyId.toString id ]

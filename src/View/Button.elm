@@ -1,15 +1,23 @@
 module View.Button exposing
     ( Button
     , accessibleLabel
+    , attention
     , choice
+    , compact
     , disabled
     , fullWidth
+    , highlighted
     , large
     , onClick
     , primary
     , secondary
+    , small
+    , square
+    , styles
+    , tall
     , toHtml
     , withFeedback
+    , withHtmlId
     , withIcon
     )
 
@@ -33,6 +41,7 @@ import View.Aria as Aria
 
 type alias Button msg =
     { accessibleLabel : Maybe String
+    , htmlId : Maybe String
     , onClick : Maybe msg
     , label : String
     , variant : Variant
@@ -40,6 +49,7 @@ type alias Button msg =
     , icon : Maybe (Html msg)
     , feedback : Maybe String
     , fullWidth : Bool
+    , emphasis : Emphasis
     }
 
 
@@ -51,8 +61,18 @@ type Variant
 
 
 type Size
-    = Regular
+    = Small
+    | Compact
+    | Square
+    | Regular
     | Large
+    | Tall
+
+
+type Emphasis
+    = Normal
+    | Highlighted
+    | Attention
 
 
 
@@ -64,6 +84,7 @@ type Size
 fromLabelAndVariant : String -> Variant -> Button msg
 fromLabelAndVariant label variant =
     { accessibleLabel = Nothing
+    , htmlId = Nothing
     , onClick = Nothing
     , label = label
     , variant = variant
@@ -71,6 +92,7 @@ fromLabelAndVariant label variant =
     , icon = Nothing
     , feedback = Nothing
     , fullWidth = False
+    , emphasis = Normal
     }
 
 
@@ -103,6 +125,13 @@ withIcon icon button =
     { button | icon = Just icon }
 
 
+withHtmlId : String -> Button msg -> Button msg
+withHtmlId htmlId button =
+    { button
+        | htmlId = Just htmlId
+    }
+
+
 {-| Replace the label with feedback while reserving the space for both labels.
 -}
 withFeedback : Maybe String -> Button msg -> Button msg
@@ -127,6 +156,48 @@ disabled label =
     fromLabelAndVariant label Disabled
 
 
+small : Button msg -> Button msg
+small button =
+    { button
+        | size = Small
+    }
+
+
+compact : Button msg -> Button msg
+compact button =
+    { button
+        | size = Compact
+    }
+
+
+square : Button msg -> Button msg
+square button =
+    { button
+        | size = Square
+    }
+
+
+tall : Button msg -> Button msg
+tall button =
+    { button
+        | size = Tall
+    }
+
+
+highlighted : Button msg -> Button msg
+highlighted button =
+    { button
+        | emphasis = Highlighted
+    }
+
+
+attention : Button msg -> Button msg
+attention button =
+    { button
+        | emphasis = Attention
+    }
+
+
 large : Button msg -> Button msg
 large button =
     { button | size = Large }
@@ -143,6 +214,7 @@ toHtml button =
         conditionalAttrs : List (Attribute msg)
         conditionalAttrs =
             [ Maybe.map Ev.onClick button.onClick
+            , Maybe.map A.id button.htmlId
             , Maybe.map Aria.label button.accessibleLabel
             , Maybe.map A.title button.accessibleLabel
             ]
@@ -276,6 +348,25 @@ toHtml button =
                 sizeStyles : List Css.Style
                 sizeStyles =
                     case button.size of
+                        Small ->
+                            [ S.p1
+                            ]
+
+                        Compact ->
+                            [ S.h6p5
+                            , S.minW6p5
+                            , S.p0
+                            , S.lineHeight1
+                            ]
+
+                        Square ->
+                            [ S.w6p5
+                            , S.h6p5
+                            , S.minW6p5
+                            , S.p0
+                            , S.lineHeight1
+                            ]
+
                         Regular ->
                             case button.variant of
                                 Choice _ ->
@@ -292,6 +383,24 @@ toHtml button =
                             , S.py4
                             , S.minH14
                             ]
+
+                        Tall ->
+                            [ S.px2
+                            , S.py3
+                            , S.minH14
+                            ]
+
+                emphasisStyles : Css.Style
+                emphasisStyles =
+                    case button.emphasis of
+                        Normal ->
+                            S.batch []
+
+                        Highlighted ->
+                            S.textYellow5
+
+                        Attention ->
+                            attentionStyles
             in
             [ A.disabled (button.variant == Disabled)
             , A.css
@@ -302,9 +411,61 @@ toHtml button =
                 , Css.maxWidth (Css.pct 100)
                 , S.pointerCursor
                 , S.batch variantStyles
+                , emphasisStyles
                 ]
             ]
     in
     H.button
         (baseAttrs ++ conditionalAttrs ++ selectionAttrs)
         content
+
+
+attentionStyles : Css.Style
+attentionStyles =
+    S.batch
+        [ S.relative
+        , S.overflowHidden
+        , S.animation "fightlines-button-attention 1.8s ease-in-out infinite"
+        , S.focusVisible
+            [ S.outlineCurrentThick
+            , S.outlineOffset3
+            ]
+        , S.after
+            [ S.contentEmpty
+            , S.absolute
+            , S.inset0
+            , Css.property "background" "linear-gradient(110deg, transparent 35%, currentColor 50%, transparent 65%)"
+            , S.opacity 0.16
+            , S.transform "translateX(-150%)"
+            , S.animation "fightlines-button-shine 3.6s ease-in-out infinite"
+            , S.pointerEventsNone
+            ]
+        , S.reducedMotion
+            [ S.animationNone
+            , S.after
+                [ S.animationNone
+                , S.displayNone
+                ]
+            ]
+        ]
+
+
+styles : Html msg
+styles =
+    H.node "style"
+        []
+        [ H.text """
+            @keyframes fightlines-button-attention {
+                0%, 100% { filter: brightness(1);
+                }
+                50% { filter: brightness(1.45);
+                }
+            }
+            @keyframes fightlines-button-shine {
+                0%, 35% { transform: translateX(-150%);
+                }
+                75%, 100% { transform: translateX(150%);
+                }
+            }
+        """
+        ]

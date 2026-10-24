@@ -46,7 +46,7 @@ main =
             \_ url key ->
                 let
                     ( failures, effect ) =
-                        checks (Shared.init (Random.initialSeed 0) OperatingSystem.Unknown LocalStorage.test url key)
+                        checks (Shared.init False (Random.initialSeed 0) OperatingSystem.Unknown LocalStorage.test url key)
                 in
                 ( (), Cmd.batch [ results failures, E.toCmd key effect ] )
         , update = \_ model -> ( model, Cmd.none )
@@ -111,7 +111,7 @@ checks shared =
 
                 framed : GameReplay.Model
                 framed =
-                    step (GameReplay.ControlsSizeReceived viewportElement (Ok controlsElement)) playing
+                    step (GameReplay.InspectorSizeReceived viewportElement (Ok inspectorElement)) playing
 
                 framedPause : GameReplay.Model
                 framedPause =
@@ -213,7 +213,17 @@ checks shared =
 
                 unframed : GameReplay.Model
                 unframed =
-                    { playing | viewport = Just { size = { x = 800, y = 600 }, bottomInset = 160 } }
+                    { playing
+                        | viewport =
+                            Just
+                                { size =
+                                    { x = 800
+                                    , y = 600
+                                    }
+                                , bottomInset = 0
+                                , rightInset = 200
+                                }
+                    }
             in
             ( List.concat
                 [ lossFailures
@@ -465,9 +475,16 @@ viewportElement =
     }
 
 
-controlsElement : Browser.Dom.Element
-controlsElement =
-    { viewportElement | element = { x = 0, y = 440, width = 400, height = 160 } }
+inspectorElement : Browser.Dom.Element
+inspectorElement =
+    { viewportElement
+        | element =
+            { x = 600
+            , y = 0
+            , width = 200
+            , height = 600
+            }
+    }
 
 
 expect : String -> Bool -> List String

@@ -9,6 +9,7 @@ module Game.View.UnitDeath exposing
 
 import Api.Enum.CombatKind as CombatKind
 import Api.Enum.UnitKind as Kind
+import Css
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Map as Map exposing (Map)
 import Game.PlayerNumber as PlayerNumber
@@ -18,6 +19,7 @@ import Game.UnitId as UnitId exposing (UnitId)
 import Game.UnitKind as UnitKind
 import Game.UnitLoss exposing (Details, DetailsError(..))
 import Game.UnitLoss.Cause as Cause exposing (Cause, NamedUnit)
+import Game.View.CombatExplosion as CombatExplosion
 import Game.View.UnitSprite as UnitSprite
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
@@ -48,58 +50,52 @@ styles : Html msg
 styles =
     H.node "style"
         []
-        [ H.text """
-            @keyframes fightlines-unit-death-flash {
-                0% { opacity: 0; }
-                25%, 100% { opacity: 1; }
+        [ H.text
+            ("""
+            @keyframes fightlines-unit-death-vanish {
+                0%, 40% { opacity: 1; }
+                100% { opacity: 0; }
             }
-            .fightlines-unit-death {
-                opacity: 1;
-                animation: fightlines-unit-death-flash 800ms steps(1) 600ms 1 forwards;
-            }
-            .fightlines-death-focus *:not(.fightlines-unit-death):not(.fightlines-combat-impact),
+            .fightlines-death-focus *:not(["""
+                ++ CombatExplosion.casualtyAnimationAttribute
+                ++ """]):not(.fightlines-combat-impact),
             .fightlines-death-focus *::before,
             .fightlines-death-focus *::after {
                 animation-play-state: paused !important;
             }
             .fightlines-loss-focus [data-loss-dim] { opacity: .18; }
-            .fightlines-loss-focus .fightlines-unit-death { animation: none; opacity: 1; }
-            .fightlines-loss-focus .fightlines-unit-death image { width: 10px; height: 10px; transform: translate(9px, -5px); }
-            @media (prefers-reduced-motion: reduce) {
-                .fightlines-unit-death { animation: none; opacity: 1; }
-            }
         """
+            )
         ]
 
 
-{-| Destroyed units remain visible for their server-timed presentation frame.
-Playback transitions own their lifetime rather than a separate marker timer.
+{-| Replace a destroyed unit's artwork with a quick explosion and disappearance.
+The projected casualty remains inspectable for its server-timed presentation frame.
 -}
-toSvg : Unit -> Svg msg
-toSvg unit =
-    Lazy.lazy deathMarker (Unit.isDying unit)
+toSvg : Int -> Unit -> Svg msg
+toSvg column unit =
+    Lazy.lazy2 deathAnimation column unit
 
 
-deathMarker : Bool -> Svg msg
-deathMarker dying =
-    if not dying then
-        Svg.text ""
-
-    else
-        Svg.g
-            [ SA.class "fightlines-unit-death"
-            , SA.pointerEvents "none"
-            , Aria.label "unit destroyed"
-            ]
-            [ Svg.image
-                [ SA.x "0"
-                , SA.y "0"
-                , SA.width "16"
-                , SA.height "16"
-                , SA.xlinkHref "/assets/death-skull-illustrated-v1.png"
+deathAnimation : Int -> Unit -> Svg msg
+deathAnimation column unit =
+    Svg.g
+        [ SA.pointerEvents "none"
+        , Aria.label "unit destroyed"
+        ]
+        [ Svg.g
+            [ A.attribute CombatExplosion.casualtyAnimationAttribute ""
+            , A.css
+                [ S.animation ("fightlines-unit-death-vanish " ++ String.fromFloat CombatExplosion.spriteDisappearsAt ++ "ms linear both")
+                , S.reducedMotion
+                    [ Css.property "animation-timing-function" "steps(1, end)"
+                    ]
                 ]
-                []
             ]
+            [ UnitSprite.toSvg column unit
+            ]
+        , CombatExplosion.mapToSvg unit.spriteFacing
+        ]
 
 
 dialog : DialogConfig -> Loss -> Dialog Msg
@@ -388,29 +384,9 @@ spotlight map units loss =
                 |> Maybe.map (outline >> List.singleton)
                 |> Maybe.withDefault []
 
-        lossMarker : Coordinate -> Svg msg
-        lossMarker tile =
-            Svg.g
-                [ SA.transform
-                    ("translate("
-                        ++ String.fromInt (tile.x * 16)
-                        ++ " "
-                        ++ String.fromInt (tile.y * 16)
-                        ++ ")"
-                    )
-                ]
-                [ toSvg loss.unit
-                ]
-
-        lossMarkers : List (Svg msg)
-        lossMarkers =
-            position
-                |> Maybe.map (lossMarker >> List.singleton)
-                |> Maybe.withDefault []
-
         children : List (Svg msg)
         children =
-            shades ++ highlights ++ lossMarkers
+            shades ++ highlights
     in
     Svg.g
         [ SA.pointerEvents "none"

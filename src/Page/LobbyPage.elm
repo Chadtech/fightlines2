@@ -1,7 +1,9 @@
 module Page.LobbyPage exposing
     ( Flags
+    , Location(..)
     , Model
     , Msg
+    , currentLocation
     , init
     , listeners
     , load
@@ -15,6 +17,7 @@ import Api.Enum.Controller
     exposing
         ( Controller(..)
         )
+import Api.Enum.MapTheme as MapTheme
 import Api.Enum.MapType
     exposing
         ( MapType
@@ -32,12 +35,15 @@ import ApiRequest
     exposing
         ( Response
         )
+import EditableMap exposing (NamedMap)
 import Effect as E
     exposing
         ( Eff
         )
 import Game.MapType as MapType
 import Game.PlayerNumber as PlayerNumber
+import Game.View.MapChoice as MapChoice
+import Game.View.MapPreview as MapPreview
 import Graphql.Http
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import Html.Styled as H
@@ -71,7 +77,7 @@ import View.Select as Select
 
 type alias Flags =
     { lobby : Snapshot
-    , mapOptions : List MapType
+    , mapPreviews : List NamedMap
     }
 
 
@@ -104,14 +110,30 @@ type alias Model =
     , isHost : Bool
     , isMember : Bool
     , gameUrl : Maybe String
-    , mapOptions : List MapType
-    , selectedMapType : MapType
+    , mapPreviews : List NamedMap
+    , screen : Screen
     , requestStatus : RequestStatus
     , refreshing : Bool
     , pollRevision : PollRevision
     , error : Maybe String
     , actionError : Maybe String
     , copyStatus : CopyStatus
+    }
+
+
+type Location
+    = LobbySetup
+    | MapLibrary
+
+
+type Screen
+    = Setup
+    | Library LibraryState
+
+
+type alias LibraryState =
+    { preview : MapType
+    , page : Int
     }
 
 
@@ -128,6 +150,7 @@ restore the authoritative selection.
 type RequestStatus
     = Idle
     | SavingSettings
+    | SavingMap
     | ChoosingSide PlayerNumber
 
 
@@ -147,10 +170,14 @@ type alias CopyResult =
 type Msg
     = SideInputChanged PlayerNumber
     | ControllerInputChanged Controller
-    | MapInputChanged MapType
+    | ChooseMapButtonClicked
+    | BackToLobbyButtonClicked
+    | MapPreviewClicked MapType
+    | PreviousMapsButtonClicked
+    | NextMapsButtonClicked
+    | UseMapButtonClicked
     | MapResponseReceived (Response Snapshot)
     | StartButtonClicked
-    | StartMapResponseReceived (Response Snapshot)
     | RetryButtonClicked
     | CopyLinkButtonClicked
     | CopyLinkResultReceived CopyResult
@@ -166,6 +193,16 @@ type Msg
 ----------------------------------------------------------------
 
 
+currentLocation : Model -> Location
+currentLocation model =
+    case model.screen of
+        Setup ->
+            LobbySetup
+
+        Library _ ->
+            MapLibrary
+
+
 setShared : Shared.Model -> Model -> Model
 setShared shared model =
     { model
@@ -179,12 +216,39 @@ setShared shared model =
 ----------------------------------------------------------------
 
 
-init : Shared.Model -> Flags -> ( Model, Eff Msg )
-init shared flags =
+init : Location -> Shared.Model -> Flags -> ( Model, Eff Msg )
+init location shared flags =
     let
         lobby : Snapshot
         lobby =
             flags.lobby
+
+        canOpenLibrary : Bool
+        canOpenLibrary =
+            (location == MapLibrary) && lobby.isHost && (lobby.gameUrl == Nothing)
+
+        mustReturnToLobby : Bool
+        mustReturnToLobby =
+            (location == MapLibrary) && not canOpenLibrary && (lobby.gameUrl == Nothing)
+
+        screen : Screen
+        screen =
+            if canOpenLibrary then
+                Library
+                    { preview = lobby.mapType
+                    , page = mapPage lobby.mapType flags.mapPreviews
+                    }
+
+            else
+                Setup
+
+        routeCorrection : Eff Msg
+        routeCorrection =
+            if mustReturnToLobby then
+                E.navigate (Route.Lobby lobby.id)
+
+            else
+                E.none
 
         model : Model
         model =
@@ -192,8 +256,8 @@ init shared flags =
             , id = lobby.id
             , name = lobby.name
             , mapType = lobby.mapType
-            , selectedMapType = lobby.mapType
-            , mapOptions = flags.mapOptions
+            , screen = screen
+            , mapPreviews = flags.mapPreviews
             , players = lobby.players
             , isHost = lobby.isHost
             , isMember = lobby.isMember
@@ -207,11 +271,14 @@ init shared flags =
             }
     in
     ( model
-    , gameNavigation
-        { isMember = lobby.isMember
-        , gameUrl = lobby.gameUrl
-        }
-        lobby.id
+    , E.batch
+        [ gameNavigation
+            { isMember = lobby.isMember
+            , gameUrl = lobby.gameUrl
+            }
+            lobby.id
+        , routeCorrection
+        ]
     )
 
 
@@ -219,7 +286,7 @@ load : LobbyId -> Graphql.Http.Request Flags
 load id =
     SS.succeed Flags
         |> SS.with (Api.Query.lobby { id = LobbyId.toString id } snapshotSelection)
-        |> SS.with Api.Query.mapOptions
+        |> SS.with (Api.Query.mapPreviews EditableMap.namedSelection)
         |> ApiRequest.queryRequest
 
 
@@ -235,11 +302,11 @@ start id =
         |> ApiRequest.mutationRequest
 
 
-saveMap : Model -> Graphql.Http.Request Snapshot
-saveMap model =
+saveMap : LobbyId -> MapType -> Graphql.Http.Request Snapshot
+saveMap id mapType =
     Api.Mutation.setLobbyMap
-        { id = LobbyId.toString model.id
-        , mapType = model.selectedMapType
+        { id = LobbyId.toString id
+        , mapType = mapType
         }
         snapshotSelection
         |> ApiRequest.mutationRequest
@@ -264,6 +331,165 @@ snapshotSelection =
         |> SS.with Snapshot.isHost
         |> SS.with Snapshot.isMember
         |> SS.with Snapshot.gameUrl
+
+
+mapsPerPage : Int
+mapsPerPage =
+    6
+
+
+isMap : MapType -> NamedMap -> Bool
+isMap mapType map =
+    map.mapType == mapType
+
+
+mapPage : MapType -> List NamedMap -> Int
+mapPage mapType maps =
+    maps
+        |> List.indexedMap Tuple.pair
+        |> List.filter (Tuple.second >> isMap mapType)
+        |> List.head
+        |> Maybe.map (Tuple.first >> pageForIndex)
+        |> Maybe.withDefault 0
+
+
+pageForIndex : Int -> Int
+pageForIndex index =
+    index // mapsPerPage
+
+
+lastMapPage : Model -> Int
+lastMapPage model =
+    max 0 ((List.length model.mapPreviews - 1) // mapsPerPage)
+
+
+changeMapPage : Int -> Model -> ( Model, Eff Msg )
+changeMapPage offset model =
+    case model.screen of
+        Library library ->
+            ( { model
+                | screen =
+                    Library
+                        { library
+                            | page = clamp 0 (lastMapPage model) (library.page + offset)
+                        }
+              }
+            , E.none
+            )
+
+        Setup ->
+            ( model, E.none )
+
+
+mapMetadata : NamedMap -> String
+mapMetadata map =
+    let
+        theme : String
+        theme =
+            case map.definition.theme of
+                MapTheme.GreenForest ->
+                    "grassland"
+
+                MapTheme.Desert ->
+                    "desert"
+
+                MapTheme.Snow ->
+                    "snow"
+    in
+    String.fromInt map.definition.width ++ " × " ++ String.fromInt map.definition.height ++ " · " ++ theme
+
+
+hasJoinedHuman : Model -> Bool
+hasJoinedHuman model =
+    let
+        isJoinedHuman : Player -> Bool
+        isJoinedHuman player =
+            not player.isHost && (player.controller == Human)
+    in
+    List.any isJoinedHuman model.players
+
+
+canChooseMap : Model -> Bool
+canChooseMap model =
+    not (isBusy model) && model.isHost && (model.gameUrl == Nothing)
+
+
+isBusy : Model -> Bool
+isBusy model =
+    model.requestStatus /= Idle
+
+
+beginSettingsChange : Model -> Model
+beginSettingsChange model =
+    let
+        nextRevision : PollRevision -> PollRevision
+        nextRevision (PollRevision revision) =
+            PollRevision (revision + 1)
+    in
+    { model
+        | requestStatus = SavingSettings
+        , actionError = Nothing
+        , refreshing = False
+        , pollRevision = nextRevision model.pollRevision
+    }
+
+
+refresh : Model -> ( Model, Eff Msg )
+refresh model =
+    if model.refreshing || isBusy model then
+        ( model, E.none )
+
+    else
+        ( { model
+            | refreshing = True
+          }
+        , E.request (LobbyResponseReceived model.pollRevision)
+            (Api.Query.lobby
+                { id = LobbyId.toString model.id
+                }
+                snapshotSelection
+                |> ApiRequest.queryRequest
+            )
+        )
+
+
+receive : Snapshot -> Model -> ( Model, Eff Msg )
+receive snapshot model =
+    ( { model
+        | id = snapshot.id
+        , name = snapshot.name
+        , mapType = snapshot.mapType
+        , players = snapshot.players
+        , isHost = snapshot.isHost
+        , isMember = snapshot.isMember
+        , gameUrl = snapshot.gameUrl
+        , error = Nothing
+      }
+    , gameNavigation
+        { isMember = snapshot.isMember
+        , gameUrl = snapshot.gameUrl
+        }
+        snapshot.id
+    )
+
+
+gameNavigation :
+    { isMember : Bool
+    , gameUrl : Maybe String
+    }
+    -> LobbyId
+    -> Eff msg
+gameNavigation args lobbyId =
+    if args.isMember && args.gameUrl /= Nothing then
+        E.navigate (Route.Game lobbyId)
+
+    else
+        E.none
+
+
+inviteUrl : Model -> String
+inviteUrl model =
+    model.shared.origin ++ Route.toString (Route.Lobby model.id)
 
 
 
@@ -334,36 +560,93 @@ update msg model =
                     |> E.request ActionResponseReceived
                 )
 
-        MapInputChanged mapType ->
-            if isBusy model || not model.isHost || model.gameUrl /= Nothing then
+        ChooseMapButtonClicked ->
+            if not (canChooseMap model) then
                 ( model, E.none )
 
             else
-                let
-                    updatedModel : Model
-                    updatedModel =
-                        beginSettingsChange { model | selectedMapType = mapType }
-                in
-                ( updatedModel
-                , E.request MapResponseReceived (saveMap updatedModel)
-                )
+                ( model, E.navigate (Route.LobbyMaps model.id) )
+
+        BackToLobbyButtonClicked ->
+            ( model, E.navigate (Route.Lobby model.id) )
+
+        MapPreviewClicked mapType ->
+            case model.screen of
+                Library library ->
+                    if List.any (isMap mapType) model.mapPreviews then
+                        ( { model
+                            | screen =
+                                Library
+                                    { library
+                                        | preview = mapType
+                                    }
+                          }
+                        , E.none
+                        )
+
+                    else
+                        ( model, E.none )
+
+                Setup ->
+                    ( model, E.none )
+
+        PreviousMapsButtonClicked ->
+            changeMapPage -1 model
+
+        NextMapsButtonClicked ->
+            changeMapPage 1 model
+
+        UseMapButtonClicked ->
+            case model.screen of
+                Library library ->
+                    if not (canChooseMap model) then
+                        ( model, E.none )
+
+                    else
+                        let
+                            updatedModel : Model
+                            updatedModel =
+                                beginSettingsChange model
+                        in
+                        ( { updatedModel
+                            | requestStatus = SavingMap
+                          }
+                        , E.request MapResponseReceived (saveMap model.id library.preview)
+                        )
+
+                Setup ->
+                    ( model, E.none )
 
         MapResponseReceived result ->
-            case result of
-                Ok snapshot ->
-                    { model
-                        | requestStatus = Idle
-                        , actionError = Nothing
-                    }
-                        |> receive snapshot
+            if model.requestStatus /= SavingMap then
+                ( model, E.none )
 
-                Err error ->
-                    ( { model
-                        | requestStatus = Idle
-                        , actionError = Just (ApiRequest.errorMessage error)
-                      }
-                    , E.none
-                    )
+            else
+                case result of
+                    Ok snapshot ->
+                        let
+                            returnToLobby : Eff Msg
+                            returnToLobby =
+                                if snapshot.gameUrl == Nothing then
+                                    E.navigate (Route.Lobby model.id)
+
+                                else
+                                    E.none
+                        in
+                        { model
+                            | requestStatus = Idle
+                            , actionError = Nothing
+                        }
+                            |> receive snapshot
+                            |> E.and returnToLobby
+
+                    Err error ->
+                        ( { model
+                            | requestStatus = Idle
+                            , actionError = Just (ApiRequest.errorMessage error)
+                          }
+                        , E.none
+                        )
 
         StartButtonClicked ->
             let
@@ -372,10 +655,8 @@ update msg model =
                     not (isBusy model)
                         && not model.refreshing
                         && model.isHost
-                        && model.gameUrl
-                        == Nothing
-                        && List.length model.players
-                        == 2
+                        && (model.gameUrl == Nothing)
+                        && (List.length model.players == 2)
             in
             if not canStart then
                 ( model, E.none )
@@ -385,25 +666,8 @@ update msg model =
                     | requestStatus = SavingSettings
                     , actionError = Nothing
                   }
-                , E.request StartMapResponseReceived (saveMap model)
+                , E.request ActionResponseReceived (start model.id)
                 )
-
-        StartMapResponseReceived result ->
-            case result of
-                Ok snapshot ->
-                    ( { model
-                        | mapType = snapshot.mapType
-                      }
-                    , E.request ActionResponseReceived (start model.id)
-                    )
-
-                Err error ->
-                    ( { model
-                        | requestStatus = Idle
-                        , actionError = Just (ApiRequest.errorMessage error)
-                      }
-                    , E.none
-                    )
 
         RetryButtonClicked ->
             refresh model
@@ -472,84 +736,358 @@ update msg model =
                     )
 
 
-isBusy : Model -> Bool
-isBusy model =
-    model.requestStatus /= Idle
-
-
-beginSettingsChange : Model -> Model
-beginSettingsChange model =
-    let
-        nextRevision : PollRevision -> PollRevision
-        nextRevision (PollRevision revision) =
-            PollRevision (revision + 1)
-    in
-    { model
-        | requestStatus = SavingSettings
-        , actionError = Nothing
-        , refreshing = False
-        , pollRevision = nextRevision model.pollRevision
-    }
-
-
-refresh : Model -> ( Model, Eff Msg )
-refresh model =
-    if model.refreshing || isBusy model then
-        ( model, E.none )
-
-    else
-        ( { model
-            | refreshing = True
-          }
-        , E.request (LobbyResponseReceived model.pollRevision)
-            (Api.Query.lobby { id = LobbyId.toString model.id } snapshotSelection
-                |> ApiRequest.queryRequest
-            )
-        )
-
-
-receive : Snapshot -> Model -> ( Model, Eff Msg )
-receive snapshot model =
-    ( { model
-        | id = snapshot.id
-        , name = snapshot.name
-        , mapType = snapshot.mapType
-        , players = snapshot.players
-        , isHost = snapshot.isHost
-        , isMember = snapshot.isMember
-        , gameUrl = snapshot.gameUrl
-        , error = Nothing
-      }
-    , gameNavigation
-        { isMember = snapshot.isMember
-        , gameUrl = snapshot.gameUrl
-        }
-        snapshot.id
-    )
-
-
-gameNavigation : { isMember : Bool, gameUrl : Maybe String } -> LobbyId -> Eff msg
-gameNavigation args lobbyId =
-    if args.isMember && args.gameUrl /= Nothing then
-        E.navigate (Route.Game lobbyId)
-
-    else
-        E.none
-
-
 
 ----------------------------------------------------------------
 -- VIEW --
 ----------------------------------------------------------------
 
 
-inviteUrl : Model -> String
-inviteUrl model =
-    model.shared.origin ++ Route.toString (Route.Lobby model.id)
-
-
 view : Model -> List (Html Msg)
 view model =
+    case model.screen of
+        Setup ->
+            lobbyView model
+
+        Library library ->
+            [ libraryView model library ]
+
+
+libraryView : Model -> LibraryState -> Html Msg
+libraryView model library =
+    let
+        visibleMaps : List NamedMap
+        visibleMaps =
+            model.mapPreviews
+                |> List.drop (library.page * mapsPerPage)
+                |> List.take mapsPerPage
+
+        choice : NamedMap -> Html Msg
+        choice map =
+            MapChoice.toHtml
+                { map = map
+                , selected = map.mapType == library.preview
+                , onSelect = MapPreviewClicked map.mapType
+                }
+
+        preview : Html Msg
+        preview =
+            case List.filter (isMap library.preview) model.mapPreviews |> List.head of
+                Just map ->
+                    mapDetailsView map
+
+                Nothing ->
+                    H.p
+                        [ Aria.role Aria.Alert
+                        ]
+                        [ H.text "this map preview is unavailable. choose another map."
+                        ]
+
+        saveFeedback : Maybe String
+        saveFeedback =
+            if model.requestStatus == SavingMap then
+                Just "saving…"
+
+            else
+                Nothing
+
+        actionError : Html Msg
+        actionError =
+            case model.actionError of
+                Just error ->
+                    H.p
+                        [ Aria.role Aria.Alert
+                        ]
+                        [ H.text error
+                        ]
+
+                Nothing ->
+                    H.text ""
+
+        pollError : Html Msg
+        pollError =
+            case model.error of
+                Just error ->
+                    H.div
+                        [ A.css
+                            [ S.col
+                            , S.g2
+                            ]
+                        ]
+                        [ H.p
+                            [ Aria.role Aria.Status
+                            ]
+                            [ H.text error
+                            ]
+                        , Button.secondary "retry" RetryButtonClicked
+                            |> Button.toHtml
+                        ]
+
+                Nothing ->
+                    H.text ""
+    in
+    Card.toHtml
+        (Card.simple
+            |> Card.withHeader
+                (CardHeader.simple "choose map"
+                    |> CardHeader.withCaption model.name
+                )
+        )
+        [ H.div
+            [ A.css
+                [ S.row
+                , S.itemsCenter
+                , S.justifySpaceBetween
+                , S.flexWrap
+                , S.g3
+                ]
+            ]
+            [ Button.secondary "← back to lobby" BackToLobbyButtonClicked
+                |> Button.toHtml
+            , H.p
+                [ A.css
+                    [ S.textGray4
+                    ]
+                ]
+                [ H.text "select a map to preview it"
+                ]
+            ]
+        , H.div
+            [ A.css
+                [ S.row
+                , S.itemsStart
+                , S.g4
+                , S.belowWidth 720
+                    [ S.col
+                    ]
+                ]
+            ]
+            [ H.div
+                [ A.css
+                    [ S.w72
+                    , S.maxWFull
+                    , S.shrink0
+                    , S.col
+                    , S.g3
+                    , S.belowWidth 720
+                        [ S.wFull
+                        ]
+                    ]
+                ]
+                [ H.div
+                    [ A.css
+                        [ S.col
+                        , S.g1
+                        ]
+                    ]
+                    (List.map choice visibleMaps)
+                , mapPagerView model library
+                ]
+            , H.div
+                [ A.css
+                    [ S.flex1
+                    , S.minW0
+                    , S.wFull
+                    ]
+                ]
+                [ preview
+                ]
+            ]
+        , pollError
+        , actionError
+        , H.div
+            [ A.css
+                [ S.row
+                , S.itemsCenter
+                , S.justifySpaceBetween
+                , S.flexWrap
+                , S.g3
+                , S.borderT
+                , S.borderGray2
+                , S.pt3
+                ]
+            ]
+            [ H.div
+                [ A.css
+                    [ S.col
+                    , S.g1
+                    ]
+                ]
+                [ H.p
+                    []
+                    [ H.text "lobby map: "
+                    , H.span
+                        [ A.css
+                            [ S.textYellow5
+                            ]
+                        ]
+                        [ H.text (MapType.label model.mapType)
+                        ]
+                    ]
+                , H.p
+                    [ A.css
+                        [ S.textGray4
+                        ]
+                    ]
+                    [ H.text "previewing only. use this map to update the lobby."
+                    ]
+                ]
+            , H.fieldset
+                [ A.disabled (isBusy model || not model.isHost || (model.gameUrl /= Nothing))
+                , A.css
+                    [ S.border0
+                    ]
+                ]
+                [ Button.primary "use this map" UseMapButtonClicked
+                    |> Button.withFeedback saveFeedback
+                    |> Button.toHtml
+                ]
+            ]
+        ]
+
+
+mapPagerView : Model -> LibraryState -> Html Msg
+mapPagerView model library =
+    let
+        previous : Button.Button Msg
+        previous =
+            if library.page == 0 then
+                Button.disabled "←"
+
+            else
+                Button.secondary "←" PreviousMapsButtonClicked
+
+        next : Button.Button Msg
+        next =
+            if library.page == lastMapPage model then
+                Button.disabled "→"
+
+            else
+                Button.secondary "→" NextMapsButtonClicked
+
+        first : Int
+        first =
+            library.page * mapsPerPage + 1
+
+        last : Int
+        last =
+            min (List.length model.mapPreviews) ((library.page + 1) * mapsPerPage)
+    in
+    H.div
+        [ A.css
+            [ S.row
+            , S.itemsCenter
+            , S.justifySpaceBetween
+            , S.g2
+            , S.flexWrap
+            ]
+        ]
+        [ H.p
+            [ A.css
+                [ S.textGray4
+                ]
+            ]
+            [ H.text (String.fromInt first ++ "–" ++ String.fromInt last ++ " of " ++ String.fromInt (List.length model.mapPreviews) ++ " maps")
+            ]
+        , H.div
+            [ A.css
+                [ S.row
+                , S.g1
+                ]
+            ]
+            [ previous
+                |> Button.accessibleLabel "previous maps"
+                |> Button.toHtml
+            , next
+                |> Button.accessibleLabel "next maps"
+                |> Button.toHtml
+            ]
+        ]
+
+
+mapDetailsView : NamedMap -> Html Msg
+mapDetailsView map =
+    H.section
+        [ Aria.label "map details"
+        , A.css
+            [ S.col
+            , S.g3
+            ]
+        ]
+        [ H.div
+            [ A.css
+                [ S.row
+                , S.itemsCenter
+                , S.justifySpaceBetween
+                , S.flexWrap
+                , S.g2
+                ]
+            ]
+            [ H.h2
+                [ A.css
+                    [ S.textGray5
+                    ]
+                ]
+                [ H.text (MapType.label map.mapType)
+                ]
+            , H.p
+                [ A.css
+                    [ S.textGray4
+                    ]
+                ]
+                [ H.text (mapMetadata map)
+                ]
+            ]
+        , H.div
+            [ A.css
+                [ S.h80
+                , S.wFull
+                , S.bgNightwood2
+                , S.indentStrong
+                , S.p3
+                ]
+            ]
+            [ MapPreview.toHtml map
+            ]
+        , H.p
+            [ A.css
+                [ S.row
+                , S.itemsCenter
+                , S.flexWrap
+                , S.g2
+                , S.textGray4
+                ]
+            ]
+            [ H.text "starting forces:"
+            , H.span
+                [ A.css
+                    [ S.textRed1
+                    ]
+                ]
+                [ H.text "player 1 (red)"
+                ]
+            , H.span
+                [ A.css
+                    [ S.textBlue1
+                    ]
+                ]
+                [ H.text "player 2 (blue)"
+                ]
+            ]
+        , H.p
+            [ A.css
+                [ S.borderT
+                , S.borderGray2
+                , S.pt3
+                , S.textGray5
+                ]
+            ]
+            [ H.text map.definition.description
+            ]
+        ]
+
+
+lobbyView : Model -> List (Html Msg)
+lobbyView model =
     [ H.div
         [ A.css
             [ S.row
@@ -669,13 +1207,23 @@ inviteView model =
                     H.text ""
     in
     H.div
-        [ A.css [ S.col, S.g1 ]
+        [ A.css
+            [ S.col
+            , S.g1
+            ]
         ]
         [ H.label
-            [ A.for "invite-link" ]
-            [ H.text "invite players" ]
+            [ A.for "invite-link"
+            ]
+            [ H.text "invite players"
+            ]
         , H.div
-            [ A.css [ S.row, S.g2, S.flexWrap ] ]
+            [ A.css
+                [ S.row
+                , S.g2
+                , S.flexWrap
+                ]
+            ]
             [ H.input
                 [ A.id "invite-link"
                 , A.type_ "text"
@@ -695,7 +1243,10 @@ inviteView model =
                 []
             , H.fieldset
                 [ A.disabled (model.copyStatus == Copying || model.copyStatus == Copied)
-                , A.css [ S.border0, S.shrink0 ]
+                , A.css
+                    [ S.border0
+                    , S.shrink0
+                    ]
                 ]
                 [ Button.secondary "copy link" CopyLinkButtonClicked
                     |> Button.withFeedback copyFeedback
@@ -709,50 +1260,54 @@ inviteView model =
 mapView : Model -> Html Msg
 mapView model =
     let
-        mapOption : MapType -> { value : MapType, label : String }
-        mapOption mapType =
-            { value = mapType
-            , label = MapType.label mapType
-            }
-    in
-    if model.isHost && model.gameUrl == Nothing then
-        H.div
-            [ A.css
-                [ S.col
-                , S.g1
-                ]
-            ]
-            [ H.label
-                [ A.for "map-type"
-                ]
-                [ H.text "map"
-                ]
-            , Select.toHtml
-                { htmlId = "map-type"
-                , disabled = isBusy model
-                , selected = model.selectedMapType
-                , options = List.map mapOption model.mapOptions
-                , toValue = Api.Enum.MapType.toString
-                , decoder = Api.Enum.MapType.decoder
-                , onChange = MapInputChanged
-                }
-            ]
+        chooseButton : Html Msg
+        chooseButton =
+            if model.isHost && (model.gameUrl == Nothing) then
+                H.fieldset
+                    [ A.disabled (isBusy model)
+                    , A.css
+                        [ S.border0
+                        ]
+                    ]
+                    [ Button.secondary "choose map" ChooseMapButtonClicked
+                        |> Button.toHtml
+                    ]
 
-    else
-        H.p
+            else
+                H.text ""
+
+        preview : Html Msg
+        preview =
+            case List.filter (isMap model.mapType) model.mapPreviews |> List.head of
+                Just map ->
+                    H.div
+                        [ A.css
+                            [ S.h64
+                            , S.wFull
+                            , S.bgNightwood2
+                            , S.indentStrong
+                            , S.p2
+                            ]
+                        ]
+                        [ MapPreview.toHtml map
+                        ]
+
+                Nothing ->
+                    H.text ""
+    in
+    H.div
+        [ A.css
+            [ S.col
+            , S.g3
+            ]
+        ]
+        [ H.p
             []
             [ H.text ("map: " ++ MapType.label model.mapType)
             ]
-
-
-hasJoinedHuman : Model -> Bool
-hasJoinedHuman model =
-    let
-        isJoinedHuman : Player -> Bool
-        isJoinedHuman player =
-            not player.isHost && (player.controller == Human)
-    in
-    List.any isJoinedHuman model.players
+        , preview
+        , chooseButton
+        ]
 
 
 controllerLabel : Controller -> String

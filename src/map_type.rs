@@ -9,7 +9,6 @@ pub enum MapType {
     SupplyPoint,
     ElAlamein,
     BloodGulch,
-    Arabia,
     Sidewinder,
     BlackForest,
     Crossroads,
@@ -17,13 +16,15 @@ pub enum MapType {
     ThreeCrossings,
     LakeOfPennsylvania,
     ConvoyCountry,
+    Tobruk,
+    BastionPass,
+    WinterFront,
 }
 
-pub const MAPS: [(MapType, &str); 11] = [
+pub const MAPS: [(MapType, &str); 13] = [
     (MapType::SupplyPoint, "supply-point"),
     (MapType::ElAlamein, "el-alamein"),
     (MapType::BloodGulch, "blood-gulch"),
-    (MapType::Arabia, "arabia"),
     (MapType::Sidewinder, "sidewinder"),
     (MapType::BlackForest, "black-forest"),
     (MapType::Crossroads, "crossroads"),
@@ -31,6 +32,9 @@ pub const MAPS: [(MapType, &str); 11] = [
     (MapType::ThreeCrossings, "three-crossings"),
     (MapType::LakeOfPennsylvania, "lake-of-pennsylvania"),
     (MapType::ConvoyCountry, "convoy-country"),
+    (MapType::Tobruk, "tobruk"),
+    (MapType::BastionPass, "bastion-pass"),
+    (MapType::WinterFront, "winter-front"),
 ];
 
 impl MapType {
@@ -39,18 +43,20 @@ impl MapType {
             Self::SupplyPoint
             | Self::ElAlamein
             | Self::BloodGulch
-            | Self::Arabia
             | Self::Sidewinder
             | Self::BlackForest
             | Self::Crossroads
             | Self::Ridgeway
             | Self::ThreeCrossings
             | Self::LakeOfPennsylvania
-            | Self::ConvoyCountry => 2,
+            | Self::ConvoyCountry
+            | Self::Tobruk
+            | Self::BastionPass
+            | Self::WinterFront => 2,
         }
     }
 
-    pub fn scenario(self) -> Result<Scenario, MapError> {
+    pub fn definition(self) -> Result<MapDefinition, MapError> {
         if std::env::args().any(|argument| argument == "--map-editor") {
             let name = MAPS
                 .iter()
@@ -62,20 +68,27 @@ impl MapType {
                 .join(format!("{name}.json"));
             let json = std::fs::read_to_string(path)
                 .map_err(|error| MapError::InvalidDefinition(error.to_string()))?;
-            return MapDefinition::parse(&json)?.scenario();
+            return MapDefinition::parse(&json);
         }
-        match self {
-            Self::SupplyPoint => Scenario::supply_point(),
-            Self::ElAlamein => Scenario::el_alamein(),
-            Self::BloodGulch => Scenario::blood_gulch(),
-            Self::Arabia => Scenario::arabia(),
-            Self::Sidewinder => Scenario::sidewinder(),
-            Self::BlackForest => Scenario::black_forest(),
-            Self::Crossroads => Scenario::crossroads(),
-            Self::Ridgeway => Scenario::ridgeway(),
-            Self::ThreeCrossings => Scenario::three_crossings(),
-            Self::LakeOfPennsylvania => Scenario::lake_of_pennsylvania(),
-            Self::ConvoyCountry => Scenario::convoy_country(),
-        }
+        let json = match self {
+            Self::SupplyPoint => include_str!("../maps/supply-point.json"),
+            Self::ElAlamein => include_str!("../maps/el-alamein.json"),
+            Self::BloodGulch => include_str!("../maps/blood-gulch.json"),
+            Self::Sidewinder => include_str!("../maps/sidewinder.json"),
+            Self::BlackForest => include_str!("../maps/black-forest.json"),
+            Self::Crossroads => include_str!("../maps/crossroads.json"),
+            Self::Ridgeway => include_str!("../maps/ridgeway.json"),
+            Self::ThreeCrossings => include_str!("../maps/three-crossings.json"),
+            Self::LakeOfPennsylvania => include_str!("../maps/lake-of-pennsylvania.json"),
+            Self::ConvoyCountry => include_str!("../maps/convoy-country.json"),
+            Self::Tobruk => include_str!("../maps/tobruk.json"),
+            Self::BastionPass => include_str!("../maps/bastion-pass.json"),
+            Self::WinterFront => include_str!("../maps/winter-front.json"),
+        };
+        MapDefinition::parse(json)
+    }
+
+    pub fn scenario(self) -> Result<Scenario, MapError> {
+        self.definition()?.scenario()
     }
 }

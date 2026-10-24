@@ -142,12 +142,13 @@ type Msg
     | UnitDeathMsg UnitDeath.Msg
     | CombatTheaterMsg CombatTheater.Msg
     | BattlefieldSizeReceived (Result Browser.Dom.Error Browser.Dom.Element)
-    | ControlsSizeReceived Browser.Dom.Element (Result Browser.Dom.Error Browser.Dom.Element)
+    | InspectorSizeReceived Browser.Dom.Element (Result Browser.Dom.Error Browser.Dom.Element)
     | WindowResized
     | CameraReturnFinished
     | AnimationTimerElapsed
     | CargoUnitClicked UnitId
     | EscapePressed
+    | InspectorCloseClicked
     | PanLeftKeyPressed
     | PanRightKeyPressed
     | PanUpKeyPressed
@@ -446,6 +447,19 @@ inspectTile position model =
     { model | inspection = Just (TileInspection position) }
 
 
+withInspectionMeasurement : Model -> Model -> ( Model, Eff Msg )
+withInspectionMeasurement previous next =
+    if (previous.inspection == Nothing) /= (next.inspection == Nothing) then
+        ( { next
+            | viewport = Nothing
+          }
+        , Battlefield.measure BattlefieldSizeReceived
+        )
+
+    else
+        E.withOut next
+
+
 inspectClick : { detail : Int } -> (Model -> Model) -> Model -> Model
 inspectClick click select model =
     if (click.detail /= 0) && BattlefieldNavigation.suppressesClick model.navigation then
@@ -717,7 +731,7 @@ update msg model =
         BattlefieldMsg battlefieldMsg ->
             model
                 |> handleBattlefieldMsg battlefieldMsg
-                |> E.withOut
+                |> withInspectionMeasurement model
 
         NavigationMsg navigationMsg ->
             model
@@ -727,11 +741,17 @@ update msg model =
         CargoUnitClicked id ->
             { model | inspection = Nothing }
                 |> selectUnit id
-                |> E.withOut
+                |> withInspectionMeasurement model
 
         EscapePressed ->
             { model | inspection = Nothing }
-                |> E.withOut
+                |> withInspectionMeasurement model
+
+        InspectorCloseClicked ->
+            { model
+                | inspection = Nothing
+            }
+                |> withInspectionMeasurement model
 
         PanLeftKeyPressed ->
             model
@@ -773,21 +793,23 @@ update msg model =
         BattlefieldSizeReceived result ->
             case result of
                 Ok battlefield ->
-                    ( model, E.measure TurnControls.htmlId (ControlsSizeReceived battlefield) )
+                    ( model, E.measure BattlefieldWorkspace.inspectorHtmlId (InspectorSizeReceived battlefield) )
 
                 Err error ->
                     { model | shared = Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared }
                         |> E.withOut
 
-        ControlsSizeReceived battlefield result ->
+        InspectorSizeReceived battlefield result ->
             case result of
-                Ok measuredControls ->
+                Ok inspector ->
                     { model
                         | viewport =
                             Just
-                                { size = { x = battlefield.element.width, y = battlefield.element.height }
-                                , bottomInset = clamp 0 battlefield.element.height (battlefield.element.y + battlefield.element.height - measuredControls.element.y)
-                                }
+                                (BattlefieldWorkspace.viewport
+                                    { battlefield = battlefield
+                                    , inspector = inspector
+                                    }
+                                )
                     }
                         |> updateCamera
                         |> E.withOut
@@ -1086,9 +1108,11 @@ view model =
         , combat = (playback model |> Maybe.andThen TurnPlayback.activeEncounter) /= Nothing
         , dying = List.any (\unit -> Unit.onMap unit && Unit.isDying unit) model.battlefield.units
         , battlefield = battlefieldView model
+        , header = Nothing
         , controls = controls model
         , inspection = selectionView model
         , hasSelection = model.inspection /= Nothing
+        , onCloseInspection = InspectorCloseClicked
         , combatOverlay =
             PlaybackPresentation.combatOverlay
                 model.automaticallyCloseCombatTheater
@@ -1373,7 +1397,6 @@ controls model =
             , feedback
             ]
         , Battlefield.navigationControls (round (model.navigation.zoom * 100))
-            |> TurnControls.navigation
             |> H.map BattlefieldMsg
         ]
 

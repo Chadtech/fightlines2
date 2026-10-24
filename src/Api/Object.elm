@@ -17,6 +17,10 @@ type ArchiveReadError
     = ArchiveReadError
 
 
+type BuildingImpact
+    = BuildingImpact
+
+
 type CargoStock
     = CargoStock
 
@@ -43,10 +47,6 @@ type Depot
 
 type DepotHp
     = DepotHp
-
-
-type DepotImpact
-    = DepotImpact
 
 
 type DepotPlacement

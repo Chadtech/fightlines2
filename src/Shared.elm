@@ -22,6 +22,7 @@ used to turn lobby paths into complete invite URLs.
 type alias Model =
     { key : Navigation.Key
     , origin : String
+    , isProduction : Bool
     , operatingSystem : OperatingSystem
     , localStorage : LocalStorage
     , seed : Random.Seed
@@ -29,9 +30,10 @@ type alias Model =
     }
 
 
-init : Random.Seed -> OperatingSystem -> LocalStorage -> Url -> Navigation.Key -> Model
-init seed operatingSystem localStorage url key =
+init : Bool -> Random.Seed -> OperatingSystem -> LocalStorage -> Url -> Navigation.Key -> Model
+init isProduction seed operatingSystem localStorage url key =
     { key = key
+    , isProduction = isProduction
     , operatingSystem = operatingSystem
     , localStorage = localStorage
     , seed = seed

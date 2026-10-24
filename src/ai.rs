@@ -4,7 +4,7 @@ use crate::{
     combat,
     map::Coordinate,
     movement,
-    scenario::{DepotKind, Direction, PlayerNumber, Scenario, Unit, UnitKind},
+    scenario::{Direction, PlayerNumber, ResourceKind, Scenario, Unit, UnitKind},
     turns::{CoordinateInput, MoveOrderInput},
     visibility,
 };
@@ -149,12 +149,12 @@ fn facing(origin: Coordinate, target: Coordinate) -> Direction {
 
 fn resource_target(scenario: &Scenario, unit: &Unit, origin: Coordinate) -> Option<Coordinate> {
     let kind = if unit.supplies().current() < unit.supplies().maximum() / 2 {
-        DepotKind::Supply
+        ResourceKind::Supply
     } else if unit
         .fuel()
         .is_some_and(|fuel| fuel.current < fuel.maximum / 2)
     {
-        DepotKind::Fuel
+        ResourceKind::Fuel
     } else {
         return None;
     };
@@ -164,7 +164,7 @@ fn resource_target(scenario: &Scenario, unit: &Unit, origin: Coordinate) -> Opti
         // Unknown stock is not knowledge of an empty or full source.
         .filter(|depot| {
             !depot.is_destroyed()
-                && depot.kind == kind
+                && depot.kind.resource_kind() == Some(kind)
                 && (!depot.stock_visible || depot.stock.current > 0)
         })
         .map(|depot| depot.position)
@@ -179,7 +179,9 @@ fn objective(scenario: &Scenario, origin: Coordinate) -> Coordinate {
     scenario
         .depots
         .iter()
-        .filter(|depot| !depot.is_destroyed() && depot.kind == DepotKind::Supply)
+        .filter(|depot| {
+            !depot.is_destroyed() && depot.kind.resource_kind() == Some(ResourceKind::Supply)
+        })
         .map(|depot| depot.position)
         .min_by_key(|position| {
             (
@@ -382,7 +384,6 @@ mod tests {
             MapType::SupplyPoint,
             MapType::ElAlamein,
             MapType::BloodGulch,
-            MapType::Arabia,
             MapType::Sidewinder,
             MapType::BlackForest,
             MapType::Crossroads,
@@ -390,6 +391,8 @@ mod tests {
             MapType::ThreeCrossings,
             MapType::LakeOfPennsylvania,
             MapType::ConvoyCountry,
+            MapType::Tobruk,
+            MapType::BastionPass,
         ] {
             let mut scenario = map.scenario().fixture()?;
             let mut turns = Turns::default();

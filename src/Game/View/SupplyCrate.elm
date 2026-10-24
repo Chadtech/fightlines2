@@ -3,7 +3,7 @@ module Game.View.SupplyCrate exposing
     , toSvg
     )
 
-import Api.Enum.DepotKind exposing (DepotKind)
+import Api.Enum.ResourceKind exposing (ResourceKind)
 import Game.Supply as Supply
 import Game.View.StockGauge as StockGauge
 import Html.Attributes as A
@@ -18,12 +18,12 @@ import View.Aria as Aria
 
 {-| Illustrated neutral freight. Interaction belongs to its tile.
 -}
-toSvg : DepotKind -> Svg msg
+toSvg : ResourceKind -> Svg msg
 toSvg kind =
     Lazy.lazy crateView kind
 
 
-crateView : DepotKind -> Svg msg
+crateView : ResourceKind -> Svg msg
 crateView kind =
     Svg.image
         [ SA.x "2"

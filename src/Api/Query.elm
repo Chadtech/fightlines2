@@ -70,6 +70,15 @@ mapOptions =
     Object.selectionForField "(List Enum.MapType.MapType)" "mapOptions" [] (Api.Enum.MapType.decoder |> Decode.list)
 
 
+{-| Public authored layouts, shared by map previews and game creation.
+-}
+mapPreviews :
+    SelectionSet decodesTo Api.Object.NamedMap
+    -> SelectionSet (List decodesTo) RootQuery
+mapPreviews object____ =
+    Object.selectionForCompositeField "mapPreviews" [] object____ (Basics.identity >> Decode.list)
+
+
 health : SelectionSet Bool RootQuery
 health =
     Object.selectionForField "Bool" "health" [] Decode.bool

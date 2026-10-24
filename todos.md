@@ -1,31 +1,29 @@
 # Todo
 
 # Done
-- Road combat background
+- Maps have descriptions
+- depot HP loss animation
 
 ## doing now
-- Attacking and destroying supply depots and supply crates
-- Stand ground direction UI stinks, should it even have direction?
+- destroyed depot sprite
+- Resign and exit menu
+- better death and attack map animations
+- UI critique of the whole UI
+- Hide map editor UI in Elm code if flag is not set
+- Map selection has thumbnail images
 
 ## Bugs
 
 ## Immediately
-- Hide map editor UI in Elm code if flag is not set
-- Good UI for truck cargo
+
+- implement resign
 - Sound
 - Make maps not hardcoded
-- Map selection has thumbnail images
-- Resign and exit menu
-- depot HP loss animation
-- HP rebalance
-- depot backdrop
-- destroyed depot sprite
-- better death and attack map animations
-- Maps have descriptions
+
 
 
 ## Soon
-- Proof read all screen text
+- Proofread all screen text
 
 
 ## Later
@@ -37,14 +35,16 @@
 - Manufacturing and cities
 - Infantry weapon diversity (bazooka, mounted machine gun)
 - Fortresses
+- Credits / About
 
 ### Future units
+- Semi truck, truck that can carry more and travel faster than a truck but can only travel on roads
 - Artillery, huge range gun that cannot move itself
 - Self propelled gun, acts just like field gun except it has high mobility and consumes fuel
 - Recon plane, high line of sight, highly mobile plane
 - fighter, high line of sight, highly mobile, high fuel consumption attack plane. Fighter plane can pass over any ground unit
 - bomber, highly mobile, high fuel consumption attack plane that can target and hit squares on selection, similar to indirect attack
-- Cargo plane, can carry 4 cargo slots, can paradrop cargo 
+- Cargo plane, can carry 4 cargo slots, can paradrop cargo and infantry
 - Anti Air gun, cheap air ambush unit that cannot move. Must be transported by truck
 - Mobile AA gun, same as Anti Air gun, but more expensive and self propelled.
 - Torpedo boat, cheap direct attack ship. Attack bonus on battleships
