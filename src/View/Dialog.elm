@@ -2,11 +2,14 @@ module View.Dialog exposing
     ( Dialog
     , announcement
     , atBottom
+    , htmlId
     , make
     , map
     , onCancel
     , reference
     , toHtml
+    , withCloseButton
+    , workspace
     )
 
 import Css
@@ -16,6 +19,7 @@ import Html.Styled.Events as Ev
 import Json.Decode as Decode
 import Style as S
 import View.Aria as Aria
+import View.Button as Button
 import View.CardHeader as CardHeader
 
 
@@ -32,6 +36,7 @@ type Dialog msg
         , onCancel : msg
         , body : List (Html msg)
         , placement : Placement
+        , showCloseButton : Bool
         }
 
 
@@ -40,6 +45,7 @@ type Placement
     | Bottom
     | Announcement
     | Reference
+    | Workspace
 
 
 
@@ -48,15 +54,26 @@ type Placement
 ----------------------------------------------------------------
 
 
+htmlId : Dialog msg -> String
+htmlId (Dialog model) =
+    model.htmlId
+
+
 make : String -> String -> msg -> List (Html msg) -> Dialog msg
-make htmlId title canceled body =
+make dialogHtmlId title canceled body =
     Dialog
-        { htmlId = htmlId
+        { htmlId = dialogHtmlId
         , title = title
         , onCancel = canceled
         , body = body
         , placement = Centered
+        , showCloseButton = False
         }
+
+
+withCloseButton : Dialog msg -> Dialog msg
+withCloseButton (Dialog model) =
+    Dialog { model | showCloseButton = True }
 
 
 onCancel : msg -> Dialog msg -> Dialog msg
@@ -74,6 +91,13 @@ reference (Dialog model) =
     Dialog { model | placement = Reference }
 
 
+{-| A dialog with room for navigation beside a working pane.
+-}
+workspace : Dialog msg -> Dialog msg
+workspace (Dialog model) =
+    Dialog { model | placement = Workspace }
+
+
 atBottom : Dialog msg -> Dialog msg
 atBottom (Dialog model) =
     Dialog { model | placement = Bottom }
@@ -87,6 +111,7 @@ map toMsg (Dialog model) =
         , onCancel = toMsg model.onCancel
         , body = List.map (H.map toMsg) model.body
         , placement = model.placement
+        , showCloseButton = model.showCloseButton
         }
 
 
@@ -104,6 +129,12 @@ toHtml (Dialog model) =
 
                 Reference ->
                     [ S.w152
+                    , S.maxHViewportInset8
+                    , S.overflowAuto
+                    ]
+
+                Workspace ->
+                    [ S.w196
                     , S.maxHViewportInset8
                     , S.overflowAuto
                     ]
@@ -148,6 +179,11 @@ toHtml (Dialog model) =
                     , A.autofocus True
                     ]
 
+                Workspace ->
+                    [ A.tabindex -1
+                    , A.autofocus True
+                    ]
+
                 _ ->
                     []
 
@@ -155,9 +191,46 @@ toHtml (Dialog model) =
         titleAttributes =
             [ A.id (model.htmlId ++ "-title")
             , A.css
-                [ S.p2px ]
+                [ S.p2px
+                , S.when (model.placement == Workspace) S.outlineNone
+                ]
             ]
                 ++ titleFocusAttributes
+
+        titleContent : Html msg
+        titleContent =
+            H.div
+                titleAttributes
+                [ CardHeader.simple model.title
+                    |> CardHeader.toHtml
+                ]
+
+        headerContent : Html msg
+        headerContent =
+            if model.showCloseButton then
+                H.div
+                    [ A.css
+                        [ S.row
+                        , S.itemsCenter
+                        , S.bgGray3
+                        , S.p2px
+                        ]
+                    ]
+                    [ H.div
+                        [ A.css
+                            [ S.flex1
+                            , S.minW0
+                            ]
+                        ]
+                        [ titleContent ]
+                    , Button.secondary "×" model.onCancel
+                        |> Button.titleBar
+                        |> Button.accessibleLabel ("close " ++ model.title)
+                        |> Button.toHtml
+                    ]
+
+            else
+                titleContent
 
         dialogStyles : List Css.Style
         dialogStyles =
@@ -169,11 +242,7 @@ toHtml (Dialog model) =
         , Ev.preventDefaultOn "cancel" (Decode.succeed ( model.onCancel, True ))
         , A.css dialogStyles
         ]
-        [ H.div
-            titleAttributes
-            [ CardHeader.simple model.title
-                |> CardHeader.toHtml
-            ]
+        [ headerContent
         , H.div
             [ A.css
                 [ S.col

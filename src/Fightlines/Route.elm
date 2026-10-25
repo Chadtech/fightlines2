@@ -1,9 +1,11 @@
 module Fightlines.Route exposing
     ( Route(..)
     , fromUrl
+    , pushUrl
     , toString
     )
 
+import Effect as E exposing (Eff)
 import LobbyId
     exposing
         ( LobbyId
@@ -42,6 +44,11 @@ parser =
         , P.map Lobby (P.s "lobby" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe))
         , P.map Game (P.s "game" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe))
         ]
+
+
+pushUrl : Route -> Eff msg
+pushUrl route =
+    E.pushUrl (toString route)
 
 
 toString : Route -> String

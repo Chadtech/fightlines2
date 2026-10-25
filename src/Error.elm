@@ -9,7 +9,8 @@ import Ports.Js.From as FromJs
 
 
 type Error
-    = LocalStorageDecodeFailed { key : String, error : JD.Error }
+    = TestError
+    | LocalStorageDecodeFailed { key : String, error : JD.Error }
     | UnitOwnerNotFound { unitId : UnitId, playerNumber : PlayerNumber }
     | FromJsFailed FromJs.Error
     | ElementFocusFailed Browser.Dom.Error

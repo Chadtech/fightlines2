@@ -6,10 +6,7 @@ import ApiRequest
         )
 import Browser
 import Browser.Navigation as Navigation
-import DevTools.Effect as E
-    exposing
-        ( Eff
-        )
+import DevPanel
 import DevTools.Flags as Flags
 import DevTools.Page.BackdropReview as BackdropReview
 import DevTools.Page.GameReplay as GameReplay
@@ -20,6 +17,10 @@ import DevTools.Route as Route
         ( Route
         )
 import DevTools.Shared as Shared
+import Effect as E
+    exposing
+        ( Eff
+        )
 import Game.LogId exposing (GameLogId)
 import Html.Styled as H
     exposing
@@ -29,6 +30,7 @@ import Html.Styled.Attributes as A
 import Json.Decode as Decode
 import KeyCmd
 import Ports.Js.From as FromJs
+import Ports.Js.To as ToJs
 import Random
 import Style as S
 import Subscriptions
@@ -101,6 +103,7 @@ main =
                 let
                     ( newPage, eff ) =
                         update msg page
+                            |> restorePageDialog page
                 in
                 case getShared newPage of
                     Just shared ->
@@ -140,6 +143,33 @@ init value url key =
 ----------------------------------------------------------------
 -- HELPERS --
 ----------------------------------------------------------------
+
+
+{-| Restore the page dialog only when the higher-priority dev panel closes.
+-}
+restorePageDialog : Page -> ( Page, Eff Msg ) -> ( Page, Eff Msg )
+restorePageDialog previous ( page, effect ) =
+    let
+        panelClosed : Bool
+        panelClosed =
+            (Maybe.map .devPanelOpen (getShared previous) == Just True)
+                && (Maybe.map .devPanelOpen (getShared page) == Just False)
+
+        result : ( Page, Eff Msg )
+        result =
+            ( page, effect )
+    in
+    if panelClosed then
+        case pageDialog page of
+            Just activeDialog ->
+                result
+                    |> E.and (E.toJs (ToJs.OpenDialog { htmlId = Dialog.htmlId activeDialog }))
+
+            Nothing ->
+                result
+
+    else
+        result
 
 
 getShared : Page -> Maybe Shared.Model
@@ -419,12 +449,10 @@ update msg page =
             case getShared page of
                 Just shared ->
                     let
-                        newShared : Shared.Model
-                        newShared =
+                        ( newShared, effect ) =
                             Shared.update subMsg shared
                     in
-                    setShared newShared page
-                        |> E.withOut
+                    ( setShared newShared page, E.map GotSharedMsg effect )
 
                 Nothing ->
                     page
@@ -460,10 +488,26 @@ view page =
     }
 
 
-{-| Map the active page's dialog into the application's message type.
+{-| The dev panel takes priority over the active page's dialog.
 -}
 dialog : Page -> Maybe (Dialog Msg)
 dialog page =
+    case getShared page of
+        Just shared ->
+            if shared.devPanelOpen then
+                DevPanel.dialog (Shared.devPanelErrors shared) shared.devPanel
+                    |> Dialog.map (Shared.devPanelMsg >> GotSharedMsg)
+                    |> Just
+
+            else
+                pageDialog page
+
+        Nothing ->
+            Nothing
+
+
+pageDialog : Page -> Maybe (Dialog Msg)
+pageDialog page =
     case page of
         Replay id model ->
             GameReplay.dialog model
@@ -623,6 +667,30 @@ pageSubscriptions page =
 
 keyCommands : Page -> KeyCmd.KeyCmd Msg
 keyCommands page =
+    let
+        panelCommands : KeyCmd.KeyCmd Msg
+        panelCommands =
+            Shared.keyCommands
+                |> KeyCmd.map GotSharedMsg
+
+        activePageCommands : KeyCmd.KeyCmd Msg
+        activePageCommands =
+            case getShared page of
+                Just shared ->
+                    if shared.devPanelOpen then
+                        KeyCmd.none
+
+                    else
+                        pageKeyCommands page
+
+                Nothing ->
+                    KeyCmd.none
+    in
+    KeyCmd.batch [ panelCommands, activePageCommands ]
+
+
+pageKeyCommands : Page -> KeyCmd.KeyCmd Msg
+pageKeyCommands page =
     case page of
         Replay id model ->
             GameReplay.keyCommands model

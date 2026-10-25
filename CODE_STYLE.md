@@ -91,9 +91,10 @@ prototype; do not update it unless the task explicitly requires that.
   `Msg` handled by its parent without having a separate `Model` and `update`.
   Split state ownership only when the boundary helps coordination.
 - Use `setShared` to update a page's shared state through its public interface.
-- Route navigation through typed `Route` values and `Effect`. Page updates
-  return `( Model, Eff Msg )` using their app's `Fightlines.Effect` or
-  `DevTools.Effect`; each entry point converts effects to commands.
+- Route navigation through each app's typed `Route.pushUrl` helper. Both route
+  modules convert their routes to strings for the common `Effect.pushUrl`.
+  Page updates return `( Model, Eff Msg )` using `Effect`; each entry point
+  converts effects to commands. Use `Effect.load` for navigation between apps.
 - Keep initial loading and failure dispatch in the owning app entry point.
   A separate failure page may own its messages and updates, retrying through
   typed route navigation.

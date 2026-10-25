@@ -69,6 +69,8 @@ Use `Button.small` for compact controls:
 Use `Button.compact` for 1.625rem-high controls with no padding, and
 `Button.square` for matching 1.625rem-square icon controls. Camera group grids
 and spacing belong directly on their containing elements.
+Use `Button.titleBar` for window-header close controls that fill the height
+available inside the header padding.
 Use `Button.tall` for a prominent action in a narrow column: 0.5rem horizontal
 and 0.75rem vertical padding with a 3.5rem minimum height. The turn submit button
 uses this size at full width. `Button.attention` adds the ready pulse and shine;

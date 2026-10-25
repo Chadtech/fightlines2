@@ -35,11 +35,10 @@ import ApiRequest
         ( Response
         )
 import EditableMap exposing (NamedMap)
-import Fightlines.Effect as E
+import Effect as E
     exposing
         ( Eff
         )
-import Fightlines.Ports.Js.To as ToJs
 import Fightlines.Route as Route
 import Fightlines.Shared as Shared
 import Fightlines.View.MapChoice as MapChoice
@@ -59,6 +58,7 @@ import LobbyId
         ( LobbyId
         )
 import Ports.Js.From as FromJs
+import Ports.Js.To as ToJs
 import Style as S
 import Time
 import View.Aria as Aria
@@ -240,7 +240,7 @@ init location shared flags =
         routeCorrection : Eff Msg
         routeCorrection =
             if mustReturnToLobby then
-                E.navigate (Route.Lobby lobby.id)
+                Route.pushUrl (Route.Lobby lobby.id)
 
             else
                 E.none
@@ -422,7 +422,7 @@ gameNavigation :
     -> Eff msg
 gameNavigation args lobbyId =
     if args.isMember && args.gameUrl /= Nothing then
-        E.navigate (Route.Game lobbyId)
+        Route.pushUrl (Route.Game lobbyId)
 
     else
         E.none
@@ -506,10 +506,10 @@ update msg model =
                 ( model, E.none )
 
             else
-                ( model, E.navigate (Route.LobbyMaps model.id) )
+                ( model, Route.pushUrl (Route.LobbyMaps model.id) )
 
         BackToLobbyButtonClicked ->
-            ( model, E.navigate (Route.Lobby model.id) )
+            ( model, Route.pushUrl (Route.Lobby model.id) )
 
         MapPreviewClicked mapType ->
             case model.screen of
@@ -563,7 +563,7 @@ update msg model =
                             returnToLobby : Eff Msg
                             returnToLobby =
                                 if snapshot.gameUrl == Nothing then
-                                    E.navigate (Route.Lobby model.id)
+                                    Route.pushUrl (Route.Lobby model.id)
 
                                 else
                                     E.none
@@ -813,8 +813,6 @@ libraryView model library =
                 , S.itemsCenter
                 , S.flexWrap
                 , S.g3
-                , S.borderT
-                , S.borderGray2
                 , S.pt3
                 ]
             ]

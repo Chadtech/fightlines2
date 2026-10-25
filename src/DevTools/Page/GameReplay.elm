@@ -21,11 +21,10 @@ import Api.Query
 import ApiRequest
 import Browser.Dom
 import Browser.Events
-import DevTools.Effect as E exposing (Eff)
 import DevTools.Page.LoggedGames as LoggedGames
-import DevTools.Ports.Js.To as ToJs
 import DevTools.Route as Route
 import DevTools.Shared as Shared
+import Effect as E exposing (Eff)
 import Error
 import Game.AnimationFrame as AnimationFrame
 import Game.BackdropCalibration as BackdropCalibration
@@ -55,6 +54,7 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Json.Decode as Decode
 import KeyCmd
+import Ports.Js.To as ToJs
 import Style as S
 import Time
 import Util.List as ListUtil

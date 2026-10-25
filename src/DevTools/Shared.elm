@@ -2,16 +2,22 @@ module DevTools.Shared exposing
     ( Model
     , Msg
     , addError
+    , devPanelErrors
+    , devPanelMsg
     , gotFromJsError
     , init
+    , keyCommands
     , listeners
     , setSeed
     , update
     )
 
 import Browser.Navigation as Navigation
+import DevPanel
+import Effect exposing (Eff)
 import Error exposing (Error)
 import ErrorHistory
+import KeyCmd exposing (KeyCmd)
 import LocalStorage exposing (LocalStorage)
 import OperatingSystem exposing (OperatingSystem)
 import Ports.Js.From as FromJs
@@ -48,6 +54,8 @@ init seed operatingSystem localStorage key =
     , localStorage = localStorage
     , seed = seed
     , errors = ErrorHistory.init
+    , devPanel = DevPanel.init
+    , devPanelOpen = False
     }
 
 
@@ -55,6 +63,16 @@ init seed operatingSystem localStorage key =
 ----------------------------------------------------------------
 -- API --
 ----------------------------------------------------------------
+
+
+devPanelErrors : Model -> List DevPanel.Error
+devPanelErrors =
+    Shared.devPanelErrors
+
+
+devPanelMsg : DevPanel.Msg -> Msg
+devPanelMsg =
+    Shared.devPanelMsg
 
 
 gotFromJsError : FromJs.Error -> Msg
@@ -78,15 +96,20 @@ addError =
 ----------------------------------------------------------------
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Eff Msg )
 update =
-    Shared.update
+    Shared.superUpdate
 
 
 
 ----------------------------------------------------------------
 -- SUBSCRIPTIONS --
 ----------------------------------------------------------------
+
+
+keyCommands : KeyCmd Msg
+keyCommands =
+    Shared.keyCommands
 
 
 listeners : FromJs.Listener Shared.Msg

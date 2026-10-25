@@ -62,6 +62,9 @@ checks =
         storageErrorDetails : Error -> String
         storageErrorDetails error =
             case error of
+                TestError ->
+                    "unexpected test error while reading local storage"
+
                 LocalStorageDecodeFailed details ->
                     details.key ++ ": " ++ JD.errorToString details.error
 

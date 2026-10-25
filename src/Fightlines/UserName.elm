@@ -3,12 +3,12 @@ module Fightlines.UserName exposing
     , remember
     )
 
+import Effect as E exposing (Eff)
 import Error exposing (Error)
-import Fightlines.Effect as E exposing (Eff)
-import Fightlines.Ports.Js.To as ToJs
 import Json.Decode as JD
 import Json.Encode as JE
 import LocalStorage exposing (LocalStorage)
+import Ports.Js.To as ToJs
 
 
 fromLocalStorage : LocalStorage -> Result Error (Maybe String)

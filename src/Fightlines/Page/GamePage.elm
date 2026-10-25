@@ -31,12 +31,11 @@ import Api.Query
 import ApiRequest
 import Browser.Dom
 import Browser.Events
-import Error exposing (Error)
-import Fightlines.Effect as E
+import Effect as E
     exposing
         ( Eff
         )
-import Fightlines.Ports.Js.To as ToJs
+import Error exposing (Error)
 import Fightlines.Route as Route
 import Fightlines.Shared as Shared
 import Fightlines.View.CommandGuide as CommandGuide
@@ -125,6 +124,7 @@ import LobbyId
     exposing
         ( LobbyId
         )
+import Ports.Js.To as ToJs
 import Preference
 import Style as S
 import Time
@@ -1658,7 +1658,7 @@ update lobbyId msg model =
                                     E.none
 
                                 GoHome ->
-                                    E.navigate Route.Home
+                                    Route.pushUrl Route.Home
                     in
                     { model | resigning = False }
                         |> applyTurnSnapshot snapshot
@@ -2161,7 +2161,7 @@ handleGameMenuMsg lobbyId msg model =
                 E.withOut model
 
             else if model.currentTurn.outcome /= Nothing then
-                ( model, E.navigate Route.Home )
+                ( model, Route.pushUrl Route.Home )
 
             else
                 resignGame lobbyId GoHome model

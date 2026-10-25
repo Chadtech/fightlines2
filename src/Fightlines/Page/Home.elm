@@ -8,7 +8,7 @@ module Fightlines.Page.Home exposing
     , view
     )
 
-import Fightlines.Effect as E exposing (Eff)
+import Effect as E exposing (Eff)
 import Fightlines.Route as Route
 import Fightlines.Shared as Shared
 import Html.Styled as H exposing (Html)
@@ -171,7 +171,7 @@ update : Msg -> Model -> ( Model, Eff Msg )
 update msg model =
     case msg of
         PlayButtonClicked ->
-            ( model, E.navigate Route.NewLobby )
+            ( model, Route.pushUrl Route.NewLobby )
 
         SceneCycleCompleted scene ->
             repositionScene scene model

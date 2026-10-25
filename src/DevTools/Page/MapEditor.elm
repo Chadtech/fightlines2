@@ -22,11 +22,10 @@ import Api.Query as Query
 import ApiRequest
 import Browser.Dom
 import Browser.Events
-import DevTools.Effect as E exposing (Eff)
-import DevTools.Ports.Js.To as ToJs
 import DevTools.Shared as Shared
 import Drag exposing (Drag)
 import EditableMap exposing (Definition, NamedMap)
+import Effect as E exposing (Eff)
 import Error
 import Game.Camera exposing (Camera)
 import Game.Coordinate as Coordinate exposing (Coordinate)
@@ -47,6 +46,7 @@ import Html.Styled.Lazy as Lazy
 import Json.Decode as D exposing (Decoder)
 import Point exposing (Point)
 import Ports.Js.From as FromJs
+import Ports.Js.To as ToJs
 import Random
 import Style as S
 import Svg.Styled as Svg exposing (Svg)

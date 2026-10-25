@@ -8,7 +8,7 @@ module Fightlines.Page.GameLoadFailed exposing
     )
 
 import ApiRequest
-import Fightlines.Effect as E
+import Effect
     exposing
         ( Eff
         )
@@ -85,10 +85,10 @@ update : Msg -> Model -> Eff Msg
 update msg model =
     case msg of
         RetryButtonClicked ->
-            E.navigate (Route.Game model.id)
+            Route.pushUrl (Route.Game model.id)
 
         ReturnHomeButtonClicked ->
-            E.navigate Route.Home
+            Route.pushUrl Route.Home
 
 
 

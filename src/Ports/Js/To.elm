@@ -1,4 +1,4 @@
-port module Fightlines.Ports.Js.To exposing
+port module Ports.Js.To exposing
     ( Msg(..)
     , toCmd
     )
@@ -9,6 +9,7 @@ import Ports.Js.Encode as Encode
 
 type Msg
     = CopyLink { url : String }
+    | GenerateMapThumbnail { htmlId : String, requestId : Int }
     | OpenDialog { htmlId : String }
     | SetLocalStorage { key : String, value : Je.Value }
 
@@ -26,6 +27,12 @@ encode msg =
 
         OpenDialog dialog ->
             Encode.openDialog dialog
+
+        GenerateMapThumbnail { htmlId, requestId } ->
+            Encode.message "generateMapThumbnail"
+                [ ( "htmlId", Je.string htmlId )
+                , ( "requestId", Je.int requestId )
+                ]
 
         CopyLink { url } ->
             Encode.message "copyLink"

@@ -9,10 +9,10 @@ import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.UnitKind as Kind
 import Browser
 import Browser.Dom
-import DevTools.Effect as E exposing (Eff)
 import DevTools.Page.GameReplay as GameReplay
 import DevTools.Page.LoggedGames as LoggedGames
 import DevTools.Shared as Shared
+import Effect as E exposing (Eff)
 import Game.BattlefieldNavigation as BattlefieldNavigation
 import Game.BattlefieldSnapshot as BattlefieldSnapshot
 import Game.Coordinate as Coordinate exposing (Coordinate)

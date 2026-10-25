@@ -15,6 +15,7 @@ module View.Button exposing
     , square
     , styles
     , tall
+    , titleBar
     , toHtml
     , withFeedback
     , withHtmlId
@@ -64,6 +65,7 @@ type Size
     = Small
     | Compact
     | Square
+    | TitleBar
     | Regular
     | Large
     | Tall
@@ -175,6 +177,13 @@ square button =
     { button
         | size = Square
     }
+
+
+{-| Fill a window title bar vertically without fixing the button's height.
+-}
+titleBar : Button msg -> Button msg
+titleBar button =
+    { button | size = TitleBar }
 
 
 tall : Button msg -> Button msg
@@ -367,6 +376,15 @@ toHtml button =
                             , S.lineHeight1
                             ]
 
+                        TitleBar ->
+                            [ S.w8
+                            , S.minW6p5
+                            , S.selfStretch
+                            , S.shrink0
+                            , S.p0
+                            , S.lineHeight1
+                            ]
+
                         Regular ->
                             case button.variant of
                                 Choice _ ->
@@ -404,9 +422,9 @@ toHtml button =
             in
             [ A.disabled (button.variant == Disabled)
             , A.css
-                [ S.batch sizeStyles
+                [ Css.alignSelf Css.flexStart
+                , S.batch sizeStyles
                 , S.batch iconStyles
-                , Css.alignSelf Css.flexStart
                 , S.when button.fullWidth S.wFull
                 , Css.maxWidth (Css.pct 100)
                 , S.pointerCursor

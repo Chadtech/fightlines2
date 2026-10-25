@@ -8,7 +8,7 @@ module Fightlines.Page.LobbyLoadFailed exposing
     )
 
 import ApiRequest
-import Fightlines.Effect as E
+import Effect
     exposing
         ( Eff
         )
@@ -65,13 +65,13 @@ update msg model =
         RetryButtonClicked ->
             case model.location of
                 LobbyPage.LobbySetup ->
-                    E.navigate (Route.Lobby model.id)
+                    Route.pushUrl (Route.Lobby model.id)
 
                 LobbyPage.MapLibrary ->
-                    E.navigate (Route.LobbyMaps model.id)
+                    Route.pushUrl (Route.LobbyMaps model.id)
 
         ReturnHomeButtonClicked ->
-            E.navigate Route.Home
+            Route.pushUrl Route.Home
 
 
 view : Model -> List (Html Msg)

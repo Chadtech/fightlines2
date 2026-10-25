@@ -1,9 +1,11 @@
 module DevTools.Route exposing
     ( Route(..)
     , fromUrl
+    , pushUrl
     , toString
     )
 
+import Effect as E exposing (Eff)
 import Game.LogId as GameLogId exposing (GameLogId)
 import Url
     exposing
@@ -37,6 +39,11 @@ parser =
         , P.map Replay (P.s "logged-games" </> P.custom "gameLogId" (GameLogId.parse >> Result.toMaybe))
         , P.map MapEditor (P.s "map-editor")
         ]
+
+
+pushUrl : Route -> Eff msg
+pushUrl route =
+    E.pushUrl (toString route)
 
 
 toString : Route -> String

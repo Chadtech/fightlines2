@@ -344,15 +344,15 @@ orders, turn lifecycle, and playback. Planning helpers also live here rather
 than under the player page. Game-specific views live in `src/Game/View/`, and
 game checks live in `src/Game/Checks/`. Generic controls remain in `src/View/`;
 player-only views live in `src/Fightlines/View/`. Player infrastructure
-(`Shared`, `Effect`, `Flags`, `Route`, `UserName`, and outgoing ports) lives in
+(`Shared`, `Flags`, `Route`, and `UserName`) lives in
 `src/Fightlines/`. Common infrastructure, general utilities, and editor-only data
 stay outside `Game`. Imports may retain concise domain aliases, such as
 `Game.Unit as Unit`.
 
 Neither app imports modules from the other app. Shared functionality belongs in
 `Game` or generic modules at the source root. Shared app infrastructure lives in
-`Effect`, `Shared`, `Subscriptions`, `Ports.Js.Encode`, and `Ports.Js.From` while
-each app retains its own effect, shared-state, and outgoing-port modules.
+`Effect`, `Shared`, `Subscriptions`, and `Ports.Js.*`. Each app retains its own
+shared-state, route, and startup modules.
 
 Each entry point owns its own top-level `Page` and `Msg` unions and a separate
 `Browser.application`. Every page carries shared state, with feature pages
@@ -364,26 +364,48 @@ Backdrop calibrations belong to the consuming pages' initialization data.
 URLs. Each app handles its own routes and page dispatch, converting effects to
 commands at its application boundary. Links outside an app's routes load a new
 document so the server can select the correct bundle. Each app owns its browser
-state and effects: `Fightlines.Shared`/`Fightlines.Effect` for the player app and
-`DevTools.Shared`/`DevTools.Effect` for tools. The tools model has no invite-link
-origin. Both models use `Shared.Model`, parameterized only by their additional
-fields and sharing the concrete `Error` type. Each app exposes seed and diagnostic
+state through `Fightlines.Shared` for the player app and `DevTools.Shared` for
+tools. Both apps use the common `Effect.Eff msg` type and interpreter. Each route
+module exposes `pushUrl : Route -> Eff msg`, converting its typed route to a
+string for `Effect.pushUrl`. `Effect` has no dependency on either route module.
+The tools model has no invite-link origin. Both models use `Shared.Model`,
+parameterized only by their additional fields and sharing the concrete `Error` type. Each app exposes seed and diagnostic
 updates through thin wrappers in its own shared module, backed by `Shared`;
 `ErrorHistory.Model` stores the session's errors newest first. `Shared.update`
 records incoming JavaScript failures directly as `Error.FromJsFailed`; app
 wrappers do not supply an error constructor. Shared infrastructure does not depend
-on either app's model. Each effect module accepts only its own routes and outgoing
-JS messages.
-Both modules own their effect variants and interpreters. `After`, `Focus`, and
-`Measure` store operation data and callbacks; their `toCmd` branches use helpers
-in `Effect.elm` to create and run the commands. `Request` holds an opaque
-`Effect.GraphqlRequest` constructed only from a GraphQL request and its response
-callback. The wrapper captures the request's response type and builds the GraphQL
+on either app's model. Outgoing JS messages are shared through `Ports.Js.To`.
+
+`Shared.Model.devPanel` owns the page-independent dev panel state in both apps.
+`DevPanel.Model.selectedTab` stores the selected `DevPanel.Tab`.
+`Shared.Model.devPanelOpen` owns visibility separately, so closing the dialog
+preserves its model. `DevPanel` owns its persistent model, UI messages, and dialog
+view without importing `Shared`. `Shared` owns the backtick toggle and handles the view's cancel event.
+`DevPanel.Error` contains presentation titles and details. Each app passes
+`Shared.devPanelErrors shared` into `DevPanel.dialog`, reusing the exhaustive
+conversion from the shared error history. The panel has no `Shared` import.
+The errors tab lists session diagnostics newest first, and its test button adds
+`Error.TestError` through the normal shared history operation. Each entry point
+maps panel events through `Shared.superUpdate`. Its `dialog` function prioritizes
+the dev panel over the page dialog and renders only the selected dialog.
+`Shared.update` returns the updated model and the common `Eff Msg` directly.
+`Shared.superUpdate` detects when the dev panel opens and adds an open-dialog
+effect using the static `DevPanel.htmlId`. App shared wrappers delegate directly
+without a dialog callback. Each entry point checks when the panel closes after
+its app update and reopens its pending page dialog. Shared has no knowledge of
+page dialogs. Page key commands are suspended while the dev panel is open;
+Escape uses the native dialog cancel event. The dev panel enables the dialog
+header’s optional close button, which emits the same cancellation event.
+
+`Effect` owns the effect variants and interpreter. `After`, `Focus`, and `Measure`
+store operation data and callbacks; `toCmd` creates and runs their commands.
+`Request` holds a private `GraphqlRequest` constructed only from a GraphQL request
+and its response callback. The wrapper captures the request's response type and builds the GraphQL
 command when sent; it cannot wrap arbitrary tasks or commands.
 Shared rendering modules do not import either app's state or effects:
 `Battlefield` exposes its element ID for page-owned measurement effects, and
 `PlaybackPresentation` reads `LocalStorage` directly and encodes preference
-entries for each page to save through its own effects.
+entries for each page to save through the common effects.
 
 `make frontend` generates `public/build-config.js` from `PRODUCTION`.
 `make build` defaults to `true` and passes it to its frontend prerequisite;
@@ -441,20 +463,18 @@ for initialization; polling and submission responses use `Snapshot` directly.
 `ApiRequest` owns shared transport
 configuration and error messages. Lobby and game responses are tagged with their
 originating ID to ignore responses from pages left during navigation.
-Each app has its own outgoing `toJs` port and message vocabulary in `Fightlines.Ports.Js.To`
-or `DevTools.Ports.Js.To`. Both support storage writes and opening dialogs; only
-player messages include clipboard copying, and only tools messages include map
-thumbnail generation. Their JavaScript entry files own those app-specific
-handlers; the common bootstrap owns storage notifications and dialog opening.
-`Ports.Js.Encode` shares the outgoing message envelope and encoders for
-storage writes and opening dialogs. App-specific payload encoders stay in each
-app's outgoing port module.
+`Ports.Js.To` owns the shared outgoing `toJs` port and message vocabulary for
+storage writes, dialog opening, clipboard copying, and map thumbnail generation.
+The JavaScript entry files retain their app-specific handlers: player startup
+handles clipboard copying, tools startup handles thumbnails, and the common
+bootstrap handles storage notifications and dialog opening. `Ports.Js.Encode`
+provides the outgoing message envelope and common payload encoders.
 The generic incoming `fromJs` port and listener decoder remain shared in
 `Ports.Js.From`. `Subscriptions.common` combines the storage-change listener,
 active-page listeners, and keyboard commands using each app's message callbacks
 and operating system. Each entry point retains page subscription dispatch and
 listener/keyboard message mapping. Port modules keep raw port functions private.
-Each app's `Effect.toJs` sends its own `ToJs.Msg`, encoded with a `tag` and operation fields.
+`Effect.toJs` sends a shared `ToJs.Msg`, encoded with a `tag` and operation fields.
 Incoming messages use `type` and `payload`;
 pages expose `listeners` with payload decoders and their own messages. Each app
 maps the active page's listeners and converts them into a single subscription
@@ -1596,7 +1616,7 @@ replay is available only from the new-turn card, never during planning or after
 the game ends. Same-turn polling preserves the retained frames.
 The page presents it only when planning is unlocked, after all
 playback and loss dialogs have finished. `GamePage.initialEffect` opens the initial
-native modal after rendering; `superUpdate` opens subsequent introductions when
+native modal after rendering; `update` opens subsequent introductions when
 the active dialog changes. `Fightlines.View.TurnIntroduction` supplies the card artwork and
 actions through `Dialog.announcement`, which owns wide modal placement. The
 introduction owns its animation styles, mounted once in the application shell;

@@ -15,7 +15,7 @@ import ApiRequest
     exposing
         ( Response
         )
-import Fightlines.Effect as E
+import Effect as E
     exposing
         ( Eff
         )
@@ -164,7 +164,7 @@ update msg model =
                       }
                     , E.batch
                         [ UserName.remember submittedName
-                        , E.navigate (Route.Lobby lobbyId)
+                        , Route.pushUrl (Route.Lobby lobbyId)
                         ]
                     )
 

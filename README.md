@@ -47,6 +47,15 @@ Opponent updates use half-second status polling plus network time.
 The combat theater also remembers its **automatically close** checkbox. When
 enabled, each encounter continues half a second after its animation finishes.
 
+## Dev panel
+
+Press backtick (`) in either the Fightlines or DevTools app to toggle the dev panel.
+The left navigation selects the errors tab, which lists shared session errors
+newest first. Choose **test error** to add an error to that same history.
+Press Escape, press backtick again, or use the header’s × button to close the
+panel; its selected tab and error history are preserved
+when it opens again.
+
 ## Backdrop review
 
 Open `/backdrop-review` in a development build to compare combat backdrops
@@ -702,8 +711,10 @@ replenishment and explicit crate loading; Crossroads and Ridgeway also have fuel
 
 `src/Fightlines.elm` runs the player app (home, lobbies, and live games).
 `src/DevTools.elm` runs the separate map editor, game archive/replay, and backdrop
-review app, with its own `DevTools.Route`, `DevTools.Flags`, `DevTools.Shared`,
-`DevTools.Effect`, and outgoing ports in `DevTools.Ports.Js.To`. Player pages
+review app, with its own `DevTools.Route`, `DevTools.Flags`, and `DevTools.Shared`.
+Both apps use `Effect.Eff` and outgoing ports in `Ports.Js.To`. Their route modules
+provide typed `Route.pushUrl` helpers for in-app navigation; `Effect.load` opens
+another app's document. Player pages
 and app infrastructure live in `src/Fightlines/`, with pages in
 `src/Fightlines/Page/` and player-only views in `src/Fightlines/View/`. Tool pages
 live in `src/DevTools/Page/` under `DevTools.Page.*`. Both apps share
