@@ -357,11 +357,16 @@ commands at its application boundary. Links outside an app's routes load a new
 document so the server can select the correct bundle. Each app owns its browser
 state and effects: `Shared`/`Effect` for the player app and
 `DevTools.Shared`/`DevTools.Effect` for tools. The tools model has no invite-link
-origin. Each effect module accepts only its own routes and outgoing JS messages.
+origin. Both models use `Common.Shared.Model`, parameterized by the app's error
+type and additional fields. Each app exposes seed and diagnostic updates through
+thin wrappers in its own shared module, backed by `Common.Shared`;
+`ErrorHistory.Model` stores the session's errors newest first. These common modules
+do not depend on either app's model or the concrete `Error` type. Each effect
+module accepts only its own routes and outgoing JS messages.
 Both modules own their effect variants and interpreters. `After`, `Focus`, and
 `Measure` store operation data and callbacks; their `toCmd` branches use helpers
-in `Common.elm` to create and run the commands. `Request` holds an opaque
-`Common.Request` constructed only from a GraphQL request and its response
+in `Common/Effect.elm` to create and run the commands. `Request` holds an opaque
+`Common.Effect.Request` constructed only from a GraphQL request and its response
 callback. The wrapper captures the request's response type and builds the GraphQL
 command when sent; it cannot wrap arbitrary tasks or commands.
 Shared rendering modules do not import either app's state or effects:
@@ -430,9 +435,15 @@ or `DevTools.Ports.Js.To`. Both support storage writes and opening dialogs; only
 player messages include clipboard copying, and only tools messages include map
 thumbnail generation. Their JavaScript entry files own those app-specific
 handlers; the common bootstrap owns storage notifications and dialog opening.
+`Common.Ports.Js.Encode` shares the outgoing message envelope and encoders for
+storage writes and opening dialogs. App-specific payload encoders stay in each
+app's outgoing port module.
 The generic incoming `fromJs` port and listener decoder remain shared in
-`Ports.Js.From`. Port modules keep raw port functions private. Each app's
-`Effect.toJs` sends its own `ToJs.Msg`, encoded with a `tag` and operation fields.
+`Ports.Js.From`. `Common.Subscriptions.common` combines the storage-change listener,
+active-page listeners, and keyboard commands using each app's message callbacks
+and operating system. Each entry point retains page subscription dispatch and
+listener/keyboard message mapping. Port modules keep raw port functions private.
+Each app's `Effect.toJs` sends its own `ToJs.Msg`, encoded with a `tag` and operation fields.
 Incoming messages use `type` and `payload`;
 pages expose `listeners` with payload decoders and their own messages. Each app
 maps the active page's listeners and converts them into a single subscription
@@ -459,8 +470,12 @@ submitted name so edits made while joining do not change which name is saved.
 Missing stored names leave the field empty. Incorrectly typed names also leave
 the field empty, but each form records `Error.LocalStorageDecodeFailed` in
 `Shared.Model.errors`, retaining the storage key and original decoder error.
-Each app's `Shared.addError` prepends errors to its session's list without clearing earlier
-errors; new shared state starts with an empty list. Failed requests
+`Preference.load` shares preference decoding, caller-supplied defaults, and
+`Error.LocalStorageDecodeFailed` construction across both apps. Preference keys,
+decoders, defaults, and loaded state remain with their owning pages or game
+modules; `PlaybackPresentation` retains its typed playback preference API.
+Each app's `Shared.addError` wrapper prepends errors to its session's history
+without clearing earlier errors; new shared state starts with an empty history. Failed requests
 keep the previous remembered name, and storage notifications preserve active
 form edits. Game state is not persisted in local storage.
 
@@ -740,9 +755,9 @@ JavaScript passes the browser platform and a random integer through each app's
 flags. Each app's flags decoder converts the required integer into a
 `Random.Seed` with `Random.initialSeed`; every initialized shared model carries
 this seed.
-Random consumers use `Random.step` and retain the returned seed through
-`Shared.setSeed`, including across page navigation, without random-generation
-effects. Each app's flags decoder also converts the platform into
+Random consumers use `Random.step` and retain the returned seed through their
+app's shared `setSeed` wrapper, including across page navigation, without
+random-generation effects. Each app's flags decoder also converts the platform into
 `OperatingSystem`, using `Unknown` for unrecognized platform strings. Each app
 stores it in its own shared model. Missing or malformed flags instead open an
 `AppInitError` page with decoder details in a read-only textarea; it has no shared

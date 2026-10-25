@@ -4,6 +4,7 @@ import Error exposing (Error(..))
 import Json.Decode as JD
 import LocalStorage
 import Platform
+import Preference
 import UserName
 
 
@@ -53,25 +54,54 @@ checks =
             case JD.decodeString LocalStorage.decoder json of
                 Ok storage ->
                     UserName.fromLocalStorage storage
-                        |> Result.mapError userNameErrorDetails
+                        |> Result.mapError storageErrorDetails
 
                 Err error ->
                     Err (JD.errorToString error)
 
-        userNameErrorDetails : Error -> String
-        userNameErrorDetails error =
+        storageErrorDetails : Error -> String
+        storageErrorDetails error =
             case error of
                 LocalStorageDecodeFailed details ->
                     details.key ++ ": " ++ JD.errorToString details.error
 
                 UnitOwnerNotFound _ ->
-                    "unexpected unit owner error while reading the user name"
+                    "unexpected unit owner error while reading local storage"
+
+                FromJsFailed _ ->
+                    "unexpected JavaScript message error while reading local storage"
+
+                ElementFocusFailed _ ->
+                    "unexpected element focus error while reading local storage"
 
                 BattlefieldMeasurementFailed _ ->
-                    "unexpected battlefield measurement error while reading the user name"
+                    "unexpected battlefield measurement error while reading local storage"
 
                 OrderPlanningInvariantViolated _ ->
-                    "unexpected order planning error while reading the user name"
+                    "unexpected order planning error while reading local storage"
+
+        readPreference : JD.Decoder value -> value -> String -> Result String ( value, Maybe String )
+        readPreference decoder defaultValue json =
+            JD.decodeString LocalStorage.decoder json
+                |> Result.mapError JD.errorToString
+                |> Result.map
+                    (Preference.load
+                        { key = "preference"
+                        , decoder = decoder
+                        , defaultValue = defaultValue
+                        }
+                        >> Tuple.mapSecond (Maybe.map storageErrorDetails)
+                    )
+
+        invalidPreferencePreservesError : Bool
+        invalidPreferencePreservesError =
+            case JD.decodeString JD.bool "42" of
+                Err error ->
+                    readPreference JD.bool False "{\"preference\":42}"
+                        == Ok ( False, Just ("preference: " ++ JD.errorToString error) )
+
+                Ok _ ->
+                    False
 
         invalidNamePreservesError : Bool
         invalidNamePreservesError =
@@ -94,4 +124,9 @@ checks =
         , check "missing remembered name succeeds without a value" (readUserName "{}" == Ok Nothing)
         , check "remembered name preserves spelling" (readUserName "{\"userName\":\"MixedCase\"}" == Ok (Just "MixedCase"))
         , check "malformed remembered name retains its key and decoder error" invalidNamePreservesError
+        , check "missing preference uses its configured default" (readPreference JD.bool True "{}" == Ok ( True, Nothing ))
+        , check "stored false overrides a true preference default" (readPreference JD.bool True "{\"preference\":false}" == Ok ( False, Nothing ))
+        , check "stored true overrides a false preference default" (readPreference JD.bool False "{\"preference\":true}" == Ok ( True, Nothing ))
+        , check "preferences support non-Boolean values" (readPreference JD.int 7 "{\"preference\":12}" == Ok ( 12, Nothing ))
+        , check "malformed preference retains its key and decoder error" invalidPreferencePreservesError
         ]

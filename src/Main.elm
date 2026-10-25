@@ -6,6 +6,7 @@ import ApiRequest
         )
 import Browser
 import Browser.Navigation as Navigation
+import Common.Subscriptions
 import Effect as E
     exposing
         ( Eff
@@ -81,8 +82,7 @@ type Msg
     | GameLoadFailedMsg LobbyId GameLoadFailed.Msg
     | ReturnHomeButtonClicked
     | HomeMsg Home.Msg
-    | JsErrorReceived FromJs.Error
-    | LocalStorageChanged LocalStorage
+    | GotSharedMsg Shared.Msg
 
 
 
@@ -279,17 +279,6 @@ handleRoute shared route =
 update : Msg -> Page -> ( Page, Eff Msg )
 update msg page =
     case msg of
-        LocalStorageChanged storage ->
-            let
-                updateStorage : Shared.Model -> Shared.Model
-                updateStorage shared =
-                    { shared | localStorage = storage }
-            in
-            ( mapShared updateStorage page, E.none )
-
-        JsErrorReceived _ ->
-            ( page, E.none )
-
         ReturnHomeButtonClicked ->
             ( page, E.navigate Route.Home )
 
@@ -473,6 +462,21 @@ update msg page =
                 _ ->
                     ( page, E.none )
 
+        GotSharedMsg subMsg ->
+            case getShared page of
+                Just shared ->
+                    let
+                        newShared : Shared.Model
+                        newShared =
+                            Shared.update subMsg shared
+                    in
+                    setShared newShared page
+                        |> E.withOut
+
+                Nothing ->
+                    page
+                        |> E.withOut
+
 
 
 ----------------------------------------------------------------
@@ -588,16 +592,25 @@ shell page =
 
 subscriptions : Page -> Sub Msg
 subscriptions page =
-    case getShared page of
+    [ case getShared page of
         Just shared ->
-            pageSubscriptions shared page
+            Common.Subscriptions.common
+                { operatingSystem = shared.operatingSystem
+                , keyCommands = keyCommands page
+                , listeners = listeners page
+                , onFromJsError =
+                    Shared.gotFromJsError >> GotSharedMsg
+                }
 
         Nothing ->
             Sub.none
+    , pageSubscriptions page
+    ]
+        |> Sub.batch
 
 
-pageSubscriptions : Shared.Model -> Page -> Sub Msg
-pageSubscriptions shared page =
+pageSubscriptions : Page -> Sub Msg
+pageSubscriptions page =
     Sub.batch
         [ case page of
             Lobby id model ->
@@ -610,14 +623,6 @@ pageSubscriptions shared page =
 
             _ ->
                 Sub.none
-        , FromJs.subscription
-            { listeners =
-                [ FromJs.data "local storage changed" LocalStorage.decoder LocalStorageChanged
-                , listeners page
-                ]
-            , onError = JsErrorReceived
-            }
-        , KeyCmd.subscriptions shared.operatingSystem [ keyCommands page ]
         ]
 
 
@@ -631,11 +636,20 @@ keyCommands page =
             KeyCmd.none
 
 
-listeners : Page -> FromJs.Listener Msg
+listeners : Page -> List (FromJs.Listener Msg)
 listeners page =
+    [ Shared.listeners
+        |> FromJs.map GotSharedMsg
+    , pageListeners page
+    ]
+
+
+pageListeners : Page -> FromJs.Listener Msg
+pageListeners page =
     case page of
         Lobby id model ->
-            LobbyPage.listeners |> FromJs.map (LobbyMsg id (LobbyPage.currentLocation model))
+            LobbyPage.listeners
+                |> FromJs.map (LobbyMsg id (LobbyPage.currentLocation model))
 
         _ ->
             FromJs.none

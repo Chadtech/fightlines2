@@ -22,7 +22,7 @@ import ApiRequest
         )
 import Browser.Dom
 import Browser.Navigation as Navigation
-import Common
+import Common.Effect as Common
 import Graphql.Http
 import Ports.Js.To as ToJs
 import Route
@@ -34,9 +34,9 @@ import Route
 type Eff msg
     = None
     | Batch (List (Eff msg))
-    | Request (Common.Request msg)
+    | Request (Common.GraphqlRequest msg)
     | After Float msg
-    | Focus { htmlId : String } msg
+    | Focus { htmlId : String } (Result Browser.Dom.Error () -> msg)
     | Measure String (Result Browser.Dom.Error Browser.Dom.Element -> msg)
     | Navigate Route
     | PushUrl String
@@ -73,7 +73,7 @@ toJs =
 
 request : (Response response -> msg) -> Graphql.Http.Request response -> Eff msg
 request toMsg graphqlRequest =
-    Request (Common.request toMsg graphqlRequest)
+    Request (Common.graphqlRequest toMsg graphqlRequest)
 
 
 after : Float -> msg -> Eff msg
@@ -81,7 +81,7 @@ after =
     After
 
 
-focus : { htmlId : String } -> msg -> Eff msg
+focus : { htmlId : String } -> (Result Browser.Dom.Error () -> msg) -> Eff msg
 focus =
     Focus
 
@@ -111,13 +111,13 @@ map toMsg effect =
             Batch (List.map (map toMsg) effects)
 
         Request pending ->
-            Request (Common.mapRequest toMsg pending)
+            Request (Common.mapGraphqlRequest toMsg pending)
 
         After milliseconds completed ->
             After milliseconds (toMsg completed)
 
-        Focus element completed ->
-            Focus element (toMsg completed)
+        Focus element received ->
+            Focus element (received >> toMsg)
 
         Measure htmlId received ->
             Measure htmlId (received >> toMsg)
@@ -145,13 +145,13 @@ toCmd key effect =
             Cmd.batch (List.map (toCmd key) effects)
 
         Request pending ->
-            Common.sendRequest pending
+            Common.sendGraphqlRequest pending
 
         After milliseconds completed ->
             Common.after milliseconds completed
 
-        Focus element completed ->
-            Common.focus element completed
+        Focus element received ->
+            Common.focus element received
 
         Measure htmlId received ->
             Common.measure htmlId received

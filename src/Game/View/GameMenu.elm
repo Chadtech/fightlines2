@@ -7,6 +7,7 @@ module Game.View.GameMenu exposing
     , panel
     )
 
+import Browser.Dom
 import Css
 import Css.Global
 import Html.Styled as H exposing (Html)
@@ -26,7 +27,7 @@ import View.Dialog as Dialog exposing (Dialog)
 type Msg
     = OpenClicked
     | CloseClicked
-    | FocusReturned
+    | FocusReturned (Result Browser.Dom.Error ())
     | ResignClicked
     | HomeClicked
 

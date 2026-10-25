@@ -1,11 +1,11 @@
-module Common exposing
-    ( Request
+module Common.Effect exposing
+    ( GraphqlRequest
     , after
     , focus
-    , mapRequest
+    , graphqlRequest
+    , mapGraphqlRequest
     , measure
-    , request
-    , sendRequest
+    , sendGraphqlRequest
     )
 
 import ApiRequest
@@ -25,10 +25,10 @@ import Task
 
 
 {-| A pending GraphQL request. The private sender captures its response type,
-which can differ between requests. Only `request` can construct one, and the
-GraphQL command is created when `sendRequest` runs.
+which can differ between requests. Only `graphqlRequest` can construct one, and the
+GraphQL command is created when `sendGraphqlRequest` runs.
 -}
-type Request msg
+type GraphqlRequest msg
     = GraphqlRequest (() -> Cmd msg)
 
 
@@ -38,18 +38,18 @@ type Request msg
 ----------------------------------------------------------------
 
 
-request : (Response response -> msg) -> Graphql.Http.Request response -> Request msg
-request received graphqlRequest =
-    GraphqlRequest (\() -> Graphql.Http.send received graphqlRequest)
+graphqlRequest : (Response response -> msg) -> Graphql.Http.Request response -> GraphqlRequest msg
+graphqlRequest received pending =
+    GraphqlRequest (\() -> Graphql.Http.send received pending)
 
 
-mapRequest : (a -> b) -> Request a -> Request b
-mapRequest toMsg (GraphqlRequest send) =
+mapGraphqlRequest : (a -> b) -> GraphqlRequest a -> GraphqlRequest b
+mapGraphqlRequest toMsg (GraphqlRequest send) =
     GraphqlRequest (\() -> Cmd.map toMsg (send ()))
 
 
-sendRequest : Request msg -> Cmd msg
-sendRequest (GraphqlRequest send) =
+sendGraphqlRequest : GraphqlRequest msg -> Cmd msg
+sendGraphqlRequest (GraphqlRequest send) =
     send ()
 
 
@@ -61,12 +61,12 @@ after milliseconds completed =
         |> Task.perform (always completed)
 
 
-{-| Attempt to focus an element, then notify completion even if it is missing.
+{-| Attempt to focus an element and report success or failure.
 -}
-focus : { htmlId : String } -> msg -> Cmd msg
-focus { htmlId } completed =
+focus : { htmlId : String } -> (Result Browser.Dom.Error () -> msg) -> Cmd msg
+focus { htmlId } received =
     Browser.Dom.focus htmlId
-        |> Task.attempt (always completed)
+        |> Task.attempt received
 
 
 {-| Measure a rendered element after layout and report success or failure.

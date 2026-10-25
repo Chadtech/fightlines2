@@ -8,19 +8,23 @@ module KeyCmd exposing
     , ctrl
     , d
     , downArrow
+    , downGamerKeys
     , enter
     , escape
     , leftArrow
+    , leftGamerKeys
     , map
     , minus
     , none
     , period
     , plus
     , rightArrow
+    , rightGamerKeys
     , s
     , shift
     , subscriptions
     , upArrow
+    , upGamerKeys
     , w
     )
 
@@ -199,6 +203,26 @@ upArrow =
 downArrow : msg -> KeyCmd msg
 downArrow =
     fromKeys [ "ArrowDown" ]
+
+
+leftGamerKeys : msg -> KeyCmd msg
+leftGamerKeys =
+    fromKeys [ "ArrowLeft", "a" ]
+
+
+rightGamerKeys : msg -> KeyCmd msg
+rightGamerKeys =
+    fromKeys [ "ArrowRight", "d" ]
+
+
+upGamerKeys : msg -> KeyCmd msg
+upGamerKeys =
+    fromKeys [ "ArrowUp", "w" ]
+
+
+downGamerKeys : msg -> KeyCmd msg
+downGamerKeys =
+    fromKeys [ "ArrowDown", "s" ]
 
 
 plus : msg -> KeyCmd msg

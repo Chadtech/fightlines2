@@ -1453,8 +1453,8 @@ keyCommands model =
             [ KeyCmd.escape EscapePressed
             , KeyCmd.plus ZoomInKeyPressed
             , KeyCmd.minus ZoomOutKeyPressed
-            , KeyCmd.batch [ KeyCmd.leftArrow PanLeftKeyPressed, KeyCmd.a PanLeftKeyPressed ]
-            , KeyCmd.batch [ KeyCmd.rightArrow PanRightKeyPressed, KeyCmd.d PanRightKeyPressed ]
-            , KeyCmd.batch [ KeyCmd.upArrow PanUpKeyPressed, KeyCmd.w PanUpKeyPressed ]
-            , KeyCmd.batch [ KeyCmd.downArrow PanDownKeyPressed, KeyCmd.s PanDownKeyPressed ]
+            , KeyCmd.leftGamerKeys PanLeftKeyPressed
+            , KeyCmd.rightGamerKeys PanRightKeyPressed
+            , KeyCmd.upGamerKeys PanUpKeyPressed
+            , KeyCmd.downGamerKeys PanDownKeyPressed
             ]

@@ -3,6 +3,7 @@ port module DevTools.Ports.Js.To exposing
     , toCmd
     )
 
+import Common.Ports.Js.Encode as Common
 import Json.Encode as Je
 
 
@@ -13,44 +14,24 @@ type Msg
 
 
 toCmd : Msg -> Cmd msg
-toCmd message =
-    toJs (encode message)
-
-
-tagName : Msg -> String
-tagName msg =
-    case msg of
-        SetLocalStorage _ ->
-            "setLocalStorage"
-
-        OpenDialog _ ->
-            "openDialog"
-
-        GenerateMapThumbnail _ ->
-            "generateMapThumbnail"
+toCmd msg =
+    toJs (encode msg)
 
 
 encode : Msg -> Je.Value
-encode message =
-    let
-        payload : List ( String, Je.Value )
-        payload =
-            case message of
-                SetLocalStorage { key, value } ->
-                    [ ( "key", Je.string key )
-                    , ( "value", value )
-                    ]
+encode msg =
+    case msg of
+        SetLocalStorage entry ->
+            Common.setLocalStorage entry
 
-                OpenDialog { htmlId } ->
-                    [ ( "htmlId", Je.string htmlId )
-                    ]
+        OpenDialog dialog ->
+            Common.openDialog dialog
 
-                GenerateMapThumbnail { htmlId, requestId } ->
-                    [ ( "htmlId", Je.string htmlId )
-                    , ( "requestId", Je.int requestId )
-                    ]
-    in
-    Je.object (( "tag", Je.string <| tagName message ) :: payload)
+        GenerateMapThumbnail { htmlId, requestId } ->
+            Common.message "generateMapThumbnail"
+                [ ( "htmlId", Je.string htmlId )
+                , ( "requestId", Je.int requestId )
+                ]
 
 
 port toJs : Je.Value -> Cmd msg

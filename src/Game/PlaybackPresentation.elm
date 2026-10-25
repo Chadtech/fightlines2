@@ -31,6 +31,7 @@ import Html.Styled as H exposing (Html)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import LocalStorage exposing (LocalStorage)
+import Preference
 import Util.Html.Event as HtmlEvent
 import Util.List as ListUtil
 import View.Dialog as Dialog exposing (Dialog)
@@ -110,17 +111,12 @@ frameCamera viewport map saved animation held =
 
 loadPreference : Preference -> LocalStorage -> ( Bool, Maybe Error )
 loadPreference preference storage =
-    let
-        key : String
-        key =
-            preferenceKey preference
-    in
-    case LocalStorage.get storage key Decode.bool of
-        Ok saved ->
-            ( Maybe.withDefault False saved, Nothing )
-
-        Err decodeError ->
-            ( False, Just (Error.LocalStorageDecodeFailed { key = key, error = decodeError }) )
+    Preference.load
+        { key = preferenceKey preference
+        , decoder = Decode.bool
+        , defaultValue = False
+        }
+        storage
 
 
 encodePreference : Preference -> Bool -> { key : String, value : Encode.Value }

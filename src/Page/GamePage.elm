@@ -122,8 +122,8 @@ import LobbyId
     exposing
         ( LobbyId
         )
-import LocalStorage
 import Ports.Js.To as ToJs
+import Preference
 import Route
 import Shared
 import Style as S
@@ -209,7 +209,7 @@ type Msg
     | GameMenuMsg GameMenu.Msg
     | PreviousCommandPressed
     | NextCommandPressed
-    | CommandFocusCompleted
+    | CommandFocusCompleted (Result Browser.Dom.Error ())
     | PanLeftKeyPressed
     | PanRightKeyPressed
     | PanUpKeyPressed
@@ -268,10 +268,20 @@ init shared flags =
             PlaybackPresentation.loadPreference PlaybackPresentation.AutomaticallyCloseCombat shared.localStorage
 
         ( skipTurnIntroduction, introductionPreferenceError ) =
-            loadPreference turnIntroductionPreferenceKey shared
+            Preference.load
+                { key = turnIntroductionPreferenceKey
+                , decoder = Decode.bool
+                , defaultValue = False
+                }
+                shared.localStorage
 
         ( skipUnplannedUnitsWarning, submissionPreferenceError ) =
-            loadPreference unplannedUnitsWarningPreferenceKey shared
+            Preference.load
+                { key = unplannedUnitsWarningPreferenceKey
+                , decoder = Decode.bool
+                , defaultValue = False
+                }
+                shared.localStorage
 
         ( skipLossDialogs, lossPreferenceError ) =
             PlaybackPresentation.loadPreference PlaybackPresentation.SkipLossDialogs shared.localStorage
@@ -366,18 +376,6 @@ rememberPlaybackPreference preference enabled =
     PlaybackPresentation.encodePreference preference enabled
         |> ToJs.SetLocalStorage
         |> E.toJs
-
-
-loadPreference : String -> Shared.Model -> ( Bool, Maybe Error )
-loadPreference key shared =
-    case LocalStorage.get shared.localStorage key Decode.bool of
-        Ok saved ->
-            ( Maybe.withDefault False saved, Nothing )
-
-        Err decodeError ->
-            ( False
-            , Just (Error.LocalStorageDecodeFailed { key = key, error = decodeError })
-            )
 
 
 showTurnIntroduction : Model -> Bool
@@ -1468,6 +1466,16 @@ resignGame lobbyId destination model =
         E.withOut model
 
 
+recordFocusResult : Result Browser.Dom.Error () -> Model -> Model
+recordFocusResult result model =
+    case result of
+        Ok () ->
+            model
+
+        Err error ->
+            { model | shared = Shared.addError (Just (Error.ElementFocusFailed error)) model.shared }
+
+
 
 ----------------------------------------------------------------
 -- UPDATE --
@@ -1877,8 +1885,8 @@ update lobbyId msg model =
         NextCommandPressed ->
             ( model, focusAdjacentCommand identity (focusedCommand model) model )
 
-        CommandFocusCompleted ->
-            model |> E.withOut
+        CommandFocusCompleted result ->
+            recordFocusResult result model |> E.withOut
 
         DirectionKeyPressed direction ->
             model
@@ -2142,7 +2150,7 @@ handleGameMenuMsg lobbyId msg model =
             , E.focus
                 { htmlId = GameMenu.buttonHtmlId
                 }
-                (GameMenuMsg GameMenu.FocusReturned)
+                (GameMenu.FocusReturned >> GameMenuMsg)
             )
 
         GameMenu.ResignClicked ->
@@ -2158,8 +2166,8 @@ handleGameMenuMsg lobbyId msg model =
             else
                 resignGame lobbyId GoHome model
 
-        GameMenu.FocusReturned ->
-            E.withOut model
+        GameMenu.FocusReturned result ->
+            E.withOut (recordFocusResult result model)
 
 
 handleTurnControlsMsg : LobbyId -> TurnControls.Msg -> Model -> ( Model, Eff Msg )
@@ -3976,17 +3984,17 @@ keyCommands model =
                     Just (UnitSelection { interaction }) ->
                         case interaction of
                             ChoosingDirection _ ->
-                                [ leftKeys (DirectionKeyPressed DirectionEnum.West)
-                                , rightKeys (DirectionKeyPressed DirectionEnum.East)
-                                , upKeys (DirectionKeyPressed DirectionEnum.North)
-                                , downKeys (DirectionKeyPressed DirectionEnum.South)
+                                [ KeyCmd.leftGamerKeys (DirectionKeyPressed DirectionEnum.West)
+                                , KeyCmd.rightGamerKeys (DirectionKeyPressed DirectionEnum.East)
+                                , KeyCmd.upGamerKeys (DirectionKeyPressed DirectionEnum.North)
+                                , KeyCmd.downGamerKeys (DirectionKeyPressed DirectionEnum.South)
                                 ]
 
                             ChoosingMove _ ->
-                                [ leftKeys (PathDirectionKeyPressed DirectionEnum.West)
-                                , rightKeys (PathDirectionKeyPressed DirectionEnum.East)
-                                , upKeys (PathDirectionKeyPressed DirectionEnum.North)
-                                , downKeys (PathDirectionKeyPressed DirectionEnum.South)
+                                [ KeyCmd.leftGamerKeys (PathDirectionKeyPressed DirectionEnum.West)
+                                , KeyCmd.rightGamerKeys (PathDirectionKeyPressed DirectionEnum.East)
+                                , KeyCmd.upGamerKeys (PathDirectionKeyPressed DirectionEnum.North)
+                                , KeyCmd.downGamerKeys (PathDirectionKeyPressed DirectionEnum.South)
                                 , KeyCmd.enter PathEnterPressed
                                 ]
 
@@ -3994,8 +4002,8 @@ keyCommands model =
                                 []
 
                             CommandMenu _ ->
-                                [ upKeys PreviousCommandPressed
-                                , downKeys NextCommandPressed
+                                [ KeyCmd.upGamerKeys PreviousCommandPressed
+                                , KeyCmd.downGamerKeys NextCommandPressed
                                 ]
 
                     Just (Inspecting _) ->
@@ -4040,44 +4048,12 @@ keyCommands model =
             ]
 
 
-leftKeys : msg -> KeyCmd msg
-leftKeys msg =
-    KeyCmd.batch
-        [ KeyCmd.leftArrow msg
-        , KeyCmd.a msg
-        ]
-
-
-rightKeys : msg -> KeyCmd msg
-rightKeys msg =
-    KeyCmd.batch
-        [ KeyCmd.rightArrow msg
-        , KeyCmd.d msg
-        ]
-
-
-upKeys : msg -> KeyCmd msg
-upKeys msg =
-    KeyCmd.batch
-        [ KeyCmd.upArrow msg
-        , KeyCmd.w msg
-        ]
-
-
-downKeys : msg -> KeyCmd msg
-downKeys msg =
-    KeyCmd.batch
-        [ KeyCmd.downArrow msg
-        , KeyCmd.s msg
-        ]
-
-
 panNavigation : () -> List (KeyCmd Msg)
 panNavigation _ =
-    [ leftKeys PanLeftKeyPressed
-    , rightKeys PanRightKeyPressed
-    , upKeys PanUpKeyPressed
-    , downKeys PanDownKeyPressed
+    [ KeyCmd.leftGamerKeys PanLeftKeyPressed
+    , KeyCmd.rightGamerKeys PanRightKeyPressed
+    , KeyCmd.upGamerKeys PanUpKeyPressed
+    , KeyCmd.downGamerKeys PanDownKeyPressed
     ]
 
 

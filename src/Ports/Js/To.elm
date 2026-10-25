@@ -3,6 +3,7 @@ port module Ports.Js.To exposing
     , toCmd
     )
 
+import Common.Ports.Js.Encode as Common
 import Json.Encode as Je
 
 
@@ -13,43 +14,23 @@ type Msg
 
 
 toCmd : Msg -> Cmd msg
-toCmd message =
-    toJs (encode message)
-
-
-tagName : Msg -> String
-tagName msg =
-    case msg of
-        SetLocalStorage _ ->
-            "setLocalStorage"
-
-        OpenDialog _ ->
-            "openDialog"
-
-        CopyLink _ ->
-            "copyLink"
+toCmd msg =
+    toJs (encode msg)
 
 
 encode : Msg -> Je.Value
-encode message =
-    let
-        payload : List ( String, Je.Value )
-        payload =
-            case message of
-                SetLocalStorage { key, value } ->
-                    [ ( "key", Je.string key )
-                    , ( "value", value )
-                    ]
+encode msg =
+    case msg of
+        SetLocalStorage entry ->
+            Common.setLocalStorage entry
 
-                OpenDialog { htmlId } ->
-                    [ ( "htmlId", Je.string htmlId )
-                    ]
+        OpenDialog dialog ->
+            Common.openDialog dialog
 
-                CopyLink { url } ->
-                    [ ( "url", Je.string url )
-                    ]
-    in
-    Je.object (( "tag", Je.string <| tagName message ) :: payload)
+        CopyLink { url } ->
+            Common.message "copyLink"
+                [ ( "url", Je.string url )
+                ]
 
 
 port toJs : Je.Value -> Cmd msg

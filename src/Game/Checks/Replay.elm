@@ -428,11 +428,11 @@ lossChecks initial =
                         |> Tuple.first
             in
             ( List.concat
-                [ expect "playback opens an initial loss and reports its missing owner once" (GameReplay.dialog initialLoss /= Nothing && List.length initialLoss.shared.errors == 1)
-                , expect "playback stops at the loss and repeated ticks do not repeat its diagnostic" (GameReplay.dialog lost /= Nothing && List.length lost.shared.errors == 1 && held.shared.errors == lost.shared.errors && held.timeline == lost.timeline)
+                [ expect "playback opens an initial loss and reports its missing owner once" (GameReplay.dialog initialLoss /= Nothing && List.length initialLoss.shared.errors.errors == 1)
+                , expect "playback stops at the loss and repeated ticks do not repeat its diagnostic" (GameReplay.dialog lost /= Nothing && List.length lost.shared.errors.errors == 1 && held.shared.errors == lost.shared.errors && held.timeline == lost.timeline)
                 , expect "unrelated events leave the pending loss and diagnostics unchanged" (hovered == held)
-                , expect "acknowledgment opens the next independent loss and reports its owner" (GameReplay.dialog acknowledged /= Nothing && List.length acknowledged.shared.errors == 2)
-                , expect "skipping hides the pending loss and reenabling restores it" (GameReplay.dialog skipped == Nothing && GameReplay.dialog restored /= Nothing && List.length restored.shared.errors == 3)
+                , expect "acknowledgment opens the next independent loss and reports its owner" (GameReplay.dialog acknowledged /= Nothing && List.length acknowledged.shared.errors.errors == 2)
+                , expect "skipping hides the pending loss and reenabling restores it" (GameReplay.dialog skipped == Nothing && GameReplay.dialog restored /= Nothing && List.length restored.shared.errors.errors == 3)
                 , expect "loading an empty turn stops the old playback and restores the saved view" (GameReplay.dialog emptyReplacement == Nothing && BattlefieldNavigation.returning emptyReplacement.navigation && emptyReplacement.battlefield.units == [])
                 ]
             , E.batch [ firstDialog, heldDialog, hoverDialog, secondDialog ] |> E.map (always ())

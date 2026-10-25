@@ -198,7 +198,7 @@ type Msg
     | WheelScrolled Point Float
     | CanvasKeyPressed String
     | SpaceReleased
-    | CanvasFocusReceived
+    | CanvasFocusReceived (Result Browser.Dom.Error ())
     | CanvasFocusLost
     | WindowResized
     | ViewportMeasured ViewportPurpose (Result Browser.Dom.Error Browser.Dom.Element)
@@ -972,8 +972,14 @@ update msg model =
             in
             ( next, E.focus { htmlId = canvasHtmlId } CanvasFocusReceived )
 
-        CanvasFocusReceived ->
-            ( model, E.none )
+        CanvasFocusReceived result ->
+            case result of
+                Ok () ->
+                    E.withOut model
+
+                Err error ->
+                    { model | shared = Shared.addError (Just (Error.ElementFocusFailed error)) model.shared }
+                        |> E.withOut
 
         CanvasMouseMoved point buttons ->
             case model.gesture of
