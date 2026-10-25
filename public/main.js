@@ -1,4 +1,4 @@
-startElmApp(Elm.Main, handleMessage);
+startElmApp(Elm.Fightlines, handleMessage);
 
 async function handleMessage(message, toElm) {
   switch (message.tag) {

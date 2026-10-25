@@ -4,7 +4,7 @@ module ErrorHistory exposing
     , init
     )
 
-{-| Session diagnostics, newest first. The owning app chooses the error type.
+{-| Session diagnostics, newest first.
 -}
 
 

@@ -10,13 +10,13 @@ module DevTools.Shared exposing
     )
 
 import Browser.Navigation as Navigation
-import Common.Shared as Common
 import Error exposing (Error)
 import ErrorHistory
 import LocalStorage exposing (LocalStorage)
 import OperatingSystem exposing (OperatingSystem)
 import Ports.Js.From as FromJs
 import Random
+import Shared
 
 
 
@@ -28,11 +28,11 @@ import Random
 {-| Browser state shared by the DevTools pages.
 -}
 type alias Model =
-    Common.Model Error {}
+    Shared.Model {}
 
 
 type alias Msg =
-    Common.Msg
+    Shared.Msg
 
 
 
@@ -59,17 +59,17 @@ init seed operatingSystem localStorage key =
 
 gotFromJsError : FromJs.Error -> Msg
 gotFromJsError =
-    Common.gotFromJsError
+    Shared.gotFromJsError
 
 
 setSeed : Random.Seed -> Model -> Model
 setSeed =
-    Common.setSeed
+    Shared.setSeed
 
 
 addError : Maybe Error -> Model -> Model
 addError =
-    Common.addError
+    Shared.addError
 
 
 
@@ -79,8 +79,8 @@ addError =
 
 
 update : Msg -> Model -> Model
-update msg model =
-    Common.update Error.FromJsFailed msg model
+update =
+    Shared.update
 
 
 
@@ -89,6 +89,6 @@ update msg model =
 ----------------------------------------------------------------
 
 
-listeners : FromJs.Listener Common.Msg
+listeners : FromJs.Listener Shared.Msg
 listeners =
-    Common.listeners
+    Shared.listeners

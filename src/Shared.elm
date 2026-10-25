@@ -3,24 +3,18 @@ module Shared exposing
     , Msg
     , addError
     , gotFromJsError
-    , init
     , listeners
     , setSeed
     , update
     )
 
 import Browser.Navigation as Navigation
-import Common.Shared as Common
 import Error exposing (Error)
 import ErrorHistory
 import LocalStorage exposing (LocalStorage)
 import OperatingSystem exposing (OperatingSystem)
 import Ports.Js.From as FromJs
 import Random
-import Url
-    exposing
-        ( Url
-        )
 
 
 
@@ -29,41 +23,21 @@ import Url
 ----------------------------------------------------------------
 
 
-{-| Shared browser state. `origin` is the scheme, hostname, and optional port
-used to turn lobby paths into complete invite URLs.
+{-| Shared browser state and diagnostics. Each app supplies its additional fields.
 -}
-type alias Model =
-    Common.Model
-        Error
-        { origin : String
-        }
-
-
-type alias Msg =
-    Common.Msg
-
-
-
-----------------------------------------------------------------
--- INIT --
-----------------------------------------------------------------
-
-
-init : Random.Seed -> OperatingSystem -> LocalStorage -> Url -> Navigation.Key -> Model
-init seed operatingSystem localStorage url key =
-    { key = key
-    , operatingSystem = operatingSystem
-    , localStorage = localStorage
-    , seed = seed
-    , errors = ErrorHistory.init
-    , origin =
-        Url.toString
-            { url
-                | path = ""
-                , query = Nothing
-                , fragment = Nothing
-            }
+type alias Model fields =
+    { fields
+        | key : Navigation.Key
+        , operatingSystem : OperatingSystem
+        , localStorage : LocalStorage
+        , seed : Random.Seed
+        , errors : ErrorHistory.Model Error
     }
+
+
+type Msg
+    = GotLocalstorage LocalStorage
+    | GotFromJsError FromJs.Error
 
 
 
@@ -74,17 +48,17 @@ init seed operatingSystem localStorage url key =
 
 gotFromJsError : FromJs.Error -> Msg
 gotFromJsError =
-    Common.gotFromJsError
+    GotFromJsError
 
 
-setSeed : Random.Seed -> Model -> Model
-setSeed =
-    Common.setSeed
+setSeed : Random.Seed -> Model fields -> Model fields
+setSeed seed model =
+    { model | seed = seed }
 
 
-addError : Maybe Error -> Model -> Model
-addError =
-    Common.addError
+addError : Maybe Error -> Model fields -> Model fields
+addError maybeError model =
+    { model | errors = ErrorHistory.add maybeError model.errors }
 
 
 
@@ -93,9 +67,14 @@ addError =
 ----------------------------------------------------------------
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model fields -> Model fields
 update msg model =
-    Common.update Error.FromJsFailed msg model
+    case msg of
+        GotLocalstorage localStorage ->
+            { model | localStorage = localStorage }
+
+        GotFromJsError error ->
+            addError (Just (Error.FromJsFailed error)) model
 
 
 
@@ -104,6 +83,9 @@ update msg model =
 ----------------------------------------------------------------
 
 
-listeners : FromJs.Listener Common.Msg
+listeners : FromJs.Listener Msg
 listeners =
-    Common.listeners
+    FromJs.data
+        "local storage changed"
+        LocalStorage.decoder
+        GotLocalstorage

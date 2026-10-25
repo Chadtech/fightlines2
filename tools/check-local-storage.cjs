@@ -7,7 +7,7 @@ const vm = require('node:vm');
 
 const key = 'fightlines.localStorage';
 const interopSource = readFileSync('public/elm-interop.js', 'utf8');
-function boot(initial, { readFails = false, writeFails = false, randomSample = 0.5, build, entryPoint = 'Main', clipboardFails = false, thumbnailFails = false } = {}) {
+function boot(initial, { readFails = false, writeFails = false, randomSample = 0.5, build, entryPoint = 'Fightlines', clipboardFails = false, thumbnailFails = false } = {}) {
   const stored = new Map(initial === undefined ? [] : [[key, initial]]);
   const messages = [];
   const warnings = [];
@@ -26,7 +26,7 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
       stored.set(name, value);
     },
   };
-  const entryFile = entryPoint === 'Main' ? 'public/main.js' : 'dev-tools/main.js';
+  const entryFile = entryPoint === 'Fightlines' ? 'public/main.js' : 'dev-tools/main.js';
   const source = interopSource + '\n' + readFileSync(entryFile, 'utf8');
   vm.runInNewContext(source, {
     FIGHTLINES_BUILD: build,
@@ -58,7 +58,7 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
 
 async function checkInterop() {
   for (const isProduction of [false, true]) {
-    for (const entryPoint of ['Main', 'DevTools']) {
+    for (const entryPoint of ['Fightlines', 'DevTools']) {
       assert.equal(boot(undefined, { build: { isProduction }, entryPoint }).flags.isProduction, isProduction);
     }
   }

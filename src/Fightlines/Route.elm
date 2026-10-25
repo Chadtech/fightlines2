@@ -1,4 +1,4 @@
-module Route exposing
+module Fightlines.Route exposing
     ( Route(..)
     , fromUrl
     , toString

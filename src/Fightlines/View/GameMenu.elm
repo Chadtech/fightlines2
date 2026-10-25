@@ -1,4 +1,4 @@
-module Game.View.GameMenu exposing
+module Fightlines.View.GameMenu exposing
     ( Msg(..)
     , Status(..)
     , buttonHtmlId

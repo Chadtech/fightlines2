@@ -1,11 +1,11 @@
-port module HomeChecks exposing (main)
+port module Fightlines.Checks.Home exposing (main)
 
 import Browser
+import Fightlines.Page.Home as Home
+import Fightlines.Shared as Shared
 import LocalStorage
 import OperatingSystem
-import Page.Home as Home
 import Random
-import Shared
 
 
 port results : List String -> Cmd msg

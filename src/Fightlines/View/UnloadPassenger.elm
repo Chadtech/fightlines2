@@ -1,4 +1,4 @@
-module Game.View.UnloadPassenger exposing (toHtml)
+module Fightlines.View.UnloadPassenger exposing (toHtml)
 
 import Game.Unit as Unit exposing (Unit)
 import Game.View.CargoPassenger as CargoPassenger

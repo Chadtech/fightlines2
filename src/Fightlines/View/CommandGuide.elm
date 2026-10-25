@@ -1,4 +1,4 @@
-module Game.View.CommandGuide exposing
+module Fightlines.View.CommandGuide exposing
     ( dialog
     , dialogHtmlId
     )

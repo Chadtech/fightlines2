@@ -1,4 +1,4 @@
-module Page.GamePage exposing
+module Fightlines.Page.GamePage exposing
     ( Flags
     , Model
     , Msg
@@ -31,11 +31,19 @@ import Api.Query
 import ApiRequest
 import Browser.Dom
 import Browser.Events
-import Effect as E
+import Error exposing (Error)
+import Fightlines.Effect as E
     exposing
         ( Eff
         )
-import Error exposing (Error)
+import Fightlines.Ports.Js.To as ToJs
+import Fightlines.Route as Route
+import Fightlines.Shared as Shared
+import Fightlines.View.CommandGuide as CommandGuide
+import Fightlines.View.CommandMenu as CommandMenu
+import Fightlines.View.GameMenu as GameMenu
+import Fightlines.View.TurnIntroduction as TurnIntroduction
+import Fightlines.View.UnloadPassenger as UnloadPassenger
 import Game.AnimationFrame as AnimationFrame
 import Game.BackdropCalibration as BackdropCalibration
 import Game.BattlefieldNavigation as BattlefieldNavigation
@@ -95,16 +103,11 @@ import Game.View.BattlefieldInspection as BattlefieldInspection
 import Game.View.BattlefieldWorkspace as BattlefieldWorkspace
 import Game.View.Cargo as Cargo
 import Game.View.CombatTheater as CombatTheater
-import Game.View.CommandGuide as CommandGuide
-import Game.View.CommandMenu as CommandMenu
-import Game.View.GameMenu as GameMenu
 import Game.View.MovementRoute as MovementRoute
 import Game.View.RotationChoices as RotationChoices
 import Game.View.TurnControls as TurnControls
-import Game.View.TurnIntroduction as TurnIntroduction
 import Game.View.UnitDeath as UnitDeath
 import Game.View.UnitStatus as UnitStatus
-import Game.View.UnloadPassenger as UnloadPassenger
 import Graphql.Http
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import Html.Styled as H
@@ -122,10 +125,7 @@ import LobbyId
     exposing
         ( LobbyId
         )
-import Ports.Js.To as ToJs
 import Preference
-import Route
-import Shared
 import Style as S
 import Time
 import Util.Html.Event as HtmlEvent

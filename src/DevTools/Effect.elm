@@ -22,19 +22,19 @@ import ApiRequest
         )
 import Browser.Dom
 import Browser.Navigation as Navigation
-import Common.Effect as Common
 import DevTools.Ports.Js.To as ToJs
 import DevTools.Route as Route
     exposing
         ( Route
         )
+import Effect
 import Graphql.Http
 
 
 type Eff msg
     = None
     | Batch (List (Eff msg))
-    | Request (Common.GraphqlRequest msg)
+    | Request (Effect.GraphqlRequest msg)
     | After Float msg
     | Focus { htmlId : String } (Result Browser.Dom.Error () -> msg)
     | Measure String (Result Browser.Dom.Error Browser.Dom.Element -> msg)
@@ -73,7 +73,7 @@ toJs =
 
 request : (Response response -> msg) -> Graphql.Http.Request response -> Eff msg
 request toMsg graphqlRequest =
-    Request (Common.graphqlRequest toMsg graphqlRequest)
+    Request (Effect.graphqlRequest toMsg graphqlRequest)
 
 
 after : Float -> msg -> Eff msg
@@ -111,7 +111,7 @@ map toMsg effect =
             Batch (List.map (map toMsg) effects)
 
         Request pending ->
-            Request (Common.mapGraphqlRequest toMsg pending)
+            Request (Effect.mapGraphqlRequest toMsg pending)
 
         After milliseconds completed ->
             After milliseconds (toMsg completed)
@@ -145,16 +145,16 @@ toCmd key effect =
             Cmd.batch (List.map (toCmd key) effects)
 
         Request pending ->
-            Common.sendGraphqlRequest pending
+            Effect.sendGraphqlRequest pending
 
         After milliseconds completed ->
-            Common.after milliseconds completed
+            Effect.after milliseconds completed
 
         Focus element received ->
-            Common.focus element received
+            Effect.focus element received
 
         Measure htmlId received ->
-            Common.measure htmlId received
+            Effect.measure htmlId received
 
         Navigate route ->
             Navigation.pushUrl key (Route.toString route)

@@ -1,4 +1,4 @@
-module Page.LobbyPage exposing
+module Fightlines.Page.LobbyPage exposing
     ( Flags
     , Location(..)
     , Model
@@ -35,13 +35,16 @@ import ApiRequest
         ( Response
         )
 import EditableMap exposing (NamedMap)
-import Effect as E
+import Fightlines.Effect as E
     exposing
         ( Eff
         )
+import Fightlines.Ports.Js.To as ToJs
+import Fightlines.Route as Route
+import Fightlines.Shared as Shared
+import Fightlines.View.MapChoice as MapChoice
 import Game.MapType as MapType
 import Game.PlayerNumber as PlayerNumber
-import Game.View.MapChoice as MapChoice
 import Game.View.MapPreview as MapPreview
 import Graphql.Http
 import Graphql.SelectionSet as SS exposing (SelectionSet)
@@ -56,9 +59,6 @@ import LobbyId
         ( LobbyId
         )
 import Ports.Js.From as FromJs
-import Ports.Js.To as ToJs
-import Route
-import Shared
 import Style as S
 import Time
 import View.Aria as Aria

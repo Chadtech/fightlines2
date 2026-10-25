@@ -1,6 +1,5 @@
-module Page.JoinLobby exposing
-    ( Flags
-    , Model
+module Fightlines.Page.NewLobby exposing
+    ( Model
     , Msg
     , init
     , setShared
@@ -15,10 +14,13 @@ import ApiRequest
     exposing
         ( Response
         )
-import Effect as E
+import Fightlines.Effect as E
     exposing
         ( Eff
         )
+import Fightlines.Route as Route
+import Fightlines.Shared as Shared
+import Fightlines.UserName as UserName
 import Graphql.Http
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import Html.Styled as H
@@ -28,10 +30,7 @@ import Html.Styled as H
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import LobbyId exposing (LobbyId)
-import Route
-import Shared
 import Style as S
-import UserName
 import View.Aria as Aria
 import View.Button as Button
 import View.Card as Card
@@ -45,19 +44,10 @@ import View.TextField as TextField
 ----------------------------------------------------------------
 
 
-type alias Flags =
-    { id : LobbyId
-    , lobbyName : String
-    , gameUrl : Maybe String
-    }
-
-
 type alias Model =
     { shared : Shared.Model
-    , id : LobbyId
-    , lobbyName : String
-    , joiningClosed : Bool
     , name : String
+    , lobbyName : String
     , busy : Bool
     , error : Maybe String
     }
@@ -65,8 +55,9 @@ type alias Model =
 
 type Msg
     = NameInputChanged String
-    | JoinButtonClicked
-    | JoinResponseReceived String (Response LobbyId)
+    | LobbyNameInputChanged String
+    | CreateButtonClicked
+    | CreateResponseReceived String (Response LobbyId)
 
 
 
@@ -75,8 +66,8 @@ type Msg
 ----------------------------------------------------------------
 
 
-init : Shared.Model -> Flags -> Model
-init shared flags =
+init : Shared.Model -> Model
+init shared =
     let
         ( name, maybeError ) =
             case UserName.fromLocalStorage shared.localStorage of
@@ -89,10 +80,8 @@ init shared flags =
     { shared =
         shared
             |> Shared.addError maybeError
-    , id = flags.id
-    , lobbyName = flags.lobbyName
-    , joiningClosed = flags.gameUrl /= Nothing
     , name = name
+    , lobbyName = ""
     , busy = False
     , error = Nothing
     }
@@ -117,14 +106,14 @@ setShared shared model =
 ----------------------------------------------------------------
 
 
-join : LobbyId -> String -> Graphql.Http.Request LobbyId
-join id name =
+create : String -> String -> Graphql.Http.Request LobbyId
+create name lobbyName =
     let
         lobbyIdSelection : SelectionSet LobbyId Api.Object.Snapshot
         lobbyIdSelection =
             Snapshot.id |> SS.mapOrFail LobbyId.parse
     in
-    Api.Mutation.joinLobby { id = LobbyId.toString id, name = name } lobbyIdSelection
+    Api.Mutation.createLobby { name = name, lobbyName = lobbyName } lobbyIdSelection
         |> ApiRequest.mutationRequest
 
 
@@ -144,8 +133,11 @@ update msg model =
             , E.none
             )
 
-        JoinButtonClicked ->
-            if model.busy || model.joiningClosed then
+        LobbyNameInputChanged lobbyName ->
+            ( { model | lobbyName = lobbyName }, E.none )
+
+        CreateButtonClicked ->
+            if model.busy then
                 ( model, E.none )
 
             else
@@ -153,10 +145,10 @@ update msg model =
                     | busy = True
                     , error = Nothing
                   }
-                , E.request (JoinResponseReceived model.name) (join model.id model.name)
+                , E.request (CreateResponseReceived model.name) (create model.name model.lobbyName)
                 )
 
-        JoinResponseReceived submittedName result ->
+        CreateResponseReceived submittedName result ->
             case result of
                 Ok lobbyId ->
                     ( { model
@@ -201,19 +193,16 @@ view model =
             ]
             [ [ H.p
                     []
-                    [ H.text "enter your name to join this lobby."
+                    [ H.text "create a lobby, then share its invite link."
                     ]
-              , if model.joiningClosed then
-                    H.p
-                        []
-                        [ H.text "this game has started. joining is closed."
-                        ]
-
-                else
-                    H.form
-                        [ Ev.onSubmit JoinButtonClicked
+              , H.form
+                    [ Ev.onSubmit CreateButtonClicked
+                    ]
+                    [ H.fieldset
+                        [ A.disabled model.busy
                         , A.css
-                            [ S.col
+                            [ S.border0
+                            , S.col
                             , S.g3
                             ]
                         ]
@@ -223,18 +212,24 @@ view model =
                                 , S.g1
                                 ]
                             ]
-                            [ H.text "your name"
+                            [ H.text "user name"
                             , TextField.simple model.name NameInputChanged
                                 |> TextField.toHtml
                             ]
-                        , H.fieldset
-                            [ A.disabled model.busy
-                            , A.css [ S.border0 ]
+                        , H.label
+                            [ A.css
+                                [ S.col
+                                , S.g1
+                                ]
                             ]
-                            [ Button.primary "join lobby" JoinButtonClicked
-                                |> Button.toHtml
+                            [ H.text "lobby name"
+                            , TextField.simple model.lobbyName LobbyNameInputChanged
+                                |> TextField.toHtml
                             ]
+                        , Button.primary "create lobby" CreateButtonClicked
+                            |> Button.toHtml
                         ]
+                    ]
               , case model.error of
                     Just error ->
                         H.p
@@ -248,7 +243,7 @@ view model =
               ]
                 |> Card.toHtml
                     (Card.simple
-                        |> Card.withHeader (CardHeader.simple model.lobbyName)
+                        |> Card.withHeader (CardHeader.simple "start a lobby")
                     )
             ]
         ]

@@ -6,7 +6,6 @@ import ApiRequest
         )
 import Browser
 import Browser.Navigation as Navigation
-import Common.Subscriptions
 import DevTools.Effect as E
     exposing
         ( Eff
@@ -29,18 +28,17 @@ import Html.Styled as H
 import Html.Styled.Attributes as A
 import Json.Decode as Decode
 import KeyCmd
-import Page.AppInitError as AppInitError
 import Ports.Js.From as FromJs
 import Random
-import Route as PlayerRoute
 import Style as S
+import Subscriptions
 import Url
     exposing
         ( Url
         )
+import View.AppInitError as AppInitError
 import View.AppShell as AppShell
 import View.Aria as Aria
-import View.Button as Button
 import View.Card as Card
 import View.Dialog as Dialog exposing (Dialog)
 
@@ -82,7 +80,6 @@ type Msg
     | LoggedGamesResponseReceived (Response LoggedGames.Flags)
     | ReplayResponseReceived GameLogId (Response GameReplay.Flags)
     | ReplayMsg GameLogId GameReplay.Msg
-    | ReturnHomeButtonClicked
     | GotSharedMsg Shared.Msg
 
 
@@ -397,9 +394,6 @@ update msg page =
                 _ ->
                     ( page, E.none )
 
-        ReturnHomeButtonClicked ->
-            ( page, E.load (PlayerRoute.toString PlayerRoute.Home) )
-
         LinkClicked request ->
             case request of
                 Browser.Internal url ->
@@ -554,8 +548,6 @@ shell page =
                     []
                     [ H.text "page not found."
                     ]
-              , Button.primary "return home" ReturnHomeButtonClicked
-                    |> Button.toHtml
               ]
                 |> Card.toHtml Card.simple
             ]
@@ -585,14 +577,6 @@ loadFailure route error =
             ]
             [ H.text "logged games"
             ]
-        , H.a
-            [ A.href (PlayerRoute.toString PlayerRoute.Home)
-            , A.css
-                [ S.link
-                ]
-            ]
-            [ H.text "home"
-            ]
         ]
     ]
 
@@ -607,7 +591,7 @@ subscriptions : Page -> Sub Msg
 subscriptions page =
     [ case getShared page of
         Just shared ->
-            Common.Subscriptions.common
+            Subscriptions.common
                 { operatingSystem = shared.operatingSystem
                 , keyCommands = keyCommands page
                 , listeners = listeners page

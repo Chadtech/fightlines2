@@ -1,4 +1,4 @@
-module Flags exposing
+module Fightlines.Flags exposing
     ( Flags
     , decoder
     )

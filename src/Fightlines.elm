@@ -1,4 +1,4 @@
-module Main exposing (main)
+module Fightlines exposing (main)
 
 import ApiRequest
     exposing
@@ -6,13 +6,24 @@ import ApiRequest
         )
 import Browser
 import Browser.Navigation as Navigation
-import Common.Subscriptions
-import Effect as E
+import Fightlines.Effect as E
     exposing
         ( Eff
         )
-import Flags
-import Game.View.TurnIntroduction as TurnIntroduction
+import Fightlines.Flags as Flags
+import Fightlines.Page.GameLoadFailed as GameLoadFailed
+import Fightlines.Page.GamePage as GamePage
+import Fightlines.Page.Home as Home
+import Fightlines.Page.JoinLobby as JoinLobby
+import Fightlines.Page.LobbyLoadFailed as LobbyLoadFailed
+import Fightlines.Page.LobbyPage as LobbyPage
+import Fightlines.Page.NewLobby as NewLobby
+import Fightlines.Route as Route
+    exposing
+        ( Route
+        )
+import Fightlines.Shared as Shared
+import Fightlines.View.TurnIntroduction as TurnIntroduction
 import Html.Styled as H
     exposing
         ( Html
@@ -24,24 +35,13 @@ import LobbyId
         ( LobbyId
         )
 import LocalStorage exposing (LocalStorage)
-import Page.AppInitError as AppInitError
-import Page.GameLoadFailed as GameLoadFailed
-import Page.GamePage as GamePage
-import Page.Home as Home
-import Page.JoinLobby as JoinLobby
-import Page.LobbyLoadFailed as LobbyLoadFailed
-import Page.LobbyPage as LobbyPage
-import Page.NewLobby as NewLobby
 import Ports.Js.From as FromJs
-import Route
-    exposing
-        ( Route
-        )
-import Shared
+import Subscriptions
 import Url
     exposing
         ( Url
         )
+import View.AppInitError as AppInitError
 import View.AppShell as AppShell
 import View.Aria as Aria
 import View.Button as Button
@@ -594,7 +594,7 @@ subscriptions : Page -> Sub Msg
 subscriptions page =
     [ case getShared page of
         Just shared ->
-            Common.Subscriptions.common
+            Subscriptions.common
                 { operatingSystem = shared.operatingSystem
                 , keyCommands = keyCommands page
                 , listeners = listeners page

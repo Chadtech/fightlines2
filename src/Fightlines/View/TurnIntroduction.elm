@@ -1,4 +1,4 @@
-module Game.View.TurnIntroduction exposing
+module Fightlines.View.TurnIntroduction exposing
     ( Msg(..)
     , conclusion
     , dialog

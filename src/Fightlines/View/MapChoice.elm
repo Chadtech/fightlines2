@@ -1,4 +1,4 @@
-module Game.View.MapChoice exposing (toHtml)
+module Fightlines.View.MapChoice exposing (toHtml)
 
 import EditableMap exposing (NamedMap)
 import Game.MapType as MapType

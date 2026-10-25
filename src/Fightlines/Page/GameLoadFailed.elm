@@ -1,4 +1,4 @@
-module Page.GameLoadFailed exposing
+module Fightlines.Page.GameLoadFailed exposing
     ( Model
     , Msg
     , init
@@ -8,10 +8,13 @@ module Page.GameLoadFailed exposing
     )
 
 import ApiRequest
-import Effect as E
+import Fightlines.Effect as E
     exposing
         ( Eff
         )
+import Fightlines.Page.GamePage as GamePage
+import Fightlines.Route as Route
+import Fightlines.Shared as Shared
 import Graphql.Http
 import Html.Styled as H
     exposing
@@ -22,9 +25,6 @@ import LobbyId
     exposing
         ( LobbyId
         )
-import Page.GamePage as GamePage
-import Route
-import Shared
 import Style as S
 import View.Aria as Aria
 import View.Button as Button

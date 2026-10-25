@@ -1,4 +1,4 @@
-module Common.Ports.Js.Encode exposing
+module Ports.Js.Encode exposing
     ( message
     , openDialog
     , setLocalStorage

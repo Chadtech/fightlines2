@@ -20,7 +20,7 @@
 ## Bugs
 
 ## Immediately
-
+- Reorg code files
 - Sound
 
 ## Soon

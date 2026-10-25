@@ -700,11 +700,13 @@ replenishment and explicit crate loading; Crossroads and Ridgeway also have fuel
 
 ## Development
 
-`src/Main.elm` runs the player app (home, lobbies, and live games).
+`src/Fightlines.elm` runs the player app (home, lobbies, and live games).
 `src/DevTools.elm` runs the separate map editor, game archive/replay, and backdrop
 review app, with its own `DevTools.Route`, `DevTools.Flags`, `DevTools.Shared`,
 `DevTools.Effect`, and outgoing ports in `DevTools.Ports.Js.To`. Player pages
-live in `src/Page/`; tool pages live in `src/DevTools/Page/` under `DevTools.Page.*`. Both apps share
+and app infrastructure live in `src/Fightlines/`, with pages in
+`src/Fightlines/Page/` and player-only views in `src/Fightlines/View/`. Tool pages
+live in `src/DevTools/Page/` under `DevTools.Page.*`. Both apps share
 modules under `src`. The game domain, player planning, and replay runtime live
 in `src/Game/`, with game-specific views in `src/Game/View/` and checks in `src/Game/Checks/`. Generic controls remain in `src/View/`.
 

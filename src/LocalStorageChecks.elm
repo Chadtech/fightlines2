@@ -1,11 +1,11 @@
 port module LocalStorageChecks exposing (main)
 
 import Error exposing (Error(..))
+import Fightlines.UserName as UserName
 import Json.Decode as JD
 import LocalStorage
 import Platform
 import Preference
-import UserName
 
 
 port results : List String -> Cmd msg

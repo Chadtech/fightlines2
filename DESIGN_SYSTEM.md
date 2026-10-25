@@ -72,7 +72,7 @@ and spacing belong directly on their containing elements.
 Use `Button.tall` for a prominent action in a narrow column: 0.5rem horizontal
 and 0.75rem vertical padding with a 3.5rem minimum height. The turn submit button
 uses this size at full width. `Button.attention` adds the ready pulse and shine;
-`Button.highlighted` retains gold text while waiting. `Main` mounts `Button.styles`
+`Button.highlighted` retains gold text while waiting. `Fightlines` mounts `Button.styles`
 once for the animation keyframes. Apply these through the button API rather than
 parent or descendant selectors.
 Use `Button.large` for roomy prominent actions: 1.5rem horizontal
@@ -933,7 +933,7 @@ Use an ordinary beveled card for the logged-game list, with flat separated rows
 showing the name, UTC start time, map, both players/controllers, completed turns,
 and outcome. Each readable row links to its replay. Unreadable archive rows show
 only the archive ID and error, without placeholder game details or a replay link.
-Keep home and refresh navigation above the rows, with explicit empty/loading
+Keep refresh navigation above the rows, with explicit empty/loading
 and failure states.
 
 Replay reuses the full-viewport battlefield and inspection panel. Replace the

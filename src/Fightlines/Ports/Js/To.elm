@@ -1,10 +1,10 @@
-port module Ports.Js.To exposing
+port module Fightlines.Ports.Js.To exposing
     ( Msg(..)
     , toCmd
     )
 
-import Common.Ports.Js.Encode as Common
 import Json.Encode as Je
+import Ports.Js.Encode as Encode
 
 
 type Msg
@@ -22,13 +22,13 @@ encode : Msg -> Je.Value
 encode msg =
     case msg of
         SetLocalStorage entry ->
-            Common.setLocalStorage entry
+            Encode.setLocalStorage entry
 
         OpenDialog dialog ->
-            Common.openDialog dialog
+            Encode.openDialog dialog
 
         CopyLink { url } ->
-            Common.message "copyLink"
+            Encode.message "copyLink"
                 [ ( "url", Je.string url )
                 ]
 

@@ -1,4 +1,4 @@
-module Page.Home exposing
+module Fightlines.Page.Home exposing
     ( Model
     , Msg
     , init
@@ -8,14 +8,14 @@ module Page.Home exposing
     , view
     )
 
-import Effect as E exposing (Eff)
+import Fightlines.Effect as E exposing (Eff)
+import Fightlines.Route as Route
+import Fightlines.Shared as Shared
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Json.Decode as Decode
 import Random
-import Route
-import Shared
 import Style as S
 import View.Aria as Aria
 import View.Button as Button

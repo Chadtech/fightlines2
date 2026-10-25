@@ -1,4 +1,4 @@
-module Common.Subscriptions exposing (common)
+module Subscriptions exposing (common)
 
 import KeyCmd
     exposing

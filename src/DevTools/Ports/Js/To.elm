@@ -3,8 +3,8 @@ port module DevTools.Ports.Js.To exposing
     , toCmd
     )
 
-import Common.Ports.Js.Encode as Common
 import Json.Encode as Je
+import Ports.Js.Encode as Encode
 
 
 type Msg
@@ -22,13 +22,13 @@ encode : Msg -> Je.Value
 encode msg =
     case msg of
         SetLocalStorage entry ->
-            Common.setLocalStorage entry
+            Encode.setLocalStorage entry
 
         OpenDialog dialog ->
-            Common.openDialog dialog
+            Encode.openDialog dialog
 
         GenerateMapThumbnail { htmlId, requestId } ->
-            Common.message "generateMapThumbnail"
+            Encode.message "generateMapThumbnail"
                 [ ( "htmlId", Je.string htmlId )
                 , ( "requestId", Je.int requestId )
                 ]

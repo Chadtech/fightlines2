@@ -114,7 +114,7 @@ when running with `--map-editor`. Shared definition GraphQL objects live with
 `map_definition.rs`; editor-only reads and writes remain gated in `map_editor.rs`.
 
 `LobbyPage.load` selects the lobby snapshot and map previews together. The page
-owns setup and library screens; `Main` correlates initial requests with both the
+owns setup and library screens; `Fightlines` correlates initial requests with both the
 lobby ID and destination. `/lobby/:id/maps` opens the host's library, while guests
 return to the ordinary lobby. The library owns a local preview and shows all maps in one scrollable list;
 only **use this map** calls `setLobbyMap`. Successful saves return to the lobby;
@@ -139,7 +139,7 @@ write failures leave the saved map unchanged; later draft edits and map switches
 remain independent of the pending snapshot. Legacy API callers may omit the
 thumbnail argument. Bump the artwork version and resave maps after changing map
 artwork to regenerate the derived images. The map editor shares
-the building and starting-unit renderers. `Game.View.MapChoice` owns selectable
+the building and starting-unit renderers. `Fightlines.View.MapChoice` owns selectable
 thumbnail rows, while `LobbyPage` owns their layout, details, and effects.
 The editor builds its options from its loaded catalog, preserving their order
 while switching drafts.
@@ -329,44 +329,55 @@ The fixture resets on restart and does not consume the normal token seed.
 
 ## Frontend
 
-Player page modules live under `src/Page/` with the `Page.*` namespace, including
-initialization/load-failure views. Tool pages live under `src/DevTools/Page/` with
+Player page modules live under `src/Fightlines/Page/` with the
+`Fightlines.Page.*` namespace, including load-failure views. Tool pages live under `src/DevTools/Page/` with
 the `DevTools.Page.*` namespace: `MapEditor`, `GameReplay`, `LoggedGames`, and
-`BackdropReview`. The initialization-error view remains shared by both apps.
-`Main.elm` and `DevTools.elm` live at the source root as separate application
-entry points. `Main` owns home, lobbies, and live games. `DevTools` owns the map
-editor, archive list/replay, and backdrop review. Imports may alias page modules to their basenames, such as `Page.GamePage as GamePage`.
+`BackdropReview`. Both apps share `View.AppInitError` for initialization errors.
+`Fightlines.elm` and `DevTools.elm` live at the source root as separate application
+entry points. `Fightlines` owns home, lobbies, and live games. `DevTools` owns the map
+editor, archive list/replay, and backdrop review. Imports may alias page modules
+to their basenames, such as `Fightlines.Page.GamePage as GamePage`.
 
 `src/Game/` contains the Elm game domain and runtime shared by player and replay
 pages: battlefield snapshots/navigation, units and resources, maps, movement,
 orders, turn lifecycle, and playback. Planning helpers also live here rather
 than under the player page. Game-specific views live in `src/Game/View/`, and
 game checks live in `src/Game/Checks/`. Generic controls remain in `src/View/`;
-application infrastructure, general utilities, and editor-only data stay outside
-`Game`. Imports may retain concise domain aliases, such as `Game.Unit as Unit`.
+player-only views live in `src/Fightlines/View/`. Player infrastructure
+(`Shared`, `Effect`, `Flags`, `Route`, `UserName`, and outgoing ports) lives in
+`src/Fightlines/`. Common infrastructure, general utilities, and editor-only data
+stay outside `Game`. Imports may retain concise domain aliases, such as
+`Game.Unit as Unit`.
+
+Neither app imports modules from the other app. Shared functionality belongs in
+`Game` or generic modules at the source root. Shared app infrastructure lives in
+`Effect`, `Shared`, `Subscriptions`, `Ports.Js.Encode`, and `Ports.Js.From` while
+each app retains its own effect, shared-state, and outgoing-port modules.
 
 Each entry point owns its own top-level `Page` and `Msg` unions and a separate
 `Browser.application`. Every page carries shared state, with feature pages
 storing it in their own models. Each app decodes its own startup flags through
-`Flags` or `DevTools.Flags`, loads its pages' required initialization data, and
+`Fightlines.Flags` or `DevTools.Flags`, loads its pages' required initialization data, and
 shows retry actions on failure.
 Backdrop calibrations belong to the consuming pages' initialization data.
-`Route` parses player routes; `DevTools.Route` parses tool routes at their existing
+`Fightlines.Route` parses player routes; `DevTools.Route` parses tool routes at their existing
 URLs. Each app handles its own routes and page dispatch, converting effects to
 commands at its application boundary. Links outside an app's routes load a new
 document so the server can select the correct bundle. Each app owns its browser
-state and effects: `Shared`/`Effect` for the player app and
+state and effects: `Fightlines.Shared`/`Fightlines.Effect` for the player app and
 `DevTools.Shared`/`DevTools.Effect` for tools. The tools model has no invite-link
-origin. Both models use `Common.Shared.Model`, parameterized by the app's error
-type and additional fields. Each app exposes seed and diagnostic updates through
-thin wrappers in its own shared module, backed by `Common.Shared`;
-`ErrorHistory.Model` stores the session's errors newest first. These common modules
-do not depend on either app's model or the concrete `Error` type. Each effect
-module accepts only its own routes and outgoing JS messages.
+origin. Both models use `Shared.Model`, parameterized only by their additional
+fields and sharing the concrete `Error` type. Each app exposes seed and diagnostic
+updates through thin wrappers in its own shared module, backed by `Shared`;
+`ErrorHistory.Model` stores the session's errors newest first. `Shared.update`
+records incoming JavaScript failures directly as `Error.FromJsFailed`; app
+wrappers do not supply an error constructor. Shared infrastructure does not depend
+on either app's model. Each effect module accepts only its own routes and outgoing
+JS messages.
 Both modules own their effect variants and interpreters. `After`, `Focus`, and
 `Measure` store operation data and callbacks; their `toCmd` branches use helpers
-in `Common/Effect.elm` to create and run the commands. `Request` holds an opaque
-`Common.Effect.Request` constructed only from a GraphQL request and its response
+in `Effect.elm` to create and run the commands. `Request` holds an opaque
+`Effect.GraphqlRequest` constructed only from a GraphQL request and its response
 callback. The wrapper captures the request's response type and builds the GraphQL
 command when sent; it cannot wrap arbitrary tasks or commands.
 Shared rendering modules do not import either app's state or effects:
@@ -385,20 +396,20 @@ for DevTools. Each entry explicitly starts its own Elm module through
 The player entry handles clipboard requests; the DevTools entry handles thumbnail
 requests. The build config supplies the required `isProduction` Boolean in the
 player app's startup flags; shared state does not retain it, and DevTools does not
-decode or store it. Non-production builds compile `Main` to `elm.js` and `DevTools` to
+decode or store it. Non-production builds compile `Fightlines` to `elm.js` and `DevTools` to
 `elm-dev-tools.js`. `tools/build-dev-tools.cjs` copies the tools HTML and startup
 script unchanged to `public/dev-tools.html` and `public/dev-tools.js`; it never
 reads or rewrites the player entry files. Both HTML sources embed the interface
 font. Map thumbnail interop loads only in the tools document. Server tool routes
 serve that document while player routes serve `index.html`. Production builds
-compile only `Main` and delete stale tools HTML/JavaScript from `public`, retaining
+compile only `Fightlines` and delete stale tools HTML/JavaScript from `public`, retaining
 the tools sources. Server editor and archive access still use their independent
 opt-in flags.
 
 `NewLobby`, `JoinLobby`, `LobbyPage`, `LobbyLoadFailed`, `GamePage`, and
 `GameLoadFailed` own their page state and views.
-The `/` route renders the `Page.Home` logo and menu card. Its model owns shared
-state and the three decorative screenshot positions; `Main` maps its messages
+The `/` route renders the `Fightlines.Page.Home` logo and menu card. Its model owns shared
+state and the three decorative screenshot positions; `Fightlines` maps its messages
 and effects. `Home.init` and each screenshot's CSS animation iteration choose
 positions synchronously with `Random.step`, consuming `Shared.Model.seed` and
 saving the successor through `Shared.setSeed`. Cycle changes happen while the
@@ -406,17 +417,17 @@ image is invisible. Position centers stay toward the right side on every screen
 size. Bradley's portrait composites over a page-green backing masked to its
 silhouette, retaining its subdued tone while blocking screenshots behind it.
 `Home.update` also owns the play button's navigation to `/new`.
-`LobbyPage.load` and `GamePage.load` define their initial requests. `Main` owns
+`LobbyPage.load` and `GamePage.load` define their initial requests. `Fightlines` owns
 initial requests and dispatches failures, and initializes each loaded page only
 after a successful response. `LobbyPage` retains its loaded roster while polling.
 `LobbyLoadFailed` and `GameLoadFailed` own their error messages, views, and
-button updates. Retry navigates to the same lobby or game route so `Main` starts
-a fresh initial request; return home navigates to the logo home page. `Main`
+button updates. Retry navigates to the same lobby or game route so `Fightlines` starts
+a fresh initial request; return home navigates to the logo home page. `Fightlines`
 maps each failure page's messages and effects, ignoring messages for a different
 page or ID. Page views return lists of HTML.
 
 The `/lobby/<id>` route shows `JoinLobby` to visitors who are not members and
-`LobbyPage` to existing members. `Main` chooses the page after the initial lobby
+`LobbyPage` to existing members. `Fightlines` chooses the page after the initial lobby
 request. `JoinLobby` owns the name form and join mutation, without polling or
 showing the roster and invite controls. Successful joining reloads the same
 route so membership opens the lobby; returning members skip the join form.
@@ -430,16 +441,16 @@ for initialization; polling and submission responses use `Snapshot` directly.
 `ApiRequest` owns shared transport
 configuration and error messages. Lobby and game responses are tagged with their
 originating ID to ignore responses from pages left during navigation.
-Each app has its own outgoing `toJs` port and message vocabulary in `Ports.Js.To`
+Each app has its own outgoing `toJs` port and message vocabulary in `Fightlines.Ports.Js.To`
 or `DevTools.Ports.Js.To`. Both support storage writes and opening dialogs; only
 player messages include clipboard copying, and only tools messages include map
 thumbnail generation. Their JavaScript entry files own those app-specific
 handlers; the common bootstrap owns storage notifications and dialog opening.
-`Common.Ports.Js.Encode` shares the outgoing message envelope and encoders for
+`Ports.Js.Encode` shares the outgoing message envelope and encoders for
 storage writes and opening dialogs. App-specific payload encoders stay in each
 app's outgoing port module.
 The generic incoming `fromJs` port and listener decoder remain shared in
-`Ports.Js.From`. `Common.Subscriptions.common` combines the storage-change listener,
+`Ports.Js.From`. `Subscriptions.common` combines the storage-change listener,
 active-page listeners, and keyboard commands using each app's message callbacks
 and operating system. Each entry point retains page subscription dispatch and
 listener/keyboard message mapping. Port modules keep raw port functions private.
@@ -571,7 +582,7 @@ and game navigation; the game page selects the scenario, map type, name, and pla
 lobby selects only the ID needed to navigate, returning `LobbyId`.
 
 `ApiRequest` shares query/mutation configuration and error presentation without
-owning page data. Pages and `Main` pass request values and response callbacks to
+owning page data. Pages and `Fightlines` pass request values and response callbacks to
 `Effect.request`; `Effect.toCmd` sends the stored GraphQL requests. Generated
 functions fix the operation's argument and result scopes; Elm compilation
 catches callers incompatible with a regenerated schema. The current server uses
@@ -696,7 +707,7 @@ gating; locked lifecycle phases convert the selection to inspection and discard
 the guide. `GamePage` derives the native dialog from that interaction and opens
 it through the existing dialog-change effect.
 
-`Game.View.CommandMenu` renders the board-anchored command popup and emits command choices
+`Fightlines.View.CommandMenu` renders the board-anchored command popup and emits command choices
 and arrow-key events. `GamePage.update` chooses the adjacent enabled command,
 wrapping at the ends, and `Effect.focus` uses Elm's DOM API to focus its HTML ID. Selection tracks the focused command. While the popup is open, page-level
 up/down arrow and W/S commands navigate its enabled options instead of panning, including
@@ -749,7 +760,7 @@ drag threshold suppresses mouse selection in the page update, while keyboard act
 independent. Wheel zoom uses the battlefield dimensions to anchor to the cursor; button zoom anchors to the viewport
 center, and reset restores the initial centered view. Camera changes never alter
 authoritative board coordinates or the selected tile.
-`Main` maps its messages with the originating lobby ID and subscribes only while
+`Fightlines` maps its messages with the originating lobby ID and subscribes only while
 the game page is active. A 400ms Elm timer cycles the four unit sprite frames.
 JavaScript passes the browser platform and a random integer through each app's
 flags. Each app's flags decoder converts the required integer into a
@@ -777,8 +788,8 @@ Plus/minus commands zoom without battlefield focus, and Escape clears selection,
 squares, and the live path preview while preserving saved move drafts. The page
 derives its active dialog through `GamePage.dialog : Model -> Maybe (Dialog Msg)`;
 `EscapePressed` dismisses an open dialog before clearing board selection.
-`Main.dialog` cases on `Page` and maps page messages, including cancellation,
-into application messages. `Main.view` renders the optional dialog through
+`Fightlines.dialog` cases on `Page` and maps page messages, including cancellation,
+into application messages. `Fightlines.view` renders the optional dialog through
 `View.Dialog.toHtml`, which creates the native modal; dialogs are not part of
 the individual page's view content.
 `Game.View.Battlefield` renders raster sprite-sheet cells in nested SVG viewports;
@@ -838,7 +849,7 @@ required.
 
 Both apps use `View.AppShell` to mount the global reset and shared component-owned
 styles, including animation and reduced-motion rules. Player-only home and
-turn-introduction styles are added by `Main`. Components
+turn-introduction styles are added by `Fightlines`. Components
 keep ownership of those rules; page views do not mount additional style nodes.
 
 The copied modules are Button, Dialog, Dropdown, PersonProfile, Textarea, and
@@ -995,7 +1006,7 @@ after movement. Fractional presentation positions go only to `GamePage`.
 Refresh starts directly at
 the completed snapshot; it does not automatically replay old turns. Same-turn polling preserves
 local drafts and monotonic submission flags. Page response messages retain the
-originating game ID through `Main`. `Game.Checks.Turn.elm` verifies timed frame playback,
+originating game ID through `Fightlines`. `Game.Checks.Turn.elm` verifies timed frame playback,
 visibility boundaries, interpolation,
 transport, facing, and reconstruction of the final board.
 
@@ -1586,7 +1597,7 @@ the game ends. Same-turn polling preserves the retained frames.
 The page presents it only when planning is unlocked, after all
 playback and loss dialogs have finished. `GamePage.initialEffect` opens the initial
 native modal after rendering; `superUpdate` opens subsequent introductions when
-the active dialog changes. `Game.View.TurnIntroduction` supplies the card artwork and
+the active dialog changes. `Fightlines.View.TurnIntroduction` supplies the card artwork and
 actions through `Dialog.announcement`, which owns wide modal placement. The
 introduction owns its animation styles, mounted once in the application shell;
 its shine animation has a separate name from the turn controls' shine. The page remembers `skipTurnIntroduction`

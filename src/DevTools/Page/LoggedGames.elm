@@ -31,7 +31,6 @@ import Graphql.Http
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
-import Route as PlayerRoute
 import Style as S
 import Time
 import View.Aria as Aria
@@ -284,7 +283,7 @@ view model =
             if List.isEmpty model.entries then
                 [ H.p
                     [ Aria.role Aria.Status ]
-                    [ H.text "no logged games yet. start a game from the home page to record one." ]
+                    [ H.text "no logged games yet." ]
                 ]
 
             else
@@ -300,11 +299,6 @@ view model =
                     ]
                 ]
                 [ H.a
-                    [ A.href (PlayerRoute.toString PlayerRoute.Home)
-                    , A.css [ S.link ]
-                    ]
-                    [ H.text "home" ]
-                , H.a
                     [ A.href (Route.toString Route.LoggedGames)
                     , A.css [ S.link ]
                     ]

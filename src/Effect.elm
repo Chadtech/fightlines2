@@ -1,19 +1,11 @@
 module Effect exposing
-    ( Eff
+    ( GraphqlRequest
     , after
-    , and
-    , batch
     , focus
-    , load
-    , map
+    , graphqlRequest
+    , mapGraphqlRequest
     , measure
-    , navigate
-    , none
-    , pushUrl
-    , request
-    , toCmd
-    , toJs
-    , withOut
+    , sendGraphqlRequest
     )
 
 import ApiRequest
@@ -21,156 +13,65 @@ import ApiRequest
         ( Response
         )
 import Browser.Dom
-import Browser.Navigation as Navigation
-import Common.Effect as Common
 import Graphql.Http
-import Ports.Js.To as ToJs
-import Route
-    exposing
-        ( Route
-        )
+import Process
+import Task
 
 
-type Eff msg
-    = None
-    | Batch (List (Eff msg))
-    | Request (Common.GraphqlRequest msg)
-    | After Float msg
-    | Focus { htmlId : String } (Result Browser.Dom.Error () -> msg)
-    | Measure String (Result Browser.Dom.Error Browser.Dom.Element -> msg)
-    | Navigate Route
-    | PushUrl String
-    | Load String
-    | ToJsMsg ToJs.Msg
+
+----------------------------------------------------------------
+-- TYPES --
+----------------------------------------------------------------
 
 
-none : Eff msg
-none =
-    None
-
-
-{-| Run every effect in the group. As with Cmd.batch, execution order is unspecified.
+{-| A pending GraphQL request. The private sender captures its response type,
+which can differ between requests. Only `graphqlRequest` can construct one, and the
+GraphQL command is created when `sendGraphqlRequest` runs.
 -}
-batch : List (Eff msg) -> Eff msg
-batch effects =
-    Batch effects
+type GraphqlRequest msg
+    = GraphqlRequest (() -> Cmd msg)
 
 
-withOut : model -> ( model, Eff msg )
-withOut model =
-    ( model, none )
+
+----------------------------------------------------------------
+-- API --
+----------------------------------------------------------------
 
 
-and : Eff msg -> ( model, Eff msg ) -> ( model, Eff msg )
-and effect ( model, eff ) =
-    ( model, Batch [ effect, eff ] )
+graphqlRequest : (Response response -> msg) -> Graphql.Http.Request response -> GraphqlRequest msg
+graphqlRequest received pending =
+    GraphqlRequest (\() -> Graphql.Http.send received pending)
 
 
-toJs : ToJs.Msg -> Eff msg
-toJs =
-    ToJsMsg
+mapGraphqlRequest : (a -> b) -> GraphqlRequest a -> GraphqlRequest b
+mapGraphqlRequest toMsg (GraphqlRequest send) =
+    GraphqlRequest (\() -> Cmd.map toMsg (send ()))
 
 
-request : (Response response -> msg) -> Graphql.Http.Request response -> Eff msg
-request toMsg graphqlRequest =
-    Request (Common.graphqlRequest toMsg graphqlRequest)
+sendGraphqlRequest : GraphqlRequest msg -> Cmd msg
+sendGraphqlRequest (GraphqlRequest send) =
+    send ()
 
 
-after : Float -> msg -> Eff msg
-after =
-    After
-
-
-focus : { htmlId : String } -> (Result Browser.Dom.Error () -> msg) -> Eff msg
-focus =
-    Focus
-
-
-navigate : Route -> Eff msg
-navigate =
-    Navigate
-
-
-pushUrl : String -> Eff msg
-pushUrl =
-    PushUrl
-
-
-load : String -> Eff msg
-load =
-    Load
-
-
-map : (a -> b) -> Eff a -> Eff b
-map toMsg effect =
-    case effect of
-        None ->
-            None
-
-        Batch effects ->
-            Batch (List.map (map toMsg) effects)
-
-        Request pending ->
-            Request (Common.mapGraphqlRequest toMsg pending)
-
-        After milliseconds completed ->
-            After milliseconds (toMsg completed)
-
-        Focus element received ->
-            Focus element (received >> toMsg)
-
-        Measure htmlId received ->
-            Measure htmlId (received >> toMsg)
-
-        Navigate route ->
-            Navigate route
-
-        PushUrl url ->
-            PushUrl url
-
-        Load url ->
-            Load url
-
-        ToJsMsg msg ->
-            ToJsMsg msg
-
-
-toCmd : Navigation.Key -> Eff msg -> Cmd msg
-toCmd key effect =
-    case effect of
-        None ->
-            Cmd.none
-
-        Batch effects ->
-            Cmd.batch (List.map (toCmd key) effects)
-
-        Request pending ->
-            Common.sendGraphqlRequest pending
-
-        After milliseconds completed ->
-            Common.after milliseconds completed
-
-        Focus element received ->
-            Common.focus element received
-
-        Measure htmlId received ->
-            Common.measure htmlId received
-
-        Navigate route ->
-            Navigation.pushUrl key (Route.toString route)
-
-        PushUrl url ->
-            Navigation.pushUrl key url
-
-        Load url ->
-            Navigation.load url
-
-        ToJsMsg msg ->
-            ToJs.toCmd msg
-
-
-{-| Measure a rendered element after the browser has laid it out.
+{-| Deliver a message after the given number of milliseconds.
 -}
-measure : String -> (Result Browser.Dom.Error Browser.Dom.Element -> msg) -> Eff msg
-measure =
-    Measure
+after : Float -> msg -> Cmd msg
+after milliseconds completed =
+    Process.sleep milliseconds
+        |> Task.perform (always completed)
+
+
+{-| Attempt to focus an element and report success or failure.
+-}
+focus : { htmlId : String } -> (Result Browser.Dom.Error () -> msg) -> Cmd msg
+focus { htmlId } received =
+    Browser.Dom.focus htmlId
+        |> Task.attempt received
+
+
+{-| Measure a rendered element after layout and report success or failure.
+-}
+measure : String -> (Result Browser.Dom.Error Browser.Dom.Element -> msg) -> Cmd msg
+measure htmlId received =
+    Browser.Dom.getElement htmlId
+        |> Task.attempt received

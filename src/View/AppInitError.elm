@@ -1,4 +1,4 @@
-module Page.AppInitError exposing (view)
+module View.AppInitError exposing (view)
 
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A

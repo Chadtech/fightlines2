@@ -6,7 +6,7 @@ const directory = mkdtempSync(join(tmpdir(), 'fightlines-home-'));
 
 try {
   const output = join(directory, 'checks.js');
-  execFileSync('elm', ['make', 'src/HomeChecks.elm', `--output=${output}`], { stdio: 'inherit' });
+  execFileSync('elm', ['make', 'src/Fightlines/Checks/Home.elm', `--output=${output}`], { stdio: 'inherit' });
 
   // Let Browser.application supply the opaque navigation key to Shared.init.
   global.window = { addEventListener() {}, navigator: { userAgent: 'home-checks' } };
@@ -17,7 +17,7 @@ try {
     createTextNode: text => ({ nodeType: 3, textContent: text }),
   };
   const { Elm } = require(output);
-  const app = Elm.HomeChecks.init({ flags: null });
+  const app = Elm.Fightlines.Checks.Home.init({ flags: null });
   app.ports.results.subscribe(failures => {
     if (failures.length) {
       console.error(failures.join('\n'));

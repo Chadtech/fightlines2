@@ -1,4 +1,4 @@
-module Game.View.CommandMenu exposing
+module Fightlines.View.CommandMenu exposing
     ( Msg(..)
     , optionHtmlId
     , toHtml
