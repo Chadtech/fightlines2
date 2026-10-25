@@ -1,4 +1,4 @@
-module Page.LoggedGames exposing
+module DevTools.Page.LoggedGames exposing
     ( Flags
     , Game
     , Model
@@ -22,6 +22,8 @@ import Api.Query
 import Api.Union
 import Api.Union.LoggedGameEntry as EntryApi
 import ApiRequest
+import DevTools.Route as Route
+import DevTools.Shared as Shared
 import Game.LogId as GameLogId exposing (GameLogId)
 import Game.MapType as MapType
 import Game.PlayerNumber as PlayerNumber
@@ -29,8 +31,7 @@ import Graphql.Http
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
-import Route
-import Shared
+import Route as PlayerRoute
 import Style as S
 import Time
 import View.Aria as Aria
@@ -299,7 +300,7 @@ view model =
                     ]
                 ]
                 [ H.a
-                    [ A.href (Route.toString Route.Home)
+                    [ A.href (PlayerRoute.toString PlayerRoute.Home)
                     , A.css [ S.link ]
                     ]
                     [ H.text "home" ]

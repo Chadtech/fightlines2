@@ -6,28 +6,16 @@ import ApiRequest
         )
 import Browser
 import Browser.Navigation as Navigation
-import Css.Global
 import Effect as E
     exposing
         ( Eff
         )
-import Game.LogId as GameLogId exposing (GameLogId)
-import Game.View.CombatEffects as CombatEffects
-import Game.View.CombatExplosion as CombatExplosion
-import Game.View.CombatTheater as CombatTheater
-import Game.View.DepotStock as DepotStock
-import Game.View.TargetSight as TargetSight
-import Game.View.TerrainTile as TerrainTile
+import Flags
 import Game.View.TurnIntroduction as TurnIntroduction
-import Game.View.UnitCargo as UnitCargo
-import Game.View.UnitDeath as UnitDeath
-import Game.View.UnitFacing as UnitFacing
-import Game.View.UnitWarnings as UnitWarnings
 import Html.Styled as H
     exposing
         ( Html
         )
-import Html.Styled.Attributes as A
 import Json.Decode as Decode
 import KeyCmd
 import LobbyId
@@ -35,36 +23,29 @@ import LobbyId
         ( LobbyId
         )
 import LocalStorage exposing (LocalStorage)
-import OperatingSystem exposing (OperatingSystem)
 import Page.AppInitError as AppInitError
-import Page.BackdropReview as BackdropReview
 import Page.GameLoadFailed as GameLoadFailed
 import Page.GamePage as GamePage
-import Page.GameReplay as GameReplay
 import Page.Home as Home
 import Page.JoinLobby as JoinLobby
 import Page.LobbyLoadFailed as LobbyLoadFailed
 import Page.LobbyPage as LobbyPage
-import Page.LoggedGames as LoggedGames
-import Page.MapEditor as MapEditor
 import Page.NewLobby as NewLobby
 import Ports.Js.From as FromJs
-import Random
 import Route
     exposing
         ( Route
         )
 import Shared
-import Style as S
 import Url
     exposing
         ( Url
         )
+import View.AppShell as AppShell
 import View.Aria as Aria
 import View.Button as Button
 import View.Card as Card
 import View.Dialog as Dialog exposing (Dialog)
-import View.LoadingBar as LoadingBar
 
 
 
@@ -84,37 +65,12 @@ type Page
     | LoadingGame Shared.Model LobbyId
     | GameLoadFailed LobbyId GameLoadFailed.Model
     | Game LobbyId GamePage.Model
-    | LoadingBackdropReview Shared.Model BackdropReviewLoadId
-    | BackdropReviewLoadFailed Shared.Model String
-    | BackdropReview BackdropReview.Model
-    | LoadingMapEditor Shared.Model
-    | MapEditorLoadFailed Shared.Model String
-    | MapEditor MapEditor.Model
-    | LoadingLoggedGames Shared.Model
-    | LoggedGamesLoadFailed Shared.Model String
-    | LoggedGames LoggedGames.Model
-    | LoadingReplay Shared.Model GameLogId
-    | ReplayLoadFailed Shared.Model GameLogId String
-    | Replay GameLogId GameReplay.Model
     | NotFound Shared.Model
-
-
-type alias Flags =
-    { isProduction : Bool
-    , operatingSystem : OperatingSystem
-    , localStorage : LocalStorage
-    , seed : Random.Seed
-    }
-
-
-type BackdropReviewLoadId
-    = BackdropReviewLoadId Int
 
 
 type Msg
     = LinkClicked Browser.UrlRequest
     | RouteReceived (Maybe Route)
-    | BackdropReviewResponseReceived BackdropReviewLoadId (Response BackdropReview.Flags)
     | NewLobbyMsg NewLobby.Msg
     | JoinLobbyMsg LobbyId JoinLobby.Msg
     | LobbyMsg LobbyId LobbyPage.Location LobbyPage.Msg
@@ -123,12 +79,6 @@ type Msg
     | GameMsg LobbyId GamePage.Msg
     | GameResponseReceived LobbyId (Response GamePage.Flags)
     | GameLoadFailedMsg LobbyId GameLoadFailed.Msg
-    | MapEditorResponseReceived (ApiRequest.Response MapEditor.Flags)
-    | MapEditorMsg MapEditor.Msg
-    | BackdropReviewMsg BackdropReview.Msg
-    | LoggedGamesResponseReceived (Response LoggedGames.Flags)
-    | ReplayResponseReceived GameLogId (Response GameReplay.Flags)
-    | ReplayMsg GameLogId GameReplay.Msg
     | ReturnHomeButtonClicked
     | HomeMsg Home.Msg
     | JsErrorReceived FromJs.Error
@@ -175,26 +125,17 @@ main =
 
 init : Decode.Value -> Url -> Navigation.Key -> ( Page, Eff Msg )
 init value url key =
-    case Decode.decodeValue flagsDecoder value of
+    case Decode.decodeValue Flags.decoder value of
         Ok flags ->
             let
                 shared : Shared.Model
                 shared =
-                    Shared.init flags.isProduction flags.seed flags.operatingSystem flags.localStorage url key
+                    Shared.init flags.seed flags.operatingSystem flags.localStorage url key
             in
             handleRoute shared (Route.fromUrl url)
 
         Err error ->
             ( AppInitError error, E.none )
-
-
-flagsDecoder : Decode.Decoder Flags
-flagsDecoder =
-    Decode.map4 Flags
-        (Decode.field "isProduction" Decode.bool)
-        (Decode.field "operatingSystem" OperatingSystem.decoder)
-        (Decode.field "localStorage" LocalStorage.decoder)
-        (Decode.field "seed" (Decode.map Random.initialSeed Decode.int))
 
 
 
@@ -208,12 +149,6 @@ getShared page =
     case page of
         AppInitError _ ->
             Nothing
-
-        LoadingBackdropReview shared _ ->
-            Just shared
-
-        BackdropReviewLoadFailed shared _ ->
-            Just shared
 
         Home model ->
             Just model.shared
@@ -242,36 +177,6 @@ getShared page =
         Game _ model ->
             Just model.shared
 
-        BackdropReview model ->
-            Just model.shared
-
-        LoadingMapEditor shared ->
-            Just shared
-
-        MapEditorLoadFailed shared _ ->
-            Just shared
-
-        MapEditor model ->
-            Just model.shared
-
-        LoadingLoggedGames shared ->
-            Just shared
-
-        LoggedGamesLoadFailed shared _ ->
-            Just shared
-
-        LoggedGames model ->
-            Just model.shared
-
-        LoadingReplay shared _ ->
-            Just shared
-
-        ReplayLoadFailed shared _ _ ->
-            Just shared
-
-        Replay _ model ->
-            Just (GameReplay.getShared model)
-
         NotFound shared ->
             Just shared
 
@@ -281,12 +186,6 @@ setShared shared page =
     case page of
         AppInitError _ ->
             page
-
-        LoadingBackdropReview _ requestId ->
-            LoadingBackdropReview shared requestId
-
-        BackdropReviewLoadFailed _ error ->
-            BackdropReviewLoadFailed shared error
 
         Home model ->
             Home (Home.setShared shared model)
@@ -314,36 +213,6 @@ setShared shared page =
 
         Game id model ->
             Game id (GamePage.setShared shared model)
-
-        BackdropReview model ->
-            BackdropReview (BackdropReview.setShared shared model)
-
-        LoadingMapEditor _ ->
-            LoadingMapEditor shared
-
-        MapEditorLoadFailed _ error ->
-            MapEditorLoadFailed shared error
-
-        MapEditor model ->
-            MapEditor (MapEditor.setShared shared model)
-
-        LoadingLoggedGames _ ->
-            LoadingLoggedGames shared
-
-        LoggedGamesLoadFailed _ error ->
-            LoggedGamesLoadFailed shared error
-
-        LoggedGames model ->
-            LoggedGames (LoggedGames.setShared shared model)
-
-        LoadingReplay _ id ->
-            LoadingReplay shared id
-
-        ReplayLoadFailed _ id error ->
-            ReplayLoadFailed shared id error
-
-        Replay id model ->
-            Replay id (GameReplay.setShared shared model)
 
         NotFound _ ->
             NotFound shared
@@ -373,21 +242,6 @@ loadGame shared id =
     )
 
 
-loadBackdropReview : Shared.Model -> ( Page, Eff Msg )
-loadBackdropReview shared =
-    let
-        ( value, seed ) =
-            Random.step (Random.int 0 2147483647) shared.seed
-
-        requestId : BackdropReviewLoadId
-        requestId =
-            BackdropReviewLoadId value
-    in
-    ( LoadingBackdropReview (Shared.setSeed seed shared) requestId
-    , E.request (BackdropReviewResponseReceived requestId) BackdropReview.load
-    )
-
-
 
 ----------------------------------------------------------------
 -- ROUTING --
@@ -397,37 +251,6 @@ loadBackdropReview shared =
 handleRoute : Shared.Model -> Maybe Route -> ( Page, Eff Msg )
 handleRoute shared route =
     case route of
-        Just Route.LoggedGames ->
-            if shared.isProduction then
-                ( NotFound shared, E.none )
-
-            else
-                ( LoadingLoggedGames shared, E.request LoggedGamesResponseReceived LoggedGames.load )
-
-        Just (Route.Replay id) ->
-            if shared.isProduction then
-                ( NotFound shared, E.none )
-
-            else
-                ( LoadingReplay shared id, E.request (ReplayResponseReceived id) (GameReplay.load id) )
-
-        Just Route.BackdropReview ->
-            if shared.isProduction then
-                ( NotFound shared, E.none )
-
-            else
-                loadBackdropReview shared
-
-        Just Route.MapEditor ->
-            if shared.isProduction then
-                ( NotFound shared, E.none )
-
-            else
-                ( LoadingMapEditor shared
-                , MapEditor.load
-                    |> E.request MapEditorResponseReceived
-                )
-
         Just Route.Home ->
             ( Home (Home.init shared), E.none )
 
@@ -456,104 +279,6 @@ handleRoute shared route =
 update : Msg -> Page -> ( Page, Eff Msg )
 update msg page =
     case msg of
-        BackdropReviewResponseReceived requestId result ->
-            case page of
-                LoadingBackdropReview shared currentId ->
-                    if requestId /= currentId then
-                        ( page, E.none )
-
-                    else
-                        case result of
-                            Ok flags ->
-                                ( BackdropReview (BackdropReview.init shared flags), E.none )
-
-                            Err error ->
-                                ( BackdropReviewLoadFailed shared (ApiRequest.errorMessage error), E.none )
-
-                _ ->
-                    ( page, E.none )
-
-        BackdropReviewMsg reviewMsg ->
-            case page of
-                BackdropReview model ->
-                    BackdropReview.update reviewMsg model
-                        |> Tuple.mapFirst BackdropReview
-                        |> Tuple.mapSecond (E.map BackdropReviewMsg)
-
-                _ ->
-                    ( page, E.none )
-
-        LoggedGamesResponseReceived result ->
-            case page of
-                LoadingLoggedGames shared ->
-                    case result of
-                        Ok flags ->
-                            ( LoggedGames (LoggedGames.init shared flags), E.none )
-
-                        Err error ->
-                            ( LoggedGamesLoadFailed shared (ApiRequest.errorMessage error), E.none )
-
-                _ ->
-                    E.withOut page
-
-        ReplayResponseReceived id result ->
-            case page of
-                LoadingReplay shared currentId ->
-                    if id /= currentId then
-                        E.withOut page
-
-                    else
-                        case result of
-                            Ok flags ->
-                                GameReplay.init shared id flags
-                                    |> Tuple.mapFirst (Replay id)
-                                    |> Tuple.mapSecond (E.map (ReplayMsg id))
-
-                            Err error ->
-                                E.withOut (ReplayLoadFailed shared id (ApiRequest.errorMessage error))
-
-                _ ->
-                    E.withOut page
-
-        ReplayMsg id replayMsg ->
-            case page of
-                Replay currentId model ->
-                    if id /= currentId then
-                        E.withOut page
-
-                    else
-                        GameReplay.update replayMsg model
-                            |> Tuple.mapFirst (Replay id)
-                            |> Tuple.mapSecond (E.map (ReplayMsg id))
-
-                _ ->
-                    E.withOut page
-
-        MapEditorResponseReceived result ->
-            case page of
-                LoadingMapEditor shared ->
-                    case result of
-                        Ok flags ->
-                            MapEditor.init shared flags
-                                |> Tuple.mapFirst MapEditor
-                                |> Tuple.mapSecond (E.map MapEditorMsg)
-
-                        Err error ->
-                            ( MapEditorLoadFailed shared (ApiRequest.errorMessage error), E.none )
-
-                _ ->
-                    ( page, E.none )
-
-        MapEditorMsg editorMsg ->
-            case page of
-                MapEditor model ->
-                    MapEditor.update editorMsg model
-                        |> Tuple.mapFirst MapEditor
-                        |> Tuple.mapSecond (E.map MapEditorMsg)
-
-                _ ->
-                    ( page, E.none )
-
         LocalStorageChanged storage ->
             let
                 updateStorage : Shared.Model -> Shared.Model
@@ -583,7 +308,12 @@ update msg page =
         LinkClicked request ->
             case request of
                 Browser.Internal url ->
-                    ( page, E.pushUrl (Url.toString url) )
+                    case Route.fromUrl url of
+                        Just _ ->
+                            ( page, E.pushUrl (Url.toString url) )
+
+                        Nothing ->
+                            ( page, E.load (Url.toString url) )
 
                 Browser.External url ->
                     ( page, E.load url )
@@ -778,9 +508,6 @@ view page =
 dialog : Page -> Maybe (Dialog Msg)
 dialog page =
     case page of
-        Replay id model ->
-            GameReplay.dialog model |> Maybe.map (Dialog.map (ReplayMsg id))
-
         Game id model ->
             GamePage.dialog model
                 |> Maybe.map (Dialog.map (GameMsg id))
@@ -839,53 +566,6 @@ shell page =
                 Game id model ->
                     List.map (H.map (GameMsg id)) (GamePage.view model)
 
-                LoadingBackdropReview _ _ ->
-                    [ H.p
-                        [ Aria.role Aria.Status ]
-                        [ H.text "loading backdrop review…" ]
-                    ]
-
-                BackdropReviewLoadFailed _ error ->
-                    loadFailure Route.BackdropReview error
-
-                BackdropReview model ->
-                    List.map (H.map BackdropReviewMsg) (BackdropReview.view model)
-
-                LoadingMapEditor _ ->
-                    [ H.p [] [ H.text "loading map editor…" ] ]
-
-                MapEditorLoadFailed _ error ->
-                    [ H.p [] [ H.text error ]
-                    , H.a [ A.href (Route.toString Route.MapEditor) ] [ H.text "retry" ]
-                    ]
-
-                MapEditor model ->
-                    List.map (H.map MapEditorMsg) (MapEditor.view model)
-
-                LoadingLoggedGames _ ->
-                    [ H.p
-                        [ Aria.role Aria.Status ]
-                        [ H.text "loading logged games…" ]
-                    ]
-
-                LoggedGamesLoadFailed _ error ->
-                    loadFailure Route.LoggedGames error
-
-                LoggedGames model ->
-                    LoggedGames.view model
-
-                LoadingReplay _ _ ->
-                    [ H.p
-                        [ Aria.role Aria.Status ]
-                        [ H.text "loading replay…" ]
-                    ]
-
-                ReplayLoadFailed _ id error ->
-                    loadFailure (Route.Replay id) error
-
-                Replay id model ->
-                    List.map (H.map (ReplayMsg id)) (GameReplay.view model)
-
                 NotFound _ ->
                     [ [ H.p
                             []
@@ -896,71 +576,8 @@ shell page =
                       ]
                         |> Card.toHtml Card.simple
                     ]
-
-        globalStyles : Html Msg
-        globalStyles =
-            Css.Global.global S.global
-
-        shellContent : List (Html Msg)
-        shellContent =
-            [ globalStyles
-            , LoadingBar.styles
-            , Home.styles
-            , TargetSight.styles
-            , TerrainTile.styles
-            , TerrainTile.definitions
-            , UnitFacing.styles
-            , UnitCargo.styles
-            , UnitWarnings.styles
-            , CombatExplosion.styles
-            , CombatExplosion.preload
-            , UnitDeath.styles
-            , CombatTheater.styles
-            , CombatEffects.styles
-            , DepotStock.styles
-            , Button.styles
-            , TurnIntroduction.styles
-            ]
-                ++ content
     in
-    [ H.main_
-        [ A.class TerrainTile.clockClass
-        , A.css
-            [ S.bgNightwood2
-            , S.minHFullViewport
-            , S.p4
-            , S.textGray4
-            , S.col
-            , S.g3
-            ]
-        ]
-        shellContent
-    ]
-
-
-loadFailure : Route -> String -> List (Html msg)
-loadFailure route error =
-    [ Card.toHtml Card.simple
-        [ H.p
-            [ Aria.role Aria.Status ]
-            [ H.text error ]
-        , H.a
-            [ A.href (Route.toString route)
-            , A.css [ S.link ]
-            ]
-            [ H.text "retry" ]
-        , H.a
-            [ A.href (Route.toString Route.LoggedGames)
-            , A.css [ S.link ]
-            ]
-            [ H.text "logged games" ]
-        , H.a
-            [ A.href (Route.toString Route.Home)
-            , A.css [ S.link ]
-            ]
-            [ H.text "home" ]
-        ]
-    ]
+    AppShell.toHtml (Home.styles :: TurnIntroduction.styles :: content)
 
 
 
@@ -987,12 +604,6 @@ pageSubscriptions shared page =
                 LobbyPage.subscriptions model
                     |> Sub.map (LobbyMsg id (LobbyPage.currentLocation model))
 
-            MapEditor model ->
-                MapEditor.subscriptions model |> Sub.map MapEditorMsg
-
-            Replay id model ->
-                GameReplay.subscriptions model |> Sub.map (ReplayMsg id)
-
             Game id model ->
                 GamePage.subscriptions model
                     |> Sub.map (GameMsg id)
@@ -1003,7 +614,6 @@ pageSubscriptions shared page =
             { listeners =
                 [ FromJs.data "local storage changed" LocalStorage.decoder LocalStorageChanged
                 , listeners page
-                , MapEditor.listeners |> FromJs.map MapEditorMsg
                 ]
             , onError = JsErrorReceived
             }
@@ -1014,9 +624,6 @@ pageSubscriptions shared page =
 keyCommands : Page -> KeyCmd.KeyCmd Msg
 keyCommands page =
     case page of
-        Replay id model ->
-            GameReplay.keyCommands model |> KeyCmd.map (ReplayMsg id)
-
         Game id model ->
             GamePage.keyCommands model |> KeyCmd.map (GameMsg id)
 

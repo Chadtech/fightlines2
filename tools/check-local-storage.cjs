@@ -6,14 +6,16 @@ const { join } = require('node:path');
 const vm = require('node:vm');
 
 const key = 'fightlines.localStorage';
-const source = readFileSync('public/main.js', 'utf8');
-function boot(initial, { readFails = false, writeFails = false, randomSample = 0.5, build } = {}) {
+const interopSource = readFileSync('public/elm-interop.js', 'utf8');
+function boot(initial, { readFails = false, writeFails = false, randomSample = 0.5, build, entryPoint = 'Main', clipboardFails = false, thumbnailFails = false } = {}) {
   const stored = new Map(initial === undefined ? [] : [[key, initial]]);
   const messages = [];
   const warnings = [];
   const events = {};
   let flags;
   let send;
+  const clipboard = [];
+  const thumbnails = [];
   const storage = {
     getItem(name) {
       if (readFails) throw new Error('storage denied');
@@ -24,27 +26,41 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
       stored.set(name, value);
     },
   };
+  const entryFile = entryPoint === 'Main' ? 'public/main.js' : 'dev-tools/main.js';
+  const source = interopSource + '\n' + readFileSync(entryFile, 'utf8');
   vm.runInNewContext(source, {
     FIGHTLINES_BUILD: build,
-    Elm: { Main: { init(options) {
+    Elm: { [entryPoint]: { init(options) {
       flags = options.flags;
       return { ports: {
         fromJs: { send(message) { messages.push(JSON.parse(JSON.stringify(message))); } },
         toJs: { subscribe(handler) { send = handler; } },
       } };
     } } },
-    navigator: { userAgent: 'test' },
+    navigator: { userAgent: 'test', clipboard: {
+      async writeText(url) {
+        if (clipboardFails) throw new Error('clipboard denied');
+        clipboard.push(url);
+      },
+    } },
+    async generateMapThumbnail(htmlId) {
+      thumbnails.push(htmlId);
+      if (thumbnailFails) throw new Error('thumbnail failed');
+      return 'test-png';
+    },
     Math: { floor: Math.floor, random: () => randomSample },
     localStorage: storage,
     addEventListener(name, handler) { events[name] = handler; },
     console: { warn(...args) { warnings.push(args); } },
   });
-  return { stored, messages, warnings, flags, send, storage, events };
+  return { stored, messages, warnings, flags, send, storage, events, clipboard, thumbnails };
 }
 
 async function checkInterop() {
   for (const isProduction of [false, true]) {
-    assert.equal(boot(undefined, { build: { isProduction } }).flags.isProduction, isProduction);
+    for (const entryPoint of ['Main', 'DevTools']) {
+      assert.equal(boot(undefined, { build: { isProduction }, entryPoint }).flags.isProduction, isProduction);
+    }
   }
   assert.equal(boot(undefined).flags.isProduction, undefined);
   assert.equal(boot(undefined).flags.seed, 1073741824);
@@ -83,11 +99,45 @@ async function checkInterop() {
   app.events.storage({ key: null, storageArea: app.storage });
   assert.deepEqual(app.messages.at(-1).payload, {});
 
+  const devTools = boot('{"count":1}', { entryPoint: 'DevTools' });
+  await devTools.send({ tag: 'setLocalStorage', key: 'count', value: 2 });
+  assert.equal(devTools.flags.localStorage.count, 1);
+  assert.deepEqual(devTools.messages.at(-1).payload, { count: 2 });
+
+  await app.send({ tag: 'copyLink', url: 'http://localhost/lobby/test' });
+  assert.deepEqual(app.clipboard, ['http://localhost/lobby/test']);
+  assert.deepEqual(app.messages.at(-1), {
+    type: 'copyLinkResult', payload: { url: 'http://localhost/lobby/test', success: true },
+  });
+  const deniedClipboard = boot(undefined, { clipboardFails: true });
+  await deniedClipboard.send({ tag: 'copyLink', url: 'http://localhost/lobby/test' });
+  assert.equal(deniedClipboard.messages.at(-1).payload.success, false);
+
+  await devTools.send({ tag: 'generateMapThumbnail', htmlId: 'map-preview', requestId: 17 });
+  assert.deepEqual(devTools.thumbnails, ['map-preview']);
+  assert.deepEqual(devTools.messages.at(-1), {
+    type: 'mapThumbnailGenerated', payload: { requestId: 17, png: 'test-png', error: null },
+  });
+  const failedThumbnail = boot(undefined, { entryPoint: 'DevTools', thumbnailFails: true });
+  await failedThumbnail.send({ tag: 'generateMapThumbnail', htmlId: 'map-preview', requestId: 18 });
+  assert.deepEqual(failedThumbnail.messages.at(-1), {
+    type: 'mapThumbnailGenerated', payload: { requestId: 18, png: null, error: 'thumbnail failed' },
+  });
+  const playerMessages = app.messages.length;
+  await app.send({ tag: 'generateMapThumbnail', htmlId: 'map-preview', requestId: 19 });
+  assert.equal(app.thumbnails.length, 0);
+  assert.equal(app.messages.length, playerMessages);
+  const toolsMessages = devTools.messages.length;
+  await devTools.send({ tag: 'copyLink', url: 'http://localhost/lobby/test' });
+  assert.equal(devTools.clipboard.length, 0);
+  assert.equal(devTools.messages.length, toolsMessages);
+
   const blocked = boot('{"count":1}', { writeFails: true });
   await blocked.send({ tag: 'setLocalStorage', key: 'count', value: 2 });
   assert.equal(blocked.stored.get(key), '{"count":1}');
   assert.equal(blocked.messages.length, 0);
   assert.equal(blocked.warnings.length, 1);
+  console.log('Separate player clipboard and DevTools thumbnail handlers passed.');
   console.log('Startup random seed and local storage startup, writes, notifications, clearing, and failure handling passed.');
 }
 

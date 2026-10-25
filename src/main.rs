@@ -96,7 +96,7 @@ async fn run() -> io::Result<()> {
     let editor_enabled = env::args().any(|argument| argument == "--map-editor");
     let editor = web::Data::new(map_editor::Editor {
         directory: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("maps"),
-        index: frontend.join("index.html"),
+        index: frontend.join("dev-tools.html"),
         writes: std::sync::Mutex::new(()),
     });
     if editor_enabled {
@@ -105,7 +105,7 @@ async fn run() -> io::Result<()> {
     let archives_enabled = env::args().any(|argument| argument == "--game-logs");
     let archives = web::Data::new(game_archive::Browser {
         directory: log_path,
-        index: frontend.join("index.html"),
+        index: frontend.join("dev-tools.html"),
     });
     if archives_enabled {
         println!(
@@ -125,7 +125,7 @@ async fn run() -> io::Result<()> {
             .route(
                 "/backdrop-review",
                 web::get().to({
-                    let index = index.clone();
+                    let index = frontend.join("dev-tools.html");
                     move || {
                         let index = index.clone();
                         async move { NamedFile::open(index) }

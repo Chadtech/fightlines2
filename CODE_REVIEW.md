@@ -46,8 +46,8 @@ compiler success do not establish that these checks pass.
   Avoid thin wrappers, page-specific settings modules, and separate containers
   that merely forward to a single view.
 - [ ] Page-specific preferences and state stay in the page. Shared diagnostics
-  belong in `Shared.Model.errors`; a page-specific boolean does not belong in
-  `Shared` merely because storage is shared.
+  belong in the owning app's `Shared.Model.errors`; a page-specific boolean does
+  not belong in `Shared` merely because storage is shared.
 - [ ] Pass small, already resolved values to views when the caller has them.
   Prefer an owner name and ownership boolean over callbacks that rediscover
   those values. Pass a purpose-specific record instead of constructing a whole
@@ -95,9 +95,9 @@ compiler success do not establish that these checks pass.
 
 ## Loading and API boundaries
 
-- [ ] `Main` owns initial loading/failure dispatch and initializes a page only
-  after its required data arrives. Required loaded data is not optional state
-  inside an already initialized page.
+- [ ] The owning app entry point handles initial loading/failure dispatch and
+  initializes a page only after its required data arrives. Required loaded data
+  is not optional state inside an already initialized page.
 - [ ] `Flags` means page initialization data, belongs to that page, and is
   decomposed during initialization. Recurring server data uses `Snapshot` or
   another domain name. Invalid initialization flags fail explicitly.

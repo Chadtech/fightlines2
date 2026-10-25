@@ -700,9 +700,13 @@ replenishment and explicit crate loading; Crossroads and Ridgeway also have fuel
 
 ## Development
 
-Elm pages live in `src/Page/`. The game domain, player planning, and replay
-runtime live in `src/Game/`, with game-specific views in `src/Game/View/` and
-checks in `src/Game/Checks/`. Generic controls remain in `src/View/`.
+`src/Main.elm` runs the player app (home, lobbies, and live games).
+`src/DevTools.elm` runs the separate map editor, game archive/replay, and backdrop
+review app, with its own `DevTools.Route`, `DevTools.Flags`, `DevTools.Shared`,
+`DevTools.Effect`, and outgoing ports in `DevTools.Ports.Js.To`. Player pages
+live in `src/Page/`; tool pages live in `src/DevTools/Page/` under `DevTools.Page.*`. Both apps share
+modules under `src`. The game domain, player planning, and replay runtime live
+in `src/Game/`, with game-specific views in `src/Game/View/` and checks in `src/Game/Checks/`. Generic controls remain in `src/View/`.
 
 For a ready-to-view test game, run `make dev` and open
 [http://127.0.0.1:8080/game/00000000000000000000000000000000](http://127.0.0.1:8080/game/00000000000000000000000000000000).
@@ -728,10 +732,21 @@ and `make logs` use `PRODUCTION=false`; standalone `make frontend` and `make run
 also default to non-production. Override a command explicitly with
 `PRODUCTION=true` or `PRODUCTION=false` when needed.
 The generated `public/build-config.js` passes a required `isProduction` Boolean
-through JavaScript startup flags into `Shared.Model`. Production frontends treat
-`/map-editor`, `/logged-games`, and individual archive replay URLs as missing
-pages, without requesting their data. Live-game turn playback remains available.
-Rebuild with `make frontend` to restore the development views.
+through JavaScript startup flags into the player app's flags decoder; shared state
+does not retain it, and DevTools does not decode or store it. Non-production
+builds emit
+`public/elm.js` for the player app plus `public/elm-dev-tools.js` for DevTools.
+DevTools has separate HTML and JavaScript sources in `dev-tools/`, copied unchanged
+to `public/dev-tools.html` and `public/dev-tools.js` during development builds.
+The player entry files are `public/index.html` and `public/main.js`; both apps use
+`public/elm-interop.js` for shared startup flags, dialogs, and browser storage.
+The player script handles clipboard commands; the tools script handles map
+thumbnail commands.
+The server serves the appropriate app at the existing URLs; links between apps load a new document. Production builds emit
+only the player app and remove previous DevTools outputs from `public`, preserving
+the sources in `dev-tools/`.
+Live-game turn playback remains available. Rebuild with `make frontend` to restore
+the development tools.
 
 Builds use the committed runtime sprites and desert SVG in `public/assets/`. Source artwork,
 experiments and older exports are kept locally and ignored by Git. `make sprites`

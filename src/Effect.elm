@@ -22,20 +22,22 @@ import ApiRequest
         )
 import Browser.Dom
 import Browser.Navigation as Navigation
+import Common
 import Graphql.Http
 import Ports.Js.To as ToJs
-import Process
 import Route
     exposing
         ( Route
         )
-import Task exposing (Task)
 
 
 type Eff msg
     = None
     | Batch (List (Eff msg))
-    | Request (Task Never msg)
+    | Request (Common.Request msg)
+    | After Float msg
+    | Focus { htmlId : String } msg
+    | Measure String (Result Browser.Dom.Error Browser.Dom.Element -> msg)
     | Navigate Route
     | PushUrl String
     | Load String
@@ -71,26 +73,17 @@ toJs =
 
 request : (Response response -> msg) -> Graphql.Http.Request response -> Eff msg
 request toMsg graphqlRequest =
-    graphqlRequest
-        |> Graphql.Http.toTask
-        |> Task.map (Ok >> toMsg)
-        |> Task.onError (Err >> toMsg >> Task.succeed)
-        |> Request
+    Request (Common.request toMsg graphqlRequest)
 
 
 after : Float -> msg -> Eff msg
-after milliseconds msg =
-    Process.sleep milliseconds
-        |> Task.map (always msg)
-        |> Request
+after =
+    After
 
 
 focus : { htmlId : String } -> msg -> Eff msg
-focus { htmlId } completed =
-    Browser.Dom.focus htmlId
-        |> Task.map (always completed)
-        |> Task.onError (always (Task.succeed completed))
-        |> Request
+focus =
+    Focus
 
 
 navigate : Route -> Eff msg
@@ -118,7 +111,16 @@ map toMsg effect =
             Batch (List.map (map toMsg) effects)
 
         Request pending ->
-            Request (Task.map toMsg pending)
+            Request (Common.mapRequest toMsg pending)
+
+        After milliseconds completed ->
+            After milliseconds (toMsg completed)
+
+        Focus element completed ->
+            Focus element (toMsg completed)
+
+        Measure htmlId received ->
+            Measure htmlId (received >> toMsg)
 
         Navigate route ->
             Navigate route
@@ -143,7 +145,16 @@ toCmd key effect =
             Cmd.batch (List.map (toCmd key) effects)
 
         Request pending ->
-            Task.perform identity pending
+            Common.sendRequest pending
+
+        After milliseconds completed ->
+            Common.after milliseconds completed
+
+        Focus element completed ->
+            Common.focus element completed
+
+        Measure htmlId received ->
+            Common.measure htmlId received
 
         Navigate route ->
             Navigation.pushUrl key (Route.toString route)
@@ -161,8 +172,5 @@ toCmd key effect =
 {-| Measure a rendered element after the browser has laid it out.
 -}
 measure : String -> (Result Browser.Dom.Error Browser.Dom.Element -> msg) -> Eff msg
-measure htmlId received =
-    Browser.Dom.getElement htmlId
-        |> Task.map (Ok >> received)
-        |> Task.onError (Err >> received >> Task.succeed)
-        |> Request
+measure =
+    Measure

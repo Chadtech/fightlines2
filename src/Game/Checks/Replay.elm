@@ -9,7 +9,10 @@ import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.UnitKind as Kind
 import Browser
 import Browser.Dom
-import Effect as E exposing (Eff)
+import DevTools.Effect as E exposing (Eff)
+import DevTools.Page.GameReplay as GameReplay
+import DevTools.Page.LoggedGames as LoggedGames
+import DevTools.Shared as Shared
 import Game.BattlefieldNavigation as BattlefieldNavigation
 import Game.BattlefieldSnapshot as BattlefieldSnapshot
 import Game.Coordinate as Coordinate exposing (Coordinate)
@@ -30,10 +33,7 @@ import Graphql.Http
 import Json.Decode as Decode
 import LocalStorage
 import OperatingSystem
-import Page.GameReplay as GameReplay
-import Page.LoggedGames as LoggedGames
 import Random
-import Shared
 
 
 port results : List String -> Cmd msg
@@ -43,10 +43,10 @@ main : Program () () ()
 main =
     Browser.application
         { init =
-            \_ url key ->
+            \_ _ key ->
                 let
                     ( failures, effect ) =
-                        checks (Shared.init False (Random.initialSeed 0) OperatingSystem.Unknown LocalStorage.test url key)
+                        checks (Shared.init (Random.initialSeed 0) OperatingSystem.Unknown LocalStorage.test key)
                 in
                 ( (), Cmd.batch [ results failures, E.toCmd key effect ] )
         , update = \_ model -> ( model, Cmd.none )

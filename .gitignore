@@ -1,6 +1,9 @@
 /target/
 /elm-stuff/
 /public/elm.js
+/public/elm-dev-tools.js
+/public/dev-tools.html
+/public/dev-tools.js
 /public/build-config.js
 /node_modules/
 /output/

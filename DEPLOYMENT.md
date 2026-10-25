@@ -13,13 +13,14 @@ and omit `--dev-game` and `--map-editor` on hosted servers. The fixture is absen
 by default; the flag does not alter authorization for normal games.
 
 Run `make build` before hosting to build the server and generate
-the frontend's production flag. This frontend treats the map editor, logged-game
-list, and archive replay routes as missing pages, including navigation within the
-app. This target defaults to `PRODUCTION=true`; `make dev`, `make editor`, and
-`make logs` use `false`. Rebuilding with standalone `make frontend` also defaults
-to `false` and restores these development routes. Command-line assignments such
-as `make build PRODUCTION=false` override these defaults. The flag controls
-frontend availability; continue to omit `--map-editor` and `--game-logs` on public
+the frontend's production flag. This builds only the player app, removing the
+DevTools bundle, copied HTML, and startup script from earlier development builds. The map
+editor, logged-game list, archive replay, and backdrop preview pages are
+unavailable. This target defaults to `PRODUCTION=true`; `make dev`, `make editor`,
+and `make logs` use `false`. Rebuilding with standalone `make frontend` also defaults
+to `false` and builds the separate DevTools app at the existing development URLs.
+Command-line assignments such as `make build PRODUCTION=false` override these
+defaults. The flag controls frontend availability; continue to omit `--map-editor` and `--game-logs` on public
 servers to disable their server routes and GraphQL operations. Serve behind an
 HTTPS reverse proxy for internet hosting.
 
@@ -30,9 +31,13 @@ responses use `no-store`.
 - `FIGHTLINES_ADDR`: listen address; defaults to `127.0.0.1:8080`.
 - `FIGHTLINES_FRONTEND_DIR`: frontend asset directory; defaults to this
   checkout's `public/`. Set it explicitly when moving the executable
-  to another machine, and include `index.html`, `main.js`,
+  to another machine, and include `index.html`, `main.js`, `elm-interop.js`,
   the generated `build-config.js` and `elm.js`, and the `assets/` directory
-  containing the sprite sheets.
+  containing the sprite sheets. For a development deployment, also include the
+  copied `dev-tools.html` and `dev-tools.js`, plus `elm-dev-tools.js`. Their
+  sources live in `dev-tools/`; both apps share `elm-interop.js` for browser
+  storage, startup flags, and dialogs. Clipboard and thumbnail requests are
+  handled by their respective app entry scripts.
 - `FIGHTLINES_SEED`: optional debugging override for the initial token-generation
   seed, exactly 64 hexadecimal characters (32 bytes). When unset, each startup
   obtains a fresh 256-bit seed from the operating system. Empty or malformed
@@ -148,8 +153,8 @@ on a production host. Existing games are unaffected by saves.
 Ship `public/backdrop-calibrations.json` with the frontend assets. The server's
 public GraphQL calibration query reads it at startup-page load, including in
 production; malformed or missing data surfaces a frontend configuration error.
-`/backdrop-review` is available in development frontend builds. Saving uses the
-same localhost, same-origin, and `--map-editor` requirements as map authoring.
+`/backdrop-review` loads the DevTools app in development frontend builds. Saving
+uses the same localhost, same-origin, and `--map-editor` requirements as map authoring.
 Omit that flag on hosted servers. Saving atomically updates the file, preserving
 other backdrop/unit entries; refresh gameplay/replay pages to load changes. With a custom
 `FIGHTLINES_FRONTEND_DIR`, read and write paths use that frontend directory.

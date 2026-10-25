@@ -17,6 +17,7 @@ sprites:
 frontend: generate-api
 	node tools/build-config.cjs $(PRODUCTION)
 	elm make src/Main.elm --output=public/elm.js
+	node tools/build-dev-tools.cjs $(PRODUCTION)
 
 check:
 	cargo fmt --all -- --check
@@ -35,7 +36,7 @@ check:
 	node tools/check-local-storage.cjs
 	node tools/check-home.cjs
 	$(MAKE) frontend
-	elm make src/Style.elm src/View/*.elm src/Game/View/*.elm --output=/dev/null
+	elm make src/DevTools.elm src/Style.elm src/View/*.elm src/Game/View/*.elm --output=/dev/null
 
 dev editor logs: PRODUCTION = false
 

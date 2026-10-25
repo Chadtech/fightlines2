@@ -4,6 +4,7 @@ module Game.PlaybackPresentation exposing
     , Preference(..)
     , cameraPanDurationMs
     , combatOverlay
+    , encodePreference
     , frameCamera
     , loadPreference
     , loss
@@ -11,13 +12,11 @@ module Game.PlaybackPresentation exposing
     , lossError
     , ownerName
     , readyToAutomaticallyClose
-    , rememberPreference
     , subscriptions
     )
 
 import Api.Enum.PlayerNumber exposing (PlayerNumber)
 import Browser.Events
-import Effect as E exposing (Eff)
 import Error exposing (Error)
 import Game.BackdropCalibration as BackdropCalibration
 import Game.BattlefieldSnapshot as BattlefieldSnapshot exposing (Player)
@@ -31,9 +30,7 @@ import Game.View.UnitDeath as UnitDeath
 import Html.Styled as H exposing (Html)
 import Json.Decode as Decode
 import Json.Encode as Encode
-import LocalStorage
-import Ports.Js.To as ToJs
-import Shared
+import LocalStorage exposing (LocalStorage)
 import Util.Html.Event as HtmlEvent
 import Util.List as ListUtil
 import View.Dialog as Dialog exposing (Dialog)
@@ -111,14 +108,14 @@ frameCamera viewport map saved animation held =
     { camera = target, remainingPanMs = remainingPanMs }
 
 
-loadPreference : Preference -> Shared.Model -> ( Bool, Maybe Error )
-loadPreference preference shared =
+loadPreference : Preference -> LocalStorage -> ( Bool, Maybe Error )
+loadPreference preference storage =
     let
         key : String
         key =
             preferenceKey preference
     in
-    case LocalStorage.get shared.localStorage key Decode.bool of
+    case LocalStorage.get storage key Decode.bool of
         Ok saved ->
             ( Maybe.withDefault False saved, Nothing )
 
@@ -126,14 +123,11 @@ loadPreference preference shared =
             ( False, Just (Error.LocalStorageDecodeFailed { key = key, error = decodeError }) )
 
 
-rememberPreference : Preference -> Bool -> Eff msg
-rememberPreference preference enabled =
-    E.toJs
-        (ToJs.SetLocalStorage
-            { key = preferenceKey preference
-            , value = Encode.bool enabled
-            }
-        )
+encodePreference : Preference -> Bool -> { key : String, value : Encode.Value }
+encodePreference preference enabled =
+    { key = preferenceKey preference
+    , value = Encode.bool enabled
+    }
 
 
 loss : Bool -> Maybe TurnPlayback.Playback -> Maybe TurnPlayback.Loss

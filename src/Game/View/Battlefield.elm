@@ -12,9 +12,9 @@ module Game.View.Battlefield exposing
     , SavedOverlays
     , UnloadRoute
     , camera
+    , htmlId
     , inspection
     , interaction
-    , measure
     , navigationControls
     , toSvg
     , viewportAttributes
@@ -23,10 +23,8 @@ module Game.View.Battlefield exposing
 import Api.Enum.Direction exposing (Direction)
 import Api.Enum.SpriteFacing exposing (SpriteFacing)
 import Api.Enum.UnitKind as UnitKind
-import Browser.Dom
 import Css
 import Css.Global
-import Effect as E exposing (Eff)
 import Game.AnimationFrame as AnimationFrame
 import Game.Camera as Camera exposing (Camera)
 import Game.CombatRules exposing (CombatRules)
@@ -148,13 +146,6 @@ type alias WheelEvent =
 ----------------------------------------------------------------
 -- API --
 ----------------------------------------------------------------
-
-
-{-| Measure the navigation surface after layout, including the area around the board.
--}
-measure : (Result Browser.Dom.Error Browser.Dom.Element -> msg) -> Eff msg
-measure received =
-    E.measure htmlId received
 
 
 inspection : OrdersView

@@ -29,8 +29,9 @@ the design direction changes. User feedback takes precedence.
   The home-page quotation is larger, as described below.
   Use placement, spacing, grouping, and color to distinguish roles.
 - Use Ubuntu Mono Regular at weight 400. The unmodified TrueType font is
-  embedded as a data URL in `public/index.html`; its Ubuntu Font Licence 1.0
-  and pinned upstream revision are in `public/ubuntu-mono-LICENSE.txt`.
+  embedded as a data URL in `public/index.html` and `dev-tools/index.html`; its
+  Ubuntu Font Licence 1.0 and pinned upstream revision are in
+  `public/ubuntu-mono-LICENSE.txt`.
   No separate font request is required.
   Fall back to SFMono-Regular, SF Mono, Menlo, Monaco, Consolas, Liberation Mono,
   then generic monospace.

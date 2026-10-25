@@ -17,7 +17,7 @@ main =
         { init =
             \_ url key ->
                 ( ()
-                , Shared.init False (Random.initialSeed 42) OperatingSystem.Unknown LocalStorage.test url key
+                , Shared.init (Random.initialSeed 42) OperatingSystem.Unknown LocalStorage.test url key
                     |> checks
                     |> results
                 )

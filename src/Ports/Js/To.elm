@@ -9,7 +9,6 @@ import Json.Encode as Je
 type Msg
     = CopyLink { url : String }
     | OpenDialog { htmlId : String }
-    | GenerateMapThumbnail { htmlId : String, requestId : Int }
     | SetLocalStorage { key : String, value : Je.Value }
 
 
@@ -26,9 +25,6 @@ tagName msg =
 
         OpenDialog _ ->
             "openDialog"
-
-        GenerateMapThumbnail _ ->
-            "generateMapThumbnail"
 
         CopyLink _ ->
             "copyLink"
@@ -47,11 +43,6 @@ encode message =
 
                 OpenDialog { htmlId } ->
                     [ ( "htmlId", Je.string htmlId )
-                    ]
-
-                GenerateMapThumbnail { htmlId, requestId } ->
-                    [ ( "htmlId", Je.string htmlId )
-                    , ( "requestId", Je.int requestId )
                     ]
 
                 CopyLink { url } ->

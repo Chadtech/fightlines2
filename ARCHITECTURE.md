@@ -52,14 +52,15 @@ to regenerate orders. A selected turn advances `PlayerObservation` from the star
 through each recorded resolution, preserving fog and freight memory. Live games
 and archives share terminal reveal projection in `lobby::observed_board`.
 
-`Main` owns initial loading/failure states for `LoggedGames` and `GameReplay`.
+`DevTools` owns initial loading/failure states for `LoggedGames` and `GameReplay`.
 Replay responses correlate with their archive ID and requested turn/player.
 `GamePage` and `GameReplay` are independent pages. `GamePage` owns live turn
 planning, submission, polling, and introductions through `CurrentTurn` and
 `TurnLifecycle`. `GameReplay` owns archive requests, turn/player selection,
 continuous playback, pause, and inspection. Its timeline permits only `Ready`
 and `Playing`; it carries no live lifecycle or lobby ID and cannot submit orders.
-Each page owns its own `Shared.Model`.
+Each page owns its app's shared state: `Shared.Model` for live play and
+`DevTools.Shared.Model` for replay.
 
 Replay's turn request includes the fog checkbox state in its response correlation.
 `loggedTurn` defaults to player fog; disabling `fogOfWar` selects authoritative
@@ -164,7 +165,7 @@ remains available to tests for concise fixtures. Initial layouts and deployments
 were preserved during migration, including ElAlamein's asymmetric eastern base.
 Themes affect artwork only; movement, sight and scenario geometry remain separate.
 
-`MapEditor` is an Elm page reached through `/map-editor`. `Main` owns its initial
+`MapEditor` is an Elm page reached through `/map-editor`. `DevTools` owns its initial
 load and failure dispatch; `EditableMap` owns the authoring data and its generated
 GraphQL boundary.
 The page keeps a draft, saved snapshot, and bounded undo/redo history per map;
@@ -328,10 +329,13 @@ The fixture resets on restart and does not consume the normal token seed.
 
 ## Frontend
 
-Elm page modules live under `src/Page/` with the `Page.*` namespace, including
-initialization/load-failure views.
-`Main.elm` remains at the source root as the application entry point. Imports
-may alias page modules to their basenames, such as `Page.GamePage as GamePage`.
+Player page modules live under `src/Page/` with the `Page.*` namespace, including
+initialization/load-failure views. Tool pages live under `src/DevTools/Page/` with
+the `DevTools.Page.*` namespace: `MapEditor`, `GameReplay`, `LoggedGames`, and
+`BackdropReview`. The initialization-error view remains shared by both apps.
+`Main.elm` and `DevTools.elm` live at the source root as separate application
+entry points. `Main` owns home, lobbies, and live games. `DevTools` owns the map
+editor, archive list/replay, and backdrop review. Imports may alias page modules to their basenames, such as `Page.GamePage as GamePage`.
 
 `src/Game/` contains the Elm game domain and runtime shared by player and replay
 pages: battlefield snapshots/navigation, units and resources, maps, movement,
@@ -341,25 +345,50 @@ game checks live in `src/Game/Checks/`. Generic controls remain in `src/View/`;
 application infrastructure, general utilities, and editor-only data stay outside
 `Game`. Imports may retain concise domain aliases, such as `Game.Unit as Unit`.
 
-`Page` in `Main` is the top-level state. Every page carries shared state, with
-feature pages storing it in their own models. `Main` routes immediately after
-decoding application flags, loads each page's required initialization data, and
-shows a retry action when a page fails to load. Backdrop calibrations belong to
-the consuming pages' initialization data. `Main` handles URL navigation through
-`handleRoute` and page dispatch; the `Browser.application` boundary
-converts effects to commands. `Route` parses typed lobby/game routes, `Shared`
-owns navigation, and `Effect` translates page effects into commands.
+Each entry point owns its own top-level `Page` and `Msg` unions and a separate
+`Browser.application`. Every page carries shared state, with feature pages
+storing it in their own models. Each app decodes its own startup flags through
+`Flags` or `DevTools.Flags`, loads its pages' required initialization data, and
+shows retry actions on failure.
+Backdrop calibrations belong to the consuming pages' initialization data.
+`Route` parses player routes; `DevTools.Route` parses tool routes at their existing
+URLs. Each app handles its own routes and page dispatch, converting effects to
+commands at its application boundary. Links outside an app's routes load a new
+document so the server can select the correct bundle. Each app owns its browser
+state and effects: `Shared`/`Effect` for the player app and
+`DevTools.Shared`/`DevTools.Effect` for tools. The tools model has no invite-link
+origin. Each effect module accepts only its own routes and outgoing JS messages.
+Both modules own their effect variants and interpreters. `After`, `Focus`, and
+`Measure` store operation data and callbacks; their `toCmd` branches use helpers
+in `Common.elm` to create and run the commands. `Request` holds an opaque
+`Common.Request` constructed only from a GraphQL request and its response
+callback. The wrapper captures the request's response type and builds the GraphQL
+command when sent; it cannot wrap arbitrary tasks or commands.
+Shared rendering modules do not import either app's state or effects:
+`Battlefield` exposes its element ID for page-owned measurement effects, and
+`PlaybackPresentation` reads `LocalStorage` directly and encodes preference
+entries for each page to save through its own effects.
 
 `make frontend` generates `public/build-config.js` from `PRODUCTION`.
 `make build` defaults to `true` and passes it to its frontend prerequisite;
 `make dev`, `make editor`, and `make logs` use `false`. Standalone frontend and
 run commands default to `false`; command-line assignments override these defaults.
-`index.html` loads the config before `main.js`, which passes its `isProduction`
-Boolean through the required startup flags into `Shared.Model`. `Main.handleRoute`
-treats editor, archive-list, and archive-replay routes as `NotFound` in production
-before starting requests. This build setting persists across page navigation;
-local storage does not control it. Server editor and archive access still use
-their independent opt-in flags.
+Each app has its own HTML and JavaScript entry files: `public/index.html` and
+`public/main.js` for the player app, `dev-tools/index.html` and `dev-tools/main.js`
+for DevTools. Each entry explicitly starts its own Elm module through
+`public/elm-interop.js`, which shares startup flags, storage, and dialog handling.
+The player entry handles clipboard requests; the DevTools entry handles thumbnail
+requests. The build config supplies the required `isProduction` Boolean in the
+player app's startup flags; shared state does not retain it, and DevTools does not
+decode or store it. Non-production builds compile `Main` to `elm.js` and `DevTools` to
+`elm-dev-tools.js`. `tools/build-dev-tools.cjs` copies the tools HTML and startup
+script unchanged to `public/dev-tools.html` and `public/dev-tools.js`; it never
+reads or rewrites the player entry files. Both HTML sources embed the interface
+font. Map thumbnail interop loads only in the tools document. Server tool routes
+serve that document while player routes serve `index.html`. Production builds
+compile only `Main` and delete stale tools HTML/JavaScript from `public`, retaining
+the tools sources. Server editor and archive access still use their independent
+opt-in flags.
 
 `NewLobby`, `JoinLobby`, `LobbyPage`, `LobbyLoadFailed`, `GamePage`, and
 `GameLoadFailed` own their page state and views.
@@ -396,11 +425,16 @@ for initialization; polling and submission responses use `Snapshot` directly.
 `ApiRequest` owns shared transport
 configuration and error messages. Lobby and game responses are tagged with their
 originating ID to ignore responses from pages left during navigation.
-JavaScript boots Elm and handles interop through one outgoing `toJs` port in
-`Ports.Js.To` and one incoming `fromJs` port in `Ports.Js.From`. These modules
-keep raw port functions private. `Effect.toJs` sends a `Ports.Js.To.Msg`, encoded
-with a `tag` and operation fields. Incoming messages use `type` and `payload`;
-pages expose `listeners` with payload decoders and their own messages. `Main`
+Each app has its own outgoing `toJs` port and message vocabulary in `Ports.Js.To`
+or `DevTools.Ports.Js.To`. Both support storage writes and opening dialogs; only
+player messages include clipboard copying, and only tools messages include map
+thumbnail generation. Their JavaScript entry files own those app-specific
+handlers; the common bootstrap owns storage notifications and dialog opening.
+The generic incoming `fromJs` port and listener decoder remain shared in
+`Ports.Js.From`. Port modules keep raw port functions private. Each app's
+`Effect.toJs` sends its own `ToJs.Msg`, encoded with a `tag` and operation fields.
+Incoming messages use `type` and `payload`;
+pages expose `listeners` with payload decoders and their own messages. Each app
 maps the active page's listeners and converts them into a single subscription
 with `Ports.Js.From.subscription`, handling listener errors without changing
 page state. `LobbyPage` owns copy feedback and keeps polling in its ordinary
@@ -409,14 +443,14 @@ ignored. Add future JavaScript operations as outgoing message variants and
 page listeners rather than adding ports.
 
 `LocalStorage` wraps a dictionary of JSON values and decodes each requested key
-with the caller's decoder. `Shared.Model.localStorage` receives the startup
-`localStorage` flag. JavaScript stores the object under `fightlines.localStorage`;
+with the caller's decoder. Each app's shared `localStorage` field receives the
+startup `localStorage` flag. JavaScript stores the object under `fightlines.localStorage`;
 missing, malformed, or inaccessible storage starts empty. Pages write individual
 keys through `Effect.toJs (ToJs.SetLocalStorage { key = key, value = value })`,
 where `value` is a `Json.Encode.Value`. Writes preserve other keys. Successful
 writes notify the current Elm app; browser storage events notify other tabs,
-including removal or clearing of the stored object. `Main` listens for
-`local storage changed` on every initialized page and replaces shared storage
+including removal or clearing of the stored object. Both apps listen for
+`local storage changed` on every initialized page and replace shared storage
 through `setShared`. Failed writes log a warning without reporting a saved value.
 `UserName` reads and writes the `userName` key. Creation and join forms prefill
 it during initialization and remember the trimmed submitted name after a
@@ -425,7 +459,7 @@ submitted name so edits made while joining do not change which name is saved.
 Missing stored names leave the field empty. Incorrectly typed names also leave
 the field empty, but each form records `Error.LocalStorageDecodeFailed` in
 `Shared.Model.errors`, retaining the storage key and original decoder error.
-`Shared.addError` prepends errors to this session's list without clearing earlier
+Each app's `Shared.addError` prepends errors to its session's list without clearing earlier
 errors; new shared state starts with an empty list. Failed requests
 keep the previous remembered name, and storage notifications preserve active
 form edits. Game state is not persisted in local storage.
@@ -523,7 +557,7 @@ lobby selects only the ID needed to navigate, returning `LobbyId`.
 
 `ApiRequest` shares query/mutation configuration and error presentation without
 owning page data. Pages and `Main` pass request values and response callbacks to
-`Effect.request`; `Effect.toCmd` executes the resulting tasks. Generated
+`Effect.request`; `Effect.toCmd` sends the stored GraphQL requests. Generated
 functions fix the operation's argument and result scopes; Elm compilation
 catches callers incompatible with a regenerated schema. The current server uses
 synchronous resolvers for its in-memory operations.
@@ -689,8 +723,8 @@ coordinate system. `GamePage.turnPanel` supplies compact horizontal game control
 at the bottom-left edge, with submit, player statuses, and camera controls side by side.
 `Game.View.TurnControls` owns the responsive surface and maps lifecycle activity
 to the button's size and emphasis modifiers. `View.Button` owns button styling
-and animations; `Main` mounts its keyframes once. `Battlefield.navigationControls`
-owns its pan/zoom grids directly, without descendant selectors. Narrow
+and animations; `View.AppShell` mounts its keyframes once.
+`Battlefield.navigationControls` owns its pan/zoom grids directly, without descendant selectors. Narrow
 layouts wrap the camera controls below without reserving a fixed panel height.
 The gesture transitions from idle to pressed to panning, then retains click
 suppression after release until a fresh press or viewport reset. Zoom and lost
@@ -702,21 +736,22 @@ center, and reset restores the initial centered view. Camera changes never alter
 authoritative board coordinates or the selected tile.
 `Main` maps its messages with the originating lobby ID and subscribes only while
 the game page is active. A 400ms Elm timer cycles the four unit sprite frames.
-JavaScript passes the browser platform and a random integer through the main app's
-flags. `Main` decodes the required integer into a `Random.Seed` with
-`Random.initialSeed`; every initialized `Shared.Model` carries this seed.
+JavaScript passes the browser platform and a random integer through each app's
+flags. Each app's flags decoder converts the required integer into a
+`Random.Seed` with `Random.initialSeed`; every initialized shared model carries
+this seed.
 Random consumers use `Random.step` and retain the returned seed through
 `Shared.setSeed`, including across page navigation, without random-generation
-effects. `Main` also decodes the platform into `OperatingSystem` and stores it in
-`Shared.Model`, using `Unknown`
-for unrecognized platform strings. Missing or malformed flags instead open an
+effects. Each app's flags decoder also converts the platform into
+`OperatingSystem`, using `Unknown` for unrecognized platform strings. Each app
+stores it in its own shared model. Missing or malformed flags instead open an
 `AppInitError` page with decoder details in a read-only textarea; it has no shared
 state, subscriptions, or route handling. Pages expose keyboard commands through
 `keyCommands`; game navigation keys pattern-match the current selection and unit
 interaction, with dialog visibility deciding whether command-menu navigation is
 active. Locked phases expose inspection only, so key bindings need no separate
-planning-lock check. `Main` maps active-page messages and passes the shared operating
-system to `KeyCmd.subscriptions`. Command shortcuts use Meta on macOS/iOS and
+planning-lock check. Each app maps active-page messages and passes the shared
+operating system to `KeyCmd.subscriptions`. Command shortcuts use Meta on macOS/iOS and
 Control elsewhere. While choosing a move, `GamePage` routes arrow and WASD
 commands to extend or retrace the preview from its current tip, and Enter saves
 the preview through the same destination validation as a click. Board Enter
@@ -786,8 +821,9 @@ resolution. Earlier terrain atlases remain available locally and are ignored by 
 shared global reset, style helpers, and `View.Button`; no standalone CSS file is
 required.
 
-`Main` mounts the global reset and component-owned global styles together in
-the application shell, including animation and reduced-motion rules. Components
+Both apps use `View.AppShell` to mount the global reset and shared component-owned
+styles, including animation and reduced-motion rules. Player-only home and
+turn-introduction styles are added by `Main`. Components
 keep ownership of those rules; page views do not mount additional style nodes.
 
 The copied modules are Button, Dialog, Dropdown, PersonProfile, Textarea, and
@@ -1586,8 +1622,8 @@ table blocks entry, passage, passenger exits, AI routing, and movement resolutio
 map definitions reject starting units on water. Water does not obstruct sight or
 add combat cover. `Game.View.TerrainTile` clips a 32-frame, eight-column water atlas
 with stepped CSS keyframes at 60ms per frame. Its styles are mounted once by
-`Main`; reduced motion holds the first frame, and the existing combat/loss focus
-selectors pause it. The same component serves the board, editor, and inspector
+`View.AppShell`; reduced motion holds the first frame, and the existing
+combat/loss focus selectors pause it. The same component serves the board, editor, and inspector
 in every theme. Indirect-fire impacts use the matching water still backdrop.
 
 `Terrain::Beach` is authored land terrain with plain entry and supply costs,
@@ -1599,8 +1635,8 @@ from bounded neighboring terrain. Cliffs are presentation, not another stored
 terrain type. `TerrainTile.onMap` renders these overlays inside the water cell,
 above the animated surface and beneath grid, objects and interaction targets.
 Beach tiles blend themed ground into their inland edges using shared SVG mask
-definitions mounted once by `Main`. Board, editor and inspector use the same
-neighbor-aware renderer; fog and destination dimming apply to the entire tile.
+definitions mounted once by `View.AppShell`. Board, editor and inspector use the
+same neighbor-aware renderer; fog and destination dimming apply to the entire tile.
 Beach corner artwork is a quarter-turn projection of the straight beach edge,
 with shared wedge clipping and endpoint samples that join its sand and foam bands.
 `Game.View.Cliff` interprets shoreline direction from water toward land. A northern
@@ -1625,7 +1661,7 @@ selection styling remain shared.
 
 Only authoring resolves neighbors. `Game.Road` maps cardinal connections to a
 `RoadShape`; `EditableMap.reconnectRoads` updates affected roads after terrain
-painting and cropping. `Page.MapEditor` offers a single road brush and includes
+painting and cropping. `DevTools.Page.MapEditor` offers a single road brush and includes
 neighbor changes in the same draft/undo gesture. Saved definitions contain the
 resolved variants. Unit/depot painting does not reshape roads; merely loading or
 rendering a map leaves authored orientation intact.
@@ -1738,9 +1774,9 @@ entrenched masters for board cells, inspector portraits, and theater figures;
 
 `Game.BackdropCalibration` owns the typed catalog and GraphQL selections.
 Each of `GamePage`, `GameReplay`, and `BackdropReview` loads its own catalog
-with its initialization flags. `Main` dispatches each page's loading and failure
-states; unrelated routes do not request calibrations. The loaded page owns its
-catalog independently of `Shared.Model`; active games and replays pass it through
+with its initialization flags. The owning app dispatches each page's loading and
+failure states; unrelated routes do not request calibrations. The loaded page
+owns its catalog independently of `Shared.Model`; active games and replays pass it through
 `PlaybackPresentation` to `CombatTheater`. `CombatFormation` retains its legacy
 placements for uncalibrated scenery. For calibrated scenery, unit-specific row
 patterns are projected between front and rear footing lines and scaled by depth.
@@ -1753,7 +1789,7 @@ Gameplay projects units into this record; backdrop review supplies its visual
 choices directly. Both use the same portrait and formation renderers and theater
 crop, without constructing a preview game unit or inventing identity and rules.
 
-`Page.BackdropReview` owns unsaved drafts keyed by backdrop path and unit type
+`DevTools.Page.BackdropReview` owns unsaved drafts keyed by backdrop path and unit type
 and save requests. Its initial `combatBackdrops` query reads the available PNG
 assets from the configured frontend directory, including uncalibrated backdrops,
 and supplies paths and labels for preview and copy selectors. An unreadable or

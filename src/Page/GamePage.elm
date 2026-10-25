@@ -265,7 +265,7 @@ init : Shared.Model -> Flags -> ( Model, Eff Msg )
 init shared flags =
     let
         ( automaticallyCloseCombatTheater, maybeError ) =
-            PlaybackPresentation.loadPreference PlaybackPresentation.AutomaticallyCloseCombat shared
+            PlaybackPresentation.loadPreference PlaybackPresentation.AutomaticallyCloseCombat shared.localStorage
 
         ( skipTurnIntroduction, introductionPreferenceError ) =
             loadPreference turnIntroductionPreferenceKey shared
@@ -274,7 +274,7 @@ init shared flags =
             loadPreference unplannedUnitsWarningPreferenceKey shared
 
         ( skipLossDialogs, lossPreferenceError ) =
-            PlaybackPresentation.loadPreference PlaybackPresentation.SkipLossDialogs shared
+            PlaybackPresentation.loadPreference PlaybackPresentation.SkipLossDialogs shared.localStorage
 
         model : Model
         model =
@@ -321,7 +321,7 @@ init shared flags =
     ( model
     , E.batch
         [ eff
-        , Battlefield.measure BattlefieldSizeReceived
+        , E.measure Battlefield.htmlId BattlefieldSizeReceived
         ]
     )
 
@@ -359,6 +359,13 @@ turnIntroductionPreferenceKey =
 unplannedUnitsWarningPreferenceKey : String
 unplannedUnitsWarningPreferenceKey =
     "skipUnplannedUnitsWarning"
+
+
+rememberPlaybackPreference : PlaybackPresentation.Preference -> Bool -> Eff msg
+rememberPlaybackPreference preference enabled =
+    PlaybackPresentation.encodePreference preference enabled
+        |> ToJs.SetLocalStorage
+        |> E.toJs
 
 
 loadPreference : String -> Shared.Model -> ( Bool, Maybe Error )
@@ -1584,7 +1591,7 @@ superUpdate lobbyId msg model =
                 viewportEffect : Eff Msg
                 viewportEffect =
                     if viewportChanged then
-                        Battlefield.measure BattlefieldSizeReceived
+                        E.measure Battlefield.htmlId BattlefieldSizeReceived
 
                     else
                         E.none
@@ -1699,7 +1706,7 @@ update lobbyId msg model =
                         |> E.withOut
 
         WindowResized ->
-            ( model, Battlefield.measure BattlefieldSizeReceived )
+            ( model, E.measure Battlefield.htmlId BattlefieldSizeReceived )
 
         PanLeftKeyPressed ->
             model
@@ -2094,14 +2101,14 @@ update lobbyId msg model =
 
                 UnitDeath.SkipDialogsChanged skip ->
                     ( { model | skipUnitLossDialogs = skip }
-                    , PlaybackPresentation.rememberPreference PlaybackPresentation.SkipLossDialogs skip
+                    , rememberPlaybackPreference PlaybackPresentation.SkipLossDialogs skip
                     )
 
         CombatTheaterMsg panelMsg ->
             case panelMsg of
                 CombatTheater.AutomaticallyCloseChanged automaticallyClose ->
                     ( { model | automaticallyCloseCombatTheater = automaticallyClose }
-                    , PlaybackPresentation.rememberPreference PlaybackPresentation.AutomaticallyCloseCombat automaticallyClose
+                    , rememberPlaybackPreference PlaybackPresentation.AutomaticallyCloseCombat automaticallyClose
                     )
 
                 CombatTheater.ContinueClicked ->

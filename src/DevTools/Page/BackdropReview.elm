@@ -1,4 +1,4 @@
-module Page.BackdropReview exposing
+module DevTools.Page.BackdropReview exposing
     ( Flags
     , Model
     , Msg
@@ -18,7 +18,8 @@ import Api.Object.CombatBackdrop as BackdropApi
 import Api.Object.CombatBackdropCatalog as BackdropCatalogApi
 import Api.Query
 import ApiRequest
-import Effect as E exposing (Eff)
+import DevTools.Effect as E exposing (Eff)
+import DevTools.Shared as Shared
 import Game.BackdropCalibration as Calibration
     exposing
         ( Calibration
@@ -35,7 +36,6 @@ import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Json.Decode as Decode
 import Random
-import Shared
 import Style as S
 import View.Button as Button
 import View.Card as Card

@@ -1,4 +1,4 @@
-module Page.GameReplay exposing
+module DevTools.Page.GameReplay exposing
     ( Flags
     , Model
     , Msg(..)
@@ -21,7 +21,11 @@ import Api.Query
 import ApiRequest
 import Browser.Dom
 import Browser.Events
-import Effect as E exposing (Eff)
+import DevTools.Effect as E exposing (Eff)
+import DevTools.Page.LoggedGames as LoggedGames
+import DevTools.Ports.Js.To as ToJs
+import DevTools.Route as Route
+import DevTools.Shared as Shared
 import Error
 import Game.AnimationFrame as AnimationFrame
 import Game.BackdropCalibration as BackdropCalibration
@@ -51,10 +55,6 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Json.Decode as Decode
 import KeyCmd
-import Page.LoggedGames as LoggedGames
-import Ports.Js.To as ToJs
-import Route
-import Shared
 import Style as S
 import Time
 import Util.List as ListUtil
@@ -189,10 +189,10 @@ init : Shared.Model -> GameLogId -> Flags -> ( Model, Eff Msg )
 init shared id flags =
     let
         ( skipLossDialogs, lossError ) =
-            PlaybackPresentation.loadPreference PlaybackPresentation.SkipLossDialogs shared
+            PlaybackPresentation.loadPreference PlaybackPresentation.SkipLossDialogs shared.localStorage
 
         ( automaticallyClose, combatError ) =
-            PlaybackPresentation.loadPreference PlaybackPresentation.AutomaticallyCloseCombat shared
+            PlaybackPresentation.loadPreference PlaybackPresentation.AutomaticallyCloseCombat shared.localStorage
 
         model : Model
         model =
@@ -217,7 +217,7 @@ init shared id flags =
             , playbackIntent = SingleTurnPlayback
             }
     in
-    ( model, Battlefield.measure BattlefieldSizeReceived )
+    ( model, E.measure Battlefield.htmlId BattlefieldSizeReceived )
 
 
 
@@ -271,6 +271,13 @@ pause model =
             model
 
 
+rememberPlaybackPreference : PlaybackPresentation.Preference -> Bool -> Eff msg
+rememberPlaybackPreference preference enabled =
+    PlaybackPresentation.encodePreference preference enabled
+        |> ToJs.SetLocalStorage
+        |> E.toJs
+
+
 startPlayback : Model -> ( Model, Eff Msg )
 startPlayback model =
     case model.timeline of
@@ -296,7 +303,7 @@ startTurnPlayback model =
                         |> applyFrame first
                         |> updateLossDialog (activeDialogHtmlId model)
             in
-            ( started, E.batch [ Battlefield.measure BattlefieldSizeReceived, dialogEffect ] )
+            ( started, E.batch [ E.measure Battlefield.htmlId BattlefieldSizeReceived, dialogEffect ] )
 
         _ ->
             if isPlaying model then
@@ -308,27 +315,24 @@ startTurnPlayback model =
 
 finishPlayback : Model -> ( Model, Eff Msg )
 finishPlayback model =
-    let
-        ( finished, nextTurnEffect ) =
-            { model
-                | timeline = Ready
-                , navigation = BattlefieldNavigation.startReturn model.navigation
-            }
-                |> loadNextTurn
-    in
-    ( finished
-    , E.batch
-        [ E.after PlaybackPresentation.cameraPanDurationMs CameraReturnFinished
-        , nextTurnEffect
-        ]
-    )
+    { model
+        | timeline = Ready
+        , navigation = BattlefieldNavigation.startReturn model.navigation
+    }
+        |> loadNextTurn
+        |> E.and (E.after PlaybackPresentation.cameraPanDurationMs CameraReturnFinished)
 
 
 loadNextTurn : Model -> ( Model, Eff Msg )
 loadNextTurn model =
     case ( model.playbackIntent, model.request ) of
         ( ContinuousPlayback, Idle ) ->
-            loadTurn { turn = model.position.turn + 1, player = model.position.player, fogOfWar = model.position.fogOfWar } model
+            loadTurn
+                { turn = model.position.turn + 1
+                , player = model.position.player
+                , fogOfWar = model.position.fogOfWar
+                }
+                model
 
         _ ->
             model
@@ -458,7 +462,7 @@ withInspectionMeasurement previous next =
         ( { next
             | viewport = Nothing
           }
-        , Battlefield.measure BattlefieldSizeReceived
+        , E.measure Battlefield.htmlId BattlefieldSizeReceived
         )
 
     else
@@ -793,7 +797,7 @@ update msg model =
                 |> E.withOut
 
         WindowResized ->
-            ( model, Battlefield.measure BattlefieldSizeReceived )
+            ( model, E.measure Battlefield.htmlId BattlefieldSizeReceived )
 
         BattlefieldSizeReceived result ->
             case result of
@@ -869,13 +873,13 @@ update msg model =
                     { model | skipUnitLossDialogs = skip }
                         |> updateLossDialog (activeDialogHtmlId model)
                         |> E.and
-                            (PlaybackPresentation.rememberPreference PlaybackPresentation.SkipLossDialogs skip)
+                            (rememberPlaybackPreference PlaybackPresentation.SkipLossDialogs skip)
 
         CombatTheaterMsg theaterMsg ->
             case theaterMsg of
                 CombatTheater.AutomaticallyCloseChanged enabled ->
                     ( { model | automaticallyCloseCombatTheater = enabled }
-                    , PlaybackPresentation.rememberPreference PlaybackPresentation.AutomaticallyCloseCombat enabled
+                    , rememberPlaybackPreference PlaybackPresentation.AutomaticallyCloseCombat enabled
                     )
 
                 CombatTheater.ContinueClicked ->

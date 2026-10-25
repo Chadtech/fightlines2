@@ -45,8 +45,9 @@ prototype; do not update it unless the task explicitly requires that.
 
 ### Formatting and imports
 
-- Keep page modules in `src/Page/`, game domain/runtime modules in `src/Game/`,
-  game-specific views in `src/Game/View/`, and generic controls in `src/View/`.
+- Keep player pages in `src/Page/` and tool pages in `src/DevTools/Page/`.
+  Keep game domain/runtime modules in `src/Game/`, game-specific views in
+  `src/Game/View/`, and generic controls in `src/View/`.
   Use the corresponding module namespace; concise import aliases are welcome.
 - Use `elm-format`. Write multiline exposing lists, imports with exposing lists,
   record definitions, and record updates with one entry per line, following the
@@ -82,16 +83,19 @@ prototype; do not update it unless the task explicitly requires that.
   `update` to reuse another case's behavior. When multiple message cases need
   the same functionality, extract a shared helper and call it directly from
   each case.
-- Keep the top-level `Page` union in `Main`. Pages own their models, messages,
-  updates, and views; each page model carries `Shared.Model`. Keep coordinated
+- Keep each app's top-level `Page` union in its entry point (`Main` or `DevTools`).
+  Pages own their models, messages, updates, and views; each page model carries
+  its app's `Shared.Model` (`Shared` or `DevTools.Shared`). Keep coordinated
   interaction state in the owning page. A view component may expose its own
   `Msg` handled by its parent without having a separate `Model` and `update`.
   Split state ownership only when the boundary helps coordination.
 - Use `setShared` to update a page's shared state through its public interface.
 - Route navigation through typed `Route` values and `Effect`. Page updates
-  return `( Model, Eff Msg )`; `Main` converts effects to commands.
-- Keep initial loading and failure dispatch in `Main`. A separate failure page
-  may own its messages and updates, retrying through typed route navigation.
+  return `( Model, Eff Msg )` using their app's `Effect` or `DevTools.Effect`;
+  each entry point converts effects to commands.
+- Keep initial loading and failure dispatch in the owning app entry point.
+  A separate failure page may own its messages and updates, retrying through
+  typed route navigation.
   Initialize a loaded page after its initial request succeeds; required loaded
   data should not remain optional in its model. Keep the loaded page visible
   during subsequent polling.
