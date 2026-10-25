@@ -131,14 +131,14 @@ portrait playerName unit =
             ]
         ]
         [ Svg.svg
-            [ SA.viewBox ("0 0 " ++ String.fromFloat (UnitSprite.portraitWidth unit) ++ " 16")
+            [ SA.viewBox ("0 0 " ++ String.fromFloat (UnitSprite.portraitWidth (UnitSprite.appearance unit)) ++ " 16")
             , SA.width "100%"
             , SA.height "128"
             , SA.css
                 [ S.block
                 ]
             ]
-            [ UnitSprite.portraitToSvg unit
+            [ UnitSprite.portraitToSvg (UnitSprite.appearance unit)
             ]
         ]
 

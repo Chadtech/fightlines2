@@ -21,6 +21,20 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode exposing (Decoder)
 
 
+combatBackdrops :
+    SelectionSet decodesTo Api.Object.CombatBackdropCatalog
+    -> SelectionSet decodesTo RootQuery
+combatBackdrops object____ =
+    Object.selectionForCompositeField "combatBackdrops" [] object____ Basics.identity
+
+
+backdropCalibrations :
+    SelectionSet decodesTo Api.Object.CalibratedBackdrop
+    -> SelectionSet (List decodesTo) RootQuery
+backdropCalibrations object____ =
+    Object.selectionForCompositeField "backdropCalibrations" [] object____ (Basics.identity >> Decode.list)
+
+
 loggedGames :
     SelectionSet decodesTo Api.Union.LoggedGameEntry
     -> SelectionSet (List decodesTo) RootQuery

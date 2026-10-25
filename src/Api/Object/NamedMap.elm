@@ -30,3 +30,8 @@ definition :
     -> SelectionSet decodesTo Api.Object.NamedMap
 definition object____ =
     Object.selectionForCompositeField "definition" [] object____ Basics.identity
+
+
+thumbnailUrl : SelectionSet String Api.Object.NamedMap
+thumbnailUrl =
+    Object.selectionForField "String" "thumbnailUrl" [] Decode.string

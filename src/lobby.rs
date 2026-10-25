@@ -834,6 +834,45 @@ pub fn game(context: &Context, id: LobbyId) -> FieldResult<GameSnapshot> {
     game_view(game, &identity)
 }
 
+/// Publish the terminal result under the submission lock, after durable recording.
+pub fn resign_game(context: &Context, id: LobbyId) -> FieldResult<GameSnapshot> {
+    let mut state = context
+        .store
+        .state
+        .lock()
+        .or_else(|_| error("the server state is unavailable."))?;
+    let game = state
+        .games
+        .get_mut(&id)
+        .ok_or_else(|| FieldError::from("this game no longer exists."))?;
+    if let GameAccess::DevelopmentPreview = game.access {
+        return error("the development preview is read-only. create a game to resign.");
+    }
+    let identity = context
+        .identity()
+        .ok_or_else(|| FieldError::from("only joined players can resign."))?;
+    let player = game
+        .players
+        .iter()
+        .find(|player| player.controller.session() == Some(&identity))
+        .map(|player| player.player_number)
+        .ok_or_else(|| FieldError::from("only joined players can resign."))?;
+    if game.turns.outcome.is_some() {
+        return game_view(game, &identity);
+    }
+    let mut next_turns = game.turns.clone();
+    next_turns.resign(player);
+    if let Some(log) = &mut game.log {
+        let mut result =
+            SubmissionResult::new(next_turns.number, Vec::new(), &game.scenario, &next_turns);
+        result.resigned_player = Some(player);
+        log.submitted(result)
+            .map_err(|error| log_error(&id, error))?;
+    }
+    game.turns = next_turns;
+    game_view(game, &identity)
+}
+
 /// Submit under the same lock as validation and resolution so concurrent players
 /// cannot resolve against different boards. Development preview stays read-only.
 pub fn submit_turn(
@@ -991,7 +1030,9 @@ mod tests {
             }];
             for unit in &mut game.scenario.units {
                 let survives = match outcome {
-                    GameOutcome::Victory(winner) => unit.player_number() == winner,
+                    GameOutcome::Victory(winner) | GameOutcome::Resignation(winner) => {
+                        unit.player_number() == winner
+                    }
                     GameOutcome::Draw => false,
                 };
                 if !survives && unit.kind() != UnitKind::Truck {

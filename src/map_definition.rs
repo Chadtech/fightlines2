@@ -2,10 +2,11 @@
 use crate::{
     graphql::Context,
     map::{Coordinate, Map, MapError, MapTheme, Terrain, TerrainValue},
+    map_thumbnail,
     map_type::MapType,
     scenario::{BuildingKind, Direction, PlayerNumber, Scenario, UnitKind},
 };
-use juniper::{GraphQLObject, graphql_object};
+use juniper::{FieldResult, graphql_object};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -48,11 +49,22 @@ pub struct UnitPlacement {
     pub direction: Option<Direction>,
 }
 
-#[derive(GraphQLObject)]
-#[graphql(context = Context)]
 pub struct NamedMap {
     pub map_type: MapType,
     pub definition: MapDefinition,
+}
+
+#[graphql_object(context = Context)]
+impl NamedMap {
+    fn map_type(&self) -> MapType {
+        self.map_type
+    }
+    fn definition(&self) -> &MapDefinition {
+        &self.definition
+    }
+    fn thumbnail_url(&self) -> FieldResult<String> {
+        Ok(map_thumbnail::url(&self.definition)?)
+    }
 }
 
 #[graphql_object(context = Context)]

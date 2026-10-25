@@ -64,6 +64,7 @@ type alias UnitPlacement =
 type alias NamedMap =
     { mapType : MapType
     , definition : Definition
+    , thumbnailUrl : String
     }
 
 
@@ -127,6 +128,7 @@ namedSelection =
     SS.succeed NamedMap
         |> SS.with NamedApi.mapType
         |> SS.with (NamedApi.definition definitionSelection)
+        |> SS.with NamedApi.thumbnailUrl
 
 
 definitionSelection : SelectionSet Definition Api.Object.MapDefinition
@@ -165,9 +167,10 @@ unitSelection =
         |> SS.with UnitApi.direction
 
 
-saveMutation : MapType -> Definition -> SelectionSet () RootMutation
-saveMutation mapType definition =
+saveMutation : MapType -> Definition -> String -> SelectionSet () RootMutation
+saveMutation mapType definition thumbnail =
     Mutation.saveMap
+        (\options -> { options | thumbnail = Optional.Present thumbnail })
         { mapType = mapType
         , definition = definitionInput definition
         }

@@ -364,12 +364,15 @@ withoutStalePassengerHolds map units drafts =
     List.filter (not << staleHold) drafts
 
 
-nextDismountedUnit : Map -> List Unit -> List PlannedOrder -> Maybe Unit
-nextDismountedUnit map units drafts =
+{-| Continue commands only for passengers of this truck. Other transports may
+have unfinished infantry orders whose automatic menus were dismissed.
+-}
+nextDismountedUnit : Map -> List Unit -> UnitId -> List PlannedOrder -> Maybe Unit
+nextDismountedUnit map units truckId drafts =
     let
         needsCommand : Unit -> Bool
         needsCommand unit =
-            (Unit.carrierId unit /= Nothing)
+            (Unit.carrierId unit == Just truckId)
                 && Unit.onMap (planningUnit map drafts unit)
                 && not (List.any (\order -> order.unitId == unit.id) drafts)
     in

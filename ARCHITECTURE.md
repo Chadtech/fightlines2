@@ -115,16 +115,31 @@ when running with `--map-editor`. Shared definition GraphQL objects live with
 `LobbyPage.load` selects the lobby snapshot and map previews together. The page
 owns setup and library screens; `Main` correlates initial requests with both the
 lobby ID and destination. `/lobby/:id/maps` opens the host's library, while guests
-return to the ordinary lobby. The library owns a local preview and pagination;
+return to the ordinary lobby. The library owns a local preview and shows all maps in one scrollable list;
 only **use this map** calls `setLobbyMap`. Successful saves return to the lobby;
 failed saves preserve the preview and display the error. Back navigation discards
 the preview. Polls update the authoritative lobby map without changing what the
 host is previewing. Starting uses the saved map directly.
 
 `Game.View.MapPreview` renders inert authored layouts with shared terrain and
-placement artwork. Water previews hold their first frame. The map editor shares
+placement artwork. Water previews hold their first frame. Library rows use saved
+PNG thumbnails from `public/map-thumbnails/`; the selected large preview remains
+SVG. `NamedMap.thumbnailUrl` fingerprints the definition with a stable FNV-1a
+cache key and an explicit artwork version (`map_thumbnail.rs`).
+
+The editor captures its pending save definition in a separate hidden map preview.
+A correlated Elm port asks `public/map-thumbnail.js` to embed shared SVG definitions,
+styles, and one copy of each sprite atlas, then rasterize it through a canvas at
+320 pixels on the longest edge. JavaScript returns PNG base64 or an explicit error.
+Elm sends the PNG with the matching definition through the existing `saveMap`
+GraphQL mutation. The server validates image dimensions and size, writes the image
+atomically under its fingerprint, then publishes the map JSON. Generation or image
+write failures leave the saved map unchanged; later draft edits and map switches
+remain independent of the pending snapshot. Legacy API callers may omit the
+thumbnail argument. Bump the artwork version and resave maps after changing map
+artwork to regenerate the derived images. The map editor shares
 the building and starting-unit renderers. `Game.View.MapChoice` owns selectable
-thumbnail rows, while `LobbyPage` owns their layout, details, paging, and effects.
+thumbnail rows, while `LobbyPage` owns their layout, details, and effects.
 The editor builds its options from its loaded catalog, preserving their order
 while switching drafts.
 
@@ -180,15 +195,23 @@ and their consumption costs use integer quantities at four times the original sc
 for finer balance adjustments. HP, damage, tile ranges, movement points, and cargo
 berths retain their existing scale. Directional ambush combat is authoritative.
 `Turns` checks victory on the authoritative final board after resource settlement.
-Its optional `GameOutcome` (`Victory(PlayerNumber)` or `Draw`) is public in each
-game snapshot and permanently blocks further submissions. Living infantry,
+Its optional `GameOutcome` (`Victory(PlayerNumber)`, `Resignation(PlayerNumber)`,
+or `Draw`) is public in each game snapshot and permanently blocks further
+submissions. Living infantry,
 tanks, and field guns count regardless of location; trucks do not.
 Simultaneous elimination is a draw. GraphQL exposes a
 nullable outcome object whose nullable `winner` distinguishes victory from a draw;
-an absent outcome means play continues. Elm decodes this into `Victory PlayerNumber`
-or `Draw` and retains the result through playback, then uses the turn announcement
-dialog to present it, including
-on refresh and when ordinary introductions are skipped.
+an absent outcome means play continues. The `resigned` field distinguishes
+resignation from elimination. Both victory variants carry the winner. Elm decodes
+this into `Victory PlayerNumber`, `Resignation PlayerNumber`, or `Draw` and retains
+the result through playback, then uses the turn announcement dialog to present it,
+including on refresh and when ordinary introductions are skipped.
+`resignGame` authorizes the caller against the roster and records the result before
+committing it under the submission lock. It clears pending orders without resolving
+the turn or changing the board. Retries preserve the first terminal result. Archives
+record `resigned_player` alongside the unchanged board and terminal outcome; archive
+replay applies `Turns::resign`. The live page interrupts playback and planning to
+show the conclusion and reveal the final board as soon as resignation arrives.
 Starting requires exactly two players and initializes the scenario once before
 consuming the lobby. Each roster entry explicitly stores its `PlayerNumber`,
 independently of its human session or AI controller and of the host credential.
@@ -318,13 +341,14 @@ game checks live in `src/Game/Checks/`. Generic controls remain in `src/View/`;
 application infrastructure, general utilities, and editor-only data stay outside
 `Game`. Imports may retain concise domain aliases, such as `Game.Unit as Unit`.
 
-`Page` in `Main` is the top-level state, starting at `Blank` before handling
-the initial route. Every page carries shared state, with feature pages storing
-it in their own models. `Main` handles URL navigation through `handleRoute`
-and page dispatch. `Main.init` returns an effect and handles the initial route
-directly after decoding flags; the `Browser.application` boundary converts
-effects to commands. `Route` parses typed lobby/game routes, `Shared` owns
-navigation, and `Effect` translates page effects into commands.
+`Page` in `Main` is the top-level state. Every page carries shared state, with
+feature pages storing it in their own models. `Main` routes immediately after
+decoding application flags, loads each page's required initialization data, and
+shows a retry action when a page fails to load. Backdrop calibrations belong to
+the consuming pages' initialization data. `Main` handles URL navigation through
+`handleRoute` and page dispatch; the `Browser.application` boundary
+converts effects to commands. `Route` parses typed lobby/game routes, `Shared`
+owns navigation, and `Effect` translates page effects into commands.
 
 `make frontend` generates `public/build-config.js` from `PRODUCTION`.
 `make build` defaults to `true` and passes it to its frontend prerequisite;
@@ -886,7 +910,10 @@ Ambush facings and final resources are included in the final frame. The latest
 `TurnResolution` is stored and the turn advances once. Pending enemy orders are
 never exposed. Ambush combat extends this authoritative timeline at the initial and arrival boundaries.
 
-`GamePage` polls snapshots every two seconds. `TurnLifecycle.Phase` distinguishes
+`GamePage` polls compact turn status every half-second, including during playback,
+and fetches a full snapshot when the turn advances or the game ends. Ordinary
+turn updates wait for active playback to finish; resignation interrupts it.
+`TurnLifecycle.Phase` distinguishes
 `Planning`, `Submitting`, `WaitingForOpponent` and `Playing`; order drafts belong
 to the first three variants, and playback data belongs only to `Playing`.
 Only planning accepts order edits or stores editable selection. Waiting,
@@ -1245,7 +1272,8 @@ as one ambush card with inward-facing formations and a brief CSS expansion.
 `Game.View.CombatTheater` receives the immutable map and the current playback
 frame's projected depots. It chooses each participant's backdrop from its
 on-board position, using the shared industrial yard on depot tiles (with its
-snowy variant on snow maps) and terrain and map theme elsewhere. Empty
+snowy variant on snow maps), a distinct concrete courtyard on fortress tiles
+(also with a snowy variant), and terrain and map theme elsewhere. Empty
 indirect-fire impacts use the same selection; entrenched infantry retain their
 trench interior. `Game.View.CombatFormation` maps
 authoritative before/after health to staggered figures for every unit kind and
@@ -1296,7 +1324,8 @@ mode. Its 6000ms capped clock allows the 200ms opening expansion, a one-second
 anticipation beat, up to eight staggered infantry casualties, and the automatic-close pause
 to finish, including a subsequent depot strike. When an indirect impact includes depot
 damage, the theater finishes the participant hits, then replaces their scenes with
-one centered depot map sprite. After a short anticipation, the building receives its
+one centered depot map sprite over the tile's terrain and map-theme backdrop.
+After a short anticipation, the building receives its
 own impact; a destroyed depot adopts the board's shared crater-and-wreckage sprite.
 `Depot.image` chooses this asset from projected HP for both depot kinds, including
 inspector portraits; the board retains its normal fog filter and hit targets.
@@ -1671,8 +1700,14 @@ transport events.
 route previews, and submission. Inspector resource gauges retain authoritative
 values; reserved unloading supplies affect command affordability only. Physical
 board and cargo data stay unchanged until playback. Finishing exit choices opens the first infantry command menu; saving a
-command advances to the next unloaded infantry without an order. Missing commands
-use the existing submission warning and explicit hold fallback at the exit.
+command advances to the next unloaded infantry without an order from the same truck.
+`OrderPlanning.cancelInteraction` cancels the active truck sequence through
+`OrderDependencies.revoke`, including saved infantry commands and other dependent
+routes. The active unload stage identifies its truck; during infantry commands,
+the selected unit's authoritative carrier and remaining uncommanded dismounts
+identify the unfinished sequence. After the last infantry command, Escape only
+clears selection. Missing commands use the existing submission warning and explicit
+hold fallback at the exit.
 
 ## Infantry entrenchment
 
@@ -1697,3 +1732,56 @@ that projected map position. `Game.View.UnitSprite` uses the approved team-color
 entrenched masters for board cells, inspector portraits, and theater figures;
 `tools/build-entrenched-sprites.cjs` packs them without changing their sources.
 `TurnPlayback` clears the displayed entrenchment as actual movement begins.
+
+
+## Combat backdrop calibration
+
+`Game.BackdropCalibration` owns the typed catalog and GraphQL selections.
+Each of `GamePage`, `GameReplay`, and `BackdropReview` loads its own catalog
+with its initialization flags. `Main` dispatches each page's loading and failure
+states; unrelated routes do not request calibrations. The loaded page owns its
+catalog independently of `Shared.Model`; active games and replays pass it through
+`PlaybackPresentation` to `CombatTheater`. `CombatFormation` retains its legacy
+placements for uncalibrated scenery. For calibrated scenery, unit-specific row
+patterns are projected between front and rear footing lines and scaled by depth.
+`UnitSprite.portraitFooting` excludes transparent padding so resizing stays
+anchored at boots, tracks, wheels, or the gun carriage. Impacts use the same
+transformed placements. Entrenched scenes retain their existing presentation.
+
+`UnitSprite.Appearance` contains only kind, team, facing, and entrenchment.
+Gameplay projects units into this record; backdrop review supplies its visual
+choices directly. Both use the same portrait and formation renderers and theater
+crop, without constructing a preview game unit or inventing identity and rules.
+
+`Page.BackdropReview` owns unsaved drafts keyed by backdrop path and unit type
+and save requests. Its initial `combatBackdrops` query reads the available PNG
+assets from the configured frontend directory, including uncalibrated backdrops,
+and supplies paths and labels for preview and copy selectors. An unreadable or
+empty asset directory fails loading explicitly. The frontend keeps no fixed
+backdrop list. Sliders adjust the preview without overlays. Both panels
+resolve a backdrop/unit pair through the same draft catalog; changing unit type
+selects its independent settings. Save responses update the
+review page's saved catalog without replacing newer draft edits. Read-only public
+GraphQL loading reads `public/backdrop-calibrations.json`; save mutations reuse
+`map_editor::Access` and its write lock, require localhost/same-origin access
+with `--map-editor`, validate bounds and local backdrop paths, merge one
+backdrop/unit entry,
+and atomically replace the JSON file. Invalid input or unreadable configuration
+leaves the saved file intact. Entering or reloading any consuming page loads
+current saved settings without synchronizing catalogs across pages.
+
+Legacy shared calibration entries load as identical starting settings for all four
+unit types. Subsequent saves merge only the selected pair. The JSON catalog stores
+a typed unit-kind map inside each backdrop, preserving other units and backdrops.
+
+
+The review page's bulk-copy action sends source and destination backdrop paths.
+The server validates both and copies all saved source unit settings into the
+destination under the same write lock and atomic JSON replacement used for
+individual saves. Units absent from the source retain their destination settings.
+The UI snapshots destination drafts, removes unchanged drafts for copied units
+after success, and preserves edits made while copying or after failure. Save and
+copy requests exclude one another; source choices include only saved backdrops.
+Save and copy responses carry request IDs drawn from the shared random seed, so
+responses from an earlier page visit cannot complete a later request. Copy selectors
+remain editable during a request; completion uses the submitted destination.

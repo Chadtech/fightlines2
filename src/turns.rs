@@ -354,10 +354,11 @@ pub struct TurnResolution {
     pub frames: Vec<TurnFrame>,
 }
 
-/// Terminal result; absence means multiple players still have combat forces.
+/// Terminal result; resignation carries the victorious opponent, just like victory.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GameOutcome {
     Victory(PlayerNumber),
+    Resignation(PlayerNumber),
     Draw,
 }
 
@@ -387,10 +388,17 @@ impl GameOutcome {
 
 #[graphql_object]
 impl GameOutcome {
+    fn resigned(&self) -> bool {
+        match self {
+            Self::Resignation(_) => true,
+            Self::Victory(_) | Self::Draw => false,
+        }
+    }
+
     /// The victorious player, or null when the game ended in a draw.
     fn winner(&self) -> Option<PlayerNumber> {
         match self {
-            Self::Victory(player) => Some(*player),
+            Self::Victory(player) | Self::Resignation(player) => Some(*player),
             Self::Draw => None,
         }
     }
@@ -1205,6 +1213,19 @@ fn playback_order(
 }
 
 impl Turns {
+    /// Resignation ends the game without resolving pending orders or changing the board.
+    pub fn resign(&mut self, player: PlayerNumber) {
+        if self.outcome.is_some() {
+            return;
+        }
+        let winner = match player {
+            PlayerNumber::Player1 => PlayerNumber::Player2,
+            PlayerNumber::Player2 => PlayerNumber::Player1,
+        };
+        self.outcome = Some(GameOutcome::Resignation(winner));
+        self.orders = [None, None];
+    }
+
     pub fn submit(
         &mut self,
         scenario: &mut Scenario,

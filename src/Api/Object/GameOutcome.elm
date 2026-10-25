@@ -20,6 +20,11 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+resigned : SelectionSet Bool Api.Object.GameOutcome
+resigned =
+    Object.selectionForField "Bool" "resigned" [] Decode.bool
+
+
 {-| The victorious player, or null when the game ended in a draw.
 -}
 winner : SelectionSet (Maybe Api.Enum.PlayerNumber.PlayerNumber) Api.Object.GameOutcome

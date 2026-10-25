@@ -48,48 +48,6 @@
     },
     {
       "position": {
-        "x": 19,
-        "y": 13
-      },
-      "terrain": "Mountains"
-    },
-    {
-      "position": {
-        "x": 19,
-        "y": 12
-      },
-      "terrain": "Mountains"
-    },
-    {
-      "position": {
-        "x": 19,
-        "y": 11
-      },
-      "terrain": "Mountains"
-    },
-    {
-      "position": {
-        "x": 5,
-        "y": 10
-      },
-      "terrain": "Mountains"
-    },
-    {
-      "position": {
-        "x": 5,
-        "y": 9
-      },
-      "terrain": "Mountains"
-    },
-    {
-      "position": {
-        "x": 5,
-        "y": 8
-      },
-      "terrain": "Mountains"
-    },
-    {
-      "position": {
         "x": 0,
         "y": 19
       },
@@ -918,6 +876,34 @@
   "depots": [
     {
       "position": {
+        "x": 20,
+        "y": 11
+      },
+      "kind": "Fuel"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 10
+      },
+      "kind": "Fuel"
+    },
+    {
+      "position": {
+        "x": 20,
+        "y": 13
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
+        "x": 4,
+        "y": 8
+      },
+      "kind": "Supply"
+    },
+    {
+      "position": {
         "x": 11,
         "y": 2
       },
@@ -939,50 +925,8 @@
     },
     {
       "position": {
-        "x": 3,
-        "y": 9
-      },
-      "kind": "Fuel"
-    },
-    {
-      "position": {
-        "x": 21,
-        "y": 12
-      },
-      "kind": "Fuel"
-    },
-    {
-      "position": {
         "x": 11,
         "y": 15
-      },
-      "kind": "Supply"
-    },
-    {
-      "position": {
-        "x": 4,
-        "y": 8
-      },
-      "kind": "Supply"
-    },
-    {
-      "position": {
-        "x": 4,
-        "y": 10
-      },
-      "kind": "Supply"
-    },
-    {
-      "position": {
-        "x": 20,
-        "y": 11
-      },
-      "kind": "Supply"
-    },
-    {
-      "position": {
-        "x": 20,
-        "y": 13
       },
       "kind": "Supply"
     }

@@ -24,6 +24,39 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+buildBackdropCalibrationInput :
+    BackdropCalibrationInputRequiredFields
+    -> BackdropCalibrationInput
+buildBackdropCalibrationInput required____ =
+    { frontFooting = required____.frontFooting, rowSpacing = required____.rowSpacing, unitSize = required____.unitSize, rearScale = required____.rearScale }
+
+
+type alias BackdropCalibrationInputRequiredFields =
+    { frontFooting : Float
+    , rowSpacing : Float
+    , unitSize : Float
+    , rearScale : Float
+    }
+
+
+{-| Type for the BackdropCalibrationInput input object.
+-}
+type alias BackdropCalibrationInput =
+    { frontFooting : Float
+    , rowSpacing : Float
+    , unitSize : Float
+    , rearScale : Float
+    }
+
+
+{-| Encode a BackdropCalibrationInput into a value that can be used as an argument.
+-}
+encodeBackdropCalibrationInput : BackdropCalibrationInput -> Value
+encodeBackdropCalibrationInput input____ =
+    Encode.maybeObject
+        [ ( "frontFooting", Encode.float input____.frontFooting |> Just ), ( "rowSpacing", Encode.float input____.rowSpacing |> Just ), ( "unitSize", Encode.float input____.unitSize |> Just ), ( "rearScale", Encode.float input____.rearScale |> Just ) ]
+
+
 buildCoordinateInput :
     CoordinateInputRequiredFields
     -> CoordinateInput

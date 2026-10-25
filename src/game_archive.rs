@@ -142,7 +142,9 @@ impl LoggedGame {
             .last()
             .and_then(|submission| submission.outcome)
         {
-            Some(GameOutcome::Victory(player)) => LoggedGameStatus::PlayerWon(player),
+            Some(GameOutcome::Victory(player) | GameOutcome::Resignation(player)) => {
+                LoggedGameStatus::PlayerWon(player)
+            }
             Some(GameOutcome::Draw) => LoggedGameStatus::Draw,
             None => LoggedGameStatus::Unfinished,
         };
@@ -255,6 +257,9 @@ pub fn turn(
     let mut outcome = None;
     let orders = review::orders(&archive, turn_number)?;
     for submission in &archive.submissions {
+        if submission.resigned_player.is_some() && submission.turn_number == turn_number + 1 {
+            outcome = submission.outcome;
+        }
         if let Some(resolution) = &submission.resolution {
             if resolution.turn_number > turn_number {
                 break;

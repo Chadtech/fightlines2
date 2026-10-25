@@ -5,6 +5,7 @@ module Game.OrderPlanning exposing
     , applyCommand
     , canRevokeOrder
     , canSelectUnloadCargo
+    , cancelInteraction
     , chooseUnloadSquare
     , choosingDirection
     , choosingIndirectFire
@@ -226,6 +227,80 @@ setSelection selected model =
                     orders model
     in
     OrdinaryPlanning { orders = retainedOrders, selection = selected }
+
+
+{-| Escape abandons an unfinished transport and all orders depending on it.
+The passenger command sequence is complete when every dismount has an order.
+Other interactions retain their normal dismissal behavior.
+-}
+cancelInteraction : Map -> List Unit -> Model -> InvariantCheck InvariantViolation Model
+cancelInteraction map units model =
+    let
+        canceled : List PlannedOrder -> Model
+        canceled retained =
+            OrdinaryPlanning { orders = retained, selection = Nothing }
+    in
+    case activeTruckSequence map units model of
+        Just truckId ->
+            OrderDependencies.revoke units [ truckId ] (orders model)
+                |> IC.mapError OrderDependenciesInvariantViolated
+                |> IC.map canceled
+
+        Nothing ->
+            if hasDialog model then
+                dismissDialog model
+                    |> promptDismountedCommands map units
+                    |> IC.happy
+
+            else
+                setSelection Nothing model |> IC.happy
+
+
+activeTruckSequence : Map -> List Unit -> Model -> Maybe UnitId
+activeTruckSequence map units model =
+    let
+        unloadingTruck : UnitId -> Maybe UnitId
+        unloadingTruck id =
+            let
+                hasUnloads : PlannedOrder -> Bool
+                hasUnloads order =
+                    (order.unitId == id) && not (List.isEmpty (PlannedOrder.unloads order))
+            in
+            if List.any hasUnloads (orders model) then
+                Just id
+
+            else
+                Nothing
+
+        pendingPassengers : Unit -> Maybe UnitId
+        pendingPassengers unit =
+            let
+                truckId : UnitId
+                truckId =
+                    Maybe.withDefault unit.id (Unit.carrierId unit)
+            in
+            PlannedTransport.nextDismountedUnit map units truckId (orders model)
+                |> Maybe.map (\_ -> truckId)
+    in
+    case model of
+        ChoosingPassengers choice ->
+            Just (UnloadingTruck.unitId choice.truck)
+
+        ChoosingExits unloading ->
+            Just (UnloadingTruck.unitId unloading.truck)
+
+        ChoosingCrates id _ _ ->
+            unloadingTruck id
+
+        ChoosingGroundFreight id _ _ ->
+            unloadingTruck id
+
+        OrdinaryPlanning _ ->
+            selectedUnitFromSelection units (selection model)
+                |> Maybe.andThen pendingPassengers
+
+        ConfirmingSubmission _ ->
+            Nothing
 
 
 {-| Unfinished unloading cannot become a submission. The lifecycle consumes
@@ -495,7 +570,24 @@ chooseUnloadSquare map units playerNumbers movementRules supplyCrates depots des
 
 
 promptDismountedCommands : Map -> List Unit -> Model -> Model
-promptDismountedCommands map units original =
+promptDismountedCommands map units model =
+    case selectedUnitFromSelection units (selection model) of
+        Just unit ->
+            promptTruckDismountedCommands
+                map
+                units
+                (Maybe.withDefault unit.id (Unit.carrierId unit))
+                model
+
+        Nothing ->
+            model
+
+
+{-| Automatic prompts stay with the active transport, including commands saved
+by its dismounting infantry. Leaving selection ends that prompt sequence.
+-}
+promptTruckDismountedCommands : Map -> List Unit -> UnitId -> Model -> Model
+promptTruckDismountedCommands map units truckId original =
     let
         model : Model
         model =
@@ -530,7 +622,7 @@ promptDismountedCommands map units original =
     in
     case model of
         OrdinaryPlanning _ ->
-            case PlannedTransport.nextDismountedUnit map units (orders model) of
+            case PlannedTransport.nextDismountedUnit map units truckId (orders model) of
                 Just unit ->
                     setUnitInteraction
                         unit.id
@@ -1512,12 +1604,30 @@ skipUnloading : Map -> List Unit -> List Supply.GroundCrate -> List Depot -> Mod
 skipUnloading map units supplyCrates depots model =
     case model of
         ChoosingPassengers choice ->
-            finishUnloading units supplyCrates depots choice.truck choice.otherOrders Nothing
-                |> promptDismountedCommands map units
+            finishUnloading
+                units
+                supplyCrates
+                depots
+                choice.truck
+                choice.otherOrders
+                Nothing
+                |> promptTruckDismountedCommands
+                    map
+                    units
+                    (UnloadingTruck.unitId choice.truck)
 
         ChoosingExits unloading ->
-            finishUnloading units supplyCrates depots unloading.truck unloading.otherOrders Nothing
-                |> promptDismountedCommands map units
+            finishUnloading
+                units
+                supplyCrates
+                depots
+                unloading.truck
+                unloading.otherOrders
+                Nothing
+                |> promptTruckDismountedCommands
+                    map
+                    units
+                    (UnloadingTruck.unitId unloading.truck)
 
         _ ->
             model

@@ -52,6 +52,8 @@ pub struct Submission {
 
 #[derive(Serialize, Deserialize)]
 pub struct SubmissionResult {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resigned_player: Option<PlayerNumber>,
     pub turn_number: i32,
     pub submissions: Vec<Submission>,
     pub scenario: Scenario,
@@ -241,6 +243,7 @@ impl SubmissionResult {
         turns: &Turns,
     ) -> Self {
         Self {
+            resigned_player: None,
             turn_number,
             submissions,
             scenario: scenario.clone(),
@@ -315,7 +318,9 @@ impl Archive {
             let Event::Submitted(submitted) = record.event else {
                 return Err(io::Error::other("unexpected Started record"));
             };
-            if submitted.submissions.is_empty() || submitted.turn_number != next_turn {
+            if (submitted.submissions.is_empty() && submitted.resigned_player.is_none())
+                || submitted.turn_number != next_turn
+            {
                 return Err(io::Error::other("invalid submission sequence"));
             }
             match &submitted.resolution {
@@ -360,7 +365,7 @@ pub fn replay(directory: &Path) -> io::Result<String> {
                 let scenario = scenario
                     .as_mut()
                     .ok_or_else(|| io::Error::other("game log must begin with Started"))?;
-                if submitted.submissions.is_empty() {
+                if submitted.submissions.is_empty() && submitted.resigned_player.is_none() {
                     return Err(io::Error::other("submission record has no orders"));
                 }
                 for submission in &submitted.submissions {
@@ -375,12 +380,16 @@ pub fn replay(directory: &Path) -> io::Result<String> {
                             io::Error::other(format!("{}: {error}", path.display()))
                         })?;
                 }
-                let actual = SubmissionResult::new(
+                if let Some(player) = submitted.resigned_player {
+                    turns.resign(player);
+                }
+                let mut actual = SubmissionResult::new(
                     submitted.turn_number,
                     submitted.submissions.clone(),
                     scenario,
                     &turns,
                 );
+                actual.resigned_player = submitted.resigned_player;
                 if serde_json::to_value(&actual)? != serde_json::to_value(&submitted)? {
                     return Err(io::Error::other(format!(
                         "{}: replay differs from recorded turn {}",

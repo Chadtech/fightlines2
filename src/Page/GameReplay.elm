@@ -24,6 +24,7 @@ import Browser.Events
 import Effect as E exposing (Eff)
 import Error
 import Game.AnimationFrame as AnimationFrame
+import Game.BackdropCalibration as BackdropCalibration
 import Game.BattlefieldNavigation as BattlefieldNavigation
 import Game.BattlefieldSnapshot as BattlefieldSnapshot
 import Game.Camera as Camera
@@ -88,11 +89,13 @@ type alias RecordedTurn =
 type alias Flags =
     { game : LoggedGames.Game
     , turn : RecordedTurn
+    , backdropCalibrations : List BackdropCalibration.Entry
     }
 
 
 type alias Model =
     { shared : Shared.Model
+    , backdropCalibrations : List BackdropCalibration.Entry
     , id : GameLogId
     , game : LoggedGames.Game
     , battlefield : BattlefieldSnapshot.Snapshot
@@ -178,6 +181,7 @@ load id =
     SS.succeed Flags
         |> SS.with (Api.Query.loggedGame { id = GameLogId.toString id } LoggedGames.selection)
         |> SS.with (turnSelection id { turn = 0, player = PlayerNumber.Player1, fogOfWar = True })
+        |> SS.with BackdropCalibration.catalogSelection
         |> ApiRequest.queryRequest
 
 
@@ -193,6 +197,7 @@ init shared id flags =
         model : Model
         model =
             { shared = shared |> Shared.addError lossError |> Shared.addError combatError
+            , backdropCalibrations = flags.backdropCalibrations
             , id = id
             , game = flags.game
             , battlefield = flags.turn.battlefield
@@ -1115,6 +1120,7 @@ view model =
         , onCloseInspection = InspectorCloseClicked
         , combatOverlay =
             PlaybackPresentation.combatOverlay
+                model.backdropCalibrations
                 model.automaticallyCloseCombatTheater
                 model.battlefield.map
                 (playback model)

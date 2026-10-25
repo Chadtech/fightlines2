@@ -1,11 +1,11 @@
 use crate::{
-    game_archive,
+    backdrop_calibration, game_archive,
     lobby::{self, GameSnapshot, Snapshot, Store},
     lobby_id::LobbyId,
     map_definition::NamedMap,
     map_editor,
     map_type::{self, MapType},
-    scenario::PlayerNumber,
+    scenario::{PlayerNumber, UnitKind},
     session_token::SessionToken,
 };
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -54,6 +54,14 @@ pub struct Query;
 
 #[graphql_object(context = Context)]
 impl Query {
+    fn combat_backdrops() -> FieldResult<backdrop_calibration::CombatBackdropCatalog> {
+        backdrop_calibration::available()
+    }
+
+    fn backdrop_calibrations() -> FieldResult<Vec<backdrop_calibration::CalibratedBackdrop>> {
+        backdrop_calibration::list()
+    }
+
     fn logged_games(context: &Context) -> FieldResult<Vec<game_archive::LoggedGameEntry>> {
         game_archive::games(context)
     }
@@ -116,12 +124,30 @@ pub struct Mutation;
 
 #[graphql_object(context = Context)]
 impl Mutation {
+    fn copy_backdrop_calibrations(
+        context: &Context,
+        source_backdrop: String,
+        destination_backdrop: String,
+    ) -> FieldResult<Vec<backdrop_calibration::CalibratedBackdrop>> {
+        backdrop_calibration::copy(context, source_backdrop, destination_backdrop)
+    }
+
+    fn save_backdrop_calibration(
+        context: &Context,
+        backdrop: String,
+        unit_kind: UnitKind,
+        calibration: backdrop_calibration::BackdropCalibrationInput,
+    ) -> FieldResult<backdrop_calibration::CalibratedBackdrop> {
+        backdrop_calibration::save(context, backdrop, unit_kind, calibration)
+    }
+
     fn save_map(
         context: &Context,
         map_type: MapType,
         definition: map_editor::MapDefinitionInput,
+        thumbnail: Option<String>,
     ) -> FieldResult<NamedMap> {
-        map_editor::save_map(context, map_type, definition)
+        map_editor::save_map(context, map_type, definition, thumbnail)
     }
 
     fn create_lobby(context: &Context, name: String, lobby_name: String) -> FieldResult<Snapshot> {
@@ -159,6 +185,10 @@ impl Mutation {
         orders: Vec<crate::turns::MoveOrderInput>,
     ) -> FieldResult<GameSnapshot> {
         lobby::submit_turn(context, LobbyId::from_token(id), turn_number, orders)
+    }
+
+    fn resign_game(context: &Context, id: String) -> FieldResult<GameSnapshot> {
+        lobby::resign_game(context, LobbyId::from_token(id))
     }
 
     fn start_game(context: &Context, id: String) -> FieldResult<Snapshot> {
@@ -495,6 +525,179 @@ mod tests {
     }
 
     #[actix_web::test]
+    async fn resignation_is_authorized_terminal_and_durably_shared() -> TestResult<()> {
+        use crate::{game_log, seed::Seed};
+        use std::{
+            fs,
+            time::{SystemTime, UNIX_EPOCH},
+        };
+        let root = std::env::temp_dir().join(format!(
+            "fightlines-resign-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        for swapped in [false, true] {
+            for resign_guest in [false, true] {
+                for pending in [false, true] {
+                    let directory = root.join(format!("{swapped}-{resign_guest}-{pending}"));
+                    let app = test::init_service(
+                        App::new()
+                            .app_data(web::Data::new(
+                                Store::new(Seed::new([47; 32]))
+                                    .with_game_logs(game_log::Directory::open(directory.clone())?),
+                            ))
+                            .app_data(web::Data::new(schema()))
+                            .route("/graphql", web::post().to(handle)),
+                    )
+                    .await;
+                    macro_rules! execute {
+                        ($query:expr, $cookie:expr) => {{
+                            let mut request = test::TestRequest::post().uri("/graphql")
+                                .set_json(json!({"query": $query}));
+                            if let Some(cookie) = $cookie { request = request.cookie(cookie); }
+                            let response = test::call_service(&app, request.to_request()).await;
+                            let cookie = response.response().cookies().next().map(|cookie| cookie.into_owned());
+                            let body: Value = test::read_body_json(response).await;
+                            (body, cookie)
+                        }};
+                    }
+                    let (created, host) = execute!(
+                        "mutation { createLobby(name: \"Host\", lobbyName: \"Resign test\") { id } }",
+                        None
+                    );
+                    let id = created["data"]["createLobby"]["id"].as_str().fixture()?;
+                    let (joined, guest) = execute!(
+                        format!("mutation {{ joinLobby(id: \"{id}\", name: \"Guest\") {{ id }} }}"),
+                        None
+                    );
+                    assert!(joined.get("errors").is_none(), "{joined}");
+                    if swapped {
+                        let (swapped, _) = execute!(
+                            format!(
+                                "mutation {{ setLobbySide(id: \"{id}\", playerNumber: PLAYER2) {{ id }} }}"
+                            ),
+                            host.clone()
+                        );
+                        assert!(swapped.get("errors").is_none(), "{swapped}");
+                    }
+                    let (started, _) = execute!(
+                        format!("mutation {{ startGame(id: \"{id}\") {{ id }} }}"),
+                        host.clone()
+                    );
+                    assert!(started.get("errors").is_none(), "{started}");
+                    let fields = "turnNumber submitted opponentSubmitted outcome { winner resigned } scenario { units { id } }";
+                    let resign = format!("mutation {{ resignGame(id: \"{id}\") {{ {fields} }} }}");
+                    let query = format!("{{ game(id: \"{id}\") {{ {fields} }} }}");
+                    for identity in [
+                        None,
+                        Some(SessionToken::from_token("outsider".into()).cookie()),
+                    ] {
+                        let (denied, _) = execute!(&resign, identity);
+                        assert!(denied["errors"].is_array(), "{denied}");
+                    }
+                    let (before, _) = execute!(&query, host.clone());
+                    if pending {
+                        let host_side = if swapped {
+                            PlayerNumber::Player2
+                        } else {
+                            PlayerNumber::Player1
+                        };
+                        let orders = MapType::default()
+                            .scenario()
+                            .fixture()?
+                            .units
+                            .iter()
+                            .filter(|unit| unit.player_number() == host_side)
+                            .map(|unit| -> TestResult<String> {
+                                let pos = unit.board_position().fixture()?;
+                                Ok(format!(
+                                    "{{ unitId: \"{}\", path: [{{ x: {}, y: {} }}] }}",
+                                    unit.id(),
+                                    pos.x(),
+                                    pos.y()
+                                ))
+                            })
+                            .collect::<TestResult<Vec<_>>>()?
+                            .join(",");
+                        let (submitted, _) = execute!(
+                            format!(
+                                "mutation {{ submitTurn(id: \"{id}\", turnNumber: 1, orders: [{orders}]) {{ submitted }} }}"
+                            ),
+                            host.clone()
+                        );
+                        assert_eq!(
+                            submitted["data"]["submitTurn"]["submitted"], true,
+                            "{submitted}"
+                        );
+                    }
+                    let archive = fs::read_dir(&directory)?.next().fixture()??.path();
+                    let offline = archive.with_extension("offline");
+                    fs::rename(&archive, &offline)?;
+                    let resigning = if resign_guest {
+                        guest.clone()
+                    } else {
+                        host.clone()
+                    };
+                    let (failed, _) = execute!(&resign, resigning.clone());
+                    assert!(failed["errors"].is_array(), "{failed}");
+                    let (unchanged, _) = execute!(&query, host.clone());
+                    assert!(unchanged["data"]["game"]["outcome"].is_null());
+                    assert_eq!(unchanged["data"]["game"]["submitted"], pending);
+                    fs::rename(&offline, &archive)?;
+                    let (ended, _) = execute!(&resign, resigning.clone());
+                    assert!(ended.get("errors").is_none(), "{ended}");
+                    let expected_winner = if swapped == resign_guest {
+                        "PLAYER2"
+                    } else {
+                        "PLAYER1"
+                    };
+                    assert_eq!(
+                        ended["data"]["resignGame"]["outcome"],
+                        json!({"winner": expected_winner, "resigned": true})
+                    );
+                    for identity in [host.clone(), guest.clone()] {
+                        let (observed, _) = execute!(&query, identity.clone());
+                        assert_eq!(observed["data"]["game"], ended["data"]["resignGame"]);
+                        assert_eq!(observed["data"]["game"]["turnNumber"], 1);
+                        assert_eq!(observed["data"]["game"]["submitted"], false);
+                        // A retry or the opponent resigning cannot reverse the first result.
+                        let (retry, _) = execute!(&resign, identity.clone());
+                        assert_eq!(retry["data"]["resignGame"], ended["data"]["resignGame"]);
+                        let (rejected, _) = execute!(
+                            format!(
+                                "mutation {{ submitTurn(id: \"{id}\", turnNumber: 1, orders: []) {{ turnNumber }} }}"
+                            ),
+                            identity
+                        );
+                        assert!(rejected["errors"].is_array());
+                    }
+                    assert!(
+                        ended["data"]["resignGame"]["scenario"]["units"]
+                            .as_array()
+                            .fixture()?
+                            .len()
+                            >= before["data"]["game"]["scenario"]["units"]
+                                .as_array()
+                                .fixture()?
+                                .len()
+                    );
+                    let archived = game_log::Archive::read(&archive)?;
+                    let final_record = archived.submissions.last().fixture()?;
+                    assert_eq!(
+                        serde_json::to_value(&final_record.scenario)?,
+                        serde_json::to_value(&archived.started.scenario)?
+                    );
+                    assert_eq!(archived.turn_count(), 0);
+                    assert_eq!(archived.submissions.len(), if pending { 2 } else { 1 });
+                    assert!(game_log::replay(&archive)?.contains("Resignation"));
+                }
+            }
+        }
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[actix_web::test]
     async fn ai_lobby_authorization_and_turns_over_graphql() -> TestResult<()> {
         let app = test::init_service(
             App::new()
@@ -627,6 +830,18 @@ mod tests {
             assert_eq!(result["data"]["submitTurn"]["turnNumber"], number + 1);
             assert_eq!(result["data"]["submitTurn"]["submitted"], false);
         }
+        let (resigned, _) = execute!(
+            format!(
+                "mutation {{ resignGame(id: \"{id}\") {{ turnNumber outcome {{ winner resigned }} }} }}"
+            ),
+            host.clone()
+        );
+        assert!(resigned.get("errors").is_none(), "{resigned}");
+        assert_eq!(resigned["data"]["resignGame"]["turnNumber"], 4);
+        assert_eq!(
+            resigned["data"]["resignGame"]["outcome"],
+            json!({"winner": "PLAYER2", "resigned": true})
+        );
         // A joined human retains the slot when the host attempts to select AI.
         let (created, _) = execute!(
             "mutation { createLobby(name: \"Host\", lobbyName: \"Human match\") { id } }",

@@ -321,7 +321,7 @@ detail label content =
 portrait : Unit -> Html msg
 portrait unit =
     Svg.svg
-        [ SA.viewBox ("0 0 " ++ String.fromFloat (UnitSprite.portraitWidth unit) ++ " 16")
+        [ SA.viewBox ("0 0 " ++ String.fromFloat (UnitSprite.portraitWidth (UnitSprite.appearance unit)) ++ " 16")
         , Aria.hidden True
         , SA.css
             [ S.w14
@@ -329,7 +329,7 @@ portrait unit =
             , S.shrink0
             ]
         ]
-        [ UnitSprite.portraitToSvg unit
+        [ UnitSprite.portraitToSvg (UnitSprite.appearance unit)
         ]
 
 

@@ -17,7 +17,6 @@ import Api.Enum.Controller
     exposing
         ( Controller(..)
         )
-import Api.Enum.MapTheme as MapTheme
 import Api.Enum.MapType
     exposing
         ( MapType
@@ -133,7 +132,6 @@ type Screen
 
 type alias LibraryState =
     { preview : MapType
-    , page : Int
     }
 
 
@@ -173,8 +171,6 @@ type Msg
     | ChooseMapButtonClicked
     | BackToLobbyButtonClicked
     | MapPreviewClicked MapType
-    | PreviousMapsButtonClicked
-    | NextMapsButtonClicked
     | UseMapButtonClicked
     | MapResponseReceived (Response Snapshot)
     | StartButtonClicked
@@ -236,7 +232,6 @@ init location shared flags =
             if canOpenLibrary then
                 Library
                     { preview = lobby.mapType
-                    , page = mapPage lobby.mapType flags.mapPreviews
                     }
 
             else
@@ -333,70 +328,16 @@ snapshotSelection =
         |> SS.with Snapshot.gameUrl
 
 
-mapsPerPage : Int
-mapsPerPage =
-    6
-
-
 isMap : MapType -> NamedMap -> Bool
 isMap mapType map =
     map.mapType == mapType
 
 
-mapPage : MapType -> List NamedMap -> Int
-mapPage mapType maps =
-    maps
-        |> List.indexedMap Tuple.pair
-        |> List.filter (Tuple.second >> isMap mapType)
-        |> List.head
-        |> Maybe.map (Tuple.first >> pageForIndex)
-        |> Maybe.withDefault 0
-
-
-pageForIndex : Int -> Int
-pageForIndex index =
-    index // mapsPerPage
-
-
-lastMapPage : Model -> Int
-lastMapPage model =
-    max 0 ((List.length model.mapPreviews - 1) // mapsPerPage)
-
-
-changeMapPage : Int -> Model -> ( Model, Eff Msg )
-changeMapPage offset model =
-    case model.screen of
-        Library library ->
-            ( { model
-                | screen =
-                    Library
-                        { library
-                            | page = clamp 0 (lastMapPage model) (library.page + offset)
-                        }
-              }
-            , E.none
-            )
-
-        Setup ->
-            ( model, E.none )
-
-
-mapMetadata : NamedMap -> String
-mapMetadata map =
-    let
-        theme : String
-        theme =
-            case map.definition.theme of
-                MapTheme.GreenForest ->
-                    "grassland"
-
-                MapTheme.Desert ->
-                    "desert"
-
-                MapTheme.Snow ->
-                    "snow"
-    in
-    String.fromInt map.definition.width ++ " × " ++ String.fromInt map.definition.height ++ " · " ++ theme
+mapDimensions : NamedMap -> String
+mapDimensions map =
+    String.fromInt map.definition.width
+        ++ " × "
+        ++ String.fromInt map.definition.height
 
 
 hasJoinedHuman : Model -> Bool
@@ -590,12 +531,6 @@ update msg model =
                 Setup ->
                     ( model, E.none )
 
-        PreviousMapsButtonClicked ->
-            changeMapPage -1 model
-
-        NextMapsButtonClicked ->
-            changeMapPage 1 model
-
         UseMapButtonClicked ->
             case model.screen of
                 Library library ->
@@ -755,12 +690,6 @@ view model =
 libraryView : Model -> LibraryState -> Html Msg
 libraryView model library =
     let
-        visibleMaps : List NamedMap
-        visibleMaps =
-            model.mapPreviews
-                |> List.drop (library.page * mapsPerPage)
-                |> List.take mapsPerPage
-
         choice : NamedMap -> Html Msg
         choice map =
             MapChoice.toHtml
@@ -835,25 +764,6 @@ libraryView model library =
         [ H.div
             [ A.css
                 [ S.row
-                , S.itemsCenter
-                , S.justifySpaceBetween
-                , S.flexWrap
-                , S.g3
-                ]
-            ]
-            [ Button.secondary "← back to lobby" BackToLobbyButtonClicked
-                |> Button.toHtml
-            , H.p
-                [ A.css
-                    [ S.textGray4
-                    ]
-                ]
-                [ H.text "select a map to preview it"
-                ]
-            ]
-        , H.div
-            [ A.css
-                [ S.row
                 , S.itemsStart
                 , S.g4
                 , S.belowWidth 720
@@ -876,11 +786,14 @@ libraryView model library =
                 [ H.div
                     [ A.css
                         [ S.col
-                        , S.g1
+                        , S.bgNightwood3
+                        , S.indentStrong
+                        , S.p2px
+                        , S.maxHViewportInsetRem 16
+                        , S.overflowAuto
                         ]
                     ]
-                    (List.map choice visibleMaps)
-                , mapPagerView model library
+                    (List.map choice model.mapPreviews)
                 ]
             , H.div
                 [ A.css
@@ -898,7 +811,6 @@ libraryView model library =
             [ A.css
                 [ S.row
                 , S.itemsCenter
-                , S.justifySpaceBetween
                 , S.flexWrap
                 , S.g3
                 , S.borderT
@@ -906,32 +818,7 @@ libraryView model library =
                 , S.pt3
                 ]
             ]
-            [ H.div
-                [ A.css
-                    [ S.col
-                    , S.g1
-                    ]
-                ]
-                [ H.p
-                    []
-                    [ H.text "lobby map: "
-                    , H.span
-                        [ A.css
-                            [ S.textYellow5
-                            ]
-                        ]
-                        [ H.text (MapType.label model.mapType)
-                        ]
-                    ]
-                , H.p
-                    [ A.css
-                        [ S.textGray4
-                        ]
-                    ]
-                    [ H.text "previewing only. use this map to update the lobby."
-                    ]
-                ]
-            , H.fieldset
+            [ H.fieldset
                 [ A.disabled (isBusy model || not model.isHost || (model.gameUrl /= Nothing))
                 , A.css
                     [ S.border0
@@ -941,64 +828,7 @@ libraryView model library =
                     |> Button.withFeedback saveFeedback
                     |> Button.toHtml
                 ]
-            ]
-        ]
-
-
-mapPagerView : Model -> LibraryState -> Html Msg
-mapPagerView model library =
-    let
-        previous : Button.Button Msg
-        previous =
-            if library.page == 0 then
-                Button.disabled "←"
-
-            else
-                Button.secondary "←" PreviousMapsButtonClicked
-
-        next : Button.Button Msg
-        next =
-            if library.page == lastMapPage model then
-                Button.disabled "→"
-
-            else
-                Button.secondary "→" NextMapsButtonClicked
-
-        first : Int
-        first =
-            library.page * mapsPerPage + 1
-
-        last : Int
-        last =
-            min (List.length model.mapPreviews) ((library.page + 1) * mapsPerPage)
-    in
-    H.div
-        [ A.css
-            [ S.row
-            , S.itemsCenter
-            , S.justifySpaceBetween
-            , S.g2
-            , S.flexWrap
-            ]
-        ]
-        [ H.p
-            [ A.css
-                [ S.textGray4
-                ]
-            ]
-            [ H.text (String.fromInt first ++ "–" ++ String.fromInt last ++ " of " ++ String.fromInt (List.length model.mapPreviews) ++ " maps")
-            ]
-        , H.div
-            [ A.css
-                [ S.row
-                , S.g1
-                ]
-            ]
-            [ previous
-                |> Button.accessibleLabel "previous maps"
-                |> Button.toHtml
-            , next
-                |> Button.accessibleLabel "next maps"
+            , Button.secondary "back to lobby" BackToLobbyButtonClicked
                 |> Button.toHtml
             ]
         ]
@@ -1009,17 +839,40 @@ mapDetailsView map =
     H.section
         [ Aria.label "map details"
         , A.css
-            [ S.col
-            , S.g3
+            [ S.grid
+            , S.gridColumns "minmax(0, 1.2fr) minmax(0, 1fr)"
+            , S.itemsStart
+            , S.g4
+            , S.belowWidth 1100
+                [ S.gridCols1
+                ]
             ]
         ]
         [ H.div
             [ A.css
-                [ S.row
-                , S.itemsCenter
-                , S.justifySpaceBetween
-                , S.flexWrap
-                , S.g2
+                [ S.wFull
+                , S.bgNightwood2
+                , S.indentStrong
+                , S.p3
+                ]
+            ]
+            [ H.div
+                [ A.css
+                    [ S.wFull
+                    , S.aspectRatio
+                        { width = map.definition.width
+                        , height = map.definition.height
+                        }
+                    ]
+                ]
+                [ MapPreview.toHtml map
+                ]
+            ]
+        , H.div
+            [ A.css
+                [ S.col
+                , S.g3
+                , S.minW0
                 ]
             ]
             [ H.h2
@@ -1034,54 +887,43 @@ mapDetailsView map =
                     [ S.textGray4
                     ]
                 ]
-                [ H.text (mapMetadata map)
+                [ H.text (mapDimensions map)
                 ]
-            ]
-        , H.div
-            [ A.css
-                [ S.h80
-                , S.wFull
-                , S.bgNightwood2
-                , S.indentStrong
-                , S.p3
-                ]
-            ]
-            [ MapPreview.toHtml map
-            ]
-        , H.p
-            [ A.css
-                [ S.row
-                , S.itemsCenter
-                , S.flexWrap
-                , S.g2
-                , S.textGray4
-                ]
-            ]
-            [ H.text "starting forces:"
-            , H.span
+            , H.p
                 [ A.css
-                    [ S.textRed1
+                    [ S.row
+                    , S.itemsCenter
+                    , S.flexWrap
+                    , S.g2
+                    , S.textGray4
                     ]
                 ]
-                [ H.text "player 1 (red)"
-                ]
-            , H.span
-                [ A.css
-                    [ S.textBlue1
+                [ H.text "starting forces:"
+                , H.span
+                    [ A.css
+                        [ S.textRed1
+                        ]
+                    ]
+                    [ H.text "player 1 (red)"
+                    ]
+                , H.span
+                    [ A.css
+                        [ S.textBlue1
+                        ]
+                    ]
+                    [ H.text "player 2 (blue)"
                     ]
                 ]
-                [ H.text "player 2 (blue)"
+            , H.p
+                [ A.css
+                    [ S.borderT
+                    , S.borderGray2
+                    , S.pt3
+                    , S.textGray5
+                    ]
                 ]
-            ]
-        , H.p
-            [ A.css
-                [ S.borderT
-                , S.borderGray2
-                , S.pt3
-                , S.textGray5
+                [ H.text map.definition.description
                 ]
-            ]
-            [ H.text map.definition.description
             ]
         ]
 

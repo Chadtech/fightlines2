@@ -1,10 +1,12 @@
 module Game.View.MapPreview exposing
-    ( depotToSvg
+    ( definitionToHtml
+    , depotToSvg
     , toHtml
     , unitToSvg
     )
 
 import Api.Enum.Direction as Direction
+import Api.Enum.MapType exposing (MapType)
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.UnitKind as UnitKind
 import EditableMap
@@ -34,6 +36,16 @@ The caller owns its dimensions. Artwork stays still and is shared with the game.
 -}
 toHtml : NamedMap -> Html msg
 toHtml map =
+    definitionToHtml
+        { mapType = map.mapType
+        , definition = map.definition
+        }
+
+
+{-| Render a submitted editor snapshot before it has a saved thumbnail URL.
+-}
+definitionToHtml : { mapType : MapType, definition : Definition } -> Html msg
+definitionToHtml map =
     Svg.svg
         [ SA.width "100%"
         , SA.height "100%"

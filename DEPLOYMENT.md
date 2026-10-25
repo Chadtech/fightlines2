@@ -141,3 +141,15 @@ using validation and atomic replacement. Editor-enabled servers read the current
 files when starting a new game. Production embeds those files at compile time,
 so deploy a rebuilt Rust executable after map edits. No map directory is needed
 on a production host. Existing games are unaffected by saves.
+
+
+## Backdrop calibration settings
+
+Ship `public/backdrop-calibrations.json` with the frontend assets. The server's
+public GraphQL calibration query reads it at startup-page load, including in
+production; malformed or missing data surfaces a frontend configuration error.
+`/backdrop-review` is available in development frontend builds. Saving uses the
+same localhost, same-origin, and `--map-editor` requirements as map authoring.
+Omit that flag on hosted servers. Saving atomically updates the file, preserving
+other backdrop/unit entries; refresh gameplay/replay pages to load changes. With a custom
+`FIGHTLINES_FRONTEND_DIR`, read and write paths use that frontend directory.

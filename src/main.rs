@@ -1,6 +1,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used)]
 
 mod ai;
+mod backdrop_calibration;
 mod combat;
 mod game_archive;
 mod game_log;
@@ -11,6 +12,7 @@ mod lobby_name;
 mod map;
 mod map_definition;
 mod map_editor;
+mod map_thumbnail;
 mod map_type;
 mod movement;
 mod movement_resolution;
@@ -120,6 +122,16 @@ async fn run() -> io::Result<()> {
             .app_data(store.clone())
             .app_data(schema.clone())
             .route("/graphql", web::post().to(graphql::handle))
+            .route(
+                "/backdrop-review",
+                web::get().to({
+                    let index = index.clone();
+                    move || {
+                        let index = index.clone();
+                        async move { NamedFile::open(index) }
+                    }
+                }),
+            )
             .route(
                 "/new",
                 web::get().to({

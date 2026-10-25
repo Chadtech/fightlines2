@@ -17,12 +17,28 @@ type ArchiveReadError
     = ArchiveReadError
 
 
+type BackdropCalibration
+    = BackdropCalibration
+
+
 type BuildingImpact
     = BuildingImpact
 
 
+type CalibratedBackdrop
+    = CalibratedBackdrop
+
+
 type CargoStock
     = CargoStock
+
+
+type CombatBackdrop
+    = CombatBackdrop
+
+
+type CombatBackdropCatalog
+    = CombatBackdropCatalog
 
 
 type CombatHealth

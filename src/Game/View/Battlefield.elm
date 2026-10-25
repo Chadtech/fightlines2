@@ -99,7 +99,8 @@ type alias TerrainGroups =
 
 
 type alias UnloadRoute =
-    { origin : Coordinate
+    { unitId : UnitId
+    , origin : Coordinate
     , direction : Direction
     }
 
@@ -937,6 +938,66 @@ toSvg args =
                 destination : Coordinate
                 destination =
                     Direction.step route.origin route.direction
+
+                isSelected : Bool
+                isSelected =
+                    args.selectedUnitId == Just route.unitId
+
+                markerPoints : String
+                markerPoints =
+                    if isSelected then
+                        "8,3 13,8 8,13 3,8"
+
+                    else
+                        "8,5 11,8 8,11 5,8"
+
+                markerFill : String
+                markerFill =
+                    if isSelected then
+                        S.yellow5Str
+
+                    else
+                        S.nightwood2Str
+
+                markerStroke : String
+                markerStroke =
+                    if isSelected then
+                        S.gray5Str
+
+                    else
+                        S.yellow5Str
+
+                selectionOutline : List (Svg Msg)
+                selectionOutline =
+                    if isSelected then
+                        [ Svg.rect
+                            [ SA.x "1.5"
+                            , SA.y "1.5"
+                            , SA.width "13"
+                            , SA.height "13"
+                            , SA.fill "none"
+                            , SA.stroke S.gray5Str
+                            , SA.strokeWidth "1"
+                            ]
+                            []
+                        ]
+
+                    else
+                        []
+
+                marker : Svg Msg
+                marker =
+                    Svg.polygon
+                        [ SA.points markerPoints
+                        , SA.fill markerFill
+                        , SA.stroke markerStroke
+                        , SA.strokeWidth "1.25"
+                        ]
+                        []
+
+                markerChildren : List (Svg Msg)
+                markerChildren =
+                    selectionOutline ++ [ marker ]
             in
             Svg.g
                 []
@@ -947,15 +1008,7 @@ toSvg args =
                     , SA.strokeWidth "1.25"
                     ]
                     []
-                , at destination
-                    [ Svg.polygon
-                        [ SA.points "8,5 11,8 8,11 5,8"
-                        , SA.fill S.nightwood2Str
-                        , SA.stroke S.yellow5Str
-                        , SA.strokeWidth "1.25"
-                        ]
-                        []
-                    ]
+                , at destination markerChildren
                 ]
 
         unloadOverlay : Svg Msg

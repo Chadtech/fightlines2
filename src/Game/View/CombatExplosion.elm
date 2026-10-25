@@ -150,6 +150,8 @@ frameStarts =
 
 {-| Play once when a map casualty appears, even while a loss dialog holds the
 playback clock. Reuse the theater frames and timing, then leave the tile empty.
+Completed frames return to their base opacity instead of retaining a stepped
+animation sample, which can leave the final frames visible after they finish.
 -}
 mapToSvg : SpriteFacing -> Svg msg
 mapToSvg facing =
@@ -165,7 +167,7 @@ mapToSvg facing =
                             ++ String.fromFloat (endsAt - startsAt)
                             ++ "ms steps(1, end) "
                             ++ String.fromFloat startsAt
-                            ++ "ms forwards"
+                            ++ "ms"
                         )
                     , S.reducedMotion
                         [ S.displayNone
@@ -190,7 +192,11 @@ mapToSvg facing =
                 , A.css
                     [ S.displayNone
                     , S.opacity 0
-                    , S.animation ("fightlines-map-explosion " ++ String.fromFloat durationMs ++ "ms steps(1, end) forwards")
+                    , S.animation
+                        ("fightlines-map-explosion "
+                            ++ String.fromFloat durationMs
+                            ++ "ms steps(1, end)"
+                        )
                     , S.reducedMotion
                         [ Css.display Css.inline
                         ]

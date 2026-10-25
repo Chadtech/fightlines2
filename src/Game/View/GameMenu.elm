@@ -1,5 +1,6 @@
 module Game.View.GameMenu exposing
     ( Msg(..)
+    , Status(..)
     , buttonHtmlId
     , dialog
     , dialogHtmlId
@@ -26,6 +27,14 @@ type Msg
     = OpenClicked
     | CloseClicked
     | FocusReturned
+    | ResignClicked
+    | HomeClicked
+
+
+type Status
+    = ActiveGame
+    | Resigning
+    | FinishedGame
 
 
 
@@ -113,18 +122,43 @@ panel config =
         ]
 
 
-dialog : Dialog Msg
-dialog =
+dialog : Status -> Dialog Msg
+dialog status =
+    let
+        homeButton : Button.Button Msg
+        homeButton =
+            case status of
+                Resigning ->
+                    Button.disabled "home"
+
+                _ ->
+                    Button.secondary "home" HomeClicked
+
+        resignButton : Button.Button Msg
+        resignButton =
+            case status of
+                ActiveGame ->
+                    Button.secondary "resign game" ResignClicked
+
+                Resigning ->
+                    Button.disabled "resigning…"
+
+                FinishedGame ->
+                    Button.disabled "resign game"
+    in
     Dialog.make dialogHtmlId
         "menu"
         CloseClicked
-        [ Button.primary "resume game" CloseClicked
+        [ Button.disabled "settings"
             |> Button.fullWidth
             |> Button.toHtml
-        , Button.disabled "settings"
+        , homeButton
             |> Button.fullWidth
             |> Button.toHtml
-        , Button.disabled "resign game"
+        , resignButton
+            |> Button.fullWidth
+            |> Button.toHtml
+        , Button.secondary "close" CloseClicked
             |> Button.fullWidth
             |> Button.toHtml
         ]

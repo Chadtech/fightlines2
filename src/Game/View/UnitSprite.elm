@@ -1,26 +1,49 @@
 module Game.View.UnitSprite exposing
-    ( portraitToSvg
+    ( Appearance
+    , appearance
+    , portraitFooting
+    , portraitToSvg
     , portraitWidth
     , toSvg
     )
 
-import Api.Enum.Entrenchment as Entrenchment
+import Api.Enum.Entrenchment as Entrenchment exposing (Entrenchment)
 import Api.Enum.PlayerNumber as PlayerNumber exposing (PlayerNumber)
-import Api.Enum.SpriteFacing as SpriteFacingEnum
+import Api.Enum.SpriteFacing as SpriteFacingEnum exposing (SpriteFacing)
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Css
-import Game.Unit as Unit exposing (Unit)
+import Game.Unit exposing (Unit)
 import Html.Styled.Lazy as Lazy
 import Svg.Styled as Svg exposing (Svg)
 import Svg.Styled.Attributes as SA
 import View.Sprite as Sprite
 
 
+{-| Visual inputs shared by gameplay portraits and formation calibration.
+No identity, position, resources, or combat rules are needed to draw a unit.
+-}
+type alias Appearance =
+    { kind : UnitKind
+    , playerNumber : PlayerNumber
+    , spriteFacing : SpriteFacing
+    , entrenchment : Entrenchment
+    }
+
+
+appearance : Unit -> Appearance
+appearance unit =
+    { kind = unit.kind
+    , playerNumber = unit.playerNumber
+    , spriteFacing = unit.spriteFacing
+    , entrenchment = unit.entrenchment
+    }
+
+
 
 -- Map sprites keep compact cells; field-gun portraits use their elongated master.
 
 
-portraitWidth : Unit -> Float
+portraitWidth : Appearance -> Float
 portraitWidth unit =
     case unit.kind of
         Kind.FieldGun ->
@@ -30,13 +53,29 @@ portraitWidth unit =
             16
 
 
-portraitToSvg : Unit -> Svg msg
+{-| Contact points in portrait view-box units, excluding transparent bottom padding.
+They track the exported sprite's boots, tracks, wheels, or gun carriage.
+-}
+portraitFooting : Appearance -> Float
+portraitFooting unit =
+    case unit.kind of
+        Kind.Infantry ->
+            15.1875
+
+        Kind.FieldGun ->
+            15.1
+
+        _ ->
+            14.9375
+
+
+portraitToSvg : Appearance -> Svg msg
 portraitToSvg unit =
     if unit.entrenchment == Entrenchment.Entrenched then
-        Lazy.lazy2 entrenchedView unit.playerNumber (facesLeft unit)
+        Lazy.lazy2 entrenchedView unit.playerNumber (unit.spriteFacing == SpriteFacingEnum.Left)
 
     else
-        Lazy.lazy3 portraitView unit.kind unit.playerNumber (facesLeft unit)
+        Lazy.lazy3 portraitView unit.kind unit.playerNumber (unit.spriteFacing == SpriteFacingEnum.Left)
 
 
 portraitView : UnitKind -> PlayerNumber -> Bool -> Svg msg
@@ -80,10 +119,10 @@ portraitView kind playerNumber facingLeft =
 toSvg : Int -> Unit -> Svg msg
 toSvg column unit =
     if unit.entrenchment == Entrenchment.Entrenched then
-        Lazy.lazy2 entrenchedView unit.playerNumber (facesLeft unit)
+        Lazy.lazy2 entrenchedView unit.playerNumber (unit.spriteFacing == SpriteFacingEnum.Left)
 
     else
-        Lazy.lazy4 spriteView column unit.kind unit.playerNumber (facesLeft unit)
+        Lazy.lazy4 spriteView column unit.kind unit.playerNumber (unit.spriteFacing == SpriteFacingEnum.Left)
 
 
 spriteView : Int -> UnitKind -> PlayerNumber -> Bool -> Svg msg
@@ -134,11 +173,6 @@ spriteView column kind playerNumber facingLeft =
             , row = row
             }
         ]
-
-
-facesLeft : Unit -> Bool
-facesLeft unit =
-    unit.spriteFacing == SpriteFacingEnum.Left
 
 
 entrenchedView : PlayerNumber -> Bool -> Svg msg

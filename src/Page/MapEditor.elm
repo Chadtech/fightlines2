@@ -3,6 +3,7 @@ module Page.MapEditor exposing
     , Model
     , Msg
     , init
+    , listeners
     , load
     , setShared
     , subscriptions
@@ -41,8 +42,11 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Html.Styled.Lazy as Lazy
-import Json.Decode as D
+import Json.Decode as D exposing (Decoder)
 import Point exposing (Point)
+import Ports.Js.From as FromJs
+import Ports.Js.To as ToJs
+import Random
 import Shared
 import Style as S
 import Svg.Styled as Svg exposing (Svg)
@@ -155,7 +159,24 @@ type SaveState
 type alias PendingSave =
     { mapType : MapType
     , definition : Definition
+    , requestId : SaveRequestId
+    , phase : SavePhase
     , feedback : Maybe String
+    }
+
+
+type SaveRequestId
+    = SaveRequestId Int
+
+
+type SavePhase
+    = RenderingThumbnail
+    | SendingMap
+
+
+type alias ThumbnailResult =
+    { requestId : SaveRequestId
+    , result : Result String String
     }
 
 
@@ -188,7 +209,8 @@ type Msg
     | UndoButtonClicked
     | RedoButtonClicked
     | SaveButtonClicked
-    | SaveResponseReceived (ApiRequest.Response ())
+    | ThumbnailGenerated ThumbnailResult
+    | SaveResponseReceived SaveRequestId (ApiRequest.Response ())
     | WidthInputChanged String
     | HeightInputChanged String
     | ResizeButtonClicked
@@ -245,17 +267,48 @@ setShared shared model =
 ----------------------------------------------------------------
 
 
-saveEffect : PendingSave -> Eff Msg
-saveEffect pending =
-    EditableMap.saveMutation pending.mapType pending.definition
+saveEffect : PendingSave -> String -> Eff Msg
+saveEffect pending thumbnail =
+    EditableMap.saveMutation pending.mapType pending.definition thumbnail
         |> ApiRequest.mutationRequest
-        |> E.request SaveResponseReceived
+        |> E.request (SaveResponseReceived pending.requestId)
 
 
 
 ----------------------------------------------------------------
 -- HELPERS --
 ----------------------------------------------------------------
+
+
+saveRequestIdValue : SaveRequestId -> Int
+saveRequestIdValue (SaveRequestId value) =
+    value
+
+
+thumbnailHtmlId : String
+thumbnailHtmlId =
+    "map-thumbnail-source"
+
+
+thumbnailSource : Model -> Html Msg
+thumbnailSource model =
+    case model.saveState of
+        Saving pending ->
+            H.div
+                [ A.id thumbnailHtmlId
+                , A.attribute "aria-hidden" "true"
+                , A.css
+                    [ S.displayNone
+                    ]
+                ]
+                [ MapPreview.definitionToHtml
+                    { mapType = pending.mapType
+                    , definition = pending.definition
+                    }
+                ]
+
+        _ ->
+            H.text ""
 
 
 canvasHtmlId : String
@@ -327,7 +380,14 @@ panCanvas delta model =
             canvasCamera model
     in
     { model
-        | canvasView = FreeView { camera | offset = { x = camera.offset.x + delta.x, y = camera.offset.y + delta.y } }
+        | canvasView =
+            FreeView
+                { camera
+                    | offset =
+                        { x = camera.offset.x + delta.x
+                        , y = camera.offset.y + delta.y
+                        }
+                }
     }
 
 
@@ -339,10 +399,10 @@ usesHand model =
 {-| Leave native text editing and browser shortcuts alone. Space still activates
 focused controls; pressing on the canvas moves focus there before a pan begins.
 -}
-canvasKeyDecoder : D.Decoder ( Msg, Bool )
+canvasKeyDecoder : Decoder ( Msg, Bool )
 canvasKeyDecoder =
     let
-        interpret : String -> String -> Bool -> Bool -> Bool -> D.Decoder ( Msg, Bool )
+        interpret : String -> String -> Bool -> Bool -> Bool -> Decoder ( Msg, Bool )
         interpret key tag ctrl meta alt =
             if List.member tag [ "INPUT", "TEXTAREA", "SELECT" ] || ctrl || meta || alt then
                 D.fail "text editing or browser shortcut"
@@ -362,10 +422,10 @@ canvasKeyDecoder =
         |> D.andThen identity
 
 
-canvasPressDecoder : D.Decoder ( Msg, Bool )
+canvasPressDecoder : Decoder ( Msg, Bool )
 canvasPressDecoder =
     let
-        pressed : Int -> D.Decoder ( Msg, Bool )
+        pressed : Int -> Decoder ( Msg, Bool )
         pressed button =
             case button of
                 0 ->
@@ -380,7 +440,7 @@ canvasPressDecoder =
     D.field "button" D.int |> D.andThen pressed
 
 
-canvasWheelDecoder : D.Decoder ( Msg, Bool )
+canvasWheelDecoder : Decoder ( Msg, Bool )
 canvasWheelDecoder =
     let
         scrolled : Point -> Int -> Float -> ( Msg, Bool )
@@ -697,54 +757,89 @@ update msg model =
             current.draft
     in
     case msg of
-        SaveResponseReceived result ->
+        ThumbnailGenerated result ->
             case model.saveState of
                 Saving pending ->
-                    case result of
-                        Ok () ->
-                            let
-                                markSaved : Document -> Document
-                                markSaved item =
-                                    if item.mapType == pending.mapType then
-                                        { item
-                                            | saved = pending.definition
-                                        }
+                    let
+                        matchesPending : Bool
+                        matchesPending =
+                            (result.requestId == pending.requestId) && (pending.phase == RenderingThumbnail)
+                    in
+                    if matchesPending then
+                        case result.result of
+                            Ok png ->
+                                ( { model | saveState = Saving { pending | phase = SendingMap } }
+                                , saveEffect pending png
+                                )
 
-                                    else
-                                        item
+                            Err error ->
+                                ( { model | saveState = Failed ("could not generate map thumbnail: " ++ error) }
+                                , E.none
+                                )
 
-                                savedCurrent : Document
-                                savedCurrent =
-                                    markSaved model.current
+                    else
+                        ( model, E.none )
 
-                                nextSaveState : SaveState
-                                nextSaveState =
-                                    if savedCurrent.mapType == pending.mapType && savedCurrent.draft == pending.definition then
-                                        Saved
+                _ ->
+                    ( model, E.none )
 
-                                    else
-                                        Idle
-                            in
-                            ( { model
-                                | current = savedCurrent
-                                , others = List.map markSaved model.others
-                                , saveState = nextSaveState
-                              }
-                            , E.none
-                            )
+        SaveResponseReceived requestId result ->
+            case model.saveState of
+                Saving pending ->
+                    let
+                        matchesPendingSave : Bool
+                        matchesPendingSave =
+                            (requestId == pending.requestId) && (pending.phase == SendingMap)
+                    in
+                    if not matchesPendingSave then
+                        ( model, E.none )
 
-                        Err error ->
-                            ( { model
-                                | saveState =
-                                    Failed
-                                        ("could not save "
-                                            ++ MapType.label pending.mapType
-                                            ++ ": "
-                                            ++ ApiRequest.errorMessage error
-                                        )
-                              }
-                            , E.none
-                            )
+                    else
+                        case result of
+                            Ok () ->
+                                let
+                                    markSaved : Document -> Document
+                                    markSaved item =
+                                        if item.mapType == pending.mapType then
+                                            { item
+                                                | saved = pending.definition
+                                            }
+
+                                        else
+                                            item
+
+                                    savedCurrent : Document
+                                    savedCurrent =
+                                        markSaved model.current
+
+                                    nextSaveState : SaveState
+                                    nextSaveState =
+                                        if savedCurrent.mapType == pending.mapType && savedCurrent.draft == pending.definition then
+                                            Saved
+
+                                        else
+                                            Idle
+                                in
+                                ( { model
+                                    | current = savedCurrent
+                                    , others = List.map markSaved model.others
+                                    , saveState = nextSaveState
+                                  }
+                                , E.none
+                                )
+
+                            Err error ->
+                                ( { model
+                                    | saveState =
+                                        Failed
+                                            ("could not save "
+                                                ++ MapType.label pending.mapType
+                                                ++ ": "
+                                                ++ ApiRequest.errorMessage error
+                                            )
+                                  }
+                                , E.none
+                                )
 
                 _ ->
                     ( model, E.none )
@@ -760,17 +855,24 @@ update msg model =
                         finished =
                             finishGesture model
 
+                        request : ( Int, Random.Seed )
+                        request =
+                            Random.step (Random.int 0 2147483647) finished.shared.seed
+
                         pending : PendingSave
                         pending =
                             { mapType = finished.current.mapType
                             , definition = finished.current.draft
                             , feedback = Nothing
+                            , requestId = SaveRequestId (Tuple.first request)
+                            , phase = RenderingThumbnail
                             }
                     in
                     ( { finished
                         | saveState = Saving pending
+                        , shared = Shared.setSeed (Tuple.second request) finished.shared
                       }
-                    , saveEffect pending
+                    , E.toJs (ToJs.GenerateMapThumbnail { htmlId = thumbnailHtmlId, requestId = saveRequestIdValue pending.requestId })
                     )
 
         MapInputChanged value ->
@@ -989,7 +1091,13 @@ update msg model =
                             ( zoomCanvas anchor (e ^ (negate (clamp -100 100 delta) * 0.002)) measured, E.none )
 
                 Err error ->
-                    ( { model | shared = Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared }, E.none )
+                    model
+                        |> setShared
+                            (Shared.addError
+                                (Just (Error.BattlefieldMeasurementFailed error))
+                                model.shared
+                            )
+                        |> E.withOut
 
         TileMousePressed position ->
             if usesHand model then
@@ -1001,7 +1109,11 @@ update msg model =
                     finished =
                         finishGesture model
                 in
-                ( paint position { finished | gesture = Painting finished.current.draft }, E.none )
+                ( paint
+                    position
+                    { finished | gesture = Painting finished.current.draft }
+                , E.none
+                )
 
         TileMouseEntered position buttons ->
             case model.gesture of
@@ -1129,7 +1241,8 @@ view model =
             ]
         , Ev.preventDefaultOn "keydown" canvasKeyDecoder
         ]
-        [ H.div
+        [ thumbnailSource model
+        , H.div
             [ A.css
                 [ S.col
                 , S.shrink0
@@ -1858,6 +1971,31 @@ tile draft map position =
 ----------------------------------------------------------------
 -- SUBSCRIPTIONS --
 ----------------------------------------------------------------
+
+
+listeners : FromJs.Listener Msg
+listeners =
+    let
+        thumbnailResultDecoder : Decoder (Result String String)
+        thumbnailResultDecoder =
+            let
+                fromError : Maybe String -> Decoder (Result String String)
+                fromError error =
+                    case error of
+                        Just message ->
+                            D.succeed (Err message)
+
+                        Nothing ->
+                            D.field "png" D.string |> D.map Ok
+            in
+            D.field "error" (D.nullable D.string) |> D.andThen fromError
+    in
+    FromJs.data "mapThumbnailGenerated"
+        (D.map2 ThumbnailResult
+            (D.field "requestId" D.int |> D.map SaveRequestId)
+            thumbnailResultDecoder
+        )
+        ThumbnailGenerated
 
 
 subscriptions : Model -> Sub Msg

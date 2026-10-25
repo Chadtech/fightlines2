@@ -7,6 +7,7 @@ module Api.Mutation exposing (..)
 import Api.Enum.Controller
 import Api.Enum.MapType
 import Api.Enum.PlayerNumber
+import Api.Enum.UnitKind
 import Api.InputObject
 import Api.Interface
 import Api.Object
@@ -22,6 +23,39 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode exposing (Decoder)
 
 
+type alias CopyBackdropCalibrationsRequiredArguments =
+    { sourceBackdrop : String
+    , destinationBackdrop : String
+    }
+
+
+copyBackdropCalibrations :
+    CopyBackdropCalibrationsRequiredArguments
+    -> SelectionSet decodesTo Api.Object.CalibratedBackdrop
+    -> SelectionSet (List decodesTo) RootMutation
+copyBackdropCalibrations requiredArgs____ object____ =
+    Object.selectionForCompositeField "copyBackdropCalibrations" [ Argument.required "sourceBackdrop" requiredArgs____.sourceBackdrop Encode.string, Argument.required "destinationBackdrop" requiredArgs____.destinationBackdrop Encode.string ] object____ (Basics.identity >> Decode.list)
+
+
+type alias SaveBackdropCalibrationRequiredArguments =
+    { backdrop : String
+    , unitKind : Api.Enum.UnitKind.UnitKind
+    , calibration : Api.InputObject.BackdropCalibrationInput
+    }
+
+
+saveBackdropCalibration :
+    SaveBackdropCalibrationRequiredArguments
+    -> SelectionSet decodesTo Api.Object.CalibratedBackdrop
+    -> SelectionSet decodesTo RootMutation
+saveBackdropCalibration requiredArgs____ object____ =
+    Object.selectionForCompositeField "saveBackdropCalibration" [ Argument.required "backdrop" requiredArgs____.backdrop Encode.string, Argument.required "unitKind" requiredArgs____.unitKind (Encode.enum Api.Enum.UnitKind.toString), Argument.required "calibration" requiredArgs____.calibration Api.InputObject.encodeBackdropCalibrationInput ] object____ Basics.identity
+
+
+type alias SaveMapOptionalArguments =
+    { thumbnail : OptionalArgument String }
+
+
 type alias SaveMapRequiredArguments =
     { mapType : Api.Enum.MapType.MapType
     , definition : Api.InputObject.MapDefinitionInput
@@ -29,11 +63,20 @@ type alias SaveMapRequiredArguments =
 
 
 saveMap :
-    SaveMapRequiredArguments
+    (SaveMapOptionalArguments -> SaveMapOptionalArguments)
+    -> SaveMapRequiredArguments
     -> SelectionSet decodesTo Api.Object.NamedMap
     -> SelectionSet decodesTo RootMutation
-saveMap requiredArgs____ object____ =
-    Object.selectionForCompositeField "saveMap" [ Argument.required "mapType" requiredArgs____.mapType (Encode.enum Api.Enum.MapType.toString), Argument.required "definition" requiredArgs____.definition Api.InputObject.encodeMapDefinitionInput ] object____ Basics.identity
+saveMap fillInOptionals____ requiredArgs____ object____ =
+    let
+        filledInOptionals____ =
+            fillInOptionals____ { thumbnail = Absent }
+
+        optionalArgs____ =
+            [ Argument.optional "thumbnail" filledInOptionals____.thumbnail Encode.string ]
+                |> List.filterMap Basics.identity
+    in
+    Object.selectionForCompositeField "saveMap" (optionalArgs____ ++ [ Argument.required "mapType" requiredArgs____.mapType (Encode.enum Api.Enum.MapType.toString), Argument.required "definition" requiredArgs____.definition Api.InputObject.encodeMapDefinitionInput ]) object____ Basics.identity
 
 
 type alias CreateLobbyRequiredArguments =
@@ -119,6 +162,18 @@ submitTurn :
     -> SelectionSet decodesTo RootMutation
 submitTurn requiredArgs____ object____ =
     Object.selectionForCompositeField "submitTurn" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "turnNumber" requiredArgs____.turnNumber Encode.int, Argument.required "orders" requiredArgs____.orders (Api.InputObject.encodeMoveOrderInput |> Encode.list) ] object____ Basics.identity
+
+
+type alias ResignGameRequiredArguments =
+    { id : String }
+
+
+resignGame :
+    ResignGameRequiredArguments
+    -> SelectionSet decodesTo Api.Object.GameSnapshot
+    -> SelectionSet decodesTo RootMutation
+resignGame requiredArgs____ object____ =
+    Object.selectionForCompositeField "resignGame" [ Argument.required "id" requiredArgs____.id Encode.string ] object____ Basics.identity
 
 
 type alias StartGameRequiredArguments =

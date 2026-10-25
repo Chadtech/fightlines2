@@ -37,6 +37,7 @@ import Effect as E
         )
 import Error exposing (Error)
 import Game.AnimationFrame as AnimationFrame
+import Game.BackdropCalibration as BackdropCalibration
 import Game.BattlefieldNavigation as BattlefieldNavigation
 import Game.BattlefieldSnapshot as BattlefieldSnapshot exposing (Player)
 import Game.Camera as Camera
@@ -123,6 +124,7 @@ import LobbyId
         )
 import LocalStorage
 import Ports.Js.To as ToJs
+import Route
 import Shared
 import Style as S
 import Time
@@ -144,6 +146,7 @@ import View.Dialog as Dialog exposing (Dialog)
 type alias Model =
     { currentTurn : CurrentTurn.Model
     , shared : Shared.Model
+    , backdropCalibrations : List BackdropCalibration.Entry
     , skipTurnIntroduction : Bool
     , skipUnplannedUnitsWarning : Bool
     , skipUnitLossDialogs : Bool
@@ -161,6 +164,7 @@ type alias Model =
     , navigation : BattlefieldNavigation.Model
     , battlefieldViewport : Maybe Camera.Viewport
     , frame : AnimationFrame.Frame
+    , resigning : Bool
     , menuOpen : Bool
     }
 
@@ -171,6 +175,19 @@ type alias Snapshot =
     , movementRules : List Movement.Rule
     , turn : Turn.Snapshot
     , playbackFrames : List TurnPlayback.Frame
+    }
+
+
+type ResignationDestination
+    = RemainInGame
+    | GoHome
+
+
+type alias PollStatus =
+    { number : Int
+    , outcome : Maybe GameOutcome
+    , submitted : Bool
+    , opponentSubmitted : Bool
     }
 
 
@@ -227,6 +244,8 @@ type Msg
     | TurnControlsMsg TurnControls.Msg
     | SubmitResponseReceived Int (ApiRequest.Response Snapshot)
     | CurrentTurnMsg CurrentTurn.Msg
+    | ResignResponseReceived ResignationDestination (ApiRequest.Response Snapshot)
+    | PollStatusResponseReceived (ApiRequest.Response PollStatus)
     | PollResponseReceived (ApiRequest.Response Snapshot)
 
 
@@ -237,7 +256,9 @@ type Msg
 
 
 type alias Flags =
-    { snapshot : Snapshot }
+    { snapshot : Snapshot
+    , backdropCalibrations : List BackdropCalibration.Entry
+    }
 
 
 init : Shared.Model -> Flags -> ( Model, Eff Msg )
@@ -265,6 +286,7 @@ init shared flags =
                     |> Shared.addError introductionPreferenceError
                     |> Shared.addError submissionPreferenceError
             , skipTurnIntroduction = skipTurnIntroduction
+            , backdropCalibrations = flags.backdropCalibrations
             , skipUnplannedUnitsWarning = skipUnplannedUnitsWarning
             , skipUnitLossDialogs = skipLossDialogs
             , automaticallyCloseCombatTheater = automaticallyCloseCombatTheater
@@ -281,6 +303,7 @@ init shared flags =
             , navigation = BattlefieldNavigation.init
             , battlefieldViewport = Nothing
             , frame = AnimationFrame.first
+            , resigning = False
             , menuOpen = False
             }
 
@@ -305,9 +328,9 @@ init shared flags =
 
 load : LobbyId -> Graphql.Http.Request Flags
 load id =
-    Api.Query.game
-        { id = LobbyId.toString id }
-        (SS.map Flags snapshotSelection)
+    SS.succeed Flags
+        |> SS.with (Api.Query.game { id = LobbyId.toString id } snapshotSelection)
+        |> SS.with BackdropCalibration.catalogSelection
         |> ApiRequest.queryRequest
 
 
@@ -702,7 +725,8 @@ plannedUnloadRoutes model =
                     let
                         withDirection : Direction -> UnloadRoute
                         withDirection direction =
-                            { origin = PlannedOrder.destination plan
+                            { unitId = unload.unitId
+                            , origin = PlannedOrder.destination plan
                             , direction = direction
                             }
                     in
@@ -763,7 +787,21 @@ applyTurnSnapshot snapshot currentTurn model =
         next =
             { model | currentTurn = currentTurn }
     in
-    if currentTurn.number > model.currentTurn.number then
+    if model.currentTurn.outcome /= Nothing then
+        next
+
+    else if GameOutcome.isResignation currentTurn.outcome then
+        { next
+            | map = snapshot.battlefield.map
+            , depots = snapshot.battlefield.depots
+            , supplyCrates = snapshot.battlefield.supplyCrates
+            , units = snapshot.battlefield.units
+            , visibleTiles = snapshot.battlefield.visibleTiles
+            , menuOpen = False
+            , navigation = BattlefieldNavigation.finishReturn model.navigation
+        }
+
+    else if currentTurn.number > model.currentTurn.number then
         let
             frame : TurnPlayback.Frame
             frame =
@@ -905,6 +943,21 @@ previewDirection direction model =
 loadSnapshot : LobbyId -> Graphql.Http.Request Snapshot
 loadSnapshot id =
     Api.Query.game { id = LobbyId.toString id } snapshotSelection
+        |> ApiRequest.queryRequest
+
+
+pollRequest : LobbyId -> Graphql.Http.Request PollStatus
+pollRequest id =
+    let
+        selection : SelectionSet PollStatus Api.Object.GameSnapshot
+        selection =
+            SS.succeed PollStatus
+                |> SS.with SnapshotApi.turnNumber
+                |> SS.with (SnapshotApi.outcome GameOutcome.selection)
+                |> SS.with SnapshotApi.submitted
+                |> SS.with SnapshotApi.opponentSubmitted
+    in
+    Api.Query.game { id = LobbyId.toString id } selection
         |> ApiRequest.queryRequest
 
 
@@ -1390,6 +1443,24 @@ handleBattlefieldMsg msg model =
                 |> mapNavigation BattlefieldNavigation.resetViewport
 
 
+resignGame : LobbyId -> ResignationDestination -> Model -> ( Model, Eff Msg )
+resignGame lobbyId destination model =
+    let
+        canResign : Bool
+        canResign =
+            model.menuOpen && not model.resigning && (model.currentTurn.outcome == Nothing)
+    in
+    if canResign then
+        ( { model | resigning = True }
+        , Api.Mutation.resignGame { id = LobbyId.toString lobbyId } snapshotSelection
+            |> ApiRequest.mutationRequest
+            |> E.request (ResignResponseReceived destination)
+        )
+
+    else
+        E.withOut model
+
+
 
 ----------------------------------------------------------------
 -- UPDATE --
@@ -1558,28 +1629,40 @@ superUpdate lobbyId msg model =
 update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 update lobbyId msg model =
     case msg of
-        GameMenuMsg GameMenu.OpenClicked ->
-            if canOpenMenu model then
-                E.withOut
+        GameMenuMsg menuMsg ->
+            handleGameMenuMsg lobbyId menuMsg model
+
+        ResignResponseReceived destination result ->
+            case result of
+                Ok snapshot ->
+                    let
+                        effect : Eff Msg
+                        effect =
+                            case destination of
+                                RemainInGame ->
+                                    E.none
+
+                                GoHome ->
+                                    E.navigate Route.Home
+                    in
+                    { model | resigning = False }
+                        |> applyTurnSnapshot snapshot
+                            (CurrentTurn.pollSucceeded (turnObservation snapshot) model.currentTurn)
+                        |> E.withOut
+                        |> E.and effect
+
+                Err error ->
+                    let
+                        currentTurn : CurrentTurn.Model
+                        currentTurn =
+                            model.currentTurn
+                    in
                     { model
-                        | menuOpen = True
+                        | resigning = False
+                        , menuOpen = False
+                        , currentTurn = { currentTurn | error = Just (ApiRequest.errorMessage error) }
                     }
-
-            else
-                E.withOut model
-
-        GameMenuMsg GameMenu.CloseClicked ->
-            ( { model
-                | menuOpen = False
-              }
-            , E.focus
-                { htmlId = GameMenu.buttonHtmlId
-                }
-                (GameMenuMsg GameMenu.FocusReturned)
-            )
-
-        GameMenuMsg GameMenu.FocusReturned ->
-            E.withOut model
+                        |> E.withOut
 
         BattlefieldMsg boardMsg ->
             E.withOut (handleBattlefieldMsg boardMsg model)
@@ -1831,14 +1914,19 @@ update lobbyId msg model =
                 |> E.withOut
 
         EscapePressed ->
-            if hasDialog model then
+            if model.menuOpen || showTurnIntroduction model then
                 model
                     |> dismissDialog
                     |> E.withOut
 
-            else
+            else if planningLocked model then
                 model
                     |> clearSelection
+                    |> E.withOut
+
+            else
+                model
+                    |> mapCheckedPlanning (OrderPlanning.cancelInteraction model.map model.units)
                     |> E.withOut
 
         TurnControlsMsg turnControlsMsg ->
@@ -1891,6 +1979,44 @@ update lobbyId msg model =
 
         CurrentTurnMsg turnMsg ->
             handleCurrentTurnMsg lobbyId turnMsg model
+
+        PollStatusResponseReceived result ->
+            case result of
+                Ok status ->
+                    let
+                        currentTurn : CurrentTurn.Model
+                        currentTurn =
+                            model.currentTurn
+
+                        needsSnapshot : Bool
+                        needsSnapshot =
+                            (currentTurn.outcome == Nothing)
+                                && ((status.outcome /= Nothing)
+                                        || ((status.number > currentTurn.number) && (playback model == Nothing))
+                                   )
+
+                        observation : CurrentTurn.Observation
+                        observation =
+                            { turn =
+                                { number = status.number
+                                , outcome = status.outcome
+                                , submitted = status.submitted
+                                , opponentSubmitted = status.opponentSubmitted
+                                , resolution = currentTurn.resolution
+                                }
+                            , playbackFrames = []
+                            }
+                    in
+                    if needsSnapshot then
+                        ( model, E.request PollResponseReceived (loadSnapshot lobbyId) )
+
+                    else
+                        { model | currentTurn = CurrentTurn.pollSucceeded observation currentTurn }
+                            |> E.withOut
+
+                Err error ->
+                    { model | currentTurn = CurrentTurn.pollFailed (ApiRequest.errorMessage error) model.currentTurn }
+                        |> E.withOut
 
         PollResponseReceived result ->
             case result of
@@ -1989,6 +2115,46 @@ update lobbyId msg model =
                     setCombatMapView TurnPlayback.CardVisible model |> E.withOut
 
 
+handleGameMenuMsg : LobbyId -> GameMenu.Msg -> Model -> ( Model, Eff Msg )
+handleGameMenuMsg lobbyId msg model =
+    case msg of
+        GameMenu.OpenClicked ->
+            if canOpenMenu model then
+                E.withOut
+                    { model
+                        | menuOpen = True
+                    }
+
+            else
+                E.withOut model
+
+        GameMenu.CloseClicked ->
+            ( { model
+                | menuOpen = False
+              }
+            , E.focus
+                { htmlId = GameMenu.buttonHtmlId
+                }
+                (GameMenuMsg GameMenu.FocusReturned)
+            )
+
+        GameMenu.ResignClicked ->
+            resignGame lobbyId RemainInGame model
+
+        GameMenu.HomeClicked ->
+            if not model.menuOpen || model.resigning then
+                E.withOut model
+
+            else if model.currentTurn.outcome /= Nothing then
+                ( model, E.navigate Route.Home )
+
+            else
+                resignGame lobbyId GoHome model
+
+        GameMenu.FocusReturned ->
+            E.withOut model
+
+
 handleTurnControlsMsg : LobbyId -> TurnControls.Msg -> Model -> ( Model, Eff Msg )
 handleTurnControlsMsg lobbyId msg model =
     case msg of
@@ -2056,12 +2222,12 @@ handleCurrentTurnMsg lobbyId msg model =
     in
     case msg of
         CurrentTurn.PollTimerElapsed ->
-            if currentTurn.outcome /= Nothing || currentTurn.refreshing || not (TurnLifecycle.canPoll currentTurn.phase) then
+            if currentTurn.outcome /= Nothing || currentTurn.refreshing then
                 model |> E.withOut
 
             else
                 ( { model | currentTurn = { currentTurn | refreshing = True } }
-                , E.request PollResponseReceived (loadSnapshot lobbyId)
+                , E.request PollStatusResponseReceived (pollRequest lobbyId)
                 )
 
         CurrentTurn.GotPlaybackPresentationMsg playbackMsg ->
@@ -2430,7 +2596,13 @@ view model =
         , inspection = selectionView model
         , hasSelection = currentSelection model /= Nothing
         , onCloseInspection = InspectorCloseClicked
-        , combatOverlay = PlaybackPresentation.combatOverlay model.automaticallyCloseCombatTheater model.map (playback model) |> H.map CombatTheaterMsg
+        , combatOverlay =
+            PlaybackPresentation.combatOverlay
+                model.backdropCalibrations
+                model.automaticallyCloseCombatTheater
+                model.map
+                (playback model)
+                |> H.map CombatTheaterMsg
         }
 
 
@@ -3148,7 +3320,7 @@ unloadChecklist model choice =
             [ actions
             ]
     in
-    Dialog.make unloadDialogHtmlId "unload" DialogDismissed content
+    Dialog.make unloadDialogHtmlId "unload" EscapePressed content
 
 
 freightHandlingSummary : PlannedOrder.SupplyHandling -> String
@@ -3173,7 +3345,7 @@ groundPickupDialog freight =
     in
     Dialog.make groundPickupDialogHtmlId
         ("pick up " ++ label)
-        DialogDismissed
+        EscapePressed
         [ H.p
             []
             [ H.text ("would you like this truck to pick up the " ++ label ++ " at its destination?")
@@ -3449,7 +3621,7 @@ depotLoadingDialog model id source =
     in
     Dialog.make loadCratesDialogHtmlId
         ("load " ++ cargoLabel)
-        DialogDismissed
+        EscapePressed
         content
 
 
@@ -3468,8 +3640,23 @@ dialog model =
 
 gameMenuDialog : Model -> () -> Maybe (Dialog Msg)
 gameMenuDialog model _ =
+    let
+        status : GameMenu.Status
+        status =
+            if model.resigning then
+                GameMenu.Resigning
+
+            else if model.currentTurn.outcome == Nothing then
+                GameMenu.ActiveGame
+
+            else
+                GameMenu.FinishedGame
+    in
     if model.menuOpen then
-        Just (Dialog.map GameMenuMsg GameMenu.dialog)
+        Just
+            (GameMenu.dialog status
+                |> Dialog.map GameMenuMsg
+            )
 
     else
         Nothing
@@ -3478,7 +3665,10 @@ gameMenuDialog model _ =
 commandGuideDialog : Model -> () -> Maybe (Dialog Msg)
 commandGuideDialog model _ =
     if commandGuideOpen model then
-        Just (CommandGuide.dialog DialogDismissed)
+        Just
+            (CommandGuide.dialog DialogDismissed
+                |> Dialog.onCancel EscapePressed
+            )
 
     else
         Nothing
@@ -3498,8 +3688,8 @@ introductionDialog model _ =
 turnAnnouncement : Model -> Dialog TurnIntroduction.Msg
 turnAnnouncement model =
     let
-        victory : PlayerNumber -> Dialog TurnIntroduction.Msg
-        victory winner =
+        victory : String -> PlayerNumber -> Dialog TurnIntroduction.Msg
+        victory caption winner =
             let
                 winnerName : String
                 winnerName =
@@ -3510,13 +3700,16 @@ turnAnnouncement model =
             in
             TurnIntroduction.conclusion
                 { headline = winnerName ++ " wins"
-                , caption = "the opposing army has no surviving combat units"
+                , caption = caption
                 , previousTurn = model.currentTurn.resolution
                 }
     in
     case model.currentTurn.outcome of
         Just (GameOutcome.Victory winner) ->
-            victory winner
+            victory "the opposing army has no surviving combat units" winner
+
+        Just (GameOutcome.Resignation winner) ->
+            victory "the game ended by resignation" winner
 
         Just GameOutcome.Draw ->
             TurnIntroduction.conclusion
@@ -3667,7 +3860,7 @@ turnPanel model =
 
 displayedTurnNumber : Model -> Int
 displayedTurnNumber model =
-    if model.currentTurn.outcome /= Nothing then
+    if (model.currentTurn.outcome /= Nothing) && not (GameOutcome.isResignation model.currentTurn.outcome) then
         model.currentTurn.number - 1
 
     else
@@ -3701,6 +3894,13 @@ turnFeedback players ownStatus opponentStatus outcome error =
 
                             else
                                 "lost"
+
+                        Just (GameOutcome.Resignation winner) ->
+                            if player.playerNumber == winner then
+                                "won"
+
+                            else
+                                "resigned"
 
                         Just GameOutcome.Draw ->
                             "draw"

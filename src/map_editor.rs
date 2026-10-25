@@ -3,6 +3,7 @@ use crate::{
     graphql::Context,
     map::{Coordinate, MapTheme, TerrainValue},
     map_definition::{DepotPlacement, MapDefinition, NamedMap, TerrainPlacement, UnitPlacement},
+    map_thumbnail,
     map_type::{MAPS, MapType},
     scenario::{BuildingKind, Direction, PlayerNumber, UnitKind},
 };
@@ -48,7 +49,7 @@ impl Access {
         }
     }
 
-    fn write(&self) -> FieldResult<&Editor> {
+    pub(crate) fn write(&self) -> FieldResult<&Editor> {
         let editor = self.read()?;
         match self {
             Self::Writable(_) => Ok(editor),
@@ -177,6 +178,7 @@ pub fn save_map(
     context: &Context,
     map_type: MapType,
     definition: MapDefinitionInput,
+    thumbnail: Option<String>,
 ) -> FieldResult<NamedMap> {
     let editor = context.editor.write()?;
     let name = MAPS
@@ -191,6 +193,10 @@ pub fn save_map(
     let json = serde_json::to_string_pretty(&definition)? + "\n";
     let _guard = editor.writes.lock().map_err(|error| error.to_string())?;
     let destination = editor.directory.join(format!("{name}.json"));
+    if let Some(thumbnail) = thumbnail {
+        let frontend = editor.index.parent().ok_or("missing frontend directory")?;
+        map_thumbnail::save(frontend, &definition, &thumbnail)?;
+    }
     let temporary = destination.with_extension("json.tmp");
     fs::write(&temporary, json)?;
     fs::rename(&temporary, &destination)?;
@@ -517,6 +523,73 @@ mod tests {
         assert_eq!(saved["units"], original_data["units"]);
         assert!(!destination.with_extension("json.tmp").exists());
         fs::remove_dir_all(directory)?;
+        Ok(())
+    }
+
+    #[actix_web::test]
+    async fn saves_thumbnail_with_its_map_and_rejects_invalid_image_before_map_write()
+    -> TestResult<()> {
+        use base64::{Engine, engine::general_purpose::STANDARD};
+        let root =
+            std::env::temp_dir().join(format!("fightlines-map-image-{}", std::process::id()));
+        let maps = root.join("maps");
+        let frontend = root.join("public");
+        fs::create_dir_all(&maps)?;
+        fs::create_dir_all(&frontend)?;
+        let app = test::init_service(
+            App::new()
+                .app_data(store())
+                .app_data(web::Data::new(Editor {
+                    directory: maps.clone(),
+                    index: frontend.join("index.html"),
+                    writes: Mutex::new(()),
+                }))
+                .app_data(web::Data::new(crate::graphql::schema()))
+                .route("/graphql", web::post().to(crate::graphql::handle)),
+        )
+        .await;
+        let mut definition = json!({
+            "description": "thumbnail fixture", "width": 2, "height": 2,
+            "theme": "GREEN_FOREST", "features": [], "depots": [],
+            "units": [
+                {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "PLAYER1", "kind": "INFANTRY", "direction": "EAST"},
+                {"id": 2, "position": {"x": 1, "y": 1}, "playerNumber": "PLAYER2", "kind": "INFANTRY", "direction": "WEST"}
+            ]
+        });
+        let query = "mutation Save($definition: MapDefinitionInput!, $thumbnail: String) { saveMap(mapType: SUPPLY_POINT, definition: $definition, thumbnail: $thumbnail) { thumbnailUrl } }";
+        let png = include_bytes!("../tests/fixtures/map-thumbnail.png");
+        let mut saved_json = None;
+        for valid in [true, false] {
+            let thumbnail = if valid {
+                STANDARD.encode(png)
+            } else {
+                STANDARD.encode(b"invalid PNG")
+            };
+            let request = test::TestRequest::post()
+                .uri("/graphql")
+                .peer_addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234))
+                .insert_header(("host", "localhost:8080"))
+                .insert_header(("origin", "http://localhost:8080"))
+                .set_json(json!({"query": query, "variables": {"definition": definition, "thumbnail": thumbnail}}))
+                .to_request();
+            let body: Value = test::call_and_read_body_json(&app, request).await;
+            if valid {
+                assert!(body.get("errors").is_none(), "{body}");
+                let path = body["data"]["saveMap"]["thumbnailUrl"]
+                    .as_str()
+                    .ok_or("missing thumbnail URL")?;
+                assert_eq!(fs::read(frontend.join(path.trim_start_matches('/')))?, png);
+                saved_json = Some(fs::read_to_string(maps.join("supply-point.json"))?);
+                definition["description"] = json!("must not be saved");
+            } else {
+                assert!(body.get("errors").is_some(), "{body}");
+                assert_eq!(
+                    fs::read_to_string(maps.join("supply-point.json"))?,
+                    saved_json.as_deref().ok_or("missing successful save")?
+                );
+            }
+        }
+        fs::remove_dir_all(root)?;
         Ok(())
     }
 }

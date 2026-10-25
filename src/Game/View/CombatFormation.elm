@@ -4,14 +4,15 @@ module Game.View.CombatFormation exposing
     , impactsToSvg
     , lossStartsAt
     , toSvg
+    , toSvgWithCalibration
     )
 
 import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
+import Game.BackdropCalibration exposing (Calibration)
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
-import Game.Unit as Unit exposing (Unit)
 import Game.View.CombatExplosion as CombatExplosion
-import Game.View.UnitSprite as UnitSprite
+import Game.View.UnitSprite as UnitSprite exposing (Appearance)
 import Html.Styled.Attributes as A
 import Svg.Styled as Svg exposing (Svg)
 import Svg.Styled.Attributes as SA
@@ -177,18 +178,152 @@ placements kind =
             vehiclePlacements
 
 
-toSvg : Float -> CombatHealth -> Unit -> List (Svg msg)
+toSvg : Float -> CombatHealth -> Appearance -> List (Svg msg)
 toSvg =
-    layersToSvg [ Combatants, Impacts ]
+    layersToSvg Nothing [ Combatants, Impacts ]
 
 
-impactsToSvg : Float -> CombatHealth -> Unit -> List (Svg msg)
+impactsToSvg : Float -> CombatHealth -> Appearance -> List (Svg msg)
 impactsToSvg =
-    layersToSvg [ Impacts ]
+    layersToSvg Nothing [ Impacts ]
 
 
-layersToSvg : List Layer -> Float -> CombatHealth -> Unit -> List (Svg msg)
-layersToSvg layers elapsed health unit =
+toSvgWithCalibration : Maybe Calibration -> Float -> CombatHealth -> Appearance -> List (Svg msg)
+toSvgWithCalibration calibration =
+    layersToSvg calibration [ Combatants, Impacts ]
+
+
+formationPlacements : Maybe Calibration -> Appearance -> List Placement
+formationPlacements calibration unit =
+    case calibration of
+        Nothing ->
+            placements unit.kind
+
+        Just settings ->
+            calibratedPlacements settings unit
+
+
+{-| Depth runs from zero at the rear to one at the front. Formation patterns
+remain unit-specific; the selected backdrop/unit calibration supplies ground and scale values.
+-}
+calibratedPlacements : Calibration -> Appearance -> List Placement
+calibratedPlacements settings unit =
+    let
+        pattern :
+            List
+                { center : Float
+                , depth : Float
+                , proportion : Float
+                }
+        pattern =
+            case unit.kind of
+                Kind.Infantry ->
+                    [ { center = 16
+                      , depth = 0
+                      , proportion = 0.7
+                      }
+                    , { center = 40
+                      , depth = 0
+                      , proportion = 0.7
+                      }
+                    , { center = 67
+                      , depth = 0
+                      , proportion = 0.7
+                      }
+                    , { center = 28
+                      , depth = 0.5
+                      , proportion = 0.7
+                      }
+                    , { center = 54
+                      , depth = 0.5
+                      , proportion = 0.7
+                      }
+                    , { center = 78
+                      , depth = 0.5
+                      , proportion = 0.7
+                      }
+                    , { center = 18
+                      , depth = 1
+                      , proportion = 0.7
+                      }
+                    , { center = 49
+                      , depth = 1
+                      , proportion = 0.7
+                      }
+                    ]
+
+                Kind.FieldGun ->
+                    [ { center = 16
+                      , depth = 0
+                      , proportion = 1
+                      }
+                    , { center = 48
+                      , depth = 0
+                      , proportion = 1
+                      }
+                    , { center = 79
+                      , depth = 0
+                      , proportion = 1
+                      }
+                    , { center = 48
+                      , depth = 1
+                      , proportion = 2.14
+                      }
+                    ]
+
+                _ ->
+                    [ { center = 19
+                      , depth = 0
+                      , proportion = 1
+                      }
+                    , { center = 53
+                      , depth = 0
+                      , proportion = 1
+                      }
+                    , { center = 33
+                      , depth = 1
+                      , proportion = 1
+                      }
+                    , { center = 72
+                      , depth = 1
+                      , proportion = 1
+                      }
+                    ]
+
+        place :
+            { center : Float
+            , depth : Float
+            , proportion : Float
+            }
+            -> Placement
+        place position =
+            let
+                perspective : Float
+                perspective =
+                    settings.rearScale / 100 + (1 - settings.rearScale / 100) * position.depth
+
+                width : Float
+                width =
+                    96 * settings.unitSize / 100 * position.proportion * perspective
+
+                footing : Float
+                footing =
+                    64 * (settings.frontFooting - settings.rowSpacing * (1 - position.depth)) / 100
+
+                center : Float
+                center =
+                    clamp (width / 2 + 1) (95 - width / 2) position.center
+            in
+            { x = center - width / 2
+            , y = footing - width / UnitSprite.portraitWidth unit * UnitSprite.portraitFooting unit
+            , size = width
+            }
+    in
+    List.map place pattern
+
+
+layersToSvg : Maybe Calibration -> List Layer -> Float -> CombatHealth -> Appearance -> List (Svg msg)
+layersToSvg calibration layers elapsed health unit =
     let
         beforeCount : Int
         beforeCount =
@@ -313,7 +448,7 @@ layersToSvg layers elapsed health unit =
 
         visiblePlacements : List Placement
         visiblePlacements =
-            List.take beforeCount (placements unit.kind)
+            List.take beforeCount (formationPlacements calibration unit)
 
         renderLayer : Layer -> List (Svg msg)
         renderLayer layer =

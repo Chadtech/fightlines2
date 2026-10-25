@@ -214,7 +214,16 @@ submissionFailed originatingTurn error model =
 
 pollSucceeded : Observation -> Model -> Model
 pollSucceeded observation model =
-    receive observation { model | refreshing = False }
+    let
+        preservePlayback : Bool
+        preservePlayback =
+            (TurnLifecycle.playback model.phase /= Nothing) && not (GameOutcome.isResignation observation.turn.outcome)
+    in
+    if preservePlayback then
+        { model | refreshing = False }
+
+    else
+        receive observation { model | refreshing = False }
 
 
 pollFailed : String -> Model -> Model
@@ -230,7 +239,21 @@ pollFailed error model =
 
 receive : Observation -> Model -> Model
 receive observation model =
-    if observation.turn.number < model.number then
+    if model.outcome /= Nothing then
+        model
+
+    else if GameOutcome.isResignation observation.turn.outcome then
+        { model
+            | number = observation.turn.number
+            , outcome = observation.turn.outcome
+            , opponentSubmitted = observation.turn.opponentSubmitted
+            , resolution = Nothing
+            , phase = TurnLifecycle.Planning OrderPlanning.init
+            , error = Nothing
+            , introduction = AwaitingIntroduction []
+        }
+
+    else if observation.turn.number < model.number then
         model
 
     else if observation.turn.number == model.number then
@@ -281,7 +304,7 @@ receive observation model =
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ Time.every 2000 (\_ -> PollTimerElapsed)
+        [ Time.every 500 (\_ -> PollTimerElapsed)
         , PlaybackPresentation.subscriptions (TurnLifecycle.playback model.phase)
             |> Sub.map GotPlaybackPresentationMsg
         ]

@@ -60,6 +60,16 @@ app.ports.toJs.subscribe(async (message) => {
       }));
       break;
     }
+    case "generateMapThumbnail": {
+      const { htmlId, requestId } = message;
+      try {
+        const png = await generateMapThumbnail(htmlId);
+        toElm("mapThumbnailGenerated", { requestId, png, error: null });
+      } catch (error) {
+        toElm("mapThumbnailGenerated", { requestId, png: null, error: String(error.message ?? error) });
+      }
+      break;
+    }
     case "copyLink": {
       const { url } = message;
       let success;

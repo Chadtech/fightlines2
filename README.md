@@ -38,12 +38,38 @@ and stock discarded with destroyed units are not spending. Choose **begin turn**
 **skip this dialog** dismisses it and remembers the preference in this browser.
 When the previous turn has an animation, **replay turn** on this card rewatches it
 and returns to the card. Replay is available only here, before beginning the turn.
+Choose **menu** then **resign game** to concede immediately, including after
+submitting orders. Your opponent wins, and both players see the game-over card.
+Choose **home** in the menu to return to the home screen. In an ongoing game,
+this resigns first and navigates only after the request succeeds. Finished games
+return home immediately.
+Opponent updates use half-second status polling plus network time.
 The combat theater also remembers its **automatically close** checkbox. When
 enabled, each encounter continues half a second after its animation finishes.
 
+## Backdrop review
+
+Open `/backdrop-review` in a development build to compare combat backdrops
+with infantry, tanks, trucks, or field guns using the gameplay renderer. Select
+a backdrop and unit type, adjust the four sliders, then choose **save calibration**.
+Each backdrop and unit type has its own calibration; panels showing the same pair
+share settings. Backdrop choices come from the server's combat backdrop asset
+directory, including images without saved calibrations. Extra preview controls
+include team, facing, health, and a custom image path.
+
+Saving requires a localhost server started with `--map-editor` (`make dev` or
+`make editor`). It writes `public/backdrop-calibrations.json`, preserving other
+backdrop/unit pairs. Commit that file with the artwork. Gameplay and replays load
+saved settings whenever their page opens or refreshes; unsaved adjustments stay
+in the review page. Backdrops
+without saved settings retain their original gameplay placements. Use **copy calibrations** to select a saved source and a destination backdrop,
+then **copy and save all unit calibrations**. This copies all saved source unit
+types at once, replacing matching destination settings while preserving others.
+For example, reuse road settings for snowy road, then fine-tune if needed.
+
 ## Run locally
 
-Requires Rust/Cargo, Elm 0.19.1, Node.js 22 or newer, npm, and Make.
+Requires Rust/Cargo, Elm 0.19.3, Node.js 22 or newer, npm, and Make.
 Install `elm-format` to run the development checks.
 
 ```sh
@@ -99,7 +125,7 @@ human cannot be replaced.
 
 For a human opponent, share the invite link with another player, who enters a name and chooses
 **Join lobby**. The host chooses **choose map** to open a separate library screen.
-Each map has a thumbnail; selecting one shows a larger preview, dimensions, theme,
+Each map has a thumbnail; selecting one shows a larger preview, dimensions,
 and description. Choose **use this map** to save the selection and return to the
 lobby, where the other player sees the updated map. **back to lobby** and browser
 back discard the preview. The host then chooses **Start game**.
@@ -118,6 +144,13 @@ The initial map type is **supply point**. Joined players see the selected map;
 only the host can change it before starting. The game retains that selection.
 The lobby loads its ordered map options from the backend; the editor lists the
 maps returned in its catalog.
+Map saves also generate a PNG thumbnail from the submitted map's SVG through a
+browser canvas. The map library uses these images for its list and keeps an SVG
+for the selected large preview. Generated images live in `public/map-thumbnails/`
+and ship with the frontend. To regenerate a thumbnail, open the map in the local
+editor and save it again; resave each map after changing shared map artwork.
+Thumbnail generation failures keep the existing saved map intact and show an
+error in the editor.
 
 **Tobruk** adapts Battlefield 1942's asymmetric desert assault to a 29 × 21 board.
 Player 1 (red) attacks from the southwest with five tanks; player 2 (blue)
@@ -237,7 +270,11 @@ They receive a fresh movement allowance after dismounting, but pay both unloadin
 and action supply costs, with upkeep charged once. Commands resolve after transport
 and before indirect fire. Prepared ambushes can fire during unloading; a blocked
 exit, stopped truck, or dead passenger prevents the follow-up action. Field guns
-still only dismount. Revoking the truck order also revokes its infantry commands.
+still only dismount. Press Escape during this command sequence to cancel the
+truck move, all unload choices, and any infantry commands already entered.
+After the last unloading infantry receives a command, the sequence is complete;
+Escape then clears selection and keeps the saved plan. Revoking the truck order
+also revokes its infantry commands.
 Enemy resources and passengers are concealed outside combat. Direct-fire
 encounters involving your units appear even when the enemy is concealed and reveal
 both participants’ before/after health; supplies and fuel stay hidden. Crate cargo is separate from the truck's own provisions.

@@ -575,13 +575,17 @@ outcomeChecks =
         [ expect "ongoing game outcomes decode as absent"
             (decodeOutcome JE.null == Ok Nothing)
         , expect "draw outcomes decode distinctly from an ongoing game"
-            (decodeOutcome (JE.object [ ( "winner", JE.null ) ]) == Ok (Just GameOutcome.Draw))
+            (decodeOutcome (JE.object [ ( "winner", JE.null ), ( "resigned", JE.bool False ) ]) == Ok (Just GameOutcome.Draw))
         , expect "victory outcomes retain player 1 as the winner"
-            (decodeOutcome (JE.object [ ( "winner", JE.string "PLAYER1" ) ])
+            (decodeOutcome (JE.object [ ( "winner", JE.string "PLAYER1" ), ( "resigned", JE.bool False ) ])
                 == Ok (Just (GameOutcome.Victory PlayerNumber.Player1))
             )
+        , expect "resignation outcomes retain the opponent as the winner"
+            (decodeOutcome (JE.object [ ( "winner", JE.string "PLAYER2" ), ( "resigned", JE.bool True ) ])
+                == Ok (Just (GameOutcome.Resignation PlayerNumber.Player2))
+            )
         , expect "victory outcomes retain player 2 as the winner"
-            (decodeOutcome (JE.object [ ( "winner", JE.string "PLAYER2" ) ])
+            (decodeOutcome (JE.object [ ( "winner", JE.string "PLAYER2" ), ( "resigned", JE.bool False ) ])
                 == Ok (Just (GameOutcome.Victory PlayerNumber.Player2))
             )
         ]
@@ -668,6 +672,27 @@ currentTurnChecks =
         finishedOnRefresh =
             CurrentTurn.init { turn = { turn | outcome = Just (GameOutcome.Victory PlayerNumber.Player1), submitted = False }, playbackFrames = [] }
 
+        resignation : CurrentTurn.Observation
+        resignation =
+            { observation | turn = { turn | number = 2, submitted = False, outcome = Just (GameOutcome.Resignation PlayerNumber.Player2) } }
+
+        resigned : CurrentTurn.Model
+        resigned =
+            CurrentTurn.pollSucceeded resignation advanced
+
+        resignationAnnounced : CurrentTurn.Model -> Bool
+        resignationAnnounced current =
+            let
+                ended : CurrentTurn.Model
+                ended =
+                    CurrentTurn.pollSucceeded resignation current
+            in
+            (ended.outcome == resignation.turn.outcome)
+                && CurrentTurn.introductionPending ended
+                && (TurnLifecycle.playback ended.phase == Nothing)
+                && (CurrentTurn.startSubmission ended == Nothing)
+                && (TurnLifecycle.orders ended.phase == [])
+
         completePlayback : CurrentTurn.Model -> CurrentTurn.Model
         completePlayback current =
             case TurnLifecycle.tick 1000 current.phase of
@@ -706,7 +731,17 @@ currentTurnChecks =
                 && (CurrentTurn.replay replay.currentTurn == Nothing)
     in
     List.concat
-        [ expect "replay is absent on the first turn and during original playback"
+        [ expect "resignation interrupts planning, submission, waiting, and playback with an end card"
+            (List.all resignationAnnounced [ CurrentTurn.acknowledgeIntroduction initial, submitting, waiting, advanced ])
+        , expect "stale polls and submission responses cannot reverse resignation"
+            ((CurrentTurn.pollSucceeded nextObservation resigned).outcome
+                == resignation.turn.outcome
+                && (CurrentTurn.submissionSucceeded 2 nextObservation resigned).outcome
+                == resignation.turn.outcome
+            )
+        , expect "dismissed resignation stays dismissed"
+            (not (CurrentTurn.introductionPending (CurrentTurn.pollSucceeded resignation (CurrentTurn.acknowledgeIntroduction resigned))))
+        , expect "replay is absent on the first turn and during original playback"
             (not (CurrentTurn.canReplay initial) && CurrentTurn.replay initial == Nothing && CurrentTurn.replay advanced == Nothing)
         , expect "the completed turn is replayable only while its introduction is pending"
             (CurrentTurn.canReplay introduced && replayed /= Nothing)

@@ -2,7 +2,6 @@ module Game.View.MapChoice exposing (toHtml)
 
 import EditableMap exposing (NamedMap)
 import Game.MapType as MapType
-import Game.View.MapPreview as MapPreview
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
@@ -48,7 +47,10 @@ toHtml args =
             , S.g3
             , S.p2
             , S.wFull
-            , S.bgGray1
+            , S.bgNightwood3
+            , S.evenChildren
+                [ S.bgNightwood2
+                ]
             , S.textLeft
             , S.textGray5
             , S.border
@@ -59,8 +61,12 @@ toHtml args =
                 ]
             , S.when args.selected
                 (S.batch
-                    [ S.bgNightwood3
-                    , S.indentStrong
+                    [ S.bgGray2
+                    , S.evenChildren
+                        [ S.bgGray2
+                        ]
+                    , S.outlineYellow5
+                    , S.outlineOffsetNeg1
                     ]
                 )
             , S.focusVisible
@@ -78,7 +84,17 @@ toHtml args =
                 , S.bgNightwood2
                 ]
             ]
-            [ MapPreview.toHtml args.map
+            [ H.img
+                [ A.src args.map.thumbnailUrl
+                , A.alt ""
+                , A.css
+                    [ S.block
+                    , S.wFull
+                    , S.hFull
+                    , S.objectContain
+                    ]
+                ]
+                []
             ]
         , H.span
             [ A.css

@@ -16,7 +16,9 @@ pub enum PlayerNumber {
     Player2,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, GraphQLEnum, Serialize, Deserialize,
+)]
 pub enum UnitKind {
     Infantry,
     Tank,

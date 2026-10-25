@@ -156,12 +156,17 @@ omits this decorative cycle and retains the original green background.
   page to scroll. Keep creation and joining as centered compact forms.
 - `choose map` opens a separate full-width library screen at `/lobby/:id/maps`,
   using one card headed `choose map` with the lobby name as its caption. Put
-  `back to lobby` at the top, six thumbnail choices and pagination in the left
-  column, and the selected map's large preview, dimensions, theme, starting-player
-  legend, and description in the right column. Stack these below 720px. Thumbnails
-  use the actual terrain, buildings, and starting units with still water. A checked,
-  inset row indicates the previewed map. Keep the saved lobby map visible in a
-  footer beside the gold `use this map` action. Browsing does not save; applying
+  all thumbnail choices in one scrollable left column, and the selected map's
+  large preview in a closely fitted inset surface beside its dimensions,
+  starting-player legend, and description in the right column. Stack preview and
+  details below 1100px, and stack the library columns below 720px. Thumbnails
+  use saved PNG images of the actual terrain, buildings, and starting units with
+  still water. Generate these from the shared preview renderer when saving maps;
+  keep the large selected preview as SVG. The map list sits in one inset surface with alternating green row backgrounds. The
+  previewed row has a brighter gray background, gold outline, and checkmark. The
+  footer contains the gold `use this map` action followed by `back to lobby`, both
+  aligned left, with no explanatory text or back arrow.
+  Omit the preview hint and theme label. Browsing does not save; applying
   returns to the lobby, while back navigation discards the preview. Disable
   duplicate saves and show failures on the library screen without losing the
   preview. Guests see the saved map in the lobby and have no change-map action.
@@ -202,8 +207,15 @@ omits this decorative cycle and retains the original green background.
   on the right so their different roles are clear. Use 0.125rem vertical and
   0.625rem horizontal button padding with a 1.875rem minimum height.
   Open a centered native menu dialog
-  with a primary `resume game` action; Escape also returns to the battlefield.
-  Keep settings and resign game disabled until implemented. Disable the menu
+  with a secondary `close` action at the bottom; Escape also returns to the battlefield.
+  Keep settings disabled. Enable the secondary `resign game` action while the
+  game is active, including after submitting orders; show `resigning…` while its
+  request is pending. Resignation opens the existing game-over card for both
+  players, naming the winner and explaining that the game ended by resignation.
+  Add a secondary `home` action that resigns an active game before navigating
+  home, waits for success, and stays in the game on failure. Disable it while
+  resignation is pending; finished games navigate directly home.
+  Disable the menu
   during playback and other dialogs, and close it when new playback starts.
 - The game is a full-viewport workspace. Render the board directly on the page
   background, without a containing card or border. Reserve the bottom
@@ -460,6 +472,8 @@ omits this decorative cycle and retains the original green background.
   choices under the truck's order. Extend a solid gold branch from the truck's
   destination dot to an outlined diamond on each saved unloading square. Keep
   these markers visible above unit artwork and preserve tile interaction.
+  The selected passenger's exit uses a larger filled gold diamond with a bright
+  ivory tile outline, following selection while issuing infantry commands.
   Passengers appear after truck movement during
   resolution. Carried units do not have independent board sprites or focus targets.
 
@@ -578,7 +592,10 @@ Supply and fuel depot tiles use a shared industrial yard, with a snowy variant
 on snow maps. Both show warehouses, crates, drums, and storage tanks against
 open sky, with no distant terrain. Leave the paved yard open for the formations,
 with packed snow in the winter variant. Use the same yard for indirect-fire impacts on depots;
-entrenched infantry retain their trench interior.
+entrenched infantry retain their trench interior. Fortress tiles use their own
+concrete casemate courtyard with thick sloped blast walls, firing slits, a steel
+door, and sandbagged parapets. Keep the foreground fighting deck open for unit
+formations; snow maps use the matching snow-covered fortress courtyard.
 Omit visible unit/player labels. The western participant appears
 left, facing right; the eastern participant appears right, facing left. For a
 vertical encounter, the northern participant appears left.
@@ -713,6 +730,13 @@ even on occupied tiles. A selected on-board unit standing on a depot also shows
 the complete depot inspection beneath its own row. Unknown stock has no map bar
 or numeric value; the inspector row says `stock outside sight`.
 
+Treat a truck move, its unload choices, and its infantry commands as one planning
+sequence. Escape cancels that truck order and all dependent commands while the
+sequence is unfinished, including after some infantry commands have been saved.
+After every unloading infantry has a command, Escape only clears selection and
+keeps the completed plan. Trucks unloading only field guns or freight complete
+the sequence when their final cargo choice is saved.
+
 ## Turn introduction
 
 Introduce each planning turn with a centered, wide beveled modal over a dimmed
@@ -769,7 +793,8 @@ Fog retains the last observed condition
 and its normal artwork filter. Shell impacts
 show the attacker and occupant hit first, then replace those scenes with one
 centered depot map sprite taking its own strike. Use the building sprite to make
-clear that the whole depot is hit; omit the depot HP text from the theater.
+clear that the whole depot is hit; place it over the tile's terrain backdrop,
+matching the map theme, and omit the depot HP text from the theater.
 Destroyed depots switch to the same wreckage sprite as on the board. Automatic
 close waits for this follow-up strike to settle. Sabotage uses the existing map burst
 without damaging units or freight.
@@ -936,3 +961,26 @@ not ordered to fire, aboard transport, destroyed, and unarmed. Keep defensive
 readiness separate from permission to fire. Use the state before each volley in
 combat portraits and the displayed snapshot's state in the inspector. Conceal
 enemy readiness while fog is enabled, including in combat portraits.
+
+
+## Backdrop calibration review
+
+The development backdrop review page has two responsive scene editors. Each
+places backdrop/unit selectors above the exact gameplay scene, then four sliders:
+front footing position, row separation, front unit size, and rear size relative
+to the front. Keep the preview unobstructed and use the sliders for adjustments.
+Keep unit size changes anchored on ground contact. The same backdrop/unit pair
+shares settings across panels; other unit types remain
+independent. Keep save state
+and errors beside **save calibration**, preserve drafts after errors, and disable
+repeat saves while one is pending. Secondary team/facing/health/custom-path
+controls live under **more preview options**. Unconfigured backdrops begin with
+an explicitly unsaved suggested preview; gameplay keeps legacy placements until
+that backdrop has been saved.
+
+
+Place a **copy calibrations** group above the scene editors, with saved source
+and destination selectors and **copy and save all unit calibrations**. State
+that copying replaces matching destination settings and uses saved source values.
+Show completion and failures beside the action. Disable copying to the same
+backdrop and prevent concurrent copy/save requests.

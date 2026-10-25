@@ -4,6 +4,7 @@ module View.Dialog exposing
     , atBottom
     , make
     , map
+    , onCancel
     , reference
     , toHtml
     )
@@ -48,14 +49,19 @@ type Placement
 
 
 make : String -> String -> msg -> List (Html msg) -> Dialog msg
-make htmlId title onCancel body =
+make htmlId title canceled body =
     Dialog
         { htmlId = htmlId
         , title = title
-        , onCancel = onCancel
+        , onCancel = canceled
         , body = body
         , placement = Centered
         }
+
+
+onCancel : msg -> Dialog msg -> Dialog msg
+onCancel canceled (Dialog model) =
+    Dialog { model | onCancel = canceled }
 
 
 announcement : Dialog msg -> Dialog msg

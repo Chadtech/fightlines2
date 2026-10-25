@@ -19,6 +19,7 @@ import Api.Enum.PlayerNumber exposing (PlayerNumber)
 import Browser.Events
 import Effect as E exposing (Eff)
 import Error exposing (Error)
+import Game.BackdropCalibration as BackdropCalibration
 import Game.BattlefieldSnapshot as BattlefieldSnapshot exposing (Player)
 import Game.Camera as Camera exposing (Camera)
 import Game.Map as Map exposing (Map)
@@ -185,15 +186,16 @@ lossDialog config playback =
     loss config.skipDialogs playback |> Maybe.map notice
 
 
-combatOverlay : Bool -> Map -> Maybe TurnPlayback.Playback -> Html CombatTheater.Msg
-combatOverlay automaticallyClose map playback =
+combatOverlay : List BackdropCalibration.Entry -> Bool -> Map -> Maybe TurnPlayback.Playback -> Html CombatTheater.Msg
+combatOverlay calibrations automaticallyClose map playback =
     let
         overlay : TurnPlayback.Playback -> Maybe (Html CombatTheater.Msg)
         overlay animation =
             TurnPlayback.panels animation
                 |> Maybe.map
                     (CombatTheater.toHtml
-                        { automaticallyClose = automaticallyClose
+                        { calibrations = calibrations
+                        , automaticallyClose = automaticallyClose
                         , visibleTiles = animation.current.visibleTiles
                         }
                         animation.current.depots

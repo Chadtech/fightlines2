@@ -83,7 +83,7 @@ checks shared =
 
                 initial : GameReplay.Model
                 initial =
-                    GameReplay.init shared game.id { game = game, turn = opening } |> Tuple.first
+                    GameReplay.init shared game.id { game = game, turn = opening, backdropCalibrations = [] } |> Tuple.first
 
                 step : GameReplay.Msg -> GameReplay.Model -> GameReplay.Model
                 step msg model =

@@ -2,11 +2,13 @@ module Game.View.CombatTheater exposing
     ( Msg(..)
     , attackerOnLeft
     , backdropPath
+    , preview
     , readyToAutomaticallyClose
     , styles
     , toHtml
     )
 
+import Api.Enum.BuildingKind as BuildingKind
 import Api.Enum.CombatKind as CombatKind
 import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
@@ -14,6 +16,7 @@ import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing exposing (SpriteFacing)
 import Api.Enum.UnitKind as UnitKind
 import Css
+import Game.BackdropCalibration as BackdropCalibration
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Depot as Depot exposing (Depot)
@@ -27,9 +30,11 @@ import Game.TurnPlayback as TurnPlayback
         , Panel
         )
 import Game.Unit as Unit exposing (Unit)
+import Game.UnitKind as UnitKindLabel
 import Game.View.CombatExplosion as CombatExplosion
 import Game.View.CombatFormation as CombatFormation
 import Game.View.CombatReadiness as CombatReadiness
+import Game.View.UnitSprite as UnitSprite exposing (Appearance)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
@@ -39,6 +44,7 @@ import Style as S
 import Svg.Styled as Svg
 import Svg.Styled.Attributes as SA
 import Util.Html.Event as HtmlEvent
+import Util.List as ListUtil
 import View.Aria as Aria
 import View.Button as Button
 import View.Card as Card
@@ -55,6 +61,7 @@ type Msg
 
 type alias Scenery =
     { map : Map
+    , calibrations : List BackdropCalibration.Entry
     , depots : List Depot
     }
 
@@ -235,7 +242,8 @@ automaticCloseDelayMs =
 
 
 toHtml :
-    { automaticallyClose : Bool
+    { calibrations : List BackdropCalibration.Entry
+    , automaticallyClose : Bool
     , visibleTiles : List Coordinate
     }
     -> List Depot
@@ -243,15 +251,16 @@ toHtml :
     -> Panel
     -> Html Msg
 toHtml config depots map panel =
-    Lazy.lazy5 theaterView config.automaticallyClose config.visibleTiles depots map panel
+    Lazy.lazy6 theaterView config.calibrations config.automaticallyClose config.visibleTiles depots map panel
 
 
-theaterView : Bool -> List Coordinate -> List Depot -> Map -> Panel -> Html Msg
-theaterView automaticallyClose visibleTiles depots map panel =
+theaterView : List BackdropCalibration.Entry -> Bool -> List Coordinate -> List Depot -> Map -> Panel -> Html Msg
+theaterView calibrations automaticallyClose visibleTiles depots map panel =
     let
         scenery : Scenery
         scenery =
             { map = map
+            , calibrations = calibrations
             , depots = depots
             }
 
@@ -570,16 +579,23 @@ backdropAt scenery position =
         atPosition depot =
             depot.position == position
     in
-    if List.any atPosition scenery.depots then
-        case scenery.map.theme of
-            MapTheme.Snow ->
-                "/assets/combat-backdrops-anime-v1/snowy-depot.png"
+    case ListUtil.find atPosition scenery.depots of
+        Just depot ->
+            case ( scenery.map.theme, depot.kind ) of
+                ( MapTheme.Snow, BuildingKind.Fortress ) ->
+                    "/assets/combat-backdrops-anime-v1/snowy-fortress.png"
 
-            _ ->
-                "/assets/combat-backdrops-anime-v1/depot.png"
+                ( _, BuildingKind.Fortress ) ->
+                    "/assets/combat-backdrops-anime-v1/fortress.png"
 
-    else
-        backdropPath scenery.map.theme (Map.terrainAt scenery.map position)
+                ( MapTheme.Snow, _ ) ->
+                    "/assets/combat-backdrops-anime-v1/snowy-depot.png"
+
+                _ ->
+                    "/assets/combat-backdrops-anime-v1/depot.png"
+
+        Nothing ->
+            backdropPath scenery.map.theme (Map.terrainAt scenery.map position)
 
 
 backdropPath : MapTheme -> Terrain -> String
@@ -598,7 +614,7 @@ backdropPath theme terrain =
                     "water"
 
                 ( _, Terrain.Beach ) ->
-                    "beach"
+                    "beach-ocean"
 
                 ( MapTheme.GreenForest, Terrain.Forest ) ->
                     "forest"
@@ -778,7 +794,7 @@ impactScene visibleTiles scenery panel position =
     in
     scene
         (Just (backdropAt scenery position))
-        panel
+        (rumbleTransform panel)
         description
         content
 
@@ -832,8 +848,8 @@ depotScene scenery panel damage =
                 ]
             ]
             [ scene
-                (Just (backdropAt scenery damage.depot.position))
-                panel
+                (Just (backdropPath scenery.map.theme (Map.terrainAt scenery.map damage.depot.position)))
+                (rumbleTransform panel)
                 description
                 artwork
             ]
@@ -960,22 +976,37 @@ portraitScene scenery panel health unit =
     if isEntrenchedInfantry then
         scene
             Nothing
-            panel
+            (rumbleTransform panel)
             (Unit.label unit)
-            (trenchImage :: CombatFormation.impactsToSvg panel.elapsed health unit)
+            (trenchImage :: CombatFormation.impactsToSvg panel.elapsed health (UnitSprite.appearance unit))
 
     else
         scene
             (Just path)
-            panel
+            (rumbleTransform panel)
             description
-            (CombatFormation.toSvg panel.elapsed health unit)
+            (CombatFormation.toSvgWithCalibration (BackdropCalibration.find { backdrop = path, unitKind = unit.kind } scenery.calibrations) panel.elapsed health (UnitSprite.appearance unit))
 
 
-scene : Maybe String -> Panel -> String -> List (Svg.Svg Msg) -> Html Msg
-scene path panel description figures =
+{-| Review artwork with the exact gameplay crop, sprites, and formation placements.
+The preview holds an undamaged formation still, without inventing a combat event.
+-}
+preview : Maybe BackdropCalibration.Calibration -> String -> Int -> Appearance -> Html msg
+preview calibration path hitPoints unit =
     let
-        background : String -> Svg.Svg Msg
+        health : CombatHealth
+        health =
+            { before = { current = hitPoints, maximum = 16 }
+            , after = { current = hitPoints, maximum = 16 }
+            }
+    in
+    scene (Just path) "none" (UnitKindLabel.label unit.kind) (CombatFormation.toSvgWithCalibration calibration 0 health unit)
+
+
+scene : Maybe String -> String -> String -> List (Svg.Svg msg) -> Html msg
+scene path transform description figures =
+    let
+        background : String -> Svg.Svg msg
         background imagePath =
             Svg.image
                 [ SA.xlinkHref imagePath
@@ -988,7 +1019,7 @@ scene path panel description figures =
                 ]
                 []
 
-        content : List (Svg.Svg Msg)
+        content : List (Svg.Svg msg)
         content =
             case path of
                 Nothing ->
@@ -1014,7 +1045,7 @@ scene path panel description figures =
         [ Svg.g
             [ SA.class "fightlines-combat-rumble"
             , SA.css
-                [ S.transform (rumbleTransform panel)
+                [ S.transform transform
                 , Css.property "transform-origin" "48px 32px"
                 ]
             ]

@@ -68,9 +68,187 @@ checks =
                 ++ indirectPlanningChecks infantryId truckId
                 ++ sabotagePlanningChecks infantryId truckId
                 ++ diggingTerrainChecks infantryId
+                ++ interruptedDismountChecks infantryId truckId passengerId
 
         _ ->
             [ "could not construct planning fixture IDs" ]
+
+
+interruptedDismountChecks : UnitId -> UnitId -> UnitId -> List String
+interruptedDismountChecks infantryId truckId passengerId =
+    case ( UnitId.parse "4", UnitId.parse "5", UnitId.parse "6" ) of
+        ( Ok otherTruckId, Ok gunId, Ok otherUnitId ) ->
+            let
+                context : BoardFixture
+                context =
+                    board
+                        [ unit truckId Kind.Truck (Location.OnMap { x = 1, y = 1 })
+                        , unit infantryId Kind.Infantry (Location.Aboard truckId)
+                        , unit passengerId Kind.Infantry (Location.Aboard truckId)
+                        , unit otherTruckId Kind.Truck (Location.OnMap { x = 4, y = 3 })
+                        , unit gunId Kind.FieldGun (Location.Aboard otherTruckId)
+                        , unit otherUnitId Kind.Tank (Location.OnMap { x = 0, y = 0 })
+                        ]
+
+                ready : OrderPlanning.Model
+                ready =
+                    OrderPlanning.init
+                        |> OrderPlanning.setOrders
+                            [ { unitId = truckId
+                              , action =
+                                    PlannedOrder.Unload
+                                        { position = { x = 1, y = 1 }
+                                        , unloads =
+                                            [ { unitId = infantryId, destination = { x = 1, y = 2 } }
+                                            , { unitId = passengerId, destination = { x = 2, y = 1 } }
+                                            ]
+                                        }
+                              }
+                            , unrelatedOrder
+                            ]
+                        |> OrderPlanning.setSelection (Just (Inspecting (UnitInspection truckId)))
+                        |> OrderPlanning.promptDismountedCommands context.map context.units
+
+                unrelatedOrder : PlannedOrder.PlannedOrder
+                unrelatedOrder =
+                    { unitId = otherUnitId, action = PlannedOrder.Hold { x = 0, y = 0 } }
+
+                cancel : OrderPlanning.Model -> OrderPlanning.Model
+                cancel model =
+                    OrderPlanning.cancelInteraction context.map context.units model |> fixtureValue
+
+                hold : OrderPlanning.Model -> OrderPlanning.Model
+                hold model =
+                    OrderPlanning.applyCommand context.map context.units context.playerNumbers context.movementRules [] [] UnitCommand.HoldPosition model
+                        |> fixtureValue
+
+                escaped : OrderPlanning.Model
+                escaped =
+                    cancel ready
+
+                firstCommand : OrderPlanning.Model
+                firstCommand =
+                    hold ready
+
+                completed : OrderPlanning.Model
+                completed =
+                    hold firstCommand
+
+                movingInfantry : OrderPlanning.Model
+                movingInfantry =
+                    OrderPlanning.applyCommand context.map context.units context.playerNumbers context.movementRules [] [] UnitCommand.Move ready
+                        |> fixtureValue
+
+                checklist : OrderPlanning.Model
+                checklist =
+                    OrderPlanning.startStationaryUnload truckId { x = 1, y = 1 } ready
+
+                movingChecklist : OrderPlanning.Model
+                movingChecklist =
+                    OrderPlanning.startUnload truckId
+                        { destination = { x = 1, y = 2 }
+                        , path = [ { x = 1, y = 1 }, { x = 1, y = 2 } ]
+                        , cost = 2
+                        }
+                        ready
+
+                exits : OrderPlanning.Model
+                exits =
+                    checklist
+                        |> OrderPlanning.toggleUnloadPassenger infantryId True
+                        |> OrderPlanning.toggleUnloadPassenger passengerId True
+                        |> (OrderPlanning.confirmPassengers context.map context.units context.playerNumbers context.movementRules [] [] >> fixtureValue)
+
+                firstExit : OrderPlanning.Model
+                firstExit =
+                    OrderPlanning.chooseUnloadSquare context.map context.units context.playerNumbers context.movementRules [] [] { x = 1, y = 2 } exits
+                        |> fixtureValue
+
+                withPassengerKind : UnitKind -> BoardFixture
+                withPassengerKind kind =
+                    let
+                        changePassenger : Unit -> Unit
+                        changePassenger original =
+                            if original.id == gunId then
+                                { original | kind = kind }
+
+                            else
+                                original
+                    in
+                    { context | units = List.map changePassenger context.units }
+
+                deployOtherPassenger : BoardFixture -> OrderPlanning.Model
+                deployOtherPassenger fixture =
+                    escaped
+                        |> (OrderPlanning.selectUnit fixture.map fixture.units fixture.playerNumbers fixture.movementRules [] [] otherTruckId >> fixtureValue)
+                        |> (OrderPlanning.applyCommand fixture.map fixture.units fixture.playerNumbers fixture.movementRules [] [] UnitCommand.Move >> fixtureValue)
+                        |> (OrderPlanning.selectTile fixture.map fixture.units fixture.playerNumbers fixture.movementRules [] [] { x = 5, y = 3 } >> fixtureValue)
+                        |> OrderPlanning.toggleUnloadPassenger gunId True
+                        |> (OrderPlanning.confirmPassengers fixture.map fixture.units fixture.playerNumbers fixture.movementRules [] [] >> fixtureValue)
+                        |> (OrderPlanning.chooseUnloadSquare fixture.map fixture.units fixture.playerNumbers fixture.movementRules [] [] { x = 5, y = 2 } >> fixtureValue)
+
+                gunDeployed : OrderPlanning.Model
+                gunDeployed =
+                    deployOtherPassenger context
+
+                infantryContext : BoardFixture
+                infantryContext =
+                    withPassengerKind Kind.Infantry
+
+                infantryDeployed : OrderPlanning.Model
+                infantryDeployed =
+                    deployOtherPassenger infantryContext
+            in
+            List.concat
+                [ expect "the initial truck opens its infantry commands"
+                    (Maybe.map .id (OrderPlanning.commandMenuUnit context.map context.units ready) == Just infantryId)
+                , expect "Escape cancels the truck and both unloads while preserving unrelated orders"
+                    (OrderPlanning.orders escaped
+                        == [ unrelatedOrder ]
+                        && OrderPlanning.selection escaped
+                        == Nothing
+                    )
+                , expect "Escape during the second infantry command cancels the first infantry command too"
+                    (OrderPlanning.orders (cancel firstCommand) == [ unrelatedOrder ])
+                , expect "Escape during infantry movement selection cancels the entire truck sequence"
+                    (OrderPlanning.orders (cancel movingInfantry) == [ unrelatedOrder ])
+                , expect "Escape cancels the checklist, exit selection, and partially chosen exits"
+                    (List.all (\model -> OrderPlanning.orders (cancel model) == [ unrelatedOrder ]) [ checklist, movingChecklist, exits, firstExit ])
+                , expect "Escape after the last infantry command preserves the completed plan"
+                    (OrderPlanning.orders (cancel completed)
+                        == OrderPlanning.orders completed
+                        && List.length (OrderPlanning.orders completed)
+                        == 4
+                        && OrderPlanning.selection (cancel completed)
+                        == Nothing
+                    )
+                , expect "deploying another truck's field gun does not reopen skipped infantry menus"
+                    (OrderPlanning.commandMenuUnit context.map context.units gunDeployed
+                        == Nothing
+                        && List.length (List.concatMap PlannedOrder.unloads (OrderPlanning.orders gunDeployed))
+                        == 1
+                        && List.map .id (OrderPlanning.missingOrders context.map context.units context.playerNumbers (OrderPlanning.orders gunDeployed))
+                        == [ truckId ]
+                    )
+                , expect "Escape after unloading only a field gun keeps the completed truck plan"
+                    (OrderPlanning.orders (cancel gunDeployed) == OrderPlanning.orders gunDeployed)
+                , expect "closing the infantry command guide keeps the sequence but Escape cancels it"
+                    (let
+                        readingGuide : OrderPlanning.Model
+                        readingGuide =
+                            OrderPlanning.openCommandGuide context.map context.units context.playerNumbers ready
+                     in
+                     OrderPlanning.orders (cancel readingGuide)
+                        == [ unrelatedOrder ]
+                        && OrderPlanning.orders (OrderPlanning.dismissDialog readingGuide)
+                        == OrderPlanning.orders ready
+                    )
+                , expect "another truck prompts only its own dismounting infantry"
+                    (Maybe.map .id (OrderPlanning.commandMenuUnit infantryContext.map infantryContext.units infantryDeployed) == Just gunId)
+                ]
+
+        _ ->
+            [ "could not construct interrupted dismount fixture IDs" ]
 
 
 diggingTerrainChecks : UnitId -> List String

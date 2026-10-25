@@ -1,24 +1,13 @@
 # Todo
 
 # Done
-- Maps have descriptions
-- depot HP loss animation
+- When deploying two infantry from a truck, its unclear which one you are issuing commands for first
+- If I fail to give commands to infantry unloading from one truck, the next truck I unload from will get the command menu for the infantry
+- implement resign
 
 ## doing now
-- destroyed depot sprite
-- Resign and exit menu
-- better death and attack map animations
-- UI critique of the whole UI
-- Hide map editor UI in Elm code if flag is not set
-- Map selection has thumbnail images
 
-## Bugs
-
-## Immediately
-
-- implement resign
-- Sound
-- Make maps not hardcoded
+- - Make maps not hardcoded
 - Validation errors on lobby name should show up as red
 - start button should disable if you are waiting on a human
 - Fortress backdrop
@@ -28,10 +17,14 @@
 - No pagination in map list
 - Search field
 
+## Bugs
+
+## Immediately
+
+- Sound
 
 ## Soon
 - Proofread all screen text
-
 
 ## Later
 - Attack animations
