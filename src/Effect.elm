@@ -2,6 +2,7 @@ module Effect exposing
     ( Eff
     , after
     , and
+    , andThen
     , audio
     , batch
     , focus
@@ -86,6 +87,12 @@ withOut model =
 and : Eff msg -> ( model, Eff msg ) -> ( model, Eff msg )
 and effect ( model, eff ) =
     ( model, Batch [ effect, eff ] )
+
+
+andThen : (model -> ( model, Eff msg )) -> ( model, Eff msg ) -> ( model, Eff msg )
+andThen fn ( model, eff ) =
+    fn model
+        |> and eff
 
 
 toJs : ToJs.Msg -> Eff msg

@@ -57,10 +57,13 @@ All three cues are excerpts from one court gamelan performance, using its
 original pitches; source credit and extraction details are in `public/audio/README.md`.
 The current picks are C06 for affirm, C19 for cancel, and C07 for confirm,
 shortened to 160–220ms with fast fades.
-Opening **menu** and choosing **revoke order** play `uiAffirm`. Closing the menu
-and choosing **keep planning** play the higher `uiCancel`;
-**submit turn** and **submit anyway** play the lower
-`uiConfirm`. Keyboard equivalents use the same cues.
+Live-game messages select their UI cue in `GamePage.playAudio`, including nested
+view and playback messages. Opening menus, selecting objects, adjusting discrete
+camera controls, and choosing commands play `uiAffirm`. Saving orders, confirming
+cargo choices, submitting, resigning, and continuing dialogs play `uiConfirm`.
+Closing, backing out, and declining cargo choices play `uiCancel`.
+Keyboard actions use the same cue categories. Hover, focus, continuous pointer
+input, automatic playback, and server responses remain silent.
 
 ## Dev panel
 

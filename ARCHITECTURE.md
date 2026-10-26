@@ -87,6 +87,20 @@ refresh camera framing; finishing playback restores the saved view and may load
 the next turn. Loading a turn without animation frames also advances continuous
 playback. Unrelated messages do not run a presentation pass after `update`.
 
+Live `GamePage.superUpdate` checks layout changes after every update, adds the
+message's UI audio cue, synchronizes newly active native dialogs, and records
+their loss diagnostics. The layout check requests measurement only when selection
+visibility, submission readiness, turn activity, errors, or outcomes change.
+`GamePage.playAudio` explicitly handles every message and nested message type;
+continuous input and background work select `Audio.none`.
+Playback start closes the menu and explicitly remeasures the workspace; the
+central layout check skips a duplicate measurement on that transition.
+Frame advancement, combat continuation, and casualty acknowledgment update camera
+framing. Finishing playback starts the camera return and allows the pending turn
+introduction to appear. Viewport measurements and navigation changes refresh
+framing directly. These gameplay effects belong to their transitions rather than
+the wrapper.
+
 Replay controls replace the live turn-submit panel. Pause holds the recorded
 timeline and allows manual pan/zoom from the held camera. Automatic framing
 resumes with playback. Play continues through subsequent turns, while manual
@@ -749,7 +763,7 @@ The command guide is a `ReadingGuide` state inside the selected unit's
 and drafts while open. `OrderPlanning` owns opening, dismissal, and submission
 gating; locked lifecycle phases convert the selection to inspection and discard
 the guide. `GamePage` derives the native dialog from that interaction and opens
-it through the existing dialog-change effect.
+it through the dialog-change effect in `superUpdate`.
 
 `Fightlines.View.CommandMenu` renders the board-anchored command popup and emits command choices
 and arrow-key events. `GamePage.update` chooses the adjacent enabled command,
@@ -1624,7 +1638,7 @@ supplies native focus trapping with lower-screen placement and a transparent bac
 
 `UnitLoss.resolve` combines projected losses with the page's roster lookup for
 both dialog rendering and update-time error reporting. `GamePage.superUpdate`
-logs `Error.UnitOwnerNotFound` in `Shared.Model.errors` only when it detects a
+logs `Error.UnitOwnerNotFound` in `Shared.Model.errors` only when opening a
 newly active loss dialog. Unchanged or absent dialogs perform no additional
 owner resolution, and rendering does not log errors.
 
@@ -1639,9 +1653,10 @@ then returns to the pending introduction. Acknowledgment releases those frames;
 replay is available only from the new-turn card, never during planning or after
 the game ends. Same-turn polling preserves the retained frames.
 The page presents it only when planning is unlocked, after all
-playback and loss dialogs have finished. `GamePage.initialEffect` opens the initial
-native modal after rendering; `update` opens subsequent introductions when
-the active dialog changes. `Fightlines.View.TurnIntroduction` supplies the card artwork and
+playback and loss dialogs have finished. `GamePage.init` opens the initial
+native modal after rendering; `superUpdate` opens subsequent introductions when
+snapshot arrival or playback completion changes the active dialog.
+`Fightlines.View.TurnIntroduction` supplies the card artwork and
 actions through `Dialog.announcement`, which owns wide modal placement. The
 introduction owns its animation styles, mounted once in the application shell;
 its shine animation has a separate name from the turn controls' shine. The page remembers `skipTurnIntroduction`

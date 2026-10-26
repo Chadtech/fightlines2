@@ -584,12 +584,17 @@ ownerName model =
     PlaybackPresentation.ownerName model.players
 
 
-{-| Called only after detecting a newly active dialog. Repeated playback ticks
-and view rendering must not append the same loss error again.
+{-| Record an error only if the active loss details cannot be resolved. Called
+when a dialog becomes active so repeated ticks do not record it again.
 -}
-logNewLossError : Model -> Model
-logNewLossError model =
-    { model | shared = Shared.addError (PlaybackPresentation.lossError model.players (unitLoss model)) model.shared }
+recordLossDetailsErrorIfPresent : Model -> Model
+recordLossDetailsErrorIfPresent model =
+    { model
+        | shared =
+            Shared.addError
+                (PlaybackPresentation.lossError model.players (unitLoss model))
+                model.shared
+    }
 
 
 activeDialogHtmlId : Model -> Maybe String
@@ -648,11 +653,13 @@ submitTurn : LobbyId -> Model -> ( Model, Eff Msg )
 submitTurn lobbyId model =
     case CurrentTurn.startSubmission model.currentTurn of
         Just currentTurn ->
-            ( { model | currentTurn = currentTurn }
-            , E.request
-                (SubmitResponseReceived model.currentTurn.number)
-                (submitRequest lobbyId model)
-            )
+            { model | currentTurn = currentTurn }
+                |> E.withOut
+                |> E.and
+                    (E.request
+                        (SubmitResponseReceived model.currentTurn.number)
+                        (submitRequest lobbyId model)
+                    )
 
         Nothing ->
             ( model, E.none )
@@ -787,8 +794,28 @@ turnObservation snapshot =
     }
 
 
-applyTurnSnapshot : Snapshot -> CurrentTurn.Model -> Model -> Model
+applyTurnSnapshot : Snapshot -> CurrentTurn.Model -> Model -> ( Model, Eff Msg )
 applyTurnSnapshot snapshot currentTurn model =
+    let
+        next : Model
+        next =
+            reconcileTurnSnapshot snapshot currentTurn model
+    in
+    case ( playback model, playback next ) of
+        ( Nothing, Just _ ) ->
+            startPlayback next
+
+        ( Just _, Nothing ) ->
+            finishPlayback model next
+
+        _ ->
+            next
+                |> closeMenuForTurnIntroduction
+                |> E.withOut
+
+
+reconcileTurnSnapshot : Snapshot -> CurrentTurn.Model -> Model -> Model
+reconcileTurnSnapshot snapshot currentTurn model =
     let
         next : Model
         next =
@@ -1182,6 +1209,7 @@ focusAdjacentCommand orderCommands current model =
 mapNavigation : (BattlefieldNavigation.Model -> BattlefieldNavigation.Model) -> Model -> Model
 mapNavigation change model =
     { model | navigation = change model.navigation |> BattlefieldNavigation.finishReturn }
+        |> updatePlaybackCamera
 
 
 cargoDialogHtmlId : TurnLifecycle.Phase -> Maybe String
@@ -1515,6 +1543,81 @@ playbackCamera model =
             Nothing
 
 
+remeasureWorkspace : Model -> ( Model, Eff Msg )
+remeasureWorkspace model =
+    ( { model | battlefieldViewport = Nothing }
+    , E.measure Battlefield.htmlId BattlefieldSizeReceived
+    )
+
+
+{-| Selection changes the inspector inset; turn controls and errors can change
+the height available to the battlefield. Playback start requests its own fresh
+measurement, so this check does not request a second one for that transition.
+-}
+withLayoutMeasurement : Model -> Model -> ( Model, Eff Msg )
+withLayoutMeasurement previous next =
+    let
+        playbackStarted : Bool
+        playbackStarted =
+            (playback previous == Nothing) && (playback next /= Nothing)
+
+        layoutChanged : Bool
+        layoutChanged =
+            ((currentSelection previous == Nothing) /= (currentSelection next == Nothing))
+                || (turnActivity previous /= turnActivity next)
+                || (previous.currentTurn.error /= next.currentTurn.error)
+                || (previous.currentTurn.outcome /= next.currentTurn.outcome)
+    in
+    if layoutChanged && not playbackStarted then
+        remeasureWorkspace next
+
+    else
+        E.withOut next
+
+
+closeMenuForTurnIntroduction : Model -> Model
+closeMenuForTurnIntroduction model =
+    if showTurnIntroduction model then
+        { model | menuOpen = False }
+
+    else
+        model
+
+
+startPlayback : Model -> ( Model, Eff Msg )
+startPlayback model =
+    remeasureWorkspace { model | menuOpen = False }
+
+
+finishPlayback : Model -> Model -> ( Model, Eff Msg )
+finishPlayback previous next =
+    let
+        ( returned, cameraEffect ) =
+            if playbackCamera previous /= Nothing then
+                ( { next | navigation = BattlefieldNavigation.startReturn next.navigation }
+                , E.after PlaybackPresentation.cameraPanDurationMs CameraReturnFinished
+                )
+
+            else
+                E.withOut next
+    in
+    returned
+        |> closeMenuForTurnIntroduction
+        |> E.with cameraEffect
+
+
+presentPlaybackTransition : Model -> Model -> ( Model, Eff Msg )
+presentPlaybackTransition previous next =
+    case ( playback previous, playback next ) of
+        ( Just _, Nothing ) ->
+            finishPlayback previous next
+
+        _ ->
+            next
+                |> updatePlaybackCamera
+                |> E.withOut
+
+
 turnActivity : Model -> TurnControls.Activity
 turnActivity model =
     let
@@ -1549,98 +1652,30 @@ turnActivity model =
 ----------------------------------------------------------------
 
 
+{-| Check layout changes, add UI audio feedback, and synchronize native dialogs.
+Gameplay transitions own their other effects in `update` and its helpers.
+-}
 superUpdate : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 superUpdate lobbyId msg model =
-    case update lobbyId msg model of
-        ( updated, effect ) ->
-            let
-                playbackStarted : Bool
-                playbackStarted =
-                    (playback model == Nothing) && (playback updated /= Nothing)
+    let
+        ( next, effect ) =
+            model
+                |> update lobbyId msg
+                |> E.andThen (withLayoutMeasurement model)
+                |> E.and (E.audio (playAudio msg model))
+    in
+    case activeDialogHtmlId next of
+        Just htmlId ->
+            if activeDialogHtmlId model /= Just htmlId then
+                ( recordLossDetailsErrorIfPresent next
+                , E.batch [ effect, E.toJs (ToJs.OpenDialog { htmlId = htmlId }) ]
+                )
 
-                layoutChanged : Bool
-                layoutChanged =
-                    ((currentSelection model == Nothing) /= (currentSelection updated == Nothing))
-                        || (turnActivity model /= turnActivity updated)
-                        || (model.currentTurn.error /= updated.currentTurn.error)
-                        || (model.currentTurn.outcome /= updated.currentTurn.outcome)
-                        || (model.players /= updated.players)
+            else
+                ( next, effect )
 
-                viewportChanged : Bool
-                viewportChanged =
-                    playbackStarted || layoutChanged
-
-                withMenu : Model
-                withMenu =
-                    { updated
-                        | menuOpen = updated.menuOpen && not playbackStarted && not (showTurnIntroduction updated)
-                    }
-
-                next : Model
-                next =
-                    if viewportChanged then
-                        { withMenu
-                            | battlefieldViewport = Nothing
-                        }
-
-                    else
-                        updatePlaybackCamera withMenu
-
-                playbackFinished : Bool
-                playbackFinished =
-                    playbackCamera model /= Nothing && playback next == Nothing
-
-                cameraEffect : Eff Msg
-                cameraEffect =
-                    if playbackFinished then
-                        E.after PlaybackPresentation.cameraPanDurationMs CameraReturnFinished
-
-                    else
-                        E.none
-
-                viewportEffect : Eff Msg
-                viewportEffect =
-                    if viewportChanged then
-                        E.measure Battlefield.htmlId BattlefieldSizeReceived
-
-                    else
-                        E.none
-
-                withCameraReturn : Model
-                withCameraReturn =
-                    if playbackFinished then
-                        { next | navigation = BattlefieldNavigation.startReturn next.navigation }
-
-                    else
-                        next
-
-                combinedEffect : Eff Msg
-                combinedEffect =
-                    E.batch [ effect, cameraEffect, viewportEffect ]
-
-                previousDialogHtmlId : Maybe String
-                previousDialogHtmlId =
-                    activeDialogHtmlId model
-
-                nextDialogHtmlId : Maybe String
-                nextDialogHtmlId =
-                    activeDialogHtmlId next
-            in
-            case nextDialogHtmlId of
-                Just htmlId ->
-                    if nextDialogHtmlId /= previousDialogHtmlId then
-                        ( logNewLossError withCameraReturn
-                        , E.batch
-                            [ combinedEffect
-                            , E.toJs (ToJs.OpenDialog { htmlId = htmlId })
-                            ]
-                        )
-
-                    else
-                        ( withCameraReturn, combinedEffect )
-
-                Nothing ->
-                    ( withCameraReturn, combinedEffect )
+        Nothing ->
+            ( next, effect )
 
 
 update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
@@ -1665,7 +1700,6 @@ update lobbyId msg model =
                     { model | resigning = False }
                         |> applyTurnSnapshot snapshot
                             (CurrentTurn.pollSucceeded (turnObservation snapshot) model.currentTurn)
-                        |> E.withOut
                         |> E.and effect
 
                 Err error ->
@@ -1682,10 +1716,12 @@ update lobbyId msg model =
                         |> E.withOut
 
         BattlefieldMsg boardMsg ->
-            E.withOut (handleBattlefieldMsg boardMsg model)
+            handleBattlefieldMsg boardMsg model
+                |> E.withOut
 
         CameraReturnFinished ->
             { model | navigation = BattlefieldNavigation.finishReturn model.navigation }
+                |> updatePlaybackCamera
                 |> E.withOut
 
         BattlefieldSizeReceived result ->
@@ -1709,6 +1745,7 @@ update lobbyId msg model =
                                 }
                     in
                     { model | battlefieldViewport = Just viewport }
+                        |> updatePlaybackCamera
                         |> E.withOut
 
                 Err error ->
@@ -1957,7 +1994,7 @@ update lobbyId msg model =
         SubmissionCancelled ->
             case model.currentTurn.phase of
                 TurnLifecycle.Planning (OrderPlanning.ConfirmingSubmission _) ->
-                    ( dismissDialog model, E.none )
+                    dismissDialog model |> E.withOut
 
                 _ ->
                     E.withOut model
@@ -1996,7 +2033,6 @@ update lobbyId msg model =
                                 (turnObservation snapshot)
                                 model.currentTurn
                             )
-                        |> E.withOut
 
                 Err error ->
                     { model | currentTurn = CurrentTurn.submissionFailed turnNumber (ApiRequest.errorMessage error) model.currentTurn }
@@ -2053,7 +2089,6 @@ update lobbyId msg model =
                                 (turnObservation snapshot)
                                 model.currentTurn
                             )
-                        |> E.withOut
 
                 Err error ->
                     { model | currentTurn = CurrentTurn.pollFailed (ApiRequest.errorMessage error) model.currentTurn }
@@ -2079,7 +2114,7 @@ update lobbyId msg model =
                                 applyPlaybackFrame
                                     { phase = replay.currentTurn.phase, frame = replay.frame }
                                     { model | currentTurn = replay.currentTurn }
-                                    |> E.withOut
+                                    |> startPlayback
 
                             Nothing ->
                                 model |> E.withOut
@@ -2115,7 +2150,7 @@ update lobbyId msg model =
                                         currentTurn.phase
                             }
                     }
-                        |> E.withOut
+                        |> presentPlaybackTransition model
 
                 UnitDeath.SkipDialogsChanged skip ->
                     ( { model | skipUnitLossDialogs = skip }
@@ -2131,13 +2166,397 @@ update lobbyId msg model =
 
                 CombatTheater.ContinueClicked ->
                     continueCombat model
-                        |> E.withOut
+                        |> presentPlaybackTransition model
 
                 CombatTheater.SeeMapPressed ->
                     setCombatMapView TurnPlayback.SeeingMap model |> E.withOut
 
                 CombatTheater.SeeMapReleased ->
                     setCombatMapView TurnPlayback.CardVisible model |> E.withOut
+
+
+{-| Classify message intent for UI feedback. Continuous input and background
+work stay silent; focus and release notifications do not duplicate an action cue.
+Clicks ignored after panning also stay silent.
+-}
+playAudio : Msg -> Model -> Audio.Event
+playAudio msg model =
+    case msg of
+        BattlefieldSizeReceived _ ->
+            Audio.none
+
+        InspectorSizeReceived _ _ ->
+            Audio.none
+
+        CameraReturnFinished ->
+            Audio.none
+
+        WindowResized ->
+            Audio.none
+
+        BattlefieldMsg battlefieldMsg ->
+            case battlefieldMsg of
+                Battlefield.PanLeftClicked ->
+                    Audio.uiAffirm
+
+                Battlefield.PanRightClicked ->
+                    Audio.uiAffirm
+
+                Battlefield.PanUpClicked ->
+                    Audio.uiAffirm
+
+                Battlefield.PanDownClicked ->
+                    Audio.uiAffirm
+
+                Battlefield.ZoomInClicked ->
+                    Audio.uiAffirm
+
+                Battlefield.ZoomOutClicked ->
+                    Audio.uiAffirm
+
+                Battlefield.ResetViewClicked ->
+                    Audio.uiAffirm
+
+                Battlefield.RotationChoicesMsg rotationMsg ->
+                    case rotationMsg of
+                        RotationChoices.MouseMovedOverDirection _ ->
+                            Audio.none
+
+                        RotationChoices.FocusedDirection _ ->
+                            Audio.none
+
+                        RotationChoices.ClickedDirection _ ->
+                            if BattlefieldNavigation.suppressesClick model.navigation then
+                                Audio.none
+
+                            else
+                                Audio.uiConfirm
+
+                        RotationChoices.DirectionActivationKeyPressed _ ->
+                            Audio.uiConfirm
+
+                Battlefield.ClickedUnit _ click ->
+                    battlefieldClickAudio click model
+
+                Battlefield.PressedEnterOnUnit _ ->
+                    Audio.uiAffirm
+
+                Battlefield.PressedSpaceOnUnit _ ->
+                    Audio.uiAffirm
+
+                Battlefield.MouseOverUnit _ ->
+                    Audio.none
+
+                Battlefield.ClickedDepot _ click ->
+                    battlefieldClickAudio click model
+
+                Battlefield.PressedEnterOnDepot _ ->
+                    Audio.uiAffirm
+
+                Battlefield.PressedSpaceOnDepot _ ->
+                    Audio.uiAffirm
+
+                Battlefield.MouseOverDepot _ ->
+                    Audio.none
+
+                Battlefield.ClickedDepotStock _ click ->
+                    battlefieldClickAudio click model
+
+                Battlefield.PressedEnterOnDepotStock _ ->
+                    Audio.uiAffirm
+
+                Battlefield.PressedSpaceOnDepotStock _ ->
+                    Audio.uiAffirm
+
+                Battlefield.ClickedTile _ click ->
+                    battlefieldClickAudio click model
+
+                Battlefield.PressedEnterOnTile _ ->
+                    Audio.uiAffirm
+
+                Battlefield.PressedSpaceOnTile _ ->
+                    Audio.uiAffirm
+
+                Battlefield.FocusedBoardUnit _ ->
+                    Audio.none
+
+                Battlefield.FocusedBoardTile _ ->
+                    Audio.none
+
+                Battlefield.TargetPreviewLeft ->
+                    Audio.none
+
+                Battlefield.MouseOverTile _ ->
+                    Audio.none
+
+                Battlefield.MousePressed _ ->
+                    Audio.none
+
+                Battlefield.WheelScrolled _ _ ->
+                    Audio.none
+
+                Battlefield.HomePressed ->
+                    Audio.uiAffirm
+
+        BattlefieldNavigationMsg navigationMsg ->
+            case navigationMsg of
+                BattlefieldNavigation.MouseMoved _ _ ->
+                    Audio.none
+
+                BattlefieldNavigation.MouseReleased _ ->
+                    Audio.none
+
+                BattlefieldNavigation.WindowVisibilityChanged _ ->
+                    Audio.none
+
+        CommandMenuMsg commandMsg ->
+            case commandMsg of
+                CommandMenu.MenuPressed ->
+                    Audio.none
+
+                CommandMenu.InfoClicked ->
+                    Audio.uiAffirm
+
+                CommandMenu.CancelClicked ->
+                    Audio.uiCancel
+
+                CommandMenu.CommandFocused _ ->
+                    Audio.none
+
+                CommandMenu.CommandPicked command ->
+                    case command of
+                        UnitCommand.StandGround ->
+                            Audio.uiAffirm
+
+                        UnitCommand.HoldPosition ->
+                            Audio.uiConfirm
+
+                        UnitCommand.Move ->
+                            Audio.uiAffirm
+
+                        UnitCommand.AttackMove ->
+                            Audio.uiAffirm
+
+                        UnitCommand.IndirectFire ->
+                            Audio.uiAffirm
+
+                        UnitCommand.Sabotage ->
+                            Audio.uiConfirm
+
+                        UnitCommand.DigIn ->
+                            Audio.uiConfirm
+
+                        UnitCommand.Ambush ->
+                            Audio.uiAffirm
+
+                CommandMenu.ArrowedUpCommandMenu _ ->
+                    Audio.uiAffirm
+
+                CommandMenu.ArrowedDownCommandMenu _ ->
+                    Audio.uiAffirm
+
+        GameMenuMsg menuMsg ->
+            case menuMsg of
+                GameMenu.OpenClicked ->
+                    Audio.uiAffirm
+
+                GameMenu.CloseClicked ->
+                    Audio.uiCancel
+
+                GameMenu.FocusReturned _ ->
+                    Audio.none
+
+                GameMenu.ResignClicked ->
+                    Audio.uiConfirm
+
+                GameMenu.HomeClicked ->
+                    Audio.uiConfirm
+
+        PreviousCommandPressed ->
+            Audio.uiAffirm
+
+        NextCommandPressed ->
+            Audio.uiAffirm
+
+        CommandFocusCompleted _ ->
+            Audio.none
+
+        PanLeftKeyPressed ->
+            Audio.uiAffirm
+
+        PanRightKeyPressed ->
+            Audio.uiAffirm
+
+        PanUpKeyPressed ->
+            Audio.uiAffirm
+
+        PanDownKeyPressed ->
+            Audio.uiAffirm
+
+        ZoomInKeyPressed ->
+            Audio.uiAffirm
+
+        ZoomOutKeyPressed ->
+            Audio.uiAffirm
+
+        AnimationTimerElapsed _ ->
+            Audio.none
+
+        TurnIntroductionMsg introMsg ->
+            case introMsg of
+                TurnIntroduction.BeginClicked ->
+                    Audio.uiConfirm
+
+                TurnIntroduction.ReplayClicked ->
+                    Audio.uiAffirm
+
+                TurnIntroduction.BattlefieldViewClicked ->
+                    Audio.uiConfirm
+
+                TurnIntroduction.SkipDialogsChanged _ ->
+                    Audio.uiAffirm
+
+        UnitDeathMsg lossMsg ->
+            case lossMsg of
+                UnitDeath.ContinueClicked _ ->
+                    Audio.uiConfirm
+
+                UnitDeath.SkipDialogsChanged _ ->
+                    Audio.uiAffirm
+
+        CombatTheaterMsg theaterMsg ->
+            case theaterMsg of
+                CombatTheater.ContinueClicked ->
+                    Audio.uiConfirm
+
+                CombatTheater.SeeMapPressed ->
+                    Audio.uiAffirm
+
+                CombatTheater.SeeMapReleased ->
+                    Audio.none
+
+                CombatTheater.AutomaticallyCloseChanged _ ->
+                    Audio.uiAffirm
+
+        DirectionKeyPressed _ ->
+            Audio.uiConfirm
+
+        PathDirectionKeyPressed _ ->
+            Audio.uiAffirm
+
+        PathEnterPressed ->
+            Audio.uiConfirm
+
+        NextUnorderedUnitKeyPressed ->
+            Audio.uiAffirm
+
+        ClearMoveClicked ->
+            Audio.uiAffirm
+
+        BackToCommandsClicked ->
+            Audio.uiCancel
+
+        CargoUnitClicked _ ->
+            Audio.uiAffirm
+
+        LoadCratesClicked _ count ->
+            if count == 0 then
+                Audio.uiCancel
+
+            else
+                Audio.uiConfirm
+
+        GroundFreightPickupClicked ->
+            Audio.uiConfirm
+
+        UnloadCrateToggled _ checked ->
+            if checked then
+                Audio.uiAffirm
+
+            else
+                Audio.uiCancel
+
+        UnloadUnitToggled _ checked ->
+            if checked then
+                Audio.uiAffirm
+
+            else
+                Audio.uiCancel
+
+        UnloadChoicesConfirmed ->
+            Audio.uiConfirm
+
+        UnloadSkipped ->
+            Audio.uiCancel
+
+        InspectClicked ->
+            Audio.uiCancel
+
+        InspectorCloseClicked ->
+            Audio.uiCancel
+
+        EscapePressed ->
+            Audio.uiCancel
+
+        DialogDismissed ->
+            Audio.uiCancel
+
+        SubmissionCancelled ->
+            Audio.uiCancel
+
+        SubmissionConfirmed ->
+            Audio.uiConfirm
+
+        SubmitKeyPressed ->
+            Audio.uiConfirm
+
+        SubmissionEnterPressed ->
+            Audio.uiConfirm
+
+        SkipUnplannedUnitsWarningChanged _ ->
+            Audio.uiAffirm
+
+        TurnControlsMsg turnControlsMsg ->
+            case turnControlsMsg of
+                TurnControls.SubmitClicked ->
+                    Audio.uiConfirm
+
+        SubmitResponseReceived _ _ ->
+            Audio.none
+
+        CurrentTurnMsg turnMsg ->
+            case turnMsg of
+                CurrentTurn.PollTimerElapsed ->
+                    Audio.none
+
+                CurrentTurn.GotPlaybackPresentationMsg playbackMsg ->
+                    case playbackMsg of
+                        PlaybackPresentation.FrameElapsed _ ->
+                            Audio.none
+
+                        PlaybackPresentation.CombatEnterReleased ->
+                            Audio.uiConfirm
+
+                        PlaybackPresentation.CombatSeeMapReleased ->
+                            Audio.none
+
+        ResignResponseReceived _ _ ->
+            Audio.none
+
+        PollStatusResponseReceived _ ->
+            Audio.none
+
+        PollResponseReceived _ ->
+            Audio.none
+
+
+battlefieldClickAudio : { detail : Int } -> Model -> Audio.Event
+battlefieldClickAudio click model =
+    if suppressesBattlefieldClick click model then
+        Audio.none
+
+    else
+        Audio.uiAffirm
 
 
 handleGameMenuMsg : LobbyId -> GameMenu.Msg -> Model -> ( Model, Eff Msg )
@@ -2148,7 +2567,7 @@ handleGameMenuMsg lobbyId msg model =
                 ( { model
                     | menuOpen = True
                   }
-                , E.audio Audio.uiAffirm
+                , E.none
                 )
 
             else
@@ -2163,7 +2582,6 @@ handleGameMenuMsg lobbyId msg model =
                 }
                 (GameMenu.FocusReturned >> GameMenuMsg)
             )
-                |> E.and (E.audio Audio.uiCancel)
 
         GameMenu.ResignClicked ->
             resignGame lobbyId RemainInGame model
@@ -2264,7 +2682,7 @@ handleCurrentTurnMsg lobbyId msg model =
 
                 PlaybackPresentation.CombatEnterReleased ->
                     continueCombat model
-                        |> E.withOut
+                        |> presentPlaybackTransition model
 
                 PlaybackPresentation.CombatSeeMapReleased ->
                     setCombatMapView TurnPlayback.CardVisible model
@@ -2318,7 +2736,7 @@ advancePlayback delta model =
         Just next ->
             applyPlaybackFrame next model
                 |> automaticallyContinueCombat
-                |> E.withOut
+                |> presentPlaybackTransition model
 
         Nothing ->
             model |> E.withOut
@@ -2364,6 +2782,7 @@ setCombatMapView mapView model =
                     TurnLifecycle.setCombatMapView mapView currentTurn.phase
             }
     }
+        |> updatePlaybackCamera
 
 
 applyPlaybackFrame :

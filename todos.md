@@ -17,6 +17,7 @@
 - Search field
 
 ## Bugs
+- unit disappears when it starves with no notice
 
 ## Immediately
 - Sound
