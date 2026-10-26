@@ -3,6 +3,7 @@ port module Ports.Js.To exposing
     , toCmd
     )
 
+import Audio
 import Json.Encode as Je
 import Ports.Js.Encode as Encode
 
@@ -11,6 +12,7 @@ type Msg
     = CopyLink { url : String }
     | GenerateMapThumbnail { htmlId : String, requestId : Int }
     | OpenDialog { htmlId : String }
+    | Audio Audio.Event
     | SetLocalStorage { key : String, value : Je.Value }
 
 
@@ -27,6 +29,9 @@ encode msg =
 
         OpenDialog dialog ->
             Encode.openDialog dialog
+
+        Audio audio ->
+            Audio.encodeEvent audio
 
         GenerateMapThumbnail { htmlId, requestId } ->
             Encode.message "generateMapThumbnail"

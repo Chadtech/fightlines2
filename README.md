@@ -47,6 +47,21 @@ Opponent updates use half-second status polling plus network time.
 The combat theater also remembers its **automatically close** checkbox. When
 enabled, each encounter continues half a second after its animation finishes.
 
+## Audio manager
+
+Updates can request audio with `E.audio Audio.uiAffirm`, `Audio.uiCancel`, or
+`Audio.uiConfirm`; `Audio.none` produces no sound. Both apps share a JavaScript
+manager that loads and caches clips, unlocks
+audio after player interaction, and stops playback when the page is hidden.
+All three cues are excerpts from one court gamelan performance, using its
+original pitches; source credit and extraction details are in `public/audio/README.md`.
+The current picks are C06 for affirm, C19 for cancel, and C07 for confirm,
+shortened to 160–220ms with fast fades.
+Opening **menu** and choosing **revoke order** play `uiAffirm`. Closing the menu
+and choosing **keep planning** play the higher `uiCancel`;
+**submit turn** and **submit anyway** play the lower
+`uiConfirm`. Keyboard equivalents use the same cues.
+
 ## Dev panel
 
 Press backtick (`) in either the Fightlines or DevTools app to toggle the dev panel.

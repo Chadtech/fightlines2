@@ -34,6 +34,7 @@ check:
 	node tools/check-planning.cjs
 	node tools/check-pointer.cjs
 	node tools/check-local-storage.cjs
+	node tools/check-audio.cjs
 	node tools/check-home.cjs
 	$(MAKE) frontend
 	elm make src/DevTools.elm src/Style.elm src/View/*.elm src/Fightlines/View/*.elm src/Game/View/*.elm --output=/dev/null

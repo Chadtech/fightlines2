@@ -7,6 +7,9 @@
 /public/build-config.js
 /node_modules/
 /output/
+
+# Local audio experiments, generated clips and audition tools.
+/audio-experiments/
 /old
 /.idea
 /.env

@@ -27,7 +27,7 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
     },
   };
   const entryFile = entryPoint === 'Fightlines' ? 'public/main.js' : 'dev-tools/main.js';
-  const source = interopSource + '\n' + readFileSync(entryFile, 'utf8');
+  const source = readFileSync('public/audio-manager.js', 'utf8') + '\n' + interopSource + '\n' + readFileSync(entryFile, 'utf8');
   vm.runInNewContext(source, {
     FIGHTLINES_BUILD: build,
     Elm: { [entryPoint]: { init(options) {
@@ -50,6 +50,7 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
     },
     Math: { floor: Math.floor, random: () => randomSample },
     localStorage: storage,
+    document: { addEventListener() {} },
     addEventListener(name, handler) { events[name] = handler; },
     console: { warn(...args) { warnings.push(args); } },
   });
@@ -71,6 +72,10 @@ async function checkInterop() {
   }
   assert.equal(JSON.stringify(boot(undefined, { readFails: true }).flags.localStorage), '{}');
   const app = boot('{"existing":{"enabled":true},"count":1}');
+  await app.send(null);
+  await app.send({ play: 'uiAffirm' });
+  assert.equal(app.warnings.length, 0);
+  assert.equal(app.messages.length, 0);
   assert.equal(app.flags.localStorage.count, 1);
   await app.send({ tag: 'setLocalStorage', key: 'count', value: 2 });
   assert.deepEqual(JSON.parse(app.stored.get(key)), { existing: { enabled: true }, count: 2 });

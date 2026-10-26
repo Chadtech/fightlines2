@@ -29,6 +29,7 @@ import Api.Object.Scenario as Scenario
 import Api.Object.TerrainMovementCost as MovementCostApi
 import Api.Query
 import ApiRequest
+import Audio
 import Browser.Dom
 import Browser.Events
 import Effect as E
@@ -237,6 +238,7 @@ type Msg
     | InspectorCloseClicked
     | EscapePressed
     | DialogDismissed
+    | SubmissionCancelled
     | SubmissionConfirmed
     | SubmitKeyPressed
     | SubmissionEnterPressed
@@ -1476,12 +1478,6 @@ recordFocusResult result model =
             { model | shared = Shared.addError (Just (Error.ElementFocusFailed error)) model.shared }
 
 
-
-----------------------------------------------------------------
--- UPDATE --
-----------------------------------------------------------------
-
-
 {-| Retain playback framing across subject changes. Only projected positions
 can request a pan, and the saved planning navigation remains independent.
 -}
@@ -1545,6 +1541,12 @@ turnActivity model =
 
             else
                 TurnControls.Planning
+
+
+
+----------------------------------------------------------------
+-- UPDATE --
+----------------------------------------------------------------
 
 
 superUpdate : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
@@ -1952,6 +1954,14 @@ update lobbyId msg model =
                 |> dismissDialog
                 |> E.withOut
 
+        SubmissionCancelled ->
+            case model.currentTurn.phase of
+                TurnLifecycle.Planning (OrderPlanning.ConfirmingSubmission _) ->
+                    ( dismissDialog model, E.none )
+
+                _ ->
+                    E.withOut model
+
         SubmitKeyPressed ->
             if canSubmitWithKeyboard model then
                 requestSubmission lobbyId model
@@ -2135,10 +2145,11 @@ handleGameMenuMsg lobbyId msg model =
     case msg of
         GameMenu.OpenClicked ->
             if canOpenMenu model then
-                E.withOut
-                    { model
-                        | menuOpen = True
-                    }
+                ( { model
+                    | menuOpen = True
+                  }
+                , E.audio Audio.uiAffirm
+                )
 
             else
                 E.withOut model
@@ -2152,6 +2163,7 @@ handleGameMenuMsg lobbyId msg model =
                 }
                 (GameMenu.FocusReturned >> GameMenuMsg)
             )
+                |> E.and (E.audio Audio.uiCancel)
 
         GameMenu.ResignClicked ->
             resignGame lobbyId RemainInGame model
@@ -3790,7 +3802,7 @@ submissionWarning model =
     in
     Dialog.make partialOrdersDialogHtmlId
         "units without orders"
-        DialogDismissed
+        SubmissionCancelled
         [ H.p
             []
             [ H.text warning
@@ -3811,7 +3823,7 @@ submissionWarning model =
                 , S.g3
                 ]
             ]
-            [ Button.secondary "keep planning" DialogDismissed
+            [ Button.secondary "keep planning" SubmissionCancelled
                 |> Button.toHtml
             , Button.primary "submit anyway" SubmissionConfirmed
                 |> Button.toHtml

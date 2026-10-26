@@ -428,6 +428,30 @@ compile only `Fightlines` and delete stale tools HTML/JavaScript from `public`, 
 the tools sources. Server editor and archive access still use their independent
 opt-in flags.
 
+Both documents load `public/audio-manager.js` before the shared interop. Each
+`startElmApp` creates one manager. `Effect.audio` accepts an `Audio.Event` and
+sends it through `Ports.Js.To.Audio`: `Audio.none` encodes as `null`, and
+`Audio.uiAffirm`, `Audio.uiCancel`, and `Audio.uiConfirm` as
+`{ "play": "uiAffirm" }`, `{ "play": "uiCancel" }`, and
+`{ "play": "uiConfirm" }`. Shared interop routes these events
+to the manager before dispatching tagged clipboard, dialog, storage or thumbnail
+messages. Elm updates remain the only source of playback requests; pointer and
+keyboard listeners only unlock the browser audio context and preload its clips.
+The manager caches decoded buffers, limits simultaneous voices to four, coalesces
+identical requests within 40ms, and drops requests delayed more than 250ms.
+Hidden pages and page exit stop sounds and invalidate pending playback. Audio
+failures produce bounded console warnings without rejecting the Elm port handler.
+The three cues map to `/audio/ui-{affirm,cancel,confirm}-gamelan-v4.ogg`, excerpts
+from one CC BY 4.0 court gamelan performance credited in `public/audio/README.md`.
+They use audition picks C06, C19 and C07 respectively, shortened to 180ms, 160ms
+and 220ms with quick fades after the attack.
+The complete source recording and other experimental clips remain ignored.
+Opening the game menu and revoking an order emit `uiAffirm`; closing the menu
+and cancelling the unplanned-unit warning emit the higher `uiCancel`.
+Accepted submission requests and the unplanned-unit
+warning emit the lower `uiConfirm`, including keyboard submission. Locked or
+invalid submission attempts emit no audio.
+
 `NewLobby`, `JoinLobby`, `LobbyPage`, `LobbyLoadFailed`, `GamePage`, and
 `GameLoadFailed` own their page state and views.
 The `/` route renders the `Fightlines.Page.Home` logo and menu card. Its model owns shared

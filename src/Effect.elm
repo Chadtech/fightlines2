@@ -2,6 +2,7 @@ module Effect exposing
     ( Eff
     , after
     , and
+    , audio
     , batch
     , focus
     , load
@@ -12,6 +13,7 @@ module Effect exposing
     , request
     , toCmd
     , toJs
+    , with
     , withOut
     )
 
@@ -19,6 +21,7 @@ import ApiRequest
     exposing
         ( Response
         )
+import Audio
 import Browser.Dom
 import Browser.Navigation as Navigation
 import Graphql.Http
@@ -70,6 +73,11 @@ batch effects =
     Batch effects
 
 
+with : Eff msg -> model -> ( model, Eff msg )
+with eff model =
+    ( model, eff )
+
+
 withOut : model -> ( model, Eff msg )
 withOut model =
     ( model, none )
@@ -83,6 +91,11 @@ and effect ( model, eff ) =
 toJs : ToJs.Msg -> Eff msg
 toJs =
     ToJsMsg
+
+
+audio : Audio.Event -> Eff msg
+audio sound =
+    toJs (ToJs.Audio sound)
 
 
 request : (Response response -> msg) -> Graphql.Http.Request response -> Eff msg
