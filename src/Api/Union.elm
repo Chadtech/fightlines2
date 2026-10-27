@@ -5,9 +5,17 @@
 module Api.Union exposing (..)
 
 
+type DirectUnitLoss
+    = DirectUnitLoss
+
+
 type LoggedGameEntry
     = LoggedGameEntry
 
 
 type UnitLocation
     = UnitLocation
+
+
+type UnitLoss
+    = UnitLoss

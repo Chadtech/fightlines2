@@ -59,9 +59,9 @@ recovers, followed by a short travel beat. Units that only receive fire stay
 still. Live games and logged replays share this sequence.
 Sabotage opens a theater showing a demolition charge beside the structure over
 the tile’s terrain backdrop, then leaving the structure in wreckage. Supply-exhaustion
-losses open a separate theater where the unit's formation slumps and fades without
-shell impacts, followed by the usual loss acknowledgment. Both scenes share the
-continue, see-map, and automatic-close controls.
+losses open a separate theater where skulls and crossbones pulse slowly three times
+over the formation before its figures vanish together, followed by the usual loss
+acknowledgment. Both scenes share the continue, see-map, and automatic-close controls.
 
 ## Audio manager
 
@@ -567,7 +567,7 @@ all three squares straight ahead, plus the two squares beside the middle square,
 forming a five-square plus sign that rotates with the chosen direction.
 
 Ambush readiness costs 8 supplies in addition to normal turn upkeep. Firing costs
-12 supplies for infantry, 20 for field guns, and 16 for tanks; infantry deal 4 damage, tanks 8, and field guns 12. These are
+12 supplies for infantry, 20 for field guns, and 24 for tanks; infantry deal 4 damage, tanks 8, and field guns 12. These are
 initial balance values. Readiness is charged even without a target, and upkeep
 is reserved before firing. Units without enough supplies for readiness cannot
 choose ambush; a unit can maintain readiness without enough supplies to fire.
@@ -868,8 +868,8 @@ with an `attack move` heading and the usual fog-safe encounter portraits.
 
 Unit losses pause playback with a `unit lost` dialog below the battlefield. The lost
 unit stays highlighted while the rest of the map and controls darken. The dialog
-identifies the attack type and responsible player's unit, supply exhaustion, or a
-lost carrier. A destroyed truck and its lost passengers share one dialog and
+uses Rust-recorded loss causes to identify the attack type and responsible player's
+unit, supply exhaustion, or a lost carrier. A destroyed truck and its lost passengers share one dialog and
 one **continue** action; unrelated losses have separate dialogs. The adjacent
 **skip this dialog** checkbox remembers your preference and preserves the quick
 explosion and sprite disappearance while skipping future dialogs.

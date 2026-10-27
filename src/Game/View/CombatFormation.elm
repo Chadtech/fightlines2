@@ -106,6 +106,7 @@ type CasualtyEffect
 type Layer
     = Combatants
     | Impacts
+    | ExhaustionMarkers
 
 
 placements : UnitKind -> List Placement
@@ -210,23 +211,28 @@ toSvgWithCalibration calibration =
     layersToSvg ShellImpact calibration [ Combatants, Impacts ]
 
 
-exhaustionFadeDurationMs : Float
-exhaustionFadeDurationMs =
-    700
+exhaustionPulseDurationMs : Float
+exhaustionPulseDurationMs =
+    1000
 
 
-exhaustionEndsAt : UnitKind -> Int -> Float
-exhaustionEndsAt kind health =
-    impactStartsAt + toFloat (max 0 (figureCount kind health - 1)) * 120 + exhaustionFadeDurationMs
+exhaustionFlickerDurationMs : Float
+exhaustionFlickerDurationMs =
+    3 * exhaustionPulseDurationMs
 
 
-{-| Exhaustion removes the formation without inventing incoming fire.
+exhaustionEndsAt : Float
+exhaustionEndsAt =
+    impactStartsAt + exhaustionFlickerDurationMs
+
+
+{-| Three slow skull pulses precede simultaneous formation removal.
 -}
 exhaustionToSvg : Maybe Calibration -> Float -> CombatHealth -> Appearance -> List (Svg msg)
 exhaustionToSvg calibration elapsed =
     layersToSvg SupplyExhaustion
         calibration
-        [ Combatants ]
+        [ Combatants, ExhaustionMarkers ]
         { elapsed = elapsed, impactDelay = 0, attack = CombatAttack.NotAttacking }
 
 
@@ -395,7 +401,12 @@ layersToSvg effect calibration layers animation health unit =
 
                 startsAt : Float
                 startsAt =
-                    lossStartsAt { surviving = afterCount, index = index }
+                    case effect of
+                        ShellImpact ->
+                            lossStartsAt { surviving = afterCount, index = index }
+
+                        SupplyExhaustion ->
+                            impactStartsAt
 
                 visible : Bool
                 visible =
@@ -408,19 +419,7 @@ layersToSvg effect calibration layers animation health unit =
                             CombatExplosion.spriteDisappearsAt
 
                         SupplyExhaustion ->
-                            exhaustionFadeDurationMs
-
-                collapse : Float
-                collapse =
-                    if lost && (effect == SupplyExhaustion) then
-                        clamp 0 1 ((elapsed - startsAt) / exhaustionFadeDurationMs)
-
-                    else
-                        0
-
-                collapseTransform : String
-                collapseTransform =
-                    "translate(0 " ++ String.fromFloat (UnitSprite.portraitFooting unit) ++ ") rotate(" ++ String.fromFloat (collapse * 16) ++ ") scale(1 " ++ String.fromFloat (1 - collapse * 0.35) ++ ") translate(0 " ++ String.fromFloat (0 - UnitSprite.portraitFooting unit) ++ ")"
+                            exhaustionFlickerDurationMs
 
                 spriteOpacity : Float
                 spriteOpacity =
@@ -430,7 +429,7 @@ layersToSvg effect calibration layers animation health unit =
                                 CombatExplosion.spriteOpacity (elapsed - startsAt)
 
                             SupplyExhaustion ->
-                                1 - collapse
+                                1
 
                     else
                         1
@@ -445,12 +444,7 @@ layersToSvg effect calibration layers animation health unit =
                             , SA.class "fightlines-combat-figure"
                             , A.attribute "data-figure-index" (String.fromInt index)
                             ]
-                            [ Svg.g
-                                [ SA.transform collapseTransform
-                                , SA.css [ S.reducedMotion [ S.transform "none" ] ]
-                                ]
-                                [ CombatAttack.toSvg { elapsed = animation.elapsed, figureIndex = index } animation.attack unit ]
-                            ]
+                            [ CombatAttack.toSvg { elapsed = animation.elapsed, figureIndex = index } animation.attack unit ]
                         ]
 
                     else
@@ -497,6 +491,34 @@ layersToSvg effect calibration layers animation health unit =
                     else
                         []
 
+                exhaustionMarker : List (Svg msg)
+                exhaustionMarker =
+                    if lost && visible && (elapsed >= startsAt) then
+                        let
+                            markerSize : Float
+                            markerSize =
+                                min (placement.size * 0.7) (scale * UnitSprite.portraitFooting unit)
+
+                            pulseOpacity : Float
+                            pulseOpacity =
+                                (1 - cos (2 * pi * (elapsed - startsAt) / exhaustionPulseDurationMs)) / 2
+                        in
+                        [ Svg.image
+                            [ SA.x (String.fromFloat ((placement.size - markerSize) / 2))
+                            , SA.y (String.fromFloat ((scale * UnitSprite.portraitFooting unit - markerSize) / 2))
+                            , SA.width (String.fromFloat markerSize)
+                            , SA.height (String.fromFloat markerSize)
+                            , SA.xlinkHref "/assets/death-skull-illustrated-v1.png"
+                            , SA.opacity (String.fromFloat pulseOpacity)
+                            , SA.css [ S.reducedMotion [ S.opacity 1 ] ]
+                            , A.attribute "data-exhaustion-marker" (String.fromInt index)
+                            ]
+                            []
+                        ]
+
+                    else
+                        []
+
                 content : List (Svg msg)
                 content =
                     case layer of
@@ -505,6 +527,9 @@ layersToSvg effect calibration layers animation health unit =
 
                         Impacts ->
                             impact
+
+                        ExhaustionMarkers ->
+                            exhaustionMarker
             in
             Svg.g
                 [ SA.transform

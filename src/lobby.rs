@@ -429,6 +429,7 @@ fn observed_board(
     {
         // Lift fog only after the original, viewer-specific final turn has played.
         resolution.frames.push(TurnFrame {
+            losses: Vec::new(),
             sabotages: Vec::new(),
             departures: Vec::new(),
             indirect_impacts: Vec::new(),

@@ -529,10 +529,15 @@ lossChecks initial =
                 alive =
                     frame []
 
+                loss : Unit -> TurnPlayback.Loss
+                loss unit =
+                    { unit = unit, cause = TurnPlayback.SuppliesExhausted }
+
                 deaths : TurnPlayback.Frame
                 deaths =
                     alive
                         |> TurnPlayback.setFrameUnits (List.map (Unit.setDestroyed True) living)
+                        |> TurnPlayback.setFrameLosses (List.map loss living)
 
                 position : { turn : Int, player : PlayerNumber.PlayerNumber, fogOfWar : Bool }
                 position =
@@ -695,6 +700,7 @@ frame visible =
     { durationMs = 180
     , units = []
     , departures = []
+    , losses = []
     , sabotages = []
     , indirectImpacts = []
     , shots = []

@@ -33,6 +33,10 @@ type CargoStock
     = CargoStock
 
 
+type CarrierUnitLoss
+    = CarrierUnitLoss
+
+
 type CombatBackdrop
     = CombatBackdrop
 
@@ -53,6 +57,14 @@ type CombatState
     = CombatState
 
 
+type CombatUnitLoss
+    = CombatUnitLoss
+
+
+type ConcealedIndirectFireUnitLoss
+    = ConcealedIndirectFireUnitLoss
+
+
 type Coordinate
     = Coordinate
 
@@ -67,6 +79,10 @@ type DepotHp
 
 type DepotPlacement
     = DepotPlacement
+
+
+type ExhaustedUnitLoss
+    = ExhaustedUnitLoss
 
 
 type Fuel

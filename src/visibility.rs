@@ -386,9 +386,9 @@ fn observed_frames(
                 let mut observed = observed_scenario(&board, player_number, &visible);
                 // Corpses persist until cleanup. Later sight or a firing reveal
                 // must not disclose a casualty that was hidden when it happened.
-                for unit in &board.units {
+                for loss in &frame.losses {
+                    let unit = loss.unit();
                     if unit.player_number() != player_number
-                        && unit.destroyed()
                         && casualties.insert(unit.unit_id())
                         && !observed
                             .units
@@ -402,6 +402,11 @@ fn observed_frames(
                     .units
                     .retain(|unit| !concealed_casualties.contains(&unit.unit_id()));
                 TurnFrame {
+                    losses: frame
+                        .losses
+                        .iter()
+                        .filter_map(|loss| loss.projected(&observed.units, player_number))
+                        .collect(),
                     sabotages: frame
                         .sabotages
                         .iter()
@@ -528,6 +533,7 @@ fn observed_frames(
         let visible = visible_tiles(board, player_number);
         let observed = observed_scenario(board, player_number, &visible);
         TurnFrame {
+            losses: Vec::new(),
             sabotages: Vec::new(),
             departures: Vec::new(),
             indirect_impacts: Vec::new(),
@@ -586,6 +592,7 @@ mod tests {
     use crate::supplies::CargoStock;
     use crate::test_support::{FixtureValue, TestResult};
     use crate::turns::{TurnEvent, TurnEventKind};
+    use crate::unit_loss;
 
     fn scenario(kind: UnitKind, sketch: &str) -> TestResult<Scenario> {
         Ok({
@@ -630,6 +637,7 @@ mod tests {
             reports: Vec::new(),
             events: Vec::new(),
             frames: vec![TurnFrame {
+                losses: Vec::new(),
                 sabotages: vec![position],
                 departures: Vec::new(),
                 indirect_impacts: Vec::new(),
@@ -707,6 +715,7 @@ mod tests {
             assert_eq!(observation.supply_crates, vec![freight.clone()]);
             assert!(enemy.supply_crates.is_empty());
             let frame = |board: &Scenario| TurnFrame {
+                losses: Vec::new(),
                 sabotages: Vec::new(),
                 departures: Vec::new(),
                 units: board.units.clone(),
@@ -788,6 +797,7 @@ mod tests {
             let enemy_id = enemy.unit_id();
             board.units.push(enemy);
             let frame = |board: &Scenario| TurnFrame {
+                losses: Vec::new(),
                 sabotages: Vec::new(),
                 departures: Vec::new(),
                 indirect_impacts: Vec::new(),
@@ -799,8 +809,14 @@ mod tests {
                 duration_ms: 180,
             };
             let mut frames = vec![frame(&board)];
+            let casualty = board.units.get(1).fixture()?.clone();
+            board.units.get_mut(1).fixture()?.set_supplies_for_test(0);
             board.units.get_mut(1).fixture()?.take_damage(16);
-            frames.push(frame(&board));
+            let mut death_frame = frame(&board);
+            death_frame.losses.push(unit_loss::UnitLoss::Exhaustion(
+                unit_loss::ExhaustedUnitLoss { unit: casualty },
+            ));
+            frames.push(death_frame);
             if firing_reveal {
                 board.units.get_mut(1).fixture()?.finish_firing_reveal(true);
             } else {
@@ -837,8 +853,10 @@ mod tests {
                     .visible_tiles
                     .contains(&Coordinate::new(6, 0))
             );
+            assert!(projected.frames.iter().all(|frame| frame.losses.is_empty()));
             // The owner still receives the casualty, including its death frame.
             let own_frames = observed_frames(&board, PlayerNumber::Player2, &resolution);
+            assert_eq!(own_frames.get(1).fixture()?.losses.len(), 1);
             assert!(
                 own_frames
                     .get(1)
@@ -891,6 +909,7 @@ mod tests {
             turn_number: 1,
             events: vec![],
             frames: vec![TurnFrame {
+                losses: Vec::new(),
                 sabotages: Vec::new(),
                 departures: Vec::new(),
                 indirect_impacts: Vec::new(),
@@ -1363,6 +1382,7 @@ mod tests {
         let enemy_id = enemy.unit_id();
         board.units.push(enemy);
         let frame = |board: &Scenario| TurnFrame {
+            losses: Vec::new(),
             sabotages: Vec::new(),
             departures: Vec::new(),
             indirect_impacts: Vec::new(),

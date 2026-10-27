@@ -556,11 +556,12 @@ and interface animations and block battlefield interaction during the dialog.
 
 Name the lost unit and show whether the lethal shot was an `ambush` or `attack move`,
 alongside the attacker portrait, type, and owning player's name. Supply exhaustion
-first opens an `out of supplies` theater: stagger the unit's
-formation through a short slump and fade, leaving the backdrop empty without
-incoming projectiles, explosions, or camera shake. Use the normal theater controls;
+first opens an `out of supplies` theater: slowly flicker an illustrated skull and
+crossbones over each figure three times in sync over three seconds. Keep figures
+full-size and opaque until they vanish together at the end of the last flicker,
+leaving the backdrop empty without incoming projectiles, explosions, or camera shake. Use the normal theater controls;
 automatic close waits for the final figure to disappear plus half a second.
-Reduced motion keeps figures still until removal. The subsequent loss dialog
+Reduced motion keeps skull markers steady until removal. The subsequent loss dialog
 reads `ran out of supplies`; passengers lost with a carrier identify that carrier
 and its loss cause. Use projected playback data so concealed casualties never
 appear on the map or in the loss queue.

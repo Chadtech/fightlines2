@@ -55,6 +55,7 @@ pub struct MovementResolution {
 
 fn frame(board: &Scenario, duration_ms: i32) -> TurnFrame {
     TurnFrame {
+        losses: Vec::new(),
         sabotages: Vec::new(),
         departures: Vec::new(),
         indirect_impacts: Vec::new(),

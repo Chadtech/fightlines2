@@ -7,6 +7,7 @@ use crate::{
         SpriteFacing, Unit, UnitId, UnitKind,
     },
     supplies::{self, CrateUnload, GroundSupplyCrate, SupplyOrder},
+    unit_loss::UnitLoss,
 };
 use juniper::{GraphQLEnum, GraphQLInputObject, GraphQLObject, graphql_object};
 use serde::{Deserialize, Serialize};
@@ -267,6 +268,9 @@ impl UnitDeparture {
 
 #[derive(Clone, Debug, GraphQLObject, Serialize, Deserialize)]
 pub struct TurnFrame {
+    /// Losses emitted at this step, never repeated in the following pause.
+    #[serde(default)]
+    pub losses: Vec<UnitLoss>,
     /// Successful demolitions; hidden depot tiles are removed during projection.
     #[serde(default)]
     pub sabotages: Vec<Coordinate>,
@@ -1403,6 +1407,7 @@ impl Turns {
                 });
                 unit.board(truck);
                 frames.push(TurnFrame {
+                    losses: Vec::new(),
                     sabotages: Vec::new(),
                     departures: Vec::new(),
                     indirect_impacts: Vec::new(),
@@ -1467,6 +1472,7 @@ impl Turns {
                         combat.activate(scenario, std::slice::from_ref(command));
                     }
                     frames.push(TurnFrame {
+                        losses: Vec::new(),
                         sabotages: Vec::new(),
                         departures: Vec::new(),
                         indirect_impacts: Vec::new(),
@@ -1584,6 +1590,7 @@ impl Turns {
             }
             if !sabotages.is_empty() {
                 frames.push(TurnFrame {
+                    losses: Vec::new(),
                     sabotages,
                     departures: Vec::new(),
                     indirect_impacts: Vec::new(),
@@ -1651,11 +1658,13 @@ impl Turns {
                     supply_crates: scenario.supply_crates.clone(),
                     shots: Vec::new(),
                     units: resource_snapshot,
+                    losses: settlement.losses,
                     visible_tiles: Vec::new(),
                     duration_ms: 180,
                 });
             }
             frames.push(TurnFrame {
+                losses: Vec::new(),
                 sabotages: Vec::new(),
                 departures: Vec::new(),
                 indirect_impacts: Vec::new(),
@@ -2259,7 +2268,7 @@ mod tests {
                 assert_eq!(report.units_lost, 0);
                 assert_eq!(report.enemy_units_destroyed, 1);
                 assert_eq!(report.damage_inflicted, 1);
-                assert_eq!(report.supplies_consumed, 28);
+                assert_eq!(report.supplies_consumed, 36);
             } else {
                 assert_eq!(report.units_lost, 2);
                 assert_eq!(report.enemy_units_destroyed, 0);
@@ -6397,6 +6406,20 @@ mod tests {
                     .next()
                     .fixture()?;
                 assert!(projected.frames.iter().all(|frame| frame.shots.is_empty()));
+                let losses: Vec<_> = projected
+                    .frames
+                    .iter()
+                    .flat_map(|frame| &frame.losses)
+                    .collect();
+                if player == PlayerNumber::Player2 && !entrenched {
+                    assert_eq!(losses.len(), 1);
+                    let UnitLoss::ConcealedIndirectFire(loss) = losses.first().fixture()? else {
+                        return Err("concealed artillery loss exposed its attacker".into());
+                    };
+                    assert_eq!(loss.unit.unit_id(), target_id);
+                } else {
+                    assert!(losses.is_empty());
+                }
                 if player == PlayerNumber::Player1 {
                     assert!(impact.target.is_none());
                 } else {

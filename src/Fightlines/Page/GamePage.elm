@@ -905,6 +905,7 @@ reconcileTurnSnapshot snapshot currentTurn model =
             frame =
                 TurnPlayback.initial snapshot.playbackFrames
                     { departures = []
+                    , losses = []
                     , sabotages = []
                     , indirectImpacts = []
                     , shots = []

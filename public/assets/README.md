@@ -193,8 +193,8 @@ and open center are transparent.
 ## Illustrated death marker
 
 `death-skull-illustrated-v1.png` is a transparent 256px cell containing a detailed
-1980s anime-style skull and crossbones retained as legacy artwork. Map casualties
-now reuse the six `combat-impact-side-anime-v2` explosion frames, with the sprite
+1980s anime-style skull and crossbones. Exhaustion theaters pulse it over each
+formation figure before the formation vanishes. Map casualties reuse the six `combat-impact-side-anime-v2` explosion frames, with the sprite
 vanishing beneath the blast. Built-in imagegen produced the local skull
 master and prompt in `artwork/effects/illustrated/`. Run
 `node tools/build-effect-sprites.cjs` (also included in `make sprites`) to export it.

@@ -146,8 +146,8 @@ readyToAutomaticallyClose panel =
                 Sabotage _ ->
                     sabotageBlastAt + 700
 
-                Exhaustion unit ->
-                    exhaustionEndsAt unit
+                Exhaustion _ ->
+                    CombatFormation.exhaustionEndsAt
 
                 _ ->
                     ordinaryAnimationEndsAt panel
@@ -1038,11 +1038,6 @@ depotScene scenery panel damage =
 sabotageBlastAt : Float
 sabotageBlastAt =
     2400
-
-
-exhaustionEndsAt : Unit -> Float
-exhaustionEndsAt unit =
-    CombatFormation.exhaustionEndsAt unit.kind (exhaustionHealth unit).before.current
 
 
 exhaustionHealth : Unit -> CombatHealth

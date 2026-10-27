@@ -173,6 +173,9 @@ fn inspect_unit(unit: &mut Unit, orders: &[RecordedOrder], fired: &BTreeSet<Unit
 pub fn inspect_resolution(resolution: &mut TurnResolution, orders: &[RecordedOrder]) {
     let mut fired = BTreeSet::new();
     for frame in &mut resolution.frames {
+        for loss in &mut frame.losses {
+            loss.for_each_unit_mut(&mut |unit| inspect_unit(unit, orders, &fired));
+        }
         for shot in &mut frame.shots {
             inspect_unit(&mut shot.attacker, orders, &fired);
             inspect_unit(&mut shot.target, orders, &fired);
@@ -205,6 +208,9 @@ pub fn conceal_enemy_states(resolution: &mut TurnResolution, player: PlayerNumbe
         }
     }
     for frame in &mut resolution.frames {
+        for loss in &mut frame.losses {
+            loss.for_each_unit_mut(&mut |unit| conceal(unit, player));
+        }
         for unit in &mut frame.units {
             conceal(unit, player);
         }

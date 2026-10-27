@@ -4,6 +4,7 @@ use crate::{
     map_definition::MapDefinition,
     movement,
     supplies::{self, CargoStock, GroundSupplyCrate, ResourceStock, SupplyRules},
+    unit_loss::{self, UnitLoss},
 };
 use juniper::{GraphQLEnum, GraphQLObject, GraphQLUnion, graphql_object};
 use serde::{Deserialize, Serialize};
@@ -452,6 +453,7 @@ pub struct SupplyConsumption {
 }
 
 pub struct ResourceSettlement {
+    pub losses: Vec<UnitLoss>,
     pub units: Vec<Unit>,
     pub upkeep: Vec<SupplyConsumption>,
 }
@@ -778,6 +780,7 @@ impl Scenario {
         for unit in &mut self.units {
             unit.supplies.current = (unit.supplies.current - unit.supplies.upkeep_per_turn).max(0);
         }
+        let losses = unit_loss::exhaustion(&self.units);
         let exhausted: Vec<_> = self
             .units
             .iter()
@@ -799,6 +802,7 @@ impl Scenario {
         self.units
             .retain(|unit| unit.supplies.current > 0 && unit.is_alive());
         ResourceSettlement {
+            losses,
             units: resource_snapshot,
             upkeep,
         }

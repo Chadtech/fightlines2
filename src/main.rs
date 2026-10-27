@@ -22,6 +22,7 @@ mod seed;
 mod session_token;
 mod supplies;
 mod turns;
+mod unit_loss;
 mod visibility;
 
 use actix_files::{Files, NamedFile};

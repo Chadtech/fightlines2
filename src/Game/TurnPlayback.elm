@@ -21,6 +21,7 @@ module Game.TurnPlayback exposing
     , movingPositions
     , panels
     , selection
+    , setFrameLosses
     , setFrameShots
     , setFrameUnits
     , setMapView
@@ -37,10 +38,17 @@ import Api.Enum.CombatKind as CombatKind exposing (CombatKind)
 import Api.Enum.Direction exposing (Direction)
 import Api.Enum.Entrenchment as Entrenchment
 import Api.Object
+import Api.Object.CarrierUnitLoss as CarrierLossApi
+import Api.Object.CombatUnitLoss as CombatLossApi
+import Api.Object.ConcealedIndirectFireUnitLoss as ConcealedLossApi
+import Api.Object.ExhaustedUnitLoss as ExhaustionLossApi
 import Api.Object.GameSnapshot as GameApi
 import Api.Object.TurnFrame as FrameApi
 import Api.Object.TurnResolution as ResolutionApi
 import Api.Object.UnitDeparture as DepartureApi
+import Api.Union
+import Api.Union.DirectUnitLoss as DirectLossApi
+import Api.Union.UnitLoss as LossApi
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Depot as Depot exposing (Depot)
@@ -58,7 +66,8 @@ import Util.List as ListUtil
 
 
 type alias Frame =
-    { durationMs : Int
+    { losses : List Loss
+    , durationMs : Int
     , units : List Unit
     , departures : List Departure
     , indirectImpacts : List IndirectImpact
@@ -172,6 +181,11 @@ setElapsed elapsed model =
     { model | elapsed = elapsed }
 
 
+setFrameLosses : List Loss -> Frame -> Frame
+setFrameLosses recordedLosses model =
+    { model | losses = recordedLosses }
+
+
 setFrameShots : List Shot -> Frame -> Frame
 setFrameShots shots model =
     { model | shots = shots }
@@ -187,8 +201,8 @@ setCombatFocusStage stage model =
     { model | stage = stage }
 
 
-{-| Only projected casualties are reported. Encounter portraits can explain a
-loss but must never introduce a concealed unit onto the battlefield.
+{-| Recorded causes supply meaning; the held board determines when each casualty
+is ready for acknowledgment. Portraits never introduce concealed battlefield units.
 -}
 losses : Playback -> List Loss
 losses playback =
@@ -197,52 +211,21 @@ losses playback =
         frame =
             lossFrame playback
 
-        cause : Unit -> LossCause
-        cause unit =
+        pending : Loss -> Maybe Loss
+        pending loss =
             let
-                lethalShot : Shot -> Bool
-                lethalShot shot =
-                    shot.target.id == unit.id && shot.targetHealth.after.current == 0
-
-                deadCarrier : Unit -> Bool
-                deadCarrier carrier =
-                    Unit.carrierId unit == Just carrier.id && Unit.isDying carrier
+                displayedCasualty : Unit -> Bool
+                displayedCasualty unit =
+                    (unit.id == loss.unit.id) && Unit.isDying unit
             in
-            case ListUtil.find lethalShot playback.current.shots of
-                Just shot ->
-                    Destroyed shot.kind shot.attacker
+            if List.member loss.unit.id playback.acknowledgedLosses then
+                Nothing
 
-                Nothing ->
-                    case ListUtil.find deadCarrier frame.units of
-                        Just carrier ->
-                            CarrierLost carrier (cause carrier)
-
-                        Nothing ->
-                            if
-                                List.any
-                                    (\impact ->
-                                        IndirectImpact.destroyedUnitId impact == Just unit.id
-                                    )
-                                    playback.current.indirectImpacts
-                            then
-                                ConcealedIndirectFire
-
-                            else
-                                SuppliesExhausted
-
-        unacknowledged : Unit -> Bool
-        unacknowledged unit =
-            Unit.isDying unit
-                && not (List.member unit.id playback.acknowledgedLosses)
-
-        notice : Unit -> Loss
-        notice unit =
-            { unit = unit
-            , cause = cause unit
-            }
+            else
+                ListUtil.find displayedCasualty frame.units
+                    |> Maybe.map (\unit -> { loss | unit = unit })
     in
-    List.filter unacknowledged frame.units
-        |> List.map notice
+    List.filterMap pending frame.losses
 
 
 type alias LossEvent =
@@ -576,7 +559,7 @@ encounters frames =
     in
     orderEncounters frame (combatEncounters ++ impactEncounters)
         ++ sabotageEncounters frames
-        ++ exhaustionEncounters frames
+        ++ exhaustionEncounters frames.next
 
 
 sabotageEncounters : FrameTransition -> List Encounter
@@ -590,34 +573,23 @@ sabotageEncounters frames =
     List.filterMap encounter frames.next.sabotages
 
 
-exhaustionEncounters : FrameTransition -> List Encounter
-exhaustionEncounters frames =
+exhaustionEncounters : Frame -> List Encounter
+exhaustionEncounters frame =
     let
-        frame : Frame
-        frame =
-            frames.next
+        encounter : Loss -> Maybe Encounter
+        encounter loss =
+            case loss.cause of
+                SuppliesExhausted ->
+                    if Unit.onMap loss.unit then
+                        Just (Exhaustion loss.unit)
 
-        combatParticipants : List UnitId
-        combatParticipants =
-            List.concatMap (\shot -> [ shot.attacker.id, shot.target.id ]) frame.shots
-                ++ List.filterMap IndirectImpact.destroyedUnitId frame.indirectImpacts
+                    else
+                        Nothing
 
-        exhausted : Unit -> Maybe Encounter
-        exhausted unit =
-            let
-                exhaustedOnMap : Bool
-                exhaustedOnMap =
-                    Unit.isDying unit && Unit.onMap unit && not (List.member unit.id combatParticipants)
-            in
-            if exhaustedOnMap then
-                frames.current.units
-                    |> ListUtil.find (\earlier -> (earlier.id == unit.id) && not (Unit.isDying earlier))
-                    |> Maybe.map (\earlier -> Exhaustion earlier)
-
-            else
-                Nothing
+                _ ->
+                    Nothing
     in
-    List.filterMap exhausted frame.units
+    List.filterMap encounter frame.losses
 
 
 {-| Impact-only shells belong to the same simultaneous volley as confirmed hits.
@@ -896,6 +868,7 @@ combineReturnFire opening pending =
             in
             ( frame
                 |> setFrameShots shots
+                |> setFrameLosses (opening.losses ++ frame.losses)
             , rest
             )
     in
@@ -932,6 +905,7 @@ selection unit coordinate =
     GameApi.lastResolution
         (ResolutionApi.frames
             (SS.succeed Frame
+                |> SS.with (FrameApi.losses (lossSelection unit))
                 |> SS.with FrameApi.durationMs
                 |> SS.with (FrameApi.units unit)
                 |> SS.with
@@ -950,6 +924,62 @@ selection unit coordinate =
             )
         )
         |> SS.map (Maybe.withDefault [])
+
+
+lossSelection : SelectionSet Unit Api.Object.Unit -> SelectionSet Loss Api.Union.UnitLoss
+lossSelection unit =
+    LossApi.fragments
+        { onCombatUnitLoss = combatLossSelection unit
+        , onExhaustedUnitLoss = exhaustionLossSelection unit
+        , onConcealedIndirectFireUnitLoss = concealedLossSelection unit
+        , onCarrierUnitLoss = carrierLossSelection unit
+        }
+
+
+combatLossSelection : SelectionSet Unit Api.Object.Unit -> SelectionSet Loss Api.Object.CombatUnitLoss
+combatLossSelection unit =
+    SS.succeed Loss
+        |> SS.with (CombatLossApi.unit unit)
+        |> SS.with
+            (SS.succeed Destroyed
+                |> SS.with CombatLossApi.kind
+                |> SS.with (CombatLossApi.attacker unit)
+            )
+
+
+exhaustionLossSelection : SelectionSet Unit Api.Object.Unit -> SelectionSet Loss Api.Object.ExhaustedUnitLoss
+exhaustionLossSelection unit =
+    SS.succeed Loss
+        |> SS.with (ExhaustionLossApi.unit unit)
+        |> SS.with (SS.succeed SuppliesExhausted)
+
+
+concealedLossSelection : SelectionSet Unit Api.Object.Unit -> SelectionSet Loss Api.Object.ConcealedIndirectFireUnitLoss
+concealedLossSelection unit =
+    SS.succeed Loss
+        |> SS.with (ConcealedLossApi.unit unit)
+        |> SS.with (SS.succeed ConcealedIndirectFire)
+
+
+carrierLossSelection : SelectionSet Unit Api.Object.Unit -> SelectionSet Loss Api.Object.CarrierUnitLoss
+carrierLossSelection unit =
+    let
+        carrierCause : Loss -> LossCause
+        carrierCause carrier =
+            CarrierLost carrier.unit carrier.cause
+    in
+    SS.succeed Loss
+        |> SS.with (CarrierLossApi.unit unit)
+        |> SS.with
+            (CarrierLossApi.carrierLoss
+                (DirectLossApi.fragments
+                    { onCombatUnitLoss = combatLossSelection unit
+                    , onExhaustedUnitLoss = exhaustionLossSelection unit
+                    , onConcealedIndirectFireUnitLoss = concealedLossSelection unit
+                    }
+                )
+                |> SS.map carrierCause
+            )
 
 
 initial : List Frame -> Frame -> Frame
@@ -975,7 +1005,7 @@ start frames =
 
 
 {-| Combat keeps casualties in authoritative snapshots until end-of-turn cleanup.
-Show each death in its first frame, then omit the finished marker and corpse
+Use recorded loss IDs to show each death once, then omit the finished marker and corpse
 from subsequent presentation frames so later movement can resume with focus.
 The transition after a death frame already supplies the server's death pause.
 -}
@@ -989,7 +1019,7 @@ clearPresentedDeaths presented frames =
             let
                 deaths : List UnitId
                 deaths =
-                    List.filter Unit.isDying frame.units |> List.map .id
+                    List.map (.unit >> .id) frame.losses
 
                 units : List Unit
                 units =
@@ -999,6 +1029,7 @@ clearPresentedDeaths presented frames =
             in
             (frame
                 |> setFrameUnits units
+                |> setFrameLosses (List.filter (\loss -> not (List.member loss.unit.id presented)) frame.losses)
             )
                 :: clearPresentedDeaths (deaths ++ presented) remaining
 
@@ -1219,6 +1250,7 @@ exchangeDeathFrame projected focus =
     in
     before
         |> setFrameUnits (List.map present before.units)
+        |> setFrameLosses projected.losses
 
 
 advanceCombat : CombatFocus -> Playback -> { animation : Playback, frame : Frame }
@@ -1319,6 +1351,7 @@ presentationFrame playing next =
                     unit
     in
     { departures = playing.current.departures
+    , losses = playing.current.losses
     , sabotages = playing.current.sabotages
     , indirectImpacts = playing.current.indirectImpacts
     , depots = playing.current.depots

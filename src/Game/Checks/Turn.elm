@@ -328,6 +328,7 @@ playbackChecks first second =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , losses = []
             , sabotages = []
             , indirectImpacts = []
             , shots = []
@@ -345,6 +346,7 @@ playbackChecks first second =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , losses = []
             , sabotages = []
             , indirectImpacts = []
             , shots = []
@@ -370,6 +372,7 @@ playbackChecks first second =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , losses = []
             , sabotages = []
             , indirectImpacts = []
             , shots = []
@@ -881,6 +884,7 @@ transportPlaybackChecks passengerId truckId =
                     { depots = []
                     , supplyCrates = []
                     , departures = []
+                    , losses = []
                     , sabotages = []
                     , indirectImpacts = []
                     , shots = []
@@ -892,6 +896,7 @@ transportPlaybackChecks passengerId truckId =
                     [ { depots = []
                       , supplyCrates = []
                       , departures = []
+                      , losses = []
                       , sabotages = []
                       , indirectImpacts = []
                       , shots = []
@@ -1006,6 +1011,7 @@ spriteFacingChecks id =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , losses = []
             , sabotages = []
             , indirectImpacts = []
             , shots = []
@@ -1145,6 +1151,7 @@ combatPlaybackChecks first second =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , losses = []
             , sabotages = []
             , indirectImpacts = []
             , shots = []
@@ -1364,6 +1371,15 @@ combatPlaybackChecks first second =
 
                 showTarget : List IndirectImpact -> Bool -> Maybe TurnPlayback.Playback
                 showTarget impacts destroyed =
+                    let
+                        recordedLosses : List TurnPlayback.Loss
+                        recordedLosses =
+                            if destroyed then
+                                [ { unit = target, cause = TurnPlayback.ConcealedIndirectFire } ]
+
+                            else
+                                []
+                    in
                     TurnPlayback.start
                         [ before
                             |> TurnPlayback.setFrameUnits
@@ -1375,6 +1391,7 @@ combatPlaybackChecks first second =
                                 ]
                             |> setFrameSabotages []
                             |> setFrameIndirectImpacts impacts
+                            |> TurnPlayback.setFrameLosses recordedLosses
                         ]
                         |> Maybe.andThen (TurnPlayback.tick 180 >> Tuple.first)
                         |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
@@ -2436,6 +2453,7 @@ combatDeathChecks first second =
                 before =
                     { units = [ attacker, target, other ]
                     , departures = []
+                    , losses = []
                     , sabotages = []
                     , indirectImpacts = []
                     , shots = []
@@ -2462,6 +2480,10 @@ combatDeathChecks first second =
                             ]
                         |> TurnPlayback.setFrameShots
                             [ lethalShot target, lethalShot other ]
+                        |> TurnPlayback.setFrameLosses
+                            [ { unit = target, cause = TurnPlayback.Destroyed CombatKind.Ambush attacker }
+                            , { unit = other, cause = TurnPlayback.Destroyed CombatKind.Ambush attacker }
+                            ]
 
                 cleanup : TurnPlayback.Frame
                 cleanup =
@@ -2537,6 +2559,10 @@ combatDeathChecks first second =
                                     |> Unit.setDestroyed True
                                 , other
                                 ]
+                            |> TurnPlayback.setFrameLosses
+                                [ { unit = attacker, cause = TurnPlayback.Destroyed CombatKind.Ambush target }
+                                , { unit = target, cause = TurnPlayback.Destroyed CombatKind.Ambush attacker }
+                                ]
                             |> TurnPlayback.setFrameShots
                                 [ reciprocal
                                     |> setShotOrigin reciprocal.destination
@@ -2578,6 +2604,7 @@ combatDeathChecks first second =
                             , other
                             ]
                         |> TurnPlayback.setFrameShots []
+                        |> TurnPlayback.setFrameLosses [ { unit = target, cause = TurnPlayback.ConcealedIndirectFire } ]
                         |> setFrameSabotages []
                         |> setFrameIndirectImpacts
                             [ { destination = { x = 3, y = 2 }, attacker = Nothing, depot = Nothing, target = Just { unit = target, health = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } } } } ]
@@ -2645,6 +2672,7 @@ combatDeathChecks first second =
                             |> TurnPlayback.setFrameUnits
                                 [ attacker, firingGun |> Unit.setDestroyed True ]
                             |> TurnPlayback.setFrameShots shots
+                            |> TurnPlayback.setFrameLosses [ { unit = firingGun, cause = TurnPlayback.ConcealedIndirectFire } ]
                             |> setFrameIndirectImpacts impacts
                         , cleanup
                         ]
@@ -2695,7 +2723,11 @@ combatDeathChecks first second =
                         carriedDeath : TurnPlayback.Frame
                         carriedDeath =
                             { concealedShell
-                                | units =
+                                | losses =
+                                    [ { unit = carrier, cause = TurnPlayback.ConcealedIndirectFire }
+                                    , { unit = passenger, cause = TurnPlayback.CarrierLost carrier TurnPlayback.ConcealedIndirectFire }
+                                    ]
+                                , units =
                                     [ attacker
                                     , carrier
                                         |> Unit.setDestroyed True
@@ -2937,8 +2969,8 @@ combatDeathChecks first second =
                     (concealedDeath |> Maybe.map (.frame >> dyingIds >> List.isEmpty) |> (==) (Just True))
                 , expect "loss dialog identifies the lethal shot and its attacker"
                     (firstDeath |> Maybe.map (.animation >> TurnPlayback.losses) |> Maybe.map (List.map .cause) |> (==) (Just [ TurnPlayback.Destroyed CombatKind.Ambush attacker ]))
-                , expect "loss dialogs distinguish attack move from ambush"
-                    (firstDeath |> Maybe.map (.animation >> attackMoveCauses) |> (==) (Just [ TurnPlayback.Destroyed CombatKind.AttackMove attacker ]))
+                , expect "loss dialogs preserve recorded causes when shot metadata changes"
+                    (firstDeath |> Maybe.map (.animation >> attackMoveCauses) |> (==) (Just [ TurnPlayback.Destroyed CombatKind.Ambush attacker ]))
                 , expect "loss dialog holds combat casualties through arbitrarily long ticks"
                     (firstDeath |> Maybe.map (.animation >> TurnPlayback.tickUntilLoss 60000 >> Tuple.second >> dyingIds) |> (==) (Just [ second ]))
                 , expect "continuing a loss resumes the existing casualty pause"
@@ -3019,6 +3051,7 @@ deathPlaybackChecks id =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , losses = [ { unit = alive, cause = TurnPlayback.SuppliesExhausted } ]
             , sabotages = []
             , indirectImpacts = []
             , shots = []
@@ -3036,6 +3069,7 @@ deathPlaybackChecks id =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , losses = []
             , sabotages = []
             , indirectImpacts = []
             , shots = []
@@ -3065,6 +3099,15 @@ deathPlaybackChecks id =
                 |> TurnPlayback.setFrameUnits
                     [ alive ]
                 |> setFrameDurationMs 0
+                |> TurnPlayback.setFrameLosses []
+
+        spent : Unit
+        spent =
+            alive
+                |> Unit.setResources
+                    (dead.resources
+                        |> Maybe.map (\resources -> { resources | hitPoints = { current = 16, maximum = 16 } })
+                    )
 
         delayed : Maybe ( Maybe TurnPlayback.Playback, TurnPlayback.Frame )
         delayed =
@@ -3098,7 +3141,7 @@ deathPlaybackChecks id =
                 shownKind =
                     TurnPlayback.start
                         [ initial |> TurnPlayback.setFrameUnits [ living ]
-                        , dying |> TurnPlayback.setFrameUnits [ Unit.setKind kind dead ]
+                        , dying |> TurnPlayback.setFrameUnits [ Unit.setKind kind dead ] |> TurnPlayback.setFrameLosses [ { unit = living, cause = TurnPlayback.SuppliesExhausted } ]
                         , gone
                         ]
                         |> Maybe.andThen (TurnPlayback.tickUntilLoss 60000 >> Tuple.first)
@@ -3170,12 +3213,26 @@ deathPlaybackChecks id =
         ++ expect "dead units vanish at the server frame boundary" (finished == Nothing && List.isEmpty afterRemoval.units && List.isEmpty afterRemoval.visibleTiles)
         ++ expect "death does not interpolate a movement" (List.isEmpty (TurnPlayback.movingPositions (Just animation)))
         ++ expect "supply death dialogs remain until acknowledged" (held == Just animation && heldFrame.units == [ dead ])
+        ++ expect "dying snapshots without loss events never invent a loss cause"
+            (List.isEmpty (TurnPlayback.losses { animation | current = dying |> TurnPlayback.setFrameLosses [] }))
+        ++ expect "recorded exhaustion opens without a matching previous unit"
+            (TurnPlayback.start [ gone, dying, gone ]
+                |> Maybe.andThen (TurnPlayback.tick 180 >> Tuple.first)
+                |> Maybe.andThen TurnPlayback.activeEncounter
+                |> (==) (Just (TurnPlayback.Exhaustion alive))
+            )
+        ++ expect "zero supplies before the loss event do not discard a future exhaustion scene"
+            (TurnPlayback.start [ initial |> TurnPlayback.setFrameUnits [ spent ], dying, gone ]
+                |> Maybe.andThen (TurnPlayback.tick 180 >> Tuple.first)
+                |> Maybe.andThen TurnPlayback.activeEncounter
+                |> (==) (Just (TurnPlayback.Exhaustion alive))
+            )
         ++ expect "supply death cause uses the exhaustion frame" (List.map .cause (TurnPlayback.losses animation) == [ TurnPlayback.SuppliesExhausted ])
         ++ expect "delayed ticks stop before the supply-exhaustion theater" (Maybe.map (Tuple.second >> .units) delayed == Just [ alive ])
         ++ expect "acknowledged supply death completes normally" (acknowledged == Nothing && List.isEmpty acknowledgedFrame.units)
         ++ expect "exhaustion opens its theater before acknowledging a loss" (shown |> Maybe.andThen TurnPlayback.activeEncounter |> (==) (Just (TurnPlayback.Exhaustion alive)))
         ++ expect "exhaustion keeps casualty acknowledgment after the theater" (continued |> Maybe.map (.animation >> TurnPlayback.losses >> List.map .cause) |> (==) (Just [ TurnPlayback.SuppliesExhausted ]))
-        ++ expect "exhaustion waits for every figure to fade and the close delay" (not (exhaustionReady 3239 TurnPlayback.CardVisible) && exhaustionReady 3240 TurnPlayback.CardVisible && not (exhaustionReady 6000 TurnPlayback.SeeingMap))
+        ++ expect "exhaustion waits for the final skull flicker and the close delay" (not (exhaustionReady 4699 TurnPlayback.CardVisible) && exhaustionReady 4700 TurnPlayback.CardVisible && not (exhaustionReady 6000 TurnPlayback.SeeingMap))
         ++ List.concatMap exhaustionKindChecks [ Kind.Infantry, Kind.Tank, Kind.Truck, Kind.FieldGun ]
         ++ List.concatMap sabotageChecks [ BuildingKind.Supply, BuildingKind.Fuel, BuildingKind.Fortress ]
 
@@ -3219,6 +3276,7 @@ deathFocusChecks first second =
             { depots = []
             , supplyCrates = []
             , departures = []
+            , losses = [ { unit = Unit.setDestroyed False dead, cause = TurnPlayback.SuppliesExhausted } ]
             , sabotages = []
             , indirectImpacts = []
             , shots = []
@@ -3254,7 +3312,7 @@ deathFocusChecks first second =
             else
                 [ label ]
     in
-    case TurnPlayback.start [ dying, paused, moved ] of
+    case TurnPlayback.start [ dying |> TurnPlayback.setFrameLosses [ { unit = dead, cause = TurnPlayback.ConcealedIndirectFire } ], paused, moved ] of
         Nothing ->
             [ "death focus playback did not start" ]
 
@@ -3275,6 +3333,10 @@ deathFocusChecks first second =
                         (animation
                             |> setPlaybackCurrent
                                 (dying
+                                    |> TurnPlayback.setFrameLosses
+                                        [ { unit = dead, cause = TurnPlayback.SuppliesExhausted }
+                                        , { unit = survivor, cause = TurnPlayback.CarrierLost dead TurnPlayback.SuppliesExhausted }
+                                        ]
                                     |> TurnPlayback.setFrameUnits
                                         [ dead
                                         , survivor
@@ -3581,6 +3643,12 @@ carrierLossEventChecks first second =
                     { units = [ passenger, independent, truck, otherPassenger ]
                     , durationMs = 1400
                     , departures = []
+                    , losses =
+                        [ { unit = Unit.setDestroyed False passenger, cause = TurnPlayback.CarrierLost truck TurnPlayback.SuppliesExhausted }
+                        , { unit = Unit.setDestroyed False independent, cause = TurnPlayback.SuppliesExhausted }
+                        , { unit = Unit.setDestroyed False truck, cause = TurnPlayback.SuppliesExhausted }
+                        , { unit = Unit.setDestroyed False otherPassenger, cause = TurnPlayback.CarrierLost truck TurnPlayback.SuppliesExhausted }
+                        ]
                     , sabotages = []
                     , indirectImpacts = []
                     , shots = []
@@ -3595,6 +3663,7 @@ carrierLossEventChecks first second =
                     , remaining =
                         [ frame
                             |> TurnPlayback.setFrameUnits []
+                            |> TurnPlayback.setFrameLosses []
                         ]
                     , elapsed = 0
                     , presentation = TurnPlayback.Battlefield
@@ -3621,6 +3690,12 @@ carrierLossEventChecks first second =
                     animation
                         |> setPlaybackCurrent
                             (frame
+                                |> TurnPlayback.setFrameLosses
+                                    [ { unit = passenger, cause = TurnPlayback.CarrierLost truck (TurnPlayback.Destroyed CombatKind.AttackMove shot.attacker) }
+                                    , { unit = independent, cause = TurnPlayback.SuppliesExhausted }
+                                    , { unit = truck, cause = TurnPlayback.Destroyed CombatKind.AttackMove shot.attacker }
+                                    , { unit = otherPassenger, cause = TurnPlayback.CarrierLost truck (TurnPlayback.Destroyed CombatKind.AttackMove shot.attacker) }
+                                    ]
                                 |> TurnPlayback.setFrameShots
                                     [ shot ]
                             )
@@ -3628,9 +3703,9 @@ carrierLossEventChecks first second =
                 exhaustionTheater : Maybe TurnPlayback.Playback
                 exhaustionTheater =
                     TurnPlayback.start
-                        [ frame |> TurnPlayback.setFrameUnits (List.map (Unit.setDestroyed False) frame.units)
+                        [ frame |> TurnPlayback.setFrameUnits (List.map (Unit.setDestroyed False) frame.units) |> TurnPlayback.setFrameLosses []
                         , frame
-                        , frame |> TurnPlayback.setFrameUnits []
+                        , frame |> TurnPlayback.setFrameUnits [] |> TurnPlayback.setFrameLosses []
                         ]
                         |> Maybe.andThen (TurnPlayback.tickUntilLoss 1400 >> Tuple.first)
                         |> Maybe.andThen (TurnPlayback.tickUntilLoss 300 >> Tuple.first)

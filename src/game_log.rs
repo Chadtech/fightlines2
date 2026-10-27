@@ -15,7 +15,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const FORMAT_VERSION: u32 = 1;
+mod legacy;
+
+const FORMAT_VERSION: u32 = 2;
 
 pub struct Directory(PathBuf);
 
@@ -284,13 +286,19 @@ fn records(directory: &Path) -> io::Result<Vec<Record>> {
                 "missing or unexpected record at {expected}"
             )));
         }
-        let record: Record = serde_json::from_reader(BufReader::new(File::open(path)?))
+        let mut record: Record = serde_json::from_reader(BufReader::new(File::open(path)?))
             .map_err(|error| io::Error::other(format!("{expected}: {error}")))?;
-        if record.format_version != FORMAT_VERSION {
+        if record.format_version != 1 && record.format_version != FORMAT_VERSION {
             return Err(io::Error::other(format!(
                 "unsupported game log version {}",
                 record.format_version
             )));
+        }
+        if record.format_version == 1
+            && let Event::Submitted(submitted) = &mut record.event
+            && let Some(resolution) = &mut submitted.resolution
+        {
+            legacy::restore_losses(resolution);
         }
         records.push(record);
     }
@@ -361,7 +369,7 @@ pub fn replay(directory: &Path) -> io::Result<String> {
         let path = directory.join(format!("{index:08}.json"));
         match record.event {
             Event::Started(started) if index == 0 => scenario = Some(started.scenario),
-            Event::Submitted(submitted) => {
+            Event::Submitted(mut submitted) => {
                 let scenario = scenario
                     .as_mut()
                     .ok_or_else(|| io::Error::other("game log must begin with Started"))?;
@@ -390,6 +398,17 @@ pub fn replay(directory: &Path) -> io::Result<String> {
                     &turns,
                 );
                 actual.resigned_player = submitted.resigned_player;
+                // Version one never recorded loss payloads. Verify all its original
+                // authoritative fields without comparing compatibility-only portraits.
+                if record.format_version == 1 {
+                    for result in [&mut actual, &mut submitted] {
+                        if let Some(resolution) = &mut result.resolution {
+                            for frame in &mut resolution.frames {
+                                frame.losses.clear();
+                            }
+                        }
+                    }
+                }
                 if serde_json::to_value(&actual)? != serde_json::to_value(&submitted)? {
                     return Err(io::Error::other(format!(
                         "{}: replay differs from recorded turn {}",
@@ -595,6 +614,45 @@ mod tests {
         );
         assert_eq!(fs::read(&destination)?, b"existing record");
         fs::remove_file(destination)?;
+        replay(&log.directory)?;
+        let expected_losses: Vec<_> = Archive::read(&log.directory)?
+            .submissions
+            .into_iter()
+            .filter_map(|submission| submission.resolution)
+            .flat_map(|resolution| resolution.frames)
+            .flat_map(|frame| frame.losses)
+            .map(|loss| loss.unit().unit_id())
+            .collect();
+        assert!(!expected_losses.is_empty());
+        for path in fs::read_dir(&log.directory)? {
+            let path = path?.path();
+            if path.extension().is_none_or(|extension| extension != "json") {
+                continue;
+            }
+            let mut record: serde_json::Value = serde_json::from_reader(File::open(&path)?)?;
+            record["format_version"] = json!(1);
+            if let Some(frames) = record
+                .get_mut("event")
+                .and_then(|event| event.get_mut("data"))
+                .and_then(|data| data.get_mut("resolution"))
+                .and_then(|resolution| resolution.get_mut("frames"))
+                .and_then(serde_json::Value::as_array_mut)
+            {
+                for frame in frames {
+                    frame.as_object_mut().fixture()?.remove("losses");
+                }
+            }
+            fs::write(&path, serde_json::to_vec(&record)?)?;
+        }
+        let restored_losses: Vec<_> = Archive::read(&log.directory)?
+            .submissions
+            .into_iter()
+            .filter_map(|submission| submission.resolution)
+            .flat_map(|resolution| resolution.frames)
+            .flat_map(|frame| frame.losses)
+            .map(|loss| loss.unit().unit_id())
+            .collect();
+        assert_eq!(restored_losses, expected_losses);
         replay(&log.directory)?;
         fs::remove_dir_all(root)?;
         Ok(())

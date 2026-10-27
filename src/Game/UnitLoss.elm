@@ -22,7 +22,7 @@ type DetailsError
 
 
 {-| Resolve every owner required by a loss notice from the page's roster lookup.
-Names stay separate from playback, which only carries projected units and shots.
+Names stay separate from playback, which carries projected units and loss events.
 -}
 resolve : (Unit -> Maybe String) -> Loss -> Result DetailsError Details
 resolve ownerName loss =

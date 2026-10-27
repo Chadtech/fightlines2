@@ -6,7 +6,7 @@ use crate::{
         UnitId, UnitKind,
     },
     turns::{FacingOrder, MoveOrder, TravelMode, TurnFrame, UnitOrderKind},
-    visibility,
+    unit_loss, visibility,
 };
 use juniper::{GraphQLEnum, GraphQLObject, graphql_object};
 use serde::{Deserialize, Serialize};
@@ -51,7 +51,7 @@ pub fn rules(kind: UnitKind) -> CombatRules {
         shot_cost: match kind {
             UnitKind::Infantry => 12,
             UnitKind::FieldGun => 20,
-            UnitKind::Tank => 16,
+            UnitKind::Tank => 24,
             UnitKind::Truck => 8,
         },
     }
@@ -625,6 +625,7 @@ impl Combat {
             return;
         }
         let shots = theater_shots(board, engagements);
+        let losses = unit_loss::combat(&shots, &board.units);
         let mut damage = BTreeMap::<UnitId, i32>::new();
         for engagement in engagements {
             self.fire(
@@ -657,6 +658,7 @@ impl Combat {
             }
         }
         frames.push(TurnFrame {
+            losses,
             sabotages: Vec::new(),
             departures: Vec::new(),
             indirect_impacts: Vec::new(),
@@ -673,6 +675,7 @@ impl Combat {
         let casualty_pause = !dead_carriers.is_empty() || has_bombardment;
         // Clear shots while preserving enough time to read the exchange and death marker.
         frames.push(TurnFrame {
+            losses: Vec::new(),
             sabotages: Vec::new(),
             departures: Vec::new(),
             indirect_impacts: Vec::new(),
@@ -967,6 +970,7 @@ impl Combat {
         self.volley(board, &engagements, frames);
         if engagements.is_empty() && !misses.is_empty() {
             frames.push(TurnFrame {
+                losses: Vec::new(),
                 sabotages: Vec::new(),
                 departures: Vec::new(),
                 indirect_impacts: Vec::new(),
@@ -978,6 +982,7 @@ impl Combat {
                 shots: Vec::new(),
             });
             frames.push(TurnFrame {
+                losses: Vec::new(),
                 sabotages: Vec::new(),
                 departures: Vec::new(),
                 indirect_impacts: Vec::new(),
@@ -2489,7 +2494,7 @@ mod tests {
         assert_eq!(shots[1].target_health.after.current(), 15);
         assert!(result.stopped.contains(&orders[1].unit_id));
         let mover = result.frames.last().fixture()?.units.get(1).fixture()?;
-        assert_eq!(mover.supplies().current(), 104);
+        assert_eq!(mover.supplies().current(), 96);
         assert_eq!(mover.fuel().fixture()?.current, 114);
         Ok(())
     }
@@ -2520,7 +2525,7 @@ mod tests {
         assert_eq!(shots(&result)[0].target_health.after.current(), 4);
         assert_eq!(units[0].hit_points().current(), 16);
         assert_eq!(units[1].hit_points().current(), 4);
-        assert_eq!(units[0].supplies().current(), 104);
+        assert_eq!(units[0].supplies().current(), 96);
         assert_eq!(
             units[1].supplies().current(),
             scenario.units[1].supplies().current()
@@ -2660,6 +2665,17 @@ mod tests {
                 .all(|unit| !unit.is_alive())
         );
         assert_eq!(result.frames.last().fixture()?.duration_ms, 1400);
+        let losses: Vec<_> = result
+            .frames
+            .iter()
+            .flat_map(|frame| &frame.losses)
+            .collect();
+        assert_eq!(losses.len(), 2);
+        assert!(losses.iter().all(|loss| match loss {
+            unit_loss::UnitLoss::Combat(loss) => loss.kind == CombatKind::Ambush,
+            _ => false,
+        }));
+        assert!(result.frames.last().fixture()?.losses.is_empty());
         let mut reversed = orders.clone();
         reversed.reverse();
         let other = resolve_completed_movement(&scenario, &reversed, 1)?;
@@ -2922,6 +2938,33 @@ mod tests {
                 .count(),
             1
         );
+        Ok(())
+    }
+
+    #[test]
+    fn tank_firing_cost_reserves_upkeep_and_does_not_repeat() -> TestResult<()> {
+        for (supplies, expected_shots, remaining) in [(35, 0, 27), (36, 1, 4), (128, 1, 96)] {
+            let (mut scenario, orders) =
+                fixture(UnitKind::Tank, UnitKind::Tank, Coordinate::new(4, 3))?;
+            scenario
+                .units
+                .first_mut()
+                .fixture()?
+                .set_supplies_for_test(supplies);
+            let mut combat = Combat::prepare(&mut scenario, &orders);
+            let mut frames = Vec::new();
+            let mut stopped = BTreeSet::new();
+            combat.finish(&mut scenario, &mut stopped, &mut frames);
+            combat.engage(&mut scenario, &mut stopped, &mut frames);
+            assert_eq!(
+                frames.iter().flat_map(|frame| &frame.shots).count(),
+                expected_shots
+            );
+            assert_eq!(
+                scenario.units.first().fixture()?.supplies().current(),
+                remaining
+            );
+        }
         Ok(())
     }
 

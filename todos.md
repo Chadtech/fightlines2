@@ -12,7 +12,7 @@
 - Lag between when move is clicked and when command menu is opened
 
 ## Immediately
-- Out of supplies theater animation should having flashing skull and bones
+- Out of supplies theater animation should have flashing skull and bones
 
 ## Soon
 - Proofread all screen text

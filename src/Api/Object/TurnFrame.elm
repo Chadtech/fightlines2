@@ -19,6 +19,15 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+{-| Losses emitted at this step, never repeated in the following pause.
+-}
+losses :
+    SelectionSet decodesTo Api.Union.UnitLoss
+    -> SelectionSet (List decodesTo) Api.Object.TurnFrame
+losses object____ =
+    Object.selectionForCompositeField "losses" [] object____ (Basics.identity >> Decode.list)
+
+
 {-| Successful demolitions; hidden depot tiles are removed during projection.
 -}
 sabotages :

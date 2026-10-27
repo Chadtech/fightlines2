@@ -1505,13 +1505,15 @@ timing, combat outcomes, and fog projection remain authoritative.
 Sabotage and supply exhaustion also enter the shared encounter queue. Sabotage
 pairs each projected sabotage coordinate with its pre-event building. Its scene
 uses the tile’s terrain and map theme, with a demolition charge and no infantry
-portrait. Exhaustion uses newly dying on-map units without a
-combat source, retaining their previous living appearance; passengers follow their
+portrait. Exhaustion consumes explicit supply-loss events for on-map units,
+using the living appearance recorded with each event; passengers follow their
 carrier's casualty pause rather than opening separate theaters. Both use the
 existing spotlight, map peek, continuation, and automatic-close transitions.
-`CombatFormation.exhaustionToSvg` reuses calibrated placements with staggered
-slump/fade removal and no shell impacts. Continuing exhaustion enters the existing
-`Deaths` stage so loss acknowledgment and carrier grouping remain intact.
+`CombatFormation.exhaustionToSvg` reuses calibrated placements with three synchronized
+one-second skull-and-crossbones pulses over the unchanged figures, then removes the
+formation together. Reduced motion holds the markers steady until removal.
+Continuing exhaustion enters the existing `Deaths` stage so loss acknowledgment
+and carrier grouping remain intact.
 
 Projected `Shot.attackerHealth` and `Shot.targetHealth` carry authoritative before
 and after hit points for each pair, including concealed enemies. Rust sequences health losses across pairs within a simultaneous volley; reciprocal shots share a single transition.
@@ -1705,13 +1707,29 @@ frame independently; `GamePage` applies those sources alongside frame units and 
 
 ## Unit loss acknowledgment
 
-`TurnPlayback.losses` derives typed combat, exhaustion, and carrier-loss notices
-from projected frames and lethal shots. `lossEvent` groups a carrier with its
-projected passengers, independent of unit ordering. One acknowledgment covers
+Rust emits typed `UnitLoss` events where combat damage and resource settlement
+kill units. `TurnFrame.losses` records combat kind and attacker, supply exhaustion,
+or a passenger's carrier loss. Event-owned unit snapshots preserve the appearance
+before removal; carrier causes use `DirectUnitLoss` because trucks cannot be carried.
+Visibility projection removes unobserved casualties, conceals enemy resources,
+and replaces hidden indirect-fire attackers with a concealed-artillery loss.
+Replay inspection and redaction also visit event-owned unit portraits.
+
+`TurnPlayback.losses` consumes those recorded causes and resolves casualties
+against the currently displayed board. Exhaustion scenes use recorded supply-loss
+appearances directly, without comparing previous and next frames or excluding
+combat participants. Corpse cleanup follows recorded loss IDs rather than treating
+zero supplies in an intermediate snapshot as a new death.
+`lossEvent` groups a carrier with its projected passengers, independent of unit
+ordering. One acknowledgment covers
 the carrier and those passengers; unrelated casualties remain queued. Playback owns acknowledged unit IDs and
 `tickUntilLoss` stops at each unacknowledged casualty, including supply frames
 crossed by delayed animation ticks. `TurnLifecycle` carries acknowledgment through
 its existing playing state. The skip preference selects ordinary timed playback.
+
+Archive format two persists these events. The version-one archive reader restores
+legacy losses once at the loading boundary from recorded snapshots and shots;
+live resolution and Elm never use that compatibility inference.
 
 `GamePage` loads and saves `skipUnitLossDialogs` through the existing local-storage
 boundary. It derives the active dialog from playback and opens it through the native
