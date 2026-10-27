@@ -14,11 +14,11 @@ module DevTools.Page.MapEditor exposing
 import Api.Enum.BuildingKind as BuildingKind exposing (BuildingKind)
 import Api.Enum.Direction as Direction exposing (Direction)
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
-import Api.Enum.MapType as MapType exposing (MapType)
 import Api.Enum.PlayerNumber as PlayerNumber exposing (PlayerNumber)
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Api.Object.MapCatalog as CatalogApi
 import Api.Query as Query
+import Api.Scalar exposing (MapId)
 import ApiRequest
 import Browser.Dom
 import Browser.Events
@@ -31,7 +31,7 @@ import Game.Camera as Camera exposing (Camera)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Depot as Depot
 import Game.Map as Map exposing (Map)
-import Game.MapType as MapType
+import Game.MapId as MapId
 import Game.Road as Road
 import Game.Terrain as Terrain exposing (Terrain)
 import Game.UnitKind
@@ -72,7 +72,7 @@ type alias Flags =
 
 
 type alias Document =
-    { mapType : MapType
+    { mapType : MapId
     , draft : Definition
     , saved : Definition
     , undo : List Definition
@@ -82,7 +82,7 @@ type alias Document =
 
 type alias Model =
     { shared : Shared.Model
-    , mapOptions : List MapType
+    , mapOptions : List MapId
     , current : Document
     , others : List Document
     , brush : Brush
@@ -157,7 +157,7 @@ type SaveState
 
 
 type alias PendingSave =
-    { mapType : MapType
+    { mapType : MapId
     , definition : Definition
     , requestId : SaveRequestId
     , phase : SavePhase
@@ -907,7 +907,7 @@ update msg model =
                                     |> setSaveState
                                         (Failed
                                             ("could not save "
-                                                ++ MapType.label pending.mapType
+                                                ++ MapId.label pending.mapType
                                                 ++ ": "
                                                 ++ ApiRequest.errorMessage error
                                             )
@@ -1452,7 +1452,7 @@ toolbarActions model =
             "map"
             (EditableMap.name model.current.mapType)
             MapInputChanged
-            (List.map (\kind -> ( EditableMap.name kind, MapType.label kind )) model.mapOptions)
+            (List.map (\kind -> ( EditableMap.name kind, MapId.label kind )) model.mapOptions)
         , H.div
             [ A.css
                 [ S.row

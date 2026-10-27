@@ -184,6 +184,25 @@ update msg model =
 
 view : Model -> List (Html Msg)
 view model =
+    let
+        errorArea : Html Msg
+        errorArea =
+            case model.error of
+                Just error ->
+                    H.p
+                        [ Aria.role Aria.Status
+                        , A.css
+                            [ S.bgRed0
+                            , S.textGray5
+                            , S.p2
+                            ]
+                        ]
+                        [ H.text error
+                        ]
+
+                Nothing ->
+                    H.text ""
+    in
     [ H.div
         [ A.css
             [ S.flex1
@@ -237,16 +256,7 @@ view model =
                             |> Button.toHtml
                         ]
                     ]
-              , case model.error of
-                    Just error ->
-                        H.p
-                            [ Aria.role Aria.Status
-                            ]
-                            [ H.text error
-                            ]
-
-                    Nothing ->
-                        H.text ""
+              , errorArea
               ]
                 |> Card.toHtml
                     (Card.simple

@@ -6,7 +6,7 @@ use crate::{
     lobby_id::LobbyId,
     lobby_name::LobbyName,
     map::{Coordinate, MapError},
-    map_type::MapType,
+    map_id::{self, MapId},
     player_name::PlayerName,
     scenario::{PlayerNumber, Scenario},
     seed::{self, Seed},
@@ -65,12 +65,18 @@ impl Store {
     pub fn development(seed: Seed) -> Result<Self, DevelopmentError> {
         let mut state = State::new(seed);
         let host = SessionToken::from_token("development-player-1".into());
-        let map_type = MapType::default();
+        let map_type = map_id::options()
+            .map_err(DevelopmentError::Map)?
+            .into_iter()
+            .next()
+            .ok_or_else(|| {
+                DevelopmentError::Map(MapError::InvalidDefinition("map catalog is empty".into()))
+            })?;
         let mut game = Game::from_lobby(
             Lobby {
                 id: LobbyId::from_token("00000000000000000000000000000000".into()),
                 name: LobbyName::parse("Test game").ok_or(DevelopmentError::InvalidName)?,
-                map_type,
+                map_type: map_type.clone(),
                 host: host.clone(),
                 players: vec![
                     Player {
@@ -120,7 +126,7 @@ impl State {
 struct Lobby {
     id: LobbyId,
     name: LobbyName,
-    map_type: MapType,
+    map_type: MapId,
     host: SessionToken,
     players: Vec<Player>,
 }
@@ -135,7 +141,7 @@ struct Game {
     scenario: Scenario,
     source_lobby: LobbyId,
     name: LobbyName,
-    map_type: MapType,
+    map_type: MapId,
     host: SessionToken,
     players: Vec<Player>,
 }
@@ -208,7 +214,7 @@ struct Player {
 pub struct Snapshot {
     id: String,
     name: String,
-    map_type: MapType,
+    map_type: MapId,
     players: Vec<PlayerView>,
     is_host: bool,
     is_member: bool,
@@ -237,7 +243,7 @@ pub struct GameSnapshot {
     last_resolution: Option<TurnResolution>,
     id: String,
     name: String,
-    map_type: MapType,
+    map_type: MapId,
     players: Vec<GamePlayerView>,
     is_host: bool,
     is_member: bool,
@@ -266,7 +272,7 @@ struct GamePlayerView {
 struct SnapshotSource<'a> {
     id: &'a LobbyId,
     name: &'a LobbyName,
-    map_type: MapType,
+    map_type: &'a MapId,
     host: &'a SessionToken,
     players: &'a [Player],
 }
@@ -279,7 +285,7 @@ fn snapshot(
     Snapshot {
         id: source.id.to_string(),
         name: source.name.to_string(),
-        map_type: source.map_type,
+        map_type: source.map_type.clone(),
         players: source
             .players
             .iter()
@@ -306,7 +312,7 @@ fn lobby_snapshot(lobby: &Lobby, session: Option<&SessionToken>) -> Snapshot {
         SnapshotSource {
             id: &lobby.id,
             name: &lobby.name,
-            map_type: lobby.map_type,
+            map_type: &lobby.map_type,
             host: &lobby.host,
             players: &lobby.players,
         },
@@ -320,7 +326,7 @@ fn game_snapshot(game: &Game, session: Option<&SessionToken>) -> Snapshot {
         SnapshotSource {
             id: &game.source_lobby,
             name: &game.name,
-            map_type: game.map_type,
+            map_type: &game.map_type,
             host: &game.host,
             players: &game.players,
         },
@@ -360,7 +366,7 @@ fn game_view(game: &Game, session: &SessionToken) -> FieldResult<GameSnapshot> {
         last_resolution,
         id: game.source_lobby.to_string(),
         name: game.name.to_string(),
-        map_type: game.map_type,
+        map_type: game.map_type.clone(),
         players: game
             .players
             .iter()
@@ -503,7 +509,7 @@ impl GameSnapshot {
             last_resolution,
             id: started.game_id.to_string(),
             name: started.name.clone(),
-            map_type: started.map_type,
+            map_type: started.map_type.clone(),
             players: started
                 .players
                 .iter()
@@ -537,6 +543,11 @@ pub fn create(context: &Context, input: &str, lobby_input: &str) -> FieldResult<
     let Some(lobby_name) = LobbyName::parse(lobby_input) else {
         return error("Enter a lobby name between 1 and 40 characters.");
     };
+    let map_type = map_id::options()
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .next()
+        .ok_or("map catalog is empty")?;
     let mut state = context
         .store
         .state
@@ -549,7 +560,7 @@ pub fn create(context: &Context, input: &str, lobby_input: &str) -> FieldResult<
     let lobby = Lobby {
         id: id.clone(),
         name: lobby_name,
-        map_type: MapType::default(),
+        map_type,
         host: identity.clone(),
         players: vec![Player {
             player_number: PlayerNumber::Player1,
@@ -632,7 +643,7 @@ pub fn join(context: &Context, id: LobbyId, input: &str) -> FieldResult<Snapshot
     Ok(result)
 }
 
-pub fn set_map_type(context: &Context, id: LobbyId, map_type: MapType) -> FieldResult<Snapshot> {
+pub fn set_map_type(context: &Context, id: LobbyId, map_type: MapId) -> FieldResult<Snapshot> {
     let mut state = context
         .store
         .state
@@ -648,6 +659,11 @@ pub fn set_map_type(context: &Context, id: LobbyId, map_type: MapType) -> FieldR
     if identity.as_ref() != Some(&lobby.host) {
         return error("Only the host can change the map.");
     }
+    map_type
+        .definition()
+        .map_err(|error| error.to_string())?
+        .scenario()
+        .map_err(|error| error.to_string())?;
     lobby.map_type = map_type;
     Ok(lobby_snapshot(lobby, identity.as_ref()))
 }
@@ -781,7 +797,7 @@ pub fn start(context: &Context, id: LobbyId) -> FieldResult<Snapshot> {
                 .start(GameStarted {
                     game_id: id.clone(),
                     name: game.name.to_string(),
-                    map_type: game.map_type,
+                    map_type: game.map_type.clone(),
                     players: game
                         .players
                         .iter()

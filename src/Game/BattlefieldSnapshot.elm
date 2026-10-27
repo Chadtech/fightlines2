@@ -1,11 +1,11 @@
 module Game.BattlefieldSnapshot exposing (Player, Snapshot, selection)
 
-import Api.Enum.MapType exposing (MapType)
 import Api.Enum.PlayerNumber exposing (PlayerNumber)
 import Api.Object
 import Api.Object.GamePlayerView as PlayerView
 import Api.Object.GameSnapshot as SnapshotApi
 import Api.Object.Scenario as Scenario
+import Api.Scalar exposing (MapId)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Depot as Depot exposing (Depot)
 import Game.Map as Map exposing (Map)
@@ -24,7 +24,7 @@ import Graphql.SelectionSet as SS exposing (SelectionSet)
 -}
 type alias Snapshot =
     { name : String
-    , mapType : MapType
+    , mapType : MapId
     , players : List Player
     , map : Map
     , units : List Unit

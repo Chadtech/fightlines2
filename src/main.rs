@@ -12,8 +12,8 @@ mod lobby_name;
 mod map;
 mod map_definition;
 mod map_editor;
+mod map_id;
 mod map_thumbnail;
-mod map_type;
 mod movement;
 mod movement_resolution;
 mod player_name;
@@ -95,7 +95,7 @@ async fn run() -> io::Result<()> {
     let store = store.with_game_logs(logs);
     let editor_enabled = env::args().any(|argument| argument == "--map-editor");
     let editor = web::Data::new(map_editor::Editor {
-        directory: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("maps"),
+        directory: map_id::directory(),
         index: frontend.join("dev-tools.html"),
         writes: std::sync::Mutex::new(()),
     });

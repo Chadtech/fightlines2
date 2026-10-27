@@ -1,7 +1,7 @@
 module Fightlines.View.MapChoice exposing (toHtml)
 
 import EditableMap exposing (NamedMap)
-import Game.MapType as MapType
+import Game.MapId as MapId
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
@@ -40,7 +40,7 @@ toHtml args =
         [ A.type_ "button"
         , Ev.onClick args.onSelect
         , A.attribute "aria-pressed" pressed
-        , Aria.label ("preview " ++ MapType.label args.map.mapType)
+        , Aria.label ("preview " ++ MapId.label args.map.mapType)
         , A.css
             [ S.row
             , S.itemsCenter
@@ -106,7 +106,7 @@ toHtml args =
             ]
             [ H.span
                 []
-                [ H.text (MapType.label args.map.mapType)
+                [ H.text (MapId.label args.map.mapType)
                 ]
             , H.span
                 [ A.css

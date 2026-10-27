@@ -4,7 +4,7 @@ use crate::{
     lobby_id::LobbyId,
     map_definition::NamedMap,
     map_editor,
-    map_type::{self, MapType},
+    map_id::{self, MapId},
     scenario::{PlayerNumber, UnitKind},
     session_token::SessionToken,
 };
@@ -83,24 +83,13 @@ impl Query {
     }
 
     /// Playable maps in the order offered by the server. Available without editor access.
-    fn map_options() -> Vec<MapType> {
-        map_type::MAPS.iter().map(|(kind, _)| *kind).collect()
+    fn map_options() -> FieldResult<Vec<MapId>> {
+        map_id::options().map_err(|error| format!("could not load maps: {error}").into())
     }
 
     /// Public authored layouts, shared by map previews and game creation.
     fn map_previews() -> FieldResult<Vec<NamedMap>> {
-        map_type::MAPS
-            .iter()
-            .map(|(map_type, name)| {
-                let definition = map_type
-                    .definition()
-                    .map_err(|error| format!("could not load {name}: {error}"))?;
-                Ok(NamedMap {
-                    map_type: *map_type,
-                    definition,
-                })
-            })
-            .collect()
+        map_id::catalog().map_err(|error| format!("could not load maps: {error}").into())
     }
 
     fn health() -> bool {
@@ -143,7 +132,7 @@ impl Mutation {
 
     fn save_map(
         context: &Context,
-        map_type: MapType,
+        map_type: MapId,
         definition: map_editor::MapDefinitionInput,
         thumbnail: Option<String>,
     ) -> FieldResult<NamedMap> {
@@ -158,7 +147,7 @@ impl Mutation {
         lobby::join(context, LobbyId::from_token(id), &name)
     }
 
-    fn set_lobby_map(context: &Context, id: String, map_type: MapType) -> FieldResult<Snapshot> {
+    fn set_lobby_map(context: &Context, id: String, map_type: MapId) -> FieldResult<Snapshot> {
         lobby::set_map_type(context, LobbyId::from_token(id), map_type)
     }
 
@@ -294,19 +283,18 @@ mod tests {
         let request = test::TestRequest::post()
             .uri("/graphql")
             .peer_addr("192.0.2.1:1234".parse()?)
-            .set_json(json!({"query": "{ mapOptions __type(name: \"MapType\") { enumValues { name } } }"}))
+            .set_json(json!({"query": "{ mapOptions __type(name: \"MapId\") { kind } }"}))
             .to_request();
         let body: Value = test::call_and_read_body_json(&app, request).await;
         assert!(body.get("errors").is_none(), "{body}");
-        let options: Vec<MapType> = map_type::MAPS.iter().map(|(kind, _)| *kind).collect();
+        let options: Vec<MapId> = map_id::options().fixture()?;
         let expected: juniper::InputValue = juniper::ToInputValue::to_input_value(&options);
         assert_eq!(body["data"]["mapOptions"], serde_json::to_value(expected)?);
-        assert!(options.contains(&MapType::default()));
+        assert!(options.contains(&MapId::default()));
         let values = body["data"]["mapOptions"].as_array().fixture()?;
-        let enum_values = body["data"]["__type"]["enumValues"].as_array().fixture()?;
+        assert_eq!(body["data"]["__type"]["kind"], "SCALAR");
         for value in values {
             assert_eq!(values.iter().filter(|option| *option == value).count(), 1);
-            assert!(enum_values.iter().any(|entry| &entry["name"] == value));
         }
         Ok(())
     }
@@ -328,8 +316,8 @@ mod tests {
         let body: Value = test::call_and_read_body_json(&app, request).await;
         assert!(body.get("errors").is_none(), "{body}");
         let previews = body["data"]["mapPreviews"].as_array().fixture()?;
-        assert_eq!(previews.len(), map_type::MAPS.len());
-        for (preview, (kind, _)) in previews.iter().zip(map_type::MAPS) {
+        assert_eq!(previews.len(), map_id::options().fixture()?.len());
+        for (preview, kind) in previews.iter().zip(map_id::options().fixture()?) {
             let definition = kind.definition().fixture()?;
             let map_type: juniper::InputValue = juniper::ToInputValue::to_input_value(&kind);
             assert_eq!(preview["mapType"], serde_json::to_value(map_type)?);
@@ -434,7 +422,7 @@ mod tests {
                 initial["event"]["data"]["players"][0]["name"],
                 "Archive host"
             );
-            let source = MapType::default().scenario().fixture()?;
+            let source = MapId::default().scenario().fixture()?;
             let orders = |player| -> TestResult<String> {
                 source
                     .units
@@ -602,7 +590,7 @@ mod tests {
                         } else {
                             PlayerNumber::Player1
                         };
-                        let orders = MapType::default()
+                        let orders = MapId::default()
                             .scenario()
                             .fixture()?
                             .units
@@ -1005,7 +993,7 @@ mod tests {
                     for query in [
                         format!("mutation {{ startGame(id: \"{id}\") {{ id }} }}"),
                         format!(
-                            "mutation {{ setLobbyMap(id: \"{id}\", mapType: SUPPLY_POINT) {{ id }} }}"
+                            "mutation {{ setLobbyMap(id: \"{id}\", mapType: \"supply-point\") {{ id }} }}"
                         ),
                         format!(
                             "mutation {{ setLobbyController(id: \"{id}\", controller: {controller}) {{ id }} }}"
@@ -1044,7 +1032,7 @@ mod tests {
                 let game_query = format!(
                     "{{ game(id: \"{id}\") {{ turnNumber submitted opponentSubmitted {roster} visibleTiles {{ x y }} scenario {{ units {{ id playerNumber }} }} lastResolution {{ reports {{ playerNumber }} }} }} }}"
                 );
-                let expected = crate::map_type::MapType::default().scenario().fixture()?;
+                let expected = MapId::default().scenario().fixture()?;
                 let (game, _) = execute!(&game_query, host.clone());
                 assert!(game.get("errors").is_none(), "{game}");
                 assert_eq!(game["data"]["game"]["players"][0]["playerNumber"], side);
@@ -1313,9 +1301,9 @@ mod tests {
         );
         assert!(cookie.is_none());
         let set_map = format!(
-            "mutation {{ setLobbyMap(id: \"{id}\", mapType: SUPPLY_POINT) {{ {FIELDS} }} }}"
+            "mutation {{ setLobbyMap(id: \"{id}\", mapType: \"supply-point\") {{ {FIELDS} }} }}"
         );
-        assert_eq!(created["data"]["createLobby"]["mapType"], "SUPPLY_POINT");
+        assert_eq!(created["data"]["createLobby"]["mapType"], "supply-point");
         for identity in [None, Some(guest.clone())] {
             let (denied, _) = execute!(&set_map, identity);
             assert!(
@@ -1326,19 +1314,24 @@ mod tests {
             );
         }
         let (configured, _) = execute!(&set_map, Some(host.clone()));
-        assert_eq!(configured["data"]["setLobbyMap"]["mapType"], "SUPPLY_POINT");
+        assert_eq!(configured["data"]["setLobbyMap"]["mapType"], "supply-point");
         let (observed, _) = execute!(
             format!("{{ lobby(id: \"{id}\") {{ mapType }} }}"),
             Some(guest.clone())
         );
-        assert_eq!(observed["data"]["lobby"]["mapType"], "SUPPLY_POINT");
+        assert_eq!(observed["data"]["lobby"]["mapType"], "supply-point");
         let (invalid_map, _) = execute!(
-            format!("mutation {{ setLobbyMap(id: \"{id}\", mapType: UNKNOWN) {{ id }} }}"),
+            format!("mutation {{ setLobbyMap(id: \"{id}\", mapType: \"unknown\") {{ id }} }}"),
             Some(host.clone())
         );
         assert!(invalid_map["errors"].is_array());
+        let (unchanged, _) = execute!(
+            format!("{{ lobby(id: \"{id}\") {{ mapType }} }}"),
+            Some(host.clone())
+        );
+        assert_eq!(unchanged["data"]["lobby"]["mapType"], "supply-point");
         let (missing_map, _) = execute!(
-            "mutation { setLobbyMap(id: \"missing\", mapType: SUPPLY_POINT) { id } }",
+            "mutation { setLobbyMap(id: \"missing\", mapType: \"supply-point\") { id } }",
             Some(host.clone())
         );
         assert!(missing_map["errors"].is_array());
@@ -1378,7 +1371,7 @@ mod tests {
         );
         let (member, _) = execute!(&game, Some(guest.clone()));
         assert_eq!(member["data"]["game"]["name"], "Friday Night");
-        assert_eq!(member["data"]["game"]["mapType"], "SUPPLY_POINT");
+        assert_eq!(member["data"]["game"]["mapType"], "supply-point");
         assert_eq!(member["data"]["game"]["isMember"], true);
         let scenario = &member["data"]["game"]["scenario"];
         let definition =

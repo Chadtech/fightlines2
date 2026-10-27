@@ -15,10 +15,6 @@ module Fightlines.Page.GamePage exposing
     )
 
 import Api.Enum.Direction as DirectionEnum exposing (Direction)
-import Api.Enum.MapType
-    exposing
-        ( MapType
-        )
 import Api.Enum.PlayerNumber as PlayerNumberEnum exposing (PlayerNumber)
 import Api.Enum.ResourceKind as ResourceKind
 import Api.Enum.TurnEventKind as TurnEventKind
@@ -30,6 +26,10 @@ import Api.Object.MovementRule as MovementRuleApi
 import Api.Object.Scenario as Scenario
 import Api.Object.TerrainMovementCost as MovementCostApi
 import Api.Query
+import Api.Scalar
+    exposing
+        ( MapId
+        )
 import ApiRequest
 import Audio
 import Browser.Dom
@@ -155,7 +155,7 @@ type alias Model =
     , skipUnitLossDialogs : Bool
     , automaticallyCloseCombatTheater : Bool
     , name : String
-    , mapType : MapType
+    , mapType : MapId
     , players : List Player
     , map : Map
     , units : List Unit

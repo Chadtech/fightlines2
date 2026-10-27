@@ -115,17 +115,22 @@ game. `LobbyId` keeps
 public lobby identifiers distinct from those credentials. GraphQL IDs and names
 remain strings.
 
-`MapType` is a Rust enum exposed as a GraphQL enum. A lobby defaults to
-`SupplyPoint`; only its host can update it through `setLobbyMap`. Starting
-carries the selected type into the game, where it cannot be changed. Elm keeps
-the generated enum typed and derives display labels from its schema names.
-`map_type::MAPS` owns the ordered server catalog shared by game loading, the editor,
-and the public `mapOptions` and `mapPreviews` queries. `mapPreviews` returns authored
-`NamedMap` definitions, including descriptions and starting placements; it exposes
-no live game state and does not require editor access. `MapType::definition` reads
-the same compiled-in source files as game creation, or the current source files
-when running with `--map-editor`. Shared definition GraphQL objects live with
-`map_definition.rs`; editor-only reads and writes remain gated in `map_editor.rs`.
+`MapId` is a validated filename stem exposed as a GraphQL string scalar. The
+legacy `mapType` field name remains in snapshots, mutations, and archives.
+The server discovers `*.json` files in `FIGHTLINES_MAP_DIR` (default `maps/` in
+the checkout) for the public `mapOptions` and `mapPreviews` queries, editor
+catalog, and game creation. Catalog order places `supply-point` first when
+present, followed by the remaining IDs alphabetically. New lobbies use the first
+available map. Only the host can change it through `setLobbyMap`; selecting an
+unknown or invalid layout fails before changing the lobby.
+`mapPreviews` returns authored `NamedMap` definitions, including descriptions and
+starting placements, without editor access. Definitions are read at runtime in
+both production and editor mode, so new files and saved edits need no Rust rebuild.
+Existing games and archives own their recorded boards. Archive readers also
+accept the previous PascalCase enum identities and normalize them to filename IDs.
+Elm keeps the generated `MapId` scalar typed and derives display labels from its
+hyphenated value. Shared definition GraphQL objects live in `map_definition.rs`;
+editor reads and writes remain gated in `map_editor.rs`.
 
 `LobbyPage.load` selects the lobby snapshot and map previews together. The page
 owns setup and library screens; `Fightlines` correlates initial requests with both the
@@ -173,7 +178,7 @@ Unlisted terrain tiles are implicitly `Plain`; explicit plain placements use
 `map_definition.rs` validates dimensions, bounds, unique terrain and depot
 positions, unit IDs and occupancy, mountain and water passability, facing, and a force for
 each player. `Scenario::from_definition` initializes resources using ordinary
-rules. `MapType::definition` owns the compiled-in JSON selection shared by
+rules. `MapId::definition` reads the runtime JSON source shared by
 previews and game creation; the ASCII parser
 remains available to tests for concise fixtures. Initial layouts and deployments
 were preserved during migration, including ElAlamein's asymmetric eastern base.
@@ -201,9 +206,9 @@ loopback clients and saves to matching localhost Origins. Ordinary game queries
 and mutations retain their own authorization. `EditableMap` uses the shared
 `Api.*` enums, selections and inputs without editor enum conversions. All requests
 use `ApiRequest` and `Effect.request`.
-Saves validate before atomically replacing a known map file. In editor mode,
-`MapType::scenario` reads the latest source file at game creation; production
-uses compiled-in data. Existing games own independent scenarios.
+Saves validate before atomically replacing an existing map file in the configured
+catalog directory. `MapId::scenario` reads its latest definition at game creation
+in every mode. Existing games own independent scenarios.
 
 Hit points, supplies and vehicle fuel are authoritative. Fuel, provisions, freight stocks,
 and their consumption costs use integer quantities at four times the original scale
@@ -339,7 +344,7 @@ the unload checklist, and exit selection updates shading without rebuilding tile
 
 With the explicit `--dev-game` server flag, `Store::development` seeds one
 started game at ID `00000000000000000000000000000000`, using the current
-`MapType` scenario and two dummy players. It uses the ordinary `/game/<id>`
+first catalog scenario and two dummy players. It uses the ordinary `/game/<id>`
 route, game query and page. Only this fixture has
 `GameAccess::DevelopmentPreview`: its game query previews the host/Player1 without
 requiring or setting a session cookie. Normal games retain member authorization.
@@ -622,7 +627,7 @@ removed. Frontend URLs such as `/lobby/<id>` and `/game/<id>` still serve the
 application.
 
 Queries include `health`, `lobby(id)`, `game(id)`, `mapOptions`, and `maps`.
-`mapOptions` returns playable map types without editor access. Mutations are
+`mapOptions` returns discovered map IDs without editor access. Mutations are
 `createLobby(name, lobbyName)`, `joinLobby(id, name)`,
 `setLobbyMap(id, mapType)`, `setLobbyController(id, controller)`, `startGame(id)`, and
 `submitTurn(id, turnNumber, orders)`, and `saveMap(mapType, definition)`.
@@ -1405,9 +1410,12 @@ distinct encounter unit pairs, combining reciprocal shots. Redundant pairs where
 a participant has already died and neither unit's health changes are omitted;
 zero-damage encounters between living units remain visible. Stationary return fire
 in a later volley shares the same theater and impact clock, using the first
-volley's starting health and the return volley's final health. Combining stops
-at movement, sight or logistics changes, another encounter, or an intervening
-casualty; authoritative damage calculations remain unchanged. Combat focus holds each
+volley's starting health and the return volley's final health. The return volley
+may also contain unrelated pairs, which retain their own encounters and health
+transitions. A shot involving either returning participant in another pair keeps
+the volleys separate. Combining stops at movement, sight or logistics changes,
+an intervening encounter, or a casualty; indirect fire stays separate and
+authoritative damage calculations remain unchanged. Combat focus holds each
 pair in a 300ms spotlight stage followed by a panel stage that waits for Enter without
 advancing movement interpolation or revealing the volley. `GamePage` freezes idle/interface animation and renders `Game.View.CombatTheater`
 as one ambush card with inward-facing formations and a brief CSS expansion.

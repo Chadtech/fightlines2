@@ -5,7 +5,6 @@
 module Api.Mutation exposing (..)
 
 import Api.Enum.Controller
-import Api.Enum.MapType
 import Api.Enum.PlayerNumber
 import Api.Enum.UnitKind
 import Api.InputObject
@@ -57,7 +56,7 @@ type alias SaveMapOptionalArguments =
 
 
 type alias SaveMapRequiredArguments =
-    { mapType : Api.Enum.MapType.MapType
+    { mapType : Api.ScalarCodecs.MapId
     , definition : Api.InputObject.MapDefinitionInput
     }
 
@@ -76,7 +75,7 @@ saveMap fillInOptionals____ requiredArgs____ object____ =
             [ Argument.optional "thumbnail" filledInOptionals____.thumbnail Encode.string ]
                 |> List.filterMap Basics.identity
     in
-    Object.selectionForCompositeField "saveMap" (optionalArgs____ ++ [ Argument.required "mapType" requiredArgs____.mapType (Encode.enum Api.Enum.MapType.toString), Argument.required "definition" requiredArgs____.definition Api.InputObject.encodeMapDefinitionInput ]) object____ Basics.identity
+    Object.selectionForCompositeField "saveMap" (optionalArgs____ ++ [ Argument.required "mapType" requiredArgs____.mapType (Api.ScalarCodecs.codecs |> Api.Scalar.unwrapEncoder .codecMapId), Argument.required "definition" requiredArgs____.definition Api.InputObject.encodeMapDefinitionInput ]) object____ Basics.identity
 
 
 type alias CreateLobbyRequiredArguments =
@@ -109,7 +108,7 @@ joinLobby requiredArgs____ object____ =
 
 type alias SetLobbyMapRequiredArguments =
     { id : String
-    , mapType : Api.Enum.MapType.MapType
+    , mapType : Api.ScalarCodecs.MapId
     }
 
 
@@ -118,7 +117,7 @@ setLobbyMap :
     -> SelectionSet decodesTo Api.Object.Snapshot
     -> SelectionSet decodesTo RootMutation
 setLobbyMap requiredArgs____ object____ =
-    Object.selectionForCompositeField "setLobbyMap" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "mapType" requiredArgs____.mapType (Encode.enum Api.Enum.MapType.toString) ] object____ Basics.identity
+    Object.selectionForCompositeField "setLobbyMap" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "mapType" requiredArgs____.mapType (Api.ScalarCodecs.codecs |> Api.Scalar.unwrapEncoder .codecMapId) ] object____ Basics.identity
 
 
 type alias SetLobbyControllerRequiredArguments =

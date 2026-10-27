@@ -17,10 +17,6 @@ import Api.Enum.Controller
     exposing
         ( Controller(..)
         )
-import Api.Enum.MapType
-    exposing
-        ( MapType
-        )
 import Api.Enum.PlayerNumber
     exposing
         ( PlayerNumber(..)
@@ -30,6 +26,10 @@ import Api.Object
 import Api.Object.PlayerView as PlayerView
 import Api.Object.Snapshot as Snapshot
 import Api.Query
+import Api.Scalar
+    exposing
+        ( MapId
+        )
 import ApiRequest
     exposing
         ( Response
@@ -42,7 +42,7 @@ import Effect as E
 import Fightlines.Route as Route
 import Fightlines.Shared as Shared
 import Fightlines.View.MapChoice as MapChoice
-import Game.MapType as MapType
+import Game.MapId as MapId
 import Game.PlayerNumber as PlayerNumber
 import Game.View.MapPreview as MapPreview
 import Graphql.Http
@@ -66,6 +66,7 @@ import View.Button as Button
 import View.Card as Card
 import View.CardHeader as CardHeader
 import View.Select as Select
+import View.TextField as TextField
 
 
 
@@ -83,7 +84,7 @@ type alias Flags =
 type alias Snapshot =
     { id : LobbyId
     , name : String
-    , mapType : MapType
+    , mapType : MapId
     , players : List Player
     , isHost : Bool
     , isMember : Bool
@@ -104,7 +105,7 @@ type alias Model =
     { shared : Shared.Model
     , id : LobbyId
     , name : String
-    , mapType : MapType
+    , mapType : MapId
     , players : List Player
     , isHost : Bool
     , isMember : Bool
@@ -131,7 +132,8 @@ type Screen
 
 
 type alias LibraryState =
-    { preview : MapType
+    { preview : MapId
+    , search : String
     }
 
 
@@ -170,7 +172,8 @@ type Msg
     | ControllerInputChanged Controller
     | ChooseMapButtonClicked
     | BackToLobbyButtonClicked
-    | MapPreviewClicked MapType
+    | MapPreviewClicked MapId
+    | MapSearchInputChanged String
     | UseMapButtonClicked
     | MapResponseReceived (Response Snapshot)
     | StartButtonClicked
@@ -232,6 +235,7 @@ init location shared flags =
             if canOpenLibrary then
                 Library
                     { preview = lobby.mapType
+                    , search = ""
                     }
 
             else
@@ -322,7 +326,7 @@ start id =
         |> ApiRequest.mutationRequest
 
 
-saveMap : LobbyId -> MapType -> Graphql.Http.Request Snapshot
+saveMap : LobbyId -> MapId -> Graphql.Http.Request Snapshot
 saveMap id mapType =
     Api.Mutation.setLobbyMap
         { id = LobbyId.toString id
@@ -353,7 +357,7 @@ snapshotSelection =
         |> SS.with Snapshot.gameUrl
 
 
-isMap : MapType -> NamedMap -> Bool
+isMap : MapId -> NamedMap -> Bool
 isMap mapType map =
     map.mapType == mapType
 
@@ -378,6 +382,30 @@ hasJoinedHuman model =
 canChooseMap : Model -> Bool
 canChooseMap model =
     not (isBusy model) && model.isHost && (model.gameUrl == Nothing)
+
+
+startGameBlockedReason : Model -> Maybe String
+startGameBlockedReason model =
+    if model.gameUrl /= Nothing then
+        Just "this game has started. joining is closed."
+
+    else if not model.isHost then
+        Just "waiting for the host to start the game…"
+
+    else if List.length model.players < 2 then
+        Just "waiting for another player"
+
+    else if List.length model.players /= 2 then
+        Just "this game requires exactly two players"
+
+    else if isBusy model then
+        Just "waiting for the current request to finish…"
+
+    else if model.refreshing then
+        Just "updating lobby…"
+
+    else
+        Nothing
 
 
 isBusy : Model -> Bool
@@ -526,6 +554,16 @@ update msg model =
         BackToLobbyButtonClicked ->
             ( model, Route.pushUrl (Route.Lobby model.id) )
 
+        MapSearchInputChanged search ->
+            case model.screen of
+                Library library ->
+                    ( { model | screen = Library { library | search = search } }
+                    , E.none
+                    )
+
+                Setup ->
+                    ( model, E.none )
+
         MapPreviewClicked mapType ->
             case model.screen of
                 Library library ->
@@ -597,16 +635,7 @@ update msg model =
                         )
 
         StartButtonClicked ->
-            let
-                canStart : Bool
-                canStart =
-                    not (isBusy model)
-                        && not model.refreshing
-                        && model.isHost
-                        && (model.gameUrl == Nothing)
-                        && (List.length model.players == 2)
-            in
-            if not canStart then
+            if startGameBlockedReason model /= Nothing then
                 ( model, E.none )
 
             else
@@ -709,6 +738,35 @@ view model =
 libraryView : Model -> LibraryState -> Html Msg
 libraryView model library =
     let
+        search : String
+        search =
+            String.trim library.search |> String.toLower
+
+        matchesSearch : NamedMap -> Bool
+        matchesSearch map =
+            String.contains search
+                (String.toLower (MapId.label map.mapType ++ " " ++ map.definition.description))
+
+        matchingMaps : List NamedMap
+        matchingMaps =
+            List.filter matchesSearch model.mapPreviews
+
+        choices : List (Html Msg)
+        choices =
+            if List.isEmpty matchingMaps then
+                [ H.p
+                    [ Aria.role Aria.Status
+                    , A.css
+                        [ S.p2
+                        ]
+                    ]
+                    [ H.text "no maps match your search."
+                    ]
+                ]
+
+            else
+                List.map choice matchingMaps
+
         choice : NamedMap -> Html Msg
         choice map =
             MapChoice.toHtml
@@ -802,7 +860,17 @@ libraryView model library =
                         ]
                     ]
                 ]
-                [ H.div
+                [ H.label
+                    [ A.css
+                        [ S.col
+                        , S.g1
+                        ]
+                    ]
+                    [ H.text "search maps"
+                    , TextField.simple library.search MapSearchInputChanged
+                        |> TextField.toHtml
+                    ]
+                , H.div
                     [ A.css
                         [ S.col
                         , S.bgNightwood3
@@ -812,7 +880,7 @@ libraryView model library =
                         , S.overflowAuto
                         ]
                     ]
-                    (List.map choice model.mapPreviews)
+                    choices
                 ]
             , H.div
                 [ A.css
@@ -897,7 +965,7 @@ mapDetailsView map =
                     [ S.textGray5
                     ]
                 ]
-                [ H.text (MapType.label map.mapType)
+                [ H.text (MapId.label map.mapType)
                 ]
             , H.p
                 [ A.css
@@ -1162,7 +1230,7 @@ mapView model =
         ]
         [ H.p
             []
-            [ H.text ("map: " ++ MapType.label model.mapType)
+            [ H.text ("map: " ++ MapId.label model.mapType)
             ]
         , preview
         , chooseButton
@@ -1188,44 +1256,40 @@ controllerLabel controller =
 startControlsView : Model -> Html Msg
 startControlsView model =
     let
+        blockedReason : Maybe String
+        blockedReason =
+            startGameBlockedReason model
+
+        startControl : Button.Button Msg
+        startControl =
+            case blockedReason of
+                Nothing ->
+                    Button.primary "start game" StartButtonClicked
+
+                Just reason ->
+                    Button.disabled "start game"
+                        |> Button.accessibleLabel ("start game: " ++ reason)
+
         startButton : Html Msg
         startButton =
             if model.isHost && (model.gameUrl == Nothing) then
-                H.fieldset
-                    [ A.disabled (isBusy model || model.refreshing || (List.length model.players /= 2))
-                    , A.css
-                        [ S.border0
-                        ]
-                    ]
-                    [ Button.primary "start game" StartButtonClicked
-                        |> Button.toHtml
-                    ]
+                startControl
+                    |> Button.toHtml
 
             else
                 H.text ""
 
         status : Html Msg
         status =
-            if model.gameUrl /= Nothing then
-                H.p
-                    []
-                    [ H.text "this game has started. joining is closed."
-                    ]
+            case blockedReason of
+                Just reason ->
+                    H.p
+                        []
+                        [ H.text reason
+                        ]
 
-            else if not model.isHost then
-                H.p
-                    []
-                    [ H.text "waiting for the host to start the game…"
-                    ]
-
-            else if List.length model.players < 2 then
-                H.p
-                    []
-                    [ H.text "waiting for another player"
-                    ]
-
-            else
-                H.text ""
+                Nothing ->
+                    H.text ""
     in
     H.div
         [ A.css

@@ -1741,6 +1741,8 @@ combatPlaybackChecks first second =
                     )
                 ++ expect "another volley between shots keeps separate encounters"
                     (separate opening)
+                ++ crowdedReturnFireChecks
+                    { before = before, opening = shot, returning = returnShot }
     in
     case TurnPlayback.start [ before, volley, cleanup ] of
         Nothing ->
@@ -2024,6 +2026,102 @@ combatPlaybackChecks first second =
                                 (Maybe.andThen TurnPlayback.combat finalShot /= Nothing)
                             , multipleChecks
                             ]
+
+
+crowdedReturnFireChecks : { before : TurnPlayback.Frame, opening : Shot, returning : Shot } -> List String
+crowdedReturnFireChecks fixture =
+    case ( UnitId.parse "crowded-attacker", UnitId.parse "crowded-target" ) of
+        ( Ok third, Ok fourth ) ->
+            let
+                expect : String -> Bool -> List String
+                expect label passed =
+                    if passed then
+                        []
+
+                    else
+                        [ label ]
+
+                unrelated : Shot
+                unrelated =
+                    fixture.opening
+                        |> setShotAttacker (fixture.opening.attacker |> Unit.setId third)
+                        |> setShotTarget (fixture.opening.target |> Unit.setId fourth)
+                        |> setShotOrigin { x = 5, y = 2 }
+                        |> setShotDestination { x = 6, y = 2 }
+
+                waiting : TurnPlayback.Frame
+                waiting =
+                    fixture.before |> setFrameDurationMs 600
+
+                focus : List Shot -> Maybe TurnPlayback.Playback
+                focus shots =
+                    TurnPlayback.start
+                        [ fixture.before
+                        , fixture.before
+                            |> setFrameDurationMs 450
+                            |> TurnPlayback.setFrameShots [ fixture.opening ]
+                        , waiting
+                        , fixture.before
+                            |> setFrameDurationMs 450
+                            |> TurnPlayback.setFrameShots shots
+                        , waiting
+                        ]
+                        |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+
+                combined : Maybe TurnPlayback.Playback
+                combined =
+                    focus [ unrelated, fixture.returning ]
+
+                advance : Maybe TurnPlayback.Playback -> Maybe TurnPlayback.Playback
+                advance playback =
+                    playback
+                        |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+                        |> Maybe.andThen TurnPlayback.continueCombat
+                        |> Maybe.map .animation
+
+                next : Maybe TurnPlayback.Playback
+                next =
+                    advance combined
+
+                combinedHealth : Maybe TurnPlayback.Playback -> Maybe Int
+                combinedHealth playback =
+                    playback
+                        |> Maybe.andThen TurnPlayback.combat
+                        |> Maybe.map (.attackerHealth >> .after >> .current)
+
+                conflicting : Shot
+                conflicting =
+                    unrelated |> setShotTarget fixture.opening.target
+            in
+            expect "stationary return fire shares one card when its volley also contains an unrelated shot"
+                (combinedHealth combined
+                    == Just 15
+                    && combinedHealth (focus [ fixture.returning, unrelated ])
+                    == Just 15
+                    && (combined |> Maybe.andThen TurnPlayback.combat |> Maybe.map .targetFired)
+                    == Just True
+                )
+                ++ expect "the unrelated encounter retains its own health transition after the combined pair"
+                    ((next |> Maybe.andThen TurnPlayback.combat |> Maybe.map (.attacker >> .id))
+                        == Just third
+                        && (next |> Maybe.andThen TurnPlayback.combat |> Maybe.map .targetHealth)
+                        == Just unrelated.targetHealth
+                        && (advance next |> Maybe.andThen TurnPlayback.combat)
+                        == Nothing
+                    )
+                ++ expect "combining return fire retains both authoritative shots and the final frame"
+                    ((combined |> Maybe.map (.current >> .shots >> List.length))
+                        == Just 3
+                        && (combined |> Maybe.map (.current >> .units))
+                        == Just fixture.before.units
+                    )
+                ++ expect "a shared participant in the return volley keeps health sequencing in separate encounters"
+                    (combinedHealth (focus [ fixture.returning, conflicting ]) == Just 16)
+                ++ expect "indirect fire never becomes a direct return-fire exchange"
+                    (combinedHealth (focus [ fixture.returning |> setShotKind CombatKind.IndirectFire ]) == Just 16)
+
+        _ ->
+            [ "could not construct unrelated return-volley unit IDs" ]
 
 
 mergedImpactChecks : { gun : Unit, target : Unit, before : TurnPlayback.Frame } -> List String

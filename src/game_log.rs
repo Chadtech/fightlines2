@@ -2,7 +2,7 @@
 use crate::{
     lobby::Controller,
     lobby_id::LobbyId,
-    map_type::MapType,
+    map_id::MapId,
     scenario::{PlayerNumber, Scenario},
     seed::Seed,
     turns::{self, GameOutcome, MoveOrderInput, TurnResolution, Turns},
@@ -37,7 +37,7 @@ pub struct RecordedPlayer {
 pub struct GameStarted {
     pub game_id: LobbyId,
     pub name: String,
-    pub map_type: MapType,
+    pub map_type: MapId,
     pub players: Vec<RecordedPlayer>,
     pub scenario: Scenario,
     pub server_version: String,
@@ -508,7 +508,7 @@ mod tests {
         let mut log = directory.start(GameStarted {
             game_id: LobbyId::from_token("01".repeat(16)),
             name: "Combat fixture".into(),
-            map_type: MapType::SupplyPoint,
+            map_type: MapId::default(),
             players: vec![],
             scenario: scenario.clone(),
             server_version: "test".into(),

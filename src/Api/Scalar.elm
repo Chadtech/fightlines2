@@ -2,9 +2,54 @@
 -- https://github.com/dillonkearns/elm-graphql
 
 
-module Api.Scalar exposing (..)
+module Api.Scalar exposing (Codecs, MapId(..), defaultCodecs, defineCodecs, unwrapCodecs, unwrapEncoder)
+
+import Graphql.Codec exposing (Codec)
+import Graphql.Internal.Builder.Object as Object
+import Graphql.Internal.Encode
+import Json.Decode as Decode exposing (Decoder)
+import Json.Encode as Encode
 
 
-placeholder : String
-placeholder =
-    ""
+type MapId
+    = MapId String
+
+
+defineCodecs :
+    { codecMapId : Codec valueMapId }
+    -> Codecs valueMapId
+defineCodecs definitions =
+    Codecs definitions
+
+
+unwrapCodecs :
+    Codecs valueMapId
+    -> { codecMapId : Codec valueMapId }
+unwrapCodecs (Codecs unwrappedCodecs) =
+    unwrappedCodecs
+
+
+unwrapEncoder :
+    (RawCodecs valueMapId -> Codec getterValue)
+    -> Codecs valueMapId
+    -> getterValue
+    -> Graphql.Internal.Encode.Value
+unwrapEncoder getter (Codecs unwrappedCodecs) =
+    (unwrappedCodecs |> getter |> .encoder) >> Graphql.Internal.Encode.fromJson
+
+
+type Codecs valueMapId
+    = Codecs (RawCodecs valueMapId)
+
+
+type alias RawCodecs valueMapId =
+    { codecMapId : Codec valueMapId }
+
+
+defaultCodecs : RawCodecs MapId
+defaultCodecs =
+    { codecMapId =
+        { encoder = \(MapId raw) -> Encode.string raw
+        , decoder = Object.scalarDecoder |> Decode.map MapId
+        }
+    }

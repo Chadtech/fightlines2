@@ -4,10 +4,10 @@ import Api.Enum.AmbushShape as AmbushShape
 import Api.Enum.CombatKind as CombatKind
 import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as MapTheme
-import Api.Enum.MapType as MapType
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.UnitKind as Kind
+import Api.Scalar exposing (MapId(..))
 import Browser
 import Browser.Dom
 import DevTools.Page.GameReplay as GameReplay
@@ -663,7 +663,7 @@ recordedTurn : List TurnPlayback.Frame -> RecordedTurn
 recordedTurn frames =
     { battlefield =
         { name = "replay fixture"
-        , mapType = MapType.SupplyPoint
+        , mapType = MapId "supply-point"
         , players = []
         , map = Map.fromFeatures { width = 3, height = 3, baseTile = Terrain.Plain, theme = MapTheme.GreenForest, features = [] }
         , units = []
@@ -693,4 +693,4 @@ frame visible =
 
 gameJson : String
 gameJson =
-    """{"id":"00000000000000000000000000000001-1","name":"replay fixture","mapType":"SUPPLY_POINT","startedAt":"0","players":[],"turnCount":2,"status":{"kind":"UNFINISHED","winner":null}}"""
+    """{"id":"00000000000000000000000000000001-1","name":"replay fixture","mapType":"supply-point","startedAt":"0","players":[],"turnCount":2,"status":{"kind":"UNFINISHED","winner":null}}"""

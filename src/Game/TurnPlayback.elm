@@ -727,7 +727,8 @@ beginFrame transition pending =
 
 {-| A stationary head-on exchange can span two authoritative volleys. Present
 both hits together while retaining the server's damage and final board state.
-Never cross movement, visibility changes, another encounter, or a casualty.
+A return volley may include unrelated pairs. Never cross movement, visibility
+changes, an intervening encounter, or a casualty.
 -}
 combineReturnFire : Frame -> List Frame -> ( Frame, List Frame )
 combineReturnFire opening pending =
@@ -763,62 +764,83 @@ combineReturnFire opening pending =
                                 else
                                     findReturn shot rest
 
-                            [ returnShot ] ->
+                            returnShots ->
                                 let
-                                    reciprocal : Bool
-                                    reciprocal =
-                                        (returnShot.attacker.id == shot.target.id)
-                                            && (returnShot.target.id == shot.attacker.id)
-                                            && (returnShot.origin == shot.destination)
-                                            && (returnShot.destination == shot.origin)
+                                    reciprocal : Shot -> Bool
+                                    reciprocal other =
+                                        (other.kind /= CombatKind.IndirectFire)
+                                            && (other.attacker.id == shot.target.id)
+                                            && (other.target.id == shot.attacker.id)
+                                            && (other.origin == shot.destination)
+                                            && (other.destination == shot.origin)
+
+                                    unrelated : Shot -> Bool
+                                    unrelated other =
+                                        not (List.member other.attacker.id [ shot.attacker.id, shot.target.id ])
+                                            && not (List.member other.target.id [ shot.attacker.id, shot.target.id ])
+
+                                    returns : List Shot
+                                    returns =
+                                        List.filter reciprocal returnShots
+
+                                    otherShots : List Shot
+                                    otherShots =
+                                        List.filter (not << reciprocal) returnShots
                                 in
-                                if reciprocal then
-                                    let
-                                        attackerHealth : CombatHealth
-                                        attackerHealth =
-                                            { before = shot.attackerHealth.before
-                                            , after = returnShot.targetHealth.after
-                                            }
+                                case returns of
+                                    [ returnShot ] ->
+                                        if List.all unrelated otherShots then
+                                            combine shot returnShot otherShots frame rest
 
-                                        targetHealth : CombatHealth
-                                        targetHealth =
-                                            { before = shot.targetHealth.before
-                                            , after = returnShot.attackerHealth.after
-                                            }
+                                        else
+                                            ( opening, pending )
 
-                                        shots : List Shot
-                                        shots =
-                                            [ (shot
-                                                |> Shot.setTargetHealth
-                                                    targetHealth
-                                              )
-                                                |> Shot.setAttackerHealth
-                                                    attackerHealth
-                                            , (returnShot
-                                                |> Shot.setTargetHealth
-                                                    attackerHealth
-                                              )
-                                                |> Shot.setAttackerHealth
-                                                    targetHealth
-                                            ]
-                                    in
-                                    ( frame
-                                        |> setFrameShots shots
-                                    , rest
-                                    )
-
-                                else
-                                    ( opening, pending )
-
-                            _ ->
-                                ( opening, pending )
+                                    _ ->
+                                        ( opening, pending )
 
                 [] ->
                     ( opening, pending )
+
+        combine : Shot -> Shot -> List Shot -> Frame -> List Frame -> ( Frame, List Frame )
+        combine shot returnShot otherShots frame rest =
+            let
+                attackerHealth : CombatHealth
+                attackerHealth =
+                    { before = shot.attackerHealth.before
+                    , after = returnShot.targetHealth.after
+                    }
+
+                targetHealth : CombatHealth
+                targetHealth =
+                    { before = shot.targetHealth.before
+                    , after = returnShot.attackerHealth.after
+                    }
+
+                shots : List Shot
+                shots =
+                    [ (shot
+                        |> Shot.setTargetHealth
+                            targetHealth
+                      )
+                        |> Shot.setAttackerHealth
+                            attackerHealth
+                    , (returnShot
+                        |> Shot.setTargetHealth
+                            attackerHealth
+                      )
+                        |> Shot.setAttackerHealth
+                            targetHealth
+                    ]
+                        ++ otherShots
+            in
+            ( frame
+                |> setFrameShots shots
+            , rest
+            )
     in
     case opening.shots of
         [ shot ] ->
-            if List.any Unit.isDying opening.units then
+            if (shot.kind == CombatKind.IndirectFire) || List.any Unit.isDying opening.units then
                 ( opening, pending )
 
             else

@@ -325,7 +325,7 @@ mod tests {
     use super::*;
     use crate::{
         map::Map,
-        map_type::MapType,
+        map_id::MapId,
         test_support::{FixtureValue, TestResult},
         turns::{self, Turns},
     };
@@ -380,20 +380,22 @@ mod tests {
 
     #[test]
     fn every_map_plays_valid_turns_through_completion() -> TestResult {
-        for map in [
-            MapType::SupplyPoint,
-            MapType::ElAlamein,
-            MapType::BloodGulch,
-            MapType::Sidewinder,
-            MapType::BlackForest,
-            MapType::Crossroads,
-            MapType::Ridgeway,
-            MapType::ThreeCrossings,
-            MapType::LakeOfPennsylvania,
-            MapType::ConvoyCountry,
-            MapType::Tobruk,
-            MapType::BastionPass,
+        // Keep this bounded AI regression sample independent of catalog growth.
+        for name in [
+            "supply-point",
+            "el-alamein",
+            "blood-gulch",
+            "sidewinder",
+            "black-forest",
+            "crossroads",
+            "ridgeway",
+            "three-crossings",
+            "lake-of-pennsylvania",
+            "convoy-country",
+            "tobruk",
+            "bastion-pass",
         ] {
+            let map = MapId::parse(name.into())?;
             let mut scenario = map.scenario().fixture()?;
             let mut turns = Turns::default();
             for _ in 0..160 {

@@ -539,7 +539,7 @@ mod tests {
         ai::{self, Difficulty},
         map::{Map, RoadShape},
         map_definition::MapDefinition,
-        map_type::MapType,
+        map_id::MapId,
         test_support::{FixtureValue, TestResult},
         turns,
     };
@@ -893,19 +893,21 @@ mod tests {
 
     #[test]
     fn plays_valid_turns_on_every_map_and_both_sides() -> TestResult {
-        for map in [
-            MapType::SupplyPoint,
-            MapType::ElAlamein,
-            MapType::BloodGulch,
-            MapType::Sidewinder,
-            MapType::BlackForest,
-            MapType::Crossroads,
-            MapType::Ridgeway,
-            MapType::ThreeCrossings,
-            MapType::LakeOfPennsylvania,
-            MapType::ConvoyCountry,
-            MapType::BastionPass,
+        // Keep this bounded AI regression sample independent of catalog growth.
+        for name in [
+            "supply-point",
+            "el-alamein",
+            "blood-gulch",
+            "sidewinder",
+            "black-forest",
+            "crossroads",
+            "ridgeway",
+            "three-crossings",
+            "lake-of-pennsylvania",
+            "convoy-country",
+            "bastion-pass",
         ] {
+            let map = MapId::parse(name.into())?;
             let mut scenario = map.scenario().fixture()?;
             let mut turns = Turns::default();
             for _ in 0..12 {
@@ -975,19 +977,21 @@ mod tests {
 
     #[test]
     fn hard_plays_valid_turns_on_every_map_and_both_sides() -> TestResult {
-        for map in [
-            MapType::SupplyPoint,
-            MapType::ElAlamein,
-            MapType::BloodGulch,
-            MapType::Sidewinder,
-            MapType::BlackForest,
-            MapType::Crossroads,
-            MapType::Ridgeway,
-            MapType::ThreeCrossings,
-            MapType::LakeOfPennsylvania,
-            MapType::ConvoyCountry,
-            MapType::BastionPass,
+        // Keep this bounded AI regression sample independent of catalog growth.
+        for name in [
+            "supply-point",
+            "el-alamein",
+            "blood-gulch",
+            "sidewinder",
+            "black-forest",
+            "crossroads",
+            "ridgeway",
+            "three-crossings",
+            "lake-of-pennsylvania",
+            "convoy-country",
+            "bastion-pass",
         ] {
+            let map = MapId::parse(name.into())?;
             let mut scenario = map.scenario().fixture()?;
             let mut turns = Turns::default();
             for _ in 0..4 {

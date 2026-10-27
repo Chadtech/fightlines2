@@ -4,7 +4,16 @@
 
 module Api.ScalarCodecs exposing (..)
 
+import Api.Scalar exposing (defaultCodecs)
+import Json.Decode as Decode exposing (Decoder)
 
-placeholder : String
-placeholder =
-    ""
+
+type alias MapId =
+    Api.Scalar.MapId
+
+
+codecs : Api.Scalar.Codecs MapId
+codecs =
+    Api.Scalar.defineCodecs
+        { codecMapId = defaultCodecs.codecMapId
+        }

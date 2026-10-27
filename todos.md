@@ -1,20 +1,9 @@
 # Todo
 
 # Done
-- When deploying two infantry from a truck, its unclear which one you are issuing commands for first
-- If I fail to give commands to infantry unloading from one truck, the next truck I unload from will get the command menu for the infantry
-- implement resign
 
 ## doing now
 
-- Make maps not hardcoded
-- Validation errors on lobby name should show up as red
-- start button should disable if you are waiting on a human
-- Investigate mutual direct combat
-- Death map animation seems to hang on last frame
-- Road backdrop makes tanks and field guns look small
-- No pagination in map list
-- Search field
 
 ## Bugs
 - unit disappears when it starves with no notice

@@ -186,8 +186,13 @@ join and lobby headers.
 
 The initial map type is **supply point**. Joined players see the selected map;
 only the host can change it before starting. The game retains that selection.
-The lobby loads its ordered map options from the backend; the editor lists the
-maps returned in its catalog.
+The lobby and editor load their map catalogs from the backend. Maps are runtime
+JSON files discovered in `FIGHTLINES_MAP_DIR` (default: this checkout's `maps/`),
+identified by their filename stems. Add a valid `lowercase-hyphenated-id.json`
+file to make a map available without rebuilding the server or frontend.
+The catalog places `supply-point` first when present, then sorts the other IDs
+alphabetically. New lobbies default to the first available map. Saved edits affect
+new games; active games and archived boards retain their own layouts.
 Map saves also generate a PNG thumbnail from the submitted map's SVG through a
 browser canvas. The map library uses these images for its list and keeps an SVG
 for the selected large preview. Generated images live in `public/map-thumbnails/`

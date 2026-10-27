@@ -16,7 +16,6 @@ module EditableMap exposing
 import Api.Enum.BuildingKind as BuildingKind exposing (BuildingKind)
 import Api.Enum.Direction as Direction exposing (Direction)
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
-import Api.Enum.MapType as MapType exposing (MapType)
 import Api.Enum.PlayerNumber as PlayerNumber exposing (PlayerNumber)
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Api.InputObject as Input
@@ -27,9 +26,11 @@ import Api.Object.MapDefinition as DefinitionApi
 import Api.Object.NamedMap as NamedApi
 import Api.Object.TerrainPlacement as TerrainApi
 import Api.Object.UnitPlacement as UnitApi
+import Api.Scalar exposing (MapId)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Direction as Direction
 import Game.Map as Map exposing (Map)
+import Game.MapId as MapId
 import Game.Road as Road
 import Game.Terrain as Terrain exposing (Terrain)
 import Game.TerrainFeature as TerrainFeature exposing (TerrainFeature)
@@ -65,7 +66,7 @@ type alias UnitPlacement =
 
 
 type alias NamedMap =
-    { mapType : MapType
+    { mapType : MapId
     , definition : Definition
     , thumbnailUrl : String
     }
@@ -187,7 +188,7 @@ unitSelection =
         |> SS.with UnitApi.direction
 
 
-saveMutation : MapType -> Definition -> String -> SelectionSet () RootMutation
+saveMutation : MapId -> Definition -> String -> SelectionSet () RootMutation
 saveMutation mapType definition thumbnail =
     Mutation.saveMap
         (\options -> { options | thumbnail = Optional.Present thumbnail })
@@ -251,8 +252,6 @@ unitInput unit =
         )
 
 
-name : MapType -> String
+name : MapId -> String
 name kind =
-    MapType.toString kind
-        |> String.replace "_" "-"
-        |> String.toLower
+    MapId.toString kind

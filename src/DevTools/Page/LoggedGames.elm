@@ -11,7 +11,6 @@ module DevTools.Page.LoggedGames exposing
 
 import Api.Enum.Controller as Controller exposing (Controller)
 import Api.Enum.LoggedGameStatusKind as StatusKind
-import Api.Enum.MapType exposing (MapType)
 import Api.Enum.PlayerNumber exposing (PlayerNumber)
 import Api.Object
 import Api.Object.ArchivePlayer as PlayerApi
@@ -19,13 +18,14 @@ import Api.Object.ArchiveReadError as ReadErrorApi
 import Api.Object.LoggedGame as GameApi
 import Api.Object.LoggedGameStatus as StatusApi
 import Api.Query
+import Api.Scalar exposing (MapId)
 import Api.Union
 import Api.Union.LoggedGameEntry as EntryApi
 import ApiRequest
 import DevTools.Route as Route
 import DevTools.Shared as Shared
 import Game.LogId as GameLogId exposing (GameLogId)
-import Game.MapType as MapType
+import Game.MapId as MapId
 import Game.PlayerNumber as PlayerNumber
 import Graphql.Http
 import Graphql.SelectionSet as SS exposing (SelectionSet)
@@ -47,7 +47,7 @@ import View.CardHeader as CardHeader
 type alias Game =
     { id : GameLogId
     , name : String
-    , mapType : MapType
+    , mapType : MapId
     , startedAt : String
     , players : List Player
     , turnCount : Int
@@ -353,7 +353,7 @@ gameContent game =
         [ H.text game.name ]
     , H.p
         []
-        [ H.text (startedAtLabel game.startedAt ++ " · " ++ MapType.label game.mapType) ]
+        [ H.text (startedAtLabel game.startedAt ++ " · " ++ MapId.label game.mapType) ]
     , H.p
         []
         [ H.text (String.join " · " (List.map playerLabel game.players)) ]

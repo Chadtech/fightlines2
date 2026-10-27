@@ -182,8 +182,10 @@ omits this decorative cycle and retains the original green background.
   duplicate saves and show failures on the library screen without losing the
   preview. Guests see the saved map in the lobby and have no change-map action.
 - Keep `start game` visible for the host and disable it until both slots are
-  filled or while a request is pending. Show `waiting for another player` beside it
-  when the human slot is empty; omit routine readiness or success text.
+  filled or while a request is pending. Derive availability and adjacent explanatory
+  text from the same blocking reason, including pending requests and lobby updates.
+  Show `waiting for another player` when the human slot is empty; omit routine
+  readiness or success text.
   Lobby updates are automatic; show `retry` only after an update fails.
 - Show two numbered player slots, including the empty human slot, as flat rows
   on the card’s ordinary warm gray surface with a quiet divider. Put the player
@@ -201,7 +203,8 @@ omits this decorative cycle and retains the original green background.
   their occupants when assignments change. Side changes lock at game start.
 - Use `Card.simple` for the centered creation form, inside a page-owned container
   that fills available width up to 24rem. Preserve useful gutters and allow
-  content to wrap.
+  content to wrap. Show creation errors, including lobby-name validation, in a
+  padded dark-red (`bgRed0`) area with light (`textGray5`) text and status semantics.
 - Use a separate join page for invite visitors with the same card and page-owned
   width constraint. Show the name field and join action before membership;
   show the roster, invite link, and

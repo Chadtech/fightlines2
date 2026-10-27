@@ -6,9 +6,9 @@ module Game.View.MapPreview exposing
     )
 
 import Api.Enum.Direction as Direction
-import Api.Enum.MapType exposing (MapType)
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.UnitKind as UnitKind
+import Api.Scalar exposing (MapId)
 import EditableMap
     exposing
         ( Definition
@@ -19,7 +19,7 @@ import EditableMap
 import Game.Coordinate exposing (Coordinate)
 import Game.Depot as Depot
 import Game.Map as Map exposing (Map)
-import Game.MapType as MapType
+import Game.MapId as MapId
 import Game.View.TerrainTile as TerrainTile
 import Html.Styled exposing (Html)
 import Html.Styled.Attributes as A
@@ -44,14 +44,14 @@ toHtml map =
 
 {-| Render a submitted editor snapshot before it has a saved thumbnail URL.
 -}
-definitionToHtml : { mapType : MapType, definition : Definition } -> Html msg
+definitionToHtml : { mapType : MapId, definition : Definition } -> Html msg
 definitionToHtml map =
     Svg.svg
         [ SA.width "100%"
         , SA.height "100%"
         , SA.viewBox ("0 0 " ++ String.fromInt (map.definition.width * 16) ++ " " ++ String.fromInt (map.definition.height * 16))
         , Aria.role Aria.Image
-        , Aria.label (MapType.label map.mapType ++ ": terrain and starting forces")
+        , Aria.label (MapId.label map.mapType ++ ": terrain and starting forces")
         , A.css
             [ S.block
             , S.wFull

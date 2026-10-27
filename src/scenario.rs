@@ -959,21 +959,7 @@ mod tests {
 
     #[test]
     fn map_themes_are_independent_of_base_terrain() -> TestResult<()> {
-        for map_type in [
-            crate::map_type::MapType::SupplyPoint,
-            crate::map_type::MapType::ElAlamein,
-            crate::map_type::MapType::BloodGulch,
-            crate::map_type::MapType::Sidewinder,
-            crate::map_type::MapType::BlackForest,
-            crate::map_type::MapType::Crossroads,
-            crate::map_type::MapType::Ridgeway,
-            crate::map_type::MapType::ThreeCrossings,
-            crate::map_type::MapType::LakeOfPennsylvania,
-            crate::map_type::MapType::ConvoyCountry,
-            crate::map_type::MapType::Tobruk,
-            crate::map_type::MapType::BastionPass,
-            crate::map_type::MapType::WinterFront,
-        ] {
+        for map_type in crate::map_id::options().map_err(|error| error.to_string())? {
             let scenario = map_type.scenario().fixture()?;
             let original_visibility =
                 crate::visibility::visible_tiles(&scenario, PlayerNumber::Player1);

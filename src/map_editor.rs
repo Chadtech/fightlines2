@@ -3,8 +3,8 @@ use crate::{
     graphql::Context,
     map::{Coordinate, MapTheme, TerrainValue},
     map_definition::{DepotPlacement, MapDefinition, NamedMap, TerrainPlacement, UnitPlacement},
+    map_id::{self, MapId},
     map_thumbnail,
-    map_type::{MAPS, MapType},
     scenario::{BuildingKind, Direction, PlayerNumber, UnitKind},
 };
 use actix_files::NamedFile;
@@ -157,16 +157,9 @@ impl MapDefinitionInput {
 
 pub fn maps(context: &Context) -> FieldResult<MapCatalog> {
     let editor = context.editor.read()?;
-    let mut maps = Vec::new();
-    for (map_type, name) in MAPS {
-        let json = fs::read_to_string(editor.directory.join(format!("{name}.json")))?;
-        let definition = MapDefinition::parse(&json).map_err(|error| error.to_string())?;
-        maps.push(NamedMap {
-            map_type,
-            definition,
-        });
-    }
-    let mut maps = maps.into_iter();
+    let mut maps = map_id::catalog_in(&editor.directory)
+        .map_err(|error| error.to_string())?
+        .into_iter();
     let first = maps.next().ok_or("no editable maps were returned")?;
     Ok(MapCatalog {
         first,
@@ -176,16 +169,15 @@ pub fn maps(context: &Context) -> FieldResult<MapCatalog> {
 
 pub fn save_map(
     context: &Context,
-    map_type: MapType,
+    map_type: MapId,
     definition: MapDefinitionInput,
     thumbnail: Option<String>,
 ) -> FieldResult<NamedMap> {
     let editor = context.editor.write()?;
-    let name = MAPS
-        .iter()
-        .find(|(kind, _)| *kind == map_type)
-        .map(|(_, name)| *name)
-        .ok_or("unknown map")?;
+    let name = map_type.as_str();
+    if !editor.directory.join(format!("{name}.json")).is_file() {
+        return Err("unknown map".into());
+    }
     let definition = definition.definition()?;
     definition
         .scenario()
@@ -248,7 +240,7 @@ mod tests {
     use serde_json::{Value, json};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-    const SAVE: &str = "mutation Save($definition: MapDefinitionInput!, $kind: MapType!) { saveMap(mapType: $kind, definition: $definition) { mapType definition { description theme width depots { kind } } } }";
+    const SAVE: &str = "mutation Save($definition: MapDefinitionInput!, $kind: MapId!) { saveMap(mapType: $kind, definition: $definition) { mapType definition { description theme width depots { kind } } } }";
 
     fn store() -> web::Data<crate::lobby::Store> {
         web::Data::new(crate::lobby::Store::new(crate::seed::Seed::new([0; 32])))
@@ -324,7 +316,7 @@ mod tests {
                 .insert_header(("host", "localhost:8080"))
                 .insert_header(("origin", "http://localhost:8080"))
                 .set_json(
-                    json!({"query":query,"variables":{"kind":"SUPPLY_POINT","definition":valid}}),
+                    json!({"query":query,"variables":{"kind":"supply-point","definition":valid}}),
                 )
                 .to_request();
             let body: Value = test::call_and_read_body_json(&app, request).await;
@@ -401,7 +393,7 @@ mod tests {
             if peer == Ipv4Addr::LOCALHOST {
                 assert_eq!(
                     body["data"]["maps"]["rest"].as_array().map(Vec::len),
-                    Some(MAPS.len() - 1)
+                    Some(map_id::options().map_err(|error| error.to_string())?.len() - 1)
                 );
                 assert_eq!(body["data"]["health"], json!(true));
                 let maps = &body["data"]["maps"];
@@ -450,13 +442,13 @@ mod tests {
             "unknown-map",
         ] {
             let mut definition = valid.clone();
-            let mut kind = "SUPPLY_POINT";
+            let mut kind = "supply-point";
             match failure {
                 "width" => definition["width"] = json!(-1),
                 "negative-position" => definition["units"][0]["position"]["x"] = json!(-1),
                 "id" => definition["units"][0]["id"] = json!(0),
                 "direction" => definition["units"][0]["direction"] = Value::Null,
-                "unknown-map" => kind = "UNKNOWN",
+                "unknown-map" => kind = "unknown",
                 _ => {}
             }
             let peer = if failure == "remote" {
@@ -495,7 +487,7 @@ mod tests {
             .insert_header(("host", "localhost:8080"))
             .insert_header(("origin", "http://localhost:8080"))
             .set_json(
-                json!({"query":SAVE,"variables":{"kind":"SUPPLY_POINT","definition":definition}}),
+                json!({"query":SAVE,"variables":{"kind":"supply-point","definition":definition}}),
             )
             .to_request();
         let body: Value = test::call_and_read_body_json(&app, request).await;
@@ -535,6 +527,10 @@ mod tests {
         let maps = root.join("maps");
         let frontend = root.join("public");
         fs::create_dir_all(&maps)?;
+        fs::write(
+            maps.join("custom-thumbnail.json"),
+            include_str!("../maps/supply-point.json"),
+        )?;
         fs::create_dir_all(&frontend)?;
         let app = test::init_service(
             App::new()
@@ -556,7 +552,7 @@ mod tests {
                 {"id": 2, "position": {"x": 1, "y": 1}, "playerNumber": "PLAYER2", "kind": "INFANTRY", "direction": "WEST"}
             ]
         });
-        let query = "mutation Save($definition: MapDefinitionInput!, $thumbnail: String) { saveMap(mapType: SUPPLY_POINT, definition: $definition, thumbnail: $thumbnail) { thumbnailUrl } }";
+        let query = "mutation Save($definition: MapDefinitionInput!, $thumbnail: String) { saveMap(mapType: \"custom-thumbnail\", definition: $definition, thumbnail: $thumbnail) { thumbnailUrl } }";
         let png = include_bytes!("../tests/fixtures/map-thumbnail.png");
         let mut saved_json = None;
         for valid in [true, false] {
@@ -579,12 +575,12 @@ mod tests {
                     .as_str()
                     .ok_or("missing thumbnail URL")?;
                 assert_eq!(fs::read(frontend.join(path.trim_start_matches('/')))?, png);
-                saved_json = Some(fs::read_to_string(maps.join("supply-point.json"))?);
+                saved_json = Some(fs::read_to_string(maps.join("custom-thumbnail.json"))?);
                 definition["description"] = json!("must not be saved");
             } else {
                 assert!(body.get("errors").is_some(), "{body}");
                 assert_eq!(
-                    fs::read_to_string(maps.join("supply-point.json"))?,
+                    fs::read_to_string(maps.join("custom-thumbnail.json"))?,
                     saved_json.as_deref().ok_or("missing successful save")?
                 );
             }

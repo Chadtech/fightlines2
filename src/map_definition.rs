@@ -2,8 +2,8 @@
 use crate::{
     graphql::Context,
     map::{Coordinate, Map, MapError, MapTheme, Terrain, TerrainValue},
+    map_id::MapId,
     map_thumbnail,
-    map_type::MapType,
     scenario::{BuildingKind, Direction, PlayerNumber, Scenario, UnitKind},
 };
 use juniper::{FieldResult, graphql_object};
@@ -50,14 +50,14 @@ pub struct UnitPlacement {
 }
 
 pub struct NamedMap {
-    pub map_type: MapType,
+    pub map_type: MapId,
     pub definition: MapDefinition,
 }
 
 #[graphql_object(context = Context)]
 impl NamedMap {
-    fn map_type(&self) -> MapType {
-        self.map_type
+    fn map_type(&self) -> MapId {
+        self.map_type.clone()
     }
     fn definition(&self) -> &MapDefinition {
         &self.definition

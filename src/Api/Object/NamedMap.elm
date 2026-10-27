@@ -4,7 +4,6 @@
 
 module Api.Object.NamedMap exposing (..)
 
-import Api.Enum.MapType
 import Api.InputObject
 import Api.Interface
 import Api.Object
@@ -20,9 +19,9 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
-mapType : SelectionSet Api.Enum.MapType.MapType Api.Object.NamedMap
+mapType : SelectionSet Api.ScalarCodecs.MapId Api.Object.NamedMap
 mapType =
-    Object.selectionForField "Enum.MapType.MapType" "mapType" [] Api.Enum.MapType.decoder
+    Object.selectionForField "ScalarCodecs.MapId" "mapType" [] (Api.ScalarCodecs.codecs |> Api.Scalar.unwrapCodecs |> .codecMapId |> .decoder)
 
 
 definition :

@@ -1540,6 +1540,72 @@ mod tests {
     }
 
     #[test]
+    fn stationary_gun_return_fire_can_share_a_volley_with_an_unrelated_exchange() -> TestResult<()>
+    {
+        let (mut board, mut orders) =
+            fixture(UnitKind::FieldGun, UnitKind::Tank, Coordinate::new(4, 3))?;
+        board.units.first_mut().fixture()?.take_damage(8);
+        orders.get_mut(1).fixture()?.facing = FacingOrder::Ambush(Direction::West);
+        let (other, mut other_orders) = fixture(
+            UnitKind::Infantry,
+            UnitKind::Infantry,
+            Coordinate::new(4, 3),
+        )?;
+        other_orders.get_mut(1).fixture()?.facing = FacingOrder::Ambush(Direction::West);
+        for ((mut unit, mut order), position) in other
+            .units
+            .into_iter()
+            .zip(other_orders)
+            .zip([Coordinate::new(3, 6), Coordinate::new(4, 6)])
+        {
+            unit.move_to(position);
+            order.path = vec![position];
+            board.units.push(unit);
+            orders.push(order);
+        }
+        let result = resolve_completed_movement(&board, &orders, 1)?;
+        let volleys: Vec<_> = result
+            .frames
+            .iter()
+            .filter(|frame| !frame.shots.is_empty())
+            .collect();
+        assert_eq!(volleys.len(), 2);
+        let opening = volleys.first().fixture()?;
+        let returning = volleys.get(1).fixture()?;
+        assert_eq!(opening.shots.len(), 1);
+        assert_eq!(returning.shots.len(), 3);
+        let gun_shot = opening.shots.first().fixture()?;
+        let tank_shot = returning
+            .shots
+            .iter()
+            .find(|shot| shot.attacker.kind() == UnitKind::Tank)
+            .fixture()?;
+        assert_eq!(gun_shot.damage, 5);
+        assert_eq!(tank_shot.attacker_health.before.current(), 11);
+        assert_eq!(tank_shot.damage, 11);
+        assert_eq!(tank_shot.target_health.after.current(), 0);
+        for unit in &returning.units {
+            let initial = board
+                .units
+                .iter()
+                .find(|initial| initial.unit_id() == unit.unit_id())
+                .fixture()?;
+            assert_eq!(unit.board_position(), initial.board_position());
+            assert_eq!(
+                unit.supplies().current(),
+                initial.supplies().current()
+                    - rules(unit.kind()).readiness_cost
+                    - rules(unit.kind()).shot_cost
+            );
+        }
+        for shot in shots(&result) {
+            assert!(shot.attacker.resources().is_none());
+            assert!(shot.target.resources().is_none());
+        }
+        Ok(())
+    }
+
+    #[test]
     fn tank_charging_a_ready_gun_cannot_bypass_initial_contact_deferral() -> TestResult<()> {
         let (board, mut orders) =
             fixture(UnitKind::FieldGun, UnitKind::Tank, Coordinate::new(4, 3))?;

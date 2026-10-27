@@ -4,7 +4,7 @@ use crate::{
     game_log::{Archive, RecordedPlayer},
     graphql::Context,
     lobby::{ArchivedView, Controller, GameSnapshot},
-    map_type::MapType,
+    map_id::MapId,
     scenario::PlayerNumber,
     turns::GameOutcome,
     visibility::PlayerObservation,
@@ -128,7 +128,7 @@ impl LoggedGameStatus {
 pub struct LoggedGame {
     id: String,
     name: String,
-    map_type: MapType,
+    map_type: MapId,
     started_at: String,
     players: Vec<ArchivePlayer>,
     turn_count: i32,
@@ -151,7 +151,7 @@ impl LoggedGame {
         Self {
             id: id.0,
             name: archive.started.name.clone(),
-            map_type: archive.started.map_type,
+            map_type: archive.started.map_type.clone(),
             started_at: archive.recorded_at_unix_ms.to_string(),
             players: archive
                 .started
@@ -419,7 +419,7 @@ mod tests {
         let mut log = directory.start(GameStarted {
             game_id: LobbyId::from_token("01".repeat(16)),
             name: "Archive fixture".into(),
-            map_type: MapType::SupplyPoint,
+            map_type: MapId::default(),
             players: vec![
                 RecordedPlayer {
                     player_number: PlayerNumber::Player1,
@@ -536,7 +536,7 @@ mod tests {
             assert_eq!(game["__typename"], "LoggedGame");
             assert_eq!(game["id"], id);
             assert_eq!(game["name"], "Archive fixture");
-            assert_eq!(game["mapType"], "SUPPLY_POINT");
+            assert_eq!(game["mapType"], "supply-point");
             assert_eq!(
                 game["players"],
                 json!([

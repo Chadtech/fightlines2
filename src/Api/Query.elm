@@ -4,7 +4,6 @@
 
 module Api.Query exposing (..)
 
-import Api.Enum.MapType
 import Api.Enum.PlayerNumber
 import Api.InputObject
 import Api.Interface
@@ -79,9 +78,9 @@ maps object____ =
 
 {-| Playable maps in the order offered by the server. Available without editor access.
 -}
-mapOptions : SelectionSet (List Api.Enum.MapType.MapType) RootQuery
+mapOptions : SelectionSet (List Api.ScalarCodecs.MapId) RootQuery
 mapOptions =
-    Object.selectionForField "(List Enum.MapType.MapType)" "mapOptions" [] (Api.Enum.MapType.decoder |> Decode.list)
+    Object.selectionForField "(List ScalarCodecs.MapId)" "mapOptions" [] (Api.ScalarCodecs.codecs |> Api.Scalar.unwrapCodecs |> .codecMapId |> .decoder |> Decode.list)
 
 
 {-| Public authored layouts, shared by map previews and game creation.

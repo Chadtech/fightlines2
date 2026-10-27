@@ -38,6 +38,9 @@ responses use `no-store`.
   sources live in `dev-tools/`; both apps share `elm-interop.js` for browser
   storage, startup flags, and dialogs. Clipboard and thumbnail requests are
   handled by their respective app entry scripts.
+- `FIGHTLINES_MAP_DIR`: directory containing the playable `*.json` map files;
+  defaults to this checkout’s `maps/`. Include this directory when moving the
+  executable to another machine. Files are discovered and read at runtime.
 - `FIGHTLINES_SEED`: optional debugging override for the initial token-generation
   seed, exactly 64 hexadecimal characters (32 bytes). When unset, each startup
   obtains a fresh 256-bit seed from the operating system. Empty or malformed
@@ -141,11 +144,13 @@ reads require loopback clients; saves additionally require a matching localhost
 Origin. Do not enable this flag on hosted servers. Production serves no editor
 page and rejects authoring operations, including with the same frontend bundle.
 
-The editor writes only the catalog's known `maps/*.json` files in the source checkout,
-using validation and atomic replacement. Editor-enabled servers read the current
-files when starting a new game. Production embeds those files at compile time,
-so deploy a rebuilt Rust executable after map edits. No map directory is needed
-on a production host. Existing games are unaffected by saves.
+The editor writes only existing JSON files in `FIGHTLINES_MAP_DIR`, using
+validation and atomic replacement. All servers discover maps from that directory
+and read the current files when starting a new game. Ship the map directory with
+the executable; adding or changing valid map files requires no rebuild. IDs are
+filename stems containing 1–100 lowercase ASCII letters, digits, or internal
+hyphens. An empty catalog, invalid filename, or malformed map is reported as an
+error. Existing games are unaffected by saves.
 
 
 ## Backdrop calibration settings
