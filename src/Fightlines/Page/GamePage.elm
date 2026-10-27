@@ -6,6 +6,7 @@ module Fightlines.Page.GamePage exposing
     , init
     , keyCommands
     , load
+    , movingVehicles
     , setDepots
     , setShared
     , setUnits
@@ -623,6 +624,16 @@ plannedOrders model =
 playback : Model -> Maybe TurnPlayback.Playback
 playback model =
     TurnLifecycle.playback model.currentTurn.phase
+
+
+movingVehicles : Model -> List Audio.MovingVehicle
+movingVehicles model =
+    PlaybackPresentation.movingVehicles
+        { playback = playback model
+        , paused = False
+        , camera = playbackCamera model
+        , skipLossDialogs = model.skipUnitLossDialogs
+        }
 
 
 unitLoss : Model -> Maybe TurnPlayback.Loss

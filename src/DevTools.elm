@@ -4,6 +4,7 @@ import ApiRequest
     exposing
         ( Response
         )
+import Audio
 import Browser
 import Browser.Navigation as Navigation
 import DevPanel
@@ -104,6 +105,7 @@ main =
                     ( newPage, eff ) =
                         update msg page
                             |> restorePageDialog page
+                            |> E.andThen (withMovementAudio page)
                 in
                 case getShared newPage of
                     Just shared ->
@@ -321,6 +323,23 @@ handleRoute shared route =
 ----------------------------------------------------------------
 -- UPDATE --
 ----------------------------------------------------------------
+
+
+withMovementAudio : Page -> Page -> ( Page, Eff Msg )
+withMovementAudio before after =
+    let
+        moving : Page -> List Audio.MovingVehicle
+        moving page =
+            case page of
+                Replay _ model ->
+                    GameReplay.movingVehicles model
+
+                _ ->
+                    []
+    in
+    ( after
+    , E.audio (Audio.syncMovement { before = moving before, after = moving after })
+    )
 
 
 update : Msg -> Page -> ( Page, Eff Msg )

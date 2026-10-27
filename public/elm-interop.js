@@ -47,7 +47,8 @@ function startElmApp(elmApp, handleMessage) {
   });
 
   app.ports.toJs.subscribe(async (message) => {
-    if (message === null || (typeof message === "object" && Object.hasOwn(message, "play"))) {
+    if (message === null || (typeof message === "object" &&
+        (Object.hasOwn(message, "play") || Object.hasOwn(message, "movement")))) {
       await audio.handleEvent(message);
       return;
     }

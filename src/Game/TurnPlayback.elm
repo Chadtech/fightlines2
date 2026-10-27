@@ -79,6 +79,8 @@ type alias Departure =
 type Encounter
     = Exchange CombatExchange
     | Impact ImpactEncounter
+    | Sabotage Depot
+    | Exhaustion Unit
 
 
 {-| One landing scene combines target and depot damage while retaining every
@@ -489,9 +491,13 @@ displayExchange exchange =
 {-| Impact scenes retain observable targets independently of firing origins.
 Confirmed indirect shots already have their own exchange at the same landing.
 -}
-encounters : Frame -> List Encounter
-encounters frame =
+encounters : FrameTransition -> List Encounter
+encounters frames =
     let
+        frame : Frame
+        frame =
+            frames.next
+
         needsImpactScene : ImpactEncounter -> Bool
         needsImpactScene impact =
             let
@@ -569,6 +575,49 @@ encounters frame =
                 |> List.map Impact
     in
     orderEncounters frame (combatEncounters ++ impactEncounters)
+        ++ sabotageEncounters frames
+        ++ exhaustionEncounters frames
+
+
+sabotageEncounters : FrameTransition -> List Encounter
+sabotageEncounters frames =
+    let
+        encounter : Coordinate -> Maybe Encounter
+        encounter position =
+            ListUtil.find (\depot -> depot.position == position) frames.current.depots
+                |> Maybe.map Sabotage
+    in
+    List.filterMap encounter frames.next.sabotages
+
+
+exhaustionEncounters : FrameTransition -> List Encounter
+exhaustionEncounters frames =
+    let
+        frame : Frame
+        frame =
+            frames.next
+
+        combatParticipants : List UnitId
+        combatParticipants =
+            List.concatMap (\shot -> [ shot.attacker.id, shot.target.id ]) frame.shots
+                ++ List.filterMap IndirectImpact.destroyedUnitId frame.indirectImpacts
+
+        exhausted : Unit -> Maybe Encounter
+        exhausted unit =
+            let
+                exhaustedOnMap : Bool
+                exhaustedOnMap =
+                    Unit.isDying unit && Unit.onMap unit && not (List.member unit.id combatParticipants)
+            in
+            if exhaustedOnMap then
+                frames.current.units
+                    |> ListUtil.find (\earlier -> (earlier.id == unit.id) && not (Unit.isDying earlier))
+                    |> Maybe.map (\earlier -> Exhaustion earlier)
+
+            else
+                Nothing
+    in
+    List.filterMap exhausted frame.units
 
 
 {-| Impact-only shells belong to the same simultaneous volley as confirmed hits.
@@ -597,6 +646,12 @@ orderEncounters frame pending =
 
                 Impact impact ->
                     List.map (.unit >> .id) impact.attackers
+
+                Sabotage _ ->
+                    []
+
+                Exhaustion _ ->
+                    []
 
         canPresent : Encounter -> Bool
         canPresent candidate =
@@ -644,6 +699,12 @@ encounterCasualties encounter =
 
         Impact impact ->
             IndirectImpact.destroyedUnitId impact |> Maybe.map List.singleton |> Maybe.withDefault []
+
+        Sabotage _ ->
+            []
+
+        Exhaustion unit ->
+            [ unit.id ]
 
 
 {-| Several concealed guns can hit the same observed unit in one volley. Its
@@ -703,7 +764,7 @@ beginFrame transition pending =
 
         presentation : Presentation
         presentation =
-            case encounters frames.next of
+            case encounters frames of
                 encounter :: rest ->
                     Combat
                         { encounter = encounter
@@ -1421,6 +1482,16 @@ encounterPositions frame encounter =
                         |> Maybe.andThen (Unit.physicalPosition frame.units)
             in
             attackerPositions ++ [ impact.destination ]
+
+        Sabotage sabotage ->
+            [ sabotage.position ]
+
+        Exhaustion exhausted ->
+            frame.units
+                |> ListUtil.find (\unit -> unit.id == exhausted.id)
+                |> Maybe.andThen (Unit.physicalPosition frame.units)
+                |> Maybe.map List.singleton
+                |> Maybe.withDefault []
 
 
 {-| Frame only projected battlefield sightings. Theater portraits can contain

@@ -57,6 +57,11 @@ their matching team artwork, mirrored toward the opponent. This also plays for
 observable indirect-fire guns. Hits and casualties wait until the last firing figure
 recovers, followed by a short travel beat. Units that only receive fire stay
 still. Live games and logged replays share this sequence.
+Sabotage opens a theater showing a demolition charge beside the structure over
+the tile’s terrain backdrop, then leaving the structure in wreckage. Supply-exhaustion
+losses open a separate theater where the unit's formation slumps and fades without
+shell impacts, followed by the usual loss acknowledgment. Both scenes share the
+continue, see-map, and automatic-close controls.
 
 ## Audio manager
 
@@ -81,6 +86,12 @@ share this timing; pauses and camera holds do not repeat shots. The manager
 preloads and cycles five distinct original procedural firing variants per weapon, with up to eight
 overlapping combat voices independent of UI feedback. Timing follows animation
 frames, with no separate per-tank timers.
+During battlefield playback, each visibly moving truck or tank plays its approved
+six-second engine loop from an independent random offset. Consecutive movement
+tiles keep the same voice; stopping fades it out over 20ms. Camera holds, casualty
+dialogs, replay pause, navigation, and hidden tabs silence movement. Live games
+and logged replays share this behavior. Source and license status are documented
+in `public/audio/README.md`.
 
 ## Dev panel
 
@@ -355,7 +366,7 @@ paths are withheld from game responses.
 Any unit that fires directly reveals its occupied tile to the enemy for the following
 turn, even in forests or beyond normal sight. Direct fire again renews the reveal;
 otherwise it expires at the next turn boundary. Ambushes can hit revealed units
-in forests if they remain in the firing area and the firing line is clear.
+in forests if they remain in the firing area, even through intervening terrain.
 Enemy resources stay concealed.
 After the game ends, the fog lifts across the whole battlefield, revealing all
 remaining units, resources, depot stocks, and freight. The final turn plays with
@@ -570,8 +581,9 @@ and re-entering triggers it immediately. New contacts trigger after each movemen
 arrival or transport transition, including enemies emerging from concealment or
 unloading into the area. Other units moving do not trigger fire at an initial
 contact that has stayed in the area. A unit fires at most once per turn, choosing
-the nearest eligible observable enemy in its firing area. Forest concealment and intervening sight blockers
-apply; an ally's sight cannot enable firing through an obstruction. An ambushed
+the nearest eligible observable enemy in its firing area. Shared vision or a firing
+reveal enables ambush fire through intervening forests, hills, and mountains.
+Terrain still blocks sight normally, and unrevealed enemies in forests remain concealed. An ambushed
 unit with a normal move stops its remaining movement. A surviving attack-moving
 unit continues its remaining route and can fire on a later attack-move contact;
 being ambushed alone does not trigger return fire. Opposing ready ambushers fire simultaneously when both

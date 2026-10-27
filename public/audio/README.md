@@ -1,5 +1,33 @@
 # Runtime audio
 
+## Vehicle movement
+
+The approved six-second mono, 48kHz loops are copied unchanged from the local
+auditions:
+
+| Runtime file | Recording | Source excerpt |
+| --- | --- | --- |
+| `movement/tank-monosfera-6s.ogg` | [tank_engine.wav by monosfera](https://freesound.org/people/monosfera/sounds/572294/) | 27.8–34.4s |
+| `movement/truck-volvo-6s.ogg` | [Volvo Semi Truck OB Highway Drive Med 03 M2 by Richard King / Pro Sound Effects](https://www.prosoundeffects.com/sound-effects/PSE_KCVV4/GnTXs/volvo-semi-truck-ob-highway-drive-med-03-m2) | 32.0–38.6s |
+
+Both excerpts use a 600ms equal-power overlap, a 35Hz high-pass filter and gentle
+short-term level smoothing limited to ±2dB. Overall RMS is −22dBFS. The approved
+Vorbis files, WAV masters, extraction metadata and source hashes are retained in
+the ignored `audio-experiments/vehicle-movement-recordings-v1/` directory under
+`tank-revision-v2/` and `truck-revision-v2/`.
+
+The tank source is **CC0**, extracted from its public high-quality MP3 rendition.
+The Volvo source is **paid**, and this development asset derives from its public
+audition MP3. Purchase/use a licensed master and re-extract the same approved
+section before distributing the game; possession of the preview is not a license.
+
+Each moving vehicle has its own looping browser source with an independent
+random start offset. Refreshing a movement snapshot retains existing voices;
+removing a unit fades only that voice out. Only observed battlefield movement
+produces audio. Pauses, camera holds, loss dialogs, page changes and hidden tabs
+stop it. The six-second recordings have no baked-in start or stop fades; the
+manager applies 15ms/20ms fades when movement actually starts/stops.
+
 ## UI switches
 
 The active UI cues are excerpts from two **CC0** recordings by **Joseph Sardin**

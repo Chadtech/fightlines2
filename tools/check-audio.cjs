@@ -28,19 +28,25 @@ function boot({ loadFails = false, decodeFails = false, resumeFails = false, def
       this.state = 'running';
     }
     createGain() {
-      this.master = { gain: { value: 1, setValueAtTime(value) { this.value = value; } }, connect() {} };
-      return this.master;
+      const gain = { gain: {
+        value: 1,
+        setValueAtTime(value) { this.value = value; },
+        linearRampToValueAtTime(value) { this.value = value; },
+        cancelScheduledValues() {},
+      }, connect() {}, disconnect() {} };
+      this.master ??= gain;
+      return gain;
     }
     async decodeAudioData() {
       this.decodes += 1;
       if (decodeFails) throw new Error('invalid audio');
-      return { decoded: true };
+      return { decoded: true, duration: 6 };
     }
     createBufferSource() {
       const voice = {
         started: false, stopped: false, disconnected: false,
         connect() {},
-        start() { this.started = true; },
+        start(when = 0, offset = 0) { this.started = true; this.offset = offset; },
         stop() { this.stopped = true; },
         disconnect() { this.disconnected = true; },
         finish() { this.onended(); },
@@ -51,6 +57,10 @@ function boot({ loadFails = false, decodeFails = false, resumeFails = false, def
   }
   const sandbox = {
     AudioContext, document,
+    Math: Object.assign(Object.create(Math), { random: (() => {
+      let seed = 1;
+      return () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    })() }),
     performance: { now: () => now },
     async fetch(url) {
       requests.push(url);
@@ -101,8 +111,10 @@ async function main() {
     '/audio/combat/tank-fire-03.ogg',
     '/audio/combat/tank-fire-04.ogg',
     '/audio/combat/tank-fire-05.ogg',
+    '/audio/movement/truck-volvo-6s.ogg',
+    '/audio/movement/tank-monosfera-6s.ogg',
   ]);
-  assert.equal(app.contexts[0].decodes, 13);
+  assert.equal(app.contexts[0].decodes, 15);
   await app.audio.handleEvent({ play: 'uiAffirm' });
   assert.equal(app.voices.length, 1, 'rapid duplicate requests are coalesced');
   for (let index = 0; index < 4; index++) {
@@ -111,7 +123,7 @@ async function main() {
   }
   assert.equal(app.voices.length, 5);
   assert.equal(app.voices[0].stopped, true, 'voice limit replaces the oldest voice');
-  assert.equal(app.contexts[0].decodes, 13, 'decoded buffers are reused');
+  assert.equal(app.contexts[0].decodes, 15, 'decoded buffers are reused');
   app.voices[1].finish();
   assert.equal(app.voices[1].disconnected, true);
   app.audio.setVolume(0);
@@ -168,6 +180,61 @@ async function main() {
   combat.document.hidden = true;
   combat.documentEvents.visibilitychange();
   assert.ok(combat.voices.every(voice => voice.stopped), 'hiding stops both voice groups');
+
+  const movement = boot();
+  const truck = { unitId: 'truck-1', vehicle: 'truck' };
+  const otherTruck = { unitId: 'truck-2', vehicle: 'truck' };
+  const tank = { unitId: 'tank-1', vehicle: 'tank' };
+  await movement.audio.handleEvent({ movement: [truck] });
+  assert.equal(movement.voices.length, 0, 'movement obeys gesture gating');
+  await movement.gesture();
+  await movement.audio.handleEvent({ movement: [truck, otherTruck, tank] });
+  assert.equal(movement.voices.length, 3, 'each vehicle has an independent looping source');
+  assert.ok(movement.voices.every(voice => voice.started && voice.loop && voice.offset >= 0 && voice.offset < 6));
+  assert.equal(new Set(movement.voices.map(voice => voice.offset)).size, 3, 'vehicles start at independent random offsets');
+  assert.equal(movement.voices[0].buffer, movement.voices[1].buffer, 'trucks share decoded audio');
+  assert.notEqual(movement.voices[0].buffer, movement.voices[2].buffer, 'tank uses its approved recording');
+  await movement.audio.handleEvent({ movement: [truck, otherTruck, tank] });
+  assert.equal(movement.voices.length, 3, 'repeated movement snapshots preserve sources across tiles');
+  await movement.audio.handleEvent({ movement: [otherTruck, tank] });
+  assert.equal(movement.voices[0].stopped, true, 'a stopped vehicle fades out independently');
+  assert.equal(movement.voices[1].stopped, false);
+  await movement.audio.handleEvent({ movement: [] });
+  assert.ok(movement.voices.every(voice => voice.stopped), 'pause, dialogs and navigation stop all movement');
+  await movement.audio.handleEvent({ movement: [truck] });
+  assert.equal(movement.voices.length, 4, 'resuming creates a new source');
+  assert.notEqual(movement.voices[0].offset, movement.voices[3].offset);
+  movement.document.hidden = true;
+  movement.documentEvents.visibilitychange();
+  assert.ok(movement.voices.every(voice => voice.stopped));
+  await movement.audio.handleEvent({ movement: [truck] });
+  assert.equal(movement.voices.length, 4, 'hidden pages stay silent');
+  movement.document.hidden = false;
+  await movement.audio.handleEvent({ movement: [truck] });
+  assert.equal(movement.voices.length, 5, 'fresh snapshots restore movement after tab return');
+  movement.events.pagehide();
+  assert.ok(movement.voices.every(voice => voice.stopped));
+  for (const invalid of [null, {}, [truck, truck], [{ unitId: '', vehicle: 'truck' }], [{ unitId: '1', vehicle: 'toString' }]]) {
+    await movement.audio.handleEvent({ movement: invalid });
+  }
+  assert.equal(movement.warnings.length, 1, 'malformed movement is bounded and does not throw');
+
+  for (const cancel of ['stop', 'hidden', 'pagehide']) {
+    const pending = boot({ deferredLoad: true });
+    await pending.gesture();
+    const play = pending.audio.handleEvent({ movement: [truck] });
+    await pending.audio.handleEvent({ movement: [truck] });
+    if (cancel === 'stop') await pending.audio.handleEvent({ movement: [] });
+    if (cancel === 'hidden') {
+      pending.document.hidden = true;
+      pending.documentEvents.visibilitychange();
+      pending.document.hidden = false;
+    }
+    if (cancel === 'pagehide') pending.events.pagehide();
+    pending.release();
+    await play;
+    assert.equal(pending.voices.length, 0, `pending movement cancelled by ${cancel} cannot start late`);
+  }
 
   for (const bad of [undefined, [], {}, { play: 3 }, { play: 'unknown' }, { play: 'toString' }, { play: 'uiAffirm', extra: true }]) {
     await app.audio.handleEvent(bad);

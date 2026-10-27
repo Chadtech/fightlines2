@@ -462,7 +462,7 @@ Shared interop routes these events
 to the manager before dispatching tagged clipboard, dialog, storage or thumbnail
 messages. Elm updates remain the only source of playback requests; pointer and
 keyboard listeners only unlock the browser audio context and preload its clips.
-The manager caches decoded buffers, preloading all thirteen clips on unlock. UI
+The manager caches decoded buffers, preloading all fifteen clips on unlock. UI
 playback allows four voices and coalesces identical requests within 40ms. Combat
 playback allows eight independent voices, cycles five variants per weapon, and
 never coalesces separate shots. Requests delayed more than 250ms are dropped.
@@ -492,6 +492,21 @@ animation frame's timing without per-shot messages or independent timers;
 `GamePage.playAudio` continues to select UI feedback. Tank clips live at
 `/audio/combat/tank-fire-{01,02,03,04,05}.ogg` and retain their procedural source
 recordings, documented in `public/audio/README.md`.
+
+`PlaybackPresentation.movingVehicles` derives typed unit IDs and vehicle kinds
+from the same projected `TurnPlayback.movingPositions` edges used by sprites.
+Each page supplies its pause, camera-hold and loss-dialog state. Both app entry
+points send `Audio.syncMovement` snapshots after updates, including an empty
+snapshot when leaving playback. Active snapshots repeat so returning from a
+hidden tab can restore sound without restarting continuing voices on ordinary
+frames. This adds no movement state to `GamePage.superUpdate` or the game rules.
+The browser manager keeps one loop source per unit, starting it at a random
+offset in its approved six-second recording and preserving it across consecutive
+tiles. Random offsets are browser audio variation only and do not affect game
+seeds or recorded results. Voices fade in over 15ms and out over 20ms. Removing
+a unit invalidates pending decoding, and UI/combat voice limits do not evict
+moving vehicles. Runtime assets and their source status live in
+`public/audio/README.md`.
 
 `NewLobby`, `JoinLobby`, `LobbyPage`, `LobbyLoadFailed`, `GamePage`, and
 `GameLoadFailed` own their page state and views.
@@ -1191,8 +1206,9 @@ includes each revealed unit and its occupied tile regardless of sight or forest
 cover, without granting surrounding sight or exposing resources or cargo. The
 previous reveal remains in playback frames until the final turn boundary.
 `visibility::unit_observable` shares unit sightings between projection and ambush
-targeting, including firing reveals in forests. Ambush range and clear firing
-lines still apply; initial targets may escape before the final combat check.
+targeting, including firing reveals in forests. Ambushes require shared visibility
+and directional range, with no separate firing-line check through terrain;
+initial targets may escape before the final combat check.
 
 `game_view` projects the authoritative scenario for the requesting player,
 including the development preview. `GameSnapshot.visibleTiles` supplies the
@@ -1485,6 +1501,17 @@ its battlefield clock at zero. Long animation ticks
 stop at combat boundaries so they cannot skip the panels or immediately consume
 the hit/death feedback. These pauses affect local presentation only; Rust frame
 timing, combat outcomes, and fog projection remain authoritative.
+
+Sabotage and supply exhaustion also enter the shared encounter queue. Sabotage
+pairs each projected sabotage coordinate with its pre-event building. Its scene
+uses the tile’s terrain and map theme, with a demolition charge and no infantry
+portrait. Exhaustion uses newly dying on-map units without a
+combat source, retaining their previous living appearance; passengers follow their
+carrier's casualty pause rather than opening separate theaters. Both use the
+existing spotlight, map peek, continuation, and automatic-close transitions.
+`CombatFormation.exhaustionToSvg` reuses calibrated placements with staggered
+slump/fade removal and no shell impacts. Continuing exhaustion enters the existing
+`Deaths` stage so loss acknowledgment and carrier grouping remain intact.
 
 Projected `Shot.attackerHealth` and `Shot.targetHealth` carry authoritative before
 and after hit points for each pair, including concealed enemies. Rust sequences health losses across pairs within a simultaneous volley; reciprocal shots share a single transition.

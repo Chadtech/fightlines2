@@ -7,6 +7,7 @@ module DevTools.Page.GameReplay exposing
     , init
     , keyCommands
     , load
+    , movingVehicles
     , setShared
     , subscriptions
     , update
@@ -19,6 +20,7 @@ import Api.Object
 import Api.Object.GameSnapshot as SnapshotApi
 import Api.Query
 import ApiRequest
+import Audio
 import Browser.Dom
 import Browser.Events
 import DevTools.Page.LoggedGames as LoggedGames
@@ -312,6 +314,21 @@ playback model =
 
         Ready ->
             Nothing
+
+
+movingVehicles : Model -> List Audio.MovingVehicle
+movingVehicles model =
+    case model.timeline of
+        Playing playing ->
+            PlaybackPresentation.movingVehicles
+                { playback = Just playing.animation
+                , paused = playing.paused
+                , camera = playing.camera
+                , skipLossDialogs = model.skipUnitLossDialogs
+                }
+
+        Ready ->
+            []
 
 
 pause : Model -> Model

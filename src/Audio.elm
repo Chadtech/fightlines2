@@ -1,21 +1,49 @@
 module Audio exposing
     ( Audio(..)
     , Event(..)
+    , MovingVehicle
+    , Vehicle(..)
     , encodeEvent
     , fieldGunFire
     , none
+    , syncMovement
     , tankFire
     , uiAffirm
     , uiCancel
     , uiConfirm
     )
 
+import Game.UnitId as UnitId exposing (UnitId)
 import Json.Encode as Je
 
 
 type Event
     = None
     | Play Audio
+    | SyncMovement (List MovingVehicle)
+
+
+type Vehicle
+    = Truck
+    | Tank
+
+
+type alias MovingVehicle =
+    { unitId : UnitId
+    , vehicle : Vehicle
+    }
+
+
+{-| Refresh active movement while any vehicle moves, including after a hidden
+tab returns. An empty snapshot stops the last voices without idle port traffic.
+-}
+syncMovement : { before : List MovingVehicle, after : List MovingVehicle } -> Event
+syncMovement vehicles =
+    if List.isEmpty vehicles.before && List.isEmpty vehicles.after then
+        None
+
+    else
+        SyncMovement vehicles.after
 
 
 type Audio
@@ -89,3 +117,25 @@ encodeEvent event =
         Play audio ->
             Je.object
                 [ Tuple.pair "play" <| Je.string <| audioToName audio ]
+
+        SyncMovement vehicles ->
+            Je.object
+                [ ( "movement", Je.list encodeMovingVehicle vehicles ) ]
+
+
+encodeMovingVehicle : MovingVehicle -> Je.Value
+encodeMovingVehicle moving =
+    let
+        sound : String
+        sound =
+            case moving.vehicle of
+                Truck ->
+                    "truck"
+
+                Tank ->
+                    "tank"
+    in
+    Je.object
+        [ ( "unitId", Je.string (UnitId.toString moving.unitId) )
+        , ( "vehicle", Je.string sound )
+        ]

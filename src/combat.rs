@@ -568,12 +568,12 @@ impl Combat {
             || !target.is_alive()
             || shooter.player_number() == target.player_number()
             || !(in_line || in_cross_arm)
-            || !visibility::clear_line(&board.map, origin, destination)
         {
             return None;
         }
         // Most pairs cannot engage. Avoid recomputing the entire army's sight
         // for them, especially during the AI's repeated candidate simulations.
+        // Shared sightings enable ambush fire even through intervening terrain.
         let visible = visibility::visible_tiles(board, shooter.player_number());
         if !visibility::unit_observable(&board.map, &visible, target) {
             return None;
@@ -3030,8 +3030,8 @@ mod tests {
     }
 
     #[test]
-    fn firing_reveals_do_not_bypass_obstructed_ambush_lines() -> TestResult<()> {
-        for terrain in [Terrain::Forest, Terrain::Hills] {
+    fn firing_reveals_enable_ambushes_through_intervening_terrain() -> TestResult<()> {
+        for terrain in [Terrain::Forest, Terrain::Hills, Terrain::Mountains] {
             let (mut scenario, orders) = fixture(
                 UnitKind::FieldGun,
                 UnitKind::Infantry,
@@ -3050,14 +3050,69 @@ mod tests {
                 .fixture()?
                 .finish_firing_reveal(true);
             let result = resolve_completed_movement(&scenario, &orders, 1)?;
-            assert!(shots(&result).is_empty());
+            assert_eq!(shots(&result).len(), 1);
         }
         Ok(())
     }
 
     #[test]
-    fn concealed_targets_and_obstructed_firing_lines_do_not_trigger() -> TestResult<()> {
-        for terrain in [Terrain::Forest, Terrain::Hills] {
+    fn allied_sight_enables_ambushes_through_intervening_terrain() -> TestResult<()> {
+        for kind in [UnitKind::Tank, UnitKind::FieldGun] {
+            let targets = if kind == UnitKind::FieldGun {
+                vec![Coordinate::new(5, 3), Coordinate::new(5, 2)]
+            } else {
+                vec![Coordinate::new(5, 3)]
+            };
+            for target in targets {
+                for terrain in [Terrain::Forest, Terrain::Hills, Terrain::Mountains] {
+                    for spotted in [false, true] {
+                        let (mut scenario, orders) = fixture(kind, UnitKind::FieldGun, target)?;
+                        scenario.map = Map::new(
+                            9,
+                            9,
+                            Terrain::Plain,
+                            BTreeMap::from([(Coordinate::new(4, 3), terrain)]),
+                        )
+                        .fixture()?;
+                        if spotted {
+                            let mut observer = Scenario::supply_point()
+                                .fixture()?
+                                .units
+                                .into_iter()
+                                .find(|unit| {
+                                    unit.kind() == UnitKind::Truck
+                                        && unit.player_number() == PlayerNumber::Player1
+                                })
+                                .fixture()?;
+                            observer.move_to(Coordinate::new(6, target.y() as u16));
+                            scenario.units.push(observer);
+                        }
+                        let result = resolve_completed_movement(&scenario, &orders, 1)?;
+                        let hits = shots(&result);
+                        assert_eq!(
+                            hits.len(),
+                            usize::from(spotted),
+                            "{kind:?}, {target:?}, {terrain:?}, spotted={spotted}"
+                        );
+                        if spotted {
+                            let hit = hits.first().fixture()?;
+                            assert_eq!(hit.kind, CombatKind::Ambush);
+                            assert_eq!(hit.destination, target);
+                            assert!(
+                                hit.target_health.after.current()
+                                    < hit.target_health.before.current()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn unseen_targets_do_not_trigger_ambushes() -> TestResult<()> {
+        for terrain in [Terrain::Forest, Terrain::Hills, Terrain::Mountains] {
             let (mut scenario, orders) =
                 fixture(UnitKind::FieldGun, UnitKind::Truck, Coordinate::new(6, 3))?;
             scenario.map = Map::new(

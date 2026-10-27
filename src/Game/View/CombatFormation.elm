@@ -1,5 +1,7 @@
 module Game.View.CombatFormation exposing
     ( Animation
+    , exhaustionEndsAt
+    , exhaustionToSvg
     , figureCount
     , impactStarts
     , impactsToSvg
@@ -16,6 +18,7 @@ import Game.View.CombatAttack as CombatAttack
 import Game.View.CombatExplosion as CombatExplosion
 import Game.View.UnitSprite as UnitSprite exposing (Appearance)
 import Html.Styled.Attributes as A
+import Style as S
 import Svg.Styled as Svg exposing (Svg)
 import Svg.Styled.Attributes as SA
 import View.Aria as Aria
@@ -93,6 +96,11 @@ type alias Placement =
     , y : Float
     , size : Float
     }
+
+
+type CasualtyEffect
+    = ShellImpact
+    | SupplyExhaustion
 
 
 type Layer
@@ -189,17 +197,37 @@ placements kind =
 
 toSvg : Animation -> CombatHealth -> Appearance -> List (Svg msg)
 toSvg =
-    layersToSvg Nothing [ Combatants, Impacts ]
+    layersToSvg ShellImpact Nothing [ Combatants, Impacts ]
 
 
 impactsToSvg : Animation -> CombatHealth -> Appearance -> List (Svg msg)
 impactsToSvg =
-    layersToSvg Nothing [ Impacts ]
+    layersToSvg ShellImpact Nothing [ Impacts ]
 
 
 toSvgWithCalibration : Maybe Calibration -> Animation -> CombatHealth -> Appearance -> List (Svg msg)
 toSvgWithCalibration calibration =
-    layersToSvg calibration [ Combatants, Impacts ]
+    layersToSvg ShellImpact calibration [ Combatants, Impacts ]
+
+
+exhaustionFadeDurationMs : Float
+exhaustionFadeDurationMs =
+    700
+
+
+exhaustionEndsAt : UnitKind -> Int -> Float
+exhaustionEndsAt kind health =
+    impactStartsAt + toFloat (max 0 (figureCount kind health - 1)) * 120 + exhaustionFadeDurationMs
+
+
+{-| Exhaustion removes the formation without inventing incoming fire.
+-}
+exhaustionToSvg : Maybe Calibration -> Float -> CombatHealth -> Appearance -> List (Svg msg)
+exhaustionToSvg calibration elapsed =
+    layersToSvg SupplyExhaustion
+        calibration
+        [ Combatants ]
+        { elapsed = elapsed, impactDelay = 0, attack = CombatAttack.NotAttacking }
 
 
 formationPlacements : Maybe Calibration -> Appearance -> List Placement
@@ -331,8 +359,8 @@ calibratedPlacements settings unit =
     List.map place pattern
 
 
-layersToSvg : Maybe Calibration -> List Layer -> Animation -> CombatHealth -> Appearance -> List (Svg msg)
-layersToSvg calibration layers animation health unit =
+layersToSvg : CasualtyEffect -> Maybe Calibration -> List Layer -> Animation -> CombatHealth -> Appearance -> List (Svg msg)
+layersToSvg effect calibration layers animation health unit =
     let
         elapsed : Float
         elapsed =
@@ -371,12 +399,38 @@ layersToSvg calibration layers animation health unit =
 
                 visible : Bool
                 visible =
-                    not lost || elapsed < startsAt + CombatExplosion.spriteDisappearsAt
+                    not lost || elapsed < startsAt + disappearanceDelay
+
+                disappearanceDelay : Float
+                disappearanceDelay =
+                    case effect of
+                        ShellImpact ->
+                            CombatExplosion.spriteDisappearsAt
+
+                        SupplyExhaustion ->
+                            exhaustionFadeDurationMs
+
+                collapse : Float
+                collapse =
+                    if lost && (effect == SupplyExhaustion) then
+                        clamp 0 1 ((elapsed - startsAt) / exhaustionFadeDurationMs)
+
+                    else
+                        0
+
+                collapseTransform : String
+                collapseTransform =
+                    "translate(0 " ++ String.fromFloat (UnitSprite.portraitFooting unit) ++ ") rotate(" ++ String.fromFloat (collapse * 16) ++ ") scale(1 " ++ String.fromFloat (1 - collapse * 0.35) ++ ") translate(0 " ++ String.fromFloat (0 - UnitSprite.portraitFooting unit) ++ ")"
 
                 spriteOpacity : Float
                 spriteOpacity =
                     if lost then
-                        CombatExplosion.spriteOpacity (elapsed - startsAt)
+                        case effect of
+                            ShellImpact ->
+                                CombatExplosion.spriteOpacity (elapsed - startsAt)
+
+                            SupplyExhaustion ->
+                                1 - collapse
 
                     else
                         1
@@ -391,7 +445,12 @@ layersToSvg calibration layers animation health unit =
                             , SA.class "fightlines-combat-figure"
                             , A.attribute "data-figure-index" (String.fromInt index)
                             ]
-                            [ CombatAttack.toSvg { elapsed = animation.elapsed, figureIndex = index } animation.attack unit ]
+                            [ Svg.g
+                                [ SA.transform collapseTransform
+                                , SA.css [ S.reducedMotion [ S.transform "none" ] ]
+                                ]
+                                [ CombatAttack.toSvg { elapsed = animation.elapsed, figureIndex = index } animation.attack unit ]
+                            ]
                         ]
 
                     else

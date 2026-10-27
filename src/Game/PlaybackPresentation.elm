@@ -11,6 +11,7 @@ module Game.PlaybackPresentation exposing
     , loss
     , lossDialog
     , lossError
+    , movingVehicles
     , ownerName
     , readyToAutomaticallyClose
     , setRemainingPanMs
@@ -28,6 +29,7 @@ import Game.Camera as Camera exposing (Camera)
 import Game.Map as Map exposing (Map)
 import Game.TurnPlayback as TurnPlayback
 import Game.Unit as Unit exposing (Unit)
+import Game.UnitId exposing (UnitId)
 import Game.UnitLoss as UnitLoss
 import Game.View.CombatTheater as CombatTheater
 import Game.View.UnitDeath as UnitDeath
@@ -136,6 +138,56 @@ audioBetween transition =
 
         _ ->
             []
+
+
+{-| Follow the same projected movement edges as the sprites. Camera holds,
+replay pauses and casualty dialogs freeze movement and therefore silence it.
+-}
+movingVehicles :
+    { playback : Maybe TurnPlayback.Playback
+    , paused : Bool
+    , camera : Maybe PlaybackCamera
+    , skipLossDialogs : Bool
+    }
+    -> List Audio.MovingVehicle
+movingVehicles state =
+    let
+        cameraSettling : Bool
+        cameraSettling =
+            (state.camera |> Maybe.map .remainingPanMs |> Maybe.withDefault 0) > 0
+
+        lossHeld : Bool
+        lossHeld =
+            loss state.skipLossDialogs state.playback /= Nothing
+
+        vehicle : Unit -> Maybe Audio.MovingVehicle
+        vehicle unit =
+            case unit.kind of
+                UnitKind.Truck ->
+                    Just { unitId = unit.id, vehicle = Audio.Truck }
+
+                UnitKind.Tank ->
+                    Just { unitId = unit.id, vehicle = Audio.Tank }
+
+                _ ->
+                    Nothing
+
+        moving : TurnPlayback.Playback -> List Audio.MovingVehicle
+        moving animation =
+            let
+                ids : List UnitId
+                ids =
+                    TurnPlayback.movingPositions (Just animation) |> List.map .unitId
+            in
+            animation.current.units
+                |> List.filter (\unit -> List.member unit.id ids && not (Unit.isDying unit))
+                |> List.filterMap vehicle
+    in
+    if state.paused || cameraSettling || lossHeld then
+        []
+
+    else
+        state.playback |> Maybe.map moving |> Maybe.withDefault []
 
 
 frameCamera : Camera.Viewport -> Map -> Camera -> TurnPlayback.Playback -> Maybe PlaybackCamera -> PlaybackCamera

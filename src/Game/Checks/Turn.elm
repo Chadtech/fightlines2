@@ -14,6 +14,7 @@ import Audio
 import Game.Camera as Camera
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
 import Game.Coordinate as Coordinate exposing (Coordinate)
+import Game.Depot exposing (Depot)
 import Game.Direction as Direction
 import Game.IndirectImpact as IndirectImpact exposing (IndirectImpact)
 import Game.Map as Map
@@ -477,7 +478,8 @@ playbackChecks first second =
                 [ name ]
     in
     List.concat
-        [ expect "camera subjects follow interpolated visible movers"
+        [ movementAudioChecks firstFrame lastFrame
+        , expect "camera subjects follow interpolated visible movers"
             (Maybe.map TurnPlayback.focusPositions timedHalfway == Just [ { x = 0.5, y = 0 }, { x = 1.5, y = 1 } ])
         , expect "camera subjects exclude routes entering or leaving fog"
             (Maybe.map TurnPlayback.focusPositions entering == Just [ { x = 0.5, y = 0 } ] && Maybe.map TurnPlayback.focusPositions leaving == Just [ { x = 0.5, y = 0 } ])
@@ -540,6 +542,72 @@ playbackChecks first second =
             )
         , expect "holding preserves facing" (Direction.alongPath [ { x = 1, y = 1 } ] (Just Direction.North) == Just Direction.North)
         , expect "playback ends at the resolved board" (finished == Nothing && finalUnits == units)
+        ]
+
+
+movementAudioChecks : TurnPlayback.Frame -> TurnPlayback.Frame -> List String
+movementAudioChecks before after =
+    let
+        vehicle : Int -> Unit -> Unit
+        vehicle index unit =
+            if index == 0 then
+                Unit.setKind Kind.Truck unit
+
+            else
+                Unit.setKind Kind.Tank unit
+
+        current : TurnPlayback.Frame
+        current =
+            before |> TurnPlayback.setFrameUnits (List.indexedMap vehicle before.units)
+
+        next : TurnPlayback.Frame
+        next =
+            after |> TurnPlayback.setFrameUnits (List.indexedMap vehicle after.units)
+
+        animation : TurnPlayback.Playback
+        animation =
+            { current = current
+            , remaining = [ next ]
+            , elapsed = 90
+            , presentation = TurnPlayback.Battlefield
+            , acknowledgedLosses = []
+            }
+
+        state : { playback : Maybe TurnPlayback.Playback, paused : Bool, camera : Maybe PlaybackPresentation.PlaybackCamera, skipLossDialogs : Bool }
+        state =
+            { playback = Just animation, paused = False, camera = Nothing, skipLossDialogs = False }
+
+        vehicles : List Audio.MovingVehicle
+        vehicles =
+            PlaybackPresentation.movingVehicles state
+
+        hidden : TurnPlayback.Playback
+        hidden =
+            animation |> setPlaybackCurrent (current |> TurnPlayback.setFrameUnits (List.take 1 current.units))
+
+        leaving : TurnPlayback.Playback
+        leaving =
+            animation |> setPlaybackRemaining [ next |> TurnPlayback.setFrameUnits (List.take 1 next.units) ]
+
+        expect : String -> Bool -> List String
+        expect name passed =
+            if passed then
+                []
+
+            else
+                [ name ]
+    in
+    List.concat
+        [ expect "simultaneous truck and tank movement requests separate typed voices" (List.map .vehicle vehicles == [ Audio.Truck, Audio.Tank ])
+        , expect "movement voices retain unit identity" (List.map .unitId vehicles == List.map .id current.units)
+        , expect "replay pause silences movement" (List.isEmpty (PlaybackPresentation.movingVehicles { state | paused = True }))
+        , expect "camera pan silences movement" (List.isEmpty (PlaybackPresentation.movingVehicles { state | camera = Just { camera = { offset = { x = 0, y = 0 }, zoom = 1 }, remainingPanMs = 10 } }))
+        , expect "finished playback silences movement" (List.isEmpty (PlaybackPresentation.movingVehicles { state | playback = Nothing }))
+        , expect "stationary vehicles stay silent" (List.isEmpty (PlaybackPresentation.movingVehicles { state | playback = Just (animation |> setPlaybackRemaining [ current ]) }))
+        , expect "units entering sight have no sound before their visible movement" (List.map .vehicle (PlaybackPresentation.movingVehicles { state | playback = Just hidden }) == [ Audio.Truck ])
+        , expect "hidden destinations do not produce movement audio" (List.map .vehicle (PlaybackPresentation.movingVehicles { state | playback = Just leaving }) == [ Audio.Truck ])
+        , expect "movement snapshots stop voices when playback ends" (Audio.syncMovement { before = vehicles, after = [] } == Audio.SyncMovement [])
+        , expect "idle updates do not send movement snapshots" (Audio.syncMovement { before = [], after = [] } == Audio.none)
         ]
 
 
@@ -1402,7 +1470,7 @@ combatPlaybackChecks first second =
                         TurnPlayback.Impact impact ->
                             Maybe.map .health impact.target
 
-                        TurnPlayback.Exchange _ ->
+                        _ ->
                             Nothing
 
                 ready : Float -> Bool
@@ -2196,7 +2264,7 @@ mergedImpactChecks fixture =
                         TurnPlayback.Impact impact ->
                             List.map (.unit >> .id) impact.attackers
 
-                        TurnPlayback.Exchange _ ->
+                        _ ->
                             []
 
                 times : Maybe TurnPlayback.Playback -> Maybe (List Float)
@@ -2258,7 +2326,7 @@ mergedImpactChecks fixture =
                                 && (impact.depot == Just { kind = BuildingKind.Supply, before = { current = 3, maximum = 3 }, after = { current = 1, maximum = 3 } })
                                 && (participants panel == [ firstGun.id, secondGun.id ])
 
-                        TurnPlayback.Exchange _ ->
+                        _ ->
                             False
 
                 expect : String -> Bool -> List String
@@ -3003,6 +3071,95 @@ deathPlaybackChecks id =
             TurnPlayback.start [ initial, dying, gone ]
                 |> Maybe.map (TurnPlayback.tickUntilLoss 60000)
 
+        shown : Maybe TurnPlayback.Playback
+        shown =
+            delayed |> Maybe.andThen Tuple.first |> Maybe.andThen (TurnPlayback.tickUntilLoss 300 >> Tuple.first)
+
+        continued : Maybe { animation : TurnPlayback.Playback, frame : TurnPlayback.Frame }
+        continued =
+            shown |> Maybe.andThen TurnPlayback.continueCombat
+
+        exhaustionReady : Float -> TurnPlayback.MapView -> Bool
+        exhaustionReady elapsed mapView =
+            CombatTheater.readyToAutomaticallyClose
+                { encounter = TurnPlayback.Exhaustion alive
+                , elapsed = elapsed
+                , mapView = mapView
+                }
+
+        exhaustionKindChecks : Kind.UnitKind -> List String
+        exhaustionKindChecks kind =
+            let
+                living : Unit
+                living =
+                    Unit.setKind kind alive
+
+                shownKind : Maybe TurnPlayback.Playback
+                shownKind =
+                    TurnPlayback.start
+                        [ initial |> TurnPlayback.setFrameUnits [ living ]
+                        , dying |> TurnPlayback.setFrameUnits [ Unit.setKind kind dead ]
+                        , gone
+                        ]
+                        |> Maybe.andThen (TurnPlayback.tickUntilLoss 60000 >> Tuple.first)
+                        |> Maybe.andThen (TurnPlayback.tickUntilLoss 300 >> Tuple.first)
+
+                continuedKind : Maybe { animation : TurnPlayback.Playback, frame : TurnPlayback.Frame }
+                continuedKind =
+                    shownKind |> Maybe.andThen TurnPlayback.continueCombat
+            in
+            expect "every unit kind opens an exhaustion theater" (shownKind |> Maybe.andThen TurnPlayback.activeEncounter |> (==) (Just (TurnPlayback.Exhaustion living)))
+                ++ expect "exhaustion acknowledges once and completes without a second theater"
+                    (continuedKind |> Maybe.andThen (.animation >> TurnPlayback.acknowledgeLoss id >> TurnPlayback.tickUntilLoss 60000 >> Tuple.first) |> Maybe.andThen (TurnPlayback.tickUntilLoss 60000 >> Tuple.first) |> (==) Nothing)
+
+        sabotageChecks : BuildingKind.BuildingKind -> List String
+        sabotageChecks kind =
+            let
+                building : Depot
+                building =
+                    { kind = kind
+                    , position = { x = 2, y = 2 }
+                    , stock = Nothing
+                    , hp = { current = 3, maximum = 3 }
+                    }
+
+                sabotageBefore : TurnPlayback.Frame
+                sabotageBefore =
+                    { initial | depots = [ building ] }
+
+                sabotageFrame : TurnPlayback.Frame
+                sabotageFrame =
+                    { sabotageBefore
+                        | durationMs = 180
+                        , sabotages = [ building.position ]
+                        , depots = [ { building | hp = { current = 0, maximum = 3 } } ]
+                    }
+
+                show : List Unit -> Maybe TurnPlayback.Playback
+                show units =
+                    TurnPlayback.start
+                        [ sabotageBefore |> TurnPlayback.setFrameUnits units
+                        , sabotageFrame |> TurnPlayback.setFrameUnits units
+                        , gone
+                        ]
+                        |> Maybe.andThen (TurnPlayback.tick 180 >> Tuple.first)
+                        |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+
+                encounter : TurnPlayback.Encounter
+                encounter =
+                    TurnPlayback.Sabotage building
+
+                ready : Float -> Bool
+                ready elapsed =
+                    CombatTheater.readyToAutomaticallyClose
+                        { encounter = encounter, elapsed = elapsed, mapView = TurnPlayback.CardVisible }
+            in
+            expect "sabotage retains the observed building" (show [ alive ] |> Maybe.andThen TurnPlayback.activeEncounter |> (==) (Just encounter))
+                ++ expect "sabotage scenes do not depend on a visible infantry occupant" (show [] |> Maybe.andThen TurnPlayback.activeEncounter |> (==) (Just encounter))
+                ++ expect "sabotage focuses only its projected tile" (show [] |> Maybe.map TurnPlayback.focusPositions |> (==) (Just [ { x = 2, y = 2 } ]))
+                ++ expect "sabotage waits for the dynamite, destruction, and automatic-close delay" (not (ready 3599) && ready 3600)
+                ++ expect "sabotage has no firing cues or unit losses" (show [ alive ] |> Maybe.map (\playback -> List.isEmpty (TurnPlayback.losses playback) && (TurnPlayback.panels playback |> Maybe.map (CombatTheater.firingTimes Kind.Tank) |> (==) (Just []))) |> (==) (Just True))
+
         ( held, heldFrame ) =
             TurnPlayback.tickUntilLoss 60000 animation
 
@@ -3014,8 +3171,13 @@ deathPlaybackChecks id =
         ++ expect "death does not interpolate a movement" (List.isEmpty (TurnPlayback.movingPositions (Just animation)))
         ++ expect "supply death dialogs remain until acknowledged" (held == Just animation && heldFrame.units == [ dead ])
         ++ expect "supply death cause uses the exhaustion frame" (List.map .cause (TurnPlayback.losses animation) == [ TurnPlayback.SuppliesExhausted ])
-        ++ expect "delayed ticks cannot skip a supply loss" (Maybe.map (Tuple.second >> .units) delayed == Just [ dead ])
+        ++ expect "delayed ticks stop before the supply-exhaustion theater" (Maybe.map (Tuple.second >> .units) delayed == Just [ alive ])
         ++ expect "acknowledged supply death completes normally" (acknowledged == Nothing && List.isEmpty acknowledgedFrame.units)
+        ++ expect "exhaustion opens its theater before acknowledging a loss" (shown |> Maybe.andThen TurnPlayback.activeEncounter |> (==) (Just (TurnPlayback.Exhaustion alive)))
+        ++ expect "exhaustion keeps casualty acknowledgment after the theater" (continued |> Maybe.map (.animation >> TurnPlayback.losses >> List.map .cause) |> (==) (Just [ TurnPlayback.SuppliesExhausted ]))
+        ++ expect "exhaustion waits for every figure to fade and the close delay" (not (exhaustionReady 3239 TurnPlayback.CardVisible) && exhaustionReady 3240 TurnPlayback.CardVisible && not (exhaustionReady 6000 TurnPlayback.SeeingMap))
+        ++ List.concatMap exhaustionKindChecks [ Kind.Infantry, Kind.Tank, Kind.Truck, Kind.FieldGun ]
+        ++ List.concatMap sabotageChecks [ BuildingKind.Supply, BuildingKind.Fuel, BuildingKind.Fortress ]
 
 
 deathFocusChecks : UnitId -> UnitId -> List String
@@ -3463,6 +3625,25 @@ carrierLossEventChecks first second =
                                     [ shot ]
                             )
 
+                exhaustionTheater : Maybe TurnPlayback.Playback
+                exhaustionTheater =
+                    TurnPlayback.start
+                        [ frame |> TurnPlayback.setFrameUnits (List.map (Unit.setDestroyed False) frame.units)
+                        , frame
+                        , frame |> TurnPlayback.setFrameUnits []
+                        ]
+                        |> Maybe.andThen (TurnPlayback.tickUntilLoss 1400 >> Tuple.first)
+                        |> Maybe.andThen (TurnPlayback.tickUntilLoss 300 >> Tuple.first)
+
+                afterIndependent : Maybe TurnPlayback.Playback
+                afterIndependent =
+                    exhaustionTheater
+                        |> Maybe.andThen TurnPlayback.continueCombat
+                        |> Maybe.map .animation
+                        |> Maybe.map (TurnPlayback.acknowledgeLoss fourth)
+                        |> Maybe.andThen (TurnPlayback.tickUntilLoss 1400 >> Tuple.first)
+                        |> Maybe.andThen (TurnPlayback.tickUntilLoss 300 >> Tuple.first)
+
                 acknowledged : TurnPlayback.Playback
                 acknowledged =
                     TurnPlayback.acknowledgeLoss first animation
@@ -3476,7 +3657,13 @@ carrierLossEventChecks first second =
                         [ label ]
             in
             List.concat
-                [ expect "a truck and two passengers form one event even when passengers precede the truck"
+                [ expect "simultaneous exhaustion queues independent units without passenger theaters"
+                    ((exhaustionTheater |> Maybe.andThen TurnPlayback.activeEncounter)
+                        == Just (TurnPlayback.Exhaustion (Unit.setDestroyed False independent))
+                        && (afterIndependent |> Maybe.andThen TurnPlayback.activeEncounter)
+                        == Just (TurnPlayback.Exhaustion (Unit.setDestroyed False truck))
+                    )
+                , expect "a truck and two passengers form one event even when passengers precede the truck"
                     (TurnPlayback.lossEvent animation == Just { loss = { unit = truck, cause = TurnPlayback.SuppliesExhausted }, passengers = [ passenger, otherPassenger ] })
                 , expect "the grouped event preserves the lethal attack and attacker"
                     (TurnPlayback.lossEvent combatAnimation |> Maybe.map (.loss >> .cause) |> (==) (Just (TurnPlayback.Destroyed CombatKind.AttackMove shot.attacker)))

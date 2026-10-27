@@ -33,6 +33,7 @@ import Game.TurnPlayback as TurnPlayback
         , Panel
         )
 import Game.Unit as Unit exposing (Unit)
+import Game.Unit.HitPoints exposing (HitPoints)
 import Game.UnitKind as UnitKindLabel
 import Game.View.CombatAttack as CombatAttack
 import Game.View.CombatExplosion as CombatExplosion
@@ -116,6 +117,12 @@ attackerOnLeft panel =
                 |> Maybe.map (impactAttackerOnLeft impact.destination)
                 |> Maybe.withDefault True
 
+        Sabotage _ ->
+            True
+
+        Exhaustion _ ->
+            True
+
 
 impactAttackerOnLeft : Coordinate -> Attacker -> Bool
 impactAttackerOnLeft destination attacker =
@@ -135,14 +142,27 @@ readyToAutomaticallyClose panel =
     let
         animationEndsAt : Float
         animationEndsAt =
-            case depotSceneStartsAt panel of
-                Just startsAt ->
-                    startsAt + depotImpactStartsAt + impactContactDelayMs + rumbleDurationMs
+            case panel.encounter of
+                Sabotage _ ->
+                    sabotageBlastAt + 700
 
-                Nothing ->
-                    participantsEndAt panel
+                Exhaustion unit ->
+                    exhaustionEndsAt unit
+
+                _ ->
+                    ordinaryAnimationEndsAt panel
     in
     (panel.mapView == CardVisible) && (panel.elapsed >= animationEndsAt + automaticCloseDelayMs)
+
+
+ordinaryAnimationEndsAt : Panel -> Float
+ordinaryAnimationEndsAt panel =
+    case depotSceneStartsAt panel of
+        Just startsAt ->
+            startsAt + depotImpactStartsAt + impactContactDelayMs + rumbleDurationMs
+
+        Nothing ->
+            participantsEndAt panel
 
 
 {-| Hit clocks are shifted together so shots, casualties, rumble, and automatic
@@ -168,6 +188,12 @@ attackDelay panel =
                         |> List.map (\attacker -> firingEndsAt attacker.unit attacker.health.current)
                         |> List.maximum
                         |> Maybe.withDefault 0
+
+                Sabotage _ ->
+                    0
+
+                Exhaustion _ ->
+                    0
     in
     if endsAt > 0 then
         endsAt - CombatAttack.anticipationMs + 100
@@ -196,6 +222,12 @@ attackFor panel unit =
             else
                 CombatAttack.NotAttacking
 
+        Sabotage _ ->
+            CombatAttack.NotAttacking
+
+        Exhaustion _ ->
+            CombatAttack.NotAttacking
+
 
 {-| Sound cues use the same formation clocks and before-health as the flash.
 Only recorded firing participants of the requested kind contribute timestamps.
@@ -222,6 +254,12 @@ firingTimes kind panel =
                 |> List.concatMap (\attacker -> starts attacker.unit attacker.health.current)
                 |> List.sort
 
+        Sabotage _ ->
+            []
+
+        Exhaustion _ ->
+            []
+
 
 participantImpactStarts : Panel -> List Float
 participantImpactStarts panel =
@@ -243,6 +281,12 @@ participantBaseImpactStarts panel =
                 Nothing ->
                     List.map ((+) CombatAttack.anticipationMs) [ 0, 130, 260, 390 ]
 
+        Sabotage _ ->
+            [ sabotageBlastAt ]
+
+        Exhaustion _ ->
+            []
+
 
 participantsEndAt : Panel -> Float
 participantsEndAt panel =
@@ -261,7 +305,7 @@ depotSceneStartsAt panel =
         Impact impact ->
             impact.depot |> Maybe.map (\_ -> participantsEndAt panel + 350)
 
-        Exchange _ ->
+        _ ->
             Nothing
 
 
@@ -403,6 +447,12 @@ theaterView calibrations automaticallyClose visibleTiles depots map panel =
                 Impact impact ->
                     impactPortraits visibleTiles scenery panel impact
 
+                Sabotage sabotage ->
+                    [ sabotageScene scenery panel sabotage ]
+
+                Exhaustion unit ->
+                    [ exhaustionScene scenery panel unit ]
+
         portraits : List (Html Msg)
         portraits =
             case depotDamageAt panel of
@@ -415,6 +465,12 @@ theaterView calibrations automaticallyClose visibleTiles depots map panel =
         title : String
         title =
             case panel.encounter of
+                Sabotage _ ->
+                    "sabotage"
+
+                Exhaustion _ ->
+                    "out of supplies"
+
                 Impact { target } ->
                     case target of
                         Just _ ->
@@ -490,6 +546,16 @@ theaterView calibrations automaticallyClose visibleTiles depots map panel =
 
                 Exchange _ ->
                     H.text ""
+
+                Sabotage sabotage ->
+                    H.p
+                        []
+                        [ H.text ("infantry sabotaged the " ++ Depot.kindLabel sabotage.kind ++ ".") ]
+
+                Exhaustion unit ->
+                    H.p
+                        []
+                        [ H.text (UnitKindLabel.label unit.kind ++ " ran out of supplies.") ]
 
         sceneColumns : Css.Style
         sceneColumns =
@@ -969,6 +1035,120 @@ depotScene scenery panel damage =
         ]
 
 
+sabotageBlastAt : Float
+sabotageBlastAt =
+    2400
+
+
+exhaustionEndsAt : Unit -> Float
+exhaustionEndsAt unit =
+    CombatFormation.exhaustionEndsAt unit.kind (exhaustionHealth unit).before.current
+
+
+exhaustionHealth : Unit -> CombatHealth
+exhaustionHealth unit =
+    let
+        before : HitPoints
+        before =
+            unit.resources
+                |> Maybe.map .hitPoints
+                |> Maybe.withDefault { current = 16, maximum = 16 }
+    in
+    { before = before
+    , after = { current = 0, maximum = before.maximum }
+    }
+
+
+exhaustionScene : Scenery -> Panel -> Unit -> Html Msg
+exhaustionScene scenery panel unit =
+    let
+        path : String
+        path =
+            Unit.mapPosition unit
+                |> Maybe.map (backdropAt scenery)
+                |> Maybe.withDefault (backdropPath scenery.map.theme scenery.map.baseTile)
+
+        appearance : Appearance
+        appearance =
+            unit
+                |> Unit.setEntrenchment Entrenchment.Exposed
+                |> UnitSprite.appearance
+    in
+    scene
+        (Just path)
+        "none"
+        (Unit.label unit ++ "; ran out of supplies")
+        (CombatFormation.exhaustionToSvg
+            (BackdropCalibration.find { backdrop = path, unitKind = unit.kind } scenery.calibrations)
+            panel.elapsed
+            (exhaustionHealth unit)
+            appearance
+        )
+
+
+sabotageScene : Scenery -> Panel -> Depot -> Html Msg
+sabotageScene scenery panel building =
+    let
+        age : Float
+        age =
+            panel.elapsed - sabotageBlastAt
+
+        shownBuilding : Depot
+        shownBuilding =
+            if age >= CombatExplosion.spriteDisappearsAt then
+                { building | hp = { current = 0, maximum = building.hp.maximum } }
+
+            else
+                building
+
+        charge : List (Svg.Svg Msg)
+        charge =
+            if (panel.elapsed >= 1350) && (age < 0) then
+                [ Svg.image
+                    [ SA.x "35"
+                    , SA.y "42"
+                    , SA.width "10"
+                    , SA.height "10"
+                    , SA.xlinkHref "/assets/commands-anime-v1/sabotage.png"
+                    ]
+                    []
+                ]
+
+            else
+                []
+
+        blast : List (Svg.Svg Msg)
+        blast =
+            if (age >= 0) && (age < CombatExplosion.durationMs) then
+                [ Svg.g
+                    [ SA.transform "translate(52 34) scale(2.2)" ]
+                    [ CombatExplosion.toSvg SpriteFacing.Left age ]
+                ]
+
+            else
+                []
+
+        artwork : List (Svg.Svg Msg)
+        artwork =
+            [ Svg.image
+                [ SA.x "29"
+                , SA.y "9"
+                , SA.width "48"
+                , SA.height "48"
+                , SA.xlinkHref (Depot.image shownBuilding)
+                ]
+                []
+            ]
+                ++ charge
+                ++ blast
+    in
+    scene
+        (Just (backdropPath scenery.map.theme (Map.terrainAt scenery.map building.position)))
+        (rumbleTransform panel)
+        (Depot.kindLabel building.kind ++ "; destroyed by infantry sabotage")
+        artwork
+
+
 unconfirmedFog : Svg.Svg Msg
 unconfirmedFog =
     Svg.g
@@ -1061,6 +1241,9 @@ portraitScene scenery panel health unit =
 
                 Impact impact ->
                     Maybe.map (.unit >> .id) impact.target == Just unit.id
+
+                _ ->
+                    False
 
         trenchPath : String
         trenchPath =

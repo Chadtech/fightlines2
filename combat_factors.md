@@ -48,7 +48,8 @@ other bearings are flank hits. Defensive facing applies only to battle-ready
 infantry and tanks. An unready tank takes the same damage from every approach direction;
 its stored sprite/facing direction does not create combat flanks. Units without
 facing also use neutral facing factors.
-Cover does not override forest concealment or firing-line visibility rules.
+Cover does not override forest concealment. Ambushes use shared visibility or
+firing reveals and can fire through intervening terrain within their firing area.
 The infantry flank/rear ambush factor replaces, rather than stacks with, the
 ordinary attack-mover ambush factor. Frontal ambushes and attack-move shots retain
 their existing damage. Unready tanks do not receive the special factor.

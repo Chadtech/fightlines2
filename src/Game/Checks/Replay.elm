@@ -29,6 +29,7 @@ import Game.Unit as Unit exposing (Unit)
 import Game.Unit.Location as Location
 import Game.UnitId as UnitId exposing (UnitId)
 import Game.View.Battlefield as Battlefield
+import Game.View.CombatTheater as CombatTheater
 import Game.View.UnitDeath as UnitDeath
 import Graphql.Document
 import Graphql.Http
@@ -559,7 +560,12 @@ lossChecks initial =
                         |> Tuple.first
 
                 ( lost, firstDialog ) =
-                    GameReplay.update (GameReplay.PlaybackMsg (PlaybackPresentation.FrameElapsed 1000)) playing
+                    playing
+                        |> GameReplay.update (GameReplay.PlaybackMsg (PlaybackPresentation.FrameElapsed 1000))
+                        |> Tuple.first
+                        |> GameReplay.update (GameReplay.PlaybackMsg (PlaybackPresentation.FrameElapsed 300))
+                        |> Tuple.first
+                        |> GameReplay.update (GameReplay.CombatTheaterMsg CombatTheater.ContinueClicked)
 
                 ( held, heldDialog ) =
                     GameReplay.update (GameReplay.PlaybackMsg (PlaybackPresentation.FrameElapsed 1000)) lost
@@ -568,7 +574,14 @@ lossChecks initial =
                     GameReplay.update (GameReplay.BattlefieldMsg (Battlefield.MouseOverTile { x = 1, y = 1 })) held
 
                 ( acknowledged, secondDialog ) =
-                    GameReplay.update (GameReplay.UnitDeathMsg (UnitDeath.ContinueClicked first)) hovered
+                    hovered
+                        |> GameReplay.update (GameReplay.UnitDeathMsg (UnitDeath.ContinueClicked first))
+                        |> Tuple.first
+                        |> GameReplay.update (GameReplay.PlaybackMsg (PlaybackPresentation.FrameElapsed 1000))
+                        |> Tuple.first
+                        |> GameReplay.update (GameReplay.PlaybackMsg (PlaybackPresentation.FrameElapsed 300))
+                        |> Tuple.first
+                        |> GameReplay.update (GameReplay.CombatTheaterMsg CombatTheater.ContinueClicked)
 
                 skipped : GameReplay.Model
                 skipped =
@@ -594,7 +607,7 @@ lossChecks initial =
                 [ expect "playback opens an initial loss and reports its missing owner once" (GameReplay.dialog initialLoss /= Nothing && List.length initialLoss.shared.errors.errors == 1)
                 , expect "playback stops at the loss and repeated ticks do not repeat its diagnostic" (GameReplay.dialog lost /= Nothing && List.length lost.shared.errors.errors == 1 && held.shared.errors == lost.shared.errors && held.timeline == lost.timeline)
                 , expect "unrelated events leave the pending loss and diagnostics unchanged" (hovered == held)
-                , expect "acknowledgment opens the next independent loss and reports its owner" (GameReplay.dialog acknowledged /= Nothing && List.length acknowledged.shared.errors.errors == 2)
+                , expect "continuing the next exhaustion theater opens its independent loss and reports its owner" (GameReplay.dialog acknowledged /= Nothing && List.length acknowledged.shared.errors.errors == 2)
                 , expect "skipping hides the pending loss and reenabling restores it" (GameReplay.dialog skipped == Nothing && GameReplay.dialog restored /= Nothing && List.length restored.shared.errors.errors == 3)
                 , expect "loading an empty turn stops the old playback and restores the saved view" (GameReplay.dialog emptyReplacement == Nothing && BattlefieldNavigation.returning emptyReplacement.navigation && emptyReplacement.battlefield.units == [])
                 ]

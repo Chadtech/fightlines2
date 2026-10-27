@@ -20,6 +20,11 @@ function createAudioManager() {
     ],
   });
   const buffers = new Map();
+  const movementFiles = Object.freeze({
+    truck: "/audio/movement/truck-volvo-6s.ogg",
+    tank: "/audio/movement/tank-monosfera-6s.ogg",
+  });
+  const movingVehicles = new Map();
   const activeSources = new Map();
   const reportedErrors = new Set();
   const lastPlayed = new Map();
@@ -73,6 +78,7 @@ function createAudioManager() {
         await resuming;
       }
       for (const file of Object.values(sounds).flat()) load(file);
+      for (const file of Object.values(movementFiles)) load(file);
     } catch (error) {
       report("initialization", error);
     }
@@ -80,6 +86,7 @@ function createAudioManager() {
 
   function stopAll() {
     generation += 1;
+    movingVehicles.clear();
     for (const source of activeSources.keys()) {
       source.stop();
       source.disconnect();
@@ -88,8 +95,89 @@ function createAudioManager() {
     lastPlayed.clear();
   }
 
+  function stopMovement(id, voice) {
+    movingVehicles.delete(id);
+    if (!voice.source) return;
+    const now = context.currentTime;
+    voice.gain.gain.cancelScheduledValues(now);
+    voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
+    voice.gain.gain.linearRampToValueAtTime(0, now + 0.02);
+    voice.source.stop(now + 0.02);
+  }
+
+  async function startMovement(id, voice) {
+    try {
+      if (resuming) await resuming;
+      if (context.state !== "running") return;
+      const buffer = await load(movementFiles[voice.vehicle]);
+      // A stop, navigation, hide, or newer start cancels pending decoding.
+      if (movingVehicles.get(id) !== voice || document.hidden || context.state !== "running") return;
+      const source = context.createBufferSource();
+      const gain = context.createGain();
+      source.buffer = buffer;
+      source.loop = true;
+      source.connect(gain);
+      gain.connect(master);
+      gain.gain.setValueAtTime(0, context.currentTime);
+      gain.gain.linearRampToValueAtTime(1, context.currentTime + 0.015);
+      voice.source = source;
+      voice.gain = gain;
+      source.onended = () => {
+        if (movingVehicles.get(id) === voice) movingVehicles.delete(id);
+        activeSources.delete(source);
+        source.disconnect();
+        gain.disconnect();
+      };
+      activeSources.set(source, "movement");
+      // This randomness belongs only to browser sound playback; it never
+      // changes the deterministic game or recorded animation state.
+      source.start(0, Math.random() * buffer.duration);
+    } catch (error) {
+      if (voice.source) {
+        activeSources.delete(voice.source);
+        voice.source.disconnect();
+        voice.gain.disconnect();
+      }
+      if (movingVehicles.get(id) === voice) movingVehicles.delete(id);
+      report(`moving ${voice.vehicle}`, error);
+    } finally {
+      // A suspended context must be able to retry on the next snapshot.
+      if (!voice.source && movingVehicles.get(id) === voice) movingVehicles.delete(id);
+    }
+  }
+
+  async function syncMovement(vehicles) {
+    const valid = Array.isArray(vehicles) && vehicles.every(vehicle =>
+      vehicle !== null && typeof vehicle === "object" && !Array.isArray(vehicle) &&
+      Object.keys(vehicle).length === 2 && typeof vehicle.unitId === "string" &&
+      vehicle.unitId.length > 0 && Object.hasOwn(movementFiles, vehicle.vehicle)) &&
+      new Set(vehicles.map(vehicle => vehicle.unitId)).size === vehicles.length;
+    if (!valid) {
+      report("invalid movement", vehicles);
+      return;
+    }
+    const desired = new Map(vehicles.map(vehicle => [vehicle.unitId, vehicle.vehicle]));
+    for (const [id, voice] of movingVehicles) {
+      if (desired.get(id) !== voice.vehicle) stopMovement(id, voice);
+    }
+    if (!context || document.hidden) return;
+    const pending = [];
+    for (const [id, vehicle] of desired) {
+      if (movingVehicles.has(id)) continue;
+      const voice = { vehicle, source: null, gain: null };
+      movingVehicles.set(id, voice);
+      pending.push(startMovement(id, voice));
+    }
+    await Promise.all(pending);
+  }
+
   async function handleEvent(event) {
     if (event === null) return;
+    if (typeof event === "object" && !Array.isArray(event) &&
+        Object.keys(event).length === 1 && Object.hasOwn(event, "movement")) {
+      await syncMovement(event.movement);
+      return;
+    }
     const validEvent = typeof event === "object" && !Array.isArray(event) &&
       Object.keys(event).length === 1 && typeof event.play === "string";
     if (!validEvent || !Object.hasOwn(sounds, event.play)) {

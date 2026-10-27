@@ -556,6 +556,11 @@ and interface animations and block battlefield interaction during the dialog.
 
 Name the lost unit and show whether the lethal shot was an `ambush` or `attack move`,
 alongside the attacker portrait, type, and owning player's name. Supply exhaustion
+first opens an `out of supplies` theater: stagger the unit's
+formation through a short slump and fade, leaving the backdrop empty without
+incoming projectiles, explosions, or camera shake. Use the normal theater controls;
+automatic close waits for the final figure to disappear plus half a second.
+Reduced motion keeps figures still until removal. The subsequent loss dialog
 reads `ran out of supplies`; passengers lost with a carrier identify that carrier
 and its loss cause. Use projected playback data so concealed casualties never
 appear on the map or in the loss queue.
@@ -830,8 +835,13 @@ centered depot map sprite taking its own strike. Use the building sprite to make
 clear that the whole depot is hit; place it over the tile's terrain backdrop,
 matching the map theme, and omit the depot HP text from the theater.
 Destroyed depots switch to the same wreckage sprite as on the board. Automatic
-close waits for this follow-up strike to settle. Sabotage uses the existing map burst
-without damaging units or freight.
+close waits for this follow-up strike to settle. Sabotage opens a single theater
+scene over the tile’s terrain backdrop, matching the map theme. Show a demolition
+charge beside the structure without an infantry sprite; the existing burst then
+replaces the structure with wreckage. The structure is the only casualty; units
+and freight remain unharmed.
+Use the standard theater controls and wait for the blast to settle before automatic
+close. Retain the existing map burst after continuation.
 
 ## Stand ground
 
