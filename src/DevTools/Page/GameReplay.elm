@@ -120,11 +120,14 @@ type alias Model =
 -}
 type Timeline
     = Ready
-    | Playing
-        { animation : TurnPlayback.Playback
-        , paused : Bool
-        , camera : Maybe PlaybackPresentation.PlaybackCamera
-        }
+    | Playing PlaybackState
+
+
+type alias PlaybackState =
+    { animation : TurnPlayback.Playback
+    , paused : Bool
+    , camera : Maybe PlaybackPresentation.PlaybackCamera
+    }
 
 
 type TurnRequest
@@ -226,6 +229,56 @@ init shared id flags =
 ----------------------------------------------------------------
 
 
+setPlaybackPaused : Bool -> PlaybackState -> PlaybackState
+setPlaybackPaused paused model =
+    { model | paused = paused }
+
+
+setPlaybackCamera : Maybe PlaybackPresentation.PlaybackCamera -> PlaybackState -> PlaybackState
+setPlaybackCamera camera model =
+    { model | camera = camera }
+
+
+setPlaybackAnimation : TurnPlayback.Playback -> PlaybackState -> PlaybackState
+setPlaybackAnimation animation model =
+    { model | animation = animation }
+
+
+setTimeline : Timeline -> Model -> Model
+setTimeline timeline model =
+    { model | timeline = timeline }
+
+
+setViewport : Maybe Camera.Viewport -> Model -> Model
+setViewport viewport model =
+    { model | viewport = viewport }
+
+
+setNavigation : BattlefieldNavigation.Model -> Model -> Model
+setNavigation navigation model =
+    { model | navigation = navigation }
+
+
+setRequest : TurnRequest -> Model -> Model
+setRequest request model =
+    { model | request = request }
+
+
+setBattlefield : BattlefieldSnapshot.Snapshot -> Model -> Model
+setBattlefield battlefield model =
+    { model | battlefield = battlefield }
+
+
+setInspection : Maybe Inspection -> Model -> Model
+setInspection inspection model =
+    { model | inspection = inspection }
+
+
+setPlaybackIntent : PlaybackIntent -> Model -> Model
+setPlaybackIntent playbackIntent model =
+    { model | playbackIntent = playbackIntent }
+
+
 isLoading : Model -> Bool
 isLoading model =
     case model.request of
@@ -265,7 +318,13 @@ pause : Model -> Model
 pause model =
     case model.timeline of
         Playing playing ->
-            { model | timeline = Playing { playing | paused = True } }
+            model
+                |> setTimeline
+                    (Playing
+                        (playing
+                            |> setPlaybackPaused True
+                        )
+                    )
 
         Ready ->
             model
@@ -282,7 +341,14 @@ startPlayback : Model -> ( Model, Eff Msg )
 startPlayback model =
     case model.timeline of
         Playing playing ->
-            { model | timeline = Playing { playing | paused = False } }
+            (model
+                |> setTimeline
+                    (Playing
+                        (playing
+                            |> setPlaybackPaused False
+                        )
+                    )
+            )
                 |> updateCamera
                 |> E.withOut
 
@@ -296,10 +362,10 @@ startTurnPlayback model =
         ( first :: _, Just animation ) ->
             let
                 ( started, dialogEffect ) =
-                    { model
-                        | timeline = Playing { animation = animation, paused = False, camera = Nothing }
-                        , viewport = Nothing
-                    }
+                    (model
+                        |> setTimeline (Playing { animation = animation, paused = False, camera = Nothing })
+                        |> setViewport Nothing
+                    )
                         |> applyFrame first
                         |> updateLossDialog (activeDialogHtmlId model)
             in
@@ -315,10 +381,10 @@ startTurnPlayback model =
 
 finishPlayback : Model -> ( Model, Eff Msg )
 finishPlayback model =
-    { model
-        | timeline = Ready
-        , navigation = BattlefieldNavigation.startReturn model.navigation
-    }
+    (model
+        |> setTimeline Ready
+        |> setNavigation (BattlefieldNavigation.startReturn model.navigation)
+    )
         |> loadNextTurn
         |> E.and (E.after PlaybackPresentation.cameraPanDurationMs CameraReturnFinished)
 
@@ -371,7 +437,10 @@ loadTurn position model =
             |> E.withOut
 
     else
-        ( pause { model | request = Loading position }
+        ( pause
+            (model
+                |> setRequest (Loading position)
+            )
         , E.request (TurnResponseReceived position) (turnSelection model.id position |> ApiRequest.queryRequest)
         )
 
@@ -393,15 +462,14 @@ applyFrame frame model =
         battlefield =
             model.battlefield
     in
-    { model
-        | battlefield =
+    model
+        |> setBattlefield
             { battlefield
                 | units = frame.units
                 , depots = frame.depots
                 , supplyCrates = frame.supplyCrates
                 , visibleTiles = frame.visibleTiles
             }
-    }
 
 
 mapNavigation : (BattlefieldNavigation.Model -> BattlefieldNavigation.Model) -> Model -> Model
@@ -422,19 +490,30 @@ mapNavigation change model =
 
                     inspecting : BattlefieldNavigation.Model
                     inspecting =
-                        { navigation | offset = camera.offset, zoom = camera.zoom }
+                        navigation
+                            |> BattlefieldNavigation.setOffset
+                                camera.offset
+                            |> BattlefieldNavigation.setZoom
+                                camera.zoom
                 in
-                { model
-                    | navigation = change inspecting |> BattlefieldNavigation.finishReturn
-                    , timeline = Playing { playing | camera = Nothing }
-                }
+                model
+                    |> setNavigation (change inspecting |> BattlefieldNavigation.finishReturn)
+                    |> setTimeline
+                        (Playing
+                            (playing
+                                |> setPlaybackCamera Nothing
+                            )
+                        )
 
             else
-                { model | navigation = change model.navigation |> BattlefieldNavigation.finishReturn }
+                (model
+                    |> setNavigation (change model.navigation |> BattlefieldNavigation.finishReturn)
+                )
                     |> updateCamera
 
         Ready ->
-            { model | navigation = change model.navigation |> BattlefieldNavigation.finishReturn }
+            model
+                |> setNavigation (change model.navigation |> BattlefieldNavigation.finishReturn)
 
 
 selectUnit : UnitId -> Model -> Model
@@ -442,10 +521,12 @@ selectUnit id model =
     case ListUtil.find (\unit -> unit.id == id) model.battlefield.units of
         Just _ ->
             if model.inspection == Just (UnitInspection id) then
-                { model | inspection = Nothing }
+                model
+                    |> setInspection Nothing
 
             else
-                { model | inspection = Just (UnitInspection id) }
+                model
+                    |> setInspection (Just (UnitInspection id))
 
         Nothing ->
             model
@@ -453,15 +534,15 @@ selectUnit id model =
 
 inspectTile : Coordinate -> Model -> Model
 inspectTile position model =
-    { model | inspection = Just (TileInspection position) }
+    model
+        |> setInspection (Just (TileInspection position))
 
 
 withInspectionMeasurement : Model -> Model -> ( Model, Eff Msg )
 withInspectionMeasurement previous next =
     if (previous.inspection == Nothing) /= (next.inspection == Nothing) then
-        ( { next
-            | viewport = Nothing
-          }
+        ( next
+            |> setViewport Nothing
         , E.measure Battlefield.htmlId BattlefieldSizeReceived
         )
 
@@ -575,7 +656,14 @@ continueCombat model =
         Playing playing ->
             case TurnPlayback.continueCombat playing.animation of
                 Just next ->
-                    { model | timeline = Playing { playing | animation = next.animation } }
+                    (model
+                        |> setTimeline
+                            (Playing
+                                (playing
+                                    |> setPlaybackAnimation next.animation
+                                )
+                            )
+                    )
                         |> applyFrame next.frame
                         |> updateCamera
                         |> updateLossDialog (activeDialogHtmlId model)
@@ -593,7 +681,13 @@ setCombatMapView : TurnPlayback.MapView -> Model -> Model
 setCombatMapView mapView model =
     case model.timeline of
         Playing playing ->
-            { model | timeline = Playing { playing | animation = TurnPlayback.setMapView mapView playing.animation } }
+            model
+                |> setTimeline
+                    (Playing
+                        (playing
+                            |> setPlaybackAnimation (TurnPlayback.setMapView mapView playing.animation)
+                        )
+                    )
 
         Ready ->
             model
@@ -613,16 +707,22 @@ advancePlayback delta model =
                     |> E.withOut
 
             else if cameraSettling playing.camera then
-                { model
-                    | timeline =
-                        Playing
-                            { playing
-                                | camera =
-                                    Maybe.map
-                                        (\held -> { held | remainingPanMs = max 0 (held.remainingPanMs - delta) })
+                (model
+                    |> setTimeline
+                        (Playing
+                            (playing
+                                |> setPlaybackCamera
+                                    (Maybe.map
+                                        (\held ->
+                                            held
+                                                |> PlaybackPresentation.setRemainingPanMs
+                                                    (max 0 (held.remainingPanMs - delta))
+                                        )
                                         playing.camera
-                            }
-                }
+                                    )
+                            )
+                        )
+                )
                     |> E.withOut
 
             else
@@ -648,7 +748,14 @@ advancePlayback delta model =
                         let
                             updated : Model
                             updated =
-                                { model | timeline = Playing { playing | animation = animation } }
+                                (model
+                                    |> setTimeline
+                                        (Playing
+                                            (playing
+                                                |> setPlaybackAnimation animation
+                                            )
+                                        )
+                                )
                                     |> applyFrame frame
                         in
                         if PlaybackPresentation.readyToAutomaticallyClose model.automaticallyCloseCombatTheater animation then
@@ -672,12 +779,12 @@ updateCamera model =
                 model
 
             else
-                { model
-                    | timeline =
-                        Playing
-                            { playing
-                                | camera =
-                                    Just
+                model
+                    |> setTimeline
+                        (Playing
+                            (playing
+                                |> setPlaybackCamera
+                                    (Just
                                         (PlaybackPresentation.frameCamera
                                             viewport
                                             model.battlefield.map
@@ -685,8 +792,9 @@ updateCamera model =
                                             playing.animation
                                             playing.camera
                                         )
-                            }
-                }
+                                    )
+                            )
+                        )
 
         _ ->
             model
@@ -716,10 +824,8 @@ updateLossDialog previousHtmlId model =
                     |> E.withOut
 
             else
-                ( { model
-                    | shared =
-                        Shared.addError (PlaybackPresentation.lossError model.battlefield.players (Just loss)) model.shared
-                  }
+                ( model
+                    |> setShared (Shared.addError (PlaybackPresentation.lossError model.battlefield.players (Just loss)) model.shared)
                 , E.toJs (ToJs.OpenDialog { htmlId = htmlId })
                 )
 
@@ -748,18 +854,22 @@ update msg model =
                 |> E.withOut
 
         CargoUnitClicked id ->
-            { model | inspection = Nothing }
+            (model
+                |> setInspection Nothing
+            )
                 |> selectUnit id
                 |> withInspectionMeasurement model
 
         EscapePressed ->
-            { model | inspection = Nothing }
+            (model
+                |> setInspection Nothing
+            )
                 |> withInspectionMeasurement model
 
         InspectorCloseClicked ->
-            { model
-                | inspection = Nothing
-            }
+            (model
+                |> setInspection Nothing
+            )
                 |> withInspectionMeasurement model
 
         PanLeftKeyPressed ->
@@ -793,7 +903,9 @@ update msg model =
                 |> E.withOut
 
         CameraReturnFinished ->
-            { model | navigation = BattlefieldNavigation.finishReturn model.navigation }
+            (model
+                |> setNavigation (BattlefieldNavigation.finishReturn model.navigation)
+            )
                 |> E.withOut
 
         WindowResized ->
@@ -805,26 +917,31 @@ update msg model =
                     ( model, E.measure BattlefieldWorkspace.inspectorHtmlId (InspectorSizeReceived battlefield) )
 
                 Err error ->
-                    { model | shared = Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared }
+                    (model
+                        |> setShared (Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared)
+                    )
                         |> E.withOut
 
         InspectorSizeReceived battlefield result ->
             case result of
                 Ok inspector ->
-                    { model
-                        | viewport =
-                            Just
+                    (model
+                        |> setViewport
+                            (Just
                                 (BattlefieldWorkspace.viewport
                                     { battlefield = battlefield
                                     , inspector = inspector
                                     }
                                 )
-                    }
+                            )
+                    )
                         |> updateCamera
                         |> E.withOut
 
                 Err error ->
-                    { model | shared = Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared }
+                    (model
+                        |> setShared (Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared)
+                    )
                         |> E.withOut
 
         AnimationTimerElapsed ->
@@ -844,8 +961,21 @@ update msg model =
         PlaybackMsg playbackMsg ->
             case playbackMsg of
                 PlaybackPresentation.FrameElapsed delta ->
-                    model
-                        |> advancePlayback delta
+                    let
+                        ( next, effect ) =
+                            advancePlayback delta model
+
+                        sounds : List (Eff Msg)
+                        sounds =
+                            PlaybackPresentation.audioBetween
+                                { before = playback model
+                                , after = playback next
+                                }
+                                |> List.map E.audio
+                    in
+                    ( next
+                    , E.batch (effect :: sounds)
+                    )
 
                 PlaybackPresentation.CombatEnterReleased ->
                     model
@@ -861,7 +991,14 @@ update msg model =
                 UnitDeath.ContinueClicked id ->
                     case model.timeline of
                         Playing playing ->
-                            { model | timeline = Playing { playing | animation = TurnPlayback.acknowledgeLoss id playing.animation } }
+                            (model
+                                |> setTimeline
+                                    (Playing
+                                        (playing
+                                            |> setPlaybackAnimation (TurnPlayback.acknowledgeLoss id playing.animation)
+                                        )
+                                    )
+                            )
                                 |> updateCamera
                                 |> updateLossDialog (activeDialogHtmlId model)
 
@@ -879,7 +1016,9 @@ update msg model =
             case theaterMsg of
                 CombatTheater.AutomaticallyCloseChanged enabled ->
                     ( { model | automaticallyCloseCombatTheater = enabled }
-                    , rememberPlaybackPreference PlaybackPresentation.AutomaticallyCloseCombat enabled
+                    , rememberPlaybackPreference
+                        PlaybackPresentation.AutomaticallyCloseCombat
+                        enabled
                     )
 
                 CombatTheater.ContinueClicked ->
@@ -907,10 +1046,15 @@ update msg model =
                     , player = model.position.player
                     , fogOfWar = model.position.fogOfWar
                     }
-                    { model | playbackIntent = ContinuousPlayback }
+                    (model
+                        |> setPlaybackIntent ContinuousPlayback
+                    )
 
             else
-                startPlayback { model | playbackIntent = ContinuousPlayback }
+                startPlayback
+                    (model
+                        |> setPlaybackIntent ContinuousPlayback
+                    )
 
         PauseClicked ->
             model
@@ -927,7 +1071,9 @@ update msg model =
                 , player = model.position.player
                 , fogOfWar = model.position.fogOfWar
                 }
-                { model | playbackIntent = SingleTurnPlayback }
+                (model
+                    |> setPlaybackIntent SingleTurnPlayback
+                )
 
         NextClicked ->
             loadTurn
@@ -935,7 +1081,9 @@ update msg model =
                 , player = model.position.player
                 , fogOfWar = model.position.fogOfWar
                 }
-                { model | playbackIntent = SingleTurnPlayback }
+                (model
+                    |> setPlaybackIntent SingleTurnPlayback
+                )
 
         TurnSelected turn ->
             loadTurn
@@ -943,7 +1091,9 @@ update msg model =
                 , player = model.position.player
                 , fogOfWar = model.position.fogOfWar
                 }
-                { model | playbackIntent = SingleTurnPlayback }
+                (model
+                    |> setPlaybackIntent SingleTurnPlayback
+                )
 
         PlayerSelected player ->
             loadTurn
@@ -978,19 +1128,17 @@ update msg model =
             else
                 case result of
                     Err error ->
-                        { model | request = Failed position (ApiRequest.errorMessage error) }
+                        (model
+                            |> setRequest (Failed position (ApiRequest.errorMessage error))
+                        )
                             |> E.withOut
 
                     Ok recorded ->
-                        { model
-                            | battlefield = recorded.battlefield
-                            , frames = recorded.frames
-                            , resolution = recorded.resolution
-                            , orders = recorded.orders
-                            , navigation = BattlefieldNavigation.finishReturn model.navigation
-                            , position = position
-                            , request = Idle
-                        }
+                        ({ model | frames = recorded.frames, resolution = recorded.resolution, orders = recorded.orders, position = position }
+                            |> setBattlefield recorded.battlefield
+                            |> setNavigation (BattlefieldNavigation.finishReturn model.navigation)
+                            |> setRequest Idle
+                        )
                             |> startTurnPlayback
 
 
@@ -1024,7 +1172,16 @@ facingUnits : Model -> List UnitId
 facingUnits model =
     if isPlaying model then
         model.resolution
-            |> Maybe.map (.events >> List.filter (\event -> List.member event.kind [ TurnEventKind.Ambush, TurnEventKind.StandGround ]) >> List.map .unitId)
+            |> Maybe.map
+                (.events
+                    >> List.filter
+                        (\event ->
+                            List.member
+                                event.kind
+                                [ TurnEventKind.Ambush, TurnEventKind.StandGround ]
+                        )
+                    >> List.map .unitId
+                )
             |> Maybe.withDefault []
 
     else

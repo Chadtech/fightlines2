@@ -87,5 +87,17 @@
 !/public/assets/combat-trench-interior-v1/
 !/public/assets/combat-trench-interior-v1/*.png
 
+# Tank combat-theater firing atlases.
+!/public/assets/tank-firing-rigged-v1/
+!/public/assets/tank-firing-rigged-v1/*.png
+!/public/assets/tank-firing-drawn-v3/
+!/public/assets/tank-firing-drawn-v3/*.png
+
+# Generated field-gun combat-theater firing atlas.
+!/public/assets/field-gun-firing-drawn-v2/
+/public/assets/field-gun-firing-drawn-v2/*
+!/public/assets/field-gun-firing-drawn-v2/red.png
+!/public/assets/field-gun-firing-drawn-v2/blue.png
+
 # Private authoritative game archives.
 /game-logs/

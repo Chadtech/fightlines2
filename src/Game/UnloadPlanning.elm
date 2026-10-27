@@ -174,7 +174,12 @@ availableOptions rawOptions planning =
     let
         completes : Movement.Option -> InvariantCheck error Bool
         completes option =
-            saveDestination rawOptions option.destination { planning | options = [ option ] }
+            saveDestination rawOptions
+                option.destination
+                (planning
+                    |> setOptions
+                        [ option ]
+                )
                 |> IC.andThen (canComplete rawOptions)
 
         keepCompleting :
@@ -255,6 +260,11 @@ options map units playerNumbers movementRules supplyCrates occupancy planning =
 ----------------------------------------------------------------
 
 
+setOptions : List Movement.Option -> UnloadPlanning -> UnloadPlanning
+setOptions value model =
+    { model | options = value }
+
+
 next :
     (UnloadPlanning -> InvariantCheck error (List Movement.Option))
     -> UnloadingTruck
@@ -280,7 +290,10 @@ next exitOptions truck otherOrders cargoes =
 
                 withOptions : List Movement.Option -> Step
                 withOptions choices =
-                    ChoosingExit { planning | options = choices }
+                    ChoosingExit
+                        (planning
+                            |> setOptions choices
+                        )
             in
             exitOptions planning |> IC.map withOptions
 
@@ -316,7 +329,12 @@ canComplete rawOptions step =
                                     else
                                         tryOptions remaining
                             in
-                            saveDestination rawOptions option.destination { planning | options = [ option ] }
+                            saveDestination rawOptions
+                                option.destination
+                                (planning
+                                    |> setOptions
+                                        [ option ]
+                                )
                                 |> IC.andThen (canComplete rawOptions)
                                 |> IC.andThen tryRemaining
             in

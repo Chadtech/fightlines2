@@ -8,6 +8,9 @@ module EditableMap exposing
     , namedSelection
     , reconnectRoads
     , saveMutation
+    , setDepots
+    , setFeatures
+    , setUnits
     )
 
 import Api.Enum.BuildingKind as BuildingKind exposing (BuildingKind)
@@ -68,6 +71,21 @@ type alias NamedMap =
     }
 
 
+setFeatures : List TerrainFeature -> Definition -> Definition
+setFeatures features model =
+    { model | features = features }
+
+
+setUnits : List UnitPlacement -> Definition -> Definition
+setUnits units model =
+    { model | units = units }
+
+
+setDepots : List DepotPlacement -> Definition -> Definition
+setDepots depots model =
+    { model | depots = depots }
+
+
 map : Definition -> Map
 map definition =
     Map.fromFeatures
@@ -120,7 +138,9 @@ reconnectRoads changed definition =
             else
                 feature
     in
-    { definition | features = List.map reconnect definition.features }
+    definition
+        |> setFeatures
+            (List.map reconnect definition.features)
 
 
 namedSelection : SelectionSet NamedMap Api.Object.NamedMap

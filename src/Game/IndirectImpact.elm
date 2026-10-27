@@ -78,7 +78,9 @@ buildingSelection =
         |> SS.with (BuildingImpactApi.after Depot.hpSelection)
 
 
-destroyedUnitId : IndirectImpact -> Maybe UnitId
+{-| Read the target transition from either a projected shell or a merged landing.
+-}
+destroyedUnitId : { impact | target : Maybe Target } -> Maybe UnitId
 destroyedUnitId impact =
     case impact.target of
         Just target ->

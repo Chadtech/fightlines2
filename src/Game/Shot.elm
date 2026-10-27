@@ -1,4 +1,9 @@
-module Game.Shot exposing (Shot, selection)
+module Game.Shot exposing
+    ( Shot
+    , selection
+    , setAttackerHealth
+    , setTargetHealth
+    )
 
 import Api.Enum.CombatKind exposing (CombatKind)
 import Api.Object
@@ -32,3 +37,13 @@ selection =
         |> SS.with ShotApi.damage
         |> SS.with (ShotApi.attackerHealth CombatHealth.selection)
         |> SS.with (ShotApi.targetHealth CombatHealth.selection)
+
+
+setAttackerHealth : CombatHealth -> Shot -> Shot
+setAttackerHealth attackerHealth shot =
+    { shot | attackerHealth = attackerHealth }
+
+
+setTargetHealth : CombatHealth -> Shot -> Shot
+setTargetHealth targetHealth shot =
+    { shot | targetHealth = targetHealth }

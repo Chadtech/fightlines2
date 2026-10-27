@@ -113,7 +113,8 @@ repositionScene scene model =
 
         advanced : Model
         advanced =
-            { model | shared = Shared.setSeed nextSeed model.shared }
+            model
+                |> setShared (Shared.setSeed nextSeed model.shared)
     in
     case scene of
         Snow ->

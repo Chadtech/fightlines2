@@ -2,6 +2,7 @@ module Game.PlaybackPresentation exposing
     ( Msg(..)
     , PlaybackCamera
     , Preference(..)
+    , audioBetween
     , cameraPanDurationMs
     , combatOverlay
     , encodePreference
@@ -12,10 +13,13 @@ module Game.PlaybackPresentation exposing
     , lossError
     , ownerName
     , readyToAutomaticallyClose
+    , setRemainingPanMs
     , subscriptions
     )
 
 import Api.Enum.PlayerNumber exposing (PlayerNumber)
+import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
+import Audio
 import Browser.Events
 import Error exposing (Error)
 import Game.BackdropCalibration as BackdropCalibration
@@ -82,9 +86,56 @@ preferenceKey preference =
 ----------------------------------------------------------------
 
 
+setRemainingPanMs : Float -> PlaybackCamera -> PlaybackCamera
+setRemainingPanMs remainingPanMs camera =
+    { camera | remainingPanMs = remainingPanMs }
+
+
 cameraPanDurationMs : Float
 cameraPanDurationMs =
     1200
+
+
+{-| Fire once as the presentation clock crosses each muzzle-flash timestamp.
+An unchanged clock (pause or camera hold) cannot replay a cue. A new encounter
+or rewind starts a fresh interval instead of catching up old shots.
+-}
+audioBetween :
+    { before : Maybe TurnPlayback.Playback
+    , after : Maybe TurnPlayback.Playback
+    }
+    -> List Audio.Event
+audioBetween transition =
+    case
+        ( transition.before
+            |> Maybe.andThen TurnPlayback.panels
+        , transition.after
+            |> Maybe.andThen TurnPlayback.panels
+        )
+    of
+        ( Just before, Just after ) ->
+            let
+                advancingEncounter : Bool
+                advancingEncounter =
+                    (before.encounter == after.encounter) && (after.elapsed > before.elapsed)
+            in
+            if advancingEncounter then
+                let
+                    cues : UnitKind -> Audio.Event -> List { startsAt : Float, sound : Audio.Event }
+                    cues kind sound =
+                        CombatTheater.firingTimes kind after
+                            |> List.map (\startsAt -> { startsAt = startsAt, sound = sound })
+                in
+                (cues UnitKind.Tank Audio.tankFire ++ cues UnitKind.FieldGun Audio.fieldGunFire)
+                    |> List.sortBy .startsAt
+                    |> List.filter (\cue -> (before.elapsed < cue.startsAt) && (cue.startsAt <= after.elapsed))
+                    |> List.map .sound
+
+            else
+                []
+
+        _ ->
+            []
 
 
 frameCamera : Camera.Viewport -> Map -> Camera -> TurnPlayback.Playback -> Maybe PlaybackCamera -> PlaybackCamera

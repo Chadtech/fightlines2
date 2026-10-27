@@ -1,15 +1,30 @@
 // Elm chooses when to emit audio. This manager owns browser playback only.
 function createAudioManager() {
   const sounds = Object.freeze({
-    uiAffirm: "/audio/ui-affirm-gamelan-v4.ogg",
-    uiCancel: "/audio/ui-cancel-gamelan-v4.ogg",
-    uiConfirm: "/audio/ui-confirm-gamelan-v4.ogg",
+    uiAffirm: ["/audio/ui-affirm-switch-v1.ogg"],
+    uiCancel: ["/audio/ui-cancel-switch-v1.ogg"],
+    uiConfirm: ["/audio/ui-confirm-switch-v1.ogg"],
+    fieldGunFire: [
+      "/audio/combat/field-gun-fire-01.ogg",
+      "/audio/combat/field-gun-fire-02.ogg",
+      "/audio/combat/field-gun-fire-03.ogg",
+      "/audio/combat/field-gun-fire-04.ogg",
+      "/audio/combat/field-gun-fire-05.ogg",
+    ],
+    tankFire: [
+      "/audio/combat/tank-fire-01.ogg",
+      "/audio/combat/tank-fire-02.ogg",
+      "/audio/combat/tank-fire-03.ogg",
+      "/audio/combat/tank-fire-04.ogg",
+      "/audio/combat/tank-fire-05.ogg",
+    ],
   });
   const buffers = new Map();
-  const activeSources = new Set();
+  const activeSources = new Map();
   const reportedErrors = new Set();
   const lastPlayed = new Map();
-  const maxVoices = 4;
+  const nextVariants = new Map();
+  const voiceLimits = { ui: 4, combat: 8 };
   const maxDelayMs = 250;
   let context = null;
   let master = null;
@@ -23,22 +38,22 @@ function createAudioManager() {
     console.warn(`Audio ${key}:`, error);
   }
 
-  function load(name) {
-    if (!buffers.has(name)) {
+  function load(file) {
+    if (!buffers.has(file)) {
       const pending = (async () => {
-        const response = await fetch(sounds[name]);
+        const response = await fetch(file);
         if (!response.ok) throw new Error(`request failed (${response.status})`);
         return context.decodeAudioData(await response.arrayBuffer());
       })();
-      buffers.set(name, pending);
+      buffers.set(file, pending);
       // A failed load may retry on a later request. Keep its rejection handled
       // when it was started by gesture preloading rather than a play request.
       pending.catch((error) => {
-        buffers.delete(name);
-        report(`loading ${name}`, error);
+        buffers.delete(file);
+        report(`loading ${file}`, error);
       });
     }
-    return buffers.get(name);
+    return buffers.get(file);
   }
 
   async function unlock() {
@@ -57,7 +72,7 @@ function createAudioManager() {
         }
         await resuming;
       }
-      for (const name of Object.keys(sounds)) load(name);
+      for (const file of Object.values(sounds).flat()) load(file);
     } catch (error) {
       report("initialization", error);
     }
@@ -65,7 +80,7 @@ function createAudioManager() {
 
   function stopAll() {
     generation += 1;
-    for (const source of activeSources) {
+    for (const source of activeSources.keys()) {
       source.stop();
       source.disconnect();
     }
@@ -84,19 +99,30 @@ function createAudioManager() {
     // Locked or hidden pages discard requests, rather than replaying stale
     // clicks when the player eventually interacts with or returns to the page.
     if (!context || document.hidden) return;
+    const combat = event.play === "tankFire" || event.play === "fieldGunFire";
+    const group = combat ? "combat" : "ui";
+    const files = sounds[event.play];
+    const variant = nextVariants.get(event.play) ?? 0;
+    const file = files[variant % files.length];
+    nextVariants.set(event.play, variant + 1);
     const requestedAt = performance.now();
     const requestedGeneration = generation;
     try {
       if (resuming) await resuming;
       if (context.state !== "running") return;
-      const buffer = await load(event.play);
+      const buffer = await load(file);
       const now = performance.now();
       const expired = now - requestedAt > maxDelayMs;
       const cancelled = requestedGeneration !== generation || document.hidden;
       if (expired || cancelled || context.state !== "running") return;
-      if (now - (lastPlayed.get(event.play) ?? -Infinity) < 40) return;
-      if (activeSources.size >= maxVoices) {
-        const oldest = activeSources.values().next().value;
+      // UI click coalescing must never suppress distinct formation shots that
+      // cross their timestamps on the same animation tick.
+      if (!combat && now - (lastPlayed.get(event.play) ?? -Infinity) < 40) return;
+      const groupSources = [...activeSources]
+        .filter(([, activeGroup]) => activeGroup === group)
+        .map(([source]) => source);
+      if (groupSources.length >= voiceLimits[group]) {
+        const oldest = groupSources[0];
         oldest.stop();
         oldest.disconnect();
         activeSources.delete(oldest);
@@ -108,7 +134,7 @@ function createAudioManager() {
         activeSources.delete(source);
         source.disconnect();
       };
-      activeSources.add(source);
+      activeSources.set(source, group);
       try {
         source.start();
         lastPlayed.set(event.play, now);

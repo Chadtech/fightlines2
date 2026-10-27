@@ -115,6 +115,51 @@ rendering. Eastern units are mirrored to face west. Depots have no ownership
 outlines or team labels. The illustrated assets were generated and edited with
 built-in imagegen on October 6–7, 2026.
 
+## Tank firing animation
+
+The earlier `tank-firing-rigged-v1/{red,blue}.png` are 1536 x 512 atlases with
+eight 384 x 256 cells in four columns and two rows. The original 256px tank begins
+16px from each cell's left edge; the remaining width holds its muzzle effects.
+Frames use rigid parts of the approved team masters, with pixel-identical treads,
+small suspension recoil, a short barrel slide, and an exactly matching return pose.
+The firing frames last 45, 65, 85, 100, 110, and 120ms before returning to rest;
+the theater supplies anticipation, firing stagger, and hit timing.
+
+Run `node tools/build-tank-firing.cjs` to rebuild that earlier study
+from local masters under `artwork/units/illustrated/rigged/` and the separately
+generated flash/smoke sources in `artwork/units/illustrated/combat-theater/tank-firing-effects-v1/`.
+The approved orange-red and sky-blue tank masters are the base color references
+for future illustrated teams; UI palette swatches remain separate.
+
+A subsequent neutral animation study uses complete generated drawings,
+matching the field gun's drawn-frame approach: ready, ignition, recoil flash,
+full recoil, return, settled smoke, recovery, and settle. Built-in imagegen redraws
+the tank's suspension response, recoiling stub cannon, flash lighting, smoke,
+and dust. Sources and exact prompts are retained locally in
+`artwork/units/illustrated/combat-theater/tank-firing-drawn-v3/neutral/`.
+The tank holds its resting pose until the muzzle flash; recoil starts 30ms
+later. There is no anticipation dip. Recovery eases directly from backward
+recoil to the original level stance, with no forward overshoot; the tank stays
+level as smoke dissipates. Final rest reuses the opening drawing exactly to
+avoid motion across the loop boundary. Earlier studies remain in
+`tank-firing-drawn-v1/neutral/` and `tank-firing-drawn-v2/neutral/` for comparison.
+Run `node tools/build-tank-firing-drawn.cjs` to align whole drawings by their
+track anchors and export eight transparent 1664 x 1152 frames, a four-column
+sheet, timing metadata, and normal/slow looping matte GIFs.
+
+`tank-firing-drawn-v3/{red,blue}.png` are the active combat-theater atlases:
+1664 x 576 with eight 416 x 288 cells in four columns and two rows. Built-in
+imagegen recolors the complete approved neutral sheet using the original team
+masters. Sources and exact prompts are retained beside the neutral study in
+`{red,blue}/source.png` and `team-prompts.json`. Run
+`node tools/build-tank-firing-teams.cjs` to pack these sheets; both drawn-tank
+exporters are included in `make sprites`. Final rest reuses the ready cell
+exactly. Gameplay replaces preview holds with the shared theater clock: ignition
+at 0ms, recoil at 30ms, and final rest at 620ms. Track registration aligns with
+the static portrait's center and footing; both sides mirror toward the opponent.
+Reduced motion retains the ordinary static team portrait. Live games and logged
+replays share the sequence and its synchronized sound, impact, and close timing.
+
 ## Illustrated supply crate
 
 The supply crate was generated and revised with built-in imagegen on
@@ -181,6 +226,41 @@ The active masters are `neutral-v4-loader-inside.png`, `red-v2-crew.png`, and
 `blue-v2-crew.png`; team edits preserve the loader's placement between the trails.
 Run `node tools/build-field-gun-portraits.cjs`, also included in `make sprites`,
 to regenerate the exports without changing their aspect ratio.
+
+The initial rigid-part neutral firing animation study is rebuilt with
+`node tools/build-field-gun-firing.cjs`. It uses the approved neutral portrait's
+original pixels, sliding the exposed barrel along its bore axis into the fixed
+sleeve and returning slowly. Crew, wheel, trails, shield, sleeve, and lower recoil
+cylinder remain fixed. It reuses the tank's illustrated flash and side smoke.
+Ten transparent 2080 x 800 frames, a four-column sheet, timing/rig metadata, and
+a looping matte GIF are exported locally to
+`artwork/units/illustrated/combat-theater/field-gun-firing-rigged-v1/neutral/`.
+This study does not yet replace the static gameplay portraits.
+
+The subsequent fully drawn neutral attack uses eight separately generated
+complete images: ready, firing signal, brace, muzzle flash, maximum recoil,
+return, recovery, and settle. The chief signals and ducks, the loader braces with
+the shell, and both gunners react around the recoiling barrel/breech assembly.
+Built-in imagegen generated these drawings; exact prompts and sources live in
+`artwork/units/illustrated/combat-theater/field-gun-firing-drawn-v2/neutral/`.
+Run `node tools/build-field-gun-firing-drawn.cjs` to register each complete drawing
+against its main wheel and export eight transparent 2048 x 736 frames, a
+four-column sheet, timing metadata, and normal/slow looping matte GIFs there.
+Registration scales and translates whole images; it does not animate cutout
+parts. The same exporter retains an ignored neutral reference atlas under the
+runtime asset directory. Color-only red and blue edits of a two-column,
+four-row neutral sheet are stored beside the neutral sources as `{red,blue}/source.png`,
+with their exact built-in imagegen prompts in `team-prompts.json`.
+`node tools/build-field-gun-firing-teams.cjs` packs these edits into the committed
+`field-gun-firing-drawn-v2/{red,blue}.png` runtime atlases at 4096 x 736, each with
+eight 1024 x 368 cells. Both exporters are included in `make sprites`.
+Crew uniforms, helmets, and painted gun metal match the static team portraits;
+skin, leather, brass, rubber, flash, smoke, and dust retain their material colors.
+Each side uses its own team artwork, mirrored toward its opponent.
+The renderer aligns its wheel to the static portrait's wheel,
+retains the ready/final drawings while the theater holds, and plays the middle
+signal-through-recovery sequence once in 840ms. Its muzzle flash starts at 320ms.
+Static team portraits remain in nonfiring scenes and under reduced motion.
 
 `combat-backdrops-anime-v1/` contains fourteen opaque 1536 x 1024 painted 1980s
 anime backdrops. Forest, hills, mountains, and plains each have green, snow, and desert

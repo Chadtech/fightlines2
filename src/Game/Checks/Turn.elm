@@ -10,12 +10,14 @@ import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.TurnEventKind as EventKind
 import Api.Enum.UnitKind as Kind
+import Audio
 import Game.Camera as Camera
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Direction as Direction
 import Game.IndirectImpact as IndirectImpact exposing (IndirectImpact)
 import Game.Map as Map
+import Game.PlaybackPresentation as PlaybackPresentation
 import Game.Shot as Shot exposing (Shot)
 import Game.Terrain as Terrain
 import Game.Turn as Turn
@@ -25,6 +27,8 @@ import Game.Unit.Location as Location
 import Game.UnitId as UnitId exposing (UnitId)
 import Game.UnitLoss as UnitLoss
 import Game.UnitLoss.Cause as LossCause
+import Game.UnitResources as UnitResources
+import Game.View.CombatAttack as CombatAttack
 import Game.View.CombatExplosion as CombatExplosion
 import Game.View.CombatFormation as CombatFormation
 import Game.View.CombatTheater as CombatTheater
@@ -33,6 +37,101 @@ import Point exposing (Point)
 
 
 port results : List String -> Cmd msg
+
+
+setFrameDurationMs : Int -> TurnPlayback.Frame -> TurnPlayback.Frame
+setFrameDurationMs durationMs model =
+    { model | durationMs = durationMs }
+
+
+setFrameIndirectImpacts : List IndirectImpact -> TurnPlayback.Frame -> TurnPlayback.Frame
+setFrameIndirectImpacts indirectImpacts model =
+    { model | indirectImpacts = indirectImpacts }
+
+
+setFrameSabotages : List Coordinate -> TurnPlayback.Frame -> TurnPlayback.Frame
+setFrameSabotages sabotages model =
+    { model | sabotages = sabotages }
+
+
+setPlaybackCurrent : TurnPlayback.Frame -> TurnPlayback.Playback -> TurnPlayback.Playback
+setPlaybackCurrent current model =
+    { model | current = current }
+
+
+setPlaybackRemaining : List TurnPlayback.Frame -> TurnPlayback.Playback -> TurnPlayback.Playback
+setPlaybackRemaining remaining model =
+    { model | remaining = remaining }
+
+
+setShotOrigin : Coordinate -> Shot -> Shot
+setShotOrigin origin model =
+    { model | origin = origin }
+
+
+setShotDestination : Coordinate -> Shot -> Shot
+setShotDestination destination model =
+    { model | destination = destination }
+
+
+setShotAttacker : Unit -> Shot -> Shot
+setShotAttacker attacker model =
+    { model | attacker = attacker }
+
+
+setShotTarget : Unit -> Shot -> Shot
+setShotTarget target model =
+    { model | target = target }
+
+
+setShotKind : CombatKind.CombatKind -> Shot -> Shot
+setShotKind kind model =
+    { model | kind = kind }
+
+
+setShotDamage : Int -> Shot -> Shot
+setShotDamage damage model =
+    { model | damage = damage }
+
+
+setEventUnitId : UnitId -> Turn.Event -> Turn.Event
+setEventUnitId unitId model =
+    { model | unitId = unitId }
+
+
+setEventKind : EventKind.TurnEventKind -> Turn.Event -> Turn.Event
+setEventKind kind model =
+    { model | kind = kind }
+
+
+setEventPath : List Coordinate -> Turn.Event -> Turn.Event
+setEventPath path model =
+    { model | path = path }
+
+
+setEventInitialSpriteFacing : SpriteFacing.SpriteFacing -> Turn.Event -> Turn.Event
+setEventInitialSpriteFacing initialSpriteFacing model =
+    { model | initialSpriteFacing = initialSpriteFacing }
+
+
+setEventInitialDirection : Maybe Direction.Direction -> Turn.Event -> Turn.Event
+setEventInitialDirection initialDirection model =
+    { model | initialDirection = initialDirection }
+
+
+setPanelElapsed : Float -> TurnPlayback.Panel -> TurnPlayback.Panel
+setPanelElapsed elapsed model =
+    { model | elapsed = elapsed }
+
+
+setPanelEncounter : TurnPlayback.Encounter -> TurnPlayback.Panel -> TurnPlayback.Panel
+setPanelEncounter encounter model =
+    { model | encounter = encounter }
+
+
+setImpactAttacker : Maybe IndirectImpact.Attacker -> IndirectImpact -> IndirectImpact
+setImpactAttacker attacker model =
+    { model | attacker = attacker }
 
 
 main : Program () () Never
@@ -52,6 +151,16 @@ checks =
 
         _ ->
             [ "could not construct fixture IDs" ]
+
+
+impactEncounter : IndirectImpact -> TurnPlayback.Encounter
+impactEncounter impact =
+    TurnPlayback.Impact
+        { destination = impact.destination
+        , attackers = impact.attacker |> Maybe.map List.singleton |> Maybe.withDefault []
+        , target = impact.target
+        , depot = impact.depot
+        }
 
 
 playbackChecks : UnitId -> UnitId -> List String
@@ -286,26 +395,47 @@ playbackChecks first second =
 
         hiddenFrame : TurnPlayback.Frame
         hiddenFrame =
-            { firstFrame | units = List.filter (\unit -> unit.id == first) firstFrame.units }
+            firstFrame
+                |> TurnPlayback.setFrameUnits (List.filter (\unit -> unit.id == first) firstFrame.units)
 
         ( entering, _ ) =
-            TurnPlayback.tick 90 { sharedPlayback | current = hiddenFrame }
+            TurnPlayback.tick 90
+                (sharedPlayback
+                    |> setPlaybackCurrent hiddenFrame
+                )
 
         ( leaving, _ ) =
-            TurnPlayback.tick 90 { sharedPlayback | remaining = [ { middleFrame | units = List.filter (\unit -> unit.id == first) lastFrame.units } ] }
+            TurnPlayback.tick 90
+                (sharedPlayback
+                    |> setPlaybackRemaining
+                        [ middleFrame
+                            |> TurnPlayback.setFrameUnits (List.filter (\unit -> unit.id == first) lastFrame.units)
+                        ]
+                )
 
         exitFrame : TurnPlayback.Frame
         exitFrame =
             { firstFrame | departures = [ { unitId = second, direction = Direction.East } ] }
 
         ( departing, departingFrame ) =
-            TurnPlayback.tick 90 { sharedPlayback | current = exitFrame, remaining = [ hiddenFrame ] }
+            TurnPlayback.tick 90
+                (sharedPlayback
+                    |> setPlaybackCurrent exitFrame
+                    |> setPlaybackRemaining
+                        [ hiddenFrame ]
+                )
 
         ( surplus, surplusFrame ) =
             TurnPlayback.tick 270 sharedPlayback
 
         ( timedHalfway, _ ) =
-            TurnPlayback.tick 210 { sharedPlayback | remaining = [ { lastFrame | durationMs = 420 } ] }
+            TurnPlayback.tick 210
+                (sharedPlayback
+                    |> setPlaybackRemaining
+                        [ lastFrame
+                            |> setFrameDurationMs 420
+                        ]
+                )
 
         continueFirstUnit : Unit -> Unit
         continueFirstUnit unit =
@@ -317,11 +447,18 @@ playbackChecks first second =
 
         continuingFrame : TurnPlayback.Frame
         continuingFrame =
-            { middleFrame | units = List.map continueFirstUnit middleFrame.units }
+            middleFrame
+                |> TurnPlayback.setFrameUnits (List.map continueFirstUnit middleFrame.units)
 
         longRoute : Maybe TurnPlayback.Playback
         longRoute =
-            TurnPlayback.start [ firstFrame, middleFrame, continuingFrame, { continuingFrame | durationMs = 180 } ]
+            TurnPlayback.start
+                [ firstFrame
+                , middleFrame
+                , continuingFrame
+                , continuingFrame
+                    |> setFrameDurationMs 180
+                ]
 
         afterBoundary : Maybe TurnPlayback.Playback
         afterBoundary =
@@ -353,7 +490,17 @@ playbackChecks first second =
         , expect "camera subjects include only the projected fog departure"
             (Maybe.map TurnPlayback.focusPositions departing == Just (List.map .position (TurnPlayback.movingPositions departing)))
         , expect "camera frames projected indirect impacts even without a hit"
-            (TurnPlayback.focusPositions { sharedPlayback | current = { firstFrame | indirectImpacts = [ { destination = { x = 8, y = 9 }, attacker = Nothing, target = Nothing, depot = Nothing } ] }, remaining = [] } == [ { x = 8, y = 9 } ])
+            (TurnPlayback.focusPositions
+                (sharedPlayback
+                    |> setPlaybackCurrent
+                        (firstFrame
+                            |> setFrameIndirectImpacts
+                                [ { destination = { x = 8, y = 9 }, attacker = Nothing, target = Nothing, depot = Nothing } ]
+                        )
+                    |> setPlaybackRemaining []
+                )
+                == [ { x = 8, y = 9 } ]
+            )
         , expect "all simultaneous arrivals interpolate using server frame duration"
             (TurnPlayback.movingPositions timedHalfway == [ { unitId = first, position = { x = 0.5, y = 0 } }, { unitId = second, position = { x = 1.5, y = 1 } } ])
         , expect "only the first unit interpolates during its route"
@@ -486,7 +633,7 @@ truckPlaybackChecks unitId =
 transportPlaybackChecks : UnitId -> UnitId -> List String
 transportPlaybackChecks passengerId truckId =
     let
-        truck : Unit.Unit
+        truck : Unit
         truck =
             { id = truckId
             , playerNumber = PlayerNumber.Player1
@@ -535,7 +682,7 @@ transportPlaybackChecks passengerId truckId =
                     }
             }
 
-        passenger : Unit.Unit
+        passenger : Unit
         passenger =
             truck
                 |> Unit.setId passengerId
@@ -553,7 +700,15 @@ transportPlaybackChecks passengerId truckId =
                     }
                 |> Unit.setCargoCapacity 0
                 |> Unit.setLocation (Location.Aboard truckId)
-                |> Unit.setResources (Maybe.map (\resources -> { resources | fuel = Nothing }) truck.resources)
+                |> Unit.setResources
+                    (Maybe.map
+                        (\resources ->
+                            resources
+                                |> UnitResources.setFuel
+                                    Nothing
+                        )
+                        truck.resources
+                    )
 
         units : List Unit
         units =
@@ -574,9 +729,21 @@ transportPlaybackChecks passengerId truckId =
                     { number = 1
                     , report = Nothing
                     , events =
-                        [ { event | unitId = passengerId, kind = EventKind.Hold, path = [ { x = 1, y = 0 } ], initialSpriteFacing = SpriteFacing.Right, initialDirection = passenger.direction }
+                        [ event
+                            |> setEventUnitId passengerId
+                            |> setEventKind EventKind.Hold
+                            |> setEventPath
+                                [ { x = 1, y = 0 } ]
+                            |> setEventInitialSpriteFacing SpriteFacing.Right
+                            |> setEventInitialDirection passenger.direction
                         , event
-                        , { event | unitId = passengerId, kind = EventKind.Load, path = [ { x = 1, y = 0 } ], carrierId = Just truckId, initialSpriteFacing = SpriteFacing.Right, initialDirection = passenger.direction }
+                        , { event | carrierId = Just truckId }
+                            |> setEventUnitId passengerId
+                            |> setEventKind EventKind.Load
+                            |> setEventPath
+                                [ { x = 1, y = 0 } ]
+                            |> setEventInitialSpriteFacing SpriteFacing.Right
+                            |> setEventInitialDirection passenger.direction
                         ]
                     }
             }
@@ -598,7 +765,22 @@ transportPlaybackChecks passengerId truckId =
 
         unloading : Turn.Snapshot
         unloading =
-            { loading | resolution = Just { number = 1, report = Nothing, events = [ { event | kind = EventKind.Unload, unitId = passengerId, path = [ { x = 1, y = 0 }, { x = 2, y = 0 } ], initialCarrier = Just truckId, initialSpriteFacing = SpriteFacing.Right, initialDirection = passenger.direction } ] } }
+            { loading
+                | resolution =
+                    Just
+                        { number = 1
+                        , report = Nothing
+                        , events =
+                            [ { event | initialCarrier = Just truckId }
+                                |> setEventKind EventKind.Unload
+                                |> setEventUnitId passengerId
+                                |> setEventPath
+                                    [ { x = 1, y = 0 }, { x = 2, y = 0 } ]
+                                |> setEventInitialSpriteFacing SpriteFacing.Right
+                                |> setEventInitialDirection passenger.direction
+                            ]
+                        }
+            }
 
         unloadUnits : List Unit
         unloadUnits =
@@ -804,7 +986,9 @@ spriteFacingChecks id =
 
         truckPlayback : TurnPlayback.Playback
         truckPlayback =
-            { playback | current = frame truck, remaining = List.map frame [ westTruck, northTruck, southTruck, eastTruck ] }
+            playback
+                |> setPlaybackCurrent (frame truck)
+                |> setPlaybackRemaining (List.map frame [ westTruck, northTruck, southTruck, eastTruck ])
 
         truckFrames : List TurnPlayback.Frame
         truckFrames =
@@ -922,20 +1106,28 @@ combatPlaybackChecks first second =
 
         volley : TurnPlayback.Frame
         volley =
-            { before
-                | durationMs = 450
-                , shots = [ shot, { shot | origin = shot.destination, destination = shot.origin, attacker = target, target = attacker } ]
-                , units =
+            before
+                |> setFrameDurationMs 450
+                |> TurnPlayback.setFrameShots
+                    [ shot
+                    , shot
+                        |> setShotOrigin shot.destination
+                        |> setShotDestination shot.origin
+                        |> setShotAttacker target
+                        |> setShotTarget attacker
+                    ]
+                |> TurnPlayback.setFrameUnits
                     [ attacker
                         |> Unit.setDestroyed True
                     , target
                         |> Unit.setDestroyed True
                     ]
-            }
 
         cleanup : TurnPlayback.Frame
         cleanup =
-            { before | durationMs = 1400, units = [] }
+            before
+                |> setFrameDurationMs 1400
+                |> TurnPlayback.setFrameUnits []
 
         panelAt : { x : Int, y : Int } -> { x : Int, y : Int } -> TurnPlayback.Panel
         panelAt origin destination =
@@ -950,6 +1142,7 @@ combatPlaybackChecks first second =
                             |> Unit.setOnMap destination
                     , attackerHealth = shot.attackerHealth
                     , targetHealth = shot.targetHealth
+                    , targetFired = False
                     }
             , elapsed = 0
             , mapView = TurnPlayback.CardVisible
@@ -980,14 +1173,14 @@ combatPlaybackChecks first second =
                     , target = target
                     , attackerHealth = shot.attackerHealth
                     , targetHealth = shot.targetHealth
+                    , targetFired = False
                     }
             in
             CombatTheater.readyToAutomaticallyClose
-                { panel
-                    | elapsed = elapsed
-                    , mapView = mapView
-                    , encounter =
-                        TurnPlayback.Exchange
+                ({ panel | mapView = mapView }
+                    |> setPanelElapsed elapsed
+                    |> setPanelEncounter
+                        (TurnPlayback.Exchange
                             { exchange
                                 | target =
                                     target
@@ -997,7 +1190,8 @@ combatPlaybackChecks first second =
                                     , after = { current = remainingHealth, maximum = 16 }
                                     }
                             }
-                }
+                        )
+                )
 
         expect : String -> Bool -> List String
         expect label passed =
@@ -1012,11 +1206,12 @@ combatPlaybackChecks first second =
             let
                 landing : TurnPlayback.Frame
                 landing =
-                    { before
-                        | units = [ attacker ]
-                        , sabotages = []
-                        , indirectImpacts = [ { destination = shot.destination, attacker = Nothing, target = Nothing, depot = Nothing }, { destination = shot.destination, attacker = Nothing, target = Nothing, depot = Nothing } ]
-                    }
+                    before
+                        |> TurnPlayback.setFrameUnits
+                            [ attacker ]
+                        |> setFrameSabotages []
+                        |> setFrameIndirectImpacts
+                            [ { destination = shot.destination, attacker = Nothing, target = Nothing, depot = Nothing }, { destination = shot.destination, attacker = Nothing, target = Nothing, depot = Nothing } ]
 
                 focus : Maybe TurnPlayback.Playback
                 focus =
@@ -1032,7 +1227,11 @@ combatPlaybackChecks first second =
 
                 confirmed : TurnPlayback.Frame
                 confirmed =
-                    { landing | shots = [ { shot | kind = CombatKind.IndirectFire } ] }
+                    landing
+                        |> TurnPlayback.setFrameShots
+                            [ shot
+                                |> setShotKind CombatKind.IndirectFire
+                            ]
 
                 hit : Maybe TurnPlayback.Playback
                 hit =
@@ -1054,7 +1253,9 @@ combatPlaybackChecks first second =
 
                 knownLanding : TurnPlayback.Frame
                 knownLanding =
-                    { landing | indirectImpacts = [ knownImpact ] }
+                    landing
+                        |> setFrameIndirectImpacts
+                            [ knownImpact ]
 
                 knownShown : Maybe TurnPlayback.Playback
                 knownShown =
@@ -1064,10 +1265,20 @@ combatPlaybackChecks first second =
 
                 knownPanel : TurnPlayback.Panel
                 knownPanel =
-                    { encounter = TurnPlayback.Impact knownImpact
+                    { encounter = impactEncounter knownImpact
                     , elapsed = 0
                     , mapView = TurnPlayback.CardVisible
                     }
+
+                fieldGunPanel : TurnPlayback.Panel
+                fieldGunPanel =
+                    knownPanel
+                        |> setPanelEncounter
+                            (impactEncounter
+                                (knownImpact
+                                    |> setImpactAttacker (Just { unit = Unit.setKind Kind.FieldGun attacker, health = shot.attackerHealth.before })
+                                )
+                            )
 
                 observedTarget : IndirectImpact
                 observedTarget =
@@ -1086,15 +1297,16 @@ combatPlaybackChecks first second =
                 showTarget : List IndirectImpact -> Bool -> Maybe TurnPlayback.Playback
                 showTarget impacts destroyed =
                     TurnPlayback.start
-                        [ { before | units = [ target ] }
-                        , { landing
-                            | units =
+                        [ before
+                            |> TurnPlayback.setFrameUnits
+                                [ target ]
+                        , landing
+                            |> TurnPlayback.setFrameUnits
                                 [ target
                                     |> Unit.setDestroyed destroyed
                                 ]
-                            , sabotages = []
-                            , indirectImpacts = impacts
-                          }
+                            |> setFrameSabotages []
+                            |> setFrameIndirectImpacts impacts
                         ]
                         |> Maybe.andThen (TurnPlayback.tick 180 >> Tuple.first)
                         |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
@@ -1142,7 +1354,7 @@ combatPlaybackChecks first second =
                 depotReady : Float -> TurnPlayback.MapView -> Bool
                 depotReady elapsed mapView =
                     CombatTheater.readyToAutomaticallyClose
-                        { encounter = TurnPlayback.Impact depotHit
+                        { encounter = impactEncounter depotHit
                         , elapsed = elapsed
                         , mapView = mapView
                         }
@@ -1196,7 +1408,7 @@ combatPlaybackChecks first second =
                 ready : Float -> Bool
                 ready elapsed =
                     CombatTheater.readyToAutomaticallyClose
-                        { encounter = TurnPlayback.Impact { destination = shot.destination, attacker = Nothing, target = Nothing, depot = Nothing }
+                        { encounter = impactEncounter { destination = shot.destination, attacker = Nothing, target = Nothing, depot = Nothing }
                         , elapsed = elapsed
                         , mapView = TurnPlayback.CardVisible
                         }
@@ -1217,8 +1429,16 @@ combatPlaybackChecks first second =
                     (Maybe.andThen TurnPlayback.panels lethalDepotShown
                         |> Maybe.map
                             (\panel ->
-                                not (CombatTheater.readyToAutomaticallyClose { panel | elapsed = 3949 })
-                                    && CombatTheater.readyToAutomaticallyClose { panel | elapsed = 3950 }
+                                not
+                                    (CombatTheater.readyToAutomaticallyClose
+                                        (panel
+                                            |> setPanelElapsed 3949
+                                        )
+                                    )
+                                    && CombatTheater.readyToAutomaticallyClose
+                                        (panel
+                                            |> setPanelElapsed 3950
+                                        )
                             )
                         |> (==) (Just True)
                     )
@@ -1230,15 +1450,20 @@ combatPlaybackChecks first second =
                     )
                 ++ expect "known indirect attacker is retained alongside an unconfirmed landing"
                     (Maybe.andThen TurnPlayback.activeEncounter knownShown
-                        == Just (TurnPlayback.Impact knownImpact)
+                        == Just (impactEncounter knownImpact)
                         && Maybe.map TurnPlayback.focusPositions knownShown
                         == Just [ { x = 2, y = 2 }, { x = 3, y = 2 } ]
                         && CombatTheater.attackerOnLeft knownPanel
-                        && not (CombatTheater.attackerOnLeft { knownPanel | encounter = TurnPlayback.Impact { knownImpact | destination = { x = 1, y = 2 } } })
+                        && not
+                            (CombatTheater.attackerOnLeft
+                                (knownPanel
+                                    |> setPanelEncounter (impactEncounter { knownImpact | destination = { x = 1, y = 2 } })
+                                )
+                            )
                     )
                 ++ expect "unconfirmed indirect impacts open a theater without invented combatants"
                     (Maybe.andThen TurnPlayback.activeEncounter shown
-                        == Just (TurnPlayback.Impact { destination = shot.destination, attacker = Nothing, target = Nothing, depot = Nothing })
+                        == Just (impactEncounter { destination = shot.destination, attacker = Nothing, target = Nothing, depot = Nothing })
                         && Maybe.andThen TurnPlayback.combat shown
                         == Nothing
                         && Maybe.andThen TurnPlayback.panels shown
@@ -1246,14 +1471,29 @@ combatPlaybackChecks first second =
                     )
                 ++ expect "a concealed gun retains the observed target and authoritative damage"
                     (Maybe.andThen TurnPlayback.activeEncounter targetShown
-                        == Just (TurnPlayback.Impact observedTarget)
+                        == Just (impactEncounter observedTarget)
                         && Maybe.map TurnPlayback.focusPositions targetShown
                         == Just [ { x = 3, y = 2 } ]
                     )
                 ++ expect "observed targets animate their whole health change across duplicate landings"
                     (Maybe.andThen targetHealth combined == Just { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } })
                 ++ expect "observed infantry impacts retain the full casualty animation before automatic close"
-                    (Maybe.map (\panel -> not (CombatTheater.readyToAutomaticallyClose { panel | elapsed = 2719 }) && CombatTheater.readyToAutomaticallyClose { panel | elapsed = 2720 }) combined == Just True)
+                    (Maybe.map
+                        (\panel ->
+                            not
+                                (CombatTheater.readyToAutomaticallyClose
+                                    (panel
+                                        |> setPanelElapsed 2719
+                                    )
+                                )
+                                && CombatTheater.readyToAutomaticallyClose
+                                    (panel
+                                        |> setPanelElapsed 2720
+                                    )
+                        )
+                        combined
+                        == Just True
+                    )
                 ++ expect "combined concealed gun impacts retain the casualty ID without an attacker"
                     (showTarget [ observedTarget, laterImpact ] True
                         |> Maybe.andThen TurnPlayback.continueCombat
@@ -1274,34 +1514,72 @@ combatPlaybackChecks first second =
                     (Maybe.andThen TurnPlayback.activeEncounter afterHit == Nothing)
                 ++ expect "impact theaters wait for explosions and the automatic-close delay"
                     (not (ready 2200) && ready 2270)
+                ++ expect "visible indirect guns share muzzle-flash sound timing while concealed guns stay silent"
+                    (CombatTheater.firingTimes Kind.FieldGun fieldGunPanel
+                        == [ 1520, 1610, 1700, 1790 ]
+                        && List.isEmpty
+                            (CombatTheater.firingTimes Kind.FieldGun
+                                (fieldGunPanel
+                                    |> setPanelEncounter
+                                        (impactEncounter
+                                            (knownImpact
+                                                |> setImpactAttacker Nothing
+                                            )
+                                        )
+                                )
+                            )
+                    )
+                ++ expect "observable indirect guns finish their firing sequence before impacts and automatic close"
+                    (CombatTheater.attackDelay fieldGunPanel
+                        == 1210
+                        && not
+                            (CombatTheater.readyToAutomaticallyClose
+                                (fieldGunPanel
+                                    |> setPanelElapsed 3479
+                                )
+                            )
+                        && CombatTheater.readyToAutomaticallyClose
+                            (fieldGunPanel
+                                |> setPanelElapsed 3480
+                            )
+                    )
+                ++ mergedImpactChecks { gun = attacker, target = target, before = before }
 
         returnFireChecks : List String
         returnFireChecks =
             let
                 opening : TurnPlayback.Frame
                 opening =
-                    { before | durationMs = 450, shots = [ shot ] }
+                    before
+                        |> setFrameDurationMs 450
+                        |> TurnPlayback.setFrameShots
+                            [ shot ]
 
                 waiting : TurnPlayback.Frame
                 waiting =
-                    { before | durationMs = 600 }
+                    before
+                        |> setFrameDurationMs 600
 
                 returnShot : Shot
                 returnShot =
-                    { shot
-                        | kind = CombatKind.AttackMove
-                        , origin = shot.destination
-                        , destination = shot.origin
-                        , attacker = target
-                        , target = attacker
-                        , damage = 1
-                        , attackerHealth = { before = { current = 8, maximum = 16 }, after = { current = 8, maximum = 16 } }
-                        , targetHealth = { before = { current = 16, maximum = 16 }, after = { current = 15, maximum = 16 } }
-                    }
+                    shot
+                        |> setShotKind CombatKind.AttackMove
+                        |> setShotOrigin shot.destination
+                        |> setShotDestination shot.origin
+                        |> setShotAttacker target
+                        |> setShotTarget attacker
+                        |> setShotDamage 1
+                        |> Shot.setAttackerHealth
+                            { before = { current = 8, maximum = 16 }, after = { current = 8, maximum = 16 } }
+                        |> Shot.setTargetHealth
+                            { before = { current = 16, maximum = 16 }, after = { current = 15, maximum = 16 } }
 
                 returning : TurnPlayback.Frame
                 returning =
-                    { before | durationMs = 450, shots = [ returnShot ] }
+                    before
+                        |> setFrameDurationMs 450
+                        |> TurnPlayback.setFrameShots
+                            [ returnShot ]
 
                 focused : List TurnPlayback.Frame -> Maybe TurnPlayback.Playback
                 focused frames =
@@ -1309,7 +1587,15 @@ combatPlaybackChecks first second =
 
                 combined : Maybe TurnPlayback.Playback
                 combined =
-                    focused [ before, opening, waiting, { waiting | durationMs = 180 }, returning, waiting ]
+                    focused
+                        [ before
+                        , opening
+                        , waiting
+                        , waiting
+                            |> setFrameDurationMs 180
+                        , returning
+                        , waiting
+                        ]
 
                 exchange : Maybe TurnPlayback.CombatExchange
                 exchange =
@@ -1328,6 +1614,34 @@ combatPlaybackChecks first second =
                         |> Maybe.andThen TurnPlayback.combat
                         |> Maybe.map (.attackerHealth >> .after >> .current)
                         |> (==) (Just 16)
+
+                delayForShots : List Shot -> Maybe Float
+                delayForShots shots =
+                    let
+                        panelDelay : TurnPlayback.CombatExchange -> Float
+                        panelDelay pair =
+                            CombatTheater.attackDelay
+                                { encounter = TurnPlayback.Exchange pair
+                                , elapsed = 0
+                                , mapView = TurnPlayback.CardVisible
+                                }
+                    in
+                    focused
+                        [ before
+                        , opening
+                            |> TurnPlayback.setFrameShots shots
+                        , waiting
+                        ]
+                        |> Maybe.andThen TurnPlayback.combat
+                        |> Maybe.map panelDelay
+
+                zeroDamage : Shot -> Shot
+                zeroDamage fired =
+                    { fired
+                        | damage = 0
+                        , attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }
+                        , targetHealth = { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }
+                    }
             in
             expect "stationary return fire shares one card with both health transitions"
                 (Maybe.map (.attackerHealth >> .after >> .current) exchange
@@ -1339,6 +1653,65 @@ combatPlaybackChecks first second =
                     && Maybe.map .kind exchange
                     == Just CombatKind.AttackMove
                 )
+                ++ expect "recorded return fire is retained independently of damage"
+                    (Maybe.map .targetFired exchange
+                        == Just True
+                        && delayForShots [ zeroDamage shot, zeroDamage returnShot ]
+                        == Just 1035
+                    )
+                ++ expect "defending tanks do not fire merely because they appear in a theater"
+                    (delayForShots
+                        [ shot
+                            |> setShotAttacker (Unit.setKind Kind.Infantry attacker)
+                        ]
+                        == Just 0
+                        && delayForShots [ shot ]
+                        == Just 990
+                    )
+                ++ expect "fewer firing tanks shorten the firing phase using before-health"
+                    (delayForShots
+                        [ shot
+                            |> Shot.setAttackerHealth
+                                { before = { current = 1, maximum = 16 }, after = { current = 0, maximum = 16 } }
+                        ]
+                        == Just 720
+                    )
+                ++ expect "returning tanks delay incoming hits even when the primary attacker is infantry"
+                    (delayForShots
+                        [ shot
+                            |> setShotAttacker (Unit.setKind Kind.Infantry attacker)
+                        , returnShot
+                        ]
+                        == Just 1035
+                    )
+                ++ expect "firing field guns delay both formations' impacts, including zero-damage shots"
+                    (delayForShots
+                        [ zeroDamage
+                            (shot
+                                |> setShotAttacker (Unit.setKind Kind.FieldGun attacker)
+                            )
+                        ]
+                        == Just 1210
+                    )
+                ++ expect "receiving fire does not start a field-gun animation"
+                    (delayForShots
+                        [ shot
+                            |> setShotAttacker (Unit.setKind Kind.Infantry attacker)
+                            |> setShotTarget (Unit.setKind Kind.FieldGun target)
+                        ]
+                        == Just 0
+                    )
+                ++ expect "recorded field-gun return fire shares the stagger and recovery delay"
+                    (delayForShots
+                        [ shot
+                            |> setShotAttacker (Unit.setKind Kind.Infantry attacker)
+                            |> setShotTarget (Unit.setKind Kind.FieldGun target)
+                        , returnShot
+                            |> setShotAttacker (Unit.setKind Kind.FieldGun target)
+                            |> setShotTarget (Unit.setKind Kind.Infantry attacker)
+                        ]
+                        == Just 1255
+                    )
                 ++ expect "continuing a combined exchange does not open another theater"
                     (Maybe.andThen TurnPlayback.combat resumed
                         == Nothing
@@ -1348,18 +1721,23 @@ combatPlaybackChecks first second =
                 ++ expect "both players of a combined exchange begin their impacts together"
                     (Maybe.map (\pair -> List.head (CombatFormation.impactStarts pair.attacker.kind pair.attackerHealth) == Just 1200 && List.head (CombatFormation.impactStarts pair.target.kind pair.targetHealth) == Just 1200) exchange == Just True)
                 ++ expect "movement between shots keeps separate encounters"
-                    (separate { waiting | units = [ attacker, Unit.setOnMap { x = 4, y = 2 } target ] })
+                    (separate
+                        (waiting
+                            |> TurnPlayback.setFrameUnits
+                                [ attacker, Unit.setOnMap { x = 4, y = 2 } target ]
+                        )
+                    )
                 ++ expect "sight changes between shots keep separate encounters"
                     (separate { waiting | visibleTiles = [] })
                 ++ expect "intervening casualties keep separate encounters"
                     (separate
-                        { waiting
-                            | units =
+                        (waiting
+                            |> TurnPlayback.setFrameUnits
                                 [ attacker
                                     |> Unit.setDestroyed True
                                 , target
                                 ]
-                        }
+                        )
                     )
                 ++ expect "another volley between shots keeps separate encounters"
                     (separate opening)
@@ -1385,6 +1763,73 @@ combatPlaybackChecks first second =
                         ( showing, _ ) =
                             TurnPlayback.tick 300 focus
 
+                        atPanelTime : Float -> Maybe TurnPlayback.Playback
+                        atPanelTime elapsed =
+                            showing |> Maybe.andThen (TurnPlayback.tick elapsed >> Tuple.first)
+
+                        soundsBetween : Float -> Float -> List Audio.Event
+                        soundsBetween earlier later =
+                            PlaybackPresentation.audioBetween { before = atPanelTime earlier, after = atPanelTime later }
+
+                        fieldGunSounds : Float -> Float -> List Audio.Event
+                        fieldGunSounds earlier later =
+                            let
+                                withFieldGun : TurnPlayback.Playback -> TurnPlayback.Playback
+                                withFieldGun playback =
+                                    case playback.presentation of
+                                        TurnPlayback.Combat combatFocus ->
+                                            case combatFocus.encounter of
+                                                TurnPlayback.Exchange pair ->
+                                                    { playback
+                                                        | presentation =
+                                                            TurnPlayback.Combat
+                                                                { combatFocus
+                                                                    | encounter = TurnPlayback.Exchange { pair | attacker = Unit.setKind Kind.FieldGun pair.attacker }
+                                                                }
+                                                    }
+
+                                                _ ->
+                                                    playback
+
+                                        _ ->
+                                            playback
+
+                                gunPlayback : Float -> Maybe TurnPlayback.Playback
+                                gunPlayback elapsed =
+                                    atPanelTime elapsed |> Maybe.map withFieldGun
+                            in
+                            PlaybackPresentation.audioBetween { before = gunPlayback earlier, after = gunPlayback later }
+
+                        audioChecks : List String
+                        audioChecks =
+                            expect "muzzle sounds fire at clock crossings, including exact boundaries"
+                                (List.isEmpty (soundsBetween 0 1199)
+                                    && soundsBetween 1199 1200
+                                    == [ Audio.tankFire ]
+                                    && List.isEmpty (soundsBetween 1200 1244)
+                                    && soundsBetween 1244 1245
+                                    == [ Audio.tankFire ]
+                                )
+                                ++ expect "mixed weapon cues follow muzzle order and field-gun preparation"
+                                    (fieldGunSounds 1199 1520
+                                        == List.repeat 4 Audio.tankFire
+                                        ++ [ Audio.fieldGunFire ]
+                                        && fieldGunSounds 1520 1790
+                                        == List.repeat 3 Audio.fieldGunFire
+                                        && List.isEmpty (fieldGunSounds 1790 6000)
+                                    )
+                                ++ expect "a delayed tick emits every staggered shot exactly once"
+                                    (List.length (soundsBetween 1199 1515)
+                                        == 8
+                                        && List.isEmpty (soundsBetween 1515 6000)
+                                    )
+                                ++ expect "paused, held, rewound, and absent theaters never replay old firing cues"
+                                    (List.isEmpty (soundsBetween 1300 1300)
+                                        && List.isEmpty (soundsBetween 1515 0)
+                                        && List.isEmpty (PlaybackPresentation.audioBetween { before = Nothing, after = atPanelTime 1500 })
+                                        && List.isEmpty (PlaybackPresentation.audioBetween { before = atPanelTime 1500, after = Nothing })
+                                    )
+
                         ( holding, heldFrame ) =
                             showing |> Maybe.map (TurnPlayback.tick 60000) |> Maybe.withDefault ( Nothing, before )
 
@@ -1396,7 +1841,11 @@ combatPlaybackChecks first second =
 
                         hidden : TurnPlayback.Frame
                         hidden =
-                            { volley | units = [ target ], shots = [ shot ] }
+                            volley
+                                |> TurnPlayback.setFrameUnits
+                                    [ target ]
+                                |> TurnPlayback.setFrameShots
+                                    [ shot ]
 
                         hiddenPlayback : Maybe TurnPlayback.Playback
                         hiddenPlayback =
@@ -1407,7 +1856,15 @@ combatPlaybackChecks first second =
 
                         framesCombatKind : CombatKind.CombatKind -> Bool
                         framesCombatKind kind =
-                            TurnPlayback.start [ before, { volley | shots = [ { shot | kind = kind } ] }, cleanup ]
+                            TurnPlayback.start
+                                [ before
+                                , volley
+                                    |> TurnPlayback.setFrameShots
+                                        [ shot
+                                            |> setShotKind kind
+                                        ]
+                                , cleanup
+                                ]
                                 |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
                                 |> Maybe.map TurnPlayback.focusPositions
                                 |> (==) (Just [ { x = 2, y = 2 }, { x = 3, y = 2 } ])
@@ -1428,7 +1885,16 @@ combatPlaybackChecks first second =
 
                                         multiple : TurnPlayback.Frame
                                         multiple =
-                                            { volley | units = volley.units ++ [ anotherTarget ], shots = volley.shots ++ [ { shot | destination = { x = 4, y = 2 }, target = anotherTarget } ] }
+                                            volley
+                                                |> TurnPlayback.setFrameUnits (volley.units ++ [ anotherTarget ])
+                                                |> TurnPlayback.setFrameShots
+                                                    (volley.shots
+                                                        ++ [ shot
+                                                                |> setShotDestination
+                                                                    { x = 4, y = 2 }
+                                                                |> setShotTarget anotherTarget
+                                                           ]
+                                                    )
 
                                         firstPause : Maybe TurnPlayback.Playback
                                         firstPause =
@@ -1440,16 +1906,16 @@ combatPlaybackChecks first second =
 
                                         overlap : TurnPlayback.Frame
                                         overlap =
-                                            { volley
-                                                | shots =
+                                            volley
+                                                |> TurnPlayback.setFrameShots
                                                     [ shot
-                                                    , { shot
-                                                        | origin = { x = 4, y = 2 }
-                                                        , attacker = anotherTarget
-                                                        , targetHealth = { before = { current = 8, maximum = 16 }, after = { current = 0, maximum = 16 } }
-                                                      }
+                                                    , shot
+                                                        |> setShotOrigin
+                                                            { x = 4, y = 2 }
+                                                        |> setShotAttacker anotherTarget
+                                                        |> Shot.setTargetHealth
+                                                            { before = { current = 8, maximum = 16 }, after = { current = 0, maximum = 16 } }
                                                     ]
-                                            }
 
                                         overlapFirst : Maybe TurnPlayback.Playback
                                         overlapFirst =
@@ -1475,76 +1941,284 @@ combatPlaybackChecks first second =
                                         ++ expect "multiple pair displays return to one battlefield volley"
                                             (Maybe.andThen TurnPlayback.combat afterPairs == Nothing && revealed == multiple)
                     in
-                    List.concat
-                        [ expect "theater sides preserve horizontal map order and use north first for vertical pairs"
-                            (CombatTheater.attackerOnLeft (panelAt { x = 2, y = 2 } { x = 3, y = 2 })
-                                && not (CombatTheater.attackerOnLeft (panelAt { x = 3, y = 2 } { x = 2, y = 2 }))
-                                && CombatTheater.attackerOnLeft (panelAt { x = 2, y = 2 } { x = 2, y = 3 })
-                                && not (CombatTheater.attackerOnLeft (panelAt { x = 2, y = 3 } { x = 2, y = 2 }))
-                            )
-                        , returnFireChecks
-                        , impactChecks
-                        , expect "combat holds the pre-hit board and hides shots and movement"
-                            (frozen == before && List.isEmpty (TurnPlayback.visibleShots focus) && List.isEmpty (TurnPlayback.movingPositions paused))
-                        , expect "combat spotlights participants before opening the panels"
-                            (Maybe.andThen TurnPlayback.spotlight almostSpotlit /= Nothing && Maybe.andThen TurnPlayback.panels almostSpotlit == Nothing && Maybe.andThen TurnPlayback.spotlight showing == Nothing && Maybe.andThen TurnPlayback.panels showing /= Nothing)
-                        , expect "camera frames combat during both spotlight and theater"
-                            (TurnPlayback.focusPositions focus == [ { x = 2, y = 2 }, { x = 3, y = 2 } ] && Maybe.map TurnPlayback.focusPositions showing == Just (TurnPlayback.focusPositions focus))
-                        , expect "spotlight and map peek never highlight a concealed theater portrait"
-                            (TurnPlayback.start [ { before | units = [ target ] }, hidden, cleanup ]
-                                |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
-                                |> Maybe.map concealedSpotlights
-                                |> (==) (Just { spotlight = Just [ { x = 3, y = 2 } ], mapPeek = Just [ { x = 3, y = 2 } ] })
-                            )
-                        , expect "camera never frames a concealed theater portrait"
-                            (TurnPlayback.start [ { before | units = [ target ] }, hidden, cleanup ]
-                                |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
-                                |> Maybe.map TurnPlayback.focusPositions
-                                |> (==) (Just [ { x = 3, y = 2 } ])
-                            )
-                        , expect "camera frames every combat kind"
-                            (List.all framesCombatKind
-                                [ CombatKind.Ambush, CombatKind.AttackMove, CombatKind.IndirectFire ]
-                            )
-                        , expect "combat retains visible participants without requiring enemy resources"
-                            (Maybe.map (.attacker >> .id) (TurnPlayback.combat focus) == Just first && Maybe.map (.target >> .id) (TurnPlayback.combat focus) == Just second)
-                        , expect "automatic closing waits for two impacts, camera settling, and a half-second pause"
-                            (not (readyAt Kind.Tank 1999 TurnPlayback.CardVisible 8) && readyAt Kind.Tank 2000 TurnPlayback.CardVisible 8)
-                        , expect "automatic closing lets all four casualty animations finish"
-                            (not (readyAt Kind.Tank 2239 TurnPlayback.CardVisible 0) && readyAt Kind.Tank 2240 TurnPlayback.CardVisible 0)
-                        , expect "automatic closing waits for all eight infantry casualties and their shake"
-                            (not (readyAt Kind.Infantry 2719 TurnPlayback.CardVisible 0)
-                                && readyAt Kind.Infantry 2720 TurnPlayback.CardVisible 0
-                            )
-                        , expect "automatic closing waits while seeing the map"
-                            (not (readyAt Kind.Tank 2500 TurnPlayback.SeeingMap 0))
-                        , expect "the panel clock can reach the automatic-close threshold"
-                            (Maybe.andThen TurnPlayback.panels holding |> Maybe.map CombatTheater.readyToAutomaticallyClose |> (==) (Just True))
-                        , expect "combat panels remain open indefinitely without revealing casualties"
-                            (heldFrame == before && Maybe.map .encounter (Maybe.andThen TurnPlayback.panels holding) == Maybe.map .encounter (Maybe.andThen TurnPlayback.panels showing))
-                        , expect "map peek only belongs to an open combat card and clears on continuation"
-                            (TurnPlayback.setMapView TurnPlayback.SeeingMap focus
-                                == focus
-                                && (showing |> Maybe.map (TurnPlayback.setMapView TurnPlayback.SeeingMap) |> Maybe.andThen TurnPlayback.panels |> Maybe.map .mapView)
-                                == Just TurnPlayback.SeeingMap
-                                && Maybe.andThen TurnPlayback.panels resumed
-                                == Nothing
-                            )
-                        , expect "reciprocal shots share one pause and reveal both casualties together"
-                            (Maybe.andThen TurnPlayback.combat resumed == Nothing && hitFrame == volley && Maybe.map TurnPlayback.visibleShots resumed == Just volley.shots)
-                        , expect "continue only advances open panels, never spotlight or ordinary playback"
-                            (TurnPlayback.continueCombat animation == Nothing && TurnPlayback.continueCombat focus == Nothing && Maybe.andThen TurnPlayback.continueCombat resumed == Nothing)
-                        , expect "combat resumes exactly once and retains battlefield feedback duration"
-                            (Maybe.map .elapsed resumed == Just 0 && finished == Nothing && finalFrame == cleanup)
-                        , expect "a concealed attacker still opens the theater without appearing on the battlefield"
-                            ((Maybe.andThen TurnPlayback.combat hiddenPlayback |> Maybe.map (.attacker >> .id))
-                                == Just first
-                                && (Maybe.map (.current >> .units) hiddenPlayback == Just [ target ])
-                            )
-                        , expect "a volley in the final frame still receives combat focus"
-                            (Maybe.andThen TurnPlayback.combat finalShot /= Nothing)
-                        , multipleChecks
+                    audioChecks
+                        ++ List.concat
+                            [ expect "theater sides preserve horizontal map order and use north first for vertical pairs"
+                                (CombatTheater.attackerOnLeft (panelAt { x = 2, y = 2 } { x = 3, y = 2 })
+                                    && not (CombatTheater.attackerOnLeft (panelAt { x = 3, y = 2 } { x = 2, y = 2 }))
+                                    && CombatTheater.attackerOnLeft (panelAt { x = 2, y = 2 } { x = 2, y = 3 })
+                                    && not (CombatTheater.attackerOnLeft (panelAt { x = 2, y = 3 } { x = 2, y = 2 }))
+                                )
+                            , returnFireChecks
+                            , impactChecks
+                            , expect "combat holds the pre-hit board and hides shots and movement"
+                                (frozen == before && List.isEmpty (TurnPlayback.visibleShots focus) && List.isEmpty (TurnPlayback.movingPositions paused))
+                            , expect "combat spotlights participants before opening the panels"
+                                (Maybe.andThen TurnPlayback.spotlight almostSpotlit /= Nothing && Maybe.andThen TurnPlayback.panels almostSpotlit == Nothing && Maybe.andThen TurnPlayback.spotlight showing == Nothing && Maybe.andThen TurnPlayback.panels showing /= Nothing)
+                            , expect "camera frames combat during both spotlight and theater"
+                                (TurnPlayback.focusPositions focus == [ { x = 2, y = 2 }, { x = 3, y = 2 } ] && Maybe.map TurnPlayback.focusPositions showing == Just (TurnPlayback.focusPositions focus))
+                            , expect "spotlight and map peek never highlight a concealed theater portrait"
+                                (TurnPlayback.start
+                                    [ before
+                                        |> TurnPlayback.setFrameUnits
+                                            [ target ]
+                                    , hidden
+                                    , cleanup
+                                    ]
+                                    |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+                                    |> Maybe.map concealedSpotlights
+                                    |> (==) (Just { spotlight = Just [ { x = 3, y = 2 } ], mapPeek = Just [ { x = 3, y = 2 } ] })
+                                )
+                            , expect "camera never frames a concealed theater portrait"
+                                (TurnPlayback.start
+                                    [ before
+                                        |> TurnPlayback.setFrameUnits
+                                            [ target ]
+                                    , hidden
+                                    , cleanup
+                                    ]
+                                    |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
+                                    |> Maybe.map TurnPlayback.focusPositions
+                                    |> (==) (Just [ { x = 3, y = 2 } ])
+                                )
+                            , expect "camera frames every combat kind"
+                                (List.all framesCombatKind
+                                    [ CombatKind.Ambush, CombatKind.AttackMove, CombatKind.IndirectFire ]
+                                )
+                            , expect "combat retains visible participants without requiring enemy resources"
+                                (Maybe.map (.attacker >> .id) (TurnPlayback.combat focus) == Just first && Maybe.map (.target >> .id) (TurnPlayback.combat focus) == Just second)
+                            , expect "automatic closing waits for two impacts, camera settling, and a half-second pause"
+                                (not (readyAt Kind.Tank 2989 TurnPlayback.CardVisible 8) && readyAt Kind.Tank 2990 TurnPlayback.CardVisible 8)
+                            , expect "automatic closing lets all four casualty animations finish"
+                                (not (readyAt Kind.Tank 3229 TurnPlayback.CardVisible 0) && readyAt Kind.Tank 3230 TurnPlayback.CardVisible 0)
+                            , expect "automatic closing waits for all eight infantry casualties and their shake"
+                                (not (readyAt Kind.Infantry 3709 TurnPlayback.CardVisible 0)
+                                    && readyAt Kind.Infantry 3710 TurnPlayback.CardVisible 0
+                                )
+                            , expect "automatic closing waits while seeing the map"
+                                (not (readyAt Kind.Tank 2500 TurnPlayback.SeeingMap 0))
+                            , expect "the panel clock can reach the automatic-close threshold"
+                                (Maybe.andThen TurnPlayback.panels holding |> Maybe.map CombatTheater.readyToAutomaticallyClose |> (==) (Just True))
+                            , expect "combat panels remain open indefinitely without revealing casualties"
+                                (heldFrame == before && Maybe.map .encounter (Maybe.andThen TurnPlayback.panels holding) == Maybe.map .encounter (Maybe.andThen TurnPlayback.panels showing))
+                            , expect "map peek only belongs to an open combat card and clears on continuation"
+                                (TurnPlayback.setMapView TurnPlayback.SeeingMap focus
+                                    == focus
+                                    && (showing |> Maybe.map (TurnPlayback.setMapView TurnPlayback.SeeingMap) |> Maybe.andThen TurnPlayback.panels |> Maybe.map .mapView)
+                                    == Just TurnPlayback.SeeingMap
+                                    && Maybe.andThen TurnPlayback.panels resumed
+                                    == Nothing
+                                )
+                            , expect "reciprocal shots share one pause and reveal both casualties together"
+                                (Maybe.andThen TurnPlayback.combat resumed == Nothing && hitFrame == volley && Maybe.map TurnPlayback.visibleShots resumed == Just volley.shots)
+                            , expect "continue only advances open panels, never spotlight or ordinary playback"
+                                (TurnPlayback.continueCombat animation == Nothing && TurnPlayback.continueCombat focus == Nothing && Maybe.andThen TurnPlayback.continueCombat resumed == Nothing)
+                            , expect "combat resumes exactly once and retains battlefield feedback duration"
+                                (Maybe.map .elapsed resumed == Just 0 && finished == Nothing && finalFrame == cleanup)
+                            , expect "a concealed attacker still opens the theater without appearing on the battlefield"
+                                ((Maybe.andThen TurnPlayback.combat hiddenPlayback |> Maybe.map (.attacker >> .id))
+                                    == Just first
+                                    && (Maybe.map (.current >> .units) hiddenPlayback == Just [ target ])
+                                )
+                            , expect "a volley in the final frame still receives combat focus"
+                                (Maybe.andThen TurnPlayback.combat finalShot /= Nothing)
+                            , multipleChecks
+                            ]
+
+
+mergedImpactChecks : { gun : Unit, target : Unit, before : TurnPlayback.Frame } -> List String
+mergedImpactChecks fixture =
+    case UnitId.parse "3" of
+        Err _ ->
+            [ "could not construct a second indirect gun ID" ]
+
+        Ok third ->
+            let
+                firstGun : Unit
+                firstGun =
+                    fixture.gun |> Unit.setKind Kind.FieldGun
+
+                secondGun : Unit
+                secondGun =
+                    firstGun |> Unit.setId third |> Unit.setOnMap { x = 4, y = 2 }
+
+                hidden : IndirectImpact
+                hidden =
+                    { destination = { x = 3, y = 2 }, attacker = Nothing, target = Nothing, depot = Nothing }
+
+                visible : IndirectImpact
+                visible =
+                    hidden
+                        |> setImpactAttacker
+                            (Just { unit = secondGun, health = { current = 16, maximum = 16 } })
+
+                smaller : IndirectImpact
+                smaller =
+                    hidden
+                        |> setImpactAttacker
+                            (Just { unit = firstGun, health = { current = 4, maximum = 16 } })
+
+                fullFirst : IndirectImpact
+                fullFirst =
+                    hidden
+                        |> setImpactAttacker
+                            (Just { unit = firstGun, health = { current = 16, maximum = 16 } })
+
+                show : List IndirectImpact -> List Shot -> Maybe TurnPlayback.Playback
+                show impacts shots =
+                    let
+                        initial : TurnPlayback.Frame
+                        initial =
+                            fixture.before
+
+                        before : TurnPlayback.Frame
+                        before =
+                            { initial | units = [ firstGun, secondGun, fixture.target ] }
+                    in
+                    TurnPlayback.start
+                        [ before
+                        , before
+                            |> setFrameIndirectImpacts impacts
+                            |> TurnPlayback.setFrameShots shots
                         ]
+                        |> Maybe.andThen (TurnPlayback.tick 180 >> Tuple.first)
+                        |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+
+                hiddenFirst : Maybe TurnPlayback.Playback
+                hiddenFirst =
+                    show [ hidden, visible ] []
+
+                multiple : Maybe TurnPlayback.Playback
+                multiple =
+                    show [ smaller, visible ] []
+
+                participants : TurnPlayback.Panel -> List UnitId
+                participants panel =
+                    case panel.encounter of
+                        TurnPlayback.Impact impact ->
+                            List.map (.unit >> .id) impact.attackers
+
+                        TurnPlayback.Exchange _ ->
+                            []
+
+                times : Maybe TurnPlayback.Playback -> Maybe (List Float)
+                times playback =
+                    playback |> Maybe.andThen TurnPlayback.panels |> Maybe.map (CombatTheater.firingTimes Kind.FieldGun)
+
+                soundsBetween : { before : Float, after : Float } -> Maybe TurnPlayback.Playback -> List Audio.Event
+                soundsBetween interval playback =
+                    let
+                        atTime : Float -> Maybe TurnPlayback.Playback
+                        atTime elapsed =
+                            playback |> Maybe.andThen (TurnPlayback.tick elapsed >> Tuple.first)
+                    in
+                    PlaybackPresentation.audioBetween { before = atTime interval.before, after = atTime interval.after }
+
+                firstHealth : CombatHealth
+                firstHealth =
+                    { before = { current = 16, maximum = 16 }, after = { current = 8, maximum = 16 } }
+
+                lastHealth : CombatHealth
+                lastHealth =
+                    { before = { current = 8, maximum = 16 }, after = { current = 4, maximum = 16 } }
+
+                firstHit : IndirectImpact
+                firstHit =
+                    { smaller
+                        | target = Just { unit = fixture.target, health = firstHealth }
+                        , depot = Just { kind = BuildingKind.Supply, before = { current = 3, maximum = 3 }, after = { current = 2, maximum = 3 } }
+                    }
+
+                lastHit : IndirectImpact
+                lastHit =
+                    { visible
+                        | target = Just { unit = fixture.target, health = lastHealth }
+                        , depot = Just { kind = BuildingKind.Supply, before = { current = 2, maximum = 3 }, after = { current = 1, maximum = 3 } }
+                    }
+
+                confirmed : Shot
+                confirmed =
+                    { kind = CombatKind.IndirectFire
+                    , origin = { x = 4, y = 2 }
+                    , destination = visible.destination
+                    , attacker = secondGun
+                    , target = fixture.target
+                    , damage = 4
+                    , attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }
+                    , targetHealth = lastHealth
+                    }
+
+                damaged : Maybe TurnPlayback.Playback
+                damaged =
+                    show [ firstHit, lastHit ] [ confirmed ]
+
+                combinedDamage : TurnPlayback.Panel -> Bool
+                combinedDamage panel =
+                    case panel.encounter of
+                        TurnPlayback.Impact impact ->
+                            (Maybe.map .health impact.target == Just { before = firstHealth.before, after = lastHealth.after })
+                                && (impact.depot == Just { kind = BuildingKind.Supply, before = { current = 3, maximum = 3 }, after = { current = 1, maximum = 3 } })
+                                && (participants panel == [ firstGun.id, secondGun.id ])
+
+                        TurnPlayback.Exchange _ ->
+                            False
+
+                expect : String -> Bool -> List String
+                expect label passed =
+                    if passed then
+                        []
+
+                    else
+                        [ label ]
+            in
+            List.concat
+                [ expect "a visible gun after a concealed landing retains its formation and all four shot times"
+                    ((hiddenFirst |> Maybe.andThen TurnPlayback.panels |> Maybe.map participants)
+                        == Just [ secondGun.id ]
+                        && times hiddenFirst
+                        == Just [ 1520, 1610, 1700, 1790 ]
+                        && times (show [ visible, hidden ] [])
+                        == times hiddenFirst
+                    )
+                , expect "merged observable guns retain their own health and staggered muzzle times"
+                    ((multiple |> Maybe.andThen TurnPlayback.panels |> Maybe.map participants)
+                        == Just [ firstGun.id, secondGun.id ]
+                        && times multiple
+                        == Just [ 1520, 1520, 1610, 1700, 1790 ]
+                        && times (show [ fullFirst, visible ] [])
+                        == Just [ 1520, 1520, 1610, 1610, 1700, 1700, 1790, 1790 ]
+                    )
+                , expect "landing impacts wait for the last observable gun to recover"
+                    ((multiple |> Maybe.andThen TurnPlayback.panels |> Maybe.map CombatTheater.attackDelay)
+                        == Just 1210
+                        && (hiddenFirst |> Maybe.andThen TurnPlayback.panels |> Maybe.map CombatTheater.attackDelay)
+                        == Just 1210
+                    )
+                , expect "merged indirect audio emits every observed shot exactly once at its muzzle time"
+                    (List.isEmpty (soundsBetween { before = 0, after = 1519 } multiple)
+                        && soundsBetween { before = 1519, after = 1520 } multiple
+                        == List.repeat 2 Audio.fieldGunFire
+                        && soundsBetween { before = 1520, after = 1790 } multiple
+                        == List.repeat 3 Audio.fieldGunFire
+                        && List.isEmpty (soundsBetween { before = 1790, after = 6000 } multiple)
+                    )
+                , expect "concealed landing participants are never inferred from battlefield units"
+                    ((show [ hidden, hidden ] [] |> Maybe.andThen TurnPlayback.panels |> Maybe.map participants)
+                        == Just []
+                        && times (show [ hidden, hidden ] [])
+                        == Just []
+                        && (show [ hidden, hidden ] [] |> Maybe.andThen TurnPlayback.panels |> Maybe.map CombatTheater.attackDelay)
+                        == Just 0
+                        && (hiddenFirst |> Maybe.map TurnPlayback.focusPositions)
+                        == Just [ { x = 4, y = 2 }, { x = 3, y = 2 } ]
+                    )
+                , expect "merged guns preserve one complete target and depot transition without duplicate hit scenes"
+                    ((damaged |> Maybe.andThen TurnPlayback.panels |> Maybe.map combinedDamage)
+                        == Just True
+                        && (damaged |> Maybe.andThen TurnPlayback.continueCombat |> Maybe.map (.animation >> TurnPlayback.activeEncounter))
+                        == Just Nothing
+                    )
+                ]
 
 
 combatDeathChecks : UnitId -> UnitId -> List String
@@ -1611,21 +2285,24 @@ combatDeathChecks first second =
 
                 volley : TurnPlayback.Frame
                 volley =
-                    { before
-                        | durationMs = 450
-                        , units =
+                    before
+                        |> setFrameDurationMs 450
+                        |> TurnPlayback.setFrameUnits
                             [ attacker
                             , target
                                 |> Unit.setDestroyed True
                             , other
                                 |> Unit.setDestroyed True
                             ]
-                        , shots = [ lethalShot target, lethalShot other ]
-                    }
+                        |> TurnPlayback.setFrameShots
+                            [ lethalShot target, lethalShot other ]
 
                 cleanup : TurnPlayback.Frame
                 cleanup =
-                    { before | durationMs = 1400, units = [ attacker ] }
+                    before
+                        |> setFrameDurationMs 1400
+                        |> TurnPlayback.setFrameUnits
+                            [ attacker ]
 
                 openFirst : Maybe TurnPlayback.Playback
                 openFirst =
@@ -1646,9 +2323,16 @@ combatDeathChecks first second =
 
                         attackMoveShot : Shot -> Shot
                         attackMoveShot shot =
-                            { shot | kind = CombatKind.AttackMove }
+                            shot
+                                |> setShotKind CombatKind.AttackMove
                     in
-                    TurnPlayback.losses { animation | current = { current | shots = List.map attackMoveShot current.shots } }
+                    TurnPlayback.losses
+                        (animation
+                            |> setPlaybackCurrent
+                                (current
+                                    |> TurnPlayback.setFrameShots (List.map attackMoveShot current.shots)
+                                )
+                        )
                         |> List.map .cause
 
                 firstHeld : Maybe TurnPlayback.Frame
@@ -1679,16 +2363,24 @@ combatDeathChecks first second =
                 mutual =
                     TurnPlayback.start
                         [ before
-                        , { volley
-                            | units =
+                        , volley
+                            |> TurnPlayback.setFrameUnits
                                 [ attacker
                                     |> Unit.setDestroyed True
                                 , target
                                     |> Unit.setDestroyed True
                                 , other
                                 ]
-                            , shots = [ { reciprocal | origin = reciprocal.destination, destination = reciprocal.origin, attacker = attacker, target = target, attackerHealth = reciprocal.targetHealth, targetHealth = reciprocal.attackerHealth }, reciprocal ]
-                          }
+                            |> TurnPlayback.setFrameShots
+                                [ reciprocal
+                                    |> setShotOrigin reciprocal.destination
+                                    |> setShotDestination reciprocal.origin
+                                    |> setShotAttacker attacker
+                                    |> setShotTarget target
+                                    |> Shot.setAttackerHealth reciprocal.targetHealth
+                                    |> Shot.setTargetHealth reciprocal.attackerHealth
+                                , reciprocal
+                                ]
                         , cleanup
                         ]
                         |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
@@ -1697,24 +2389,32 @@ combatDeathChecks first second =
 
                 concealedDeath : Maybe { animation : TurnPlayback.Playback, frame : TurnPlayback.Frame }
                 concealedDeath =
-                    TurnPlayback.start [ before, { volley | units = [ attacker, other ], shots = [ lethalShot target ] }, cleanup ]
+                    TurnPlayback.start
+                        [ before
+                        , volley
+                            |> TurnPlayback.setFrameUnits
+                                [ attacker, other ]
+                            |> TurnPlayback.setFrameShots
+                                [ lethalShot target ]
+                        , cleanup
+                        ]
                         |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
                         |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
                         |> Maybe.andThen TurnPlayback.continueCombat
 
                 concealedShell : TurnPlayback.Frame
                 concealedShell =
-                    { volley
-                        | units =
+                    volley
+                        |> TurnPlayback.setFrameUnits
                             [ attacker
                             , target
                                 |> Unit.setDestroyed True
                             , other
                             ]
-                        , shots = []
-                        , sabotages = []
-                        , indirectImpacts = [ { destination = { x = 3, y = 2 }, attacker = Nothing, depot = Nothing, target = Just { unit = target, health = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } } } } ]
-                    }
+                        |> TurnPlayback.setFrameShots []
+                        |> setFrameSabotages []
+                        |> setFrameIndirectImpacts
+                            [ { destination = { x = 3, y = 2 }, attacker = Nothing, depot = Nothing, target = Just { unit = target, health = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } } } } ]
 
                 shellDeath : Maybe { animation : TurnPlayback.Playback, frame : TurnPlayback.Frame }
                 shellDeath =
@@ -1770,17 +2470,16 @@ combatDeathChecks first second =
                 bombardment : List Shot -> List IndirectImpact -> Maybe TurnPlayback.Playback
                 bombardment shots impacts =
                     TurnPlayback.start
-                        [ { before
-                            | units =
+                        [ before
+                            |> TurnPlayback.setFrameUnits
                                 [ attacker
                                 , firingGun
                                 ]
-                          }
-                        , { volley
-                            | units = [ attacker, firingGun |> Unit.setDestroyed True ]
-                            , shots = shots
-                            , indirectImpacts = impacts
-                          }
+                        , volley
+                            |> TurnPlayback.setFrameUnits
+                                [ attacker, firingGun |> Unit.setDestroyed True ]
+                            |> TurnPlayback.setFrameShots shots
+                            |> setFrameIndirectImpacts impacts
                         , cleanup
                         ]
                         |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
@@ -1823,7 +2522,9 @@ combatDeathChecks first second =
 
                         carriedBefore : TurnPlayback.Frame
                         carriedBefore =
-                            { before | units = [ attacker, carrier, passenger ] }
+                            before
+                                |> TurnPlayback.setFrameUnits
+                                    [ attacker, carrier, passenger ]
 
                         carriedDeath : TurnPlayback.Frame
                         carriedDeath =
@@ -1845,30 +2546,34 @@ combatDeathChecks first second =
 
                 overkill : Shot
                 overkill =
-                    { reciprocal
-                        | origin = { x = 2, y = 3 }
-                        , destination = { x = 3, y = 2 }
-                        , attacker =
-                            other
+                    reciprocal
+                        |> setShotOrigin
+                            { x = 2, y = 3 }
+                        |> setShotDestination
+                            { x = 3, y = 2 }
+                        |> setShotAttacker
+                            (other
                                 |> Unit.setPlayerNumber PlayerNumber.Player1
-                        , target = target
-                        , attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }
-                        , targetHealth = { before = { current = 0, maximum = 16 }, after = { current = 0, maximum = 16 } }
-                    }
+                            )
+                        |> setShotTarget target
+                        |> Shot.setAttackerHealth
+                            { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }
+                        |> Shot.setTargetHealth
+                            { before = { current = 0, maximum = 16 }, after = { current = 0, maximum = 16 } }
 
                 afterOverkill : Maybe TurnPlayback.Playback
                 afterOverkill =
                     TurnPlayback.start
                         [ before
-                        , { volley
-                            | shots = [ lethalShot target, overkill ]
-                            , units =
+                        , volley
+                            |> TurnPlayback.setFrameShots
+                                [ lethalShot target, overkill ]
+                            |> TurnPlayback.setFrameUnits
                                 [ attacker
                                 , target
                                     |> Unit.setDestroyed True
                                 , other
                                 ]
-                          }
                         , cleanup
                         ]
                         |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
@@ -1878,7 +2583,14 @@ combatDeathChecks first second =
 
                 singlePair : Shot -> Maybe TurnPlayback.CombatExchange
                 singlePair shot =
-                    TurnPlayback.start [ before, { before | durationMs = 450, shots = [ shot ] }, cleanup ]
+                    TurnPlayback.start
+                        [ before
+                        , before
+                            |> setFrameDurationMs 450
+                            |> TurnPlayback.setFrameShots
+                                [ shot ]
+                        , cleanup
+                        ]
                         |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
                         |> Maybe.andThen TurnPlayback.combat
 
@@ -1900,14 +2612,15 @@ combatDeathChecks first second =
 
                 chainAttack : Shot
                 chainAttack =
-                    { reciprocal
-                        | kind = CombatKind.AttackMove
-                        , attacker = chainAttacker
-                        , target = chainDefender
-                        , damage = 1
-                        , attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }
-                        , targetHealth = { before = { current = 16, maximum = 16 }, after = { current = 15, maximum = 16 } }
-                    }
+                    reciprocal
+                        |> setShotKind CombatKind.AttackMove
+                        |> setShotAttacker chainAttacker
+                        |> setShotTarget chainDefender
+                        |> setShotDamage 1
+                        |> Shot.setAttackerHealth
+                            { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }
+                        |> Shot.setTargetHealth
+                            { before = { current = 16, maximum = 16 }, after = { current = 15, maximum = 16 } }
 
                 chain : Bool -> Maybe TurnPlayback.Playback
                 chain concealed =
@@ -1922,7 +2635,8 @@ combatDeathChecks first second =
 
                         opening : TurnPlayback.Frame
                         opening =
-                            { before | units = units }
+                            before
+                                |> TurnPlayback.setFrameUnits units
 
                         dying : Unit -> Unit
                         dying unit =
@@ -1935,13 +2649,17 @@ combatDeathChecks first second =
 
                         landing : TurnPlayback.Frame
                         landing =
-                            { volley
-                                | units = List.map dying units
-                                , shots =
+                            volley
+                                |> TurnPlayback.setFrameUnits (List.map dying units)
+                                |> TurnPlayback.setFrameShots
                                     [ chainAttack
-                                    , { killShot | attacker = chainGun, origin = { x = 2, y = 3 }, targetHealth = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } } }
+                                    , killShot
+                                        |> setShotAttacker chainGun
+                                        |> setShotOrigin
+                                            { x = 2, y = 3 }
+                                        |> Shot.setTargetHealth
+                                            { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } }
                                     ]
-                            }
                     in
                     TurnPlayback.start [ opening, landing, cleanup ]
                         |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
@@ -1969,17 +2687,14 @@ combatDeathChecks first second =
                 , expect "concealed artillery deaths pause at their own impact scene"
                     (Maybe.map (.frame >> dyingIds) shellDeath == Just [ second ])
                 , expect "a gun's simultaneous miss appears before the confirmed hit that destroys it"
-                    (Maybe.andThen TurnPlayback.activeEncounter mixedBombardment == Just (TurnPlayback.Impact gunMiss))
+                    (Maybe.andThen TurnPlayback.activeEncounter mixedBombardment == Just (impactEncounter gunMiss))
                 , expect "merged landings retain the firing dependency of every observable gun"
                     (bombardment [ gunKill ]
                         [ { gunMiss
                             | attacker =
                                 Just
                                     { unit = other
-                                    , health =
-                                        { current = 16
-                                        , maximum = 16
-                                        }
+                                    , health = { current = 16, maximum = 16 }
                                     }
                           }
                         , gunMiss
@@ -1988,15 +2703,13 @@ combatDeathChecks first second =
                         |> (==)
                             (Just
                                 (TurnPlayback.Impact
-                                    { gunMiss
-                                        | attacker =
-                                            Just
-                                                { unit = other
-                                                , health =
-                                                    { current = 16
-                                                    , maximum = 16
-                                                    }
-                                                }
+                                    { destination = gunMiss.destination
+                                    , attackers =
+                                        [ { unit = other, health = { current = 16, maximum = 16 } }
+                                        , { unit = firingGun, health = { current = 16, maximum = 16 } }
+                                        ]
+                                    , target = Nothing
+                                    , depot = Nothing
                                     }
                                 )
                             )
@@ -2010,7 +2723,7 @@ combatDeathChecks first second =
                 , expect "a concealed gun's lethal impact waits for the victim's simultaneous miss"
                     (bombardment [] [ concealedGunKill, gunMiss ]
                         |> Maybe.andThen TurnPlayback.activeEncounter
-                        |> (==) (Just (TurnPlayback.Impact gunMiss))
+                        |> (==) (Just (impactEncounter gunMiss))
                     )
                 , expect "passengers share their carrier's concealed artillery loss event"
                     (Maybe.map (.loss >> .cause) shellCarrierDeath
@@ -2027,9 +2740,21 @@ combatDeathChecks first second =
                 , expect "overkill does not open an empty encounter after the target's death"
                     (Maybe.andThen TurnPlayback.activeEncounter afterOverkill == Nothing && afterOverkill /= Nothing)
                 , expect "zero-damage shots between living combatants still open the theater"
-                    (singlePair { overkill | targetHealth = overkill.attackerHealth, damage = 0 } /= Nothing)
+                    (singlePair
+                        (overkill
+                            |> Shot.setTargetHealth overkill.attackerHealth
+                            |> setShotDamage 0
+                        )
+                        /= Nothing
+                    )
                 , expect "reciprocal damage is retained even when the other participant already died"
-                    (singlePair { overkill | attackerHealth = { before = { current = 16, maximum = 16 }, after = { current = 12, maximum = 16 } } } /= Nothing)
+                    (singlePair
+                        (overkill
+                            |> Shot.setAttackerHealth
+                                { before = { current = 16, maximum = 16 }, after = { current = 12, maximum = 16 } }
+                        )
+                        /= Nothing
+                    )
                 , expect "a simultaneous attack move starts with the enemy's full formation"
                     (chain False |> Maybe.andThen TurnPlayback.combat |> Maybe.map (.attackerHealth >> .before >> .current >> CombatFormation.figureCount Kind.Infantry) |> (==) (Just 8))
                 , expect "a visible attack mover stays on the held board until its later lethal pair"
@@ -2170,7 +2895,10 @@ deathPlaybackChecks id =
 
         initial : TurnPlayback.Frame
         initial =
-            { dying | units = [ alive ], durationMs = 0 }
+            dying
+                |> TurnPlayback.setFrameUnits
+                    [ alive ]
+                |> setFrameDurationMs 0
 
         delayed : Maybe ( Maybe TurnPlayback.Playback, TurnPlayback.Frame )
         delayed =
@@ -2248,11 +2976,15 @@ deathFocusChecks first second =
 
         paused : TurnPlayback.Frame
         paused =
-            { dying | durationMs = 1400 }
+            dying
+                |> setFrameDurationMs 1400
 
         moved : TurnPlayback.Frame
         moved =
-            { dying | durationMs = 180, units = [ dead, Unit.setOnMap { x = 4, y = 2 } survivor ] }
+            dying
+                |> setFrameDurationMs 180
+                |> TurnPlayback.setFrameUnits
+                    [ dead, Unit.setOnMap { x = 4, y = 2 } survivor ]
 
         expect : String -> Bool -> List String
         expect label passed =
@@ -2280,22 +3012,32 @@ deathFocusChecks first second =
                 ++ expect "surviving units resume their movement after death focus" (List.map .unitId (TurnPlayback.movingPositions after) == [ second ])
                 ++ expect "carrier passengers inherit the carrier's loss cause"
                     (TurnPlayback.losses
-                        { animation
-                            | current =
-                                { dying
-                                    | units =
+                        (animation
+                            |> setPlaybackCurrent
+                                (dying
+                                    |> TurnPlayback.setFrameUnits
                                         [ dead
                                         , survivor
                                             |> Unit.setDestroyed True
                                             |> Unit.setLocation (Location.Aboard first)
                                         ]
-                                }
-                        }
+                                )
+                        )
                         |> List.map .cause
                         |> (==) [ TurnPlayback.SuppliesExhausted, TurnPlayback.CarrierLost dead TurnPlayback.SuppliesExhausted ]
                     )
                 ++ expect "loss dialogs never invent hidden casualties"
-                    (List.isEmpty (TurnPlayback.losses { animation | current = { dying | units = [ survivor ] } }))
+                    (List.isEmpty
+                        (TurnPlayback.losses
+                            (animation
+                                |> setPlaybackCurrent
+                                    (dying
+                                        |> TurnPlayback.setFrameUnits
+                                            [ survivor ]
+                                    )
+                            )
+                        )
+                    )
 
 
 combatTheaterChecks : List String
@@ -2365,6 +3107,47 @@ combatTheaterChecks =
             (List.concatMap paths themes == expectedPaths)
         , expect "a full formation's four losses finish before the panel clock caps at 2000ms"
             (CombatFormation.lossStartsAt { surviving = 0, index = 3 } + CombatExplosion.durationMs <= 2000)
+        , expect "tank flash precedes recoil by 30ms, then recovery holds the final ready drawing"
+            (List.map (CombatAttack.frameAt Kind.Tank) [ -1, 0, 29, 30, 89, 90, 179, 180, 299, 300, 439, 440, 619, 620, 6000 ]
+                == [ 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7 ]
+            )
+        , expect "four tanks fire 90ms apart and finish recovery before any incoming hit"
+            (CombatAttack.endsAt (CombatAttack.Attacking { startsAt = 1200 }) Kind.Tank 4
+                == 2090
+                && CombatAttack.endsAt (CombatAttack.Attacking { startsAt = 1200 }) Kind.Tank 1
+                == 1820
+                && CombatAttack.firingTimes (CombatAttack.Attacking { startsAt = 1200 }) Kind.Tank 4
+                == [ 1200, 1290, 1380, 1470 ]
+                && CombatAttack.endsAt CombatAttack.NotAttacking Kind.Tank 4
+                == 0
+                && CombatAttack.endsAt (CombatAttack.Attacking { startsAt = 1200 }) Kind.Tank 0
+                == 0
+            )
+        , expect "units without firing artwork keep their existing timeline"
+            (CombatAttack.endsAt (CombatAttack.Attacking { startsAt = 1200 }) Kind.Infantry 8
+                == 0
+                && CombatAttack.endsAt (CombatAttack.Attacking { startsAt = 1200 }) Kind.Truck 4
+                == 0
+            )
+        , expect "field-gun crews signal, brace, fire, recoil, recover once, and hold the final drawing"
+            (List.map (CombatAttack.frameAt Kind.FieldGun) [ -1, 0, 219, 220, 319, 320, 389, 390, 499, 500, 659, 660, 839, 840, 6000 ]
+                == [ 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7 ]
+            )
+        , expect "field-gun flash timestamps follow the 320ms crew preparation and 90ms figure stagger"
+            (CombatAttack.firingTimes (CombatAttack.Attacking { startsAt = 1200 }) Kind.FieldGun 4
+                == [ 1520, 1610, 1700, 1790 ]
+                && List.isEmpty (CombatAttack.firingTimes CombatAttack.NotAttacking Kind.FieldGun 4)
+            )
+        , expect "field-gun formations finish after every crew recovers, using their before-health figure count"
+            (CombatAttack.endsAt (CombatAttack.Attacking { startsAt = 1200 }) Kind.FieldGun 4
+                == 2310
+                && CombatAttack.endsAt (CombatAttack.Attacking { startsAt = 1200 }) Kind.FieldGun 1
+                == 2040
+                && CombatAttack.endsAt CombatAttack.NotAttacking Kind.FieldGun 4
+                == 0
+                && CombatAttack.endsAt (CombatAttack.Attacking { startsAt = 1200 }) Kind.FieldGun 0
+                == 0
+            )
         ]
 
 
@@ -2548,7 +3331,15 @@ carrierLossEventChecks first second =
 
                 animation : TurnPlayback.Playback
                 animation =
-                    { current = frame, remaining = [ { frame | units = [] } ], elapsed = 0, presentation = TurnPlayback.Battlefield, acknowledgedLosses = [] }
+                    { current = frame
+                    , remaining =
+                        [ frame
+                            |> TurnPlayback.setFrameUnits []
+                        ]
+                    , elapsed = 0
+                    , presentation = TurnPlayback.Battlefield
+                    , acknowledgedLosses = []
+                    }
 
                 shot : Shot
                 shot =
@@ -2567,7 +3358,12 @@ carrierLossEventChecks first second =
 
                 combatAnimation : TurnPlayback.Playback
                 combatAnimation =
-                    { animation | current = { frame | shots = [ shot ] } }
+                    animation
+                        |> setPlaybackCurrent
+                            (frame
+                                |> TurnPlayback.setFrameShots
+                                    [ shot ]
+                            )
 
                 acknowledged : TurnPlayback.Playback
                 acknowledged =
@@ -2595,7 +3391,16 @@ carrierLossEventChecks first second =
                 , expect "one continuation releases playback when only the carrier event remains"
                     (Tuple.first (TurnPlayback.tickUntilLoss 60000 (TurnPlayback.acknowledgeLoss fourth acknowledged)) == Nothing)
                 , expect "concealed passengers are never added to the event"
-                    (TurnPlayback.lossEvent { animation | current = { frame | units = [ truck ] } } == Just { loss = { unit = truck, cause = TurnPlayback.SuppliesExhausted }, passengers = [] })
+                    (TurnPlayback.lossEvent
+                        (animation
+                            |> setPlaybackCurrent
+                                (frame
+                                    |> TurnPlayback.setFrameUnits
+                                        [ truck ]
+                                )
+                        )
+                        == Just { loss = { unit = truck, cause = TurnPlayback.SuppliesExhausted }, passengers = [] }
+                    )
                 ]
 
         _ ->

@@ -16,6 +16,14 @@ the design direction changes. User feedback takes precedence.
   component-specific styling belongs in the component module.
 - Verify real content, focus, loading, errors, and narrow layouts in the browser.
 
+## UI sound
+
+Use short recordings of physical switches for tactile command feedback. Affirm
+uses the desk-lamp switch press, cancel its release, and confirm the more
+substantial old-switch audition A. Preserve their recorded texture and original
+pitch, with short edge fades. Runtime files and source credits are documented in
+`public/audio/README.md`.
+
 ## Typography and copy
 
 - All visible UI text is lowercase: titles, labels, buttons, instructions,
@@ -409,6 +417,9 @@ omits this decorative cycle and retains the original green background.
   Stagger unit phases by stable ID. Keep feet, wheels and tracks planted. Use light sky blue and
   moderately light warm orange-red uniform and vehicle paint while preserving
   skin, metal, wheels and canvas.
+  Use the approved `artwork/units/illustrated/rigged/tank-red.png` and
+  `tank-blue.png` masters as the base team-color references for future illustrated
+  assets. These painted colors are separate from the UI palette's swatches.
   Field guns use four drawn elevation poses in strict side profile. Keep barrel
   dimensions consistent, the carriage planted, and the operator moving naturally
   at the rear controls. A tall wheel and solid shield give the unit a square footprint.
@@ -612,9 +623,26 @@ Field-gun formations use one full-size gun centered in the foreground and three
 smaller guns scattered horizontally behind it, with shallow vertical variation.
 Keep their placements stable through impacts and paint from back to front.
 Hold the scene for one second after the opening animation finishes before combat
-begins. Use the server's per-pair before/after health, including
+begins. Attacking tank figures fire once, 90ms apart, using red and blue color edits
+of the approved eight drawn poses. Hold the ready drawing until the flash, then
+begin recoil 30ms later. Recover directly to the original level stance without
+an anticipation dip or forward overshoot; hold the matching final rest drawing
+as the smoke clears. Complete the sequence in 620ms. Keep the track anchor aligned
+with the static portrait's center and footing. Recorded return fire begins 45ms after the primary formation; receiving a
+shot alone never triggers firing. Firing field guns use red and blue color edits
+of the approved eight complete drawings, mirrored toward the opponent.
+The chief signals, the four crew members brace and react, and the barrel and
+breech recoil amid the flash, smoke, and dust. Use 320ms of preparation before
+the flash and 840ms for the complete signal/recoil/recovery sequence, staggering
+figures by the same 90ms. Keep the wheel aligned with the static portrait and
+hold the final pose after recovery. Observable indirect-fire guns use this same
+sequence. Wait for all firing figures to recover (620ms per tank, 840ms per field
+gun) and a 100ms travel beat before any participant hit. Unsupported unit kinds
+retain the existing timing until their attack artwork is added. Reduced motion
+keeps the original still portraits while preserving this sequence's timing.
+Use the server's per-pair before/after health, including
 observable enemies, without theater HP bars. Lost figures play a six-frame illustrated horizontal projectile impact over 100ms,
-beginning at 1200ms with losses staggered by 120ms. Draw impacts above the entire formation so neighboring figures cannot obscure
+beginning at 1200ms plus any firing phase, with losses staggered by 120ms. Draw impacts above the entire formation so neighboring figures cannot obscure
 the projectile. The moving projectile approach and contact each get 10ms, followed by a 30ms impact
 flash and 30ms pressure blast. Only 20ms remains for the two clearing frames. The shockwave blows
 apart and vanishes, with no ember or lingering smoke phase. Each casualty fades

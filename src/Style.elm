@@ -33,6 +33,7 @@ module Style exposing
     , bgYellow1
     , bgYellow2
     , bgYellow4
+    , blackStr
     , block
     , blue1Str
     , border

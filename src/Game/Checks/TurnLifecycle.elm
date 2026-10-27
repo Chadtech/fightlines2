@@ -33,6 +33,31 @@ import Platform
 port results : List String -> Cmd msg
 
 
+setTurnNumber : Int -> Turn.Snapshot -> Turn.Snapshot
+setTurnNumber number model =
+    { model | number = number }
+
+
+setTurnSubmitted : Bool -> Turn.Snapshot -> Turn.Snapshot
+setTurnSubmitted submitted model =
+    { model | submitted = submitted }
+
+
+setTurnOpponentSubmitted : Bool -> Turn.Snapshot -> Turn.Snapshot
+setTurnOpponentSubmitted opponentSubmitted model =
+    { model | opponentSubmitted = opponentSubmitted }
+
+
+setTurnOutcome : Maybe GameOutcome -> Turn.Snapshot -> Turn.Snapshot
+setTurnOutcome outcome model =
+    { model | outcome = outcome }
+
+
+setObservationTurn : Turn.Snapshot -> CurrentTurn.Observation -> CurrentTurn.Observation
+setObservationTurn turn model =
+    { model | turn = turn }
+
+
 main : Program () () Never
 main =
     Platform.worker
@@ -646,7 +671,11 @@ currentTurnChecks =
 
         nextObservation : CurrentTurn.Observation
         nextObservation =
-            { turn = { turn | number = 2, submitted = False, opponentSubmitted = False }
+            { turn =
+                turn
+                    |> setTurnNumber 2
+                    |> setTurnSubmitted False
+                    |> setTurnOpponentSubmitted False
             , playbackFrames = frames
             }
 
@@ -660,21 +689,48 @@ currentTurnChecks =
 
         monotonic : CurrentTurn.Model
         monotonic =
-            CurrentTurn.pollSucceeded { observation | turn = { turn | submitted = False, opponentSubmitted = False } } waiting
+            CurrentTurn.pollSucceeded
+                (observation
+                    |> setObservationTurn
+                        (turn
+                            |> setTurnSubmitted False
+                            |> setTurnOpponentSubmitted False
+                        )
+                )
+                waiting
 
         finished : CurrentTurn.Model
         finished =
             CurrentTurn.pollSucceeded
-                { observation | turn = { turn | number = 2, submitted = False, outcome = Just (GameOutcome.Victory PlayerNumber.Player1) }, playbackFrames = [] }
+                ({ observation | playbackFrames = [] }
+                    |> setObservationTurn
+                        (turn
+                            |> setTurnNumber 2
+                            |> setTurnSubmitted False
+                            |> setTurnOutcome (Just (GameOutcome.Victory PlayerNumber.Player1))
+                        )
+                )
                 waiting
 
         finishedOnRefresh : CurrentTurn.Model
         finishedOnRefresh =
-            CurrentTurn.init { turn = { turn | outcome = Just (GameOutcome.Victory PlayerNumber.Player1), submitted = False }, playbackFrames = [] }
+            CurrentTurn.init
+                { turn =
+                    turn
+                        |> setTurnOutcome (Just (GameOutcome.Victory PlayerNumber.Player1))
+                        |> setTurnSubmitted False
+                , playbackFrames = []
+                }
 
         resignation : CurrentTurn.Observation
         resignation =
-            { observation | turn = { turn | number = 2, submitted = False, outcome = Just (GameOutcome.Resignation PlayerNumber.Player2) } }
+            observation
+                |> setObservationTurn
+                    (turn
+                        |> setTurnNumber 2
+                        |> setTurnSubmitted False
+                        |> setTurnOutcome (Just (GameOutcome.Resignation PlayerNumber.Player2))
+                    )
 
         resigned : CurrentTurn.Model
         resigned =
@@ -754,7 +810,19 @@ currentTurnChecks =
         , expect "beginning the next turn permanently removes replay access for that introduction"
             (CurrentTurn.replay (CurrentTurn.acknowledgeIntroduction introduced)
                 == Nothing
-                && not (CurrentTurn.canReplay (CurrentTurn.pollSucceeded { observation | turn = { turn | number = 2, submitted = False } } (CurrentTurn.acknowledgeIntroduction introduced)))
+                && not
+                    (CurrentTurn.canReplay
+                        (CurrentTurn.pollSucceeded
+                            (observation
+                                |> setObservationTurn
+                                    (turn
+                                        |> setTurnNumber 2
+                                        |> setTurnSubmitted False
+                                    )
+                            )
+                            (CurrentTurn.acknowledgeIntroduction introduced)
+                        )
+                    )
             )
         , expect "same-turn polling preserves the retained replay frames"
             (CurrentTurn.replay (CurrentTurn.pollSucceeded { nextObservation | playbackFrames = [] } introduced) == replayed)
@@ -771,11 +839,38 @@ currentTurnChecks =
         , expect "refresh announces a finished game without replaying combat"
             (CurrentTurn.introductionPending finishedOnRefresh && TurnLifecycle.playback finishedOnRefresh.phase == Nothing)
         , expect "dismissed result stays dismissed during polling"
-            (not (CurrentTurn.introductionPending (CurrentTurn.pollSucceeded { observation | turn = { turn | number = 2, submitted = False, outcome = Just (GameOutcome.Victory PlayerNumber.Player1) } } (CurrentTurn.acknowledgeIntroduction finished))))
+            (not
+                (CurrentTurn.introductionPending
+                    (CurrentTurn.pollSucceeded
+                        (observation
+                            |> setObservationTurn
+                                (turn
+                                    |> setTurnNumber 2
+                                    |> setTurnSubmitted False
+                                    |> setTurnOutcome (Just (GameOutcome.Victory PlayerNumber.Player1))
+                                )
+                        )
+                        (CurrentTurn.acknowledgeIntroduction finished)
+                    )
+                )
+            )
         , expect "planning starts with a turn introduction"
             (CurrentTurn.introductionPending initial)
         , expect "acknowledgment survives same-turn polling"
-            (not (CurrentTurn.introductionPending (CurrentTurn.pollSucceeded { observation | turn = { turn | submitted = False, opponentSubmitted = False } } (CurrentTurn.acknowledgeIntroduction initial))))
+            (not
+                (CurrentTurn.introductionPending
+                    (CurrentTurn.pollSucceeded
+                        (observation
+                            |> setObservationTurn
+                                (turn
+                                    |> setTurnSubmitted False
+                                    |> setTurnOpponentSubmitted False
+                                )
+                        )
+                        (CurrentTurn.acknowledgeIntroduction initial)
+                    )
+                )
+            )
         , expect "submitted turns do not show an introduction"
             (not (CurrentTurn.introductionPending (CurrentTurn.init observation)))
         , expect "new introduction waits until playback finishes"

@@ -2,6 +2,7 @@ module Game.TurnPlayback exposing
     ( CombatExchange
     , Encounter(..)
     , Frame
+    , ImpactEncounter
     , Loss
     , LossCause(..)
     , LossEvent
@@ -20,6 +21,8 @@ module Game.TurnPlayback exposing
     , movingPositions
     , panels
     , selection
+    , setFrameShots
+    , setFrameUnits
     , setMapView
     , spotlight
     , start
@@ -75,7 +78,18 @@ type alias Departure =
 
 type Encounter
     = Exchange CombatExchange
-    | Impact IndirectImpact
+    | Impact ImpactEncounter
+
+
+{-| One landing scene combines target and depot damage while retaining every
+observed firing participant. Concealed origins have no entry in attackers.
+-}
+type alias ImpactEncounter =
+    { destination : Coordinate
+    , attackers : List IndirectImpact.Attacker
+    , target : Maybe IndirectImpact.Target
+    , depot : Maybe IndirectImpact.BuildingImpact
+    }
 
 
 type alias Playback =
@@ -124,6 +138,7 @@ type alias CombatExchange =
     , target : Unit
     , attackerHealth : CombatHealth
     , targetHealth : CombatHealth
+    , targetFired : Bool
     }
 
 
@@ -143,6 +158,31 @@ type LossCause
     | ConcealedIndirectFire
     | SuppliesExhausted
     | CarrierLost Unit LossCause
+
+
+setPresentation : Presentation -> Playback -> Playback
+setPresentation presentation model =
+    { model | presentation = presentation }
+
+
+setElapsed : Float -> Playback -> Playback
+setElapsed elapsed model =
+    { model | elapsed = elapsed }
+
+
+setFrameShots : List Shot -> Frame -> Frame
+setFrameShots shots model =
+    { model | shots = shots }
+
+
+setFrameUnits : List Unit -> Frame -> Frame
+setFrameUnits units model =
+    { model | units = units }
+
+
+setCombatFocusStage : CombatStage -> CombatFocus -> CombatFocus
+setCombatFocusStage stage model =
+    { model | stage = stage }
 
 
 {-| Only projected casualties are reported. Encounter portraits can explain a
@@ -420,6 +460,8 @@ exchanges frame =
                     , target = shot.target
                     , attackerHealth = shot.attackerHealth
                     , targetHealth = shot.targetHealth
+                    , targetFired =
+                        List.any (\other -> not (differentPair other) && other.attacker.id == shot.target.id) rest
                     }
                         :: remaining
     in
@@ -450,7 +492,7 @@ Confirmed indirect shots already have their own exchange at the same landing.
 encounters : Frame -> List Encounter
 encounters frame =
     let
-        needsImpactScene : IndirectImpact -> Bool
+        needsImpactScene : ImpactEncounter -> Bool
         needsImpactScene impact =
             let
                 confirmsLanding : Shot -> Bool
@@ -473,14 +515,19 @@ encounters frame =
             in
             not includesDepotDamage
 
-        unique : IndirectImpact -> List IndirectImpact -> List IndirectImpact
+        unique : IndirectImpact -> List ImpactEncounter -> List ImpactEncounter
         unique impact impacts =
             let
-                merge : IndirectImpact -> IndirectImpact
+                attackers : List IndirectImpact.Attacker
+                attackers =
+                    impact.attacker |> Maybe.map List.singleton |> Maybe.withDefault []
+
+                merge : ImpactEncounter -> ImpactEncounter
                 merge existing =
                     if existing.destination == impact.destination then
                         { existing
-                            | target = combineImpactTargets existing.target impact.target
+                            | attackers = existing.attackers ++ attackers
+                            , target = combineImpactTargets existing.target impact.target
                             , depot =
                                 case ( existing.depot, impact.depot ) of
                                     ( Just earlier, Just later ) ->
@@ -500,7 +547,13 @@ encounters frame =
                 List.map merge impacts
 
             else
-                impacts ++ [ impact ]
+                impacts
+                    ++ [ { destination = impact.destination
+                         , attackers = attackers
+                         , target = impact.target
+                         , depot = impact.depot
+                         }
+                       ]
 
         combatEncounters : List Encounter
         combatEncounters =
@@ -543,14 +596,7 @@ orderEncounters frame pending =
                     frame.shots |> List.filter samePair |> List.map (.attacker >> .id)
 
                 Impact impact ->
-                    let
-                        sameDestination : IndirectImpact -> Bool
-                        sameDestination landing =
-                            landing.destination == impact.destination
-                    in
-                    frame.indirectImpacts
-                        |> List.filter sameDestination
-                        |> List.filterMap (.attacker >> Maybe.map (.unit >> .id))
+                    List.map (.unit >> .id) impact.attackers
 
         canPresent : Encounter -> Bool
         canPresent candidate =
@@ -662,7 +708,9 @@ beginFrame transition pending =
                     Combat
                         { encounter = encounter
                         , remaining = rest
-                        , before = { before | shots = [] }
+                        , before =
+                            before
+                                |> setFrameShots []
                         , stage = Spotlighting 0
                         }
 
@@ -740,17 +788,24 @@ combineReturnFire opening pending =
 
                                         shots : List Shot
                                         shots =
-                                            [ { shot
-                                                | attackerHealth = attackerHealth
-                                                , targetHealth = targetHealth
-                                              }
-                                            , { returnShot
-                                                | attackerHealth = targetHealth
-                                                , targetHealth = attackerHealth
-                                              }
+                                            [ (shot
+                                                |> Shot.setTargetHealth
+                                                    targetHealth
+                                              )
+                                                |> Shot.setAttackerHealth
+                                                    attackerHealth
+                                            , (returnShot
+                                                |> Shot.setTargetHealth
+                                                    attackerHealth
+                                              )
+                                                |> Shot.setAttackerHealth
+                                                    targetHealth
                                             ]
                                     in
-                                    ( { frame | shots = shots }, rest )
+                                    ( frame
+                                        |> setFrameShots shots
+                                    , rest
+                                    )
 
                                 else
                                     ( opening, pending )
@@ -859,7 +914,9 @@ clearPresentedDeaths presented frames =
                         (\unit -> not (List.member unit.id presented))
                         frame.units
             in
-            { frame | units = units }
+            (frame
+                |> setFrameUnits units
+            )
                 :: clearPresentedDeaths (deaths ++ presented) remaining
 
 
@@ -925,22 +982,22 @@ tickPresentation lossPolicy delta playback =
                         advanceCombat
                             { focus
                                 | before =
-                                    { before | units = List.filter keepSurvivor before.units }
+                                    before
+                                        |> setFrameUnits (List.filter keepSurvivor before.units)
                             }
                             { playback
                                 | current =
-                                    { current
-                                        | units = List.filter keepSurvivor current.units
-                                    }
+                                    current
+                                        |> setFrameUnits (List.filter keepSurvivor current.units)
                             }
                 in
                 ( Just advanced.animation, advanced.frame )
 
             else
                 ( Just
-                    { playback
-                        | presentation = Deaths { deaths | elapsed = deaths.elapsed + delta }
-                    }
+                    (playback
+                        |> setPresentation (Deaths { deaths | elapsed = deaths.elapsed + delta })
+                    )
                 , deaths.frame
                 )
 
@@ -965,7 +1022,15 @@ tickCombat delta focus playback =
                     -- Allow staggered unit casualties followed by a depot strike and automatic-close pause.
                     ShowingPanels { panel | elapsed = min 6000 (panel.elapsed + delta) }
     in
-    ( Just { playback | presentation = Combat { focus | stage = stage } }
+    ( Just
+        (playback
+            |> setPresentation
+                (Combat
+                    (focus
+                        |> setCombatFocusStage stage
+                    )
+                )
+        )
     , focus.before
     )
 
@@ -976,13 +1041,13 @@ setMapView mapView playback =
         Combat focus ->
             case focus.stage of
                 ShowingPanels panel ->
-                    { playback
-                        | presentation =
-                            Combat
-                                { focus
-                                    | stage = ShowingPanels { panel | mapView = mapView }
-                                }
-                    }
+                    playback
+                        |> setPresentation
+                            (Combat
+                                (focus
+                                    |> setCombatFocusStage (ShowingPanels { panel | mapView = mapView })
+                                )
+                            )
 
                 Spotlighting _ ->
                     playback
@@ -1010,7 +1075,9 @@ continueCombat playback =
                     in
                     if List.any Unit.isDying frame.units then
                         Just
-                            { animation = { playback | presentation = Deaths { focus = focus, frame = frame, elapsed = 0 } }
+                            { animation =
+                                playback
+                                    |> setPresentation (Deaths { focus = focus, frame = frame, elapsed = 0 })
                             , frame = frame
                             }
 
@@ -1067,7 +1134,8 @@ exchangeDeathFrame projected focus =
             unit
                 |> Unit.setDestroyed destroyed
     in
-    { before | units = List.map present before.units }
+    before
+        |> setFrameUnits (List.map present before.units)
 
 
 advanceCombat : CombatFocus -> Playback -> { animation : Playback, frame : Frame }
@@ -1075,20 +1143,21 @@ advanceCombat focus playback =
     case focus.remaining of
         encounter :: rest ->
             { animation =
-                { playback
-                    | presentation =
-                        Combat
-                            { focus
-                                | encounter = encounter
-                                , remaining = rest
-                                , stage = Spotlighting 0
-                            }
-                }
+                playback
+                    |> setPresentation
+                        (Combat
+                            ({ focus | encounter = encounter, remaining = rest }
+                                |> setCombatFocusStage (Spotlighting 0)
+                            )
+                        )
             , frame = focus.before
             }
 
         [] ->
-            { animation = { playback | presentation = Battlefield, elapsed = 0 }
+            { animation =
+                playback
+                    |> setPresentation Battlefield
+                    |> setElapsed 0
             , frame = playback.current
             }
 
@@ -1127,7 +1196,9 @@ tickBattlefield lossPolicy delta playback =
 
             else
                 ( Just
-                    { playback | elapsed = elapsed }
+                    (playback
+                        |> setElapsed elapsed
+                    )
                 , presentationFrame playback next
                 )
 
@@ -1319,11 +1390,13 @@ encounterPositions frame encounter =
             let
                 attackerPositions : List Coordinate
                 attackerPositions =
-                    impact.attacker
-                        |> Maybe.andThen (\attacker -> ListUtil.find (\unit -> unit.id == attacker.unit.id) frame.units)
+                    impact.attackers
+                        |> List.filterMap attackerPosition
+
+                attackerPosition : IndirectImpact.Attacker -> Maybe Coordinate
+                attackerPosition attacker =
+                    ListUtil.find (\unit -> unit.id == attacker.unit.id) frame.units
                         |> Maybe.andThen (Unit.physicalPosition frame.units)
-                        |> Maybe.map List.singleton
-                        |> Maybe.withDefault []
             in
             attackerPositions ++ [ impact.destination ]
 

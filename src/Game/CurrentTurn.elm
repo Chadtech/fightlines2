@@ -10,6 +10,9 @@ module Game.CurrentTurn exposing
     , pollFailed
     , pollSucceeded
     , replay
+    , setError
+    , setPhase
+    , setRefreshing
     , setSelection
     , startSubmission
     , submissionFailed
@@ -104,7 +107,8 @@ introductionPending model =
 
 acknowledgeIntroduction : Model -> Model
 acknowledgeIntroduction model =
-    { model | introduction = IntroductionAcknowledged }
+    model
+        |> setIntroduction IntroductionAcknowledged
 
 
 {-| Replay is available only before acknowledging the new turn's introduction.
@@ -126,7 +130,9 @@ replay model =
         case model.introduction of
             AwaitingIntroduction ((first :: _) as frames) ->
                 Just
-                    { currentTurn = { model | phase = TurnLifecycle.startTurn False frames }
+                    { currentTurn =
+                        model
+                            |> setPhase (TurnLifecycle.startTurn False frames)
                     , frame = first
                     }
 
@@ -148,7 +154,8 @@ mapPlanning transition model =
     let
         withPlanning : OrderPlanning.Model -> Model
         withPlanning state =
-            { model | phase = TurnLifecycle.Planning state }
+            model
+                |> setPhase (TurnLifecycle.Planning state)
     in
     case ( model.outcome, model.phase ) of
         ( Nothing, TurnLifecycle.Planning state ) ->
@@ -161,7 +168,8 @@ mapPlanning transition model =
 
 setSelection : Maybe Selection -> Model -> Model
 setSelection selected model =
-    { model | phase = TurnLifecycle.setSelection selected model.phase }
+    model
+        |> setPhase (TurnLifecycle.setSelection selected model.phase)
 
 
 startSubmission : Model -> Maybe Model
@@ -173,7 +181,11 @@ startSubmission model =
     in
     case ( model.outcome, model.phase, phase ) of
         ( Nothing, TurnLifecycle.Planning _, TurnLifecycle.Submitting _ ) ->
-            Just { model | phase = phase, error = Nothing }
+            Just
+                (model
+                    |> setPhase phase
+                    |> setError Nothing
+                )
 
         _ ->
             Nothing
@@ -186,13 +198,14 @@ submissionSucceeded originatingTurn observation model =
 
     else
         receive observation
-            { model
-                | phase =
-                    TurnLifecycle.finishSubmission
+            (model
+                |> setPhase
+                    (TurnLifecycle.finishSubmission
                         originatingTurn
                         model.phase
-                , error = Nothing
-            }
+                    )
+                |> setError Nothing
+            )
 
 
 submissionFailed : Int -> String -> Model -> Model
@@ -200,10 +213,9 @@ submissionFailed originatingTurn error model =
     case model.phase of
         TurnLifecycle.Submitting _ ->
             if originatingTurn == model.number then
-                { model
-                    | phase = TurnLifecycle.finishSubmission originatingTurn model.phase
-                    , error = Just error
-                }
+                model
+                    |> setPhase (TurnLifecycle.finishSubmission originatingTurn model.phase)
+                    |> setError (Just error)
 
             else
                 model
@@ -220,15 +232,21 @@ pollSucceeded observation model =
             (TurnLifecycle.playback model.phase /= Nothing) && not (GameOutcome.isResignation observation.turn.outcome)
     in
     if preservePlayback then
-        { model | refreshing = False }
+        model
+            |> setRefreshing False
 
     else
-        receive observation { model | refreshing = False }
+        receive observation
+            (model
+                |> setRefreshing False
+            )
 
 
 pollFailed : String -> Model -> Model
 pollFailed error model =
-    { model | refreshing = False, error = Just error }
+    model
+        |> setRefreshing False
+        |> setError (Just error)
 
 
 
@@ -237,21 +255,60 @@ pollFailed error model =
 ----------------------------------------------------------------
 
 
+setIntroduction : Introduction -> Model -> Model
+setIntroduction introduction model =
+    { model | introduction = introduction }
+
+
+setPhase : Phase -> Model -> Model
+setPhase phase model =
+    { model | phase = phase }
+
+
+setError : Maybe String -> Model -> Model
+setError error model =
+    { model | error = error }
+
+
+setRefreshing : Bool -> Model -> Model
+setRefreshing refreshing model =
+    { model | refreshing = refreshing }
+
+
+setNumber : Int -> Model -> Model
+setNumber number model =
+    { model | number = number }
+
+
+setOutcome : Maybe GameOutcome -> Model -> Model
+setOutcome outcome model =
+    { model | outcome = outcome }
+
+
+setOpponentSubmitted : Bool -> Model -> Model
+setOpponentSubmitted opponentSubmitted model =
+    { model | opponentSubmitted = opponentSubmitted }
+
+
+setResolution : Maybe Turn.Resolution -> Model -> Model
+setResolution resolution model =
+    { model | resolution = resolution }
+
+
 receive : Observation -> Model -> Model
 receive observation model =
     if model.outcome /= Nothing then
         model
 
     else if GameOutcome.isResignation observation.turn.outcome then
-        { model
-            | number = observation.turn.number
-            , outcome = observation.turn.outcome
-            , opponentSubmitted = observation.turn.opponentSubmitted
-            , resolution = Nothing
-            , phase = TurnLifecycle.Planning OrderPlanning.init
-            , error = Nothing
-            , introduction = AwaitingIntroduction []
-        }
+        model
+            |> setNumber observation.turn.number
+            |> setOutcome observation.turn.outcome
+            |> setOpponentSubmitted observation.turn.opponentSubmitted
+            |> setResolution Nothing
+            |> setPhase (TurnLifecycle.Planning OrderPlanning.init)
+            |> setError Nothing
+            |> setIntroduction (AwaitingIntroduction [])
 
     else if observation.turn.number < model.number then
         model
@@ -276,23 +333,21 @@ receive observation model =
                 else
                     phase
         in
-        { model
-            | outcome = observation.turn.outcome
-            , opponentSubmitted = model.opponentSubmitted || observation.turn.opponentSubmitted
-            , resolution = observation.turn.resolution
-            , phase = reconciledPhase
-        }
+        model
+            |> setOutcome observation.turn.outcome
+            |> setOpponentSubmitted (model.opponentSubmitted || observation.turn.opponentSubmitted)
+            |> setResolution observation.turn.resolution
+            |> setPhase reconciledPhase
 
     else
-        { model
-            | number = observation.turn.number
-            , outcome = observation.turn.outcome
-            , opponentSubmitted = observation.turn.opponentSubmitted
-            , resolution = observation.turn.resolution
-            , phase = TurnLifecycle.startTurn observation.turn.submitted observation.playbackFrames
-            , error = Nothing
-            , introduction = AwaitingIntroduction observation.playbackFrames
-        }
+        model
+            |> setNumber observation.turn.number
+            |> setOutcome observation.turn.outcome
+            |> setOpponentSubmitted observation.turn.opponentSubmitted
+            |> setResolution observation.turn.resolution
+            |> setPhase (TurnLifecycle.startTurn observation.turn.submitted observation.playbackFrames)
+            |> setError Nothing
+            |> setIntroduction (AwaitingIntroduction observation.playbackFrames)
 
 
 

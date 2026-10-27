@@ -553,9 +553,10 @@ remainingResources limit map current resources =
         remainingFuel fuel =
             Fuel.setCurrent (fuel.current - fuelCost limit map current.path) fuel
     in
-    { resources
-        | fuel = Maybe.map remainingFuel resources.fuel
-    }
+    (resources
+        |> UnitResources.setFuel
+            (Maybe.map remainingFuel resources.fuel)
+    )
         |> UnitResources.setSupplies
             (Supplies.setCurrent
                 (supplies.current - supplyCost map supplies current.path)

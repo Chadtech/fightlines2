@@ -46,7 +46,7 @@ pub fn rules(kind: UnitKind) -> CombatRules {
             UnitKind::Infantry | UnitKind::Tank | UnitKind::Truck => AmbushShape::Line,
         },
         damage,
-        dig_in_cost: if kind == UnitKind::Infantry { 64 } else { 0 },
+        dig_in_cost: if kind == UnitKind::Infantry { 16 } else { 0 },
         readiness_cost: 8,
         shot_cost: match kind {
             UnitKind::Infantry => 12,
@@ -1424,7 +1424,7 @@ mod tests {
             board.units.get(1).fixture()?.entrenchment(),
             Entrenchment::Exposed
         );
-        assert_eq!(board.units.get(1).fixture()?.supplies().current(), 128);
+        assert_eq!(board.units.get(1).fixture()?.supplies().current(), 176);
         assert_eq!(
             combat.damage(
                 &board,

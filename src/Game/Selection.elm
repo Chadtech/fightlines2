@@ -3,6 +3,7 @@ module Game.Selection exposing
     , SelectedUnit
     , Selection(..)
     , UnitInteraction(..)
+    , setInteraction
     , toInspection
     )
 
@@ -47,6 +48,11 @@ type CommandMenuState
 ----------------------------------------------------------------
 -- API --
 ----------------------------------------------------------------
+
+
+setInteraction : UnitInteraction -> SelectedUnit -> SelectedUnit
+setInteraction interaction model =
+    { model | interaction = interaction }
 
 
 {-| Drop editable interaction data when entering a locked phase. The selected

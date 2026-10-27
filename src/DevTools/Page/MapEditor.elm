@@ -27,7 +27,7 @@ import Drag exposing (Drag)
 import EditableMap exposing (Definition, NamedMap)
 import Effect as E exposing (Eff)
 import Error
-import Game.Camera exposing (Camera)
+import Game.Camera as Camera exposing (Camera)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Depot as Depot
 import Game.Map as Map exposing (Map)
@@ -280,6 +280,71 @@ saveEffect pending thumbnail =
 ----------------------------------------------------------------
 
 
+setCanvasView : CanvasView -> Model -> Model
+setCanvasView canvasView model =
+    { model | canvasView = canvasView }
+
+
+setCurrent : Document -> Model -> Model
+setCurrent current model =
+    { model | current = current }
+
+
+setGesture : CanvasGesture -> Model -> Model
+setGesture gesture model =
+    { model | gesture = gesture }
+
+
+setSaveState : SaveState -> Model -> Model
+setSaveState saveState model =
+    { model | saveState = saveState }
+
+
+setOthers : List Document -> Model -> Model
+setOthers others model =
+    { model | others = others }
+
+
+setWidthInput : String -> Model -> Model
+setWidthInput widthInput model =
+    { model | widthInput = widthInput }
+
+
+setHeightInput : String -> Model -> Model
+setHeightInput heightInput model =
+    { model | heightInput = heightInput }
+
+
+setTool : Tool -> Model -> Model
+setTool tool model =
+    { model | tool = tool }
+
+
+setSpaceHeld : Bool -> Model -> Model
+setSpaceHeld spaceHeld model =
+    { model | spaceHeld = spaceHeld }
+
+
+setDocumentUndo : List Definition -> Document -> Document
+setDocumentUndo undo model =
+    { model | undo = undo }
+
+
+setDocumentRedo : List Definition -> Document -> Document
+setDocumentRedo redo model =
+    { model | redo = redo }
+
+
+setDocumentDraft : Definition -> Document -> Document
+setDocumentDraft draft model =
+    { model | draft = draft }
+
+
+setPendingSaveFeedback : Maybe String -> PendingSave -> PendingSave
+setPendingSaveFeedback feedback model =
+    { model | feedback = feedback }
+
+
 saveRequestIdValue : SaveRequestId -> Int
 saveRequestIdValue (SaveRequestId value) =
     value
@@ -360,16 +425,16 @@ zoomCanvas anchor factor model =
         ratio =
             zoom / camera.zoom
     in
-    { model
-        | canvasView =
-            FreeView
+    model
+        |> setCanvasView
+            (FreeView
                 { zoom = zoom
                 , offset =
                     { x = anchor.x - (anchor.x - camera.offset.x) * ratio
                     , y = anchor.y - (anchor.y - camera.offset.y) * ratio
                     }
                 }
-    }
+            )
 
 
 panCanvas : Point -> Model -> Model
@@ -379,16 +444,16 @@ panCanvas delta model =
         camera =
             canvasCamera model
     in
-    { model
-        | canvasView =
-            FreeView
-                { camera
-                    | offset =
+    model
+        |> setCanvasView
+            (FreeView
+                (camera
+                    |> Camera.setOffset
                         { x = camera.offset.x + delta.x
                         , y = camera.offset.y + delta.y
                         }
-                }
-    }
+                )
+            )
 
 
 usesHand : Model -> Bool
@@ -471,9 +536,9 @@ editingSaveState state =
     case state of
         Saving pending ->
             Saving
-                { pending
-                    | feedback = Nothing
-                }
+                (pending
+                    |> setPendingSaveFeedback Nothing
+                )
 
         _ ->
             Idle
@@ -484,9 +549,9 @@ editFailed message state =
     case state of
         Saving pending ->
             Saving
-                { pending
-                    | feedback = Just message
-                }
+                (pending
+                    |> setPendingSaveFeedback (Just message)
+                )
 
         _ ->
             Failed message
@@ -508,7 +573,9 @@ remember before current =
         current
 
     else
-        { current | undo = List.take 100 (before :: current.undo), redo = [] }
+        current
+            |> setDocumentUndo (List.take 100 (before :: current.undo))
+            |> setDocumentRedo []
 
 
 finishGesture : Model -> Model
@@ -518,10 +585,13 @@ finishGesture model =
             model
 
         Painting before ->
-            { model | current = remember before model.current, gesture = Resting }
+            model
+                |> setCurrent (remember before model.current)
+                |> setGesture Resting
 
         Panning _ ->
-            { model | gesture = Resting }
+            model
+                |> setGesture Resting
 
 
 applyEdit : Definition -> Model -> Model
@@ -531,10 +601,14 @@ applyEdit draft model =
         current =
             model.current
     in
-    { model
-        | current = remember current.draft { current | draft = draft }
-        , saveState = editingSaveState model.saveState
-    }
+    model
+        |> setCurrent
+            (remember current.draft
+                (current
+                    |> setDocumentDraft draft
+                )
+            )
+        |> setSaveState (editingSaveState model.saveState)
 
 
 paint : Coordinate -> Model -> Model
@@ -613,10 +687,12 @@ paint position model =
             else
                 paintedDraft
     in
-    { model
-        | current = { current | draft = draft }
-        , saveState = editingSaveState model.saveState
-    }
+    model
+        |> setCurrent
+            (current
+                |> setDocumentDraft draft
+            )
+        |> setSaveState (editingSaveState model.saveState)
 
 
 reflectedPlayerNumber : PlayerNumber -> PlayerNumber
@@ -705,38 +781,35 @@ paintTile settings position draft =
                         else
                             { position = position, terrain = terrain } :: features
                 in
-                { draft | features = nextFeatures }
+                draft
+                    |> EditableMap.setFeatures nextFeatures
 
         PlaceUnit kind ->
-            { draft
-                | units =
-                    { id = existingId
-                    , position = position
-                    , playerNumber = settings.playerNumber
-                    , kind = kind
-                    , direction = unitDirection kind
-                    }
+            draft
+                |> EditableMap.setUnits
+                    ({ id = existingId
+                     , position = position
+                     , playerNumber = settings.playerNumber
+                     , kind = kind
+                     , direction = unitDirection kind
+                     }
                         :: List.filter elsewhere draft.units
-            }
+                    )
 
         PlaceDepot kind ->
-            { draft
-                | depots =
-                    { position = position, kind = kind }
+            draft
+                |> EditableMap.setDepots
+                    ({ position = position, kind = kind }
                         :: List.filter elsewhere draft.depots
-            }
+                    )
 
         EraseUnit ->
-            { draft
-                | units =
-                    List.filter elsewhere draft.units
-            }
+            draft
+                |> EditableMap.setUnits (List.filter elsewhere draft.units)
 
         EraseDepot ->
-            { draft
-                | depots =
-                    List.filter elsewhere draft.depots
-            }
+            draft
+                |> EditableMap.setDepots (List.filter elsewhere draft.depots)
 
 
 
@@ -768,12 +841,14 @@ update msg model =
                     if matchesPending then
                         case result.result of
                             Ok png ->
-                                ( { model | saveState = Saving { pending | phase = SendingMap } }
+                                ( model
+                                    |> setSaveState (Saving { pending | phase = SendingMap })
                                 , saveEffect pending png
                                 )
 
                             Err error ->
-                                ( { model | saveState = Failed ("could not generate map thumbnail: " ++ error) }
+                                ( model
+                                    |> setSaveState (Failed ("could not generate map thumbnail: " ++ error))
                                 , E.none
                                 )
 
@@ -820,24 +895,23 @@ update msg model =
                                         else
                                             Idle
                                 in
-                                ( { model
-                                    | current = savedCurrent
-                                    , others = List.map markSaved model.others
-                                    , saveState = nextSaveState
-                                  }
+                                ( model
+                                    |> setCurrent savedCurrent
+                                    |> setOthers (List.map markSaved model.others)
+                                    |> setSaveState nextSaveState
                                 , E.none
                                 )
 
                             Err error ->
-                                ( { model
-                                    | saveState =
-                                        Failed
+                                ( model
+                                    |> setSaveState
+                                        (Failed
                                             ("could not save "
                                                 ++ MapType.label pending.mapType
                                                 ++ ": "
                                                 ++ ApiRequest.errorMessage error
                                             )
-                                  }
+                                        )
                                 , E.none
                                 )
 
@@ -868,10 +942,9 @@ update msg model =
                             , phase = RenderingThumbnail
                             }
                     in
-                    ( { finished
-                        | saveState = Saving pending
-                        , shared = Shared.setSeed (Tuple.second request) finished.shared
-                      }
+                    ( finished
+                        |> setSaveState (Saving pending)
+                        |> setShared (Shared.setSeed (Tuple.second request) finished.shared)
                     , E.toJs (ToJs.GenerateMapThumbnail { htmlId = thumbnailHtmlId, requestId = saveRequestIdValue pending.requestId })
                     )
 
@@ -887,14 +960,14 @@ update msg model =
             in
             case List.filter matches model.others of
                 selected :: _ ->
-                    { finished
-                        | current = selected
-                        , canvasView = FitWorkspace
-                        , others = finished.current :: List.filter (not << matches) model.others
-                        , widthInput = String.fromInt selected.draft.width
-                        , heightInput = String.fromInt selected.draft.height
-                        , saveState = editingSaveState model.saveState
-                    }
+                    (finished
+                        |> setCurrent selected
+                        |> setCanvasView FitWorkspace
+                        |> setOthers (finished.current :: List.filter (not << matches) model.others)
+                        |> setWidthInput (String.fromInt selected.draft.width)
+                        |> setHeightInput (String.fromInt selected.draft.height)
+                        |> setSaveState (editingSaveState model.saveState)
+                    )
                         |> E.withOut
                         |> E.and measureViewport
 
@@ -902,7 +975,10 @@ update msg model =
                     ( model, E.none )
 
         BrushButtonClicked brush ->
-            ( { model | brush = brush, tool = PaintTool }, E.none )
+            ( { model | brush = brush }
+                |> setTool PaintTool
+            , E.none
+            )
 
         PlayerNumberInputChanged value ->
             { model
@@ -934,7 +1010,10 @@ update msg model =
             ( { model | brushSize = String.toInt value |> Maybe.withDefault model.brushSize }, E.none )
 
         HandToolClicked ->
-            ( { model | tool = HandTool }, E.none )
+            ( model
+                |> setTool HandTool
+            , E.none
+            )
 
         ZoomInClicked ->
             ( zoomCanvas { x = 0, y = 0 } 1.25 (finishGesture model), E.none )
@@ -946,7 +1025,12 @@ update msg model =
             ( zoomCanvas { x = 0, y = 0 } (1 / (canvasCamera model).zoom) (finishGesture model), E.none )
 
         FitMapClicked ->
-            ( { model | canvasView = FitWorkspace } |> finishGesture, measureViewport )
+            ( (model
+                |> setCanvasView FitWorkspace
+              )
+                |> finishGesture
+            , measureViewport
+            )
 
         CanvasMousePressed button point ->
             let
@@ -962,10 +1046,9 @@ update msg model =
                             camera =
                                 canvasCamera finished
                         in
-                        { finished
-                            | canvasView = FreeView camera
-                            , gesture = Panning (Drag.startAt { start = point, origin = camera.offset })
-                        }
+                        finished
+                            |> setCanvasView (FreeView camera)
+                            |> setGesture (Panning (Drag.startAt { start = point, origin = camera.offset }))
 
                     else
                         model
@@ -978,7 +1061,9 @@ update msg model =
                     E.withOut model
 
                 Err error ->
-                    { model | shared = Shared.addError (Just (Error.ElementFocusFailed error)) model.shared }
+                    (model
+                        |> setShared (Shared.addError (Just (Error.ElementFocusFailed error)) model.shared)
+                    )
                         |> E.withOut
 
         CanvasMouseMoved point buttons ->
@@ -993,16 +1078,16 @@ update msg model =
                             camera =
                                 canvasCamera model
                         in
-                        ( { model
-                            | canvasView =
-                                FreeView
-                                    { camera
-                                        | offset =
+                        ( model
+                            |> setCanvasView
+                                (FreeView
+                                    (camera
+                                        |> Camera.setOffset
                                             { x = (Drag.origin drag).x + point.x - (Drag.start drag).x
                                             , y = (Drag.origin drag).y + point.y - (Drag.start drag).y
                                             }
-                                    }
-                          }
+                                    )
+                                )
                         , E.none
                         )
 
@@ -1036,7 +1121,10 @@ update msg model =
                         ( model, E.none )
 
                     else
-                        ( { finished | spaceHeld = True }, E.none )
+                        ( finished
+                            |> setSpaceHeld True
+                        , E.none
+                        )
 
                 "+" ->
                     centeredZoom 1.25
@@ -1048,7 +1136,10 @@ update msg model =
                     centeredZoom 0.8
 
                 "Home" ->
-                    ( { finished | canvasView = FitWorkspace }, measureViewport )
+                    ( finished
+                        |> setCanvasView FitWorkspace
+                    , measureViewport
+                    )
 
                 "ArrowLeft" ->
                     pan { x = 48, y = 0 }
@@ -1066,10 +1157,18 @@ update msg model =
                     ( model, E.none )
 
         SpaceReleased ->
-            ( { model | spaceHeld = False }, E.none )
+            ( model
+                |> setSpaceHeld False
+            , E.none
+            )
 
         CanvasFocusLost ->
-            ( { model | spaceHeld = False } |> finishGesture, E.none )
+            ( (model
+                |> setSpaceHeld False
+              )
+                |> finishGesture
+            , E.none
+            )
 
         WindowResized ->
             ( model, measureViewport )
@@ -1117,7 +1216,9 @@ update msg model =
                 in
                 ( paint
                     position
-                    { finished | gesture = Painting finished.current.draft }
+                    (finished
+                        |> setGesture (Painting finished.current.draft)
+                    )
                 , E.none
                 )
 
@@ -1143,7 +1244,10 @@ update msg model =
                     painted =
                         paint position (finishGesture model)
                 in
-                ( { painted | current = remember draft painted.current }, E.none )
+                ( painted
+                    |> setCurrent (remember draft painted.current)
+                , E.none
+                )
 
         MouseReleased ->
             ( finishGesture model, E.none )
@@ -1151,17 +1255,17 @@ update msg model =
         UndoButtonClicked ->
             case current.undo of
                 previous :: rest ->
-                    { model
-                        | current =
-                            { current
-                                | draft = previous
-                                , undo = rest
-                                , redo = draft :: current.redo
-                            }
-                        , saveState = editingSaveState model.saveState
-                        , widthInput = String.fromInt previous.width
-                        , heightInput = String.fromInt previous.height
-                    }
+                    (model
+                        |> setCurrent
+                            (current
+                                |> setDocumentDraft previous
+                                |> setDocumentUndo rest
+                                |> setDocumentRedo (draft :: current.redo)
+                            )
+                        |> setSaveState (editingSaveState model.saveState)
+                        |> setWidthInput (String.fromInt previous.width)
+                        |> setHeightInput (String.fromInt previous.height)
+                    )
                         |> E.withOut
 
                 [] ->
@@ -1170,27 +1274,33 @@ update msg model =
         RedoButtonClicked ->
             case current.redo of
                 next :: rest ->
-                    { model
-                        | current =
-                            { current
-                                | draft = next
-                                , undo = draft :: current.undo
-                                , redo = rest
-                            }
-                        , saveState = editingSaveState model.saveState
-                        , widthInput = String.fromInt next.width
-                        , heightInput = String.fromInt next.height
-                    }
+                    (model
+                        |> setCurrent
+                            (current
+                                |> setDocumentDraft next
+                                |> setDocumentUndo (draft :: current.undo)
+                                |> setDocumentRedo rest
+                            )
+                        |> setSaveState (editingSaveState model.saveState)
+                        |> setWidthInput (String.fromInt next.width)
+                        |> setHeightInput (String.fromInt next.height)
+                    )
                         |> E.withOut
 
                 [] ->
                     ( model, E.none )
 
         WidthInputChanged value ->
-            ( { model | widthInput = value }, E.none )
+            ( model
+                |> setWidthInput value
+            , E.none
+            )
 
         HeightInputChanged value ->
-            ( { model | heightInput = value }, E.none )
+            ( model
+                |> setHeightInput value
+            , E.none
+            )
 
         ResizeButtonClicked ->
             case ( String.toInt model.widthInput, String.toInt model.heightInput ) of
@@ -1208,13 +1318,11 @@ update msg model =
                                     |> List.map .position
                         in
                         applyEdit
-                            ({ draft
-                                | width = width
-                                , height = height
-                                , features = List.filter inside draft.features
-                                , units = List.filter inside draft.units
-                                , depots = List.filter inside draft.depots
-                             }
+                            (({ draft | width = width, height = height }
+                                |> EditableMap.setFeatures (List.filter inside draft.features)
+                                |> EditableMap.setUnits (List.filter inside draft.units)
+                                |> EditableMap.setDepots (List.filter inside draft.depots)
+                             )
                                 |> EditableMap.reconnectRoads croppedPositions
                             )
                             model
@@ -1222,11 +1330,16 @@ update msg model =
                             |> E.and measureViewport
 
                     else
-                        { model | saveState = editFailed "dimensions must be between 1 and 64" model.saveState }
+                        (model
+                            |> setSaveState (editFailed "dimensions must be between 1 and 64" model.saveState)
+                        )
                             |> E.withOut
 
                 _ ->
-                    ( { model | saveState = editFailed "enter whole-number dimensions" model.saveState }, E.none )
+                    ( model
+                        |> setSaveState (editFailed "enter whole-number dimensions" model.saveState)
+                    , E.none
+                    )
 
 
 

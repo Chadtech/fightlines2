@@ -41,6 +41,17 @@ type InvariantViolation
 
 
 ----------------------------------------------------------------
+-- HELPERS --
+----------------------------------------------------------------
+
+
+setPreview : Maybe Coordinate -> IndirectFirePlanning -> IndirectFirePlanning
+setPreview preview (IndirectFirePlanning planning) =
+    IndirectFirePlanning { planning | preview = preview }
+
+
+
+----------------------------------------------------------------
 -- API --
 ----------------------------------------------------------------
 
@@ -64,17 +75,17 @@ start unit =
 
 
 previewTo : Map -> Coordinate -> IndirectFirePlanning -> IndirectFirePlanning
-previewTo map target ((IndirectFirePlanning planning) as state) =
+previewTo map target state =
     if List.member target (targets map state) then
-        IndirectFirePlanning { planning | preview = Just target }
+        setPreview (Just target) state
 
     else
         clearPreview state
 
 
 clearPreview : IndirectFirePlanning -> IndirectFirePlanning
-clearPreview (IndirectFirePlanning planning) =
-    IndirectFirePlanning { planning | preview = Nothing }
+clearPreview =
+    setPreview Nothing
 
 
 targetPreview : IndirectFirePlanning -> Maybe Coordinate

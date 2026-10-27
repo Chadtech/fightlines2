@@ -4,6 +4,7 @@ module Game.Camera exposing
     , anchor
     , boardWidth
     , frame
+    , setOffset
     , transform
     )
 
@@ -25,6 +26,11 @@ type alias Viewport =
     , bottomInset : Float
     , rightInset : Float
     }
+
+
+setOffset : Point -> Camera -> Camera
+setOffset offset model =
+    { model | offset = offset }
 
 
 {-| The initial whole-map overview, shared by the board and command anchors.

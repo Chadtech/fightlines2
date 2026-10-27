@@ -180,7 +180,10 @@ setOrders : List PlannedOrder -> Model -> Model
 setOrders draftsOrders model =
     case model of
         OrdinaryPlanning drafts ->
-            OrdinaryPlanning { drafts | orders = draftsOrders }
+            OrdinaryPlanning
+                (drafts
+                    |> setDraftOrders draftsOrders
+                )
 
         _ ->
             model
@@ -488,7 +491,13 @@ dismissDialog model =
                     case selected.interaction of
                         CommandMenu (ReadingGuide focused) ->
                             setSelection
-                                (Just (UnitSelection { selected | interaction = CommandMenu (ChoosingCommand focused) }))
+                                (Just
+                                    (UnitSelection
+                                        (selected
+                                            |> Selection.setInteraction (CommandMenu (ChoosingCommand focused))
+                                        )
+                                    )
+                                )
                                 model
 
                         _ ->
@@ -533,13 +542,14 @@ confirmGroundPickup model =
                             }
                     in
                     OrdinaryPlanning
-                        { drafts
-                            | orders =
-                                pickup
+                        (drafts
+                            |> setDraftOrders
+                                (pickup
                                     :: List.filter
                                         (\other -> other.unitId /= id)
                                         drafts.orders
-                        }
+                                )
+                        )
                         |> IC.happy
 
                 Nothing ->
@@ -594,28 +604,25 @@ promptTruckDismountedCommands map units truckId original =
             case original of
                 OrdinaryPlanning drafts ->
                     OrdinaryPlanning
-                        { drafts
-                            | orders =
-                                PlannedTransport.withoutStalePassengerHolds map units drafts.orders
-                        }
+                        (drafts
+                            |> setDraftOrders (PlannedTransport.withoutStalePassengerHolds map units drafts.orders)
+                        )
 
                 ChoosingCrates id depot drafts ->
                     ChoosingCrates
                         id
                         depot
-                        { drafts
-                            | orders =
-                                PlannedTransport.withoutStalePassengerHolds map units drafts.orders
-                        }
+                        (drafts
+                            |> setDraftOrders (PlannedTransport.withoutStalePassengerHolds map units drafts.orders)
+                        )
 
                 ChoosingGroundFreight id freight drafts ->
                     ChoosingGroundFreight
                         id
                         freight
-                        { drafts
-                            | orders =
-                                PlannedTransport.withoutStalePassengerHolds map units drafts.orders
-                        }
+                        (drafts
+                            |> setDraftOrders (PlannedTransport.withoutStalePassengerHolds map units drafts.orders)
+                        )
 
                 _ ->
                     original
@@ -704,7 +711,13 @@ openCommandGuide map units playerNumbers model =
                         CommandMenu (ChoosingCommand focused) ->
                             if isOwnUnit playerNumbers unit then
                                 setSelection
-                                    (Just (UnitSelection { selected | interaction = CommandMenu (ReadingGuide focused) }))
+                                    (Just
+                                        (UnitSelection
+                                            (selected
+                                                |> Selection.setInteraction (CommandMenu (ReadingGuide focused))
+                                            )
+                                        )
+                                    )
                                     model
 
                             else
@@ -742,8 +755,7 @@ focusCommand map units command model =
             case selected.interaction of
                 CommandMenu _ ->
                     model
-                        |> setUnitInteraction
-                            selected.id
+                        |> setUnitInteraction selected.id
                             (CommandMenu (ChoosingCommand (Just command)))
 
                 _ ->
@@ -1380,6 +1392,11 @@ focusedCommand model =
 ----------------------------------------------------------------
 
 
+setDraftOrders : List PlannedOrder -> Drafts -> Drafts
+setDraftOrders value model =
+    { model | orders = value }
+
+
 applyUnitCommand :
     Map
     -> List Unit
@@ -1919,8 +1936,7 @@ setMoveDestinationFeedback feedback model =
             case selected.interaction of
                 ChoosingMove planning ->
                     model
-                        |> setUnitInteraction
-                            selected.id
+                        |> setUnitInteraction selected.id
                             (ChoosingMove
                                 (MovePlanning.setDestinationFeedback feedback planning)
                             )

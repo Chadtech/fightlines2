@@ -91,8 +91,6 @@ type TerrainAppearance
 type alias TerrainGroups =
     { clear : List Coordinate
     , fogged : List Coordinate
-    , dimmed : List Coordinate
-    , foggedDimmed : List Coordinate
     }
 
 
@@ -1519,44 +1517,39 @@ unselectedIndirectTerrain map visibleTiles origin range =
     terrainLayer map visibleTiles (indirectTargets map origin range) True Nothing
 
 
-{-| Terrain stays inside its cell, so equal appearances can share one filter
-without changing artwork order within a cell. Keep unit, depot, targeting and
-selection layers separate from these terrain-only groups. Coordinate keys retain
-unaffected tiles when visibility or destination availability changes.
+{-| Destination shading changes independently of terrain artwork. Keep the
+artwork's lazy boundary and parent groups stable across movement, unload dialogs,
+and exit selection so these transitions never recreate terrain tiles.
 -}
 terrainLayer : Map -> List Coordinate -> List Coordinate -> Bool -> Maybe Coordinate -> Svg Msg
 terrainLayer map visibleTiles reachable choosingDestination selected =
+    Svg.g
+        [ HA.style "image-rendering" "auto" ]
+        [ SvgLazy.lazy2 terrainArtworkLayer map visibleTiles
+        , destinationDimming map reachable choosingDestination selected
+        ]
+
+
+terrainArtworkLayer : Map -> List Coordinate -> Svg Msg
+terrainArtworkLayer map visibleTiles =
     let
         visiblePositions : Set Coordinate.Key
         visiblePositions =
             Set.fromList (List.map Coordinate.key visibleTiles)
 
-        reachablePositions : Set Coordinate.Key
-        reachablePositions =
-            Set.fromList (List.map Coordinate.key reachable)
-
         groupTile : Coordinate -> TerrainGroups -> TerrainGroups
         groupTile position accumulated =
-            case boardTileAppearance visiblePositions choosingDestination reachablePositions selected position of
-                ClearTerrain ->
-                    { accumulated | clear = position :: accumulated.clear }
+            if Set.member (Coordinate.key position) visiblePositions then
+                { accumulated | clear = position :: accumulated.clear }
 
-                FoggedTerrain ->
-                    { accumulated | fogged = position :: accumulated.fogged }
-
-                DimmedTerrain ->
-                    { accumulated | dimmed = position :: accumulated.dimmed }
-
-                FoggedDimmedTerrain ->
-                    { accumulated | foggedDimmed = position :: accumulated.foggedDimmed }
+            else
+                { accumulated | fogged = position :: accumulated.fogged }
 
         groups : TerrainGroups
         groups =
             List.foldl groupTile
                 { clear = []
                 , fogged = []
-                , dimmed = []
-                , foggedDimmed = []
                 }
                 (Map.positions map)
 
@@ -1574,13 +1567,56 @@ terrainLayer map visibleTiles reachable choosingDestination selected =
                 (List.map terrainTile (List.reverse positions))
     in
     Svg.g
-        [ HA.style "image-rendering" "auto"
-        ]
+        []
         [ terrainGroup ClearTerrain groups.clear
         , terrainGroup FoggedTerrain groups.fogged
-        , terrainGroup DimmedTerrain groups.dimmed
-        , terrainGroup FoggedDimmedTerrain groups.foggedDimmed
         ]
+
+
+{-| A black overlay at 40% opacity matches brightness(0.6). The even-odd path
+cuts out reachable squares and the selected origin, including when the origin
+is also a legal target. Keep this below routes, objects, and click targets.
+-}
+destinationDimming : Map -> List Coordinate -> Bool -> Maybe Coordinate -> Svg Msg
+destinationDimming map reachable choosingDestination selected =
+    let
+        clearPositions : Set Coordinate.Key
+        clearPositions =
+            reachable
+                |> List.map Coordinate.key
+                |> Set.fromList
+                |> Set.union (selected |> Maybe.map (Coordinate.key >> Set.singleton) |> Maybe.withDefault Set.empty)
+
+        tileHole : Coordinate.Key -> String
+        tileHole ( x, y ) =
+            "M"
+                ++ String.fromInt (x * 16)
+                ++ " "
+                ++ String.fromInt (y * 16)
+                ++ "h16v16h-16z"
+
+        shadingPath : String
+        shadingPath =
+            if choosingDestination then
+                "M0 0h"
+                    ++ String.fromInt (map.width * 16)
+                    ++ "v"
+                    ++ String.fromInt (map.height * 16)
+                    ++ "H0z"
+                    ++ (clearPositions |> Set.toList |> List.map tileHole |> String.concat)
+
+            else
+                ""
+    in
+    Svg.path
+        [ SA.d shadingPath
+        , SA.fill S.blackStr
+        , SA.fillOpacity "0.4"
+        , SA.fillRule "evenodd"
+        , SA.pointerEvents "none"
+        , Aria.svgHidden True
+        ]
+        []
 
 
 {-| Keep neighboring-terrain artwork separate from fog and destination treatment.

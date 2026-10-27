@@ -1,4 +1,12 @@
-module Game.Coordinate exposing (Coordinate, Key, inRange, key, selection)
+module Game.Coordinate exposing
+    ( Coordinate
+    , Key
+    , inRange
+    , key
+    , selection
+    , setX
+    , setY
+    )
 
 import Api.Object
 import Api.Object.Coordinate as CoordinateApi
@@ -15,6 +23,16 @@ type alias Coordinate =
 -}
 type alias Key =
     ( Int, Int )
+
+
+setY : Int -> Coordinate -> Coordinate
+setY y model =
+    { model | y = y }
+
+
+setX : Int -> Coordinate -> Coordinate
+setX x model =
+    { model | x = x }
 
 
 key : Coordinate -> Key

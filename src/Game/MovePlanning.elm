@@ -93,10 +93,9 @@ previewTo map units movementRules unit destination planning =
     let
         withPreview : Movement.Option -> MovePlanning
         withPreview preview =
-            { planning
-                | preview = preview
-                , destinationFeedback = NoDestinationFeedback
-            }
+            { planning | preview = preview }
+                |> setDestinationFeedback
+                    NoDestinationFeedback
     in
     traceTo map units movementRules unit destination planning
         |> Maybe.map withPreview

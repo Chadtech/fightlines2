@@ -88,11 +88,21 @@ async function main() {
   assert.equal(app.voices.length, 1);
   assert.equal(app.voices[0].started, true);
   assert.deepEqual(app.requests, [
-    '/audio/ui-affirm-gamelan-v4.ogg',
-    '/audio/ui-cancel-gamelan-v4.ogg',
-    '/audio/ui-confirm-gamelan-v4.ogg',
+    '/audio/ui-affirm-switch-v1.ogg',
+    '/audio/ui-cancel-switch-v1.ogg',
+    '/audio/ui-confirm-switch-v1.ogg',
+    '/audio/combat/field-gun-fire-01.ogg',
+    '/audio/combat/field-gun-fire-02.ogg',
+    '/audio/combat/field-gun-fire-03.ogg',
+    '/audio/combat/field-gun-fire-04.ogg',
+    '/audio/combat/field-gun-fire-05.ogg',
+    '/audio/combat/tank-fire-01.ogg',
+    '/audio/combat/tank-fire-02.ogg',
+    '/audio/combat/tank-fire-03.ogg',
+    '/audio/combat/tank-fire-04.ogg',
+    '/audio/combat/tank-fire-05.ogg',
   ]);
-  assert.equal(app.contexts[0].decodes, 3);
+  assert.equal(app.contexts[0].decodes, 13);
   await app.audio.handleEvent({ play: 'uiAffirm' });
   assert.equal(app.voices.length, 1, 'rapid duplicate requests are coalesced');
   for (let index = 0; index < 4; index++) {
@@ -101,7 +111,7 @@ async function main() {
   }
   assert.equal(app.voices.length, 5);
   assert.equal(app.voices[0].stopped, true, 'voice limit replaces the oldest voice');
-  assert.equal(app.contexts[0].decodes, 3, 'decoded buffers are reused');
+  assert.equal(app.contexts[0].decodes, 13, 'decoded buffers are reused');
   app.voices[1].finish();
   assert.equal(app.voices[1].disconnected, true);
   app.audio.setVolume(0);
@@ -130,6 +140,35 @@ async function main() {
   assert.equal(new Set(cues.voices.map(voice => voice.buffer)).size, 3, 'each cue uses its own recording');
   assert.equal(cues.warnings.length, 0);
 
+  const guns = boot();
+  await guns.gesture();
+  for (let index = 0; index < 6; index++) await guns.audio.handleEvent({ play: 'fieldGunFire' });
+  assert.equal(guns.voices.length, 6, 'field gun shots overlap without UI coalescing');
+  assert.equal(new Set(guns.voices.map(voice => voice.buffer)).size, 5);
+  assert.equal(guns.voices[0].buffer, guns.voices[5].buffer);
+  await guns.audio.handleEvent({ play: 'tankFire' });
+  assert.notEqual(guns.voices[0].buffer, guns.voices[6].buffer, 'guns use distinct recordings from tanks');
+  assert.equal(guns.warnings.length, 0);
+
+  const combat = boot();
+  await combat.gesture();
+  // Both four-tank formations can cross timestamps in one delayed frame.
+  // Each shot must still play, with no UI coalescing or truncated combat tails.
+  for (let index = 0; index < 8; index++) await combat.audio.handleEvent({ play: 'tankFire' });
+  assert.equal(combat.voices.length, 8);
+  assert.ok(combat.voices.every(voice => voice.started && !voice.stopped));
+  assert.equal(new Set(combat.voices.map(voice => voice.buffer)).size, 5, 'all five firing variants are used');
+  assert.equal(combat.voices[0].buffer, combat.voices[5].buffer, 'variants cycle deterministically');
+  await combat.audio.handleEvent({ play: 'uiConfirm' });
+  assert.equal(combat.voices.length, 9);
+  assert.ok(combat.voices.every(voice => !voice.stopped), 'UI and combat have independent voice limits');
+  await combat.audio.handleEvent({ play: 'tankFire' });
+  assert.equal(combat.voices[0].stopped, true, 'combat overflow only replaces an old combat voice');
+  assert.equal(combat.voices[8].stopped, false, 'combat cannot replace UI feedback');
+  combat.document.hidden = true;
+  combat.documentEvents.visibilitychange();
+  assert.ok(combat.voices.every(voice => voice.stopped), 'hiding stops both voice groups');
+
   for (const bad of [undefined, [], {}, { play: 3 }, { play: 'unknown' }, { play: 'toString' }, { play: 'uiAffirm', extra: true }]) {
     await app.audio.handleEvent(bad);
   }
@@ -155,18 +194,20 @@ async function main() {
   assert.equal(unavailableWarnings.length, 1, 'unsupported browsers keep working and report the missing API');
 
   for (const cancel of ['hidden', 'pagehide', 'expired']) {
-    const pending = boot({ deferredLoad: true });
-    await pending.gesture();
-    const play = pending.audio.handleEvent({ play: 'uiAffirm' });
-    if (cancel === 'hidden') {
-      pending.document.hidden = true;
-      pending.documentEvents.visibilitychange();
-      pending.document.hidden = false;
-    } else if (cancel === 'pagehide') pending.events.pagehide();
-    else pending.advance(251);
-    pending.release();
-    await play;
-    assert.equal(pending.voices.length, 0, `pending ${cancel} sound must not start`);
+    for (const cue of ['uiAffirm', 'tankFire', 'fieldGunFire']) {
+      const pending = boot({ deferredLoad: true });
+      await pending.gesture();
+      const play = pending.audio.handleEvent({ play: cue });
+      if (cancel === 'hidden') {
+        pending.document.hidden = true;
+        pending.documentEvents.visibilitychange();
+        pending.document.hidden = false;
+      } else if (cancel === 'pagehide') pending.events.pagehide();
+      else pending.advance(251);
+      pending.release();
+      await play;
+      assert.equal(pending.voices.length, 0, `pending ${cancel} sound must not start`);
+    }
   }
   console.log('Audio gesture gating, caching, playback, volume, voice limits, cancellation and failure handling passed.');
 }

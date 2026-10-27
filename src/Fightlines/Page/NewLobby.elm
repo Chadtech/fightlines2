@@ -106,6 +106,16 @@ setShared shared model =
 ----------------------------------------------------------------
 
 
+setBusy : Bool -> Model -> Model
+setBusy busy model =
+    { model | busy = busy }
+
+
+setError : Maybe String -> Model -> Model
+setError error model =
+    { model | error = error }
+
+
 create : String -> String -> Graphql.Http.Request LobbyId
 create name lobbyName =
     let
@@ -141,19 +151,17 @@ update msg model =
                 ( model, E.none )
 
             else
-                ( { model
-                    | busy = True
-                    , error = Nothing
-                  }
+                ( model
+                    |> setBusy True
+                    |> setError Nothing
                 , E.request (CreateResponseReceived model.name) (create model.name model.lobbyName)
                 )
 
         CreateResponseReceived submittedName result ->
             case result of
                 Ok lobbyId ->
-                    ( { model
-                        | busy = False
-                      }
+                    ( model
+                        |> setBusy False
                     , E.batch
                         [ UserName.remember submittedName
                         , Route.pushUrl (Route.Lobby lobbyId)
@@ -161,10 +169,9 @@ update msg model =
                     )
 
                 Err error ->
-                    ( { model
-                        | busy = False
-                        , error = Just (ApiRequest.errorMessage error)
-                      }
+                    ( model
+                        |> setBusy False
+                        |> setError (Just (ApiRequest.errorMessage error))
                     , E.none
                     )
 

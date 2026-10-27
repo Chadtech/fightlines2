@@ -1,5 +1,6 @@
 module Game.View.CombatFormation exposing
-    ( figureCount
+    ( Animation
+    , figureCount
     , impactStarts
     , impactsToSvg
     , lossStartsAt
@@ -11,12 +12,20 @@ import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Game.BackdropCalibration exposing (Calibration)
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
+import Game.View.CombatAttack as CombatAttack
 import Game.View.CombatExplosion as CombatExplosion
 import Game.View.UnitSprite as UnitSprite exposing (Appearance)
 import Html.Styled.Attributes as A
 import Svg.Styled as Svg exposing (Svg)
 import Svg.Styled.Attributes as SA
 import View.Aria as Aria
+
+
+type alias Animation =
+    { elapsed : Float
+    , impactDelay : Float
+    , attack : CombatAttack.Attack
+    }
 
 
 {-| Theater figures summarize health; they do not change authoritative damage.
@@ -47,7 +56,7 @@ lossStartsAt config =
 -}
 impactStartsAt : Float
 impactStartsAt =
-    1200
+    CombatAttack.anticipationMs
 
 
 impactStarts : UnitKind -> CombatHealth -> List Float
@@ -178,17 +187,17 @@ placements kind =
             vehiclePlacements
 
 
-toSvg : Float -> CombatHealth -> Appearance -> List (Svg msg)
+toSvg : Animation -> CombatHealth -> Appearance -> List (Svg msg)
 toSvg =
     layersToSvg Nothing [ Combatants, Impacts ]
 
 
-impactsToSvg : Float -> CombatHealth -> Appearance -> List (Svg msg)
+impactsToSvg : Animation -> CombatHealth -> Appearance -> List (Svg msg)
 impactsToSvg =
     layersToSvg Nothing [ Impacts ]
 
 
-toSvgWithCalibration : Maybe Calibration -> Float -> CombatHealth -> Appearance -> List (Svg msg)
+toSvgWithCalibration : Maybe Calibration -> Animation -> CombatHealth -> Appearance -> List (Svg msg)
 toSvgWithCalibration calibration =
     layersToSvg calibration [ Combatants, Impacts ]
 
@@ -322,9 +331,13 @@ calibratedPlacements settings unit =
     List.map place pattern
 
 
-layersToSvg : Maybe Calibration -> List Layer -> Float -> CombatHealth -> Appearance -> List (Svg msg)
-layersToSvg calibration layers elapsed health unit =
+layersToSvg : Maybe Calibration -> List Layer -> Animation -> CombatHealth -> Appearance -> List (Svg msg)
+layersToSvg calibration layers animation health unit =
     let
+        elapsed : Float
+        elapsed =
+            animation.elapsed - animation.impactDelay
+
         beforeCount : Int
         beforeCount =
             figureCount unit.kind health.before.current
@@ -378,7 +391,7 @@ layersToSvg calibration layers elapsed health unit =
                             , SA.class "fightlines-combat-figure"
                             , A.attribute "data-figure-index" (String.fromInt index)
                             ]
-                            [ UnitSprite.portraitToSvg unit ]
+                            [ CombatAttack.toSvg { elapsed = animation.elapsed, figureIndex = index } animation.attack unit ]
                         ]
 
                     else

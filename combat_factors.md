@@ -149,7 +149,7 @@ continues to accumulate damage across pairs without changing simultaneous fire.
 ## Entrenchment
 
 Only infantry already on the map can dig in. This exclusive stationary action
-costs 64 supplies plus ordinary upkeep, requires that stock before submitting,
+costs 16 supplies plus ordinary upkeep, requires that stock before submitting,
 and never fires or grants readiness. Protection completes after all combat,
 including indirect fire; diggers remain exposed throughout the digging turn.
 Holding, ambush, stand ground, and rotation preserve entrenchment with no extra

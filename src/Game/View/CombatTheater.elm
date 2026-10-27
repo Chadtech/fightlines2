@@ -1,7 +1,9 @@
 module Game.View.CombatTheater exposing
     ( Msg(..)
+    , attackDelay
     , attackerOnLeft
     , backdropPath
+    , firingTimes
     , preview
     , readyToAutomaticallyClose
     , styles
@@ -14,23 +16,25 @@ import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing exposing (SpriteFacing)
-import Api.Enum.UnitKind as UnitKind
+import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Css
 import Game.BackdropCalibration as BackdropCalibration
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Depot as Depot exposing (Depot)
-import Game.IndirectImpact as IndirectImpact exposing (Attacker, BuildingImpact, IndirectImpact)
+import Game.IndirectImpact exposing (Attacker, BuildingImpact)
 import Game.Map as Map exposing (Map)
 import Game.Terrain as Terrain exposing (Terrain)
 import Game.TurnPlayback as TurnPlayback
     exposing
         ( Encounter(..)
+        , ImpactEncounter
         , MapView(..)
         , Panel
         )
 import Game.Unit as Unit exposing (Unit)
 import Game.UnitKind as UnitKindLabel
+import Game.View.CombatAttack as CombatAttack
 import Game.View.CombatExplosion as CombatExplosion
 import Game.View.CombatFormation as CombatFormation
 import Game.View.CombatReadiness as CombatReadiness
@@ -108,13 +112,19 @@ attackerOnLeft panel =
                     True
 
         Impact impact ->
-            case impact.attacker |> Maybe.andThen (.unit >> Unit.mapPosition) of
-                Just attacker ->
-                    (attacker.x < impact.destination.x)
-                        || ((attacker.x == impact.destination.x) && (attacker.y <= impact.destination.y))
+            List.head impact.attackers
+                |> Maybe.map (impactAttackerOnLeft impact.destination)
+                |> Maybe.withDefault True
 
-                Nothing ->
-                    True
+
+impactAttackerOnLeft : Coordinate -> Attacker -> Bool
+impactAttackerOnLeft destination attacker =
+    case Unit.mapPosition attacker.unit of
+        Just origin ->
+            Coordinate.key origin <= Coordinate.key destination
+
+        Nothing ->
+            True
 
 
 {-| Let the final impact and its camera shake settle, then pause for half a second.
@@ -135,8 +145,91 @@ readyToAutomaticallyClose panel =
     (panel.mapView == CardVisible) && (panel.elapsed >= animationEndsAt + automaticCloseDelayMs)
 
 
+{-| Hit clocks are shifted together so shots, casualties, rumble, and automatic
+closing all agree. Unsupported attack kinds retain their existing hit timing.
+-}
+attackDelay : Panel -> Float
+attackDelay panel =
+    let
+        firingEndsAt : Unit -> Int -> Float
+        firingEndsAt unit health =
+            CombatAttack.endsAt (attackFor panel unit) unit.kind (CombatFormation.figureCount unit.kind health)
+
+        endsAt : Float
+        endsAt =
+            case panel.encounter of
+                Exchange exchange ->
+                    max
+                        (firingEndsAt exchange.attacker exchange.attackerHealth.before.current)
+                        (firingEndsAt exchange.target exchange.targetHealth.before.current)
+
+                Impact impact ->
+                    impact.attackers
+                        |> List.map (\attacker -> firingEndsAt attacker.unit attacker.health.current)
+                        |> List.maximum
+                        |> Maybe.withDefault 0
+    in
+    if endsAt > 0 then
+        endsAt - CombatAttack.anticipationMs + 100
+
+    else
+        0
+
+
+attackFor : Panel -> Unit -> CombatAttack.Attack
+attackFor panel unit =
+    case panel.encounter of
+        Exchange exchange ->
+            if unit.id == exchange.attacker.id then
+                CombatAttack.Attacking { startsAt = CombatAttack.anticipationMs }
+
+            else if (unit.id == exchange.target.id) && exchange.targetFired then
+                CombatAttack.Attacking { startsAt = CombatAttack.anticipationMs + 45 }
+
+            else
+                CombatAttack.NotAttacking
+
+        Impact impact ->
+            if List.any (\attacker -> attacker.unit.id == unit.id) impact.attackers then
+                CombatAttack.Attacking { startsAt = CombatAttack.anticipationMs }
+
+            else
+                CombatAttack.NotAttacking
+
+
+{-| Sound cues use the same formation clocks and before-health as the flash.
+Only recorded firing participants of the requested kind contribute timestamps.
+-}
+firingTimes : UnitKind -> Panel -> List Float
+firingTimes kind panel =
+    let
+        starts : Unit -> Int -> List Float
+        starts unit health =
+            if unit.kind == kind then
+                CombatAttack.firingTimes (attackFor panel unit) unit.kind (CombatFormation.figureCount unit.kind health)
+
+            else
+                []
+    in
+    case panel.encounter of
+        Exchange exchange ->
+            starts exchange.attacker exchange.attackerHealth.before.current
+                ++ starts exchange.target exchange.targetHealth.before.current
+                |> List.sort
+
+        Impact impact ->
+            impact.attackers
+                |> List.concatMap (\attacker -> starts attacker.unit attacker.health.current)
+                |> List.sort
+
+
 participantImpactStarts : Panel -> List Float
 participantImpactStarts panel =
+    List.map ((+) (attackDelay panel)) (participantBaseImpactStarts panel)
+
+
+participantBaseImpactStarts : Panel -> List Float
+participantBaseImpactStarts panel =
     case panel.encounter of
         Exchange exchange ->
             CombatFormation.impactStarts exchange.attacker.kind exchange.attackerHealth
@@ -148,14 +241,14 @@ participantImpactStarts panel =
                     CombatFormation.impactStarts observed.unit.kind observed.health
 
                 Nothing ->
-                    [ 1200, 1330, 1460, 1590 ]
+                    List.map ((+) CombatAttack.anticipationMs) [ 0, 130, 260, 390 ]
 
 
 participantsEndAt : Panel -> Float
 participantsEndAt panel =
     participantImpactStarts panel
         |> List.maximum
-        |> Maybe.withDefault 1200
+        |> Maybe.withDefault (CombatAttack.anticipationMs + attackDelay panel)
         |> (+) (impactContactDelayMs + rumbleDurationMs)
 
 
@@ -308,37 +401,7 @@ theaterView calibrations automaticallyClose visibleTiles depots map panel =
                         ]
 
                 Impact impact ->
-                    let
-                        impactTargetFromFacing : SpriteFacing -> Html Msg
-                        impactTargetFromFacing =
-                            impactTarget
-                                visibleTiles
-                                scenery
-                                panel
-                                impact
-                    in
-                    case impact.attacker of
-                        Just attacker ->
-                            let
-                                impactAttackerFromFacing : SpriteFacing -> Html Msg
-                                impactAttackerFromFacing =
-                                    impactAttacker
-                                        scenery
-                                        panel
-                                        attacker
-                            in
-                            if attackerOnLeft panel then
-                                [ impactAttackerFromFacing SpriteFacing.Right
-                                , impactTargetFromFacing SpriteFacing.Left
-                                ]
-
-                            else
-                                [ impactTargetFromFacing SpriteFacing.Right
-                                , impactAttackerFromFacing SpriteFacing.Left
-                                ]
-
-                        Nothing ->
-                            [ impactTargetFromFacing SpriteFacing.Left ]
+                    impactPortraits visibleTiles scenery panel impact
 
         portraits : List (Html Msg)
         portraits =
@@ -378,12 +441,15 @@ theaterView calibrations automaticallyClose visibleTiles depots map panel =
                     let
                         source : String
                         source =
-                            case impact.attacker of
-                                Nothing ->
+                            case impact.attackers of
+                                [] ->
                                     "an enemy field gun fired from an unknown location at this space."
 
-                                Just _ ->
+                                [ _ ] ->
                                     "a field gun fired indirectly at this space."
+
+                                _ ->
+                                    "field guns fired indirectly at this space."
 
                         outcome : String
                         outcome =
@@ -432,8 +498,11 @@ theaterView calibrations automaticallyClose visibleTiles depots map panel =
                     -- Match one column of the paired layout, including its S.g3 gap.
                     Css.property "grid-template-columns" "minmax(0, calc((100% - 0.75rem) / 2))"
 
-                _ ->
+                [ _, _ ] ->
                     S.gridCols2
+
+                _ ->
+                    Css.property "grid-template-columns" "repeat(3, minmax(0, 1fr))"
 
         card : Card.Card
         card =
@@ -719,7 +788,51 @@ impactAttacker scenery panel attacker facing =
         )
 
 
-impactTarget : List Coordinate -> Scenery -> Panel -> IndirectImpact -> SpriteFacing -> Html Msg
+{-| Render each observed gun and a single landing in horizontal map order.
+All formations share one panel clock and the combined target health transition.
+-}
+impactPortraits : List Coordinate -> Scenery -> Panel -> ImpactEncounter -> List (Html Msg)
+impactPortraits visibleTiles scenery panel impact =
+    let
+        attackerView : Attacker -> { position : Coordinate, view : Html Msg }
+        attackerView attacker =
+            let
+                facing : SpriteFacing
+                facing =
+                    if impactAttackerOnLeft impact.destination attacker then
+                        SpriteFacing.Right
+
+                    else
+                        SpriteFacing.Left
+            in
+            { position = Unit.mapPosition attacker.unit |> Maybe.withDefault impact.destination
+            , view = impactAttacker scenery panel attacker facing
+            }
+
+        targetFacing : SpriteFacing
+        targetFacing =
+            if attackerOnLeft panel then
+                SpriteFacing.Left
+
+            else
+                SpriteFacing.Right
+
+        target : { position : Coordinate, view : Html Msg }
+        target =
+            { position = impact.destination
+            , view = impactTarget visibleTiles scenery panel impact targetFacing
+            }
+
+        positionKey : { position : Coordinate, view : Html Msg } -> Coordinate.Key
+        positionKey positioned =
+            Coordinate.key positioned.position
+    in
+    (target :: List.map attackerView impact.attackers)
+        |> List.sortBy positionKey
+        |> List.map .view
+
+
+impactTarget : List Coordinate -> Scenery -> Panel -> ImpactEncounter -> SpriteFacing -> Html Msg
 impactTarget visibleTiles scenery panel impact facing =
     case impact.target of
         Just target ->
@@ -899,6 +1012,13 @@ portrait scenery panel health unit =
 portraitScene : Scenery -> Panel -> CombatHealth -> Unit -> Html Msg
 portraitScene scenery panel health unit =
     let
+        animation : CombatFormation.Animation
+        animation =
+            { elapsed = panel.elapsed
+            , impactDelay = attackDelay panel
+            , attack = attackFor panel unit
+            }
+
         path : String
         path =
             Unit.mapPosition unit
@@ -935,9 +1055,9 @@ portraitScene scenery panel health unit =
                         exchange.attacker.kind == UnitKind.FieldGun
 
                     else
-                        -- Reciprocal shots share one panel; damage confirms return fire.
+                        -- Recorded reciprocal shots also include zero-damage return fire.
                         (exchange.target.kind == UnitKind.FieldGun)
-                            && (health.after.current < health.before.current)
+                            && exchange.targetFired
 
                 Impact impact ->
                     Maybe.map (.unit >> .id) impact.target == Just unit.id
@@ -978,14 +1098,14 @@ portraitScene scenery panel health unit =
             Nothing
             (rumbleTransform panel)
             (Unit.label unit)
-            (trenchImage :: CombatFormation.impactsToSvg panel.elapsed health (UnitSprite.appearance unit))
+            (trenchImage :: CombatFormation.impactsToSvg animation health (UnitSprite.appearance unit))
 
     else
         scene
             (Just path)
             (rumbleTransform panel)
             description
-            (CombatFormation.toSvgWithCalibration (BackdropCalibration.find { backdrop = path, unitKind = unit.kind } scenery.calibrations) panel.elapsed health (UnitSprite.appearance unit))
+            (CombatFormation.toSvgWithCalibration (BackdropCalibration.find { backdrop = path, unitKind = unit.kind } scenery.calibrations) animation health (UnitSprite.appearance unit))
 
 
 {-| Review artwork with the exact gameplay crop, sprites, and formation placements.
@@ -1000,7 +1120,7 @@ preview calibration path hitPoints unit =
             , after = { current = hitPoints, maximum = 16 }
             }
     in
-    scene (Just path) "none" (UnitKindLabel.label unit.kind) (CombatFormation.toSvgWithCalibration calibration 0 health unit)
+    scene (Just path) "none" (UnitKindLabel.label unit.kind) (CombatFormation.toSvgWithCalibration calibration { elapsed = 0, impactDelay = 0, attack = CombatAttack.NotAttacking } health unit)
 
 
 scene : Maybe String -> String -> String -> List (Svg.Svg msg) -> Html msg

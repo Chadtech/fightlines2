@@ -14,6 +14,8 @@ module Game.BattlefieldNavigation exposing
     , resetViewport
     , returning
     , scroll
+    , setOffset
+    , setZoom
     , startReturn
     , subscriptions
     , suppressesClick
@@ -87,12 +89,14 @@ camera model =
 
 startReturn : Model -> Model
 startReturn model =
-    { model | returnMotion = Returning }
+    model
+        |> setReturnMotion Returning
 
 
 finishReturn : Model -> Model
 finishReturn model =
-    { model | returnMotion = Settled }
+    model
+        |> setReturnMotion Settled
 
 
 returning : Model -> Bool
@@ -112,22 +116,30 @@ suppressesClick model =
 
 panLeft : Model -> Model
 panLeft model =
-    { model | offset = { x = model.offset.x + 48, y = model.offset.y } }
+    model
+        |> setOffset
+            { x = model.offset.x + 48, y = model.offset.y }
 
 
 panRight : Model -> Model
 panRight model =
-    { model | offset = { x = model.offset.x - 48, y = model.offset.y } }
+    model
+        |> setOffset
+            { x = model.offset.x - 48, y = model.offset.y }
 
 
 panUp : Model -> Model
 panUp model =
-    { model | offset = { x = model.offset.x, y = model.offset.y + 48 } }
+    model
+        |> setOffset
+            { x = model.offset.x, y = model.offset.y + 48 }
 
 
 panDown : Model -> Model
 panDown model =
-    { model | offset = { x = model.offset.x, y = model.offset.y - 48 } }
+    model
+        |> setOffset
+            { x = model.offset.x, y = model.offset.y - 48 }
 
 
 zoomIn : Model -> Model
@@ -142,16 +154,17 @@ zoomOut model =
 
 resetViewport : Model -> Model
 resetViewport model =
-    { model
-        | offset = { x = 0, y = 0 }
-        , zoom = 1
-        , pointerGesture = PointerGesture.idle
-    }
+    model
+        |> setOffset
+            { x = 0, y = 0 }
+        |> setZoom 1
+        |> setPointerGesture PointerGesture.idle
 
 
 press : Point -> Model -> Model
 press point model =
-    { model | pointerGesture = PointerGesture.press { start = point, origin = model.offset } }
+    model
+        |> setPointerGesture (PointerGesture.press { start = point, origin = model.offset })
 
 
 scroll : Point -> Float -> Model -> Model
@@ -165,6 +178,26 @@ scroll anchor delta model =
 ----------------------------------------------------------------
 
 
+setReturnMotion : ReturnMotion -> Model -> Model
+setReturnMotion returnMotion model =
+    { model | returnMotion = returnMotion }
+
+
+setOffset : Point -> Model -> Model
+setOffset offset model =
+    { model | offset = offset }
+
+
+setZoom : Float -> Model -> Model
+setZoom zoom model =
+    { model | zoom = zoom }
+
+
+setPointerGesture : PointerGesture -> Model -> Model
+setPointerGesture pointerGesture model =
+    { model | pointerGesture = pointerGesture }
+
+
 drag : DragMode -> Point -> Model -> Model
 drag dragMode point model =
     let
@@ -172,16 +205,16 @@ drag dragMode point model =
         moved =
             PointerGesture.move point model.pointerGesture
     in
-    { model
-        | pointerGesture = moved.gesture
-        , offset =
-            case dragMode of
+    model
+        |> setPointerGesture moved.gesture
+        |> setOffset
+            (case dragMode of
                 PanCamera ->
                     Maybe.withDefault model.offset moved.offset
 
                 TraceRoute ->
                     model.offset
-    }
+            )
 
 
 zoomAt : Point -> Float -> Model -> Model
@@ -195,19 +228,19 @@ zoomAt anchor factor model =
         ratio =
             zoom / model.zoom
     in
-    { model
-        | zoom = zoom
-        , offset =
+    model
+        |> setZoom zoom
+        |> setOffset
             { x = anchor.x - (anchor.x - model.offset.x) * ratio
             , y = anchor.y - (anchor.y - model.offset.y) * ratio
             }
-        , pointerGesture = PointerGesture.finish model.pointerGesture
-    }
+        |> setPointerGesture (PointerGesture.finish model.pointerGesture)
 
 
 finish : Model -> Model
 finish model =
-    { model | pointerGesture = PointerGesture.finish model.pointerGesture }
+    model
+        |> setPointerGesture (PointerGesture.finish model.pointerGesture)
 
 
 

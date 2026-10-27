@@ -104,12 +104,17 @@ checks =
 
         removed : Definition
         removed =
-            { cross | features = List.filter (\feature -> feature.position /= east) cross.features }
+            (cross
+                |> EditableMap.setFeatures (List.filter (\feature -> feature.position /= east) cross.features)
+            )
                 |> EditableMap.reconnectRoads [ east ]
 
         unrelated : Definition
         unrelated =
-            { cross | features = [ { position = { x = 0, y = 0 }, terrain = Terrain.Road Road.EastWest } ] }
+            (cross
+                |> EditableMap.setFeatures
+                    [ { position = { x = 0, y = 0 }, terrain = Terrain.Road Road.EastWest } ]
+            )
                 |> EditableMap.reconnectRoads [ { x = 2, y = 2 } ]
     in
     List.concatMap checkShape cases

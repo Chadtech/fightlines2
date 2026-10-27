@@ -46,6 +46,17 @@ return home immediately.
 Opponent updates use half-second status polling plus network time.
 The combat theater also remembers its **automatically close** checkbox. When
 enabled, each encounter continues half a second after its animation finishes.
+Attacking tanks use red and blue versions of the approved drawn firing sequence.
+The flash precedes recoil by 30ms; the tank recovers directly to its original
+level stance as smoke clears, completing in 620ms. Tanks fire 90ms apart; recorded return fire starts
+45ms after the first formation. Field guns use red and blue versions of the
+approved eight drawings: the chief signals, the crew braces, the barrel and breech
+recoil through the muzzle blast, and everyone recovers. Their flash follows 320ms of preparation;
+each crew recovers in 840ms, with the same 90ms formation stagger. Both sides use
+their matching team artwork, mirrored toward the opponent. This also plays for
+observable indirect-fire guns. Hits and casualties wait until the last firing figure
+recovers, followed by a short travel beat. Units that only receive fire stay
+still. Live games and logged replays share this sequence.
 
 ## Audio manager
 
@@ -53,17 +64,23 @@ Updates can request audio with `E.audio Audio.uiAffirm`, `Audio.uiCancel`, or
 `Audio.uiConfirm`; `Audio.none` produces no sound. Both apps share a JavaScript
 manager that loads and caches clips, unlocks
 audio after player interaction, and stops playback when the page is hidden.
-All three cues are excerpts from one court gamelan performance, using its
-original pitches; source credit and extraction details are in `public/audio/README.md`.
-The current picks are C06 for affirm, C19 for cancel, and C07 for confirm,
-shortened to 160–220ms with fast fades.
+The three UI cues use physical switch recordings: a desk-lamp switch press for
+affirm, its release for cancel, and the approved old-switch audition A for
+confirm. They last 230ms, 230ms, and 300ms respectively; source credit and
+extraction details are in `public/audio/README.md`.
 Live-game messages select their UI cue in `GamePage.playAudio`, including nested
 view and playback messages. Opening menus, selecting objects, adjusting discrete
 camera controls, and choosing commands play `uiAffirm`. Saving orders, confirming
 cargo choices, submitting, resigning, and continuing dialogs play `uiConfirm`.
 Closing, backing out, and declining cargo choices play `uiCancel`.
 Keyboard actions use the same cue categories. Hover, focus, continuous pointer
-input, automatic playback, and server responses remain silent.
+input, automatic playback controls, and server responses remain silent.
+Combat playback emits `Audio.tankFire` or `Audio.fieldGunFire` whenever its clock crosses
+a matching muzzle-flash time (after the field gun’s 320ms preparation), using the same stagger as the sprites. Live games and logged replays
+share this timing; pauses and camera holds do not repeat shots. The manager
+preloads and cycles five distinct original procedural firing variants per weapon, with up to eight
+overlapping combat voices independent of UI feedback. Timing follows animation
+frames, with no separate per-tank timers.
 
 ## Dev panel
 
@@ -245,7 +262,7 @@ can pass through reserved destinations. Depots are passable.
 The selection panel shows the selected unit's illustration, name, and player,
 with expandable unit and gauge explanations. Every unit starts with 16/16 hit points, supplied by the server. Combat damage uses weapon matchup, health, readiness, facing, cover, and ambush advantage; see [combat_factors.md](combat_factors.md). Healing is not implemented yet.
 
-Infantry can choose **dig in** to spend their whole turn and 64 supplies plus
+Infantry can choose **dig in** to spend their whole turn and 16 supplies plus
 normal upkeep. They cannot move or fire while digging and gain entrenchment only
 after all combat resolves. Entrenchment persists through holding, ambush, stand
 ground, and facing changes; infantry and field guns do very little damage to

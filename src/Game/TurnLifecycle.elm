@@ -16,6 +16,7 @@ module Game.TurnLifecycle exposing
     , selection
     , setCombatMapView
     , setOrders
+    , setPlaybackCamera
     , setSelection
     , startSubmission
     , startTurn
@@ -68,6 +69,16 @@ type alias WaitingState =
     { orders : List PlannedOrder
     , inspection : Maybe Inspection
     }
+
+
+setPlaybackAnimation : TurnPlayback.Playback -> PlaybackState -> PlaybackState
+setPlaybackAnimation animation model =
+    { model | animation = animation }
+
+
+setPlaybackCamera : Maybe PlaybackCamera -> PlaybackState -> PlaybackState
+setPlaybackCamera camera model =
+    { model | camera = camera }
 
 
 toLabel : Phase -> String
@@ -284,7 +295,11 @@ continueCombat phase =
                     }
                     -> { phase : Phase, frame : TurnPlayback.Frame }
                 continued next =
-                    { phase = Playing { playing | animation = next.animation }
+                    { phase =
+                        Playing
+                            (playing
+                                |> setPlaybackAnimation next.animation
+                            )
                     , frame = next.frame
                     }
             in
@@ -298,7 +313,10 @@ acknowledgeLoss : UnitId -> Phase -> Phase
 acknowledgeLoss unitId phase =
     case phase of
         Playing playing ->
-            Playing { playing | animation = TurnPlayback.acknowledgeLoss unitId playing.animation }
+            Playing
+                (playing
+                    |> setPlaybackAnimation (TurnPlayback.acknowledgeLoss unitId playing.animation)
+                )
 
         _ ->
             phase
@@ -308,7 +326,10 @@ setCombatMapView : TurnPlayback.MapView -> Phase -> Phase
 setCombatMapView mapView phase =
     case phase of
         Playing playing ->
-            Playing { playing | animation = TurnPlayback.setMapView mapView playing.animation }
+            Playing
+                (playing
+                    |> setPlaybackAnimation (TurnPlayback.setMapView mapView playing.animation)
+                )
 
         _ ->
             phase
@@ -384,7 +405,10 @@ tickWith advance delta phase =
                 next =
                     case remaining of
                         Just animation ->
-                            Playing { playing | animation = animation }
+                            Playing
+                                (playing
+                                    |> setPlaybackAnimation animation
+                                )
 
                         Nothing ->
                             ready

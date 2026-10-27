@@ -21,8 +21,10 @@ try {
   const { Elm } = require(output);
   const app = Elm.Game.Checks.Replay.init({ flags: null });
   const dialogs = [];
+  const sounds = [];
   app.ports.toJs.subscribe(message => {
     if (message.tag === 'openDialog') dialogs.push(message.htmlId);
+    if (message.play) sounds.push(message.play);
   });
   app.ports.results.subscribe(failures => {
     // Cmd.batch has no ordering guarantee. Allow both ports to deliver before
@@ -30,6 +32,9 @@ try {
     setTimeout(() => {
       if (JSON.stringify(dialogs.sort()) !== JSON.stringify(['unit-loss-1', 'unit-loss-2'])) {
         failures.push(`Expected one dialog per casualty; received ${JSON.stringify(dialogs)}`);
+      }
+      if (JSON.stringify(sounds) !== JSON.stringify(['tankFire', 'tankFire', 'tankFire', 'tankFire'])) {
+        failures.push(`Expected one sound for each of four tank shots, without pause duplicates; received ${JSON.stringify(sounds)}`);
       }
       if (failures.length) {
         console.error(failures.join('\n'));

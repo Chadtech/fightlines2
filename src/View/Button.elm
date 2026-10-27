@@ -83,6 +83,16 @@ type Emphasis
 ----------------------------------------------------------------
 
 
+setSize : Size -> Button msg -> Button msg
+setSize size model =
+    { model | size = size }
+
+
+setEmphasis : Emphasis -> Button msg -> Button msg
+setEmphasis emphasis model =
+    { model | emphasis = emphasis }
+
+
 fromLabelAndVariant : String -> Variant -> Button msg
 fromLabelAndVariant label variant =
     { accessibleLabel = Nothing
@@ -160,56 +170,52 @@ disabled label =
 
 small : Button msg -> Button msg
 small button =
-    { button
-        | size = Small
-    }
+    button
+        |> setSize Small
 
 
 compact : Button msg -> Button msg
 compact button =
-    { button
-        | size = Compact
-    }
+    button
+        |> setSize Compact
 
 
 square : Button msg -> Button msg
 square button =
-    { button
-        | size = Square
-    }
+    button
+        |> setSize Square
 
 
 {-| Fill a window title bar vertically without fixing the button's height.
 -}
 titleBar : Button msg -> Button msg
 titleBar button =
-    { button | size = TitleBar }
+    button
+        |> setSize TitleBar
 
 
 tall : Button msg -> Button msg
 tall button =
-    { button
-        | size = Tall
-    }
+    button
+        |> setSize Tall
 
 
 highlighted : Button msg -> Button msg
 highlighted button =
-    { button
-        | emphasis = Highlighted
-    }
+    button
+        |> setEmphasis Highlighted
 
 
 attention : Button msg -> Button msg
 attention button =
-    { button
-        | emphasis = Attention
-    }
+    button
+        |> setEmphasis Attention
 
 
 large : Button msg -> Button msg
 large button =
-    { button | size = Large }
+    button
+        |> setSize Large
 
 
 fullWidth : Button msg -> Button msg

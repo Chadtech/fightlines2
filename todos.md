@@ -18,8 +18,10 @@
 
 ## Bugs
 - unit disappears when it starves with no notice
+- I put a field gun into the ambush range of my field gun, and it didn't move and my field gun did not attack
 
 ## Immediately
+- Sabotage combat theater animation
 - Sound
 
 ## Soon
@@ -59,8 +61,8 @@
 
 ## Army Perks
 ### United States
-- **Arsenal of Democracy** — Factories produce units for 15% less money.
-- **Motorization** — Trucks and tanks gain +1 movement range on non-attack moves.
+- **Democracy** — Factories produce units for 15% less money.
+- **Motorized** — Trucks and tanks gain +1 movement range on non-attack moves.
 
 ### Communist China
 - **Long March** — Infantry consumes 50% less supply when moving.
@@ -76,8 +78,8 @@
 
 ### Chaos Cultists
 - **Cannibalism** — Units replenish 50% of their maximum supplies when destroying an enemy unit.
-- **Lurking Horrors** — Ambushing units incur no readiness cost.
+- **Lurk** — Ambushing units incur no readiness cost.
 
 ### Amazon.com
-- **Route Optimization** — Trucks consume 50% less fuel when moving.
+- **Optimization** — Trucks consume 50% less fuel when moving.
 - **Over-the-Horizon Targeting** — Indirect-fire units gain +1 attack range.

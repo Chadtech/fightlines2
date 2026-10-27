@@ -97,6 +97,11 @@ addError maybeError model =
 ----------------------------------------------------------------
 
 
+setDevPanelOpen : Bool -> Model fields -> Model fields
+setDevPanelOpen devPanelOpen model =
+    { model | devPanelOpen = devPanelOpen }
+
+
 toDevPanelError : Error -> DevPanel.Error
 toDevPanelError error =
     case error of
@@ -224,12 +229,18 @@ update : Msg -> Model fields -> ( Model fields, Eff Msg )
 update msg model =
     case msg of
         DevPanelToggleKeyPressed ->
-            ( { model | devPanelOpen = not model.devPanelOpen }, E.none )
+            ( model
+                |> setDevPanelOpen (not model.devPanelOpen)
+            , E.none
+            )
 
         DevPanelMsg panelMsg ->
             case panelMsg of
                 DevPanel.Canceled ->
-                    ( { model | devPanelOpen = False }, E.none )
+                    ( model
+                        |> setDevPanelOpen False
+                    , E.none
+                    )
 
                 DevPanel.TabClicked tab ->
                     let

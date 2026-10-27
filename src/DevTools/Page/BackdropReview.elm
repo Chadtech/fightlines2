@@ -218,6 +218,26 @@ init shared flags =
 ----------------------------------------------------------------
 
 
+setDrafts : List Entry -> Model -> Model
+setDrafts drafts model =
+    { model | drafts = drafts }
+
+
+setCopyStatus : CopyStatus -> Model -> Model
+setCopyStatus copyStatus model =
+    { model | copyStatus = copyStatus }
+
+
+setBackdropCalibrations : List Entry -> Model -> Model
+setBackdropCalibrations backdropCalibrations model =
+    { model | backdropCalibrations = backdropCalibrations }
+
+
+setSaveStatus : SaveStatus -> Model -> Model
+setSaveStatus saveStatus model =
+    { model | saveStatus = saveStatus }
+
+
 setShared : Shared.Model -> Model -> Model
 setShared shared model =
     { model
@@ -318,15 +338,15 @@ changeCalibration key parameter value model =
                         | rearScale = clamp 35 100 (toFloat (round value))
                     }
     in
-    { model
-        | drafts =
-            Calibration.replace
+    model
+        |> setDrafts
+            (Calibration.replace
                 { backdrop = key.backdrop
                 , unitKind = key.unitKind
                 , calibration = next
                 }
                 model.drafts
-    }
+            )
 
 
 mapScene : Side -> (Scene -> Scene) -> Model -> Model
@@ -426,17 +446,15 @@ update : Msg -> Model -> ( Model, Eff Msg )
 update msg model =
     case msg of
         CopySourceChanged path ->
-            { model
-                | copySource = path
-                , copyStatus = resetCopyFeedback model.copyStatus
-            }
+            ({ model | copySource = path }
+                |> setCopyStatus (resetCopyFeedback model.copyStatus)
+            )
                 |> E.withOut
 
         CopyDestinationChanged path ->
-            { model
-                | copyDestination = path
-                , copyStatus = resetCopyFeedback model.copyStatus
-            }
+            ({ model | copyDestination = path }
+                |> setCopyStatus (resetCopyFeedback model.copyStatus)
+            )
                 |> E.withOut
 
         CopyClicked ->
@@ -461,10 +479,9 @@ update msg model =
                         , drafts = model.drafts
                         }
                 in
-                ( { model
-                    | copyStatus = Copying pending
-                    , shared = request.shared
-                  }
+                ( model
+                    |> setCopyStatus (Copying pending)
+                    |> setShared request.shared
                 , E.request (CopyResponseReceived pending.requestId)
                     (Calibration.copy
                         { source = pending.source
@@ -500,20 +517,18 @@ update msg model =
                                         in
                                         not wasReplaced
                                 in
-                                ( { model
-                                    | backdropCalibrations =
-                                        List.foldl Calibration.replace model.backdropCalibrations entries
-                                    , drafts = List.filter keepDraft model.drafts
-                                    , copyStatus = CopyDone pending.destination (List.length entries)
-                                    , saveStatus = Idle
-                                  }
+                                ( model
+                                    |> setBackdropCalibrations (List.foldl Calibration.replace model.backdropCalibrations entries)
+                                    |> setDrafts (List.filter keepDraft model.drafts)
+                                    |> setCopyStatus (CopyDone pending.destination (List.length entries))
+                                    |> setSaveStatus Idle
                                 , E.none
                                 )
 
                             Err error ->
-                                { model
-                                    | copyStatus = CopyFailed (ApiRequest.errorMessage error)
-                                }
+                                (model
+                                    |> setCopyStatus (CopyFailed (ApiRequest.errorMessage error))
+                                )
                                     |> E.withOut
 
                 _ ->
@@ -550,14 +565,14 @@ update msg model =
                         request =
                             nextRequest model.shared
                     in
-                    ( { model
-                        | saveStatus =
-                            Saving
+                    ( model
+                        |> setSaveStatus
+                            (Saving
                                 { requestId = request.requestId
                                 , entry = entry
                                 }
-                        , shared = request.shared
-                      }
+                            )
+                        |> setShared request.shared
                     , E.request (SaveResponseReceived request.requestId) (Calibration.save entry)
                     )
 
@@ -571,22 +586,22 @@ update msg model =
                     else
                         case response of
                             Ok entry ->
-                                ( { model
-                                    | backdropCalibrations = Calibration.replace entry model.backdropCalibrations
-                                    , saveStatus = Idle
-                                  }
+                                ( model
+                                    |> setBackdropCalibrations (Calibration.replace entry model.backdropCalibrations)
+                                    |> setSaveStatus Idle
                                 , E.none
                                 )
 
                             Err error ->
-                                { model
-                                    | saveStatus =
-                                        SaveFailed
+                                (model
+                                    |> setSaveStatus
+                                        (SaveFailed
                                             { backdrop = pending.entry.backdrop
                                             , unitKind = pending.entry.unitKind
                                             }
                                             (ApiRequest.errorMessage error)
-                                }
+                                        )
+                                )
                                     |> E.withOut
 
                 _ ->

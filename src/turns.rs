@@ -3009,7 +3009,7 @@ mod tests {
             .find(|unit| unit.unit_id() == id)
             .fixture()?;
         assert_eq!(unit.entrenchment(), Entrenchment::Entrenched);
-        assert_eq!(unit.supplies().current(), initial.supplies().current() - 68);
+        assert_eq!(unit.supplies().current(), initial.supplies().current() - 20);
         assert_eq!(unit.board_position(), initial.board_position());
         let resolution = turns.last_resolution.as_ref().fixture()?;
         assert!(resolution.frames.iter().all(|frame| frame.shots.is_empty()));
@@ -3037,7 +3037,7 @@ mod tests {
             .find(|unit| unit.unit_id() == id)
             .fixture()?;
         assert_eq!(unit.entrenchment(), Entrenchment::Entrenched);
-        assert_eq!(unit.supplies().current(), initial.supplies().current() - 72);
+        assert_eq!(unit.supplies().current(), initial.supplies().current() - 24);
         Ok(())
     }
 
@@ -3161,7 +3161,7 @@ mod tests {
                     .units
                     .first_mut()
                     .fixture()?
-                    .set_supplies_for_test(67),
+                    .set_supplies_for_test(19),
                 _ => scenario.units.first_mut().fixture()?.dig_in(),
             }
             assert!(validate(&scenario, PlayerNumber::Player1, inputs).is_err());
@@ -3173,7 +3173,7 @@ mod tests {
             .units
             .first_mut()
             .fixture()?
-            .set_supplies_for_test(68);
+            .set_supplies_for_test(20);
         assert!(validate(&scenario, PlayerNumber::Player1, inputs).is_ok());
         for kind in [UnitKind::Tank, UnitKind::Truck, UnitKind::FieldGun] {
             let mut inputs = holds(&scenario, PlayerNumber::Player1)?;

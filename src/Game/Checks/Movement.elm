@@ -18,7 +18,7 @@ import Game.TerrainFeature as TerrainFeature
 import Game.Unit as Unit
 import Game.Unit.Fuel exposing (Fuel)
 import Game.Unit.Location as Location
-import Game.Unit.Supplies exposing (Supplies)
+import Game.Unit.Supplies as Supplies exposing (Supplies)
 import Game.UnitId as UnitId
 import Game.UnitResources as UnitResources
 import Json.Decode as D exposing (Decoder)
@@ -66,6 +66,36 @@ ruleDecoder =
         (D.field "terrainCosts" (D.list (D.map2 Movement.TerrainCost (D.field "terrain" (D.map Terrain.fromApi TerrainApi.decoder)) (D.field "cost" D.int))))
         (D.field "roadFuelPerTile" D.int)
         (D.field "roadFuelPerCargoSlot" D.int)
+
+
+setRuleTerrainCosts : List Movement.TerrainCost -> Movement.Rule -> Movement.Rule
+setRuleTerrainCosts terrainCosts model =
+    { model | terrainCosts = terrainCosts }
+
+
+setSuppliesRoughTerrainSurcharge : Int -> Supplies -> Supplies
+setSuppliesRoughTerrainSurcharge roughTerrainSurcharge model =
+    { model | roughTerrainSurcharge = roughTerrainSurcharge }
+
+
+setSuppliesMaximum : Int -> Supplies -> Supplies
+setSuppliesMaximum maximum model =
+    { model | maximum = maximum }
+
+
+setSuppliesUpkeepPerTurn : Int -> Supplies -> Supplies
+setSuppliesUpkeepPerTurn upkeepPerTurn model =
+    { model | upkeepPerTurn = upkeepPerTurn }
+
+
+setSuppliesMovementPerTile : Int -> Supplies -> Supplies
+setSuppliesMovementPerTile movementPerTile model =
+    { model | movementPerTile = movementPerTile }
+
+
+setMapBaseTile : Terrain -> Map -> Map
+setMapBaseTile baseTile model =
+    { model | baseTile = baseTile }
 
 
 check : List Movement.Rule -> Case -> List String
@@ -469,7 +499,8 @@ targetSearchChecks unit =
 
         expensiveRule : Movement.Rule
         expensiveRule =
-            { rule | terrainCosts = List.map expensiveForest rule.terrainCosts }
+            rule
+                |> setRuleTerrainCosts (List.map expensiveForest rule.terrainCosts)
 
         expensiveForest : Movement.TerrainCost -> Movement.TerrainCost
         expensiveForest entry =
@@ -508,13 +539,12 @@ targetSearchChecks unit =
 
         tieRule : Movement.Rule
         tieRule =
-            { rule
-                | terrainCosts =
+            rule
+                |> setRuleTerrainCosts
                     [ { terrain = Terrain.Plain, cost = 1 }
                     , { terrain = Terrain.Hills, cost = 2 }
                     , { terrain = Terrain.Forest, cost = 5 }
                     ]
-            }
 
         fuelLimited : Unit.Unit
         fuelLimited =
@@ -522,15 +552,15 @@ targetSearchChecks unit =
                 |> Unit.setResources
                     (Maybe.map
                         (\resources ->
-                            { resources
-                                | fuel =
-                                    Just
+                            resources
+                                |> UnitResources.setFuel
+                                    (Just
                                         { current = 4
                                         , maximum = 64
                                         , movementPerTile = 2
                                         , movementPerCargoSlot = 0
                                         }
-                            }
+                                    )
                         )
                         unit.resources
                     )
@@ -547,7 +577,12 @@ targetSearchChecks unit =
                 supplies =
                     resources.supplies
             in
-            { resources | supplies = { supplies | current = 5, roughTerrainSurcharge = 4 } }
+            resources
+                |> UnitResources.setSupplies
+                    (supplies
+                        |> Supplies.setCurrent 5
+                        |> setSuppliesRoughTerrainSurcharge 4
+                    )
 
         route : Movement.Rule -> Unit.Unit -> Coordinate -> Maybe Movement.Option
         route movementRule mover target =
@@ -799,7 +834,14 @@ fuelChecks rules =
                 emptyUnit : Unit.Unit
                 emptyUnit =
                     unit
-                        |> Unit.setResources (Maybe.map (\resources -> { resources | fuel = Just { current = 0, maximum = 128, movementPerTile = 7, movementPerCargoSlot = 0 } }) unit.resources)
+                        |> Unit.setResources
+                            (Maybe.map
+                                (\resources ->
+                                    resources
+                                        |> UnitResources.setFuel (Just { current = 0, maximum = 128, movementPerTile = 7, movementPerCargoSlot = 0 })
+                                )
+                                unit.resources
+                            )
 
                 traced : Maybe Movement.Option
                 traced =
@@ -811,7 +853,14 @@ fuelChecks rules =
                     unit
                         |> Unit.setKind UnitKind.Truck
                         |> Unit.setCargoCapacity 2
-                        |> Unit.setResources (Maybe.map (\resources -> { resources | fuel = Just { current = 12, maximum = 128, movementPerTile = 2, movementPerCargoSlot = 2 } }) unit.resources)
+                        |> Unit.setResources
+                            (Maybe.map
+                                (\resources ->
+                                    resources
+                                        |> UnitResources.setFuel (Just { current = 12, maximum = 128, movementPerTile = 2, movementPerCargoSlot = 2 })
+                                )
+                                unit.resources
+                            )
 
                 passenger : Unit.Unit
                 passenger =
@@ -842,7 +891,15 @@ fuelChecks rules =
 
                 roadTruck : Unit.Unit
                 roadTruck =
-                    truck |> Unit.setResources (Maybe.map (\resources -> { resources | fuel = Just { current = 6, maximum = 128, movementPerTile = 2, movementPerCargoSlot = 2 } }) truck.resources)
+                    truck
+                        |> Unit.setResources
+                            (Maybe.map
+                                (\resources ->
+                                    resources
+                                        |> UnitResources.setFuel (Just { current = 6, maximum = 128, movementPerTile = 2, movementPerCargoSlot = 2 })
+                                )
+                                truck.resources
+                            )
 
                 roadMap : Map
                 roadMap =
@@ -921,7 +978,14 @@ fuelChecks rules =
                         map
                         units
                         (unit
-                            |> Unit.setResources (Maybe.map (\resources -> { resources | fuel = Just { current = 128, maximum = 128, movementPerTile = 7, movementPerCargoSlot = 0 } }) unit.resources)
+                            |> Unit.setResources
+                                (Maybe.map
+                                    (\resources ->
+                                        resources
+                                            |> UnitResources.setFuel (Just { current = 128, maximum = 128, movementPerTile = 7, movementPerCargoSlot = 0 })
+                                    )
+                                    unit.resources
+                                )
                         )
                         |> List.all (\option -> option.cost <= 12)
                     )
@@ -988,7 +1052,17 @@ supplyChecks rules =
                 exhausted : Unit.Unit
                 exhausted =
                     unit
-                        |> Unit.setResources (Maybe.map (\resources -> { resources | supplies = { supplies | current = 1 } }) unit.resources)
+                        |> Unit.setResources
+                            (Maybe.map
+                                (\resources ->
+                                    resources
+                                        |> UnitResources.setSupplies
+                                            (supplies
+                                                |> Supplies.setCurrent 1
+                                            )
+                                )
+                                unit.resources
+                            )
 
                 traced : Maybe Movement.Option
                 traced =
@@ -999,27 +1073,79 @@ supplyChecks rules =
                 fieldGun =
                     unit
                         |> Unit.setKind UnitKind.FieldGun
-                        |> Unit.setResources (Maybe.map (\resources -> { resources | supplies = { supplies | current = 27, maximum = 196, upkeepPerTurn = 4, movementPerTile = 24 } }) unit.resources)
+                        |> Unit.setResources
+                            (Maybe.map
+                                (\resources ->
+                                    resources
+                                        |> UnitResources.setSupplies
+                                            (supplies
+                                                |> Supplies.setCurrent 27
+                                                |> setSuppliesMaximum 196
+                                                |> setSuppliesUpkeepPerTurn 4
+                                                |> setSuppliesMovementPerTile 24
+                                            )
+                                )
+                                unit.resources
+                            )
 
                 suppliedFieldGun : Unit.Unit
                 suppliedFieldGun =
                     fieldGun
-                        |> Unit.setResources (Maybe.map (\resources -> { resources | supplies = { supplies | current = 28, maximum = 196, upkeepPerTurn = 4, movementPerTile = 24 } }) fieldGun.resources)
+                        |> Unit.setResources
+                            (Maybe.map
+                                (\resources ->
+                                    resources
+                                        |> UnitResources.setSupplies
+                                            (supplies
+                                                |> Supplies.setCurrent 28
+                                                |> setSuppliesMaximum 196
+                                                |> setSuppliesUpkeepPerTurn 4
+                                                |> setSuppliesMovementPerTile 24
+                                            )
+                                )
+                                fieldGun.resources
+                            )
 
                 vehicle : Unit.Unit
                 vehicle =
                     unit
                         |> Unit.setKind UnitKind.Tank
-                        |> Unit.setResources (Maybe.map (\resources -> { resources | fuel = Just { current = 2, maximum = 64, movementPerTile = 2, movementPerCargoSlot = 0 }, supplies = { supplies | current = 0, roughTerrainSurcharge = 0, movementPerTile = 0 } }) unit.resources)
+                        |> Unit.setResources
+                            (Maybe.map
+                                (\resources ->
+                                    resources
+                                        |> UnitResources.setFuel (Just { current = 2, maximum = 64, movementPerTile = 2, movementPerCargoSlot = 0 })
+                                        |> UnitResources.setSupplies
+                                            (supplies
+                                                |> Supplies.setCurrent 0
+                                                |> setSuppliesRoughTerrainSurcharge 0
+                                                |> setSuppliesMovementPerTile 0
+                                            )
+                                )
+                                unit.resources
+                            )
 
                 roughMap : Map
                 roughMap =
-                    { map | baseTile = Terrain.Forest }
+                    map
+                        |> setMapBaseTile Terrain.Forest
 
                 infantry : Unit.Unit
                 infantry =
                     unit
-                        |> Unit.setResources (Maybe.map (\resources -> { resources | supplies = { supplies | current = 8, movementPerTile = 3, roughTerrainSurcharge = 1 } }) unit.resources)
+                        |> Unit.setResources
+                            (Maybe.map
+                                (\resources ->
+                                    resources
+                                        |> UnitResources.setSupplies
+                                            (supplies
+                                                |> Supplies.setCurrent 8
+                                                |> setSuppliesMovementPerTile 3
+                                                |> setSuppliesRoughTerrainSurcharge 1
+                                            )
+                                )
+                                unit.resources
+                            )
 
                 roughTrace : Maybe Movement.Option
                 roughTrace =
@@ -1028,8 +1154,13 @@ supplyChecks rules =
                 terrainSupplyCostMatches : ( Terrain, Int ) -> Bool
                 terrainSupplyCostMatches ( terrain, expected ) =
                     Movement.supplyCost
-                        { map | baseTile = terrain }
-                        { supplies | movementPerTile = 9, roughTerrainSurcharge = 4 }
+                        (map
+                            |> setMapBaseTile terrain
+                        )
+                        (supplies
+                            |> setSuppliesMovementPerTile 9
+                            |> setSuppliesRoughTerrainSurcharge 4
+                        )
                         [ { x = 0, y = 0 }, { x = 1, y = 0 } ]
                         == expected
 
@@ -1053,7 +1184,17 @@ supplyChecks rules =
                     (Movement.tileLimit rules
                         units
                         (unit
-                            |> Unit.setResources (Maybe.map (\resources -> { resources | supplies = { supplies | current = 0 } }) unit.resources)
+                            |> Unit.setResources
+                                (Maybe.map
+                                    (\resources ->
+                                        resources
+                                            |> UnitResources.setSupplies
+                                                (supplies
+                                                    |> Supplies.setCurrent 0
+                                                )
+                                    )
+                                    unit.resources
+                                )
                         )
                         == Just 0
                     )
@@ -1063,12 +1204,32 @@ supplyChecks rules =
                         roughMap
                         [ unit ]
                         (infantry
-                            |> Unit.setResources (Maybe.map (\resources -> { resources | supplies = { supplies | current = 9, movementPerTile = 3, roughTerrainSurcharge = 1 } }) infantry.resources)
+                            |> Unit.setResources
+                                (Maybe.map
+                                    (\resources ->
+                                        resources
+                                            |> UnitResources.setSupplies
+                                                (supplies
+                                                    |> Supplies.setCurrent 9
+                                                    |> setSuppliesMovementPerTile 3
+                                                    |> setSuppliesRoughTerrainSurcharge 1
+                                                )
+                                    )
+                                    infantry.resources
+                                )
                         )
                         |> List.any (\option -> option.destination == { x = 2, y = 0 } && option.cost == 4)
                     )
                 , test "terrain supplies restrict otherwise reachable routes" (Movement.options [] rules roughMap [ infantry ] infantry |> List.all (\option -> List.length option.path <= 2))
-                , test "terrain supply cost is paid on entered squares" (Movement.supplyCost roughMap { supplies | movementPerTile = 3, roughTerrainSurcharge = 1 } [ { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 2, y = 0 } ] == 8)
+                , test "terrain supply cost is paid on entered squares"
+                    (Movement.supplyCost roughMap
+                        (supplies
+                            |> setSuppliesMovementPerTile 3
+                            |> setSuppliesRoughTerrainSurcharge 1
+                        )
+                        [ { x = 0, y = 0 }, { x = 1, y = 0 }, { x = 2, y = 0 } ]
+                        == 8
+                    )
                 , test "infantry movement supply costs match each passable terrain"
                     (List.all
                         terrainSupplyCostMatches
@@ -1110,7 +1271,7 @@ lookupChecks =
         positions =
             { x = -1, y = 3 } :: { x = 9, y = 9 } :: Map.positions map
 
-        originalTerrainAt : Coordinate -> Terrain.Terrain
+        originalTerrainAt : Coordinate -> Terrain
         originalTerrainAt position =
             features
                 |> ListUtil.find (\feature -> feature.position == position)
@@ -1231,7 +1392,14 @@ transportChecks rules =
                         |> Unit.setCargoCapacity 2
                         |> Unit.setDirection Nothing
                         |> Unit.setOnMap { x = 1, y = 0 }
-                        |> Unit.setResources (Maybe.map (\resources -> { resources | fuel = Just { current = 64, maximum = 64, movementPerTile = 1, movementPerCargoSlot = 0 } }) passenger.resources)
+                        |> Unit.setResources
+                            (Maybe.map
+                                (\resources ->
+                                    resources
+                                        |> UnitResources.setFuel (Just { current = 64, maximum = 64, movementPerTile = 1, movementPerCargoSlot = 0 })
+                                )
+                                passenger.resources
+                            )
 
                 map : Map
                 map =
@@ -1262,7 +1430,14 @@ transportChecks rules =
                 fuelEmptyTruck : Unit.Unit
                 fuelEmptyTruck =
                     truck
-                        |> Unit.setResources (Maybe.map (\resources -> { resources | fuel = Just { current = 0, maximum = 64, movementPerTile = 1, movementPerCargoSlot = 0 } }) truck.resources)
+                        |> Unit.setResources
+                            (Maybe.map
+                                (\resources ->
+                                    resources
+                                        |> UnitResources.setFuel (Just { current = 0, maximum = 64, movementPerTile = 1, movementPerCargoSlot = 0 })
+                                )
+                                truck.resources
+                            )
 
                 strandedUnits : List Unit.Unit
                 strandedUnits =
@@ -1316,7 +1491,15 @@ transportChecks rules =
                     (not
                         (canReach strandedUnits
                             (aboard
-                                |> Unit.setResources (Maybe.map (\resources -> { resources | supplies = { current = 1, maximum = 64, upkeepPerTurn = 1, roughTerrainSurcharge = 0, movementPerTile = 1 } }) aboard.resources)
+                                |> Unit.setResources
+                                    (Maybe.map
+                                        (\resources ->
+                                            resources
+                                                |> UnitResources.setSupplies
+                                                    { current = 1, maximum = 64, upkeepPerTurn = 1, roughTerrainSurcharge = 0, movementPerTile = 1 }
+                                        )
+                                        aboard.resources
+                                    )
                             )
                             { x = 2, y = 0 }
                         )

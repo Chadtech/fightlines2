@@ -778,7 +778,7 @@ mod tests {
             ]
         }"#).fixture()?.scenario().fixture()?;
             let infantry = scenario.units.first_mut().fixture()?;
-            infantry.set_supplies_for_test(40);
+            infantry.set_supplies_for_test(19);
             let orders = planner(&scenario, PlayerNumber::Player1).fixture()?;
             let order = orders.first().fixture()?;
             assert_eq!(order.path.len(), 1);

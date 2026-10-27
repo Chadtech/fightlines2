@@ -87,13 +87,17 @@ step : Coordinate -> Direction -> Coordinate
 step origin direction =
     case direction of
         Direction.North ->
-            { origin | y = origin.y - 1 }
+            origin
+                |> Coordinate.setY (origin.y - 1)
 
         Direction.East ->
-            { origin | x = origin.x + 1 }
+            origin
+                |> Coordinate.setX (origin.x + 1)
 
         Direction.South ->
-            { origin | y = origin.y + 1 }
+            origin
+                |> Coordinate.setY (origin.y + 1)
 
         Direction.West ->
-            { origin | x = origin.x - 1 }
+            origin
+                |> Coordinate.setX (origin.x - 1)

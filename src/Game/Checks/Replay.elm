@@ -1,6 +1,7 @@
 port module Game.Checks.Replay exposing (main)
 
 import Api.Enum.AmbushShape as AmbushShape
+import Api.Enum.CombatKind as CombatKind
 import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as MapTheme
 import Api.Enum.MapType as MapType
@@ -15,6 +16,7 @@ import DevTools.Shared as Shared
 import Effect as E exposing (Eff)
 import Game.BattlefieldNavigation as BattlefieldNavigation
 import Game.BattlefieldSnapshot as BattlefieldSnapshot
+import Game.CombatHealth exposing (CombatHealth)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Inspection exposing (Inspection(..))
 import Game.Map as Map
@@ -39,6 +41,21 @@ import Random
 port results : List String -> Cmd msg
 
 
+setBattlefieldUnits : List Unit -> BattlefieldSnapshot.Snapshot -> BattlefieldSnapshot.Snapshot
+setBattlefieldUnits units model =
+    { model | units = units }
+
+
+setPositionFogOfWar : Bool -> Position -> Position
+setPositionFogOfWar fogOfWar model =
+    { model | fogOfWar = fogOfWar }
+
+
+setPositionTurn : Int -> Position -> Position
+setPositionTurn turn model =
+    { model | turn = turn }
+
+
 main : Program () () ()
 main =
     Browser.application
@@ -55,6 +72,13 @@ main =
         , onUrlChange = \_ -> ()
         , onUrlRequest = \_ -> ()
         }
+
+
+type alias Position =
+    { turn : Int
+    , player : PlayerNumber.PlayerNumber
+    , fogOfWar : Bool
+    }
 
 
 type alias RecordedTurn =
@@ -200,7 +224,13 @@ checks shared =
                 revealedBlue =
                     revealed
                         |> step (GameReplay.PlayerSelected PlayerNumber.Player2)
-                        |> step (GameReplay.TurnResponseReceived { blue | fogOfWar = False } (Ok turn))
+                        |> step
+                            (GameReplay.TurnResponseReceived
+                                (blue
+                                    |> setPositionFogOfWar False
+                                )
+                                (Ok turn)
+                            )
 
                 refogged : GameReplay.Model
                 refogged =
@@ -210,6 +240,9 @@ checks shared =
 
                 ( lossFailures, lossEffects ) =
                     lossChecks initial
+
+                ( audioFailures, audioEffects ) =
+                    audioChecks initial
 
                 unframed : GameReplay.Model
                 unframed =
@@ -227,6 +260,7 @@ checks shared =
             in
             ( List.concat
                 [ lossFailures
+                , audioFailures
                 , selectionChecks initial
                 , expect "order overlays start hidden" (not initial.showOrders)
                 , expect "order overlays toggle without changing playback" ((step (GameReplay.ShowOrdersChanged True) paused).showOrders && (step (GameReplay.ShowOrdersChanged True) paused).timeline == paused.timeline)
@@ -234,8 +268,26 @@ checks shared =
                 , expect "replay starts with fog enabled" initial.position.fogOfWar
                 , expect "fog changes reload the same turn and keep the saved camera" (revealed.position == revealedPosition && revealed.navigation.offset == manual.navigation.offset && revealed.navigation.zoom == manual.navigation.zoom)
                 , expect "fog requests reject stale responses for the same turn and player" ((step (GameReplay.TurnResponseReceived (redTurn 1) (Ok turn)) revealing).position == manual.position)
-                , expect "changing player retains disabled fog" (revealedBlue.position == { blue | fogOfWar = False })
-                , expect "changing turns retains disabled fog" ((step GameReplay.NextClicked revealed |> step (GameReplay.TurnResponseReceived { revealedPosition | turn = 2 } (Ok turn))).position == { revealedPosition | turn = 2 })
+                , expect "changing player retains disabled fog"
+                    (revealedBlue.position
+                        == (blue
+                                |> setPositionFogOfWar False
+                           )
+                    )
+                , expect "changing turns retains disabled fog"
+                    ((step GameReplay.NextClicked revealed
+                        |> step
+                            (GameReplay.TurnResponseReceived
+                                (revealedPosition
+                                    |> setPositionTurn 2
+                                )
+                                (Ok turn)
+                            )
+                     ).position
+                        == (revealedPosition
+                                |> setPositionTurn 2
+                           )
+                    )
                 , expect "fog can be restored to the original player projection" (refogged.position == redTurn 1 && refogged.battlefield == playing.battlefield)
                 , expect "loading prevents a second fog request" ((step (GameReplay.FogOfWarChanged False) loading).request == loading.request)
                 , expect "viewport measurement initializes the playback camera" (framed.timeline /= playing.timeline)
@@ -258,7 +310,7 @@ checks shared =
                 , expect "keyboard inspection can be cleared without entering planning" (inspected.inspection /= Nothing && (step GameReplay.EscapePressed inspected).inspection == Nothing)
                 , expect "continuous play advances through a turn with no animation frames" (emptyTurn.position == redTurn 2)
                 ]
-            , lossEffects
+            , E.batch [ lossEffects, audioEffects ]
             )
 
 
@@ -284,7 +336,12 @@ selectionChecks initial =
 
                 opening : GameReplay.Model
                 opening =
-                    { initial | battlefield = { battlefield | units = [ unit ] } }
+                    { initial
+                        | battlefield =
+                            battlefield
+                                |> setBattlefieldUnits
+                                    [ unit ]
+                    }
 
                 firstFrame : TurnPlayback.Frame
                 firstFrame =
@@ -292,8 +349,18 @@ selectionChecks initial =
 
                 turn : RecordedTurn
                 turn =
-                    { battlefield = { battlefield | units = [ movedUnit ] }
-                    , frames = [ { firstFrame | units = [ unit ] }, { firstFrame | units = [ movedUnit ] } ]
+                    { battlefield =
+                        battlefield
+                            |> setBattlefieldUnits
+                                [ movedUnit ]
+                    , frames =
+                        [ firstFrame
+                            |> TurnPlayback.setFrameUnits
+                                [ unit ]
+                        , firstFrame
+                            |> TurnPlayback.setFrameUnits
+                                [ movedUnit ]
+                        ]
                     , orders = []
                     , resolution = Nothing
                     }
@@ -366,6 +433,88 @@ selectionChecks initial =
                 ]
 
 
+audioChecks : GameReplay.Model -> ( List String, Eff () )
+audioChecks initial =
+    case ( UnitId.parse "1", UnitId.parse "2" ) of
+        ( Ok first, Ok second ) ->
+            let
+                attacker : Unit
+                attacker =
+                    fixtureUnit first |> Unit.setKind Kind.Tank
+
+                target : Unit
+                target =
+                    fixtureUnit second |> Unit.setPlayerNumber PlayerNumber.Player2 |> Unit.setOnMap { x = 2, y = 1 }
+
+                health : CombatHealth
+                health =
+                    { before = { current = 16, maximum = 16 }, after = { current = 16, maximum = 16 } }
+
+                empty : TurnPlayback.Frame
+                empty =
+                    frame []
+
+                before : TurnPlayback.Frame
+                before =
+                    { empty | units = [ attacker, target ] }
+
+                volley : TurnPlayback.Frame
+                volley =
+                    { before
+                        | shots =
+                            [ { kind = CombatKind.Ambush
+                              , origin = { x = 1, y = 1 }
+                              , destination = { x = 2, y = 1 }
+                              , attacker = attacker
+                              , target = target
+                              , damage = 0
+                              , attackerHealth = health
+                              , targetHealth = health
+                              }
+                            ]
+                    }
+
+                tick : Float -> GameReplay.Model -> ( GameReplay.Model, Eff GameReplay.Msg )
+                tick delta =
+                    GameReplay.update (GameReplay.PlaybackMsg (PlaybackPresentation.FrameElapsed delta))
+
+                showing : GameReplay.Model
+                showing =
+                    GameReplay.update (GameReplay.TurnSelected 1) initial
+                        |> Tuple.first
+                        |> GameReplay.update (GameReplay.TurnResponseReceived { turn = 1, player = PlayerNumber.Player1, fogOfWar = True } (Ok (recordedTurn [ before, volley, before ])))
+                        |> Tuple.first
+                        |> tick 5000
+                        |> Tuple.first
+                        |> tick 300
+                        |> Tuple.first
+                        |> tick 1199
+                        |> Tuple.first
+
+                ( fired, firstCue ) =
+                    tick 1 showing
+
+                ( _, heldCue ) =
+                    tick 0 fired
+
+                paused : GameReplay.Model
+                paused =
+                    GameReplay.update GameReplay.PauseClicked fired |> Tuple.first
+
+                ( held, pausedCue ) =
+                    tick 500 paused
+
+                ( _, remainingCues ) =
+                    GameReplay.update GameReplay.PlayClicked held |> Tuple.first |> tick 300
+            in
+            ( expect "paused replay clocks remain frozen through firing timestamps" (held.timeline == paused.timeline)
+            , E.batch [ firstCue, heldCue, pausedCue, remainingCues ] |> E.map (always ())
+            )
+
+        _ ->
+            ( [ "could not construct replay audio fixture IDs" ], E.none )
+
+
 lossChecks : GameReplay.Model -> ( List String, Eff () )
 lossChecks initial =
     case ( UnitId.parse "1", UnitId.parse "2" ) of
@@ -381,7 +530,8 @@ lossChecks initial =
 
                 deaths : TurnPlayback.Frame
                 deaths =
-                    { alive | units = List.map (Unit.setDestroyed True) living }
+                    alive
+                        |> TurnPlayback.setFrameUnits (List.map (Unit.setDestroyed True) living)
 
                 position : { turn : Int, player : PlayerNumber.PlayerNumber, fogOfWar : Bool }
                 position =
@@ -393,7 +543,20 @@ lossChecks initial =
 
                 playing : GameReplay.Model
                 playing =
-                    GameReplay.update (GameReplay.TurnResponseReceived position (Ok (recordedTurn [ { alive | units = living }, deaths, alive ]))) loading |> Tuple.first
+                    GameReplay.update
+                        (GameReplay.TurnResponseReceived position
+                            (Ok
+                                (recordedTurn
+                                    [ alive
+                                        |> TurnPlayback.setFrameUnits living
+                                    , deaths
+                                    , alive
+                                    ]
+                                )
+                            )
+                        )
+                        loading
+                        |> Tuple.first
 
                 ( lost, firstDialog ) =
                     GameReplay.update (GameReplay.PlaybackMsg (PlaybackPresentation.FrameElapsed 1000)) playing

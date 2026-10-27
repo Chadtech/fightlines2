@@ -45,6 +45,41 @@ import Platform
 port results : List String -> Cmd msg
 
 
+setResourcesSupplyCargo : List CargoStock -> UnitResources -> UnitResources
+setResourcesSupplyCargo supplyCargo model =
+    { model | supplyCargo = supplyCargo }
+
+
+setDepotKind : BuildingKind -> Depot -> Depot
+setDepotKind kind model =
+    { model | kind = kind }
+
+
+setDepotHp : Depot.Hp -> Depot -> Depot
+setDepotHp hp model =
+    { model | hp = hp }
+
+
+setBoardUnits : List Unit -> BoardFixture -> BoardFixture
+setBoardUnits units model =
+    { model | units = units }
+
+
+setBoardSupplyCrates : List Supply.GroundCrate -> BoardFixture -> BoardFixture
+setBoardSupplyCrates supplyCrates model =
+    { model | supplyCrates = supplyCrates }
+
+
+setBoardDepots : List Depot -> BoardFixture -> BoardFixture
+setBoardDepots depots model =
+    { model | depots = depots }
+
+
+setBoardMap : Map -> BoardFixture -> BoardFixture
+setBoardMap map model =
+    { model | map = map }
+
+
 main : Program () () Never
 main =
     Platform.worker
@@ -175,7 +210,8 @@ interruptedDismountChecks infantryId truckId passengerId =
                             else
                                 original
                     in
-                    { context | units = List.map changePassenger context.units }
+                    context
+                        |> setBoardUnits (List.map changePassenger context.units)
 
                 deployOtherPassenger : BoardFixture -> OrderPlanning.Model
                 deployOtherPassenger fixture =
@@ -352,19 +388,22 @@ sabotagePlanningChecks infantryId truckId =
             , infantry |> Unit.setLocation (Location.Aboard truckId)
             , infantry |> Unit.setKind Kind.Tank
             , infantry |> Unit.setKind Kind.FieldGun
-            , infantry |> Unit.mapResources (\resources -> { resources | supplies = Game.Unit.Supplies.setCurrent 0 resources.supplies })
+            , infantry
+                |> Unit.mapResources
+                    (\resources ->
+                        resources
+                            |> UnitResources.setSupplies (Game.Unit.Supplies.setCurrent 0 resources.supplies)
+                    )
             ]
 
         fortress : Depot
         fortress =
-            { depot
-                | kind = BuildingKind.Fortress
-                , stock = Nothing
-                , hp =
+            { depot | stock = Nothing }
+                |> setDepotKind BuildingKind.Fortress
+                |> setDepotHp
                     { current = 8
                     , maximum = 8
                     }
-            }
 
         fortressSelected : OrderPlanning.Model
         fortressSelected =
@@ -380,7 +419,15 @@ sabotagePlanningChecks infantryId truckId =
         [ expect "sabotage is offered only to infantry already on an operational depot"
             (List.member UnitCommand.Sabotage (UnitCommand.available [ depot ] infantry)
                 && not (List.member UnitCommand.Sabotage (UnitCommand.available [] infantry))
-                && not (UnitCommand.canUse context.map [ { depot | hp = { current = 0, maximum = 3 } } ] infantry UnitCommand.Sabotage)
+                && not
+                    (UnitCommand.canUse context.map
+                        [ depot
+                            |> setDepotHp
+                                { current = 0, maximum = 3 }
+                        ]
+                        infantry
+                        UnitCommand.Sabotage
+                    )
                 && List.all (\candidate -> not (UnitCommand.canUse context.map [ depot ] candidate UnitCommand.Sabotage)) blocked
             )
         , expect "intact fortresses support the same exclusive sabotage order"
@@ -484,7 +531,9 @@ groundPickupChecks infantryId truckId =
 
                 movingContext : BoardFixture
                 movingContext =
-                    { context | units = [ movingTruck ] }
+                    context
+                        |> setBoardUnits
+                            [ movingTruck ]
 
                 moving : OrderPlanning.Model
                 moving =
@@ -496,11 +545,18 @@ groundPickupChecks infantryId truckId =
 
                 full : Unit
                 full =
-                    truck |> Unit.mapResources (\resources -> { resources | supplyCargo = List.repeat 2 { kind = kind, current = 8, maximum = 256 } })
+                    truck
+                        |> Unit.mapResources
+                            (\resources ->
+                                resources
+                                    |> setResourcesSupplyCargo (List.repeat 2 { kind = kind, current = 8, maximum = 256 })
+                            )
 
                 fullContext : BoardFixture
                 fullContext =
-                    { context | units = [ full ] }
+                    context
+                        |> setBoardUnits
+                            [ full ]
 
                 fullSkipped : OrderPlanning.Model
                 fullSkipped =
@@ -548,7 +604,11 @@ cargoLoadingChecks infantryId truckId passengerId =
         truck : List CargoStock -> Unit
         truck cargo =
             unit truckId Kind.Truck (Location.OnMap { x = 3, y = 1 })
-                |> Unit.mapResources (\resources -> { resources | supplyCargo = cargo })
+                |> Unit.mapResources
+                    (\resources ->
+                        resources
+                            |> setResourcesSupplyCargo cargo
+                    )
 
         context : BuildingKind -> List Unit -> BoardFixture
         context kind units =
@@ -766,14 +826,13 @@ mutualPickupChecks infantryId truckId gunId =
             if candidate.id == truckId then
                 Unit.mapResources
                     (\resources ->
-                        { resources
-                            | supplyCargo =
+                        resources
+                            |> setResourcesSupplyCargo
                                 [ { kind = ResourceKind.Supply
                                   , current = 64
                                   , maximum = 64
                                   }
                                 ]
-                        }
                     )
                     candidate
 
@@ -1227,7 +1286,15 @@ planningChecks infantryId truckId passengerId =
         lowSupplyInfantry : Unit
         lowSupplyInfantry =
             infantry
-                |> Unit.setResources (Maybe.map (\resources -> { resources | supplies = { current = 6, maximum = 64, upkeepPerTurn = 1, roughTerrainSurcharge = 0, movementPerTile = 1 } }) infantry.resources)
+                |> Unit.setResources
+                    (Maybe.map
+                        (\resources ->
+                            resources
+                                |> UnitResources.setSupplies
+                                    { current = 6, maximum = 64, upkeepPerTurn = 1, roughTerrainSurcharge = 0, movementPerTile = 1 }
+                        )
+                        infantry.resources
+                    )
 
         lowSupplyContext : BoardFixture
         lowSupplyContext =
@@ -1319,9 +1386,9 @@ planningChecks infantryId truckId passengerId =
 
         indirectContext : BoardFixture
         indirectContext =
-            { context
-                | units = [ fieldGun, truck ]
-            }
+            context
+                |> setBoardUnits
+                    [ fieldGun, truck ]
 
         aiming : OrderPlanning.Model
         aiming =
@@ -1492,7 +1559,15 @@ planningChecks infantryId truckId passengerId =
         insufficientReadiness : Unit
         insufficientReadiness =
             infantry
-                |> Unit.setResources (Maybe.map (\resources -> { resources | supplies = { current = 2, maximum = 48, upkeepPerTurn = 1, roughTerrainSurcharge = 1, movementPerTile = 3 } }) infantry.resources)
+                |> Unit.setResources
+                    (Maybe.map
+                        (\resources ->
+                            resources
+                                |> UnitResources.setSupplies
+                                    { current = 2, maximum = 48, upkeepPerTurn = 1, roughTerrainSurcharge = 1, movementPerTile = 3 }
+                        )
+                        infantry.resources
+                    )
 
         ambushing : OrderPlanning.Model
         ambushing =
@@ -2249,14 +2324,13 @@ planningChecks infantryId truckId passengerId =
             let
                 addCrate : UnitResources -> UnitResources
                 addCrate resources =
-                    { resources
-                        | supplyCargo =
+                    resources
+                        |> setResourcesSupplyCargo
                             [ { kind = ResourceKind.Supply
                               , current = 64
                               , maximum = 64
                               }
                             ]
-                    }
 
                 withCrate : Unit -> Unit
                 withCrate cargoUnit =
@@ -2774,14 +2848,13 @@ planningChecks infantryId truckId passengerId =
                     (truck.resources
                         |> Maybe.map
                             (\resources ->
-                                { resources
-                                    | supplyCargo =
+                                resources
+                                    |> setResourcesSupplyCargo
                                         [ { kind = ResourceKind.Supply
                                           , current = 48
                                           , maximum = 64
                                           }
                                         ]
-                                }
                             )
                     )
 
@@ -2930,8 +3003,8 @@ planningChecks infantryId truckId passengerId =
                     (truck.resources
                         |> Maybe.map
                             (\resources ->
-                                { resources
-                                    | supplyCargo =
+                                resources
+                                    |> setResourcesSupplyCargo
                                         [ { kind = ResourceKind.Supply
                                           , current = 48
                                           , maximum = 64
@@ -2941,7 +3014,6 @@ planningChecks infantryId truckId passengerId =
                                           , maximum = 64
                                           }
                                         ]
-                                }
                             )
                     )
 
@@ -2998,8 +3070,8 @@ planningChecks infantryId truckId passengerId =
 
         blockedCrateContext : BoardFixture
         blockedCrateContext =
-            { mixedContext
-                | supplyCrates =
+            mixedContext
+                |> setBoardSupplyCrates
                     [ { position =
                             { x = 3
                             , y = 2
@@ -3011,12 +3083,11 @@ planningChecks infantryId truckId passengerId =
                             }
                       }
                     ]
-            }
 
         depotContext : BoardFixture
         depotContext =
-            { context
-                | depots =
+            context
+                |> setBoardDepots
                     [ { kind = BuildingKind.Supply
                       , position =
                             { x = 3
@@ -3044,7 +3115,6 @@ planningChecks infantryId truckId passengerId =
                             }
                       }
                     ]
-            }
 
         fuelContext : BoardFixture
         fuelContext =
@@ -3052,9 +3122,8 @@ planningChecks infantryId truckId passengerId =
                 | depots =
                     List.map
                         (\depot ->
-                            { depot
-                                | kind = BuildingKind.Fuel
-                            }
+                            depot
+                                |> setDepotKind BuildingKind.Fuel
                         )
                         depotContext.depots
             }
@@ -3220,7 +3289,8 @@ planningChecks infantryId truckId passengerId =
 
         depotCargoContext : BoardFixture
         depotCargoContext =
-            { cargoContext | depots = depotContext.depots }
+            cargoContext
+                |> setBoardDepots depotContext.depots
 
         depotChecklist : OrderPlanning.Model
         depotChecklist =
@@ -3291,7 +3361,8 @@ planningChecks infantryId truckId passengerId =
 
         depotMixedContext : BoardFixture
         depotMixedContext =
-            { mixedContext | depots = depotContext.depots }
+            mixedContext
+                |> setBoardDepots depotContext.depots
 
         depotCrateUnloaded : OrderPlanning.Model
         depotCrateUnloaded =
@@ -3357,12 +3428,12 @@ planningChecks infantryId truckId passengerId =
 
         narrowContext : BoardFixture
         narrowContext =
-            { cargoContext
-                | map = Map.fromFeatures { width = 4, height = 1, baseTile = cargoContext.map.baseTile, features = [], theme = cargoContext.map.theme }
-                , units =
-                    List.map putTruckAtCorner
+            cargoContext
+                |> setBoardMap (Map.fromFeatures { width = 4, height = 1, baseTile = cargoContext.map.baseTile, features = [], theme = cargoContext.map.theme })
+                |> setBoardUnits
+                    (List.map putTruckAtCorner
                         cargoContext.units
-            }
+                    )
 
         narrowChecklist : OrderPlanning.Model
         narrowChecklist =
@@ -3438,9 +3509,9 @@ planningChecks infantryId truckId passengerId =
 
         scarceCrateContext : BoardFixture
         scarceCrateContext =
-            { mixedContext
-                | map = Map.fromFeatures { width = 4, height = 2, baseTile = mixedContext.map.baseTile, theme = mixedContext.map.theme, features = [] }
-                , supplyCrates =
+            mixedContext
+                |> setBoardMap (Map.fromFeatures { width = 4, height = 2, baseTile = mixedContext.map.baseTile, theme = mixedContext.map.theme, features = [] })
+                |> setBoardSupplyCrates
                     [ { position =
                             { x = 3
                             , y = 0
@@ -3452,7 +3523,6 @@ planningChecks infantryId truckId passengerId =
                             }
                       }
                     ]
-            }
 
         scarceCrateExits : OrderPlanning.Model
         scarceCrateExits =
@@ -3488,9 +3558,12 @@ planningChecks infantryId truckId passengerId =
                         supplies =
                             resources.supplies
                     in
-                    { resources | supplies = { supplies | current = 1 } }
+                    resources
+                        |> UnitResources.setSupplies
+                            { supplies | current = 1 }
             in
-            { cargoContext | units = List.map exhaustPassenger cargoContext.units }
+            cargoContext
+                |> setBoardUnits (List.map exhaustPassenger cargoContext.units)
 
         submitted : TurnLifecycle.Phase
         submitted =
@@ -3545,8 +3618,7 @@ planningChecks infantryId truckId passengerId =
         missingCommand =
             OrderPlanning.init
                 |> OrderPlanning.setOrders [ { unitId = truckId, action = PlannedOrder.Hold { x = 3, y = 1 } } ]
-                |> OrderPlanning.setSelection
-                    (Just (UnitSelection { id = infantryId, interaction = CommandMenu (ChoosingCommand Nothing) }))
+                |> OrderPlanning.setSelection (Just (UnitSelection { id = infantryId, interaction = CommandMenu (ChoosingCommand Nothing) }))
 
         missingCommandCheck : InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
         missingCommandCheck =
@@ -3587,7 +3659,8 @@ planningChecks infantryId truckId passengerId =
 
         brokenTurn : CurrentTurn.Model
         brokenTurn =
-            { initialTurn | phase = TurnLifecycle.Planning missingCommand }
+            initialTurn
+                |> CurrentTurn.setPhase (TurnLifecycle.Planning missingCommand)
 
         checkedTurn : InvariantCheck Error.Error CurrentTurn.Model
         checkedTurn =
@@ -3725,7 +3798,9 @@ planningChecks infantryId truckId passengerId =
             )
         , expect "cargo toggle diagnostics propagate through the current turn"
             (CurrentTurn.mapPlanning (toggleMissingPassenger True)
-                { initialTurn | phase = TurnLifecycle.Planning checklist }
+                (initialTurn
+                    |> CurrentTurn.setPhase (TurnLifecycle.Planning checklist)
+                )
                 |> IC.error
                 |> (==) (Just (OrderPlanning.PlanningUnitNotFound infantryId))
             )
@@ -4235,7 +4310,8 @@ planningChecks infantryId truckId passengerId =
 
                 moveContext : BoardFixture
                 moveContext =
-                    { mixedContext | units = unit passengerId Kind.Infantry (Location.OnMap { x = 0, y = 0 }) :: mixedContext.units }
+                    mixedContext
+                        |> setBoardUnits (unit passengerId Kind.Infantry (Location.OnMap { x = 0, y = 0 }) :: mixedContext.units)
 
                 movingChecklist : OrderPlanning.Model
                 movingChecklist =
@@ -4367,7 +4443,15 @@ planningChecks infantryId truckId passengerId =
                 (UnitCommand.canUse context.map
                     []
                     (lowSupplyInfantry
-                        |> Unit.setResources (Maybe.map (\resources -> { resources | supplies = { current = 5, maximum = 64, upkeepPerTurn = 1, roughTerrainSurcharge = 0, movementPerTile = 1 } }) lowSupplyInfantry.resources)
+                        |> Unit.setResources
+                            (Maybe.map
+                                (\resources ->
+                                    resources
+                                        |> UnitResources.setSupplies
+                                            { current = 5, maximum = 64, upkeepPerTurn = 1, roughTerrainSurcharge = 0, movementPerTile = 1 }
+                                )
+                                lowSupplyInfantry.resources
+                            )
                     )
                     UnitCommand.AttackMove
                 )

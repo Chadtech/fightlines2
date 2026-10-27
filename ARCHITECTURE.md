@@ -332,6 +332,10 @@ base terrain. Editor definitions retain their serializable feature lists; board
 rendering derives one indexed map per draft render. `GamePage` derives visibility
 and reachable-coordinate sets once per rendered layer from projected data, inside
 lazy boundaries where applicable; the reachable list still owns highlight ordering.
+Terrain artwork is lazy by map and visibility, with stable clear/fogged parent
+groups during planning. Destination dimming uses one black SVG path with cutouts
+for reachable squares and the selected origin, so moving between truck movement,
+the unload checklist, and exit selection updates shading without rebuilding tiles.
 
 With the explicit `--dev-game` server flag, `Store::development` seeds one
 started game at ID `00000000000000000000000000000000`, using the current
@@ -447,24 +451,42 @@ Both documents load `public/audio-manager.js` before the shared interop. Each
 sends it through `Ports.Js.To.Audio`: `Audio.none` encodes as `null`, and
 `Audio.uiAffirm`, `Audio.uiCancel`, and `Audio.uiConfirm` as
 `{ "play": "uiAffirm" }`, `{ "play": "uiCancel" }`, and
-`{ "play": "uiConfirm" }`. Shared interop routes these events
+`{ "play": "uiConfirm" }`. `Audio.tankFire` encodes as `{ "play": "tankFire" }`;
+`Audio.fieldGunFire` uses `{ "play": "fieldGunFire" }`.
+Shared interop routes these events
 to the manager before dispatching tagged clipboard, dialog, storage or thumbnail
 messages. Elm updates remain the only source of playback requests; pointer and
 keyboard listeners only unlock the browser audio context and preload its clips.
-The manager caches decoded buffers, limits simultaneous voices to four, coalesces
-identical requests within 40ms, and drops requests delayed more than 250ms.
+The manager caches decoded buffers, preloading all thirteen clips on unlock. UI
+playback allows four voices and coalesces identical requests within 40ms. Combat
+playback allows eight independent voices, cycles five variants per weapon, and
+never coalesces separate shots. Requests delayed more than 250ms are dropped.
 Hidden pages and page exit stop sounds and invalidate pending playback. Audio
 failures produce bounded console warnings without rejecting the Elm port handler.
-The three cues map to `/audio/ui-{affirm,cancel,confirm}-gamelan-v4.ogg`, excerpts
-from one CC BY 4.0 court gamelan performance credited in `public/audio/README.md`.
-They use audition picks C06, C19 and C07 respectively, shortened to 180ms, 160ms
-and 220ms with quick fades after the attack.
-The complete source recording and other experimental clips remain ignored.
+The three cues map to `/audio/ui-{affirm,cancel,confirm}-switch-v1.ogg`, excerpts
+from CC0 physical switch recordings by Joseph Sardin credited in
+`public/audio/README.md`. Affirm uses a desk-lamp switch press (230ms), cancel
+its release (230ms), and confirm the approved old-switch audition A (300ms).
+The source recordings and audition masters remain ignored.
 Opening the game menu and revoking an order emit `uiAffirm`; closing the menu
-and cancelling the unplanned-unit warning emit the higher `uiCancel`.
+and cancelling the unplanned-unit warning emit `uiCancel`.
 Accepted submission requests and the unplanned-unit
-warning emit the lower `uiConfirm`, including keyboard submission. Locked or
+warning emit `uiConfirm`, including keyboard submission. Locked or
 invalid submission attempts emit no audio.
+
+`PlaybackPresentation.audioBetween` compares the old and new theater clocks
+inside `GamePage.advancePlayback` and `GameReplay`'s frame-elapsed handler.
+Unrelated updates and live-game camera holds do not check for firing audio.
+It emits the matching tank-fire or field-gun-fire event for
+each shot time in `(previousElapsed, elapsed]` within the same encounter.
+`CombatTheater.firingTimes` derives those times from the recorded firing
+participants and `CombatAttack`'s sprite stagger, including zero-damage shots.
+Field-gun cues include their 320ms preparation and visible indirect-fire crews.
+Unchanged clocks, rewinds, and encounter changes emit nothing. This shares the
+animation frame's timing without per-shot messages or independent timers;
+`GamePage.playAudio` continues to select UI feedback. Tank clips live at
+`/audio/combat/tank-fire-{01,02,03,04,05}.ogg` and retain their procedural source
+recordings, documented in `public/audio/README.md`.
 
 `NewLobby`, `JoinLobby`, `LobbyPage`, `LobbyLoadFailed`, `GamePage`, and
 `GameLoadFailed` own their page state and views.
@@ -1407,6 +1429,32 @@ Formation sprites render before all impact overlays so other figures cannot
 obscure an incoming projectile.
 The incoming strike mirrors toward the figure from its opponent's side.
 `CombatFormation.impactStarts` supplies both casualty and nonlethal hit times.
+`Game.View.CombatAttack` owns attack eligibility states, per-kind animation duration,
+the 90ms figure stagger, and tank/field-gun atlas selection. `CombatExchange.targetFired`
+comes from recorded reciprocal shots rather than health changes, including misses.
+The theater assigns attacks only to firing participants, offsetting the returning
+formation by 45ms. It delays the shared hit clock until every firing figure
+finishes, plus 100ms of travel. Tanks recover in 620ms; ignition occupies the first
+30ms before recoil, followed by a direct return to the original level stance.
+The field-gun crew's 840ms sequence starts with 320ms of signaling/bracing before the muzzle flash,
+then recoil and recovery. `firingTimes` includes this preparation offset while
+`endsAt` measures the complete sequence. Observable indirect-fire attackers use
+the same animation; concealed origins stay absent. `CombatFormation.Animation` carries
+that delay and each participant's attack with the shared elapsed time; portraits,
+casualty removal, impacts, rumble, depot follow-ups, and automatic close therefore
+stay synchronized. Unsupported unit kinds retain their old hit timing. The attack
+renderer mirrors tank cells around the original 16-unit portrait and field-gun
+cells around its 40-unit portrait, preserving calibration and footing. Tank
+team atlases in `tank-firing-drawn-v3/` have eight 416x288 cells in a 1664x576
+sheet. Their track anchor at (139.75,255.5) aligns with the static portrait's
+center and footing. Tanks use the drawn ready/final poses throughout the card
+and hold final rest after recovery. The first and final cells match exactly.
+The approved neutral field-gun drawings have color-only red and blue edits. Each
+committed 4096x736 team atlas has eight 1024x368 cells; wheel registration aligns
+the animated gun with the static portrait. Field guns hold the ready drawing before the
+sequence and the final drawing afterward rather than looping while the card
+waits. Element-local Elm CSS substitutes the ordinary static team portrait under
+reduced motion. The app shell preloads all four committed attack atlases.
 The theater derives a shared, rapidly decaying camera translation and rotation
 from the latest contact on either side, beginning 20ms after the projectile
 appears and settling over 160ms. Each scene moves its backdrop, figures, and
@@ -1794,7 +1842,12 @@ playback presentation passes the current frame's visible tiles to the theater;
 unconfirmed landings outside that mask show fog over the terrain with a question
 mark in both live games and recorded replay.
 Multiple unconfirmed landings at one observed target combine their health changes
-into one scene. Target health also identifies artillery deaths and carrier losses
+into one scene. `TurnPlayback.ImpactEncounter` retains every projected firing
+participant alongside the combined target and depot transitions. Each observed
+gun receives its own formation and firing cues on the shared clock; concealed
+origins contribute no portrait, cue, or camera subject. The landing's damage
+animation and depot follow-up still play once. Target health also identifies
+artillery deaths and carrier losses
 without revealing an attacker or origin. These casualties use the same
 acknowledgment and death pause as ordinary exchanges.
 Holding Enter or Space on `see map` previews the battlefield; releasing either key
@@ -1835,7 +1888,7 @@ hold fallback at the exit.
 `Unit` owns typed `Entrenchment`, initialized as `Exposed` and exported with each
 observable unit. No map state or terrain object represents a trench. The
 exclusive `FacingOrder::DigIn` action is validated for exposed infantry already
-on the board and costs the Rust-exported `CombatRules.digInCost` (64) plus
+on the board and costs the Rust-exported `CombatRules.digInCost` (16) plus
 ordinary upkeep. `Combat::prepare` charges digging before any combat; `Turns`
 marks surviving diggers `Entrenched` after indirect fire and before resource
 settlement. Earlier playback frames retain the exposed state.

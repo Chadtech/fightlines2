@@ -291,6 +291,31 @@ load id =
 ----------------------------------------------------------------
 
 
+setRequestStatus : RequestStatus -> Model -> Model
+setRequestStatus requestStatus model =
+    { model | requestStatus = requestStatus }
+
+
+setActionError : Maybe String -> Model -> Model
+setActionError actionError model =
+    { model | actionError = actionError }
+
+
+setRefreshing : Bool -> Model -> Model
+setRefreshing refreshing model =
+    { model | refreshing = refreshing }
+
+
+setError : Maybe String -> Model -> Model
+setError error model =
+    { model | error = error }
+
+
+setCopyStatus : CopyStatus -> Model -> Model
+setCopyStatus copyStatus model =
+    { model | copyStatus = copyStatus }
+
+
 start : LobbyId -> Graphql.Http.Request Snapshot
 start id =
     Api.Mutation.startGame { id = LobbyId.toString id } snapshotSelection
@@ -367,12 +392,10 @@ beginSettingsChange model =
         nextRevision (PollRevision revision) =
             PollRevision (revision + 1)
     in
-    { model
-        | requestStatus = SavingSettings
-        , actionError = Nothing
-        , refreshing = False
-        , pollRevision = nextRevision model.pollRevision
-    }
+    { model | pollRevision = nextRevision model.pollRevision }
+        |> setRequestStatus SavingSettings
+        |> setActionError Nothing
+        |> setRefreshing False
 
 
 refresh : Model -> ( Model, Eff Msg )
@@ -381,9 +404,8 @@ refresh model =
         ( model, E.none )
 
     else
-        ( { model
-            | refreshing = True
-          }
+        ( model
+            |> setRefreshing True
         , E.request (LobbyResponseReceived model.pollRevision)
             (Api.Query.lobby
                 { id = LobbyId.toString model.id
@@ -396,16 +418,8 @@ refresh model =
 
 receive : Snapshot -> Model -> ( Model, Eff Msg )
 receive snapshot model =
-    ( { model
-        | id = snapshot.id
-        , name = snapshot.name
-        , mapType = snapshot.mapType
-        , players = snapshot.players
-        , isHost = snapshot.isHost
-        , isMember = snapshot.isMember
-        , gameUrl = snapshot.gameUrl
-        , error = Nothing
-      }
+    ( { model | id = snapshot.id, name = snapshot.name, mapType = snapshot.mapType, players = snapshot.players, isHost = snapshot.isHost, isMember = snapshot.isMember, gameUrl = snapshot.gameUrl }
+        |> setError Nothing
     , gameNavigation
         { isMember = snapshot.isMember
         , gameUrl = snapshot.gameUrl
@@ -468,7 +482,8 @@ update msg model =
                     updatedModel =
                         beginSettingsChange model
                 in
-                ( { updatedModel | requestStatus = ChoosingSide playerNumber }
+                ( updatedModel
+                    |> setRequestStatus (ChoosingSide playerNumber)
                 , Api.Mutation.setLobbySide
                     { id = LobbyId.toString model.id
                     , playerNumber = playerNumber
@@ -543,9 +558,8 @@ update msg model =
                             updatedModel =
                                 beginSettingsChange model
                         in
-                        ( { updatedModel
-                            | requestStatus = SavingMap
-                          }
+                        ( updatedModel
+                            |> setRequestStatus SavingMap
                         , E.request MapResponseReceived (saveMap model.id library.preview)
                         )
 
@@ -568,18 +582,17 @@ update msg model =
                                 else
                                     E.none
                         in
-                        { model
-                            | requestStatus = Idle
-                            , actionError = Nothing
-                        }
+                        (model
+                            |> setRequestStatus Idle
+                            |> setActionError Nothing
+                        )
                             |> receive snapshot
                             |> E.and returnToLobby
 
                     Err error ->
-                        ( { model
-                            | requestStatus = Idle
-                            , actionError = Just (ApiRequest.errorMessage error)
-                          }
+                        ( model
+                            |> setRequestStatus Idle
+                            |> setActionError (Just (ApiRequest.errorMessage error))
                         , E.none
                         )
 
@@ -597,10 +610,9 @@ update msg model =
                 ( model, E.none )
 
             else
-                ( { model
-                    | requestStatus = SavingSettings
-                    , actionError = Nothing
-                  }
+                ( model
+                    |> setRequestStatus SavingSettings
+                    |> setActionError Nothing
                 , E.request ActionResponseReceived (start model.id)
                 )
 
@@ -612,7 +624,8 @@ update msg model =
                 ( model, E.none )
 
             else
-                ( { model | copyStatus = Copying }
+                ( model
+                    |> setCopyStatus Copying
                 , E.toJs (ToJs.CopyLink { url = inviteUrl model })
                 )
 
@@ -621,15 +634,22 @@ update msg model =
                 ( model, E.none )
 
             else if result.success then
-                ( { model | copyStatus = Copied }
+                ( model
+                    |> setCopyStatus Copied
                 , E.after 2000 CopyFeedbackElapsed
                 )
 
             else
-                ( { model | copyStatus = CopyFailed }, E.none )
+                ( model
+                    |> setCopyStatus CopyFailed
+                , E.none
+                )
 
         CopyFeedbackElapsed ->
-            ( { model | copyStatus = CopyIdle }, E.none )
+            ( model
+                |> setCopyStatus CopyIdle
+            , E.none
+            )
 
         PollTimerElapsed _ ->
             refresh model
@@ -641,32 +661,31 @@ update msg model =
             else
                 case result of
                     Ok snapshot ->
-                        { model
-                            | refreshing = False
-                        }
+                        (model
+                            |> setRefreshing False
+                        )
                             |> receive snapshot
 
                     Err error ->
-                        { model
-                            | refreshing = False
-                            , error = Just (ApiRequest.errorMessage error)
-                        }
+                        (model
+                            |> setRefreshing False
+                            |> setError (Just (ApiRequest.errorMessage error))
+                        )
                             |> E.withOut
 
         ActionResponseReceived result ->
             case result of
                 Ok snapshot ->
-                    { model
-                        | requestStatus = Idle
-                        , actionError = Nothing
-                    }
+                    (model
+                        |> setRequestStatus Idle
+                        |> setActionError Nothing
+                    )
                         |> receive snapshot
 
                 Err error ->
-                    ( { model
-                        | requestStatus = Idle
-                        , actionError = Just (ApiRequest.errorMessage error)
-                      }
+                    ( model
+                        |> setRequestStatus Idle
+                        |> setActionError (Just (ApiRequest.errorMessage error))
                     , E.none
                     )
 

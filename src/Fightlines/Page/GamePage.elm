@@ -6,7 +6,9 @@ module Fightlines.Page.GamePage exposing
     , init
     , keyCommands
     , load
+    , setDepots
     , setShared
+    , setUnits
     , subscriptions
     , superUpdate
     , view
@@ -363,6 +365,56 @@ setShared shared model =
 ----------------------------------------------------------------
 
 
+setCurrentTurn : CurrentTurn.Model -> Model -> Model
+setCurrentTurn currentTurn model =
+    { model | currentTurn = currentTurn }
+
+
+setMenuOpen : Bool -> Model -> Model
+setMenuOpen menuOpen model =
+    { model | menuOpen = menuOpen }
+
+
+setMap : Map -> Model -> Model
+setMap map model =
+    { model | map = map }
+
+
+setDepots : List Depot -> Model -> Model
+setDepots depots model =
+    { model | depots = depots }
+
+
+setSupplyCrates : List Supply.GroundCrate -> Model -> Model
+setSupplyCrates supplyCrates model =
+    { model | supplyCrates = supplyCrates }
+
+
+setUnits : List Unit -> Model -> Model
+setUnits units model =
+    { model | units = units }
+
+
+setVisibleTiles : List Coordinate -> Model -> Model
+setVisibleTiles visibleTiles model =
+    { model | visibleTiles = visibleTiles }
+
+
+setNavigation : BattlefieldNavigation.Model -> Model -> Model
+setNavigation navigation model =
+    { model | navigation = navigation }
+
+
+setResigning : Bool -> Model -> Model
+setResigning resigning model =
+    { model | resigning = resigning }
+
+
+setBattlefieldViewport : Maybe Camera.Viewport -> Model -> Model
+setBattlefieldViewport battlefieldViewport model =
+    { model | battlefieldViewport = battlefieldViewport }
+
+
 turnIntroductionPreferenceKey : String
 turnIntroductionPreferenceKey =
     "skipTurnIntroduction"
@@ -500,10 +552,9 @@ mapCheckedPlanning transition model =
 
         applyChecked : Maybe Error -> CurrentTurn.Model -> Model
         applyChecked violation currentTurn =
-            { model
-                | currentTurn = currentTurn
-                , shared = Shared.addError violation model.shared
-            }
+            model
+                |> setCurrentTurn currentTurn
+                |> setShared (Shared.addError violation model.shared)
     in
     IC.resolve applyChecked checked
 
@@ -527,12 +578,12 @@ isChoosingUnload model =
 dismissDialog : Model -> Model
 dismissDialog model =
     if model.menuOpen then
-        { model
-            | menuOpen = False
-        }
+        model
+            |> setMenuOpen False
 
     else if showTurnIntroduction model then
-        { model | currentTurn = CurrentTurn.acknowledgeIntroduction model.currentTurn }
+        model
+            |> setCurrentTurn (CurrentTurn.acknowledgeIntroduction model.currentTurn)
 
     else
         model
@@ -589,12 +640,12 @@ when a dialog becomes active so repeated ticks do not record it again.
 -}
 recordLossDetailsErrorIfPresent : Model -> Model
 recordLossDetailsErrorIfPresent model =
-    { model
-        | shared =
-            Shared.addError
+    model
+        |> setShared
+            (Shared.addError
                 (PlaybackPresentation.lossError model.players (unitLoss model))
                 model.shared
-    }
+            )
 
 
 activeDialogHtmlId : Model -> Maybe String
@@ -653,7 +704,9 @@ submitTurn : LobbyId -> Model -> ( Model, Eff Msg )
 submitTurn lobbyId model =
     case CurrentTurn.startSubmission model.currentTurn of
         Just currentTurn ->
-            { model | currentTurn = currentTurn }
+            (model
+                |> setCurrentTurn currentTurn
+            )
                 |> E.withOut
                 |> E.and
                     (E.request
@@ -819,21 +872,21 @@ reconcileTurnSnapshot snapshot currentTurn model =
     let
         next : Model
         next =
-            { model | currentTurn = currentTurn }
+            model
+                |> setCurrentTurn currentTurn
     in
     if model.currentTurn.outcome /= Nothing then
         next
 
     else if GameOutcome.isResignation currentTurn.outcome then
-        { next
-            | map = snapshot.battlefield.map
-            , depots = snapshot.battlefield.depots
-            , supplyCrates = snapshot.battlefield.supplyCrates
-            , units = snapshot.battlefield.units
-            , visibleTiles = snapshot.battlefield.visibleTiles
-            , menuOpen = False
-            , navigation = BattlefieldNavigation.finishReturn model.navigation
-        }
+        next
+            |> setMap snapshot.battlefield.map
+            |> setDepots snapshot.battlefield.depots
+            |> setSupplyCrates snapshot.battlefield.supplyCrates
+            |> setUnits snapshot.battlefield.units
+            |> setVisibleTiles snapshot.battlefield.visibleTiles
+            |> setMenuOpen False
+            |> setNavigation (BattlefieldNavigation.finishReturn model.navigation)
 
     else if currentTurn.number > model.currentTurn.number then
         let
@@ -851,14 +904,12 @@ reconcileTurnSnapshot snapshot currentTurn model =
                     , supplyCrates = snapshot.battlefield.supplyCrates
                     }
         in
-        { next
-            | map = snapshot.battlefield.map
-            , depots = frame.depots
-            , supplyCrates = frame.supplyCrates
-            , supplyRules = snapshot.supplyRules
-            , units = frame.units
-            , visibleTiles = frame.visibleTiles
-        }
+        { next | supplyRules = snapshot.supplyRules }
+            |> setMap snapshot.battlefield.map
+            |> setDepots frame.depots
+            |> setSupplyCrates frame.supplyCrates
+            |> setUnits frame.units
+            |> setVisibleTiles frame.visibleTiles
 
     else
         next
@@ -898,7 +949,8 @@ currentSelection model =
 
 setSelection : Maybe Selection -> Model -> Model
 setSelection selected model =
-    { model | currentTurn = CurrentTurn.setSelection selected model.currentTurn }
+    model
+        |> setCurrentTurn (CurrentTurn.setSelection selected model.currentTurn)
 
 
 focusCommand : UnitCommand.MenuOption -> Model -> Model
@@ -1208,7 +1260,9 @@ focusAdjacentCommand orderCommands current model =
 
 mapNavigation : (BattlefieldNavigation.Model -> BattlefieldNavigation.Model) -> Model -> Model
 mapNavigation change model =
-    { model | navigation = change model.navigation |> BattlefieldNavigation.finishReturn }
+    (model
+        |> setNavigation (change model.navigation |> BattlefieldNavigation.finishReturn)
+    )
         |> updatePlaybackCamera
 
 
@@ -1486,7 +1540,8 @@ resignGame lobbyId destination model =
             model.menuOpen && not model.resigning && (model.currentTurn.outcome == Nothing)
     in
     if canResign then
-        ( { model | resigning = True }
+        ( model
+            |> setResigning True
         , Api.Mutation.resignGame { id = LobbyId.toString lobbyId } snapshotSelection
             |> ApiRequest.mutationRequest
             |> E.request (ResignResponseReceived destination)
@@ -1503,7 +1558,8 @@ recordFocusResult result model =
             model
 
         Err error ->
-            { model | shared = Shared.addError (Just (Error.ElementFocusFailed error)) model.shared }
+            model
+                |> setShared (Shared.addError (Just (Error.ElementFocusFailed error)) model.shared)
 
 
 {-| Retain playback framing across subject changes. Only projected positions
@@ -1522,12 +1578,16 @@ updatePlaybackCamera model =
                 currentTurn =
                     model.currentTurn
             in
-            { model
-                | currentTurn =
-                    { currentTurn
-                        | phase = TurnLifecycle.Playing { playing | camera = Just held }
-                    }
-            }
+            model
+                |> setCurrentTurn
+                    (currentTurn
+                        |> CurrentTurn.setPhase
+                            (TurnLifecycle.Playing
+                                (playing
+                                    |> TurnLifecycle.setPlaybackCamera (Just held)
+                                )
+                            )
+                    )
 
         _ ->
             model
@@ -1545,7 +1605,8 @@ playbackCamera model =
 
 remeasureWorkspace : Model -> ( Model, Eff Msg )
 remeasureWorkspace model =
-    ( { model | battlefieldViewport = Nothing }
+    ( model
+        |> setBattlefieldViewport Nothing
     , E.measure Battlefield.htmlId BattlefieldSizeReceived
     )
 
@@ -1578,7 +1639,8 @@ withLayoutMeasurement previous next =
 closeMenuForTurnIntroduction : Model -> Model
 closeMenuForTurnIntroduction model =
     if showTurnIntroduction model then
-        { model | menuOpen = False }
+        model
+            |> setMenuOpen False
 
     else
         model
@@ -1586,7 +1648,10 @@ closeMenuForTurnIntroduction model =
 
 startPlayback : Model -> ( Model, Eff Msg )
 startPlayback model =
-    remeasureWorkspace { model | menuOpen = False }
+    remeasureWorkspace
+        (model
+            |> setMenuOpen False
+        )
 
 
 finishPlayback : Model -> Model -> ( Model, Eff Msg )
@@ -1594,7 +1659,8 @@ finishPlayback previous next =
     let
         ( returned, cameraEffect ) =
             if playbackCamera previous /= Nothing then
-                ( { next | navigation = BattlefieldNavigation.startReturn next.navigation }
+                ( next
+                    |> setNavigation (BattlefieldNavigation.startReturn next.navigation)
                 , E.after PlaybackPresentation.cameraPanDurationMs CameraReturnFinished
                 )
 
@@ -1697,7 +1763,9 @@ update lobbyId msg model =
                                 GoHome ->
                                     Route.pushUrl Route.Home
                     in
-                    { model | resigning = False }
+                    (model
+                        |> setResigning False
+                    )
                         |> applyTurnSnapshot snapshot
                             (CurrentTurn.pollSucceeded (turnObservation snapshot) model.currentTurn)
                         |> E.and effect
@@ -1708,11 +1776,15 @@ update lobbyId msg model =
                         currentTurn =
                             model.currentTurn
                     in
-                    { model
-                        | resigning = False
-                        , menuOpen = False
-                        , currentTurn = { currentTurn | error = Just (ApiRequest.errorMessage error) }
-                    }
+                    (model
+                        |> setResigning False
+                        |> setMenuOpen False
+                        |> setCurrentTurn
+                            (currentTurn
+                                |> CurrentTurn.setError
+                                    (Just (ApiRequest.errorMessage error))
+                            )
+                    )
                         |> E.withOut
 
         BattlefieldMsg boardMsg ->
@@ -1720,7 +1792,9 @@ update lobbyId msg model =
                 |> E.withOut
 
         CameraReturnFinished ->
-            { model | navigation = BattlefieldNavigation.finishReturn model.navigation }
+            (model
+                |> setNavigation (BattlefieldNavigation.finishReturn model.navigation)
+            )
                 |> updatePlaybackCamera
                 |> E.withOut
 
@@ -1730,7 +1804,9 @@ update lobbyId msg model =
                     ( model, E.measure BattlefieldWorkspace.inspectorHtmlId (InspectorSizeReceived battlefield) )
 
                 Err error ->
-                    { model | shared = Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared }
+                    (model
+                        |> setShared (Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared)
+                    )
                         |> E.withOut
 
         InspectorSizeReceived battlefield result ->
@@ -1744,12 +1820,16 @@ update lobbyId msg model =
                                 , inspector = inspector
                                 }
                     in
-                    { model | battlefieldViewport = Just viewport }
+                    (model
+                        |> setBattlefieldViewport (Just viewport)
+                    )
                         |> updatePlaybackCamera
                         |> E.withOut
 
                 Err error ->
-                    { model | shared = Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared }
+                    (model
+                        |> setShared (Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared)
+                    )
                         |> E.withOut
 
         WindowResized ->
@@ -2035,7 +2115,9 @@ update lobbyId msg model =
                             )
 
                 Err error ->
-                    { model | currentTurn = CurrentTurn.submissionFailed turnNumber (ApiRequest.errorMessage error) model.currentTurn }
+                    (model
+                        |> setCurrentTurn (CurrentTurn.submissionFailed turnNumber (ApiRequest.errorMessage error) model.currentTurn)
+                    )
                         |> E.withOut
 
         CurrentTurnMsg turnMsg ->
@@ -2072,11 +2154,15 @@ update lobbyId msg model =
                         ( model, E.request PollResponseReceived (loadSnapshot lobbyId) )
 
                     else
-                        { model | currentTurn = CurrentTurn.pollSucceeded observation currentTurn }
+                        (model
+                            |> setCurrentTurn (CurrentTurn.pollSucceeded observation currentTurn)
+                        )
                             |> E.withOut
 
                 Err error ->
-                    { model | currentTurn = CurrentTurn.pollFailed (ApiRequest.errorMessage error) model.currentTurn }
+                    (model
+                        |> setCurrentTurn (CurrentTurn.pollFailed (ApiRequest.errorMessage error) model.currentTurn)
+                    )
                         |> E.withOut
 
         PollResponseReceived result ->
@@ -2091,7 +2177,9 @@ update lobbyId msg model =
                             )
 
                 Err error ->
-                    { model | currentTurn = CurrentTurn.pollFailed (ApiRequest.errorMessage error) model.currentTurn }
+                    (model
+                        |> setCurrentTurn (CurrentTurn.pollFailed (ApiRequest.errorMessage error) model.currentTurn)
+                    )
                         |> E.withOut
 
         AnimationTimerElapsed _ ->
@@ -2105,7 +2193,10 @@ update lobbyId msg model =
         TurnIntroductionMsg introMsg ->
             case introMsg of
                 TurnIntroduction.BeginClicked ->
-                    { model | currentTurn = CurrentTurn.acknowledgeIntroduction model.currentTurn } |> E.withOut
+                    (model
+                        |> setCurrentTurn (CurrentTurn.acknowledgeIntroduction model.currentTurn)
+                    )
+                        |> E.withOut
 
                 TurnIntroduction.ReplayClicked ->
                     if showTurnIntroduction model then
@@ -2113,7 +2204,9 @@ update lobbyId msg model =
                             Just replay ->
                                 applyPlaybackFrame
                                     { phase = replay.currentTurn.phase, frame = replay.frame }
-                                    { model | currentTurn = replay.currentTurn }
+                                    (model
+                                        |> setCurrentTurn replay.currentTurn
+                                    )
                                     |> startPlayback
 
                             Nothing ->
@@ -2123,13 +2216,14 @@ update lobbyId msg model =
                         model |> E.withOut
 
                 TurnIntroduction.BattlefieldViewClicked ->
-                    { model | currentTurn = CurrentTurn.acknowledgeIntroduction model.currentTurn } |> E.withOut
+                    (model
+                        |> setCurrentTurn (CurrentTurn.acknowledgeIntroduction model.currentTurn)
+                    )
+                        |> E.withOut
 
                 TurnIntroduction.SkipDialogsChanged skip ->
-                    ( { model
-                        | skipTurnIntroduction = skip
-                        , currentTurn = CurrentTurn.acknowledgeIntroduction model.currentTurn
-                      }
+                    ( { model | skipTurnIntroduction = skip }
+                        |> setCurrentTurn (CurrentTurn.acknowledgeIntroduction model.currentTurn)
                     , E.toJs (ToJs.SetLocalStorage { key = turnIntroductionPreferenceKey, value = Encode.bool skip })
                     )
 
@@ -2141,15 +2235,16 @@ update lobbyId msg model =
                         currentTurn =
                             model.currentTurn
                     in
-                    { model
-                        | currentTurn =
-                            { currentTurn
-                                | phase =
-                                    TurnLifecycle.acknowledgeLoss
+                    (model
+                        |> setCurrentTurn
+                            (currentTurn
+                                |> CurrentTurn.setPhase
+                                    (TurnLifecycle.acknowledgeLoss
                                         unitId
                                         currentTurn.phase
-                            }
-                    }
+                                    )
+                            )
+                    )
                         |> presentPlaybackTransition model
 
                 UnitDeath.SkipDialogsChanged skip ->
@@ -2564,9 +2659,8 @@ handleGameMenuMsg lobbyId msg model =
     case msg of
         GameMenu.OpenClicked ->
             if canOpenMenu model then
-                ( { model
-                    | menuOpen = True
-                  }
+                ( model
+                    |> setMenuOpen True
                 , E.none
                 )
 
@@ -2574,9 +2668,8 @@ handleGameMenuMsg lobbyId msg model =
                 E.withOut model
 
         GameMenu.CloseClicked ->
-            ( { model
-                | menuOpen = False
-              }
+            ( model
+                |> setMenuOpen False
             , E.focus
                 { htmlId = GameMenu.buttonHtmlId
                 }
@@ -2671,7 +2764,12 @@ handleCurrentTurnMsg lobbyId msg model =
                 model |> E.withOut
 
             else
-                ( { model | currentTurn = { currentTurn | refreshing = True } }
+                ( model
+                    |> setCurrentTurn
+                        (currentTurn
+                            |> CurrentTurn.setRefreshing
+                                True
+                        )
                 , E.request PollStatusResponseReceived (pollRequest lobbyId)
                 )
 
@@ -2701,12 +2799,23 @@ advanceCurrentPlayback delta model =
             case playing.camera of
                 Just held ->
                     if held.remainingPanMs > 0 then
-                        { model
-                            | currentTurn =
-                                { currentTurn
-                                    | phase = TurnLifecycle.Playing { playing | camera = Just { held | remainingPanMs = max 0 (held.remainingPanMs - delta) } }
-                                }
-                        }
+                        (model
+                            |> setCurrentTurn
+                                (currentTurn
+                                    |> CurrentTurn.setPhase
+                                        (TurnLifecycle.Playing
+                                            (playing
+                                                |> TurnLifecycle.setPlaybackCamera
+                                                    (Just
+                                                        (held
+                                                            |> PlaybackPresentation.setRemainingPanMs
+                                                                (max 0 (held.remainingPanMs - delta))
+                                                        )
+                                                    )
+                                            )
+                                        )
+                                )
+                        )
                             |> E.withOut
 
                     else
@@ -2734,9 +2843,23 @@ advancePlayback delta model =
     in
     case advance delta model.currentTurn.phase of
         Just next ->
-            applyPlaybackFrame next model
-                |> automaticallyContinueCombat
-                |> presentPlaybackTransition model
+            let
+                ( advanced, effect ) =
+                    applyPlaybackFrame next model
+                        |> automaticallyContinueCombat
+                        |> presentPlaybackTransition model
+
+                sounds : List (Eff Msg)
+                sounds =
+                    PlaybackPresentation.audioBetween
+                        { before = playback model
+                        , after = playback advanced
+                        }
+                        |> List.map E.audio
+            in
+            ( advanced
+            , E.batch (effect :: sounds)
+            )
 
         Nothing ->
             model |> E.withOut
@@ -2775,13 +2898,12 @@ setCombatMapView mapView model =
         currentTurn =
             model.currentTurn
     in
-    { model
-        | currentTurn =
-            { currentTurn
-                | phase =
-                    TurnLifecycle.setCombatMapView mapView currentTurn.phase
-            }
-    }
+    (model
+        |> setCurrentTurn
+            (currentTurn
+                |> CurrentTurn.setPhase (TurnLifecycle.setCombatMapView mapView currentTurn.phase)
+            )
+    )
         |> updatePlaybackCamera
 
 
@@ -2797,13 +2919,15 @@ applyPlaybackFrame next model =
         currentTurn =
             model.currentTurn
     in
-    { model
-        | currentTurn = { currentTurn | phase = next.phase }
-        , depots = next.frame.depots
-        , supplyCrates = next.frame.supplyCrates
-        , units = next.frame.units
-        , visibleTiles = next.frame.visibleTiles
-    }
+    model
+        |> setCurrentTurn
+            (currentTurn
+                |> CurrentTurn.setPhase next.phase
+            )
+        |> setDepots next.frame.depots
+        |> setSupplyCrates next.frame.supplyCrates
+        |> setUnits next.frame.units
+        |> setVisibleTiles next.frame.visibleTiles
 
 
 handleCommandMsg : CommandMenu.Msg -> Model -> ( Model, Eff Msg )

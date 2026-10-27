@@ -50,6 +50,17 @@ type Placement
 
 
 ----------------------------------------------------------------
+-- HELPERS --
+----------------------------------------------------------------
+
+
+setPlacement : Placement -> Dialog msg -> Dialog msg
+setPlacement placement (Dialog model) =
+    Dialog { model | placement = placement }
+
+
+
+----------------------------------------------------------------
 -- API --
 ----------------------------------------------------------------
 
@@ -82,25 +93,25 @@ onCancel canceled (Dialog model) =
 
 
 announcement : Dialog msg -> Dialog msg
-announcement (Dialog model) =
-    Dialog { model | placement = Announcement }
+announcement =
+    setPlacement Announcement
 
 
 reference : Dialog msg -> Dialog msg
-reference (Dialog model) =
-    Dialog { model | placement = Reference }
+reference =
+    setPlacement Reference
 
 
 {-| A dialog with room for navigation beside a working pane.
 -}
 workspace : Dialog msg -> Dialog msg
-workspace (Dialog model) =
-    Dialog { model | placement = Workspace }
+workspace =
+    setPlacement Workspace
 
 
 atBottom : Dialog msg -> Dialog msg
-atBottom (Dialog model) =
-    Dialog { model | placement = Bottom }
+atBottom =
+    setPlacement Bottom
 
 
 map : (a -> msg) -> Dialog a -> Dialog msg

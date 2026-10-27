@@ -2,7 +2,9 @@ module Audio exposing
     ( Audio(..)
     , Event(..)
     , encodeEvent
+    , fieldGunFire
     , none
+    , tankFire
     , uiAffirm
     , uiCancel
     , uiConfirm
@@ -20,6 +22,8 @@ type Audio
     = UiAffirm
     | UiCancel
     | UiConfirm
+    | TankFire
+    | FieldGunFire
 
 
 none : Event
@@ -42,6 +46,16 @@ uiConfirm =
     e UiConfirm
 
 
+tankFire : Event
+tankFire =
+    e TankFire
+
+
+fieldGunFire : Event
+fieldGunFire =
+    e FieldGunFire
+
+
 e : Audio -> Event
 e audio =
     Play audio
@@ -58,6 +72,12 @@ audioToName audio =
 
         UiConfirm ->
             "uiConfirm"
+
+        TankFire ->
+            "tankFire"
+
+        FieldGunFire ->
+            "fieldGunFire"
 
 
 encodeEvent : Event -> Je.Value

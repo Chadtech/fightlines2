@@ -1,6 +1,7 @@
 module Game.UnitResources exposing
     ( UnitResources
     , selection
+    , setFuel
     , setSupplies
     )
 
@@ -36,3 +37,8 @@ selection =
 setSupplies : Supplies -> UnitResources -> UnitResources
 setSupplies supplies resources =
     { resources | supplies = supplies }
+
+
+setFuel : Maybe Fuel -> UnitResources -> UnitResources
+setFuel fuel resources =
+    { resources | fuel = fuel }
