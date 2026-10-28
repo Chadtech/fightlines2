@@ -2,12 +2,14 @@
 
 The firing GIFs are unchanged copies of the approved local animation previews:
 
-- `tank-firing.gif`: `artwork/units/illustrated/combat-theater/tank-firing-drawn-v3/red/preview.gif`.
+- `tank-firing.gif`: `artwork/units/illustrated/combat-theater/tank-firing-drawn-v6/red/preview.gif`.
 - `field-gun-firing.gif`: `artwork/units/illustrated/combat-theater/field-gun-firing-drawn-v2/blue/preview.gif`.
 
-Both loop through eight drawings with the original preview timing, including
-resting holds between shots. They have no audio. The corresponding runtime atlases
-are committed under `public/assets/tank-firing-drawn-v3/` and
+The tank loops through ten poses with a fixed barrel, sharp backward hull rock,
+and lingering dust; the field gun retains its eight drawings. Both use the
+original preview timing, including resting holds between shots, and have no
+audio. The corresponding runtime atlases are committed under
+`public/assets/tank-firing-drawn-v6/` and
 `public/assets/field-gun-firing-drawn-v2/`. Exporters and artwork provenance are
 documented in [runtime assets](../../public/assets/README.md).
 

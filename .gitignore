@@ -92,6 +92,9 @@
 !/public/assets/tank-firing-rigged-v1/*.png
 !/public/assets/tank-firing-drawn-v3/
 !/public/assets/tank-firing-drawn-v3/*.png
+!/public/assets/tank-firing-drawn-v6/
+!/public/assets/tank-firing-drawn-v6/red.png
+!/public/assets/tank-firing-drawn-v6/blue.png
 
 # Generated field-gun combat-theater firing atlas.
 !/public/assets/field-gun-firing-drawn-v2/

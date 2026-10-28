@@ -2,12 +2,6 @@
   <img src="public/assets/fightlines-logo-v1.png" alt="FightLines" width="560">
   <p>a turn based strategy game based on logistics, supply, and transportation</p>
   <p>
-    <img src="https://img.shields.io/badge/engine-Rust-B7410E?style=flat-square" alt="Engine: Rust">
-    <img src="https://img.shields.io/badge/client-Elm-1293D8?style=flat-square" alt="Client: Elm">
-    <img src="https://img.shields.io/badge/API-GraphQL-E10098?style=flat-square" alt="API: GraphQL">
-    <img src="https://img.shields.io/badge/status-playable_prototype-87772D?style=flat-square" alt="Status: playable prototype">
-  </p>
-  <p>
     <a href="#the-game">The game</a> ·
     <a href="#combat-in-motion">Combat</a> ·
     <a href="#engineering-highlights">Engineering</a> ·

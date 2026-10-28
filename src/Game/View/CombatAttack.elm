@@ -42,7 +42,7 @@ durationMs : UnitKind -> Float
 durationMs kind =
     case kind of
         Kind.Tank ->
-            620
+            1050
 
         Kind.FieldGun ->
             840
@@ -96,7 +96,7 @@ frameAt kind age =
         frameStarts =
             case kind of
                 Kind.Tank ->
-                    [ 0, 30, 90, 180, 300, 440, 620 ]
+                    [ 0, 30, 80, 160, 250, 370, 550, 790, 1050 ]
 
                 Kind.FieldGun ->
                     [ 0, 220, 320, 390, 500, 660, 840 ]
@@ -115,7 +115,7 @@ frameAt kind age =
 
 tankPath : String -> String
 tankPath team =
-    "/assets/tank-firing-drawn-v3/" ++ team ++ ".png"
+    "/assets/tank-firing-drawn-v6/" ++ team ++ ".png"
 
 
 fieldGunPath : String -> String
@@ -175,6 +175,7 @@ toSvg clock attack unit =
 
 type alias Atlas =
     { path : String
+    , columns : Int
     , cellWidth : Int
     , cellHeight : Int
     , portraitWidth : Float
@@ -187,16 +188,17 @@ type alias Atlas =
 
 tankToSvg : Int -> Appearance -> Svg msg
 tankToSvg frame unit =
-    -- The drawn cell's track anchor is (139.75,255.5). Match the original
+    -- The drawn cell's track anchor is (155.75,255.5). Match the original
     -- 16-unit portrait's center and footing, including ready/final holds.
     atlasToSvg
         { path = tankPath (teamName unit.playerNumber)
-        , cellWidth = 416
+        , columns = 5
+        , cellWidth = 448
         , cellHeight = 288
         , portraitWidth = 16
-        , x = 8 - 139.75 / 16
+        , x = 8 - 155.75 / 16
         , y = UnitSprite.portraitFooting unit - 255.5 / 16
-        , width = 26
+        , width = 28
         , height = 18
         }
         frame
@@ -214,6 +216,7 @@ fieldGunToSvg frame unit =
     in
     atlasToSvg
         { path = fieldGunPath (teamName unit.playerNumber)
+        , columns = 4
         , cellWidth = 1024
         , cellHeight = 368
         , portraitWidth = 40
@@ -240,9 +243,9 @@ atlasToSvg atlas frame unit =
 
         viewBox : String
         viewBox =
-            String.fromInt (modBy 4 frame * atlas.cellWidth)
+            String.fromInt (modBy atlas.columns frame * atlas.cellWidth)
                 ++ " "
-                ++ String.fromInt (frame // 4 * atlas.cellHeight)
+                ++ String.fromInt (frame // atlas.columns * atlas.cellHeight)
                 ++ " "
                 ++ String.fromInt atlas.cellWidth
                 ++ " "
@@ -267,7 +270,7 @@ atlasToSvg atlas frame unit =
                 ]
                 [ Svg.image
                     [ SA.xlinkHref atlas.path
-                    , SA.width (String.fromInt (atlas.cellWidth * 4))
+                    , SA.width (String.fromInt (atlas.cellWidth * atlas.columns))
                     , SA.height (String.fromInt (atlas.cellHeight * 2))
                     ]
                     []

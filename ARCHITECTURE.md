@@ -1458,8 +1458,10 @@ the 90ms figure stagger, and tank/field-gun atlas selection. `CombatExchange.tar
 comes from recorded reciprocal shots rather than health changes, including misses.
 The theater assigns attacks only to firing participants, offsetting the returning
 formation by 45ms. It delays the shared hit clock until every firing figure
-finishes, plus 100ms of travel. Tanks recover in 620ms; ignition occupies the first
-30ms before recoil, followed by a direct return to the original level stance.
+finishes, plus 100ms of travel. Tanks use a 1050ms sequence; ignition occupies the
+first 30ms before a sharp backward hull rock. The hull returns to level by 370ms
+while dust spreads and thins through 1050ms. One fixed barrel drawing rotates
+and translates with the turret, without retracting, stretching, or scaling.
 The field-gun crew's 840ms sequence starts with 320ms of signaling/bracing before the muzzle flash,
 then recoil and recovery. `firingTimes` includes this preparation offset while
 `endsAt` measures the complete sequence. Observable indirect-fire attackers use
@@ -1469,10 +1471,12 @@ casualty removal, impacts, rumble, depot follow-ups, and automatic close therefo
 stay synchronized. Unsupported unit kinds retain their old hit timing. The attack
 renderer mirrors tank cells around the original 16-unit portrait and field-gun
 cells around its 40-unit portrait, preserving calibration and footing. Tank
-team atlases in `tank-firing-drawn-v3/` have eight 416x288 cells in a 1664x576
-sheet. Their track anchor at (139.75,255.5) aligns with the static portrait's
-center and footing. Tanks use the drawn ready/final poses throughout the card
+team atlases in `tank-firing-drawn-v6/` have ten 448x288 cells in a 2240x576
+sheet, with five columns and two rows. Their track anchor at (155.75,255.5) aligns
+with the static portrait's center and footing. Tanks use the drawn ready/final poses throughout the card
 and hold final rest after recovery. The first and final cells match exactly.
+Imagegen supplies the red and blue palette references; color-only transfer
+preserves every approved neutral alpha pixel and the fixed barrel geometry.
 The approved neutral field-gun drawings have color-only red and blue edits. Each
 committed 4096x736 team atlas has eight 1024x368 cells; wheel registration aligns
 the animated gun with the static portrait. Field guns hold the ready drawing before the

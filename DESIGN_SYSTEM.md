@@ -633,10 +633,12 @@ smaller guns scattered horizontally behind it, with shallow vertical variation.
 Keep their placements stable through impacts and paint from back to front.
 Hold the scene for one second after the opening animation finishes before combat
 begins. Attacking tank figures fire once, 90ms apart, using red and blue color edits
-of the approved eight drawn poses. Hold the ready drawing until the flash, then
-begin recoil 30ms later. Recover directly to the original level stance without
-an anticipation dip or forward overshoot; hold the matching final rest drawing
-as the smoke clears. Complete the sequence in 620ms. Keep the track anchor aligned
+of the approved ten poses. Hold the ready drawing until the flash, then begin
+a sharp backward hull rock 30ms later. Keep the same barrel bitmap at its full
+length and thickness, rotating and translating with the turret without scaling
+or retracting. Return the hull directly to level by 370ms without anticipation
+or forward overshoot. Let the track-end dust spread and thin through 1050ms,
+then hold the matching final rest drawing. Keep the track anchor aligned
 with the static portrait's center and footing. Recorded return fire begins 45ms after the primary formation; receiving a
 shot alone never triggers firing. Firing field guns use red and blue color edits
 of the approved eight complete drawings, mirrored toward the opponent.
@@ -645,7 +647,7 @@ breech recoil amid the flash, smoke, and dust. Use 320ms of preparation before
 the flash and 840ms for the complete signal/recoil/recovery sequence, staggering
 figures by the same 90ms. Keep the wheel aligned with the static portrait and
 hold the final pose after recovery. Observable indirect-fire guns use this same
-sequence. Wait for all firing figures to recover (620ms per tank, 840ms per field
+sequence. Wait for all firing figures to finish (1050ms per tank, 840ms per field
 gun) and a 100ms travel beat before any participant hit. Unsupported unit kinds
 retain the existing timing until their attack artwork is added. Reduced motion
 keeps the original still portraits while preserving this sequence's timing.

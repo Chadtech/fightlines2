@@ -131,34 +131,39 @@ generated flash/smoke sources in `artwork/units/illustrated/combat-theater/tank-
 The approved orange-red and sky-blue tank masters are the base color references
 for future illustrated teams; UI palette swatches remain separate.
 
-A subsequent neutral animation study uses complete generated drawings,
-matching the field gun's drawn-frame approach: ready, ignition, recoil flash,
-full recoil, return, settled smoke, recovery, and settle. Built-in imagegen redraws
-the tank's suspension response, recoiling stub cannon, flash lighting, smoke,
-and dust. Sources and exact prompts are retained locally in
-`artwork/units/illustrated/combat-theater/tank-firing-drawn-v3/neutral/`.
-The tank holds its resting pose until the muzzle flash; recoil starts 30ms
-later. There is no anticipation dip. Recovery eases directly from backward
-recoil to the original level stance, with no forward overshoot; the tank stays
-level as smoke dissipates. Final rest reuses the opening drawing exactly to
-avoid motion across the loop boundary. Earlier studies remain in
-`tank-firing-drawn-v1/neutral/` and `tank-firing-drawn-v2/neutral/` for comparison.
-Run `node tools/build-tank-firing-drawn.cjs` to align whole drawings by their
-track anchors and export eight transparent 1664 x 1152 frames, a four-column
-sheet, timing metadata, and normal/slow looping matte GIFs.
+The active combat-theater tank atlases are `tank-firing-drawn-v6/{red,blue}.png`:
+2240 x 576 with ten 448 x 288 cells in five columns and two rows. The sequence is
+ready, ignition, sharp backward rock, peak rock with smoke, return, damped return,
+settled dust, drifting dust, last dust, and matching rest. Ignition precedes the
+hull rock by 30ms; the hull returns to level by 370ms while dust spreads and
+thins through 1050ms. There is no anticipation dip or forward overshoot.
 
-`tank-firing-drawn-v3/{red,blue}.png` are the active combat-theater atlases:
-1664 x 576 with eight 416 x 288 cells in four columns and two rows. Built-in
-imagegen recolors the complete approved neutral sheet using the original team
-masters. Sources and exact prompts are retained beside the neutral study in
-`{red,blue}/source.png` and `team-prompts.json`. Run
-`node tools/build-tank-firing-teams.cjs` to pack these sheets; both drawn-tank
-exporters are included in `make sprites`. Final rest reuses the ready cell
-exactly. Gameplay replaces preview holds with the shared theater clock: ignition
-at 0ms, recoil at 30ms, and final rest at 620ms. Track registration aligns with
-the static portrait's center and footing; both sides mirror toward the opponent.
-Reduced motion retains the ordinary static team portrait. Live games and logged
-replays share the sequence and its synchronized sound, impact, and close timing.
+The barrel uses one original ready-pose bitmap in every frame, with translation
+and rotation only. Its length, diameter, and ring spacing never change. Existing
+muzzle effects follow its fixed tip. Complete generated hull/effects drawings,
+registration metadata, the common barrel, and generation prompts are retained in
+`artwork/units/illustrated/combat-theater/tank-firing-drawn-v6/neutral/`.
+Run `node tools/build-tank-firing-drawn.cjs` to rebuild its transparent
+1792 x 1152 frames, atlas, contact sheet, and normal/slow preview GIFs.
+
+Built-in imagegen produces the team palette references using the approved
+orange-red and sky-blue tank masters. The exact prompts live in
+`tank-firing-drawn-v6/team-prompts.json`, with the references in
+`{red,blue}/color-reference.png`. A color-only palette transfer applies those
+colors to the approved neutral pixels, preserving alpha, every silhouette,
+and the fixed barrel. Metal wheels/tracks, glass, the amber lamp, muzzle flash,
+smoke, and dust retain their material colors. Red keeps the olive cargo cylinder;
+blue paints it blue, matching the original team masters. Run
+`node tools/build-tank-firing-teams.cjs` to export the runtime atlases and
+team previews. Both exporters are included in `make sprites`.
+
+Final rest matches the ready cell exactly. Gameplay replaces preview holds with
+the shared theater clock: ignition at 0ms, rock at 30ms, and final rest at 1050ms.
+The track anchor at (155.75,255.5) aligns with the static portrait's center and
+footing; both sides mirror toward the opponent. Reduced motion retains the
+ordinary static portrait. Live games and logged replays share this sequence and
+its synchronized sound, impact, and close timing. Earlier v1–v5 studies remain
+locally for comparison; the committed v3 atlases are retained as earlier artwork.
 
 ## Illustrated supply crate
 

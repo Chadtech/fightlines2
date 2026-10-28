@@ -1742,7 +1742,7 @@ combatPlaybackChecks first second =
                     (Maybe.map .targetFired exchange
                         == Just True
                         && delayForShots [ zeroDamage shot, zeroDamage returnShot ]
-                        == Just 1035
+                        == Just 1465
                     )
                 ++ expect "defending tanks do not fire merely because they appear in a theater"
                     (delayForShots
@@ -1751,7 +1751,7 @@ combatPlaybackChecks first second =
                         ]
                         == Just 0
                         && delayForShots [ shot ]
-                        == Just 990
+                        == Just 1420
                     )
                 ++ expect "fewer firing tanks shorten the firing phase using before-health"
                     (delayForShots
@@ -1759,7 +1759,7 @@ combatPlaybackChecks first second =
                             |> Shot.setAttackerHealth
                                 { before = { current = 1, maximum = 16 }, after = { current = 0, maximum = 16 } }
                         ]
-                        == Just 720
+                        == Just 1150
                     )
                 ++ expect "returning tanks delay incoming hits even when the primary attacker is infantry"
                     (delayForShots
@@ -1767,7 +1767,7 @@ combatPlaybackChecks first second =
                             |> setShotAttacker (Unit.setKind Kind.Infantry attacker)
                         , returnShot
                         ]
-                        == Just 1035
+                        == Just 1465
                     )
                 ++ expect "firing field guns delay both formations' impacts, including zero-damage shots"
                     (delayForShots
@@ -2075,12 +2075,12 @@ combatPlaybackChecks first second =
                             , expect "combat retains visible participants without requiring enemy resources"
                                 (Maybe.map (.attacker >> .id) (TurnPlayback.combat focus) == Just first && Maybe.map (.target >> .id) (TurnPlayback.combat focus) == Just second)
                             , expect "automatic closing waits for two impacts, camera settling, and a half-second pause"
-                                (not (readyAt Kind.Tank 2989 TurnPlayback.CardVisible 8) && readyAt Kind.Tank 2990 TurnPlayback.CardVisible 8)
+                                (not (readyAt Kind.Tank 3419 TurnPlayback.CardVisible 8) && readyAt Kind.Tank 3420 TurnPlayback.CardVisible 8)
                             , expect "automatic closing lets all four casualty animations finish"
-                                (not (readyAt Kind.Tank 3229 TurnPlayback.CardVisible 0) && readyAt Kind.Tank 3230 TurnPlayback.CardVisible 0)
+                                (not (readyAt Kind.Tank 3659 TurnPlayback.CardVisible 0) && readyAt Kind.Tank 3660 TurnPlayback.CardVisible 0)
                             , expect "automatic closing waits for all eight infantry casualties and their shake"
-                                (not (readyAt Kind.Infantry 3709 TurnPlayback.CardVisible 0)
-                                    && readyAt Kind.Infantry 3710 TurnPlayback.CardVisible 0
+                                (not (readyAt Kind.Infantry 4139 TurnPlayback.CardVisible 0)
+                                    && readyAt Kind.Infantry 4140 TurnPlayback.CardVisible 0
                                 )
                             , expect "automatic closing waits while seeing the map"
                                 (not (readyAt Kind.Tank 2500 TurnPlayback.SeeingMap 0))
@@ -3429,15 +3429,15 @@ combatTheaterChecks =
             (List.concatMap paths themes == expectedPaths)
         , expect "a full formation's four losses finish before the panel clock caps at 2000ms"
             (CombatFormation.lossStartsAt { surviving = 0, index = 3 } + CombatExplosion.durationMs <= 2000)
-        , expect "tank flash precedes recoil by 30ms, then recovery holds the final ready drawing"
-            (List.map (CombatAttack.frameAt Kind.Tank) [ -1, 0, 29, 30, 89, 90, 179, 180, 299, 300, 439, 440, 619, 620, 6000 ]
-                == [ 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7 ]
+        , expect "tank flash precedes the sharp rock by 30ms, then lingering dust clears before final rest"
+            (List.map (CombatAttack.frameAt Kind.Tank) [ -1, 0, 29, 30, 79, 80, 159, 160, 249, 250, 369, 370, 549, 550, 789, 790, 1049, 1050, 6000 ]
+                == [ 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9 ]
             )
         , expect "four tanks fire 90ms apart and finish recovery before any incoming hit"
             (CombatAttack.endsAt (CombatAttack.Attacking { startsAt = 1200 }) Kind.Tank 4
-                == 2090
+                == 2520
                 && CombatAttack.endsAt (CombatAttack.Attacking { startsAt = 1200 }) Kind.Tank 1
-                == 1820
+                == 2250
                 && CombatAttack.firingTimes (CombatAttack.Attacking { startsAt = 1200 }) Kind.Tank 4
                 == [ 1200, 1290, 1380, 1470 ]
                 && CombatAttack.endsAt CombatAttack.NotAttacking Kind.Tank 4
