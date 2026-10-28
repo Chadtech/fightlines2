@@ -1,6 +1,9 @@
 # Repository instructions
 
-Read [README.md](README.md) for the project status and development commands.
+Read [README.md](README.md) for the project overview and quick start. Read
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for development commands and tool
+workflows. Consult [docs/PLAYING.md](docs/PLAYING.md) for detailed game behavior
+and [docs/MAPS.md](docs/MAPS.md) for map authoring and catalog behavior.
 Before changing code, read [CODE_STYLE.md](CODE_STYLE.md) and follow its
 conventions. Read [ARCHITECTURE.md](ARCHITECTURE.md) for state ownership and
 cross-module data flow. Before presenting code changes, apply
