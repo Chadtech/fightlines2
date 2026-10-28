@@ -1,7 +1,6 @@
 <div align="center">
   <img src="public/assets/fightlines-logo-v1.png" alt="FightLines" width="560">
-  <p><strong>Plan the attack. Protect the convoy. Keep your army supplied.</strong></p>
-  <p>A browser strategy game with simultaneous turns, hidden information, and finite supply lines.</p>
+  <p>a turn based strategy game based on logistics, supply, and transportation</p>
   <p>
     <img src="https://img.shields.io/badge/engine-Rust-B7410E?style=flat-square" alt="Engine: Rust">
     <img src="https://img.shields.io/badge/client-Elm-1293D8?style=flat-square" alt="Client: Elm">
@@ -10,6 +9,7 @@
   </p>
   <p>
     <a href="#the-game">The game</a> ·
+    <a href="#combat-in-motion">Combat</a> ·
     <a href="#engineering-highlights">Engineering</a> ·
     <a href="#run-locally">Run locally</a> ·
     <a href="#documentation">Documentation</a>
@@ -40,16 +40,26 @@ choose one of three AI difficulties.
 - **Tools for understanding a turn:** browse recorded games, switch player views,
   inspect orders, and replay combat with the recorded fog of war.
 
+## Combat in motion
+
+Tanks recoil through muzzle flash and drifting smoke. Field-gun crews signal,
+brace, fire, and recover. These looping previews use the game's firing artwork.
+
 <table>
   <tr>
-    <td width="61%"><img src="public/assets/home-battlefield-desert-v1.png" alt="Desert battlefield with infantry, tanks, artillery, supply crates, and concealed terrain." width="100%"></td>
-    <td width="39%"><img src="public/assets/home-battlefield-logistics-v1.png" alt="A truck transport plan with passenger unloading and infantry follow-up orders." width="100%"></td>
+    <td width="34%"><img src="docs/images/tank-firing.gif" alt="Animated red tank firing, recoiling, and settling as smoke clears." width="100%"></td>
+    <td width="66%"><img src="docs/images/field-gun-firing.gif" alt="Animated blue field-gun crew signaling, bracing, firing, and recovering." width="100%"></td>
   </tr>
   <tr>
-    <td align="center"><sub>Combined arms across desert terrain</sub></td>
-    <td align="center"><sub>Transport, unload, and prepare an ambush</sub></td>
+    <td align="center"><sub>Tank firing sequence</sub></td>
+    <td align="center"><sub>Field-gun firing sequence</sub></td>
   </tr>
 </table>
+
+In-game encounters bring the formations together over terrain-specific backdrops.
+Live games and recorded replays share the same combat presentation.
+
+![A tank engagement in the combat theater, with opposing formations over desert backdrops.](docs/images/combat-theater.jpg)
 
 ## Engineering highlights
 
