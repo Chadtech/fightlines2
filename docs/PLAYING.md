@@ -519,6 +519,8 @@ attack-move route also triggers an attack against an enemy on the adjacent squar
 directly ahead, using the final facing chosen after the route. This contact is
 checked after simultaneous arrivals, includes concealed enemies, and interrupts
 the target's remaining movement. Both participants stop their remaining routes.
+Following allies stop behind a unit halted by contact, preserving the column's
+order and the leading unit's attack. A leader on a normal move stops without firing.
 If allied traffic forces a participant back to a free square, direct fire occurs
 only if the participants are still cardinally adjacent after that adjustment.
 Opposing attack movers fire simultaneously; other orders do not gain automatic

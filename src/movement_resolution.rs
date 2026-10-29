@@ -142,8 +142,7 @@ fn resolve_prepared(
     let mut stopped = BTreeSet::new();
     loop {
         let mut result = resolve_arrivals(scenario, &routes, turn, combat)?;
-        stopped.extend(&result.stopped);
-        result.stopped = stopped.clone();
+        result.stopped.extend(&stopped);
         let mut occupied: BTreeMap<Coordinate, Vec<_>> = BTreeMap::new();
         for unit in &result
             .frames
@@ -210,16 +209,18 @@ fn resolve_prepared(
             return Ok(result);
         };
         stopped.insert(id);
-        for route in &mut routes {
-            route.path = result
-                .paths
-                .get(&route.unit_id)
-                .ok_or(ResolutionError::MissingPath)?
-                .clone();
-            if route.unit_id == id {
-                route.path.pop();
-            }
-        }
+        // Only shorten the later arrival. Keeping every other submitted route
+        // preserves the leader's enemy contact when this column is resolved again.
+        let route = routes
+            .iter_mut()
+            .find(|route| route.unit_id == id)
+            .ok_or(ResolutionError::MissingUnit)?;
+        route.path = result
+            .paths
+            .get(&id)
+            .ok_or(ResolutionError::MissingPath)?
+            .clone();
+        route.path.pop();
         // Every retry removes at least one path edge, so this converges to the
         // initially valid occupancy, including passengers still aboard.
     }
@@ -341,7 +342,8 @@ fn resolve_arrivals(
             }
         }
         // A successful departure frees a tile at this boundary. Swaps are blocked;
-        // repeat until blocked departures can no longer allow another unit through.
+        // propagate stopped departures through following allies before they overlap
+        // the leader and force a retreat that could erase its attack contact.
         loop {
             let before = blocked.len();
             for (id, destination) in &intents {
@@ -350,19 +352,27 @@ fn resolve_arrivals(
                     .iter()
                     .find(|unit| unit.unit_id() == *id)
                     .ok_or(ResolutionError::MissingUnit)?;
-                for enemy in board.units.iter().filter(|enemy| {
-                    enemy.is_alive()
-                        && enemy.player_number() != unit.player_number()
-                        && enemy.board_position() == Some(*destination)
+                for resident in board.units.iter().filter(|resident| {
+                    resident.is_alive() && resident.board_position() == Some(*destination)
                 }) {
-                    let departure = intents.get(&enemy.unit_id());
+                    let departure = intents.get(&resident.unit_id());
+                    if resident.player_number() == unit.player_number() {
+                        let halted_ally = blocked.contains(&resident.unit_id())
+                            || result.stopped.contains(&resident.unit_id())
+                            || (stop_after_arrival.contains(&resident.unit_id())
+                                && departure.is_none());
+                        if halted_ally {
+                            blocked.insert(*id);
+                        }
+                        continue;
+                    }
                     let swaps =
                         departure.is_some_and(|target| Some(*target) == unit.board_position());
-                    if departure.is_none() || blocked.contains(&enemy.unit_id()) || swaps {
+                    if departure.is_none() || blocked.contains(&resident.unit_id()) || swaps {
                         blocked.insert(*id);
-                        stop_after_arrival.insert(enemy.unit_id());
+                        stop_after_arrival.insert(resident.unit_id());
                         if swaps {
-                            blocked.insert(enemy.unit_id());
+                            blocked.insert(resident.unit_id());
                         }
                     }
                 }
@@ -469,8 +479,9 @@ fn resolve_arrivals(
                 result.stopped.extend([id, target.unit_id()]);
             }
         }
-        // Retreat from settled allies before combat, but preserve contact while
-        // a passing ally still has movement scheduled to leave the shared square.
+        // Retreat from settled allies before combat. A passing ally may still
+        // leave; overlapping halted allies are settled by arrival time on retry,
+        // so a later follower cannot force its leader away from enemy contact.
         let participants: BTreeSet<_> = contacts
             .iter()
             .flat_map(|(attacker, target)| [*attacker, *target])
@@ -488,10 +499,13 @@ fn resolve_arrivals(
                         order.unit_id == other.unit_id()
                             && order.path.last() != other.board_position().as_ref()
                     });
+                let halted_ally = other.player_number() == unit.player_number()
+                    && result.stopped.contains(&other.unit_id());
                 other.is_alive()
                     && other.unit_id() != id
                     && other.board_position() == unit.board_position()
                     && !departing_ally
+                    && !halted_ally
             });
             if !shared_with_settled_unit {
                 continue;
@@ -983,6 +997,120 @@ mod tests {
                     serde_json::to_value(&result.frames)?,
                     serde_json::to_value(&reversed.frames)?
                 );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn tank_column_preserves_its_leaders_contact() -> TestResult<()> {
+        use crate::{scenario::Direction, supplies::SupplyOrder, turns::TravelMode};
+
+        let scenario = MapDefinition::parse(
+            r#"{
+                "width": 9, "height": 1, "theme": "GreenForest", "features": [], "depots": [],
+                "units": [
+                    {"id": 4, "position": {"x": 2, "y": 0}, "playerNumber": "Player1", "kind": "Tank", "direction": "East"},
+                    {"id": 6, "position": {"x": 1, "y": 0}, "playerNumber": "Player1", "kind": "Tank", "direction": "East"},
+                    {"id": 5, "position": {"x": 0, "y": 0}, "playerNumber": "Player1", "kind": "Tank", "direction": "East"},
+                    {"id": 20, "position": {"x": 6, "y": 0}, "playerNumber": "Player2", "kind": "Tank", "direction": "West"}
+                ]
+            }"#,
+        )
+        .fixture()?
+        .scenario()
+        .fixture()?;
+        let mut hill_scenario = scenario.clone();
+        hill_scenario.map = Map::new(
+            9,
+            1,
+            Terrain::Plain,
+            BTreeMap::from([(Coordinate::new(4, 0), Terrain::Hills)]),
+        )
+        .fixture()?;
+        for scenario in [&scenario, &hill_scenario] {
+            for advancing_enemy in [false, true] {
+                for leader_travel in [TravelMode::Normal, TravelMode::AttackMove] {
+                    let mut orders = Vec::new();
+                    for (id, start, travel) in [
+                        ("4", 2, leader_travel),
+                        ("6", 1, TravelMode::AttackMove),
+                        ("5", 0, TravelMode::Normal),
+                    ] {
+                        orders.push(MoveOrder {
+                            supply: SupplyOrder::default(),
+                            travel,
+                            facing: FacingOrder::AfterMove(Direction::East),
+                            unit_id: UnitId::parse(id).fixture()?,
+                            path: (start..=start + 5).map(|x| Coordinate::new(x, 0)).collect(),
+                            unloads: Vec::new(),
+                        });
+                    }
+                    orders.push(MoveOrder {
+                        supply: SupplyOrder::default(),
+                        travel: TravelMode::Normal,
+                        facing: FacingOrder::Unchanged,
+                        unit_id: UnitId::parse("20").fixture()?,
+                        path: if advancing_enemy {
+                            (1..=6).rev().map(|x| Coordinate::new(x, 0)).collect()
+                        } else {
+                            vec![Coordinate::new(6, 0)]
+                        },
+                        unloads: Vec::new(),
+                    });
+                    for turn in [1, 2] {
+                        let result = resolve(scenario, &orders, turn)?;
+                        let leader_x = if advancing_enemy {
+                            if turn == 1 { 4 } else { 3 }
+                        } else {
+                            5
+                        };
+                        for (id, offset) in [("4", 0), ("6", 1), ("5", 2)] {
+                            assert_eq!(
+                                path(&result, id)?.last(),
+                                Some(&Coordinate::new(leader_x - offset, 0))
+                            );
+                        }
+                        let shots: Vec<_> = result
+                            .frames
+                            .iter()
+                            .flat_map(|frame| &frame.shots)
+                            .collect();
+                        assert_eq!(
+                            shots.len(),
+                            usize::from(leader_travel == TravelMode::AttackMove)
+                        );
+                        if leader_travel == TravelMode::AttackMove {
+                            let shot = shots.first().fixture()?;
+                            assert_eq!(shot.attacker.id(), "4");
+                            assert_eq!(shot.target.id(), "20");
+                            assert_eq!(shot.origin, Coordinate::new(leader_x, 0));
+                            assert_eq!(shot.destination, Coordinate::new(leader_x + 1, 0));
+                            assert!(shot.target_health.after.current() < 16);
+                        }
+                        let final_frame = result.frames.last().fixture()?;
+                        let positions: Vec<_> = final_frame
+                            .units
+                            .iter()
+                            .filter(|unit| unit.is_alive())
+                            .filter_map(Unit::board_position)
+                            .collect();
+                        assert_eq!(
+                            positions.iter().collect::<BTreeSet<_>>().len(),
+                            positions.len()
+                        );
+                        let reversed = resolve(
+                            scenario,
+                            &orders.iter().rev().cloned().collect::<Vec<_>>(),
+                            turn,
+                        )?;
+                        assert_eq!(result.paths, reversed.paths);
+                        assert_eq!(
+                            serde_json::to_value(&result.frames)?,
+                            serde_json::to_value(&reversed.frames)?
+                        );
+                    }
+                }
             }
         }
         Ok(())

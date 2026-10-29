@@ -1593,8 +1593,14 @@ checked after simultaneous arrivals, includes concealed enemies, and interrupts
 the target's remaining movement. Both participants stop their remaining routes.
 `Combat.engage_contacts` rechecks cardinal adjacency after interrupted allied
 passage retracts movement, before direct shots or field-gun contact interceptions.
+Blocked departures propagate backward through following allies on the same
+arrival boundary. Allies also stop behind units halted at earlier boundaries,
+keeping columns in order and preserving the leader's attack contact without
+shortening its route. If terrain timing has already allowed an overlap between
+halted allies, only the later arrival's route is shortened for the retry; other
+routes retain their original contact attempts.
 An ally still traveling through the shared square does not force that retreat;
-stationary allies and allies whose movement has stopped do.
+an ally holding or already at its destination forces retreat before combat.
 Opposing attack movers fire simultaneously; other orders do not gain automatic
 return fire. Only successful edges spend movement
 resources. Attack move and ambush both spend 8 readiness supplies per turn,
