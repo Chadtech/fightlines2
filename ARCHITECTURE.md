@@ -220,6 +220,14 @@ Hit points, supplies and vehicle fuel are authoritative. Fuel, provisions, freig
 and their consumption costs use integer quantities at four times the original scale
 for finer balance adjustments. HP, damage, tile ranges, movement points, and cargo
 berths retain their existing scale. Directional ambush combat is authoritative.
+`Unit` owns a serialized exhaustion state. The first zero-supply settlement starts
+a two-turn countdown; later zero-supply settlements decrement it. Replenishment
+precedes upkeep, and positive supplies afterward reset exhaustion. Only countdown
+expiry causes a supply death for the unit and its carried passengers. HP stays
+unchanged during the grace period. `UnitResources.exhaustionTurnsRemaining` exposes the countdown only
+with the viewer's private gauges; `destroyed` and Elm `Unit.isDying` track actual
+death independently of zero supplies. Old archive units default to supplied when
+the exhaustion field is absent, preserving captured HP and explicit loss events.
 `Turns` checks victory on the authoritative final board after resource settlement.
 Its optional `GameOutcome` (`Victory(PlayerNumber)`, `Resignation(PlayerNumber)`,
 or `Draw`) is public in each game snapshot and permanently blocks further
@@ -321,7 +329,7 @@ Fuel distance counts traversed tiles, while per-turn affordability still uses
 terrain half-points, supplies, and cargo-dependent fuel costs. Return-distance
 estimates ignore temporary occupants, but actual logistics routes avoid observed
 units and allied destinations. A fuel-safety reroute discards dependent boarding
-or dismount commands. Combat or blocked arrivals can still disrupt a rendezvous.
+or dismount orders. Combat or blocked arrivals can still disrupt a rendezvous.
 Maps without fuel sources retain ordinary movement. Deliberate freight unloading
 remains unplanned; delivery uses carried stock's normal adjacent distribution.
 When the human submits, the store prepares both submissions on copies using the
@@ -687,8 +695,8 @@ being planned, and selection is shared with playback.
 subscriptions. `Game.View.Battlefield` exposes board SVG rendering, viewport
 attributes/events, camera attributes, and navigation controls. The player and
 replay pages compose their viewport and camera containers and map messages at
-that boundary; the player page also places its command menu. `Camera` shares
-board sizing and coordinate projection with command-menu
+that boundary; the player page also places its order menu. `Camera` shares
+board sizing and coordinate projection with order-menu
 anchors. Navigation starts with zero pixel offset and 100% overview zoom.
 Reset restores the centered whole-map overview. Pan and cursor zoom update the
 offset directly, without DOM measurements or team centering. Polling does not
@@ -751,7 +759,7 @@ functions fix the operation's argument and result scopes; Elm compilation
 catches callers incompatible with a regenerated schema. The current server uses
 synchronous resolvers for its in-memory operations.
 
-`UnitCommand` owns the command vocabulary and per-unit availability.
+`UnitOrder` owns the order vocabulary and per-unit availability.
 `Game.OrderPlanning` owns editable unit/tile selection and saved drafts;
 `TurnLifecycle` retains inspection while orders are locked. `PlannedOrder` gives
 saved orders separate `Hold`, `Move`, `Unload` and `Ambush` actions. Moving truck
@@ -767,18 +775,24 @@ verifies that conversion, including unloading from stationary trucks.
 confirmation carry drafts and selection; unload stages carry the required truck
 move, other units' orders and stage-specific passenger data. The submission
 warning and unload checklist are rendered directly from these alternatives;
-`GamePage.Model` has no separate dialog state. Only one workflow can be active.
+`GamePage.Model` has no separate planning-dialog state. Only one planning
+workflow can be active. Inspector reference help is independent of planning:
+`Game.View.UnitStatus.Help` carries the unit kind or fuel values needed for its
+explanation, and the live-game and replay pages own the optional open help.
+`UnitStatus` renders the shared native dialog; dismissal preserves selection
+and drafts. Starting live playback or opening a turn introduction clears help;
+opening replay help pauses playback.
 `TurnLifecycle` owns the outer phases and delegates editable planning through
 `mapPlanning`; the planning module operates only on `OrderPlanning.Model`, without
 knowing about submission, waiting or playback. Planning functions accept only
 the map, units, ownership, movement rules, visible supply crates or depots needed
 by each operation, with explicit arguments instead of a shared context record.
 `GamePage` derives own player numbers and filters supply crates to visible tiles
-before passing them to planning. The module coordinates command
+before passing them to planning. The module coordinates order
 selection, move tracing and confirmation, ambush drafts, moving/stationary truck
 unload workflows, readiness and default submission holds. `Game.PlannedTransport`
 owns boarding partners, transport reservations and receiving-unit holds.
-`UnitCommand.MenuOption` owns command choices independently of
+`UnitOrder.MenuOption` owns order choices independently of
 the view. Page helpers delegate edits through `TurnLifecycle.mapPlanning`, so
 locked phases cannot accept draft changes. `GamePage` retains navigation guards,
 views and view messages, focus/dialog effects, GraphQL conversion and snapshot
@@ -791,9 +805,9 @@ storing another selection. Submission, waiting and playback store only
 data while retaining the selected object. Inspection may change during locked
 phases and survives submission failure or playback completion. A new turn starts
 without selection. Saving or revoking an order returns to inspection. Clicking
-an inspected unit without an order reopens commands when eligible; otherwise
+an inspected unit without an order reopens orders when eligible; otherwise
 clicking the selected unit clears selection.
-`UnitInteraction` distinguishes `CommandMenu`, `ChoosingMove MovePlanning` and
+`UnitInteraction` distinguishes `OrderMenu`, `ChoosingMove MovePlanning` and
 `ChoosingDirection DirectionPlanning`. `MovePlanning` owns a required path preview and reachable
 options; neither can exist outside movement selection. `ChoosingExits` owns the
 current passenger's reachable options and remaining queue. Leaving a workflow
@@ -809,12 +823,12 @@ feedback is defined in `Game.DestinationFeedback` for movement and unloading.
 
 `Game.DirectionPlanning` owns direction plans for ambush, stand ground and
 attack-move final facing. It initializes facing, updates previews, rejects reverse
-final-segment attack facing and constructs completed orders. Stationary commands
-require a map position; `CommandUnitNotOnMap` retains no order on failure and is
+final-segment attack facing and constructs completed orders. Stationary orders
+require a map position; `OrderUnitNotOnMap` retains no order on failure and is
 propagated as `DirectionInvariantViolated`. `Selection` carries the plan, while
 `OrderPlanning` resolves selected units, applies eligibility checks, saves the
-order and finishes the command. Attack orders use the selected identity and
-confirmed route; if finishing the command cannot resolve the selected unit, its
+order and finishes the order. Attack orders use the selected identity and
+confirmed route; if finishing the order cannot resolve the selected unit, its
 diagnostic retains the saved order.
 
 `Game.IndirectFirePlanning` owns opaque targeting state, target previews,
@@ -822,10 +836,10 @@ circular range queries and indirect-fire order construction. Starting targeting
 requires a map position and captures the firing origin and range for the active
 selection. Preview queries need only that validated plan and the map. Saving
 rechecks the current unit's map position, range and map bounds; invalid targets
-save no order. Missing required map positions return `CommandUnitNotOnMap`,
+save no order. Missing required map positions return `OrderUnitNotOnMap`,
 propagated as `IndirectFireInvariantViolated` without changing drafts or selection.
-The coordinator retains command eligibility, selected-unit lookup, order saving
-and command completion. Visibility and occupancy do not restrict indirect targets.
+The coordinator retains order eligibility, selected-unit lookup, order saving
+and order completion. Visibility and occupancy do not restrict indirect targets.
 
 Unloading domain types and operations live beneath that coordinator.
 `Game.UnloadingTruck` owns an opaque moving/stationary truck plan, accumulating
@@ -834,7 +848,7 @@ passenger and crate exits and converting the result to `PlannedOrder`.
 its exit and choosing its inspection unit. `Game.UnloadPlanning` owns the cargo
 checklist, sequential exit choices, placement feasibility and movement options.
 Its operations return the next exit picker or a finished truck plan; they do not
-depend on `OrderPlanning.Model`, depot loading or infantry command selection.
+depend on `OrderPlanning.Model`, depot loading or infantry order selection.
 `PlannedTransport.occupancy` supplies reservation-aware passenger occupancy;
 `OrderPlanning` handles the follow-up transitions. Diagnostics from simulated
 placements retain their first invariant violation and safe continuation value.
@@ -842,13 +856,13 @@ placements retain their first invariant violation and safe continuation value.
 `Game.PlannedTransport` keeps its `Occupancy` type with the operations that
 derive destination units and reservations from saved orders. It also owns cargo
 capacity checks, move orders with receiving-unit holds, dismount projections,
-stale passenger-hold removal and finding the next dismounted infantry needing a
-command. These operations take explicit units, orders and map data as needed;
+stale passenger-hold removal and finding the next dismounted infantry needing an
+order. These operations take explicit units, orders and map data as needed;
 they do not depend on the planning model, selection or dialogs. `PlannedOrder.hold`
 constructs shared hold orders from physical positions. The coordinator retains
 revoke eligibility and chooses when to open loading, unloading or infantry
-commands. `Game.OrderDependencies.revoke` removes revoked orders and cascades
-through routes, passenger/crate exits and boarding or dismount commands that
+orders. `Game.OrderDependencies.revoke` removes revoked orders and cascades
+through routes, passenger/crate exits and boarding or dismount orders that
 depend on them. It accepts only units, revoked unit IDs and saved orders; the
 coordinator applies the resulting drafts and returns the selected unit to inspection.
 Before revocation, every saved order must resolve to an existing unit. A missing
@@ -863,20 +877,20 @@ requires a receiving hold when a partner is present; failed carrier or hold
 construction retains the existing drafts. `OrderPlanning` preserves these checks
 as `TransportInvariantViolated` through the existing shared diagnostic boundary.
 
-The command guide is a `ReadingGuide` state inside the selected unit's
-`CommandMenu`, alongside `ChoosingCommand`. It retains the focused menu option
+The order guide is a `ReadingGuide` state inside the selected unit's
+`OrderMenu`, alongside `ChoosingOrder`. It retains the focused menu option
 and drafts while open. `OrderPlanning` owns opening, dismissal, and submission
 gating; locked lifecycle phases convert the selection to inspection and discard
 the guide. `GamePage` derives the native dialog from that interaction and opens
 it through the dialog-change effect in `superUpdate`.
 
-`Fightlines.View.CommandMenu` renders the board-anchored command popup and emits command choices
-and arrow-key events. `GamePage.update` chooses the adjacent enabled command,
-wrapping at the ends, and `Effect.focus` uses Elm's DOM API to focus its HTML ID. Selection tracks the focused command. While the popup is open, page-level
-up/down arrow and W/S commands navigate its enabled options instead of panning, including
-before a command button receives focus. Buttons handle arrows locally without
-propagating them. Cancel clears selection. Commands, destination planning and a saved order are mutually
-exclusive views derived from `GamePage` state. Commands appear beside the unit
+`Fightlines.View.OrderMenu` renders the board-anchored order popup and emits order choices
+and arrow-key events. `GamePage.update` chooses the adjacent enabled order,
+wrapping at the ends, and `Effect.focus` uses Elm's DOM API to focus its HTML ID. Selection tracks the focused order. While the popup is open, page-level
+up/down arrow and W/S shortcuts navigate its enabled options instead of panning, including
+before an order button receives focus. Buttons handle arrows locally without
+propagating them. Cancel clears selection. Orders, destination planning and a saved order are mutually
+exclusive views derived from `GamePage` state. Orders appear beside the unit
 (or its carrier for passengers); destination planning and saved orders remain
 in the side panel. The popup sits beside the transformed board inside the battlefield
 viewport, retaining its display size at every zoom. Viewport container units place
@@ -893,18 +907,18 @@ mapping, and facing. Its portrait API uses separate elongated field-gun assets
 for the status panel and combat formations; other portraits use the board atlas.
 Portrait width drives SVG framing and formation scaling without changing map cells.
 `Camera` names the shared offset/zoom data used by navigation, the page viewport
-and command positioning. `BattlefieldNavigation` owns camera offset, zoom and an opaque
+and order positioning. `BattlefieldNavigation` owns camera offset, zoom and an opaque
 `PointerGesture`. The page handles pointer, button and keyboard events by calling
 its direct transition functions. Pointer subscriptions emit its own `Msg` for mouse movement, release and
 visibility changes; the page maps these messages and delegates to its `update`.
 `Game.View.Battlefield.Msg` describes shared board events; each page interprets them.
 Each page wraps `Game.View.Battlefield.toSvg` in its camera container using
 `camera`, and applies `viewportAttributes` to the outer navigation
-surface. The player page places its command overlay outside the camera transform.
+surface. The player page places its order overlay outside the camera transform.
 The shared view accepts no parent-message mapping or page content. The page reads
-its camera for command positioning and queries `active` and `suppressesClick`
+its camera for order positioning and queries `active` and `suppressesClick`
 when handling previews and selection. `GamePage.keyCommands` retains keyboard
-priority across dialogs, command menus, movement, ambush and navigation.
+priority across dialogs, order menus, movement, ambush and navigation.
 `BattlefieldWorkspace` overlays a centered game header on the navigation surface
 and reserves normal-flow space for bottom controls. Its full-height right inspector
 appears only with a selection and overlays the map without changing its horizontal
@@ -937,7 +951,7 @@ stores it in its own shared model. Missing or malformed flags instead open an
 `AppInitError` page with decoder details in a read-only textarea; it has no shared
 state, subscriptions, or route handling. Pages expose keyboard commands through
 `keyCommands`; game navigation keys pattern-match the current selection and unit
-interaction, with dialog visibility deciding whether command-menu navigation is
+interaction, with dialog visibility deciding whether order-menu navigation is
 active. Locked phases expose inspection only, so key bindings need no separate
 planning-lock check. Each app maps active-page messages and passes the shared
 operating system to `KeyCmd.subscriptions`. Command shortcuts use Meta on macOS/iOS and
@@ -946,7 +960,7 @@ commands to extend or retrace the preview from its current tip, and Enter saves
 the preview through the same destination validation as a click. Board Enter
 events confirm that preview when focus remains on the selected unit. Enter on
 another unit, depot, or reachable tile activates that focused destination.
-Outside command, movement, and ambush selection, arrow and WASD commands pan.
+Outside order, movement, and ambush selection, arrow and WASD commands pan.
 Plus/minus commands zoom without battlefield focus, and Escape clears selection, reachable
 squares, and the live path preview while preserving saved move drafts. The page
 derives its active dialog through `GamePage.dialog : Model -> Maybe (Dialog Msg)`;
@@ -1050,7 +1064,7 @@ requirements.
 ## Movement planning
 
 Planning actions return `InvariantCheck InvariantViolation Model` when their
-existing lookups can encounter a broken assumption. A missing command unit,
+existing lookups can encounter a broken assumption. A missing order unit,
 required position, unload passenger, or truck loading order records a violation
 at that failure branch while retaining its existing fallback value. There is no
 general invariant scan, automatic cancellation, or rollback. `InvariantCheck.andThen`
@@ -1059,7 +1073,7 @@ continues with the retained value and preserves the first diagnostic in a chain.
 `CurrentTurn.mapPlanning`, which runs it only during editable planning, then records
 its violation as `Error.OrderPlanningInvariantViolated` in `Shared.Model.errors`.
 Pure transitions use `GamePage.mapPlanning`. Inspections, view queries, unavailable
-commands, unreachable destinations, and out-of-phase events remain silent.
+orders, unreachable destinations, and out-of-phase events remain silent.
 Cargo eligibility retains its invariant check through checkbox updates, so failed
 placement lookups reach the same diagnostic boundary. Rendering explicitly disables
 a choice when its eligibility check reports a violation. `InvariantCheck.resolve`
@@ -1076,7 +1090,7 @@ square. Future impassable terrain can omit its cost entry.
 `Movement.elm` calculates cheapest four-direction paths from those rules and
 the current board. Allied units allow passage, while enemy units block travel. Occupied unit
 squares can be destinations when an allied occupant has a planned departure,
-or for compatible truck loading with a stationary receiver; depots do not block travel. `GamePage` calculates options only after the move command is chosen and retains
+or for compatible truck loading with a stationary receiver; depots do not block travel. `GamePage` calculates options only after the move order is chosen and retains
 one editable local draft per unit owned by the viewer, plus a separate live path
 preview. Hovering extends that preview from its tip without replacing its prefix;
 mouse-event gaps use the cheapest connector within the remaining budget, with
@@ -1142,7 +1156,7 @@ turn updates wait for active playback to finish; resignation interrupts it.
 `Planning`, `Submitting`, `WaitingForOpponent` and `Playing`; order drafts belong
 to the first three variants, and playback data belongs only to `Playing`.
 Only planning accepts order edits or stores editable selection. Waiting,
-submission and playback cannot carry command menus, move previews or ambush
+submission and playback cannot carry order menus, move previews or ambush
 previews. Matching submission failures restore the saved drafts with inspection
 preserved and editing closed; request messages carry their originating turn number, so late
 responses cannot reopen an advanced turn. A poll confirming submission transitions
@@ -1225,8 +1239,10 @@ from fuel and carried supply crates.
 Validation reserves upkeep before allowing movement expenditure. Resolution
 spends supplies on successful movement, then replenishes from nearby finite
 sources before charging upkeep once to every unit,
-including holds and interrupted movement. Units at zero supplies are removed
-immediately, along with passengers of exhausted carriers. `finish_turn_resources`
+including holds and interrupted movement. The first zero-supply settlement starts
+a two-turn exhaustion countdown without changing HP. Later zero-supply settlements
+advance it; positive supplies after upkeep reset it. Countdown expiry removes the
+unit and any passengers it carries. `finish_turn_resources`
 returns a presentation snapshot with zero supplies and health for dead units.
 When deaths occur, resolution adds that snapshot followed by the authoritative
 surviving units with a 1400ms transition. `Game.View.UnitDeath` replaces the map
@@ -1353,7 +1369,7 @@ their planned arrival squares, so either the truck or passenger can be planned f
 Passengers board only with ordinary moves or holds. Remaining berths are reserved
 across drafts;
 revoking a truck’s order clears boarding moves that depend on it. The truck's status panel exposes cargo buttons;
-carried units have no independent commands. Saving a truck destination opens
+carried units have no independent orders. Saving a truck destination opens
 an unload checklist through `OrderPlanning.ChoosingPassengers`. Confirmation
 advances to `ChoosingExits`. Both stages own a typed truck plan distinguishing
 movement from stationary unloading, with all passenger and crate exits accumulated so far,
@@ -1364,9 +1380,8 @@ for paths, readiness, reservations and submission. Planning transitions finish
 or cancel the workflow without page-level order transfers.
 Each exit is reserved before calculating options for the next passenger. Leaving
 the checklist or square selection cancels the truck plan and exits already chosen,
-preserving other units' orders. Explicitly proceeding without unloading or skipping
-remaining cargo keeps the plan and chosen exits; advancing the turn discards the
-workflow. Choosing hold position on a loaded truck
+preserving other units' orders. Explicitly proceeding without unloading keeps
+the plan; advancing the turn discards the workflow. Choosing hold position on a loaded truck
 opens the same checklist at its current square without requiring fuel or a legal move. With no exits, it remains an ordinary
 `Hold`; saved stationary exits form an `Unload` order with a single-coordinate path.
 Unload choices belong to the truck's `Move` or `Unload` order and disappear when it is revoked. Elm projects the truck at its planned
@@ -1465,7 +1480,9 @@ both participants' facing, terrain cover,
 and an ambush advantage against attack movers. Infantry ambushing a ready tank
 from its flank or rear use a ×5 ambush factor instead of the ordinary factor;
 frontal exchanges retain their low infantry damage. Defensive facing only applies
-to ready infantry and tanks; unready defenders have no combat flanks. Field guns
+to direct fire against ready infantry and tanks: side hits multiply damage by
+×1.5 and rear hits by ×2. Unready defenders take ×2 incoming damage with no combat
+flanks. Field guns
 always use exposed-defender damage and neutral defensive facing: preparing their
 weapon grants firing capability without protecting the crew. Infantry have very low
 weapon effectiveness against ready tanks, while remaining dangerous to unready
@@ -1478,7 +1495,7 @@ in a separate first volley.
 Surviving tanks then fire with reduced health. Outside that area, against an
 unready gun, or after its shot is spent, tank contact uses the normal volley.
 
-`Shot.flankBonus` records whether the shot hit a ready defender's flank or rear,
+`Shot.flankBonus` records whether a direct shot hit a ready defender's flank or rear,
 using the same readiness and aspect rules as damage. Elm retains a separate bonus
 for each firing side when pairing reciprocal shots and places a corner chip over
 that formation. Missing metadata in older archives defaults to no chip. Offline
@@ -1714,8 +1731,8 @@ An ally still traveling through the shared square does not force that retreat;
 an ally holding or already at its destination forces retreat before combat.
 Opposing attack movers fire simultaneously; other orders do not gain automatic
 return fire. Only successful edges spend movement
-resources. Attack move and ambush both spend 8 readiness supplies per turn,
-even without an encounter. Planning reserves readiness, the shot cost, and
+resources. Attack move and ambush both spend 4 readiness supplies per turn for
+infantry and 8 for tanks, even without an encounter. Planning reserves readiness, the shot cost, and
 upkeep; a route without an encounter spends no firing supplies. Combat events use the existing theater,
 with an `attack move` heading and the usual fog-safe encounter portraits.
 
@@ -1818,7 +1835,8 @@ with room, preserving its remaining stock. Incidental arrivals do not collect it
 The shared unload checklist accepts typed passenger IDs and crate slots. Crates use
 the same sequential board picker with adjacent squares free of enemies and other
 crates, and mixed exits assemble a `SupplyTransfer` preserving passenger exits.
-The inspector shows stock and saved destinations; locked phases cannot edit freight.
+The inspector shows stock; planned destinations appear on the board, and locked
+phases cannot edit freight.
 Crate exits reserve against other crates independently of unit and passenger
 destinations, and revoke with their truck plan. Checklist additions require a
 complete legal placement; the sequential picker only offers exits that preserve a
@@ -1985,6 +2003,8 @@ consults visibility or occupancy. Ammunition continues to use supplies.
 bombardments simultaneously after movement and transport. Occupancy at impact
 decides the target, including allies; empty shots still pay firing cost. `Shot`
 uses `CombatKind::IndirectFire` for observable combat and casualty presentation.
+Indirect damage ignores both participants' facing and records no flank bonus;
+readiness, health, matchup, terrain, entrenchment, and fortress cover still apply.
 `TurnFrame.indirectImpacts` records tile landings independently of hit confirmation.
 Visibility projects own landings and observable opposing landings, and removes
 unseen enemy hit shots before theater, loss, and report derivation. Bombardment
@@ -2027,34 +2047,34 @@ acknowledgment and death pause as ordinary exchanges.
 Holding Enter or Space on `see map` previews the battlefield; releasing either key
 restores the card without triggering the global Enter-to-continue shortcut.
 
-## Infantry commands after dismounting
+## Infantry orders after dismounting
 
 A truck's passenger exits remain in `MoveOrder.unloads`. An infantry order whose
-path starts at its assigned exit is a dependent command after dismounting; the
+path starts at its assigned exit is a dependent order after dismounting; the
 wire contract reuses the existing move/action fields. Validation projects that
-infantry onto its exit and reserves unloading supplies before checking the command.
+infantry onto its exit and reserves unloading supplies before checking the order.
 Legacy passenger holds at the carrier remain plain unloading orders.
 
 Resolution substitutes aboard holds during the initial movement phase. Successful
 unloading activates the infantry's readiness in the existing `Combat`, then a
-second shared movement phase resolves surviving infantry commands before indirect
+second shared movement phase resolves surviving infantry orders before indirect
 fire. `movement_resolution::resolve_dismounts` preserves spent shots, readiness,
 and pending targets across phases and movement retries. Boarding exceptions apply
 only during transport; dismount movement retreats from occupied truck squares.
 Playback frames remain the authority for timing; dependent action events follow
 transport events.
 
-`PlannedTransport.planningUnit` projects dismounted infantry only for command selection,
+`PlannedTransport.planningUnit` projects dismounted infantry only for order selection,
 route previews, and submission. Inspector resource gauges retain authoritative
-values; reserved unloading supplies affect command affordability only. Physical
-board and cargo data stay unchanged until playback. Finishing exit choices opens the first infantry command menu; saving a
-command advances to the next unloaded infantry without an order from the same truck.
+values; reserved unloading supplies affect order affordability only. Physical
+board and cargo data stay unchanged until playback. Finishing exit choices opens the first infantry order menu; saving an
+order advances to the next unloaded infantry without an order from the same truck.
 `OrderPlanning.cancelInteraction` cancels the active truck sequence through
-`OrderDependencies.revoke`, including saved infantry commands and other dependent
-routes. The active unload stage identifies its truck; during infantry commands,
-the selected unit's authoritative carrier and remaining uncommanded dismounts
-identify the unfinished sequence. After the last infantry command, Escape only
-clears selection. Missing commands use the existing submission warning and explicit
+`OrderDependencies.revoke`, including saved infantry orders and other dependent
+routes. The active unload stage identifies its truck; during infantry orders,
+the selected unit's authoritative carrier and remaining unordered dismounts
+identify the unfinished sequence. After the last infantry order, Escape only
+clears selection. Missing orders use the existing submission warning and explicit
 hold fallback at the exit.
 
 ## Infantry entrenchment
@@ -2063,7 +2083,9 @@ hold fallback at the exit.
 observable unit. No map state or terrain object represents a trench. The
 exclusive `FacingOrder::DigIn` action is validated for exposed infantry already
 on the board and costs the Rust-exported `CombatRules.digInCost` (16) plus
-ordinary upkeep. `Combat::prepare` charges digging before any combat; `Turns`
+ordinary upkeep. Roads and all depot/fortress squares, including wreckage,
+exclude digging in server validation, AI candidates, and Elm order availability.
+`Combat::prepare` charges digging before any combat; `Turns`
 marks surviving diggers `Entrenched` after indirect fire and before resource
 settlement. Earlier playback frames retain the exposed state.
 
@@ -2075,7 +2097,7 @@ ordinary unit visibility, so hidden entrenchment never creates a map marker.
 
 Elm carries `PlannedOrder.DigIn` through the existing save/revoke/submission
 workflow. `Game.Unit.Location.Dismounting` describes a projected unloading position
-for planning, while excluding digging on that turn. Ordinary commands can use
+for planning, while excluding digging on that turn. Ordinary orders can use
 that projected map position. `Game.View.UnitSprite` uses the approved team-colored
 entrenched masters for board cells and inspector portraits;
 `tools/build-entrenched-sprites.cjs` packs them without changing their sources.
@@ -2150,3 +2172,23 @@ Save and copy responses carry request IDs drawn from the shared random seed, so
 responses from an earlier page visit cannot complete a later request. Source and
 destination selectors remain editable during a request; the scope controls are
 disabled and completion uses the submitted destination.
+
+## Combat chart
+
+`/dev/combat-chart` is a read-only DevTools page. Its `combatChart` query validates
+health from 1–16 and builds bounded, synthetic two-unit scenarios independently
+of authored maps or live games. `combat::chart` enumerates legal readiness and
+terrain comparisons and calls `Combat::damage_calculation`, the same calculation
+used for live shot damage. `DamageFactors` exposes those actual multipliers,
+including the squared relative-health factor and fortress protection after the
+damage cap. Elm never duplicates combat balance constants. Indirect queries
+return field-gun attacks with ready/unready columns and no directional cases.
+
+`DevTools` owns initial loading and failure states, correlated by request ID.
+`DevTools.Page.CombatChart` owns its initial `Flags`, GraphQL selections and
+requests, settings, refresh/retry state, terrain columns, and selection.
+`DevTools.CombatChart` holds the data types and helpers shared with the chart view.
+Refreshes retain the previous chart with its original settings
+and an explicit status; stale responses are ignored and hit selection is
+disabled until fresh values arrive. `DevTools.View.CombatChart` renders the
+semantic table, accessible damage cells, lethal-hit styling, and factor details.

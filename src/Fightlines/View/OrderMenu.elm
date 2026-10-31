@@ -1,4 +1,4 @@
-module Fightlines.View.CommandMenu exposing
+module Fightlines.View.OrderMenu exposing
     ( Msg(..)
     , keyCommands
     , optionHtmlId
@@ -11,7 +11,7 @@ import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Depot exposing (Depot)
 import Game.Map as Map exposing (Map)
 import Game.Unit as Unit exposing (Unit)
-import Game.UnitCommand as Command exposing (Command, MenuOption(..))
+import Game.UnitOrder as Order exposing (MenuOption(..), Order)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
@@ -28,31 +28,31 @@ type Msg
     = MenuPressed
     | InfoClicked
     | CancelClicked
-    | CommandFocused MenuOption
-    | CommandPicked Command
-    | ArrowedUpCommandMenu MenuOption
-    | ArrowedDownCommandMenu MenuOption
+    | OrderFocused MenuOption
+    | OrderPicked Order
+    | ArrowedUpOrderMenu MenuOption
+    | ArrowedDownOrderMenu MenuOption
 
 
 keyCommands : Map -> List Depot -> Unit -> KeyCmd Msg
 keyCommands map depots unit =
     let
-        commandKey : Command -> KeyCmd Msg
-        commandKey command =
-            KeyCmd.fromKeys [ Command.shortcut command ] (CommandPicked command)
+        orderKey : Order -> KeyCmd Msg
+        orderKey order =
+            KeyCmd.fromKeys [ Order.shortcut order ] (OrderPicked order)
     in
-    Command.available depots unit
-        |> List.filter (Command.canUse map depots unit)
-        |> List.map commandKey
+    Order.available depots unit
+        |> List.filter (Order.canUse map depots unit)
+        |> List.map orderKey
         |> KeyCmd.batch
 
 
 toHtml : List Depot -> Map -> Camera -> Coordinate -> Unit -> Html Msg
 toHtml depots map camera position unit =
-    Lazy.lazy6 commandsView depots map camera.offset camera.zoom position unit
+    Lazy.lazy6 ordersView depots map camera.offset camera.zoom position unit
 
 
-commandsView :
+ordersView :
     List Depot
     -> Map
     -> Point
@@ -60,7 +60,7 @@ commandsView :
     -> Coordinate
     -> Unit
     -> Html Msg
-commandsView depots map offset zoom position unit =
+ordersView depots map offset zoom position unit =
     let
         camera : Camera
         camera =
@@ -114,12 +114,12 @@ commandsView depots map offset zoom position unit =
                 ++ origin
                 ++ " - 100% - 0.5rem))"
 
-        commands : List Command
-        commands =
-            Command.available depots unit
+        orders : List Order
+        orders =
+            Order.available depots unit
     in
     H.section
-        [ Aria.label "unit commands"
+        [ Aria.label "unit orders"
         , Ev.stopPropagationOn "mousedown" (Decode.succeed ( MenuPressed, True ))
         , A.css
             [ S.absolute
@@ -157,7 +157,7 @@ commandsView depots map offset zoom position unit =
                 [ A.css
                     [ S.textGray0 ]
                 ]
-                [ H.text "command" ]
+                [ H.text "orders" ]
             , H.div
                 [ A.css
                     [ S.row
@@ -171,13 +171,13 @@ commandsView depots map offset zoom position unit =
             ]
         , H.div
             [ Aria.role Aria.Group
-            , Aria.label "choose a command"
+            , Aria.label "choose an order"
             , A.css
                 [ S.col
                 , S.shrink0
                 ]
             ]
-            (List.map (commandButton map depots unit) commands)
+            (List.map (orderButton map depots unit) orders)
         , cancelRow
         ]
 
@@ -186,8 +186,8 @@ infoButton : Html Msg
 infoButton =
     H.button
         [ A.type_ "button"
-        , Aria.label "about commands"
-        , A.title "about commands"
+        , Aria.label "about orders"
+        , A.title "about orders"
         , A.attribute "aria-haspopup" "dialog"
         , Ev.onClick InfoClicked
         , A.css
@@ -205,8 +205,8 @@ closeButton : Html Msg
 closeButton =
     H.button
         [ A.type_ "button"
-        , Aria.label "close command menu"
-        , A.title "close command menu"
+        , Aria.label "close order menu"
+        , A.title "close order menu"
         , Ev.onClick CancelClicked
         , A.css
             [ S.batch headerButtonStyles
@@ -243,22 +243,22 @@ headerButtonStyles =
     ]
 
 
-commandHtmlId : Command -> String
-commandHtmlId command =
-    "unit-command-"
-        ++ Command.assetName command
+orderHtmlId : Order -> String
+orderHtmlId order =
+    "unit-order-"
+        ++ Order.assetName order
         ++ "-"
-        ++ String.replace " " "-" (Command.label command)
+        ++ String.replace " " "-" (Order.label order)
 
 
 optionHtmlId : MenuOption -> String
 optionHtmlId option =
     case option of
-        CommandOption command ->
-            commandHtmlId command
+        OrderOption order ->
+            orderHtmlId order
 
         CancelOption ->
-            "unit-command-cancel"
+            "unit-order-cancel"
 
 
 cancelRow : Html Msg
@@ -267,10 +267,10 @@ cancelRow =
         [ A.id (optionHtmlId CancelOption)
         , A.type_ "button"
         , Ev.onClick CancelClicked
-        , Ev.onFocus (CommandFocused CancelOption)
+        , Ev.onFocus (OrderFocused CancelOption)
         , Ev.custom "keydown" (navigationDecoder CancelOption)
         , A.attribute "aria-keyshortcuts" "Escape"
-        , A.css commandRowStyles
+        , A.css orderRowStyles
         ]
         [ H.span
             [ Aria.hidden True
@@ -285,36 +285,36 @@ cancelRow =
         ]
 
 
-commandButton : Map -> List Depot -> Unit -> Command -> Html Msg
-commandButton map depots unit command =
+orderButton : Map -> List Depot -> Unit -> Order -> Html Msg
+orderButton map depots unit order =
     let
         implemented : Bool
         implemented =
-            Command.canUse map depots unit command
+            Order.canUse map depots unit order
 
         title : String
         title =
             if implemented then
-                Command.label command
+                Order.label order
 
-            else if command == Command.Sabotage then
+            else if order == Order.Sabotage then
                 "requires infantry already on an operational depot and enough supplies for upkeep"
 
-            else if command == Command.DigIn then
-                "requires stationary, unentrenched infantry off roads and "
+            else if order == Order.DigIn then
+                "requires stationary, unentrenched infantry away from roads, depots, fortresses, and building wreckage, with "
                     ++ String.fromInt unit.combatRules.digInCost
                     ++ " supplies plus upkeep"
 
-            else if command == Command.IndirectFire then
+            else if order == Order.IndirectFire then
                 "not enough supplies for readiness and one shell"
 
-            else if command == Command.StandGround then
+            else if order == Order.StandGround then
                 "not enough supplies to stand ground"
 
-            else if command == Command.Ambush then
+            else if order == Order.Ambush then
                 "not enough supplies to maintain ambush readiness"
 
-            else if command == Command.AttackMove then
+            else if order == Order.AttackMove then
                 "not enough supplies to move and fire"
 
             else
@@ -323,24 +323,24 @@ commandButton map depots unit command =
         styles : List Css.Style
         styles =
             if implemented then
-                commandRowStyles
+                orderRowStyles
 
             else
-                commandRowStyles ++ [ S.opacity 0.45, S.notAllowedCursor ]
+                orderRowStyles ++ [ S.opacity 0.45, S.notAllowedCursor ]
     in
     H.button
-        [ A.id (commandHtmlId command)
+        [ A.id (orderHtmlId order)
         , A.type_ "button"
         , A.disabled (not implemented)
         , A.title title
-        , Ev.onClick (CommandPicked command)
-        , Ev.onFocus (CommandFocused (CommandOption command))
-        , Ev.custom "keydown" (navigationDecoder (CommandOption command))
-        , A.attribute "aria-keyshortcuts" (Command.shortcut command)
+        , Ev.onClick (OrderPicked order)
+        , Ev.onFocus (OrderFocused (OrderOption order))
+        , Ev.custom "keydown" (navigationDecoder (OrderOption order))
+        , A.attribute "aria-keyshortcuts" (Order.shortcut order)
         , A.css styles
         ]
-        [ commandIcon command
-        , H.text (Command.label command ++ " (" ++ Command.shortcut command ++ ")")
+        [ orderIcon order
+        , H.text (Order.label order ++ " (" ++ Order.shortcut order ++ ")")
         ]
 
 
@@ -360,26 +360,26 @@ navigationDecoder current =
             in
             case key of
                 "ArrowDown" ->
-                    stopAll <| ArrowedDownCommandMenu current
+                    stopAll <| ArrowedDownOrderMenu current
 
                 "ArrowRight" ->
-                    stopAll <| ArrowedDownCommandMenu current
+                    stopAll <| ArrowedDownOrderMenu current
 
                 "ArrowLeft" ->
-                    stopAll <| ArrowedUpCommandMenu current
+                    stopAll <| ArrowedUpOrderMenu current
 
                 "ArrowUp" ->
-                    stopAll <| ArrowedUpCommandMenu current
+                    stopAll <| ArrowedUpOrderMenu current
 
                 _ ->
-                    Decode.fail "not command navigation"
+                    Decode.fail "not order navigation"
     in
     Decode.field "key" Decode.string
         |> Decode.andThen fromKey
 
 
-commandRowStyles : List Css.Style
-commandRowStyles =
+orderRowStyles : List Css.Style
+orderRowStyles =
     [ S.row
     , S.shrink0
     , S.itemsCenter
@@ -408,10 +408,10 @@ commandRowStyles =
     ]
 
 
-commandIcon : Command -> Html msg
-commandIcon command =
+orderIcon : Order -> Html msg
+orderIcon order =
     H.img
-        [ A.src ("/assets/commands-anime-v1/" ++ Command.assetName command ++ ".png")
+        [ A.src ("/assets/orders-anime-v1/" ++ Order.assetName order ++ ".png")
         , A.alt ""
         , A.css
             [ S.shrink0

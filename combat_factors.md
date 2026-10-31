@@ -32,9 +32,9 @@ chosen to express the expectations above rather than a fixed outcome table.
 | --- | --- |
 | Base power | infantry 4, tank 8, field gun 12 |
 | Matchup | against trucks ×3.5; infantry against infantry ×1.75, field guns ×3, unready tanks ×2, ready tanks ×0.25; tanks against infantry ×2.5 or field guns ×2; field guns against other combat units ×1.5; otherwise ×1 |
-| Exposed defender | ×1.5 incoming damage for unready units and all field guns |
-| Ready defender facing | infantry/tanks: front ×1; flank ×1.25; rear ×1.5; unready units and field guns always ×1 |
-| Attacker aim | front ×1; flank ×0.85; rear ×0.7 |
+| Exposed defender | ×2 incoming damage for unready units and all field guns |
+| Ready defender facing (direct fire only) | infantry/tanks: front ×1; flank ×1.5; rear ×2; unready units and field guns always ×1 |
+| Attacker aim | direct fire: front ×1; flank ×0.85; rear ×0.7; indirect fire always ×1 |
 | Hills or forest cover | ×0.85 incoming damage |
 | Ambush firing on an attack mover | ×1.125 |
 | Infantry ambushing a ready tank's flank or rear | ×5 instead of the ordinary ambush factor; applies to all forms of tank readiness |
@@ -46,7 +46,7 @@ retains its defensive readiness for the turn. Ordinary holds, moves, and rotatio
 are unready. Stand ground costs the same readiness supplies as ambush but never fires.
 Readiness does not grant automatic return fire or change targeting.
 Field-gun readiness prepares the weapon to fire but gives its exposed crew no
-defensive protection. Guns always take the ×1.5 exposed-defender multiplier,
+defensive protection. Guns always take the ×2 exposed-defender multiplier,
 regardless of order or approach direction. Their firing direction, coverage,
 and tank interception still apply normally.
 Facing uses 90-degree front and rear sectors, including diagonal boundaries;
@@ -54,6 +54,9 @@ other bearings are flank hits. Defensive facing applies only to battle-ready
 infantry and tanks. An unready tank takes the same damage from every approach direction;
 its stored sprite/facing direction does not create combat flanks. Units without
 facing also use neutral facing factors.
+Indirect fire ignores both participants' facing, always using ×1 for defender
+facing and attacker aim. It never receives a flank bonus. Readiness, relative
+health, matchup, terrain, entrenchment, and fortress protection still apply.
 Cover does not override forest concealment. Ambushes use shared visibility or
 firing reveals and can fire through intervening terrain within their firing area.
 The infantry flank/rear ambush factor replaces, rather than stacks with, the
@@ -72,24 +75,25 @@ use ambush shots. Readiness does not grant return fire by itself.
 | --- | --- | ---: | ---: |
 | Infantry | Unready truck | 16 | 0 |
 | Infantry | Unready truck on a hill | 16 | 0 |
-| Infantry | Unready tank | 12 | 4 |
+| Infantry | Unready tank | 16 | 0 |
 | Infantry | Ready tank | 1 | 15 |
-| Infantry | Ready tank hit from the flank | 1 | 15 |
+| Infantry | Ready tank hit from the flank | 2 | 14 |
 | Infantry | Ready tank hit from behind | 2 | 14 |
-| Infantry | Unready tank on a hill | 10 | 6 |
+| Infantry | Unready tank on a hill | 14 | 2 |
 | Infantry | Ready tank on a hill | 1 | 15 |
-| Infantry | Unready infantry | 11 | 5 |
-| Infantry | Unready infantry on a hill | 9 | 7 |
+| Infantry | Unready infantry | 14 | 2 |
+| Infantry | Unready infantry on a hill | 12 | 4 |
 | Infantry | Ready infantry | 7 | 9 |
 | Infantry | Ready infantry on a hill | 6 | 10 |
 | Infantry | Ready field gun | 16 | 0 |
-| Infantry | Ready field gun on a hill | 15 | 1 |
+| Infantry | Ready field gun on a hill | 16 | 0 |
 | Tank | Unready infantry | 16 | 0 |
 | Tank | Ready infantry on open ground | 16 | 0 |
 | Tank | Ready infantry on a hill | 16 | 0 |
-| Tank | Unready tank | 12 | 4 |
+| Tank | Unready tank | 16 | 0 |
 | Tank | Ready tank | 8 | 8 |
-| Tank | Ready tank hit from behind | 12 | 4 |
+| Tank | Ready tank hit from the flank | 12 | 4 |
+| Tank | Ready tank hit from behind | 16 | 0 |
 | Tank | Ready tank on a hill | 7 | 9 |
 | Tank | Ready field gun approached outside its firing area | 16 | 0 |
 | Field gun | Ready tank on open ground | 16 | 0 |
@@ -97,8 +101,8 @@ use ambush shots. Readiness does not grant return fire by itself.
 | Field gun | Ready infantry on open ground, without trenches | 16 | 0 |
 | Ambushing tank | Attack-moving tank, head-on | 9 | 7 |
 | Ambushing infantry | Attack-moving tank, head-on | 1 | 15 |
-| Ambushing infantry | Ready tank hit from the flank | 6 | 10 |
-| Ambushing infantry | Ready tank hit from behind | 8 | 8 |
+| Ambushing infantry | Ready tank hit from the flank | 8 | 8 |
+| Ambushing infantry | Ready tank hit from behind | 10 | 6 |
 
 Hills and forests use the same damage reduction. Forest examples require an
 otherwise legal encounter: forest concealment still prevents ordinary ambush
@@ -106,21 +110,21 @@ shots at hidden targets, while attack-move contact can engage concealed enemies.
 Infantry without entrenchment remain exposed to heavy weapons even when ambushing. Ready tanks resist infantry fire particularly
 strongly; infantry readiness does not make them effective against prepared armor.
 Infantry flank and rear ambushes are the exception: at full health on open ground,
-`round(4 × 0.25 × 1.25 × 5) = 6` and `round(4 × 0.25 × 1.5 × 5) = 8`.
+`round(4 × 0.25 × 1.5 × 5) = 8` and `round(4 × 0.25 × 2 × 5) = 10`.
 Being ambushed still does not trigger automatic return fire or stop a surviving
 attack mover's remaining route.
-The 12-damage infantry hit against an unready tank applies from every direction.
+The 16-damage infantry hit against an unready tank applies from every direction.
 
 Attackers with less current HP than their target lose power quadratically.
 The defenders in this table all start at 16 HP:
 
 | Attacker and remaining HP | Defender | Damage | Defender HP left |
 | --- | --- | ---: | ---: |
-| Infantry, 12/16 HP | Unready tank | 7 | 9 |
-| Infantry, 8/16 HP | Unready tank | 3 | 13 |
+| Infantry, 12/16 HP | Unready tank | 9 | 7 |
+| Infantry, 8/16 HP | Unready tank | 4 | 12 |
 | Infantry, 4/16 HP | Unready tank | 1 | 15 |
-| Infantry, 8/16 HP | Unready truck | 5 | 11 |
-| Infantry, 8/16 HP | Ready field gun | 5 | 11 |
+| Infantry, 8/16 HP | Unready truck | 7 | 9 |
+| Infantry, 8/16 HP | Ready field gun | 6 | 10 |
 | Tank, 12/16 HP | Ready tank | 5 | 11 |
 | Tank, 8/16 HP | Ready tank | 2 | 14 |
 | Tank, 4/16 HP | Ready tank | 1 | 15 |
@@ -166,7 +170,8 @@ Holding, ambush, stand ground, and rotation preserve entrenchment with no extra
 maintenance. Firing still needs an ordinary ambush order and its supply costs.
 Actual movement and boarding clear it; a move blocked before leaving preserves
 it. No terrain or abandoned trench persists. Dismounting consumes movement, so
-infantry cannot dig in during their unloading turn.
+infantry cannot dig in during their unloading turn. Roads, depots, fortresses,
+and building wreckage also prevent digging; adjacent squares remain eligible.
 
 Full-health, head-on attacks against ready entrenched infantry on open ground
 inflict 1 HP from infantry, 1 HP from a field gun (direct or indirect), and 16 HP

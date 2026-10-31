@@ -45,6 +45,10 @@ type CombatBackdropCatalog
     = CombatBackdropCatalog
 
 
+type CombatChartHit
+    = CombatChartHit
+
+
 type CombatHealth
     = CombatHealth
 
@@ -67,6 +71,14 @@ type ConcealedIndirectFireUnitLoss
 
 type Coordinate
     = Coordinate
+
+
+type DamageCalculation
+    = DamageCalculation
+
+
+type DamageFactors
+    = DamageFactors
 
 
 type Depot

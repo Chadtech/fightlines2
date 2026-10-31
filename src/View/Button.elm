@@ -4,6 +4,7 @@ module View.Button exposing
     , attention
     , choice
     , compact
+    , danger
     , disabled
     , fullWidth
     , highlighted
@@ -57,6 +58,7 @@ type alias Button msg =
 type Variant
     = Variant__Primary
     | Variant__Secondary
+    | Variant__Danger
     | Disabled
     | Choice Bool
 
@@ -123,6 +125,12 @@ secondary label msg =
 primary : String -> msg -> Button msg
 primary label msg =
     fromLabelAndVariant label Variant__Primary
+        |> onClick msg
+
+
+danger : String -> msg -> Button msg
+danger label msg =
+    fromLabelAndVariant label Variant__Danger
         |> onClick msg
 
 
@@ -320,6 +328,23 @@ toHtml button =
                             , Css.active
                                 [ S.textYellow6
                                 , S.importantIndent
+                                ]
+                            ]
+
+                        Variant__Danger ->
+                            [ S.bgRed0
+                            , S.textGray5
+                            , S.redOutdent
+                            , Css.hover
+                                [ S.filter "brightness(1.15)"
+                                ]
+                            , Css.active
+                                [ S.filter "brightness(1.15)"
+                                , S.redIndent
+                                ]
+                            , S.focusVisible
+                                [ S.outlineCurrentThick
+                                , S.outlineOffset3
                                 ]
                             ]
 

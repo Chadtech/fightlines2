@@ -63,7 +63,7 @@ pub(super) fn support(
             Some(plan) => {
                 replace_order(orders, truck, plan.order)?;
                 // Fuel safety can redirect the carrier. Never retain passenger
-                // commands or exits that depended on the abandoned route.
+                // orders or exits that depended on the abandoned route.
                 if !protect_reserve(scenario, truck, orders)? {
                     assigned.push(plan.mission);
                     for passenger_order in plan.dependent_orders {
@@ -144,7 +144,7 @@ pub(super) fn blocked_tiles(
         blocked.insert(planned_destination(orders, other)?);
     }
     // Passenger holds still name the carrier's old position. Reserve explicit
-    // unload exits too, including guns that cannot issue a dismount command.
+    // unload exits too, including guns that cannot issue a dismount order.
     for order in orders.iter().filter(|order| order.unit_id != unit.id()) {
         for unload in order.unloads.iter().flatten() {
             blocked.insert(unload.destination_coordinate()?);

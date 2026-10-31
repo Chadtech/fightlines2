@@ -1,6 +1,6 @@
 # Runtime sprite assets
 
-The board images, desert SVG, and small illustrated command-menu experiment exports are committed. Normal builds use
+The board images, desert SVG, and small illustrated order-menu experiment exports are committed. Normal builds use
 these exports directly. Source artwork, prompts, previews and obsolete exports
 are retained locally and ignored by Git; back them up separately. The scripts in
 `tools/` and `make sprites` can regenerate exports when the local `artwork/`
@@ -175,25 +175,20 @@ Its local master and exact prompt are in `artwork/supplies/illustrated/`.
 exports intact depots, shared destroyed-depot wreckage, and freight, preserving
 transparency and aspect ratio.
 
-## Illustrated command experiment
+## Illustrated order icons
 
-`commands-anime-v1/` contains nine transparent 128px command icons, displayed at
+`orders-anime-v1/` contains eight transparent 128px order icons, displayed at
 1.875rem. The original SVG comparison source is preserved locally in `artwork/commands/`.
-Ambush depicts a concealed field gun and is offered only to field guns.
+Ambush depicts a concealed field gun and is shared by infantry, tanks, and field guns.
 Built-in imagegen produced the high-detail 1980s military anime illustrations;
 local masters and exact prompts are in `artwork/commands/anime-v1/`.
-Run `node tools/build-command-icons.cjs` to export those local masters again.
+Run `node tools/build-order-icons.cjs` to export those local masters again.
 
 The sabotage icon depicts bundled red demolition charges and an olive-green
 detonator with a brass plunger. Built-in imagegen produced its transparent
 1980s military anime illustration on October 23, 2026. Its local master and exact
 prompt are `artwork/commands/anime-v1/sabotage.png` and `sabotage-prompt.md`.
-The infantry sabotage command uses this asset in the command menu and guide.
-
-The rotate icon was generated with built-in imagegen on October 10, 2026: a
-simple circular clockwise arrow with textured golden metal, beveled edges,
-painted highlights, and dark ink outlines matching the move arrow. Its background
-and open center are transparent.
+The infantry sabotage order uses this asset in the order menu and guide.
 
 ## Illustrated death marker
 

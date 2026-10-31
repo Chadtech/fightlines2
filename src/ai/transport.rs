@@ -805,7 +805,7 @@ mod tests {
     }
 
     #[test]
-    fn resupplying_a_carrier_preserves_its_infantry_dismount_command() -> TestResult {
+    fn resupplying_a_carrier_preserves_its_infantry_dismount_order() -> TestResult {
         let mut scenario = fixture(UnitKind::Infantry, PlayerNumber::Player1)?;
         scenario.depots.clear();
         let carrier = scenario

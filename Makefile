@@ -35,6 +35,7 @@ check:
 	node tools/check-orders.cjs
 	node tools/check-lifecycle.cjs
 	node tools/check-replay.cjs
+	node tools/check-combat-chart.cjs
 	node tools/check-planning.cjs
 	node tools/check-pointer.cjs
 	node tools/check-local-storage.cjs

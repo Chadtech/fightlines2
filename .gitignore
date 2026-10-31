@@ -60,9 +60,9 @@
 !/public/assets/field-gun-portraits-anime-v1/
 !/public/assets/field-gun-portraits-anime-v1/*.png
 
-# Small illustrated command-menu experiment exports.
-!/public/assets/commands-anime-v1/
-!/public/assets/commands-anime-v1/*.png
+# Illustrated order-menu icons.
+!/public/assets/orders-anime-v1/
+!/public/assets/orders-anime-v1/*.png
 
 # Combat theater backdrops.
 !/public/assets/combat-backdrops-anime-v1/

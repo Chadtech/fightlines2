@@ -1044,6 +1044,7 @@ mod tests {
                 };
                 if !survives && unit.kind() != UnitKind::Truck {
                     unit.set_supplies_for_test(4);
+                    unit.set_exhaustion_for_test(1);
                 }
             }
             for (observation, player) in game

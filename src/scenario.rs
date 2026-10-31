@@ -246,6 +246,41 @@ pub struct UnitResources {
     supplies: Supplies,
     fuel: Option<Fuel>,
     supply_cargo: Vec<CargoStock>,
+    exhaustion_turns_remaining: Option<i32>,
+}
+
+/// Two full turns remain after the first zero-supply settlement.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+enum Exhaustion {
+    #[default]
+    Supplied,
+    Exhausted {
+        turns_remaining: u8,
+    },
+}
+
+impl Exhaustion {
+    fn is_supplied(&self) -> bool {
+        match self {
+            Self::Supplied => true,
+            Self::Exhausted { .. } => false,
+        }
+    }
+
+    fn turns_remaining(self) -> Option<i32> {
+        match self {
+            Self::Supplied => None,
+            Self::Exhausted { turns_remaining } => Some(i32::from(turns_remaining)),
+        }
+    }
+
+    fn advance(self) -> Self {
+        let turns_remaining = match self {
+            Self::Supplied => 2,
+            Self::Exhausted { turns_remaining } => turns_remaining.saturating_sub(1),
+        };
+        Self::Exhausted { turns_remaining }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
@@ -269,6 +304,8 @@ pub struct Unit {
     hit_points: HitPoints,
     fuel: Option<Fuel>,
     supplies: Supplies,
+    #[serde(default, skip_serializing_if = "Exhaustion::is_supplied")]
+    exhaustion: Exhaustion,
     resources_visible: bool,
     firing_position_revealed: bool,
     pub(crate) supply_cargo: Vec<CargoStock>,
@@ -321,6 +358,7 @@ impl Unit {
             supplies: self.supplies(),
             fuel: self.fuel(),
             supply_cargo: self.supply_cargo.clone(),
+            exhaustion_turns_remaining: self.exhaustion.turns_remaining(),
         })
     }
 
@@ -333,7 +371,7 @@ impl Unit {
     }
 
     pub fn destroyed(&self) -> bool {
-        !self.is_alive() || self.supplies.current == 0
+        !self.is_alive()
     }
 
     pub fn combat_rules(&self) -> combat::CombatRules {
@@ -489,11 +527,21 @@ impl Unit {
         self.supplies.current = current;
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_exhaustion_for_test(&mut self, turns_remaining: u8) {
+        self.exhaustion = Exhaustion::Exhausted { turns_remaining };
+    }
+
+    pub(crate) fn exhaustion_expired(&self) -> bool {
+        self.exhaustion.turns_remaining() == Some(0)
+    }
+
     /// Conservative simulation assumption for an observed enemy whose gauges are
     /// private. Preserve public position, kind, facing and entrenchment only.
     pub(crate) fn assume_full_resources(&mut self) {
         self.hit_points = HitPoints::full();
         self.supplies = Supplies::for_kind(self.kind);
+        self.exhaustion = Exhaustion::Supplied;
         self.fuel = Fuel::for_kind(self.kind);
         self.supply_cargo.clear();
     }
@@ -704,6 +752,7 @@ impl Scenario {
                 hit_points: HitPoints::full(),
                 fuel: Fuel::for_kind(starting.kind),
                 supplies: Supplies::for_kind(starting.kind),
+                exhaustion: Exhaustion::Supplied,
                 location: Location::OnMap(starting.position),
                 direction: starting.direction,
             })
@@ -761,7 +810,7 @@ impl Scenario {
         }
     }
 
-    /// Replenish, charge upkeep, and remove exhausted units and their cargo.
+    /// Replenish, charge upkeep, advance exhaustion, and remove losses and their cargo.
     /// Return the last resource snapshot for death presentation and actual upkeep spending.
     pub fn finish_turn_resources(&mut self, turn_number: i32) -> ResourceSettlement {
         supplies::replenish(self, turn_number);
@@ -779,28 +828,33 @@ impl Scenario {
             .collect();
         for unit in &mut self.units {
             unit.supplies.current = (unit.supplies.current - unit.supplies.upkeep_per_turn).max(0);
+            unit.exhaustion = if unit.supplies.current > 0 {
+                Exhaustion::Supplied
+            } else {
+                unit.exhaustion.advance()
+            };
         }
         let losses = unit_loss::exhaustion(&self.units);
-        let exhausted: Vec<_> = self
+        let lost: Vec<_> = self
             .units
             .iter()
-            .filter(|unit| unit.supplies.current == 0 || !unit.is_alive())
+            .filter(|unit| unit.exhaustion_expired() || !unit.is_alive())
             .map(Unit::unit_id)
             .collect();
         for unit in &mut self.units {
             if unit
                 .carrier_id()
-                .is_some_and(|carrier| exhausted.contains(&carrier))
+                .is_some_and(|carrier| lost.contains(&carrier))
             {
                 unit.supplies.current = 0;
+                unit.hit_points.current = 0;
             }
-            if unit.supplies.current == 0 {
+            if unit.exhaustion_expired() {
                 unit.hit_points.current = 0;
             }
         }
         let resource_snapshot = self.units.clone();
-        self.units
-            .retain(|unit| unit.supplies.current > 0 && unit.is_alive());
+        self.units.retain(Unit::is_alive);
         ResourceSettlement {
             losses,
             units: resource_snapshot,
@@ -828,6 +882,7 @@ mod tests {
     use crate::{
         map::RoadShape,
         test_support::{FixtureValue, TestResult},
+        turns::UnitOrderKind,
     };
 
     #[test]
@@ -1032,7 +1087,8 @@ mod tests {
     }
 
     #[test]
-    fn exhausted_units_die_and_dead_carriers_leave_no_orphaned_cargo() -> TestResult<()> {
+    fn exhausted_units_get_two_full_turns_and_dead_carriers_leave_no_orphaned_cargo()
+    -> TestResult<()> {
         let mut scenario = Scenario::supply_point().fixture()?;
         scenario.depots.clear();
         let truck_id = UnitId::parse("4").fixture()?;
@@ -1043,7 +1099,21 @@ mod tests {
                 _ => {}
             }
         }
-        let snapshot = scenario.finish_turn_resources(1);
+        for turn in 1..=2 {
+            let snapshot = scenario.finish_turn_resources(turn);
+            assert!(snapshot.losses.is_empty());
+            for id in ["2", "4", "12"] {
+                let unit = scenario
+                    .units
+                    .iter()
+                    .find(|unit| unit.id() == id)
+                    .fixture()?;
+                assert_eq!(unit.exhaustion.turns_remaining(), Some(3 - turn));
+                assert_eq!(unit.hit_points(), HitPoints::full());
+                assert!(!unit.destroyed());
+            }
+        }
+        let snapshot = scenario.finish_turn_resources(3);
         for id in ["1", "2", "4", "12"] {
             assert!(!scenario.units.iter().any(|unit| unit.id() == id));
             let dead = snapshot
@@ -1059,7 +1129,7 @@ mod tests {
             scenario
                 .units
                 .iter()
-                .all(|unit| unit.supplies.current == unit.supplies.maximum - 4)
+                .all(|unit| unit.supplies.current == unit.supplies.maximum - 12)
         );
         assert!(
             scenario
@@ -1078,12 +1148,125 @@ mod tests {
         let passenger = &mut scenario.units[0];
         passenger.board(UnitId::parse("4").fixture()?);
         passenger.supplies.current = 1;
-        scenario.finish_turn_resources(1);
+        for turn in 1..=3 {
+            scenario.finish_turn_resources(turn);
+        }
         assert!(!scenario.units.iter().any(|unit| unit.id() == "1"));
         assert!(scenario.units.iter().any(|unit| unit.id() == "4"));
         assert_eq!(scenario.units.len(), 15);
 
         Ok(())
+    }
+
+    #[test]
+    fn final_turn_replenishment_rescues_exhaustion_but_upkeep_only_deliveries_do_not()
+    -> TestResult<()> {
+        let mut scenario = exhaustion_fixture()?;
+        scenario.units.truncate(1);
+        let unit = scenario.units.first_mut().fixture()?;
+        unit.set_supplies_for_test(4);
+        let position = unit.board_position().fixture()?;
+        scenario.finish_turn_resources(1);
+        assert_eq!(
+            scenario
+                .units
+                .first()
+                .fixture()?
+                .exhaustion
+                .turns_remaining(),
+            Some(2)
+        );
+
+        scenario.supply_crates.push(GroundSupplyCrate {
+            position,
+            stock: CargoStock::new(ResourceKind::Supply, 4),
+        });
+        scenario.finish_turn_resources(2);
+        assert_eq!(
+            scenario
+                .units
+                .first()
+                .fixture()?
+                .exhaustion
+                .turns_remaining(),
+            Some(1)
+        );
+        scenario.supply_crates.push(GroundSupplyCrate {
+            position,
+            stock: CargoStock::new(ResourceKind::Supply, 5),
+        });
+        let rescued = scenario.finish_turn_resources(3);
+        assert!(rescued.losses.is_empty());
+        let unit = scenario.units.first().fixture()?;
+        assert_eq!(unit.supplies().current(), 1);
+        assert_eq!(unit.exhaustion, Exhaustion::Supplied);
+        assert_eq!(unit.hit_points(), HitPoints::full());
+        scenario.finish_turn_resources(4);
+        assert_eq!(
+            scenario
+                .units
+                .first()
+                .fixture()?
+                .exhaustion
+                .turns_remaining(),
+            Some(2)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn exhaustion_survives_serialization_and_is_private_resource_data() -> TestResult<()> {
+        let mut scenario = exhaustion_fixture()?;
+        for unit in &mut scenario.units {
+            unit.set_supplies_for_test(0);
+        }
+        scenario.finish_turn_resources(1);
+        let mut restored: Scenario = serde_json::from_slice(&serde_json::to_vec(&scenario)?)?;
+        assert_eq!(restored, scenario);
+        for unit in &mut restored.units {
+            assert_eq!(
+                unit.resources().fixture()?.exhaustion_turns_remaining,
+                Some(2)
+            );
+            assert!(!unit.destroyed());
+            if unit.kind() != UnitKind::Truck {
+                let state = combat::combat_state(unit, UnitOrderKind::AttackMove, false);
+                assert_eq!(state.weapon, combat::WeaponReadiness::InsufficientSupplies);
+            }
+            let mut concealed = unit.clone();
+            concealed.conceal_resources();
+            assert!(concealed.resources().is_none());
+            concealed.assume_full_resources();
+            assert_eq!(concealed.exhaustion, Exhaustion::Supplied);
+
+            let mut legacy = serde_json::to_value(&unit)?;
+            legacy.as_object_mut().fixture()?.remove("exhaustion");
+            let legacy: Unit = serde_json::from_value(legacy)?;
+            assert_eq!(legacy.exhaustion, Exhaustion::Supplied);
+        }
+        restored.finish_turn_resources(2);
+        assert!(
+            restored
+                .units
+                .iter()
+                .all(|unit| unit.exhaustion.turns_remaining() == Some(1))
+        );
+        let expired = restored.finish_turn_resources(3);
+        assert_eq!(expired.losses.len(), scenario.units.len());
+        assert!(restored.units.is_empty());
+        Ok(())
+    }
+
+    fn exhaustion_fixture() -> TestResult<Scenario> {
+        MapDefinition::parse(r#"{
+            "width":5,"height":1,"theme":"GreenForest","features":[],"depots":[],
+            "units":[
+                {"id":1,"position":{"x":0,"y":0},"playerNumber":"Player1","kind":"Infantry","direction":"East"},
+                {"id":2,"position":{"x":1,"y":0},"playerNumber":"Player1","kind":"Tank","direction":"East"},
+                {"id":3,"position":{"x":3,"y":0},"playerNumber":"Player2","kind":"FieldGun","direction":"West"},
+                {"id":4,"position":{"x":4,"y":0},"playerNumber":"Player2","kind":"Truck","direction":null}
+            ]
+        }"#).fixture()?.scenario().fixture()
     }
 
     #[test]

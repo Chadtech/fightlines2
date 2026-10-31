@@ -60,11 +60,20 @@ start :
     -> Coordinate
     -> MovePlanning
 start purpose map units movementRules drafts unit origin =
+    let
+        destinations : PlannedTransport.Occupancy
+        destinations =
+            PlannedTransport.occupancy units unit drafts
+
+        dismounting : Bool
+        dismounting =
+            PlannedTransport.isDismounting units unit
+    in
     { purpose = purpose
     , preview = Movement.start origin
     , options =
         Movement.optionsAvoiding [] movementRules map units (movementUnit purpose unit)
-            |> List.filter (canStop purpose units unit drafts)
+            |> List.filter (canStopAt purpose destinations dismounting unit)
     , destinationFeedback = NoDestinationFeedback
     }
 
@@ -126,11 +135,18 @@ canStop :
     -> Movement.Option
     -> Bool
 canStop purpose units unit drafts option =
-    let
-        destinations : PlannedTransport.Occupancy
-        destinations =
-            PlannedTransport.occupancy units unit drafts
-    in
+    canStopAt purpose
+        (PlannedTransport.occupancy units unit drafts)
+        (PlannedTransport.isDismounting units unit)
+        unit
+        option
+
+
+{-| Resolve transport reservations once when filtering a unit's destinations.
+They depend on the saved orders, not on the candidate route.
+-}
+canStopAt : MovePurpose -> PlannedTransport.Occupancy -> Bool -> Unit -> Movement.Option -> Bool
+canStopAt purpose destinations dismounting unit option =
     case purpose of
         NormalMove ->
             let
@@ -143,7 +159,7 @@ canStop purpose units unit drafts option =
                                     && (Unit.mapPosition other == Just option.destination)
                             )
             in
-            not (PlannedTransport.isDismounting units unit && endsOnTruck)
+            not (dismounting && endsOnTruck)
                 && Movement.canStop
                     destinations.reserved
                     destinations.units

@@ -10,6 +10,7 @@ import Browser.Navigation as Navigation
 import DevPanel
 import DevTools.Flags as Flags
 import DevTools.Page.BackdropReview as BackdropReview
+import DevTools.Page.CombatChart as CombatChart
 import DevTools.Page.GameReplay as GameReplay
 import DevTools.Page.LoggedGames as LoggedGames
 import DevTools.Page.MapEditor as MapEditor
@@ -56,6 +57,9 @@ import View.Dialog as Dialog exposing (Dialog)
 type Page
     = AppInitError Decode.Error
     | Home Shared.Model
+    | LoadingCombatChart Shared.Model CombatChartLoadId
+    | CombatChartLoadFailed Shared.Model String
+    | CombatChart CombatChart.Model
     | LoadingBackdropReview Shared.Model BackdropReviewLoadId
     | BackdropReviewLoadFailed Shared.Model String
     | BackdropReview BackdropReview.Model
@@ -71,6 +75,10 @@ type Page
     | NotFound Shared.Model
 
 
+type CombatChartLoadId
+    = CombatChartLoadId Int
+
+
 type BackdropReviewLoadId
     = BackdropReviewLoadId Int
 
@@ -78,6 +86,8 @@ type BackdropReviewLoadId
 type Msg
     = LinkClicked Browser.UrlRequest
     | RouteReceived (Maybe Route)
+    | CombatChartResponseReceived CombatChartLoadId (Response CombatChart.Flags)
+    | CombatChartMsg CombatChart.Msg
     | BackdropReviewResponseReceived BackdropReviewLoadId (Response BackdropReview.Flags)
     | MapEditorResponseReceived (ApiRequest.Response MapEditor.Flags)
     | MapEditorMsg MapEditor.Msg
@@ -186,6 +196,15 @@ getShared page =
         Home shared ->
             Just shared
 
+        LoadingCombatChart shared _ ->
+            Just shared
+
+        CombatChartLoadFailed shared _ ->
+            Just shared
+
+        CombatChart model ->
+            Just model.shared
+
         LoadingBackdropReview shared _ ->
             Just shared
 
@@ -234,6 +253,15 @@ setShared shared page =
 
         Home _ ->
             Home shared
+
+        LoadingCombatChart _ requestId ->
+            LoadingCombatChart shared requestId
+
+        CombatChartLoadFailed _ error ->
+            CombatChartLoadFailed shared error
+
+        CombatChart model ->
+            CombatChart (CombatChart.setShared shared model)
 
         LoadingBackdropReview _ requestId ->
             LoadingBackdropReview shared requestId
@@ -318,6 +346,19 @@ handleRoute shared route =
         Just (Route.Replay id) ->
             ( LoadingReplay shared id, E.request (ReplayResponseReceived id) (GameReplay.load id) )
 
+        Just Route.CombatChart ->
+            let
+                ( value, seed ) =
+                    Random.step (Random.int 0 2147483647) shared.seed
+
+                requestId : CombatChartLoadId
+                requestId =
+                    CombatChartLoadId value
+            in
+            ( LoadingCombatChart (Shared.setSeed seed shared) requestId
+            , E.request (CombatChartResponseReceived requestId) CombatChart.load
+            )
+
         Just Route.BackdropReview ->
             loadBackdropReview shared
 
@@ -379,6 +420,35 @@ withPlaybackAudio before after =
 update : Msg -> Page -> ( Page, Eff Msg )
 update msg page =
     case msg of
+        CombatChartResponseReceived requestId result ->
+            case page of
+                LoadingCombatChart shared currentId ->
+                    if requestId /= currentId then
+                        E.withOut page
+
+                    else
+                        case result of
+                            Ok flags ->
+                                CombatChart (CombatChart.init shared flags)
+                                    |> E.withOut
+
+                            Err error ->
+                                CombatChartLoadFailed shared (ApiRequest.errorMessage error)
+                                    |> E.withOut
+
+                _ ->
+                    E.withOut page
+
+        CombatChartMsg chartMsg ->
+            case page of
+                CombatChart model ->
+                    CombatChart.update chartMsg model
+                        |> Tuple.mapFirst CombatChart
+                        |> Tuple.mapSecond (E.map CombatChartMsg)
+
+                _ ->
+                    E.withOut page
+
         BackdropReviewResponseReceived requestId result ->
             case page of
                 LoadingBackdropReview shared currentId ->
@@ -595,6 +665,18 @@ shell page =
         Home _ ->
             homeView
 
+        LoadingCombatChart _ _ ->
+            [ H.p
+                [ Aria.role Aria.Status ]
+                [ H.text "loading combat chart…" ]
+            ]
+
+        CombatChartLoadFailed _ error ->
+            loadFailure Route.CombatChart error
+
+        CombatChart model ->
+            List.map (H.map CombatChartMsg) (CombatChart.view model)
+
         LoadingBackdropReview _ _ ->
             [ H.p
                 [ Aria.role Aria.Status
@@ -691,6 +773,7 @@ homeView =
         , link Route.MapEditor "map editor"
         , link Route.LoggedGames "logged games"
         , link Route.BackdropReview "backdrop review"
+        , link Route.CombatChart "combat chart"
         ]
     ]
 

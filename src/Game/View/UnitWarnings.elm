@@ -7,6 +7,7 @@ module Game.View.UnitWarnings exposing
 import Game.Unit as Unit exposing (Unit)
 import Game.UnitResources as UnitResources exposing (UnitResources)
 import Html.Styled as H exposing (Html)
+import Html.Styled.Attributes as A
 import Html.Styled.Lazy as Lazy
 import Style as S
 import Svg.Styled as Svg exposing (Svg)
@@ -30,6 +31,7 @@ styles =
 type Warning
     = LowHitPoints
     | LowSupplies
+    | Exhausted
     | LowFuel
 
 
@@ -59,7 +61,8 @@ resourceWarnings resources =
         candidates : List ( Warning, Bool )
         candidates =
             [ ( LowHitPoints, lowHitPoints )
-            , ( LowSupplies, isLow resources.supplies )
+            , ( LowSupplies, (resources.supplies.current > 0) && isLow resources.supplies )
+            , ( Exhausted, resources.supplies.current == 0 )
             , ( LowFuel, resources.fuel |> Maybe.map isLow |> Maybe.withDefault False )
             ]
 
@@ -89,6 +92,9 @@ warningLabel warning =
 
         LowSupplies ->
             "low supplies"
+
+        Exhausted ->
+            "exhausted"
 
         LowFuel ->
             "low fuel"
@@ -130,6 +136,9 @@ badge index warning =
                 LowSupplies ->
                     S.yellow1Str
 
+                Exhausted ->
+                    S.yellow1Str
+
                 LowFuel ->
                     S.red1Str
 
@@ -142,6 +151,9 @@ badge index warning =
                 LowSupplies ->
                     S.yellow5Str
 
+                Exhausted ->
+                    S.yellow5Str
+
                 LowFuel ->
                     S.gray0Str
 
@@ -149,6 +161,11 @@ badge index warning =
         border =
             case warning of
                 LowSupplies ->
+                    { color = S.gray0Str
+                    , opacity = "1"
+                    }
+
+                Exhausted ->
                     { color = S.gray0Str
                     , opacity = "1"
                     }
@@ -186,6 +203,13 @@ badge index warning =
                             []
                         ]
 
+                Exhausted ->
+                    Svg.path
+                        [ SA.d "M10.5 4H13.5V14H10.5ZM10.5 17H13.5V20H10.5Z"
+                        , SA.fill foreground
+                        ]
+                        []
+
                 LowFuel ->
                     Svg.path
                         [ SA.d "M17 6H8V18H17M8 12H15"
@@ -196,7 +220,8 @@ badge index warning =
                         []
     in
     Svg.svg
-        [ SA.x (String.fromFloat (0.64 + toFloat index * 3.44))
+        [ A.attribute "data-unit-warning" (warningLabel warning)
+        , SA.x (String.fromFloat (0.64 + toFloat index * 3.44))
         , SA.y "0.64"
         , SA.width "3.2"
         , SA.height "3.2"

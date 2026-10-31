@@ -1,4 +1,11 @@
-module Game.View.UnitStatus exposing (toHtml)
+module Game.View.UnitStatus exposing
+    ( Action(..)
+    , Help
+    , buttonHtmlId
+    , dialog
+    , dialogHtmlId
+    , toHtml
+    )
 
 import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
@@ -13,12 +20,14 @@ import Game.View.CombatReadiness as CombatReadiness
 import Game.View.UnitSprite as UnitSprite
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
+import Html.Styled.Events as Ev
 import Html.Styled.Lazy as Lazy
 import Style as S
 import Svg.Styled as Svg
 import Svg.Styled.Attributes as SA
 import View.Aria as Aria
 import View.Button as Button
+import View.Dialog as Dialog exposing (Dialog)
 import View.InfoMarker as InfoMarker
 
 
@@ -38,44 +47,72 @@ type Resource
     | Fuel Fuel
 
 
-toHtml : String -> Unit -> Maybe msg -> Html msg
-toHtml playerName unit revoke =
-    case revoke of
-        Just onRevoke ->
-            Lazy.lazy3 revocableStatusView playerName unit onRevoke
+type Action msg
+    = RevokeOrder msg
+    | CancelOrder msg
+
+
+type Help
+    = UnitHelp UnitKind
+    | SupplyHelp UnitKind
+    | FuelHelp Fuel
+
+
+type alias Events msg =
+    { onHelp : Help -> msg
+    }
+
+
+toHtml : Events msg -> String -> Unit -> Maybe (Action msg) -> Html msg
+toHtml events playerName unit action =
+    case action of
+        Just portraitAction ->
+            Lazy.lazy4 actionableStatusView events playerName unit portraitAction
 
         Nothing ->
-            Lazy.lazy2 inspectionStatusView playerName unit
+            Lazy.lazy3 inspectionStatusView events playerName unit
 
 
-inspectionStatusView : String -> Unit -> Html msg
-inspectionStatusView playerName unit =
-    statusView playerName unit []
+inspectionStatusView : Events msg -> String -> Unit -> Html msg
+inspectionStatusView events playerName unit =
+    statusView events playerName unit []
 
 
-revocableStatusView : String -> Unit -> msg -> Html msg
-revocableStatusView playerName unit onRevoke =
-    statusView playerName
+actionableStatusView : Events msg -> String -> Unit -> Action msg -> Html msg
+actionableStatusView events playerName unit action =
+    let
+        button : Button.Button msg
+        button =
+            case action of
+                RevokeOrder onRevoke ->
+                    Button.primary "revoke order" onRevoke
+
+                CancelOrder onCancel ->
+                    Button.danger "cancel order (esc)" onCancel
+    in
+    statusView events
+        playerName
         unit
-        [ Button.primary "revoke order" onRevoke
+        [ button
             |> Button.fullWidth
             |> Button.toHtml
         ]
 
 
-statusView : String -> Unit -> List (Html msg) -> Html msg
-statusView playerName unit portraitActions =
+statusView : Events msg -> String -> Unit -> List (Html msg) -> Html msg
+statusView events playerName unit portraitActions =
     let
         identityContent : List (Html msg)
         identityContent =
-            [ unitHelp playerName unit
+            [ unitHeader events playerName unit
             , portrait playerName unit
             ]
 
         resourceContent : List (Html msg)
         resourceContent =
             [ CombatReadiness.toHtml unit.combatState
-            , resourcesView unit.kind unit.resources
+            , exhaustionStatus unit
+            , resourcesView events unit.kind unit.resources
             ]
 
         content : List (Html msg)
@@ -92,8 +129,42 @@ statusView playerName unit portraitActions =
         content
 
 
-resourcesView : UnitKind -> Maybe UnitResources -> Html msg
-resourcesView kind maybeResources =
+exhaustionStatus : Unit -> Html msg
+exhaustionStatus unit =
+    let
+        remaining : Maybe Int
+        remaining =
+            if Unit.isDying unit then
+                Nothing
+
+            else
+                unit.resources |> Maybe.andThen .exhaustionTurnsRemaining
+    in
+    case remaining of
+        Just turns ->
+            let
+                timeLeft : String
+                timeLeft =
+                    if turns == 1 then
+                        "1 turn"
+
+                    else
+                        String.fromInt turns ++ " turns"
+            in
+            H.p
+                [ A.css
+                    [ S.textYellow5
+                    ]
+                ]
+                [ H.text ("exhausted · resupply within " ++ timeLeft)
+                ]
+
+        Nothing ->
+            H.text ""
+
+
+resourcesView : Events msg -> UnitKind -> Maybe UnitResources -> Html msg
+resourcesView events kind maybeResources =
     let
         visibleResources : UnitResources -> List Resource
         visibleResources details =
@@ -116,7 +187,7 @@ resourcesView kind maybeResources =
             , S.g3
             ]
         ]
-        (List.map (gauge kind) resources)
+        (List.map (gauge events kind) resources)
 
 
 portrait : String -> Unit -> Html msg
@@ -143,74 +214,151 @@ portrait playerName unit =
         ]
 
 
-unitHelp : String -> Unit -> Html msg
-unitHelp playerName unit =
-    H.details
-        []
-        [ H.summary
-            [ Aria.label ("about " ++ UnitKindUtil.label unit.kind)
-            , A.title "about this unit"
-            , A.css
-                [ S.batch summaryStyles
-                , S.row
+unitHeader : Events msg -> String -> Unit -> Html msg
+unitHeader events playerName unit =
+    H.div
+        [ A.css
+            [ S.row
+            , S.itemsCenter
+            , S.justifySpaceBetween
+            , S.g2
+            ]
+        ]
+        [ H.div
+            [ A.css
+                [ S.row
                 , S.itemsCenter
-                , S.justifySpaceBetween
                 , S.g2
                 ]
             ]
-            [ H.div
+            [ H.h2
                 [ A.css
-                    [ S.row
-                    , S.itemsCenter
-                    , S.g2
+                    [ S.textGray5
                     ]
                 ]
-                [ H.h2
-                    [ A.css
-                        [ S.textGray5
-                        ]
-                    ]
-                    [ H.text (unitTitle unit)
-                    ]
-                , InfoMarker.toHtml
+                [ H.text (unitTitle unit)
                 ]
-            , H.span
-                [ A.css
-                    [ S.textGray4
-                    , S.textAlignRight
-                    ]
-                ]
-                [ H.text playerName
+            , infoButton events ("about " ++ UnitKindUtil.label unit.kind) (UnitHelp unit.kind)
+            ]
+        , H.span
+            [ A.css
+                [ S.textGray4
+                , S.textAlignRight
                 ]
             ]
-        , H.section
-            [ Aria.label "about this unit"
-            , A.css
-                [ S.bgYellow2
-                , S.textGray5
-                , S.mt3
-                , S.mlNeg3
-                , S.mrNeg3
-                ]
+            [ H.text playerName
             ]
-            [ H.dl
-                [ A.css
-                    [ S.col
-                    , S.g3
-                    , S.p3
-                    ]
-                ]
-                [ helpEntry "role" (roleText unit.kind)
-                , helpEntry "needs"
-                    (if usesOil unit.kind then
-                        "watch its supply and fuel levels when planning a move."
+        ]
 
-                     else
-                        "watch its supply level when planning a move."
-                    )
-                , helpEntry "movement" "enemy units block travel. move onto stationary compatible allies to load a truck. an allied square becomes available after its occupant has a move planned; final destinations must stay separate."
-                ]
+
+infoButton : Events msg -> String -> Help -> Html msg
+infoButton events label help =
+    H.button
+        [ A.type_ "button"
+        , A.id (buttonHtmlId help)
+        , Aria.label label
+        , A.title label
+        , A.attribute "aria-haspopup" "dialog"
+        , Ev.onClick (events.onHelp help)
+        , A.css
+            [ S.row
+            , S.itemsCenter
+            , S.justifyCenter
+            , S.shrink0
+            , S.w6
+            , S.h6
+            , S.p0
+            , S.borderTransparent
+            , S.bgTransparent
+            , S.textGray5
+            , S.pointerCursor
+            , S.focusVisible
+                [ S.outlineCurrent ]
             ]
+        ]
+        [ InfoMarker.toHtml ]
+
+
+buttonHtmlId : Help -> String
+buttonHtmlId help =
+    case help of
+        UnitHelp _ ->
+            "unit-type-info-button"
+
+        SupplyHelp _ ->
+            "unit-supply-info-button"
+
+        FuelHelp _ ->
+            "unit-fuel-info-button"
+
+
+dialogHtmlId : String
+dialogHtmlId =
+    "unit-info-dialog"
+
+
+dialog : msg -> Help -> Dialog msg
+dialog dismissed help =
+    let
+        title : String
+        title =
+            case help of
+                UnitHelp kind ->
+                    "about " ++ UnitKindUtil.label kind
+
+                SupplyHelp _ ->
+                    "supply"
+
+                FuelHelp _ ->
+                    "fuel"
+
+        content : Html msg
+        content =
+            case help of
+                UnitHelp kind ->
+                    unitDescription kind
+
+                SupplyHelp kind ->
+                    H.p
+                        []
+                        [ H.text (supplyExplanation kind) ]
+
+                FuelHelp fuel ->
+                    H.p
+                        []
+                        [ H.text (fuelExplanation fuel) ]
+    in
+    Dialog.make dialogHtmlId
+        title
+        dismissed
+        [ content
+        , Button.secondary "close" dismissed
+            |> Button.toHtml
+        ]
+        |> Dialog.reference
+        |> Dialog.withCloseButton
+
+
+unitDescription : UnitKind -> Html msg
+unitDescription kind =
+    let
+        needs : String
+        needs =
+            if usesOil kind then
+                "watch its supply and fuel levels when planning a move."
+
+            else
+                "watch its supply level when planning a move."
+    in
+    H.dl
+        [ A.css
+            [ S.col
+            , S.g3
+            ]
+        ]
+        [ helpEntry "role" (roleText kind)
+        , helpEntry "needs" needs
+        , helpEntry "movement" "enemy units block travel. move onto stationary compatible allies to load a truck. an allied square becomes available after its occupant has a move planned; final destinations must stay separate."
         ]
 
 
@@ -239,16 +387,8 @@ helpEntry label description =
         ]
 
 
-summaryStyles : List Css.Style
-summaryStyles =
-    [ S.pointerCursor
-    , S.listStyleNone
-    , S.hideDetailsMarker
-    ]
-
-
-gauge : UnitKind -> Resource -> Html msg
-gauge kind resource =
+gauge : Events msg -> UnitKind -> Resource -> Html msg
+gauge events kind resource =
     let
         label : String
         label =
@@ -291,26 +431,21 @@ gauge kind resource =
             else
                 S.bgYellow4
 
-        explanation : Maybe String
-        explanation =
-            case resource of
-                HitPoints _ ->
-                    Nothing
-
-                Supply _ ->
-                    Just (supplyExplanation kind)
-
-                Fuel fuel ->
-                    Just (fuelExplanation fuel)
-
         labelChildren : List (Html msg)
         labelChildren =
-            case explanation of
-                Nothing ->
+            case resource of
+                HitPoints _ ->
                     [ H.text label ]
 
-                Just _ ->
-                    [ H.text label, InfoMarker.toHtml ]
+                Supply _ ->
+                    [ H.text label
+                    , infoButton events "about supply" (SupplyHelp kind)
+                    ]
+
+                Fuel fuel ->
+                    [ H.text label
+                    , infoButton events "about fuel" (FuelHelp fuel)
+                    ]
 
         header : Html msg
         header =
@@ -340,32 +475,6 @@ gauge kind resource =
                     [ H.text (String.fromInt level.current ++ " / " ++ String.fromInt level.maximum)
                     ]
                 ]
-
-        resourceHelp : Html msg
-        resourceHelp =
-            case explanation of
-                Nothing ->
-                    header
-
-                Just info ->
-                    H.details
-                        []
-                        [ H.summary
-                            [ Aria.label ("about " ++ label)
-                            , A.title info
-                            , A.css summaryStyles
-                            ]
-                            [ header ]
-                        , H.p
-                            [ A.css
-                                [ S.bgYellow2
-                                , S.textGray5
-                                , S.p2
-                                , S.mt2
-                                ]
-                            ]
-                            [ H.text info ]
-                        ]
     in
     H.div
         [ A.css
@@ -373,7 +482,7 @@ gauge kind resource =
             , S.g1
             ]
         ]
-        [ resourceHelp
+        [ header
         , H.div
             [ Aria.role Aria.Meter
             , Aria.label label
@@ -404,23 +513,23 @@ supplyExplanation kind =
         consumption =
             supplyConsumption kind
     in
-    consumption ++ " nearby supply depots, ground crates, and loaded supply trucks replenish provisions automatically before turn upkeep."
+    consumption ++ " at 0 supplies, this unit becomes exhausted and cannot fight. it has two full turns to receive supplies before it perishes. supplies must remain after upkeep to clear exhaustion. nearby supply depots, ground crates, and loaded supply trucks replenish provisions automatically before turn upkeep."
 
 
 supplyConsumption : UnitKind -> String
 supplyConsumption kind =
     case kind of
         Kind.Truck ->
-            "trucks consume a small amount of supplies each turn. when supplies reach 0, this unit perishes."
+            "trucks consume a small amount of supplies each turn."
 
         Kind.Tank ->
-            "tanks consume supplies each turn and for combat readiness and firing. movement uses fuel without spending supplies. when supplies reach 0, this unit perishes."
+            "tanks consume supplies each turn and for combat readiness and firing. movement uses fuel without spending supplies."
 
         Kind.Infantry ->
-            "infantry consume supplies each turn, while walking, for attack move, stand ground or ambush readiness, when digging in, and when firing. hills, forests, and mountains cost additional walking supplies. when supplies reach 0, this unit perishes."
+            "infantry consume supplies each turn, while walking, for attack move, stand ground or ambush readiness, when digging in, and when firing. hills, forests, and mountains cost additional walking supplies."
 
         Kind.FieldGun ->
-            "field guns consume a small amount of supplies each turn, and additional supplies when moving, standing ground, attack-moving, and engaging enemies. when supplies reach 0, this unit perishes."
+            "field guns consume a small amount of supplies each turn, and additional supplies when moving, standing ground, attack-moving, and engaging enemies."
 
 
 usesOil : UnitKind -> Bool

@@ -5,7 +5,6 @@ module Game.View.Cargo exposing
 
 import Css
 import Css.Global
-import Game.PlannedOrder as PlannedOrder
 import Game.Supply as Supply
 import Game.Unit as Unit exposing (Unit)
 import Game.UnitId as UnitId exposing (UnitId)
@@ -13,7 +12,6 @@ import Game.View.CargoPassenger as CargoPassenger
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
-import Util.List as ListUtil
 import View.Aria as Aria
 import View.InfoMarker as InfoMarker
 
@@ -32,19 +30,13 @@ pickupPreview stock =
             , Css.padding Css.zero
             ]
         ]
-        [ freightToHtml
-            { number = 1
-            , unload = Nothing
-            }
-            stock
-        ]
+        [ freightToHtml 1 stock ]
 
 
 toHtml :
     { capacity : Int
     , passengers : List Unit
     , freight : List Supply.CargoStock
-    , unloads : List PlannedOrder.CrateUnload
     , onSelectPassenger : UnitId -> msg
     }
     -> Html msg
@@ -64,12 +56,7 @@ toHtml config =
 
         freightRow : Int -> Supply.CargoStock -> Html msg
         freightRow index stock =
-            freightToHtml
-                { number = index + 1
-                , unload =
-                    ListUtil.find (\unload -> unload.cargoIndex == index) config.unloads
-                }
-                stock
+            freightToHtml (index + 1) stock
 
         rows : List (Html msg)
         rows =
@@ -167,17 +154,12 @@ toHtml config =
         ]
 
 
-freightToHtml :
-    { number : Int
-    , unload : Maybe PlannedOrder.CrateUnload
-    }
-    -> Supply.CargoStock
-    -> Html msg
-freightToHtml config stock =
+freightToHtml : Int -> Supply.CargoStock -> Html msg
+freightToHtml number stock =
     let
         name : String
         name =
-            Supply.cargoLabel stock.kind ++ " " ++ String.fromInt config.number
+            Supply.cargoLabel stock.kind ++ " " ++ String.fromInt number
 
         fraction : Float
         fraction =
@@ -186,25 +168,6 @@ freightToHtml config stock =
 
             else
                 0
-
-        unloadDetails : List (Html msg)
-        unloadDetails =
-            case config.unload of
-                Just unload ->
-                    [ H.p
-                        []
-                        [ H.text
-                            ("unload at ("
-                                ++ String.fromInt unload.destination.x
-                                ++ ", "
-                                ++ String.fromInt unload.destination.y
-                                ++ ")"
-                            )
-                        ]
-                    ]
-
-                Nothing ->
-                    []
 
         details : List (Html msg)
         details =
@@ -254,7 +217,6 @@ freightToHtml config stock =
                     []
                 ]
             ]
-                ++ unloadDetails
     in
     H.li
         [ A.css

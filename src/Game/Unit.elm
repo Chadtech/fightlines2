@@ -224,7 +224,7 @@ isDying unit =
         || (unit.resources
                 |> Maybe.map
                     (\resources ->
-                        resources.supplies.current == 0 || resources.hitPoints.current == 0
+                        resources.hitPoints.current == 0
                     )
                 |> Maybe.withDefault False
            )
@@ -238,31 +238,27 @@ loadingTarget units mover destination =
             let
                 hasRoom : Unit -> Bool
                 hasRoom truck =
-                    let
-                        passengers : List Unit
-                        passengers =
-                            List.filter (\passenger -> carrierId passenger == Just truck.id) units
-
-                        occupiedBerths : Int
-                        occupiedBerths =
-                            List.length passengers + freightCount truck
-                    in
                     (truck.kind == UnitKind.Truck)
-                        && (occupiedBerths < truck.cargoCapacity)
+                        && (occupiedCargoSlots units truck < truck.cargoCapacity)
 
                 portable : Unit -> Bool
                 portable unit =
-                    unit.kind == UnitKind.Infantry || unit.kind == UnitKind.FieldGun
+                    (unit.kind == UnitKind.Infantry) || (unit.kind == UnitKind.FieldGun)
 
                 alliedTarget : Bool
                 alliedTarget =
-                    mapPosition target == Just destination && target.id /= mover.id && target.playerNumber == mover.playerNumber
+                    (mapPosition target == Just destination)
+                        && (target.id /= mover.id)
+                        && (target.playerNumber == mover.playerNumber)
 
                 loadingAllowed : Bool
                 loadingAllowed =
-                    (hasRoom mover && portable target) || (portable mover && hasRoom target)
+                    (portable target && hasRoom mover) || (portable mover && hasRoom target)
             in
-            alliedTarget && onMap mover && onMap target && loadingAllowed
+            alliedTarget
+                && onMap mover
+                && onMap target
+                && loadingAllowed
     in
     ListUtil.find compatible units
 

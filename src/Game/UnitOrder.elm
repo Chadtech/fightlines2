@@ -1,6 +1,6 @@
-module Game.UnitCommand exposing
-    ( Command(..)
-    , MenuOption(..)
+module Game.UnitOrder exposing
+    ( MenuOption(..)
+    , Order(..)
     , all
     , assetName
     , available
@@ -21,7 +21,7 @@ import Game.Unit.Location as Location
 import Game.UnitResources as UnitResources exposing (UnitResources)
 
 
-type Command
+type Order
     = StandGround
     | HoldPosition
     | Move
@@ -33,28 +33,28 @@ type Command
 
 
 type MenuOption
-    = CommandOption Command
+    = OrderOption Order
     | CancelOption
 
 
-all : List Command
+all : List Order
 all =
-    [ Move, HoldPosition, Ambush, StandGround, AttackMove, IndirectFire, DigIn, Sabotage ]
+    [ Move, AttackMove, Ambush, HoldPosition, IndirectFire, StandGround, DigIn, Sabotage ]
 
 
 enabledOptions : Map -> List Depot -> Unit -> List MenuOption
 enabledOptions map depots unit =
     let
-        commands : List MenuOption
-        commands =
+        orders : List MenuOption
+        orders =
             available depots unit
                 |> List.filter (canUse map depots unit)
-                |> List.map CommandOption
+                |> List.map OrderOption
     in
-    commands ++ [ CancelOption ]
+    orders ++ [ CancelOption ]
 
 
-available : List Depot -> Unit -> List Command
+available : List Depot -> Unit -> List Order
 available depots unit =
     if Unit.carrierId unit /= Nothing then
         []
@@ -62,22 +62,22 @@ available depots unit =
     else
         case unit.kind of
             Kind.Infantry ->
-                [ Move, HoldPosition, Ambush, StandGround, AttackMove, DigIn ]
-                    ++ sabotageCommands depots unit
+                [ Move, AttackMove, Ambush, HoldPosition, StandGround, DigIn ]
+                    ++ sabotageOrders depots unit
 
             Kind.Tank ->
-                [ Move, HoldPosition, Ambush, StandGround, AttackMove ]
+                [ Move, AttackMove, Ambush, HoldPosition, StandGround ]
 
             Kind.Truck ->
                 [ Move, HoldPosition ]
 
             Kind.FieldGun ->
-                [ Move, HoldPosition, Ambush, StandGround, IndirectFire ]
+                [ Move, Ambush, HoldPosition, IndirectFire, StandGround ]
 
 
-isImplemented : Command -> Bool
-isImplemented command =
-    case command of
+isImplemented : Order -> Bool
+isImplemented order =
+    case order of
         IndirectFire ->
             True
 
@@ -103,9 +103,9 @@ isImplemented command =
             True
 
 
-label : Command -> String
-label command =
-    case command of
+label : Order -> String
+label order =
+    case order of
         StandGround ->
             "stand ground"
 
@@ -131,9 +131,9 @@ label command =
             "ambush"
 
 
-shortcut : Command -> String
-shortcut command =
-    case command of
+shortcut : Order -> String
+shortcut order =
+    case order of
         Move ->
             "m"
 
@@ -159,9 +159,9 @@ shortcut command =
             "x"
 
 
-assetName : Command -> String
-assetName command =
-    case command of
+assetName : Order -> String
+assetName order =
+    case order of
         StandGround ->
             "stand-ground"
 
@@ -187,9 +187,9 @@ assetName command =
             "ambush"
 
 
-canUse : Map -> List Depot -> Unit -> Command -> Bool
-canUse map depots unit command =
-    if command == Sabotage then
+canUse : Map -> List Depot -> Unit -> Order -> Bool
+canUse map depots unit order =
+    if order == Sabotage then
         let
             affordable : Bool
             affordable =
@@ -200,9 +200,9 @@ canUse map depots unit command =
                         )
                     |> Maybe.withDefault False
         in
-        List.member Sabotage (sabotageCommands depots unit) && affordable
+        List.member Sabotage (sabotageOrders depots unit) && affordable
 
-    else if command == DigIn then
+    else if order == DigIn then
         let
             affordable : Bool
             affordable =
@@ -215,10 +215,16 @@ canUse map depots unit command =
         in
         case unit.location of
             Location.OnMap position ->
+                let
+                    hasBuilding : Bool
+                    hasBuilding =
+                        List.any (\depot -> depot.position == position) depots
+                in
                 (unit.kind == Kind.Infantry)
                     && (unit.entrenchment == Entrenchment.Exposed)
                     && affordable
                     && not (Terrain.isRoad (Map.terrainAt map position))
+                    && not hasBuilding
 
             Location.Aboard _ ->
                 False
@@ -226,7 +232,7 @@ canUse map depots unit command =
             Location.Dismounting _ ->
                 False
 
-    else if command == IndirectFire then
+    else if order == IndirectFire then
         let
             canAffordShell : UnitResources -> Bool
             canAffordShell resources =
@@ -244,7 +250,7 @@ canUse map depots unit command =
         in
         (unit.kind == Kind.FieldGun) && Unit.onMap unit && affordable
 
-    else if command == Ambush || command == StandGround then
+    else if (order == Ambush) || (order == StandGround) then
         let
             affordable : Bool
             affordable =
@@ -255,7 +261,7 @@ canUse map depots unit command =
         in
         unit.direction /= Nothing && Unit.onMap unit && affordable
 
-    else if command == AttackMove then
+    else if order == AttackMove then
         let
             affordable : Bool
             affordable =
@@ -263,6 +269,7 @@ canUse map depots unit command =
                     |> Maybe.map
                         (\resources ->
                             let
+                                cost : Int
                                 cost =
                                     resources.supplies.upkeepPerTurn
                                         + resources.supplies.movementPerTile
@@ -276,11 +283,11 @@ canUse map depots unit command =
         Unit.onMap unit && affordable
 
     else
-        isImplemented command
+        isImplemented order
 
 
-sabotageCommands : List Depot -> Unit -> List Command
-sabotageCommands depots unit =
+sabotageOrders : List Depot -> Unit -> List Order
+sabotageOrders depots unit =
     case unit.location of
         Location.OnMap position ->
             let

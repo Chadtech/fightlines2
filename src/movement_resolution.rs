@@ -868,7 +868,7 @@ mod tests {
         assert_eq!(shots.len(), 1);
         assert_eq!(shots[0].kind, CombatKind::AttackMove);
         assert_eq!(shots[0].destination, Coordinate::new(2, 0));
-        assert_eq!(shots[0].target_health.after.current(), 5);
+        assert_eq!(shots[0].target_health.after.current(), 2);
         let units = &result.frames.last().ok_or("missing frame")?.units;
         assert_eq!(
             units
@@ -877,7 +877,7 @@ mod tests {
                 .ok_or("missing attacker")?
                 .supplies()
                 .current(),
-            163
+            175
         );
         assert_eq!(
             units
@@ -1187,7 +1187,7 @@ mod tests {
                 assert_eq!(shot.kind, CombatKind::AttackMove);
                 assert_eq!(shot.origin, Coordinate::new(destination.0, destination.1));
                 assert_eq!(shot.destination, Coordinate::new(enemy.0, enemy.1));
-                let damage = if attacker == "11" { 16 } else { 11 };
+                let damage = if attacker == "11" { 16 } else { 14 };
                 assert_eq!(shot.target_health.after.current(), 16 - damage);
                 let unit = result
                     .frames
@@ -1197,7 +1197,7 @@ mod tests {
                     .iter()
                     .find(|unit| unit.id() == attacker)
                     .ok_or("missing attacker")?;
-                let supplies = if attacker == "11" { 96 } else { 163 };
+                let supplies = if attacker == "11" { 96 } else { 175 };
                 assert_eq!(unit.supplies().current(), supplies);
                 assert_eq!(result.stopped.len(), 2);
             }

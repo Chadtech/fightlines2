@@ -70,7 +70,7 @@ occupancy units unit drafts =
     }
 
 
-{-| Project an infantry's planned dismount for local command planning. The board and cargo
+{-| Project an infantry's planned dismount for local order planning. The board and cargo
 remain authoritative until playback; previews reserve the actual unloading cost.
 -}
 planningUnit : Map -> List PlannedOrder -> Unit -> Unit
@@ -339,7 +339,7 @@ moveReceiver units unit move drafts =
             IC.happy (loadingTarget units unit move.destination drafts)
 
 
-{-| Drop aboard holds superseded by an infantry command from a planned exit.
+{-| Drop aboard holds superseded by an infantry order from a planned exit.
 Other units' orders remain unchanged.
 -}
 withoutStalePassengerHolds : Map -> List Unit -> List PlannedOrder -> List PlannedOrder
@@ -364,19 +364,19 @@ withoutStalePassengerHolds map units drafts =
     List.filter (not << staleHold) drafts
 
 
-{-| Continue commands only for passengers of this truck. Other transports may
+{-| Continue orders only for passengers of this truck. Other transports may
 have unfinished infantry orders whose automatic menus were dismissed.
 -}
 nextDismountedUnit : Map -> List Unit -> UnitId -> List PlannedOrder -> Maybe Unit
 nextDismountedUnit map units truckId drafts =
     let
-        needsCommand : Unit -> Bool
-        needsCommand unit =
+        needsOrder : Unit -> Bool
+        needsOrder unit =
             (Unit.carrierId unit == Just truckId)
                 && Unit.onMap (planningUnit map drafts unit)
                 && not (List.any (\order -> order.unitId == unit.id) drafts)
     in
-    ListUtil.find needsCommand units
+    ListUtil.find needsOrder units
 
 
 
@@ -409,7 +409,7 @@ destinationUnits units drafts =
     List.filterMap destinationUnit units
 
 
-{-| Passengers board only with ordinary movement and holds. Other commands
+{-| Passengers board only with ordinary movement and holds. Other orders
 keep their destination reserved, even when the unit could otherwise ride.
 -}
 canBoardWithOrder : List PlannedOrder -> Unit -> Bool
@@ -552,24 +552,31 @@ reservedDestinations units unit drafts =
         unavailableReceiver : Unit -> Bool
         unavailableReceiver target =
             let
-                boardingTarget : Coordinate -> Maybe Unit
-                boardingTarget position =
-                    loadingTarget units unit position drafts
-
-                hasBoardingSpace : Unit -> Bool
-                hasBoardingSpace truck =
-                    boardingSpace units unit truck drafts
-
-                canBoardAtTarget : Bool
-                canBoardAtTarget =
-                    Unit.mapPosition target
-                        |> Maybe.andThen boardingTarget
-                        |> Maybe.map hasBoardingSpace
-                        |> Maybe.withDefault False
+                receivingOtherUnit : Bool
+                receivingOtherUnit =
+                    (target.id /= unit.id) && receivingLoad units target drafts
             in
-            (target.id /= unit.id)
-                && receivingLoad units target drafts
-                && not canBoardAtTarget
+            if not receivingOtherUnit then
+                False
+
+            else
+                let
+                    boardingTarget : Coordinate -> Maybe Unit
+                    boardingTarget position =
+                        loadingTarget units unit position drafts
+
+                    hasBoardingSpace : Unit -> Bool
+                    hasBoardingSpace truck =
+                        boardingSpace units unit truck drafts
+
+                    canBoardAtTarget : Bool
+                    canBoardAtTarget =
+                        Unit.mapPosition target
+                            |> Maybe.andThen boardingTarget
+                            |> Maybe.map hasBoardingSpace
+                            |> Maybe.withDefault False
+                in
+                not canBoardAtTarget
 
         unavailableReceivers : List Coordinate
         unavailableReceivers =

@@ -1,5 +1,6 @@
 module Style exposing
     ( absolute
+    , accentYellow5
     , active
     , after
     , animation
@@ -39,6 +40,7 @@ module Style exposing
     , border
     , border0
     , borderB
+    , borderCollapse
     , borderGray2
     , borderGray4
     , borderL
@@ -48,6 +50,7 @@ module Style exposing
     , borderT
     , borderTransparent
     , borderX
+    , borderYellow5
     , borderYellow5_20
     , bottom0
     , bottom12
@@ -128,6 +131,7 @@ module Style exposing
     , h3
     , h32
     , h320
+    , h3px
     , h4
     , h40
     , h5
@@ -215,6 +219,7 @@ module Style exposing
     , mb4
     , md
     , minH0
+    , minH11
     , minH14
     , minH24
     , minH32
@@ -233,6 +238,7 @@ module Style exposing
     , minW6p5
     , minW72
     , minWFitContent
+    , minWidthRem
     , mixBlendScreen
     , ml1
     , ml128
@@ -330,6 +336,8 @@ module Style exposing
     , py6
     , py8
     , red1Str
+    , redIndent
+    , redOutdent
     , reducedMotion
     , relative
     , right0
@@ -363,6 +371,7 @@ module Style exposing
     , softEdgeMask
     , squareBL
     , squareBR
+    , tableFixed
     , tabularNums
     , textAlignCenter
     , textAlignRight
@@ -472,6 +481,11 @@ import Size exposing (Size)
 basisFull : Css.Style
 basisFull =
     Css.flexBasis (Css.pct 100)
+
+
+accentYellow5 : Css.Style
+accentYellow5 =
+    Css.property "accent-color" yellow5Str
 
 
 animationNone : Css.Style
@@ -638,6 +652,11 @@ red0Str =
 red1Str : String
 red1Str =
     "#F21D23"
+
+
+redShadowStr : String
+redShadowStr =
+    "#300C10"
 
 
 yellow0Str : String
@@ -920,6 +939,26 @@ importantIndent =
         |> Css.batch
 
 
+redOutdent : Css.Style
+redOutdent =
+    [ Css.borderLeft3 borderWidth Css.solid (Css.hex red1Str)
+    , Css.borderTop3 borderWidth Css.solid (Css.hex red1Str)
+    , Css.borderRight3 borderWidth Css.solid (Css.hex redShadowStr)
+    , Css.borderBottom3 borderWidth Css.solid (Css.hex redShadowStr)
+    ]
+        |> Css.batch
+
+
+redIndent : Css.Style
+redIndent =
+    [ Css.borderLeft3 borderWidth Css.solid (Css.hex redShadowStr)
+    , Css.borderTop3 borderWidth Css.solid (Css.hex redShadowStr)
+    , Css.borderRight3 borderWidth Css.solid (Css.hex red1Str)
+    , Css.borderBottom3 borderWidth Css.solid (Css.hex red1Str)
+    ]
+        |> Css.batch
+
+
 none : Css.Style
 none =
     batch []
@@ -982,6 +1021,21 @@ borderGray2 =
 borderGray4 : Css.Style
 borderGray4 =
     Css.borderColor gray4Color
+
+
+borderYellow5 : Css.Style
+borderYellow5 =
+    Css.borderColor (Css.hex yellow5Str)
+
+
+borderCollapse : Css.Style
+borderCollapse =
+    Css.property "border-collapse" "collapse"
+
+
+tableFixed : Css.Style
+tableFixed =
+    Css.property "table-layout" "fixed"
 
 
 borderT : Css.Style
@@ -1346,6 +1400,11 @@ h2px =
     Css.height <| Css.px 2
 
 
+h3px : Css.Style
+h3px =
+    Css.height <| Css.px 3
+
+
 h1 : Css.Style
 h1 =
     Css.height s1
@@ -1459,6 +1518,11 @@ minH0 =
 minH6 : Css.Style
 minH6 =
     Css.minHeight (Css.rem 1.5)
+
+
+minH11 : Css.Style
+minH11 =
+    Css.minHeight (Css.rem 2.75)
 
 
 minH14 : Css.Style
@@ -3171,6 +3235,11 @@ opacity value =
 widthPct : Float -> Css.Style
 widthPct value =
     Css.width (Css.pct value)
+
+
+minWidthRem : Float -> Css.Style
+minWidthRem value =
+    Css.minWidth (Css.rem value)
 
 
 maxHViewportInsetRem : Float -> Css.Style

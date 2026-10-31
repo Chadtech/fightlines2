@@ -1,5 +1,7 @@
 use crate::{
-    backdrop_calibration, game_archive,
+    backdrop_calibration,
+    combat::chart,
+    game_archive,
     lobby::{self, GameSnapshot, Snapshot, Store},
     lobby_id::LobbyId,
     map_definition::NamedMap,
@@ -54,6 +56,10 @@ pub struct Query;
 
 #[graphql_object(context = Context)]
 impl Query {
+    fn combat_chart(input: chart::CombatChartInput) -> FieldResult<Vec<chart::CombatChartHit>> {
+        chart::hits(input)
+    }
+
     fn combat_backdrops() -> FieldResult<backdrop_calibration::CombatBackdropCatalog> {
         backdrop_calibration::available()
     }
@@ -279,6 +285,43 @@ mod tests {
     use serde_json::{Value, json};
 
     const FIELDS: &str = "id name mapType players { name isHost } isHost isMember gameUrl";
+
+    #[actix_web::test]
+    async fn combat_chart_is_read_only_and_rejects_invalid_health() -> TestResult<()> {
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(Store::new(crate::seed::Seed::new([0; 32]))))
+                .app_data(web::Data::new(schema()))
+                .route("/graphql", web::post().to(handle)),
+        )
+        .await;
+        let query = "query($input: CombatChartInput!) { combatChart(input: $input) { attacker defender defense cover remainingHp calculation { damage factors { defenderFacing attackerAim } } } }";
+        for health in [8, 0, 17] {
+            let request = test::TestRequest::post()
+                .uri("/graphql")
+                .peer_addr("192.0.2.1:1234".parse()?)
+                .set_json(json!({"query": query, "variables": { "input": {
+                    "attack": "INDIRECT_FIRE", "attackerHp": health, "defenderHp": 16,
+                    "attackerAim": "REAR", "readyOrder": "STAND_GROUND",
+                    "entrenchedInfantry": false, "fortress": false
+                }}}))
+                .to_request();
+            let body: Value = test::call_and_read_body_json(&app, request).await;
+            if health == 8 {
+                assert!(body.get("errors").is_none(), "{body}");
+                let hits = body["data"]["combatChart"].as_array().fixture()?;
+                assert_eq!(hits.len(), 12);
+                for hit in hits {
+                    assert_eq!(hit["attacker"], "FIELD_GUN");
+                    assert_eq!(hit["calculation"]["factors"]["defenderFacing"], 1.0);
+                    assert_eq!(hit["calculation"]["factors"]["attackerAim"], 1.0);
+                }
+            } else {
+                assert!(body["errors"].is_array(), "{body}");
+            }
+        }
+        Ok(())
+    }
 
     #[actix_web::test]
     async fn map_options_are_public_and_match_the_server_catalog() -> TestResult<()> {

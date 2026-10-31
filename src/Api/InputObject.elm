@@ -4,7 +4,10 @@
 
 module Api.InputObject exposing (..)
 
+import Api.Enum.AttackAspect
 import Api.Enum.BuildingKind
+import Api.Enum.CombatKind
+import Api.Enum.CombatReadyOrder
 import Api.Enum.Direction
 import Api.Enum.MapTheme
 import Api.Enum.PlayerNumber
@@ -63,6 +66,45 @@ encodeBackdropCalibrationInput : BackdropCalibrationInput -> Value
 encodeBackdropCalibrationInput input____ =
     Encode.maybeObject
         [ ( "frontFooting", Encode.float input____.frontFooting |> Just ), ( "rowSpacing", Encode.float input____.rowSpacing |> Just ), ( "unitSize", Encode.float input____.unitSize |> Just ), ( "rearScale", Encode.float input____.rearScale |> Just ), ( "trenchFooting", Encode.float input____.trenchFooting |> Just ), ( "trenchSize", Encode.float input____.trenchSize |> Just ), ( "secondTrenchFooting", Encode.float input____.secondTrenchFooting |> Just ), ( "secondTrenchSize", Encode.float input____.secondTrenchSize |> Just ) ]
+
+
+buildCombatChartInput :
+    CombatChartInputRequiredFields
+    -> CombatChartInput
+buildCombatChartInput required____ =
+    { attack = required____.attack, attackerHp = required____.attackerHp, defenderHp = required____.defenderHp, attackerAim = required____.attackerAim, readyOrder = required____.readyOrder, entrenchedInfantry = required____.entrenchedInfantry, fortress = required____.fortress }
+
+
+type alias CombatChartInputRequiredFields =
+    { attack : Api.Enum.CombatKind.CombatKind
+    , attackerHp : Int
+    , defenderHp : Int
+    , attackerAim : Api.Enum.AttackAspect.AttackAspect
+    , readyOrder : Api.Enum.CombatReadyOrder.CombatReadyOrder
+    , entrenchedInfantry : Bool
+    , fortress : Bool
+    }
+
+
+{-| Type for the CombatChartInput input object.
+-}
+type alias CombatChartInput =
+    { attack : Api.Enum.CombatKind.CombatKind
+    , attackerHp : Int
+    , defenderHp : Int
+    , attackerAim : Api.Enum.AttackAspect.AttackAspect
+    , readyOrder : Api.Enum.CombatReadyOrder.CombatReadyOrder
+    , entrenchedInfantry : Bool
+    , fortress : Bool
+    }
+
+
+{-| Encode a CombatChartInput into a value that can be used as an argument.
+-}
+encodeCombatChartInput : CombatChartInput -> Value
+encodeCombatChartInput input____ =
+    Encode.maybeObject
+        [ ( "attack", Encode.enum Api.Enum.CombatKind.toString input____.attack |> Just ), ( "attackerHp", Encode.int input____.attackerHp |> Just ), ( "defenderHp", Encode.int input____.defenderHp |> Just ), ( "attackerAim", Encode.enum Api.Enum.AttackAspect.toString input____.attackerAim |> Just ), ( "readyOrder", Encode.enum Api.Enum.CombatReadyOrder.toString input____.readyOrder |> Just ), ( "entrenchedInfantry", Encode.bool input____.entrenchedInfantry |> Just ), ( "fortress", Encode.bool input____.fortress |> Just ) ]
 
 
 buildCoordinateInput :

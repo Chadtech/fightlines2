@@ -25,6 +25,7 @@ import Game.Turn as Turn
 import Game.TurnPlayback as TurnPlayback
 import Game.Unit as Unit exposing (Unit)
 import Game.Unit.Location as Location
+import Game.Unit.Supplies as Supplies
 import Game.UnitId as UnitId exposing (UnitId)
 import Game.UnitLoss as UnitLoss
 import Game.UnitLoss.Cause as LossCause
@@ -35,6 +36,7 @@ import Game.View.CombatExplosion as CombatExplosion
 import Game.View.CombatFormation as CombatFormation
 import Game.View.CombatInfantry as CombatInfantry
 import Game.View.CombatTheater as CombatTheater
+import Game.View.UnitWarnings as UnitWarnings
 import Platform
 import Point exposing (Point)
 
@@ -227,7 +229,8 @@ playbackChecks first second =
                         }
               , resources =
                     Just
-                        { supplyCargo = []
+                        { exhaustionTurnsRemaining = Nothing
+                        , supplyCargo = []
                         , hitPoints =
                             { current = 16
                             , maximum = 16
@@ -267,7 +270,8 @@ playbackChecks first second =
                         }
               , resources =
                     Just
-                        { supplyCargo = []
+                        { exhaustionTurnsRemaining = Nothing
+                        , supplyCargo = []
                         , hitPoints =
                             { current = 16
                             , maximum = 16
@@ -892,7 +896,8 @@ truckPlaybackChecks unitId =
                         }
               , resources =
                     Just
-                        { supplyCargo = []
+                        { exhaustionTurnsRemaining = Nothing
+                        , supplyCargo = []
                         , hitPoints =
                             { current = 16
                             , maximum = 16
@@ -979,7 +984,8 @@ transportPlaybackChecks passengerId truckId =
                     }
             , resources =
                 Just
-                    { supplyCargo = []
+                    { exhaustionTurnsRemaining = Nothing
+                    , supplyCargo = []
                     , hitPoints =
                         { current = 16
                         , maximum = 16
@@ -1216,7 +1222,8 @@ spriteFacingChecks id =
                     }
             , resources =
                 Just
-                    { supplyCargo = []
+                    { exhaustionTurnsRemaining = Nothing
+                    , supplyCargo = []
                     , hitPoints =
                         { current = 16
                         , maximum = 16
@@ -3640,7 +3647,8 @@ deathPlaybackChecks id =
                     }
             , resources =
                 Just
-                    { supplyCargo = []
+                    { exhaustionTurnsRemaining = Nothing
+                    , supplyCargo = []
                     , hitPoints =
                         { current = 0
                         , maximum = 16
@@ -3718,6 +3726,15 @@ deathPlaybackChecks id =
                     (dead.resources
                         |> Maybe.map (\resources -> { resources | hitPoints = { current = 16, maximum = 16 } })
                     )
+
+        lowSupplies : Unit
+        lowSupplies =
+            let
+                lowerSupplies : UnitResources.UnitResources -> UnitResources.UnitResources
+                lowerSupplies resources =
+                    UnitResources.setSupplies (Supplies.setCurrent 16 resources.supplies) resources
+            in
+            Unit.mapResources lowerSupplies spent
 
         delayed : Maybe ( Maybe TurnPlayback.Playback, TurnPlayback.Frame )
         delayed =
@@ -3824,7 +3841,17 @@ deathPlaybackChecks id =
         ( acknowledged, acknowledgedFrame ) =
             TurnPlayback.acknowledgeLoss id animation |> TurnPlayback.tickUntilLoss 1400
     in
-    expect "dead units remain for the full death animation" (pending /= Nothing && beforeRemoval.units == [ dead ])
+    expect "zero supplies alone keep an exhausted unit alive" (not (Unit.isDying spent))
+        ++ expect "low supplies retain their warning above zero" (UnitWarnings.label lowSupplies == "low supplies")
+        ++ expect "zero supplies switch the warning to exhaustion" (UnitWarnings.label spent == "exhausted")
+        ++ expect "concealed exhaustion does not disclose a warning" (UnitWarnings.label alive == "")
+        ++ expect "dead units do not retain an exhaustion warning" (UnitWarnings.label dead == "")
+        ++ expect "exhausted snapshots without a loss do not open death feedback"
+            (TurnPlayback.start [ initial |> TurnPlayback.setFrameUnits [ spent ], initial |> TurnPlayback.setFrameUnits [ spent ] ]
+                |> Maybe.map (\playback -> TurnPlayback.activeEncounter playback == Nothing && List.isEmpty (TurnPlayback.losses playback))
+                |> (==) (Just True)
+            )
+        ++ expect "dead units remain for the full death animation" (pending /= Nothing && beforeRemoval.units == [ dead ])
         ++ expect "dead units vanish at the server frame boundary" (finished == Nothing && List.isEmpty afterRemoval.units && List.isEmpty afterRemoval.visibleTiles)
         ++ expect "death does not interpolate a movement" (List.isEmpty (TurnPlayback.movingPositions (Just animation)))
         ++ expect "supply death dialogs remain until acknowledged" (held == Just animation && heldFrame.units == [ dead ])

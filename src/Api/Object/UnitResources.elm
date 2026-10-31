@@ -45,3 +45,8 @@ supplyCargo :
     -> SelectionSet (List decodesTo) Api.Object.UnitResources
 supplyCargo object____ =
     Object.selectionForCompositeField "supplyCargo" [] object____ (Basics.identity >> Decode.list)
+
+
+exhaustionTurnsRemaining : SelectionSet (Maybe Int) Api.Object.UnitResources
+exhaustionTurnsRemaining =
+    Object.selectionForField "(Maybe Int)" "exhaustionTurnsRemaining" [] (Decode.int |> Decode.nullable)

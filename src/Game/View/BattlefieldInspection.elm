@@ -1,6 +1,7 @@
 module Game.View.BattlefieldInspection exposing
     ( cargo
     , toHtml
+    , unloadingFreight
     )
 
 import Api.Enum.PlayerNumber exposing (PlayerNumber)
@@ -8,7 +9,6 @@ import Css
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Depot as Depot exposing (Depot)
 import Game.Map as Map exposing (Map)
-import Game.PlannedOrder as PlannedOrder exposing (PlannedOrder)
 import Game.Supply as Supply
 import Game.Unit as Unit exposing (Unit)
 import Game.UnitId as UnitId exposing (UnitId)
@@ -20,7 +20,6 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Keyed as Keyed
 import Style as S
-import Util.List as ListUtil
 import View.Aria as Aria
 
 
@@ -43,7 +42,6 @@ type alias Contents msg =
 type alias CargoArgs msg =
     { units : List Unit
     , ownPlayers : List PlayerNumber
-    , orders : List PlannedOrder
     , onSelectPassenger : UnitId -> msg
     }
 
@@ -119,6 +117,21 @@ toHtml model =
         rows =
             unitRows ++ tileRows
     in
+    inspectionView rows
+
+
+unloadingFreight : Int -> Supply.CargoStock -> Html msg
+unloadingFreight cargoIndex stock =
+    inspectionView
+        [ ( "unloading:" ++ String.fromInt cargoIndex
+          , inspectionRow (Supply.cargoLabel stock.kind)
+                [ SupplyCrate.toHtml { lastSeen = False } stock ]
+          )
+        ]
+
+
+inspectionView : List ( String, Html msg ) -> Html msg
+inspectionView rows =
     Keyed.node "section"
         [ Aria.label "selection"
         , A.css
@@ -176,13 +189,6 @@ cargo args unit =
                 |> Maybe.map .supplyCargo
                 |> Maybe.withDefault []
 
-        unloads : List PlannedOrder.CrateUnload
-        unloads =
-            args.orders
-                |> ListUtil.find (\order -> order.unitId == unit.id)
-                |> Maybe.map PlannedOrder.crateUnloads
-                |> Maybe.withDefault []
-
         canInspectCargo : Bool
         canInspectCargo =
             List.member unit.playerNumber args.ownPlayers && unit.cargoCapacity > 0
@@ -192,7 +198,6 @@ cargo args unit =
             { capacity = unit.cargoCapacity
             , passengers = passengers
             , freight = freight
-            , unloads = unloads
             , onSelectPassenger = args.onSelectPassenger
             }
 

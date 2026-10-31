@@ -537,13 +537,19 @@ mod tests {
                 {"id": 2, "position": {"x": 2, "y": 1}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
             ]
         }"#).fixture()?.scenario().fixture()?;
-        // Exhausting the target's provisions ends the match after the shell hits.
+        // The target is on its final exhaustion turn when the shell hits.
         scenario
             .units
             .iter_mut()
             .find(|unit| unit.id() == "2")
             .fixture()?
             .set_supplies_for_test(4);
+        scenario
+            .units
+            .iter_mut()
+            .find(|unit| unit.id() == "2")
+            .fixture()?
+            .set_exhaustion_for_test(1);
         let mut log = directory.start(GameStarted {
             game_id: LobbyId::from_token("01".repeat(16)),
             name: "Combat fixture".into(),

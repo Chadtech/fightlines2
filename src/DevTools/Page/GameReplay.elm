@@ -108,6 +108,7 @@ type alias Model =
     , showOrders : Bool
     , timeline : Timeline
     , inspection : Maybe Inspection
+    , unitHelp : Maybe UnitStatus.Help
     , navigation : BattlefieldNavigation.Model
     , viewport : Maybe Camera.Viewport
     , frame : AnimationFrame.Frame
@@ -158,6 +159,9 @@ type Msg
     | CargoUnitClicked UnitId
     | EscapePressed
     | InspectorCloseClicked
+    | UnitHelpClicked UnitStatus.Help
+    | UnitHelpDismissed
+    | UnitHelpFocusReturned (Result Browser.Dom.Error ())
     | PanLeftKeyPressed
     | PanRightKeyPressed
     | PanUpKeyPressed
@@ -213,6 +217,7 @@ init shared id flags =
             , showOrders = False
             , timeline = Ready
             , inspection = Nothing
+            , unitHelp = Nothing
             , navigation = BattlefieldNavigation.init
             , viewport = Nothing
             , frame = AnimationFrame.first
@@ -846,9 +851,21 @@ unitLoss model =
     PlaybackPresentation.loss model.skipUnitLossDialogs (playback model)
 
 
+dismissUnitHelp : Model -> ( Model, Eff Msg )
+dismissUnitHelp model =
+    case model.unitHelp of
+        Just help ->
+            ( { model | unitHelp = Nothing }
+            , E.focus { htmlId = UnitStatus.buttonHtmlId help } UnitHelpFocusReturned
+            )
+
+        Nothing ->
+            E.withOut model
+
+
 activeDialogHtmlId : Model -> Maybe String
 activeDialogHtmlId model =
-    unitLoss model |> Maybe.map UnitDeath.dialogHtmlId
+    dialog model |> Maybe.map Dialog.htmlId
 
 
 updateLossDialog : Maybe String -> Model -> ( Model, Eff Msg )
@@ -901,11 +918,37 @@ update msg model =
                 |> selectUnit id
                 |> withInspectionMeasurement model
 
+        UnitHelpClicked help ->
+            if dialog model /= Nothing then
+                E.withOut model
+
+            else
+                ( pause { model | unitHelp = Just help }
+                , E.toJs (ToJs.OpenDialog { htmlId = UnitStatus.dialogHtmlId })
+                )
+
+        UnitHelpDismissed ->
+            dismissUnitHelp model
+
+        UnitHelpFocusReturned result ->
+            case result of
+                Ok () ->
+                    E.withOut model
+
+                Err error ->
+                    model
+                        |> setShared (Shared.addError (Just (Error.ElementFocusFailed error)) model.shared)
+                        |> E.withOut
+
         EscapePressed ->
-            (model
-                |> setInspection Nothing
-            )
-                |> withInspectionMeasurement model
+            if model.unitHelp /= Nothing then
+                dismissUnitHelp model
+
+            else
+                (model
+                    |> setInspection Nothing
+                )
+                    |> withInspectionMeasurement model
 
         InspectorCloseClicked ->
             (model
@@ -1169,17 +1212,21 @@ update msg model =
             else
                 case result of
                     Err error ->
-                        (model
+                        model
                             |> setRequest (Failed position (ApiRequest.errorMessage error))
-                        )
                             |> E.withOut
 
                     Ok recorded ->
-                        ({ model | frames = recorded.frames, resolution = recorded.resolution, orders = recorded.orders, position = position }
+                        { model
+                            | frames = recorded.frames
+                            , resolution = recorded.resolution
+                            , orders = recorded.orders
+                            , position = position
+                            , unitHelp = Nothing
+                        }
                             |> setBattlefield recorded.battlefield
                             |> setNavigation (BattlefieldNavigation.finishReturn model.navigation)
                             |> setRequest Idle
-                        )
                             |> startTurnPlayback
 
 
@@ -1347,11 +1394,14 @@ selectionView model =
         unitContent unit =
             { unit = unit
             , content =
-                [ UnitStatus.toHtml (PlaybackPresentation.ownerName model.battlefield.players unit |> Maybe.withDefault "") unit Nothing
+                [ UnitStatus.toHtml
+                    { onHelp = UnitHelpClicked }
+                    (PlaybackPresentation.ownerName model.battlefield.players unit |> Maybe.withDefault "")
+                    unit
+                    Nothing
                 , BattlefieldInspection.cargo
                     { units = model.battlefield.units
                     , ownPlayers = [ model.position.player ]
-                    , orders = []
                     , onSelectPassenger = CargoUnitClicked
                     }
                     unit
@@ -1569,13 +1619,18 @@ controls model =
 
 dialog : Model -> Maybe (Dialog Msg)
 dialog model =
-    PlaybackPresentation.lossDialog
-        { skipDialogs = model.skipUnitLossDialogs
-        , players = model.battlefield.players
-        , ownPlayers = [ model.position.player ]
-        }
-        (playback model)
-        |> Maybe.map (Dialog.map UnitDeathMsg)
+    case model.unitHelp of
+        Just help ->
+            Just (UnitStatus.dialog UnitHelpDismissed help)
+
+        Nothing ->
+            PlaybackPresentation.lossDialog
+                { skipDialogs = model.skipUnitLossDialogs
+                , players = model.battlefield.players
+                , ownPlayers = [ model.position.player ]
+                }
+                (playback model)
+                |> Maybe.map (Dialog.map UnitDeathMsg)
 
 
 

@@ -2,7 +2,7 @@ module Game.OrderPlanning exposing
     ( Drafts
     , InvariantViolation(..)
     , Model(..)
-    , applyCommand
+    , applyOrder
     , canRevokeOrder
     , canSelectUnloadCargo
     , cancelInteraction
@@ -10,8 +10,6 @@ module Game.OrderPlanning exposing
     , choosingDirection
     , choosingIndirectFire
     , clearTargetPreview
-    , commandGuideOpen
-    , commandMenuUnit
     , confirmGroundPickup
     , confirmPassengers
     , confirmPath
@@ -19,8 +17,8 @@ module Game.OrderPlanning exposing
     , destinationFeedback
     , dismissDialog
     , extendPath
-    , focusCommand
-    , focusedCommand
+    , focusOrder
+    , focusedOrder
     , indirectTargetPreview
     , indirectTargets
     , init
@@ -28,13 +26,15 @@ module Game.OrderPlanning exposing
     , missingOrders
     , moveOptions
     , movementPlanning
-    , openCommandGuide
+    , openOrderGuide
+    , orderGuideOpen
+    , orderMenuUnit
     , orders
     , pathPreview
     , previewDirection
     , previewTile
-    , promptDismountedCommands
-    , restoreCommands
+    , promptDismountedOrders
+    , restoreOrderMenu
     , revokeSelectedOrder
     , saveDirection
     , saveUnloadDestination
@@ -84,14 +84,14 @@ import Game.PlannedOrder as PlannedOrder exposing (PlannedOrder)
 import Game.PlannedTransport as PlannedTransport
 import Game.Selection as Selection
     exposing
-        ( CommandMenuState(..)
+        ( OrderMenuState(..)
         , Selection(..)
         , UnitInteraction(..)
         )
 import Game.Supply as Supply
 import Game.Unit as Unit exposing (Unit)
-import Game.UnitCommand as UnitCommand
 import Game.UnitId as UnitId exposing (UnitId)
+import Game.UnitOrder as UnitOrder
 import Game.UnloadCargo as UnloadCargo exposing (UnloadCargo)
 import Game.UnloadPlanning as UnloadPlanning
     exposing
@@ -129,7 +129,7 @@ type alias Drafts =
 
 type InvariantViolation
     = PlanningUnitNotFound UnitId
-    | CommandUnitHasNoPosition UnitId
+    | OrderUnitHasNoPosition UnitId
     | LoadingOrderNotFound UnitId
     | TransportInvariantViolated PlannedTransport.InvariantViolation
     | OrderDependenciesInvariantViolated OrderDependencies.InvariantViolation
@@ -233,7 +233,7 @@ setSelection selected model =
 
 
 {-| Escape abandons an unfinished transport and all orders depending on it.
-The passenger command sequence is complete when every dismount has an order.
+The passenger order sequence is complete when every dismount has an order.
 Other interactions retain their normal dismissal behavior.
 -}
 cancelInteraction : Map -> List Unit -> Model -> InvariantCheck InvariantViolation Model
@@ -252,7 +252,7 @@ cancelInteraction map units model =
         Nothing ->
             if hasDialog model then
                 dismissDialog model
-                    |> promptDismountedCommands map units
+                    |> promptDismountedOrders map units
                     |> IC.happy
 
             else
@@ -313,7 +313,7 @@ submissionDrafts : Model -> Maybe Drafts
 submissionDrafts model =
     case model of
         OrdinaryPlanning drafts ->
-            if commandGuideOpen model || choosingDirection model then
+            if orderGuideOpen model || choosingDirection model then
                 Nothing
 
             else
@@ -462,7 +462,7 @@ showSubmissionWarning : Model -> Model
 showSubmissionWarning model =
     case model of
         OrdinaryPlanning drafts ->
-            if commandGuideOpen model || choosingDirection model then
+            if orderGuideOpen model || choosingDirection model then
                 model
 
             else
@@ -489,12 +489,12 @@ dismissDialog model =
             case drafts.selection of
                 Just (UnitSelection selected) ->
                     case selected.interaction of
-                        CommandMenu (ReadingGuide focused) ->
+                        OrderMenu (ReadingGuide focused) ->
                             setSelection
                                 (Just
                                     (UnitSelection
                                         (selected
-                                            |> Selection.setInteraction (CommandMenu (ChoosingCommand focused))
+                                            |> Selection.setInteraction (OrderMenu (ChoosingOrder focused))
                                         )
                                     )
                                 )
@@ -576,14 +576,14 @@ chooseUnloadSquare map units playerNumbers movementRules supplyCrates depots des
             depots
             (UnloadPlanning.availableOptions (unloadOptions map units playerNumbers movementRules supplyCrates))
             destination
-        |> IC.map (promptDismountedCommands map units)
+        |> IC.map (promptDismountedOrders map units)
 
 
-promptDismountedCommands : Map -> List Unit -> Model -> Model
-promptDismountedCommands map units model =
+promptDismountedOrders : Map -> List Unit -> Model -> Model
+promptDismountedOrders map units model =
     case selectedUnitFromSelection units (selection model) of
         Just unit ->
-            promptTruckDismountedCommands
+            promptTruckDismountedOrders
                 map
                 units
                 (Maybe.withDefault unit.id (Unit.carrierId unit))
@@ -593,11 +593,11 @@ promptDismountedCommands map units model =
             model
 
 
-{-| Automatic prompts stay with the active transport, including commands saved
+{-| Automatic prompts stay with the active transport, including orders saved
 by its dismounting infantry. Leaving selection ends that prompt sequence.
 -}
-promptTruckDismountedCommands : Map -> List Unit -> UnitId -> Model -> Model
-promptTruckDismountedCommands map units truckId original =
+promptTruckDismountedOrders : Map -> List Unit -> UnitId -> Model -> Model
+promptTruckDismountedOrders map units truckId original =
     let
         model : Model
         model =
@@ -633,7 +633,7 @@ promptTruckDismountedCommands map units truckId original =
                 Just unit ->
                     setUnitInteraction
                         unit.id
-                        (CommandMenu (ChoosingCommand Nothing))
+                        (OrderMenu (ChoosingOrder Nothing))
                         model
 
                 Nothing ->
@@ -643,31 +643,31 @@ promptTruckDismountedCommands map units truckId original =
             model
 
 
-applyCommand :
+applyOrder :
     Map
     -> List Unit
     -> List PlayerNumber
     -> List Movement.Rule
     -> List Supply.GroundCrate
     -> List Depot
-    -> UnitCommand.Command
+    -> UnitOrder.Order
     -> Model
     -> InvariantCheck InvariantViolation Model
-applyCommand map units playerNumbers movementRules supplyCrates depots command model =
+applyOrder map units playerNumbers movementRules supplyCrates depots order model =
     case ( selection model, hasDialog model ) of
         ( Just (UnitSelection { interaction }), False ) ->
             case interaction of
-                CommandMenu _ ->
+                OrderMenu _ ->
                     case selectedUnit map units model of
                         Just unit ->
-                            applyUnitCommand
+                            applyUnitOrder
                                 map
                                 units
                                 playerNumbers
                                 movementRules
                                 supplyCrates
                                 depots
-                                command
+                                order
                                 unit
                                 model
 
@@ -681,14 +681,14 @@ applyCommand map units playerNumbers movementRules supplyCrates depots command m
             IC.happy model
 
 
-commandGuideOpen : Model -> Bool
-commandGuideOpen model =
+orderGuideOpen : Model -> Bool
+orderGuideOpen model =
     case model of
         OrdinaryPlanning drafts ->
             case drafts.selection of
                 Just (UnitSelection { interaction }) ->
                     case interaction of
-                        CommandMenu (ReadingGuide _) ->
+                        OrderMenu (ReadingGuide _) ->
                             True
 
                         _ ->
@@ -701,20 +701,20 @@ commandGuideOpen model =
             False
 
 
-openCommandGuide : Map -> List Unit -> List PlayerNumber -> Model -> Model
-openCommandGuide map units playerNumbers model =
-    case ( model, commandMenuUnit map units model ) of
+openOrderGuide : Map -> List Unit -> List PlayerNumber -> Model -> Model
+openOrderGuide map units playerNumbers model =
+    case ( model, orderMenuUnit map units model ) of
         ( OrdinaryPlanning drafts, Just unit ) ->
             case drafts.selection of
                 Just (UnitSelection selected) ->
                     case selected.interaction of
-                        CommandMenu (ChoosingCommand focused) ->
+                        OrderMenu (ChoosingOrder focused) ->
                             if isOwnUnit playerNumbers unit then
                                 setSelection
                                     (Just
                                         (UnitSelection
                                             (selected
-                                                |> Selection.setInteraction (CommandMenu (ReadingGuide focused))
+                                                |> Selection.setInteraction (OrderMenu (ReadingGuide focused))
                                             )
                                         )
                                     )
@@ -733,12 +733,12 @@ openCommandGuide map units playerNumbers model =
             model
 
 
-commandMenuUnit : Map -> List Unit -> Model -> Maybe Unit
-commandMenuUnit map units model =
+orderMenuUnit : Map -> List Unit -> Model -> Maybe Unit
+orderMenuUnit map units model =
     case ( selection model, hasDialog model ) of
         ( Just (UnitSelection { interaction }), False ) ->
             case interaction of
-                CommandMenu _ ->
+                OrderMenu _ ->
                     selectedUnit map units model
 
                 _ ->
@@ -748,15 +748,15 @@ commandMenuUnit map units model =
             Nothing
 
 
-focusCommand : Map -> List Unit -> UnitCommand.MenuOption -> Model -> Model
-focusCommand map units command model =
-    case ( selection model, commandMenuUnit map units model ) of
+focusOrder : Map -> List Unit -> UnitOrder.MenuOption -> Model -> Model
+focusOrder map units order model =
+    case ( selection model, orderMenuUnit map units model ) of
         ( Just (UnitSelection selected), Just _ ) ->
             case selected.interaction of
-                CommandMenu _ ->
+                OrderMenu _ ->
                     model
                         |> setUnitInteraction selected.id
-                            (CommandMenu (ChoosingCommand (Just command)))
+                            (OrderMenu (ChoosingOrder (Just order)))
 
                 _ ->
                     model
@@ -778,7 +778,7 @@ canRevokeOrder map units playerNumbers unitId model =
 
                         Just (UnitSelection { interaction }) ->
                             case interaction of
-                                CommandMenu _ ->
+                                OrderMenu _ ->
                                     True
 
                                 _ ->
@@ -841,7 +841,7 @@ saveDirection map units playerNumbers direction model =
                         Just order ->
                             model
                                 |> setOrders (order :: List.filter (\other -> other.unitId /= id) (orders model))
-                                |> finishUnitCommand map units
+                                |> finishUnitOrder map units
 
                         Nothing ->
                             IC.happy model
@@ -910,8 +910,8 @@ selectUnit map units playerNumbers movementRules supplyCrates depots id model =
                 nextSelection =
                     unitSelection map units playerNumbers unit model
 
-                reopeningCommands : Bool
-                reopeningCommands =
+                reopeningOrders : Bool
+                reopeningOrders =
                     (selection model == Just (Inspecting (UnitInspection id)))
                         && (nextSelection /= Inspecting (UnitInspection id))
             in
@@ -931,7 +931,7 @@ selectUnit map units playerNumbers movementRules supplyCrates depots id model =
                         )
                     |> Maybe.withDefault (IC.happy model)
 
-            else if (Maybe.map .id (selectedUnit map units model) == Just id) && not reopeningCommands then
+            else if (Maybe.map .id (selectedUnit map units model) == Just id) && not reopeningOrders then
                 IC.happy (setSelection Nothing model)
 
             else
@@ -1362,15 +1362,15 @@ confirmPassengers map units playerNumbers movementRules supplyCrates depots mode
             IC.happy model
 
 
-focusedCommand : Model -> Maybe UnitCommand.MenuOption
-focusedCommand model =
+focusedOrder : Model -> Maybe UnitOrder.MenuOption
+focusedOrder model =
     case selection model of
         Just (UnitSelection selected) ->
             case selected.interaction of
-                CommandMenu (ChoosingCommand focused) ->
+                OrderMenu (ChoosingOrder focused) ->
                     focused
 
-                CommandMenu (ReadingGuide focused) ->
+                OrderMenu (ReadingGuide focused) ->
                     focused
 
                 ChoosingIndirectFire _ ->
@@ -1397,29 +1397,29 @@ setDraftOrders value model =
     { model | orders = value }
 
 
-applyUnitCommand :
+applyUnitOrder :
     Map
     -> List Unit
     -> List PlayerNumber
     -> List Movement.Rule
     -> List Supply.GroundCrate
     -> List Depot
-    -> UnitCommand.Command
+    -> UnitOrder.Order
     -> Unit
     -> Model
     -> InvariantCheck InvariantViolation Model
-applyUnitCommand map units playerNumbers movementRules supplyCrates depots command unit model =
+applyUnitOrder map units playerNumbers movementRules supplyCrates depots order unit model =
     let
         canApply : Bool
         canApply =
             isOwnUnit playerNumbers unit
                 && not (PlannedTransport.receivingLoad units unit (orders model))
-                && List.member command (UnitCommand.available depots unit)
-                && UnitCommand.canUse map depots unit command
+                && List.member order (UnitOrder.available depots unit)
+                && UnitOrder.canUse map depots unit order
     in
     if canApply then
-        case command of
-            UnitCommand.IndirectFire ->
+        case order of
+            UnitOrder.IndirectFire ->
                 let
                     beginTargeting : Maybe IndirectFirePlanning -> Model
                     beginTargeting maybePlanning =
@@ -1434,34 +1434,34 @@ applyUnitCommand map units playerNumbers movementRules supplyCrates depots comma
                     |> IC.mapError IndirectFireInvariantViolated
                     |> IC.map beginTargeting
 
-            UnitCommand.Move ->
+            UnitOrder.Move ->
                 beginMovement NormalMove map units movementRules unit model
 
-            UnitCommand.AttackMove ->
+            UnitOrder.AttackMove ->
                 beginMovement AttackMove map units movementRules unit model
 
-            UnitCommand.Ambush ->
+            UnitOrder.Ambush ->
                 setUnitInteraction unit.id (ChoosingDirection (DirectionPlanning.ambush unit)) model
                     |> IC.happy
 
-            UnitCommand.StandGround ->
+            UnitOrder.StandGround ->
                 setUnitInteraction unit.id (ChoosingDirection (DirectionPlanning.standGround unit)) model
                     |> IC.happy
 
-            UnitCommand.HoldPosition ->
+            UnitOrder.HoldPosition ->
                 holdPosition map units supplyCrates depots unit model
 
-            UnitCommand.Sabotage ->
-                saveStationaryCommand map units unit PlannedOrder.Sabotage model
+            UnitOrder.Sabotage ->
+                saveStationaryOrder map units unit PlannedOrder.Sabotage model
 
-            UnitCommand.DigIn ->
-                saveStationaryCommand map units unit PlannedOrder.DigIn model
+            UnitOrder.DigIn ->
+                saveStationaryOrder map units unit PlannedOrder.DigIn model
 
     else
         IC.happy model
 
 
-{-| Called only after resolving the selected unit failed. An active command
+{-| Called only after resolving the selected unit failed. An active order
 requires that unit; an absent selection or stale inspection is an expected no-op.
 Keep the caller's existing fallback value in either case.
 -}
@@ -1491,7 +1491,7 @@ saveIndirectFire map units target model =
                         Just planned ->
                             model
                                 |> setOrders (planned :: List.filter (\other -> other.unitId /= unit.id) (orders model))
-                                |> finishUnitCommand map units
+                                |> finishUnitOrder map units
 
                         Nothing ->
                             IC.happy model
@@ -1628,7 +1628,7 @@ skipUnloading map units supplyCrates depots model =
                 choice.truck
                 choice.otherOrders
                 Nothing
-                |> promptTruckDismountedCommands
+                |> promptTruckDismountedOrders
                     map
                     units
                     (UnloadingTruck.unitId choice.truck)
@@ -1641,7 +1641,7 @@ skipUnloading map units supplyCrates depots model =
                 unloading.truck
                 unloading.otherOrders
                 Nothing
-                |> promptTruckDismountedCommands
+                |> promptTruckDismountedOrders
                     map
                     units
                     (UnloadingTruck.unitId unloading.truck)
@@ -1699,7 +1699,7 @@ holdPosition map units supplyCrates depots unit model =
                                 (orders model)
                         )
                         model
-                        |> finishUnitCommand map units
+                        |> finishUnitOrder map units
             in
             if PlannedTransport.hasCargo units unit then
                 next
@@ -1709,7 +1709,7 @@ holdPosition map units supplyCrates depots unit model =
                 next |> IC.andThen (offerTruckLoading units supplyCrates depots unit)
 
         Nothing ->
-            IC.violated (CommandUnitHasNoPosition unit.id) model
+            IC.violated (OrderUnitHasNoPosition unit.id) model
 
 
 unloadOptions :
@@ -1786,7 +1786,7 @@ beginMovement purpose map units movementRules unit model =
                 |> IC.happy
 
         Nothing ->
-            IC.violated (CommandUnitHasNoPosition unit.id) model
+            IC.violated (OrderUnitHasNoPosition unit.id) model
 
 
 inspectSelectedUnit : Map -> List Unit -> Model -> InvariantCheck InvariantViolation Model
@@ -1799,19 +1799,19 @@ inspectSelectedUnit map units model =
             missingSelectedUnit (selection model) model
 
 
-finishUnitCommand : Map -> List Unit -> Model -> InvariantCheck InvariantViolation Model
-finishUnitCommand map units model =
+finishUnitOrder : Map -> List Unit -> Model -> InvariantCheck InvariantViolation Model
+finishUnitOrder map units model =
     inspectSelectedUnit map units model
-        |> IC.map (promptDismountedCommands map units)
+        |> IC.map (promptDismountedOrders map units)
 
 
-restoreCommands :
+restoreOrderMenu :
     Map
     -> List Unit
     -> List PlayerNumber
     -> Model
     -> InvariantCheck InvariantViolation Model
-restoreCommands map units playerNumbers model =
+restoreOrderMenu map units playerNumbers model =
     case selectedUnit map units model of
         Just unit ->
             IC.happy (setSelection (Just (unitSelection map units playerNumbers unit model)) model)
@@ -1831,15 +1831,15 @@ unitSelection map units playerNumbers original model =
         hasOrder =
             List.any (\order -> order.unitId == unit.id) (orders model)
 
-        canChooseCommand : Bool
-        canChooseCommand =
+        canChooseOrder : Bool
+        canChooseOrder =
             isOwnUnit playerNumbers unit
                 && Unit.onMap unit
                 && not (PlannedTransport.receivingLoad units unit (orders model))
                 && not hasOrder
     in
-    if canChooseCommand then
-        UnitSelection { id = unit.id, interaction = CommandMenu (ChoosingCommand Nothing) }
+    if canChooseOrder then
+        UnitSelection { id = unit.id, interaction = OrderMenu (ChoosingOrder Nothing) }
 
     else
         Inspecting (UnitInspection unit.id)
@@ -1909,7 +1909,7 @@ selectMovementTile map units playerNumbers movementRules supplyCrates depots pos
                             PlannedTransport.moveOrders units unit move (orders model)
                                 |> IC.mapError TransportInvariantViolated
                                 |> IC.map saveOrders
-                                |> IC.andThen (finishUnitCommand map units)
+                                |> IC.andThen (finishUnitOrder map units)
                                 |> IC.andThen (openUnloadPrompt units supplyCrates depots unit move)
                                 |> IC.andThen offerReceiverLoading
 
@@ -1958,7 +1958,7 @@ hasDialog model =
             True
 
         _ ->
-            commandGuideOpen model || submissionWarningOpen model || unloadChoice model /= Nothing
+            orderGuideOpen model || submissionWarningOpen model || unloadChoice model /= Nothing
 
 
 movePurpose : Model -> MovePurpose
@@ -1968,14 +1968,14 @@ movePurpose model =
         |> Maybe.withDefault NormalMove
 
 
-saveStationaryCommand :
+saveStationaryOrder :
     Map
     -> List Unit
     -> Unit
     -> (Coordinate -> PlannedOrder.Action)
     -> Model
     -> InvariantCheck InvariantViolation Model
-saveStationaryCommand map units unit action model =
+saveStationaryOrder map units unit action model =
     case Unit.mapPosition unit of
         Just position ->
             let
@@ -1989,7 +1989,7 @@ saveStationaryCommand map units unit action model =
             in
             model
                 |> setOrders (planned :: otherOrders)
-                |> finishUnitCommand map units
+                |> finishUnitOrder map units
 
         Nothing ->
-            IC.violated (CommandUnitHasNoPosition unit.id) model
+            IC.violated (OrderUnitHasNoPosition unit.id) model

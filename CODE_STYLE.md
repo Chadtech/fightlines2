@@ -18,7 +18,7 @@ prototype; do not update it unless the task explicitly requires that.
   depend on their position for meaning, especially consecutive integers,
   strings, or messages.
 - Put dependent state inside the variant that permits it. A pending unit
-  command belongs inside unit selection; fields specific to one alternative
+  order belongs inside unit selection; fields specific to one alternative
   belong in that alternative. Make impossible combinations unrepresentable.
 - Replace ambiguous nested optional values with named alternatives. If a nested
   `Maybe` or `Option` distinguishes failure, absence, and success, model those
@@ -34,7 +34,7 @@ prototype; do not update it unless the task explicitly requires that.
 - Capitalize acronyms like ordinary words in names we control: `Html`, `Ai`,
   and `Id`, rather than `HTML`, `AI`, and `ID`.
 - Name HTML element identifiers explicitly with `HtmlId` (Elm) or `html_id`
-  (Rust), such as `commandHtmlId` and `htmlId`, to distinguish them from
+  (Rust), such as `orderHtmlId` and `htmlId`, to distinguish them from
   server and domain identifiers.
 - Extract helpers when they clarify a concept or remove meaningful duplication;
   keep helpers near their callers and expose only what other modules need.

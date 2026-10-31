@@ -25,7 +25,7 @@ import InvariantCheck as IC exposing (InvariantCheck)
 
 
 {-| Targeting begins only after resolving a map position. Its origin and range
-remain fixed during command selection; saving rechecks the current firing unit.
+remain fixed during order selection; saving rechecks the current firing unit.
 -}
 type IndirectFirePlanning
     = IndirectFirePlanning
@@ -36,7 +36,7 @@ type IndirectFirePlanning
 
 
 type InvariantViolation
-    = CommandUnitNotOnMap UnitId
+    = OrderUnitNotOnMap UnitId
 
 
 
@@ -71,7 +71,7 @@ start unit =
                 )
 
         Nothing ->
-            IC.violated (CommandUnitNotOnMap unit.id) Nothing
+            IC.violated (OrderUnitNotOnMap unit.id) Nothing
 
 
 previewTo : Map -> Coordinate -> IndirectFirePlanning -> IndirectFirePlanning
@@ -129,4 +129,4 @@ order map unit target =
                 IC.happy Nothing
 
         Nothing ->
-            IC.violated (CommandUnitNotOnMap unit.id) Nothing
+            IC.violated (OrderUnitNotOnMap unit.id) Nothing

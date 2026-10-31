@@ -223,7 +223,7 @@ pub fn combat(shots: &[Shot], units: &[Unit]) -> Vec<UnitLoss> {
 pub fn exhaustion(units: &[Unit]) -> Vec<UnitLoss> {
     let direct = units
         .iter()
-        .filter(|unit| unit.is_alive() && unit.supplies().current() == 0)
+        .filter(|unit| unit.is_alive() && unit.exhaustion_expired())
         .map(|unit| DirectUnitLoss::Exhaustion(ExhaustedUnitLoss { unit: unit.clone() }))
         .collect();
     with_passengers(direct, units)
@@ -305,7 +305,9 @@ mod tests {
             if carrier_exhausts {
                 board.units.first_mut().fixture()?.set_supplies_for_test(1);
             }
-            let settled = board.finish_turn_resources(1);
+            assert!(board.finish_turn_resources(1).losses.is_empty());
+            assert!(board.finish_turn_resources(2).losses.is_empty());
+            let settled = board.finish_turn_resources(3);
             assert_eq!(settled.losses.len(), if carrier_exhausts { 2 } else { 1 });
             let passenger = settled
                 .losses
@@ -322,7 +324,7 @@ mod tests {
                 UnitLoss::Exhaustion(_) if !carrier_exhausts => {}
                 _ => return Err("incorrect passenger loss cause".into()),
             }
-            assert!(board.finish_turn_resources(2).losses.is_empty());
+            assert!(board.finish_turn_resources(4).losses.is_empty());
         }
         Ok(())
     }
@@ -405,7 +407,9 @@ mod tests {
         let truck = board.units.first().fixture()?.clone();
         board.units.get_mut(1).fixture()?.board(truck.unit_id());
         board.units.first_mut().fixture()?.set_supplies_for_test(1);
-        let settled = board.finish_turn_resources(1);
+        board.finish_turn_resources(1);
+        board.finish_turn_resources(2);
+        let settled = board.finish_turn_resources(3);
         let schema = juniper::RootNode::new(
             Query {
                 losses: settled.losses,

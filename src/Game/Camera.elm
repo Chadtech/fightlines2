@@ -33,7 +33,7 @@ setOffset offset model =
     { model | offset = offset }
 
 
-{-| The initial whole-map overview, shared by the board and command anchors.
+{-| The initial whole-map overview, shared by the board and order anchors.
 -}
 boardWidth : String
 boardWidth =

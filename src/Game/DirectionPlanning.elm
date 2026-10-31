@@ -36,7 +36,7 @@ type StationaryPurpose
 
 
 type InvariantViolation
-    = CommandUnitNotOnMap UnitId
+    = OrderUnitNotOnMap UnitId
 
 
 
@@ -76,7 +76,7 @@ preview direction planning =
                 AttackMove move direction
 
 
-{-| Stationary commands require a map position. A broken assumption retains no
+{-| Stationary orders require a map position. A broken assumption retains no
 order to save; the coordinator keeps the current drafts and selection.
 -}
 stationaryOrder :
@@ -105,7 +105,7 @@ stationaryOrder purpose unit direction =
                 )
 
         Nothing ->
-            IC.violated (CommandUnitNotOnMap unit.id) Nothing
+            IC.violated (OrderUnitNotOnMap unit.id) Nothing
 
 
 {-| The selected identity and confirmed route suffice to construct an attack

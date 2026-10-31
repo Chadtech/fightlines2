@@ -5,7 +5,7 @@ const sharp = require('sharp');
 const names = ['stand-ground', 'hold-position', 'move', 'attack-move', 'indirect-fire', 'dig-in', 'ambush', 'sabotage'];
 const root = path.resolve(__dirname, '..');
 const source = path.join(root, 'artwork/commands/anime-v1');
-const destination = path.join(root, 'public/assets/commands-anime-v1');
+const destination = path.join(root, 'public/assets/orders-anime-v1');
 
 async function main() {
     await fs.mkdir(destination, { recursive: true });
@@ -15,7 +15,7 @@ async function main() {
             .png()
             .toFile(path.join(destination, `${name}.png`));
     }
-    console.log(`Exported ${names.length} transparent command icons at 128px.`);
+    console.log(`Exported ${names.length} transparent order icons at 128px.`);
 }
 
 main().catch(error => {

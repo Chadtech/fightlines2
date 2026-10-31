@@ -516,7 +516,7 @@ pub fn validate(
     inputs: Vec<MoveOrderInput>,
 ) -> Result<Vec<MoveOrder>, &'static str> {
     // Read dependencies before validating individual orders so submission order
-    // cannot decide whether an infantry command starts aboard or at its exit.
+    // cannot decide whether an infantry order starts aboard or at its exit.
     let mut infantry_exits = BTreeMap::new();
     for truck in &inputs {
         let carrier = UnitId::parse(&truck.unit_id).ok_or("invalid unit id.")?;
@@ -666,6 +666,14 @@ pub fn validate(
                 scenario.map.tile_at(position).is_some_and(Terrain::is_road)
             }) {
                 return Err("infantry cannot dig in on roads.");
+            }
+            if unit.board_position().is_some_and(|position| {
+                scenario
+                    .depots
+                    .iter()
+                    .any(|depot| depot.position == position)
+            }) {
+                return Err("infantry cannot dig in on depots or fortresses.");
             }
             if path.len() != 1
                 || input.direction.is_some()
@@ -1466,10 +1474,10 @@ impl Turns {
                         .ok_or("the order references a missing unit.")?
                         .follow_terrain_path(&scenario.map, &event.path, 0);
                     events.push(event);
-                    if let Some(command) =
+                    if let Some(order) =
                         dismounts.iter().find(|plan| plan.unit_id == unload.unit_id)
                     {
-                        combat.activate(scenario, std::slice::from_ref(command));
+                        combat.activate(scenario, std::slice::from_ref(order));
                     }
                     frames.push(TurnFrame {
                         losses: Vec::new(),
@@ -1831,6 +1839,10 @@ mod tests {
             resolve_holds(&mut scenario, &mut turns)?;
             assert_eq!(turns.outcome, None);
             vehicle(&mut scenario, "4")?.set_supplies_for_test(4);
+            for _ in 0..2 {
+                resolve_holds(&mut scenario, &mut turns)?;
+                assert_eq!(turns.outcome, None);
+            }
             resolve_holds(&mut scenario, &mut turns)?;
             assert_eq!(
                 turns.outcome,
@@ -1861,6 +1873,10 @@ mod tests {
                 }
             }
             let mut turns = Turns::default();
+            for _ in 0..2 {
+                resolve_holds(&mut scenario, &mut turns)?;
+                assert_eq!(turns.outcome, None);
+            }
             resolve_holds(&mut scenario, &mut turns)?;
             let expected = if exhausted.len() == 2 {
                 GameOutcome::Draw
@@ -1886,7 +1902,7 @@ mod tests {
                 ),
                 Err("the game has ended.")
             );
-            assert_eq!(turns.number, 2);
+            assert_eq!(turns.number, 4);
             assert!(turns.orders.iter().all(Option::is_none));
             assert_eq!(scenario.units.len(), units.len());
             for (actual, before) in scenario.units.iter().zip(units) {
@@ -2195,6 +2211,7 @@ mod tests {
                     }
                     if unit.id() == "4" {
                         unit.set_supplies_for_test(4);
+                        unit.set_exhaustion_for_test(1);
                     }
                 }
             }
@@ -2243,6 +2260,7 @@ mod tests {
                 _ => {
                     unit.move_to(Coordinate::new(2, 0));
                     unit.set_supplies_for_test(4);
+                    unit.set_exhaustion_for_test(1);
                 }
             }
         }
@@ -2318,7 +2336,8 @@ mod tests {
                     .fixture()?;
                 assert_eq!(
                     attacker.supplies().current(),
-                    128 - turn * (4 + 8 + movement_cost)
+                    128 - turn
+                        * (4 + combat::rules(attacker.kind()).readiness_cost + movement_cost)
                 );
                 assert!(
                     turns
@@ -2337,7 +2356,10 @@ mod tests {
                     .iter()
                     .find(|report| report.player_number == PlayerNumber::Player1)
                     .fixture()?;
-                assert_eq!(report.supplies_consumed, 4 + 8 + movement_cost);
+                assert_eq!(
+                    report.supplies_consumed,
+                    4 + combat::rules(attacker.kind()).readiness_cost + movement_cost
+                );
                 let defender = scenario
                     .units
                     .iter()
@@ -2416,9 +2438,9 @@ mod tests {
         invalid[0].path.truncate(1);
         assert!(validate(&scenario, PlayerNumber::Player1, invalid).is_err());
         let mut low_supplies = scenario.clone();
-        low_supplies.units[0].spend_supplies(156);
+        low_supplies.units[0].set_supplies_for_test(29);
         assert!(validate(&low_supplies, PlayerNumber::Player1, attack(&low_supplies)?).is_err());
-        for (sketch, required) in [("....", 42), (".%%.", 50), (".##.", 50)] {
+        for (sketch, required) in [("....", 30), (".%%.", 38), (".##.", 38)] {
             let mut terrain_scenario = scenario.clone();
             terrain_scenario.map = Map::from_ascii(sketch).fixture()?;
             terrain_scenario.units[0].set_supplies_for_test(required - 1);
@@ -2459,8 +2481,8 @@ mod tests {
                 .find(|unit| unit.id() == "6")
                 .fixture()?;
             assert_eq!(attacker.board_position(), Some(Coordinate::new(1, 0)));
-            assert_eq!(attacker.supplies().current(), 159);
-            assert_eq!(target.hit_points().current(), 5);
+            assert_eq!(attacker.supplies().current(), 171);
+            assert_eq!(target.hit_points().current(), 2);
             assert_eq!(target.supplies().current(), 188);
             assert_eq!(
                 turns
@@ -2779,8 +2801,8 @@ mod tests {
             }
             assert_eq!(turns.number, 2);
             assert_eq!(scenario.units[0].hit_points().current(), 16);
-            assert_eq!(scenario.units[1].hit_points().current(), 5);
-            assert_eq!(scenario.units[0].supplies().current(), 168);
+            assert_eq!(scenario.units[1].hit_points().current(), 2);
+            assert_eq!(scenario.units[0].supplies().current(), 180);
             assert_eq!(scenario.units[1].supplies().current(), 188);
             assert_eq!(scenario.units[0].direction(), Some(Direction::East));
             let resolution = turns.last_resolution.as_ref().fixture()?;
@@ -2828,9 +2850,9 @@ mod tests {
     fn ambush_initial_contacts_resolve_after_their_submitted_movement() -> TestResult<()> {
         for first in [PlayerNumber::Player1, PlayerNumber::Player2] {
             for (destinations, damage) in [
-                (vec![], 9),
-                (vec![(9, 8)], 9),
-                (vec![(9, 8), (9, 7)], 9),
+                (vec![], 11),
+                (vec![(9, 8)], 11),
+                (vec![(9, 8), (9, 7)], 11),
                 (vec![(8, 7)], 0),
             ] {
                 let mut scenario = Scenario::supply_point().fixture()?;
@@ -2943,7 +2965,7 @@ mod tests {
             .iter_mut()
             .find(|unit| unit.id() == "12")
             .fixture()?
-            .take_damage(4);
+            .take_damage(6);
         let mut player1 = holds(&scenario, PlayerNumber::Player1)?;
         player1[0].ambush = Some(true);
         player1[0].direction = Some(Direction::East);
@@ -2965,14 +2987,14 @@ mod tests {
             .find(|unit| unit.id() == "6")
             .fixture()?;
         assert_eq!(passenger.board_position(), Some(Coordinate::new(8, 8)));
-        assert_eq!(passenger.hit_points().current(), 1);
+        assert_eq!(passenger.hit_points().current(), 2);
         assert_eq!(passenger.supplies().current(), 179);
         let gun = scenario
             .units
             .iter()
             .find(|unit| unit.id() == "12")
             .fixture()?;
-        assert_eq!(gun.hit_points().current(), 12);
+        assert_eq!(gun.hit_points().current(), 10);
         assert_eq!(gun.supplies().current(), 164);
         let resolution = turns.last_resolution.fixture()?;
         let unload_frame = resolution
@@ -3152,6 +3174,55 @@ mod tests {
     }
 
     #[test]
+    fn digging_rejects_buildings_and_wreckage_but_allows_adjacent_tiles() -> TestResult<()> {
+        let initial = MapDefinition::parse(
+            r#"{
+                "width": 3, "height": 3, "theme": "GreenForest",
+                "features": [], "depots": [],
+                "units": [
+                    {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "Player1", "kind": "Infantry", "direction": "East"},
+                    {"id": 2, "position": {"x": 2, "y": 2}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
+                ]
+            }"#,
+        )
+        .fixture()?
+        .scenario()
+        .fixture()?;
+        for kind in [
+            BuildingKind::Supply,
+            BuildingKind::Fuel,
+            BuildingKind::Fortress,
+        ] {
+            for destroyed in [false, true] {
+                for position in [Coordinate::new(0, 0), Coordinate::new(1, 0)] {
+                    let mut scenario = initial.clone();
+                    let mut depot = Depot::new(kind, position);
+                    if destroyed {
+                        depot.sabotage();
+                    }
+                    scenario.depots = vec![depot];
+                    let before = serde_json::to_value(&scenario)?;
+                    let mut inputs = holds(&scenario, PlayerNumber::Player1)?;
+                    inputs.first_mut().fixture()?.dig_in = Some(true);
+                    let mut turns = Turns::default();
+                    let result = turns.submit(&mut scenario, PlayerNumber::Player1, 1, inputs);
+                    if position == Coordinate::new(0, 0) {
+                        assert_eq!(
+                            result,
+                            Err("infantry cannot dig in on depots or fortresses.")
+                        );
+                        assert!(turns.orders.iter().all(Option::is_none));
+                        assert_eq!(serde_json::to_value(&scenario)?, before);
+                    } else {
+                        result?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn digging_rejects_combined_actions_and_insufficient_supplies() -> TestResult<()> {
         for action in 0..9 {
             let mut scenario = Scenario::supply_point().fixture()?;
@@ -3222,7 +3293,7 @@ mod tests {
         assert_eq!(scenario.units[0].direction(), Some(Direction::North));
         assert_eq!(
             scenario.units[0].supplies().current(),
-            original.supplies().current() - 12
+            original.supplies().current() - 8
         );
         let resolution = turns.last_resolution.as_ref().fixture()?;
         assert!(resolution.frames.iter().all(|frame| frame.shots.is_empty()));
@@ -3279,7 +3350,7 @@ mod tests {
         inputs[0].stand_ground = Some(true);
         inputs[0].direction = Some(Direction::North);
         assert!(validate(&aboard, PlayerNumber::Player1, inputs).is_err());
-        scenario.units[0].spend_supplies(184);
+        scenario.units[0].set_supplies_for_test(7);
         let mut inputs = holds(&scenario, PlayerNumber::Player1)?;
         inputs[0].stand_ground = Some(true);
         inputs[0].direction = Some(Direction::North);
@@ -3290,7 +3361,7 @@ mod tests {
                 .is_err()
         );
         assert!(turns.orders[0].is_none());
-        assert_eq!(scenario.units[0].supplies().current(), 8);
+        assert_eq!(scenario.units[0].supplies().current(), 7);
         Ok(())
     }
 
@@ -3310,7 +3381,7 @@ mod tests {
         orders[3].ambush = Some(true);
         orders[3].direction = Some(Direction::East);
         assert!(validate(&scenario, PlayerNumber::Player1, orders).is_err());
-        scenario.units[0].spend_supplies(184);
+        scenario.units[0].set_supplies_for_test(7);
         let mut orders = holds(&scenario, PlayerNumber::Player1)?;
         orders[0].ambush = Some(true);
         orders[0].direction = Some(Direction::East);
@@ -3321,7 +3392,7 @@ mod tests {
                 .is_err()
         );
         assert!(turns.orders[0].is_none());
-        assert_eq!(scenario.units[0].supplies().current(), 8);
+        assert_eq!(scenario.units[0].supplies().current(), 7);
         Ok(())
     }
 
@@ -3527,7 +3598,7 @@ mod tests {
     }
 
     #[test]
-    fn dismounted_infantry_gets_a_fresh_command_after_truck_movement() -> TestResult<()> {
+    fn dismounted_infantry_gets_a_fresh_order_after_truck_movement() -> TestResult<()> {
         for action in ["move", "attack", "ambush", "stand", "hold"] {
             let mut scenario = Scenario::supply_point().fixture()?;
             let truck = UnitId::parse("4").fixture()?;
@@ -3583,9 +3654,9 @@ mod tests {
                 - if action == "hold" || action == "move" {
                     0
                 } else {
-                    8
+                    4
                 }
-                - if action == "attack" { 12 } else { 0 };
+                - if action == "attack" { 4 } else { 0 };
             assert_eq!(infantry.supplies().current(), expected, "{action}");
             let resolution = turns.last_resolution.as_ref().fixture()?;
             let unload = resolution
@@ -3640,10 +3711,10 @@ mod tests {
     }
 
     #[test]
-    fn dismount_commands_reserve_unloading_cost_and_require_the_assigned_exit() -> TestResult<()> {
+    fn dismount_orders_reserve_unloading_cost_and_require_the_assigned_exit() -> TestResult<()> {
         let mut scenario = infantry_dismount_fixture()?;
         let infantry = vehicle(&mut scenario, "1")?;
-        infantry.spend_supplies(infantry.supplies().current() - 39);
+        infantry.set_supplies_for_test(29);
         let mut orders = infantry_dismount_inputs(&scenario)?;
         let order = orders
             .iter_mut()
@@ -3655,7 +3726,7 @@ mod tests {
             validate(&scenario, PlayerNumber::Player1, orders).err(),
             Some("not enough supplies to attack after moving.")
         );
-        vehicle(&mut scenario, "1")?.receive_supplies(9);
+        vehicle(&mut scenario, "1")?.receive_supplies(1);
         let mut orders = infantry_dismount_inputs(&scenario)?;
         let order = orders
             .iter_mut()
@@ -3678,7 +3749,7 @@ mod tests {
     }
 
     #[test]
-    fn blocked_transport_or_concealed_exit_cancels_the_dismount_command() -> TestResult<()> {
+    fn blocked_transport_or_concealed_exit_cancels_the_dismount_order() -> TestResult<()> {
         for blocked_truck in [true, false] {
             let mut scenario = infantry_dismount_fixture()?;
             let blocked = if blocked_truck {
@@ -3705,7 +3776,7 @@ mod tests {
     }
 
     #[test]
-    fn unloading_ambush_preserves_spent_shots_and_surviving_attack_commands() -> TestResult<()> {
+    fn unloading_ambush_preserves_spent_shots_and_surviving_attack_orders() -> TestResult<()> {
         for attacker in ["6", "14"] {
             let mut scenario = infantry_dismount_fixture()?;
             vehicle(&mut scenario, attacker)?.move_to(Coordinate::new(0, 9));
@@ -4212,16 +4283,16 @@ mod tests {
         turns
             .submit(&mut scenario, PlayerNumber::Player2, number, player2)
             .fixture()?;
-        assert!(!scenario.units.iter().any(|unit| unit.id() == "1"));
+        assert!(scenario.units.iter().any(|unit| unit.id() == "1"));
         let resolution = turns.last_resolution.as_ref().fixture()?;
-        let death_frame = &resolution.frames[resolution.frames.len() - 2];
-        let dead = death_frame
+        let exhaustion_frame = resolution.frames.last().fixture()?;
+        let exhausted = exhaustion_frame
             .units
             .iter()
             .find(|unit| unit.id() == "1")
             .fixture()?;
-        assert_eq!(dead.supplies().current(), 0);
-        assert_eq!(resolution.frames.last().fixture()?.duration_ms, 1400);
+        assert_eq!(exhausted.supplies().current(), 0);
+        assert_eq!(resolution.frames.last().fixture()?.duration_ms, 180);
         let visible = crate::visibility::visible_tiles(&scenario, PlayerNumber::Player1);
         let observed = crate::visibility::observed_resolution(
             &scenario,
@@ -4233,10 +4304,13 @@ mod tests {
             observed
                 .events
                 .iter()
-                .any(|event| event.unit_id == dead.unit_id())
+                .any(|event| event.unit_id == exhausted.unit_id())
         );
         assert!(
-            observed.frames[observed.frames.len() - 2]
+            observed
+                .frames
+                .last()
+                .fixture()?
                 .units
                 .iter()
                 .any(|unit| unit.id() == "1")
@@ -4251,7 +4325,14 @@ mod tests {
             assert_eq!(vehicle(&mut scenario, id)?.supplies().current(), 18);
         }
         // The gun spends 24 walking supplies and 4 upkeep, exhausting its 28.
-        assert!(!scenario.units.iter().any(|unit| unit.id() == "13"));
+        assert!(scenario.units.iter().any(|unit| unit.id() == "13"));
+        assert!(
+            resolution
+                .frames
+                .iter()
+                .all(|frame| frame.losses.is_empty())
+        );
+        assert!(!exhausted.destroyed());
         assert_eq!(vehicle(&mut scenario, "4")?.supplies().current(), 8);
         assert_eq!(vehicle(&mut scenario, "11")?.supplies().current(), 16);
         assert_eq!(vehicle(&mut scenario, "4")?.fuel().fixture()?.current, 126);
@@ -4285,7 +4366,7 @@ mod tests {
     }
 
     #[test]
-    fn supplies_reserve_upkeep_reject_movement_and_die_at_zero() -> TestResult<()> {
+    fn supplies_reserve_upkeep_reject_movement_and_die_after_exhaustion() -> TestResult<()> {
         let mut scenario = Scenario::supply_point().fixture()?;
         scenario.depots.clear();
         let mut turns = Turns::default();
@@ -4304,6 +4385,11 @@ mod tests {
             assert!(turns.orders[0].is_none());
             assert_eq!(vehicle(&mut scenario, id)?.supplies().current(), 4);
         }
+        resolve_holds(&mut scenario, &mut turns)?;
+        assert_eq!(turns.outcome, None);
+        assert!(scenario.units.iter().all(|unit| !unit.destroyed()));
+        resolve_holds(&mut scenario, &mut turns)?;
+        assert_eq!(turns.outcome, None);
         resolve_holds(&mut scenario, &mut turns)?;
         assert_eq!(turns.outcome, Some(GameOutcome::Draw));
         assert!(scenario.units.is_empty());

@@ -9,7 +9,7 @@ Rust owns the authoritative rules; this guide explains the intended behavior.
 - [Digging in](#digging-in) · [fuel](#fuel) · [transport](#transport-and-unloading)
 - [Sight and fog of war](#sight-and-fog-of-war)
 - [Supplies and replenishment](#supplies-and-replenishment)
-- [Commands and turn submission](#commands-and-turn-submission)
+- [Orders and turn submission](#orders-and-turn-submission)
 - [Ambush combat](#ambush-combat) · [attack move](#attack-move)
 - [Fuel depots and drums](#fuel-depots-and-drums) · [stand ground](#stand-ground)
 - [Mountains](#mountains) · [indirect fire and buildings](#indirect-fire-and-buildings)
@@ -57,8 +57,11 @@ observable indirect-fire guns. Hits and casualties wait until the last firing fi
 recovers, followed by a short travel beat. Units that only receive fire stay
 still. Live games and logged replays share this sequence.
 A `flank bonus` chip in a formation's outer top corner means its shot benefits
-from hitting a battle-ready defender from the side or rear. Return fire can earn
-its own chip. Older recordings without this shot metadata omit the indicator.
+from a direct shot hitting a battle-ready defender from the side (×1.5 damage)
+or rear (×2). Indirect fire ignores both units' facing and never earns this chip.
+Unready defenders take ×2 damage from every direction, with no additional flank
+bonus. Field guns and trucks always count as exposed defenders. Return fire can
+earn its own chip. Older recordings without this shot metadata omit the indicator.
 Sabotage opens a theater showing a demolition charge beside the structure over
 the tile’s terrain backdrop, then leaving the structure in wreckage. Supply-exhaustion
 losses open a separate theater where skulls and crossbones pulse slowly three times
@@ -125,7 +128,7 @@ and depots can also be selected with Tab and Enter/Space. Drag the battlefield
 with the primary mouse button to pan; scroll to zoom around the cursor. The right-side
 panel has selection details and unit actions; the bottom-left control panel has
 pan arrows, zoom and reset controls. Games open at 100%, centered on the whole-map overview.
-Reset restores this centered overview; zoom ranges from 35% to 300%. Arrow keys or WASD pan the map while the command popup is closed and no move or ambush direction is being chosen.
+Reset restores this centered overview; zoom ranges from 35% to 300%. Arrow keys or WASD pan the map while the order popup is closed and no move or ambush direction is being chosen.
 Plus/minus zoom without requiring battlefield focus; Home resets the view while the battlefield is focused. Dragging does not select a tile.
 The panel remains fixed while the board moves. Terrain uses detailed 80s anime
 illustrations, with a grass tile in every square, defined hill ridges and tree
@@ -151,12 +154,12 @@ neutral material colors and no team-colored outlines.
 Click the selected unit again to deselect it while keeping its saved move.
 Press Escape to clear the current selection and path preview while keeping saved moves.
 Press `.` to select the next of your on-board units without orders, cycling through
-them and opening its commands. Saved orders remain intact; the shortcut is inactive
+them and opening its orders. Saved orders remain intact; the shortcut is inactive
 while a dialog is open or orders are locked.
-While a unit's command menu is open, press `m` for move, `h` for hold position,
+While a unit's order menu is open, press `m` for move, `h` for hold position,
 `a` for attack move, `b` for ambush, `g` for stand ground, `i` for indirect fire,
-`d` for dig in, or `x` for sabotage. Each command shows its key beside its name.
-Keys immediately choose enabled commands; unavailable commands are ignored.
+`d` for dig in, or `x` for sabotage. Each order shows its key beside its name.
+Keys immediately choose enabled orders; unavailable orders are ignored.
 Up/down arrows or W/S still navigate the menu, and Escape cancels.
 Select one of your units, choose **move** to highlight reachable
 squares. Click a highlighted square to save a move. Hover across squares to preview your exact route; retrace
@@ -165,8 +168,8 @@ the remaining budget. If the traced route exceeds the budget, an affordable
 route from the unit is chosen when one exists. Saving stops hover previews and hides reachable-square highlights.
 Select the unit and choose the full-width **revoke order** button beneath its
 portrait to remove the saved plan and
-keep the unit selected with its command popup closed. Click the unit again to
-reopen commands, then choose **move** to trace a new route. Arrow keys or WASD extend or retrace the previewed route; Enter saves it without panning the map. Reachable squares support Tab and Enter/Space.
+keep the unit selected with its order popup closed. Click the unit again to
+reopen orders, then choose **move** to trace a new route. Arrow keys or WASD extend or retrace the previewed route; Enter saves it without panning the map. Reachable squares support Tab and Enter/Space.
 Press Escape or click the selected unit to leave movement selection. Paths remain visible when
 switching units. Unsubmitted plans are local drafts and disappear on refresh.
 Routes can pass through allied units or enemy starting positions; enemies encountered
@@ -189,7 +192,9 @@ ground, and facing changes; infantry and field guns do very little damage to
 them, while tanks retain their devastating damage. Entrenchment grants no
 automatic firing: choose ambush on later turns to intercept enemies. Successful
 movement or boarding removes it, leaving no trench behind; a move blocked before
-departure preserves it. Infantry cannot dig on roads or on their unloading turn.
+departure preserves it. Infantry cannot dig on roads, supply or fuel depots,
+fortresses, or building wreckage, or on their unloading turn. Adjacent tiles
+remain eligible.
 
 ## Fuel
 
@@ -232,17 +237,17 @@ leave the affected passengers aboard. An exit occupied by a concealed enemy can
 be submitted; if the enemy remains there at resolution, the passenger stays aboard
 and spends no unloading supplies. Revoking the truck's order also removes
 its unload choices.
-After choosing cargo exits, unloading infantry receive their normal command menu.
+After choosing cargo exits, unloading infantry receive their normal order menu.
 Plan a move, attack move, ambush, stand ground, or hold from the unload square.
 They receive a fresh movement allowance after dismounting, but pay both unloading
-and action supply costs, with upkeep charged once. Commands resolve after transport
+and action supply costs, with upkeep charged once. Orders resolve after transport
 and before indirect fire. Prepared ambushes can fire during unloading; a blocked
 exit, stopped truck, or dead passenger prevents the follow-up action. Field guns
-still only dismount. Press Escape during this command sequence to cancel the
-truck move, all unload choices, and any infantry commands already entered.
-After the last unloading infantry receives a command, the sequence is complete;
+still only dismount. Press Escape during this order sequence to cancel the
+truck move, all unload choices, and any infantry orders already entered.
+After the last unloading infantry receives an order, the sequence is complete;
 Escape then clears selection and keeps the saved plan. Revoking the truck order
-also revokes its infantry commands.
+also revokes its infantry orders.
 Enemy resources and passengers are concealed outside combat. Direct-fire
 encounters involving your units appear even when the enemy is concealed and reveal
 both participants’ before/after health; supplies and fuel stay hidden. Crate cargo is separate from the truck's own provisions.
@@ -296,12 +301,20 @@ field guns spend 24 supplies per tile. Tanks and trucks use fuel
 for movement and spend no movement supplies. Movement reserves the turn's upkeep before spending
 supplies. Infantry need at least 13 supplies for a plain or beach tile or 17 for hills, forest, or mountains; field guns need at least 28. Tank movement needs enough fuel but no additional supplies beyond upkeep.
 Units below these thresholds can still hold.
-Units die immediately when supplies reach zero after turn upkeep. A dead truck
-also loses its passengers. During playback, the unit vanishes beneath the combat
-theater's illustrated explosion: its sprite disappears at 50ms and the blast
-clears at 100ms. Reduced-motion mode briefly shows a steady impact and removes
-the sprite without fading. Other sprites and interface animations pause during
-death feedback; movement resumes after the existing casualty pause.
+Units become exhausted when supplies reach zero after turn upkeep. They remain
+alive at their current health but cannot fight, and have two full turns to receive
+supplies. For example, a unit exhausted at the end of turn 5 dies at the end of
+turn 7 if still unsupplied. Replenishment is checked before upkeep and countdown
+expiry; supplies must remain after upkeep to clear exhaustion. A delivery spent
+entirely on upkeep does not reset the countdown. A later exhaustion starts a fresh
+two-turn countdown. Exhausted units still occupy their square, provide sight, and
+count toward victory; ordinary movement, transport, and action costs still apply.
+A dead truck also loses its passengers, but an exhausted truck keeps them until
+it actually dies. Exhaustion deaths use the existing skull-and-crossbones theater.
+
+The low-supplies badge remains at 25% or less. At zero supplies it changes to a
+boxed `!`; selecting the unit shows how many turns remain to resupply. Enemy
+resource warnings and countdowns remain concealed.
 
 Depots start with 1024 finite supplies. Ground supply crates hold up to 256.
 At the end of each turn, after movement, transport, and combat, depots and ground
@@ -336,7 +349,7 @@ Select passengers, crates, or both, then choose their adjacent squares on the ma
 Cargo choices are disabled when the selected cargo cannot all be placed. Passengers
 need distinct free squares and sufficient supplies; crates may share squares with
 allied units and passenger exits, but not other crates or enemies.
-The inspector shows crate stock and saved destinations. Gold dotted squares mark planned crate exits. Loading and crate
+The inspector shows crate stock. Gold dotted squares mark planned crate exits. Loading and crate
 unloading cannot be combined in one turn. Revoke the truck order to clear the
 whole plan. A blocked truck or a crate exit occupied by an enemy or another crate
 leaves cargo aboard; competing loaders alternate player priority by turn and may receive less than planned
@@ -349,24 +362,28 @@ but stock is concealed outside sight. Previously seen ground crates and fuel dru
 remain darkened in fog, showing last-seen stock until the tile is visible again;
 enemy truck cargo stays concealed. Supplies do not restore hit points.
 
-## Commands and turn submission
+## Orders and turn submission
 
 The right panel opens when a unit, depot, or tile is selected and closes when
 selection clears. Selected units show their name and player, inset portrait,
-gauges, and resource details in the panel. Illustrated commands open in a popup beside
+gauges, and resource details in the panel. Illustrated orders open in a popup beside
 the selected unit on the board.
-The command popup’s info button opens a green inset, beveled, scrollable guide.
-Each row pairs its command sprite with the name and a paragraph explaining it,
-including commands not yet implemented. Close or Escape returns
+The order popup’s info button opens a green inset, beveled, scrollable guide.
+Each row pairs its order sprite with the name and a paragraph explaining it,
+including orders not yet implemented. Close or Escape returns
 to the popup without changing orders.
-Move and hold position appear first. Carried units have inspection details
-and no independent commands. While the
-popup is open, up/down arrows or W/S cycle available commands even before the list has
-focus; Enter or Space chooses the focused command. Cancel closes the popup
-and clears selection. These arrows do not pan the map. Unimplemented commands are disabled.
-Choosing move opens destination planning; **back to commands** cancels that
-preview. Choosing hold position or saving a destination replaces the command
-list with the chosen order and **revoke order**. Revoking returns to the commands.
+Available orders appear as move, attack move, ambush, hold position, indirect fire,
+stand ground, dig in, then sabotage. The guide and keyboard navigation use the same
+sequence, with dig in and sabotage grouped last as specialized actions.
+Carried units have inspection details
+and no independent orders. While the
+popup is open, up/down arrows or W/S cycle available orders even before the list has
+focus; Enter or Space chooses the focused order. Cancel closes the popup
+and clears selection. These arrows do not pan the map. Unimplemented orders are disabled.
+Choosing move opens destination planning; **cancel order (esc)** cancels that
+preview and clears selection, just like Escape. Choosing hold position or saving a
+destination replaces the order list with the chosen order and **revoke order**.
+Revoking returns to the orders.
 Escape clears selection without removing saved orders. Orders remain editable
 until the turn is submitted.
 
@@ -386,7 +403,7 @@ beneath submit at all times, empty while idle, with a solid gray bar while waiti
 for the other player. It sweeps smoothly left to right, fully exiting the
 track before looping from the left; reduced-motion
 settings keep these effects steady.
-Press Cmd+Enter (Ctrl+Enter on other platforms) to submit while no command menu,
+Press Cmd+Enter (Ctrl+Enter on other platforms) to submit while no order menu,
 move/direction selection, unload workflow, dialog, or pointer gesture is active.
 When the units-without-orders warning opens, Enter confirms **submit anyway**;
 Escape or **keep planning** returns to planning.
@@ -432,9 +449,10 @@ straight ahead, requiring their own or allied sight of the target. Field guns co
 all three squares straight ahead, plus the two squares beside the middle square,
 forming a five-square plus sign that rotates with the chosen direction.
 
-Ambush readiness costs 8 supplies in addition to normal turn upkeep. Firing costs
-12 supplies for infantry, 20 for field guns, and 24 for tanks; infantry deal 4 damage, tanks 8, and field guns 12. These are
-initial balance values. Readiness is charged even without a target, and upkeep
+Ambush readiness costs 4 supplies for infantry and 8 for tanks and field guns,
+in addition to normal turn upkeep. Firing costs 4 supplies for infantry, 20 for
+field guns, and 24 for tanks; infantry deal 4 damage, tanks 8, and field guns 12.
+These are initial balance values. Readiness is charged even without a target, and upkeep
 is reserved before firing. Units without enough supplies for readiness cannot
 choose ambush; a unit can maintain readiness without enough supplies to fire.
 Trucks and carried units cannot ambush. Ambush orders last for one resolved turn.
@@ -532,8 +550,9 @@ If allied traffic forces a participant back to a free square, direct fire occurs
 only if the participants are still cardinally adjacent after that adjustment.
 Opposing attack movers fire simultaneously; other orders do not gain automatic
 return fire. Only successful edges spend movement
-resources. Attack move and ambush both spend 8 readiness supplies per turn,
-even without an encounter. Planning reserves readiness, the shot cost, and
+resources. Attack move and ambush both spend 4 readiness supplies per turn for
+infantry and 8 for tanks, even without an encounter.
+Planning reserves readiness, the shot cost, and
 upkeep; a route without an encounter spends no firing supplies. Combat events use the existing theater,
 with an `attack move` heading and the usual fog-safe encounter portraits.
 
@@ -565,8 +584,9 @@ Choose **stand ground** for infantry, tanks, or field guns to stay in place.
 Infantry and tanks gain defensive readiness; exposed field-gun crews gain no
 damage reduction from preparation. Choose its direction on the map or with an
 arrow key / WASD, just like ambush. It never fires and costs normal upkeep plus
-8 readiness supplies each turn. Choosing a direction saves the order, which
-counts toward turn readiness and can be revoked before submission. Trucks and
+4 readiness supplies for infantry or 8 for tanks and field guns each turn.
+Choosing a direction saves the order, which counts toward turn readiness and
+can be revoked before submission. Trucks and
 passengers cannot stand ground.
 
 ## Mountains
@@ -583,6 +603,10 @@ theater scenes currently reuse the corresponding hill backdrops. Existing map
 layouts are unchanged; place mountains with `^` in a scenario's ASCII sketch.
 
 ## Indirect fire and buildings
+
+Indirect fire ignores both the gun's facing and the defender's facing. It receives
+no side or rear bonus. Readiness, relative health, terrain cover, trenches, and
+fortress protection still affect damage.
 
 Depots and fortresses can be destroyed by indirect fire or infantry sabotage.
 Fuel depots have 1 HP, supply depots 3 HP, and fortresses 8 HP.

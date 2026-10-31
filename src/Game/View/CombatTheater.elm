@@ -930,8 +930,7 @@ theaterView calibrations automaticallyClose visibleTiles depots map panel =
                     ]
                 ]
                 [ Card.toHtml card
-                    [ explanation
-                    , H.div
+                    [ H.div
                         [ A.css
                             [ S.grid
                             , S.g3
@@ -940,6 +939,7 @@ theaterView calibrations automaticallyClose visibleTiles depots map panel =
                             ]
                         ]
                         portraits
+                    , explanation
                     , H.div
                         [ A.css
                             [ S.row
@@ -1392,7 +1392,7 @@ sabotageScene scenery panel building =
                     , SA.y "42"
                     , SA.width "10"
                     , SA.height "10"
-                    , SA.xlinkHref "/assets/commands-anime-v1/sabotage.png"
+                    , SA.xlinkHref "/assets/orders-anime-v1/sabotage.png"
                     ]
                     []
                 ]

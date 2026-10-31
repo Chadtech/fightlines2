@@ -21,6 +21,7 @@ import Url.Parser as P
 
 type Route
     = Home
+    | CombatChart
     | BackdropReview
     | MapEditor
     | LoggedGames
@@ -36,6 +37,7 @@ parser : Parser (Route -> a) a
 parser =
     P.oneOf
         [ P.map Home P.top
+        , P.map CombatChart (P.s "combat-chart")
         , P.map BackdropReview (P.s "backdrop-review")
         , P.map LoggedGames (P.s "logged-games")
         , P.map Replay (P.s "logged-games" </> P.custom "gameLogId" (GameLogId.parse >> Result.toMaybe))
@@ -62,6 +64,9 @@ toString route =
 
                 Replay id ->
                     [ "logged-games", GameLogId.toString id ]
+
+                CombatChart ->
+                    [ "combat-chart" ]
 
                 BackdropReview ->
                     [ "backdrop-review" ]

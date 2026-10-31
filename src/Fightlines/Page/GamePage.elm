@@ -44,9 +44,9 @@ import Effect as E
 import Error exposing (Error)
 import Fightlines.Route as Route
 import Fightlines.Shared as Shared
-import Fightlines.View.CommandGuide as CommandGuide
-import Fightlines.View.CommandMenu as CommandMenu
 import Fightlines.View.GameMenu as GameMenu
+import Fightlines.View.OrderGuide as OrderGuide
+import Fightlines.View.OrderMenu as OrderMenu
 import Fightlines.View.TurnIntroduction as TurnIntroduction
 import Fightlines.View.UnloadPassenger as UnloadPassenger
 import Game.AnimationFrame as AnimationFrame
@@ -91,8 +91,8 @@ import Game.Turn as Turn
 import Game.TurnLifecycle as TurnLifecycle exposing (Phase)
 import Game.TurnPlayback as TurnPlayback
 import Game.Unit as Unit exposing (Unit)
-import Game.UnitCommand as UnitCommand
 import Game.UnitId as UnitId exposing (UnitId)
+import Game.UnitOrder as UnitOrder
 import Game.UnloadCargo as UnloadCargo exposing (UnloadCargo)
 import Game.UnloadPlanning
     exposing
@@ -172,6 +172,7 @@ type alias Model =
     , frame : AnimationFrame.Frame
     , resigning : Bool
     , menuOpen : Bool
+    , unitHelp : Maybe UnitStatus.Help
     }
 
 
@@ -211,11 +212,11 @@ type Msg
     | WindowResized
     | BattlefieldMsg Battlefield.Msg
     | BattlefieldNavigationMsg BattlefieldNavigation.Msg
-    | CommandMenuMsg CommandMenu.Msg
+    | OrderMenuMsg OrderMenu.Msg
     | GameMenuMsg GameMenu.Msg
-    | PreviousCommandPressed
-    | NextCommandPressed
-    | CommandFocusCompleted (Result Browser.Dom.Error ())
+    | PreviousOrderPressed
+    | NextOrderPressed
+    | OrderFocusCompleted (Result Browser.Dom.Error ())
     | PanLeftKeyPressed
     | PanRightKeyPressed
     | PanUpKeyPressed
@@ -231,7 +232,7 @@ type Msg
     | PathEnterPressed
     | NextUnorderedUnitKeyPressed
     | ClearMoveClicked
-    | BackToCommandsClicked
+    | CancelOrderClicked
     | CargoUnitClicked UnitId
     | LoadCratesClicked UnitId Int
     | GroundFreightPickupClicked
@@ -241,6 +242,8 @@ type Msg
     | UnloadSkipped
     | InspectClicked
     | InspectorCloseClicked
+    | UnitHelpClicked UnitStatus.Help
+    | UnitHelpFocusReturned (Result Browser.Dom.Error ())
     | EscapePressed
     | DialogDismissed
     | SubmissionCancelled
@@ -322,6 +325,7 @@ init shared flags =
             , frame = AnimationFrame.first
             , resigning = False
             , menuOpen = False
+            , unitHelp = Nothing
             }
 
         eff : Eff Msg
@@ -580,7 +584,10 @@ isChoosingUnload model =
 
 dismissDialog : Model -> Model
 dismissDialog model =
-    if model.menuOpen then
+    if model.unitHelp /= Nothing then
+        { model | unitHelp = Nothing }
+
+    else if model.menuOpen then
         model
             |> setMenuOpen False
 
@@ -592,8 +599,20 @@ dismissDialog model =
         model
             |> mapPlanning
                 (OrderPlanning.dismissDialog
-                    >> OrderPlanning.promptDismountedCommands model.map model.units
+                    >> OrderPlanning.promptDismountedOrders model.map model.units
                 )
+
+
+dismissUnitHelp : Model -> ( Model, Eff Msg )
+dismissUnitHelp model =
+    case model.unitHelp of
+        Just help ->
+            ( { model | unitHelp = Nothing }
+            , E.focus { htmlId = UnitStatus.buttonHtmlId help } UnitHelpFocusReturned
+            )
+
+        Nothing ->
+            E.withOut model
 
 
 partialOrdersDialogHtmlId : String
@@ -601,10 +620,10 @@ partialOrdersDialogHtmlId =
     "submit-turn-warning"
 
 
-commandGuideOpen : Model -> Bool
-commandGuideOpen model =
+orderGuideOpen : Model -> Bool
+orderGuideOpen model =
     TurnLifecycle.planning model.currentTurn.phase
-        |> Maybe.map OrderPlanning.commandGuideOpen
+        |> Maybe.map OrderPlanning.orderGuideOpen
         |> Maybe.withDefault False
 
 
@@ -681,11 +700,14 @@ recordLossDetailsErrorIfPresent model =
 
 activeDialogHtmlId : Model -> Maybe String
 activeDialogHtmlId model =
-    if model.menuOpen then
+    if model.unitHelp /= Nothing then
+        Just UnitStatus.dialogHtmlId
+
+    else if model.menuOpen then
         Just GameMenu.dialogHtmlId
 
-    else if commandGuideOpen model then
-        Just CommandGuide.dialogHtmlId
+    else if orderGuideOpen model then
+        Just OrderGuide.dialogHtmlId
 
     else if showTurnIntroduction model then
         Just TurnIntroduction.dialogHtmlId
@@ -797,18 +819,18 @@ isOwnUnit model unit =
     OrderPlanning.isOwnUnit (ownPlayerNumbers model) unit
 
 
-applyCommand : UnitCommand.Command -> Model -> Model
-applyCommand command model =
+applyOrder : UnitOrder.Order -> Model -> Model
+applyOrder order model =
     model
         |> mapCheckedPlanning
-            (OrderPlanning.applyCommand
+            (OrderPlanning.applyOrder
                 model.map
                 model.units
                 (ownPlayerNumbers model)
                 model.movementRules
                 (visibleSupplyCrates model)
                 model.depots
-                command
+                order
             )
 
 
@@ -838,17 +860,17 @@ plannedUnloadRoutes model =
     List.concatMap truckUnloads (plannedOrders model)
 
 
-focusedCommand : Model -> Maybe UnitCommand.MenuOption
-focusedCommand model =
+focusedOrder : Model -> Maybe UnitOrder.MenuOption
+focusedOrder model =
     TurnLifecycle.planning model.currentTurn.phase
-        |> Maybe.andThen OrderPlanning.focusedCommand
+        |> Maybe.andThen OrderPlanning.focusedOrder
 
 
-commandMenuUnit : Model -> Maybe Unit
-commandMenuUnit model =
+orderMenuUnit : Model -> Maybe Unit
+orderMenuUnit model =
     TurnLifecycle.planning model.currentTurn.phase
         |> Maybe.andThen
-            (OrderPlanning.commandMenuUnit model.map model.units)
+            (OrderPlanning.orderMenuUnit model.map model.units)
 
 
 submitRequest : LobbyId -> Model -> Graphql.Http.Request Snapshot
@@ -985,11 +1007,11 @@ setSelection selected model =
         |> setCurrentTurn (CurrentTurn.setSelection selected model.currentTurn)
 
 
-focusCommand : UnitCommand.MenuOption -> Model -> Model
-focusCommand command model =
+focusOrder : UnitOrder.MenuOption -> Model -> Model
+focusOrder order model =
     model
         |> mapPlanning
-            (OrderPlanning.focusCommand model.map model.units command)
+            (OrderPlanning.focusOrder model.map model.units order)
 
 
 revokeSelectedOrder : Model -> Model
@@ -1035,7 +1057,7 @@ rotationSelection model =
                             Unit.mapPosition unit
                                 |> Maybe.map (atPosition unit.id direction)
 
-                CommandMenu _ ->
+                OrderMenu _ ->
                     Nothing
 
                 ChoosingIndirectFire _ ->
@@ -1240,48 +1262,48 @@ confirmPath model =
             )
 
 
-focusAdjacentCommand :
-    (List UnitCommand.MenuOption -> List UnitCommand.MenuOption)
-    -> Maybe UnitCommand.MenuOption
+focusAdjacentOrder :
+    (List UnitOrder.MenuOption -> List UnitOrder.MenuOption)
+    -> Maybe UnitOrder.MenuOption
     -> Model
     -> Eff Msg
-focusAdjacentCommand orderCommands current model =
+focusAdjacentOrder arrangeOptions current model =
     let
-        afterCurrent : List UnitCommand.MenuOption -> List UnitCommand.MenuOption
+        afterCurrent : List UnitOrder.MenuOption -> List UnitOrder.MenuOption
         afterCurrent remaining =
             case remaining of
                 [] ->
                     []
 
-                command :: rest ->
-                    if Just command == current then
+                order :: rest ->
+                    if Just order == current then
                         rest
 
                     else
                         afterCurrent rest
     in
-    case commandMenuUnit model of
+    case orderMenuUnit model of
         Just unit ->
             let
-                commands : List UnitCommand.MenuOption
-                commands =
-                    UnitCommand.enabledOptions model.map model.depots unit
-                        |> orderCommands
+                orders : List UnitOrder.MenuOption
+                orders =
+                    UnitOrder.enabledOptions model.map model.depots unit
+                        |> arrangeOptions
 
-                adjacent : Maybe UnitCommand.MenuOption
+                adjacent : Maybe UnitOrder.MenuOption
                 adjacent =
-                    case afterCurrent commands |> List.head of
-                        Just command ->
-                            Just command
+                    case afterCurrent orders |> List.head of
+                        Just order ->
+                            Just order
 
                         Nothing ->
-                            List.head commands
+                            List.head orders
             in
             case adjacent of
-                Just command ->
+                Just order ->
                     E.focus
-                        { htmlId = CommandMenu.optionHtmlId command }
-                        CommandFocusCompleted
+                        { htmlId = OrderMenu.optionHtmlId order }
+                        OrderFocusCompleted
 
                 Nothing ->
                     E.none
@@ -1671,7 +1693,7 @@ withLayoutMeasurement previous next =
 closeMenuForTurnIntroduction : Model -> Model
 closeMenuForTurnIntroduction model =
     if showTurnIntroduction model then
-        model
+        { model | unitHelp = Nothing }
             |> setMenuOpen False
 
     else
@@ -1681,7 +1703,7 @@ closeMenuForTurnIntroduction model =
 startPlayback : Model -> ( Model, Eff Msg )
 startPlayback model =
     remeasureWorkspace
-        (model
+        ({ model | unitHelp = Nothing }
             |> setMenuOpen False
         )
 
@@ -1977,7 +1999,7 @@ update lobbyId msg model =
             model
                 |> mapCheckedPlanning
                     (OrderPlanning.confirmGroundPickup
-                        >> IC.map (OrderPlanning.promptDismountedCommands model.map model.units)
+                        >> IC.map (OrderPlanning.promptDismountedOrders model.map model.units)
                     )
                 |> E.withOut
 
@@ -1992,7 +2014,7 @@ update lobbyId msg model =
                         |> mapCheckedPlanning
                             (OrderPlanning.dismissDialog
                                 >> saveCrateLoading id count
-                                >> IC.map (OrderPlanning.promptDismountedCommands model.map model.units)
+                                >> IC.map (OrderPlanning.promptDismountedOrders model.map model.units)
                             )
                         |> E.withOut
 
@@ -2026,17 +2048,17 @@ update lobbyId msg model =
                     (OrderPlanning.selectNextUnorderedUnit model.map model.units (ownPlayerNumbers model))
                 |> E.withOut
 
-        CommandMenuMsg commandMsg ->
+        OrderMenuMsg orderMsg ->
             model
-                |> handleCommandMsg commandMsg
+                |> handleOrderMsg orderMsg
 
-        PreviousCommandPressed ->
-            ( model, focusAdjacentCommand List.reverse (focusedCommand model) model )
+        PreviousOrderPressed ->
+            ( model, focusAdjacentOrder List.reverse (focusedOrder model) model )
 
-        NextCommandPressed ->
-            ( model, focusAdjacentCommand identity (focusedCommand model) model )
+        NextOrderPressed ->
+            ( model, focusAdjacentOrder identity (focusedOrder model) model )
 
-        CommandFocusCompleted result ->
+        OrderFocusCompleted result ->
             recordFocusResult result model |> E.withOut
 
         DirectionKeyPressed direction ->
@@ -2054,14 +2076,9 @@ update lobbyId msg model =
                 |> confirmPath
                 |> E.withOut
 
-        BackToCommandsClicked ->
+        CancelOrderClicked ->
             model
-                |> mapCheckedPlanning
-                    (OrderPlanning.restoreCommands
-                        model.map
-                        model.units
-                        (ownPlayerNumbers model)
-                    )
+                |> mapCheckedPlanning (OrderPlanning.cancelInteraction model.map model.units)
                 |> E.withOut
 
         ClearMoveClicked ->
@@ -2079,8 +2096,22 @@ update lobbyId msg model =
                 |> clearSelection
                 |> E.withOut
 
+        UnitHelpClicked help ->
+            if hasDialog model then
+                E.withOut model
+
+            else
+                { model | unitHelp = Just help }
+                    |> E.withOut
+
+        UnitHelpFocusReturned result ->
+            recordFocusResult result model |> E.withOut
+
         EscapePressed ->
-            if model.menuOpen || showTurnIntroduction model then
+            if model.unitHelp /= Nothing then
+                dismissUnitHelp model
+
+            else if model.menuOpen || showTurnIntroduction model then
                 model
                     |> dismissDialog
                     |> E.withOut
@@ -2099,9 +2130,13 @@ update lobbyId msg model =
             handleTurnControlsMsg lobbyId turnControlsMsg model
 
         DialogDismissed ->
-            model
-                |> dismissDialog
-                |> E.withOut
+            if model.unitHelp /= Nothing then
+                dismissUnitHelp model
+
+            else
+                model
+                    |> dismissDialog
+                    |> E.withOut
 
         SubmissionCancelled ->
             case model.currentTurn.phase of
@@ -2436,50 +2471,50 @@ playAudio msg model =
                 BattlefieldNavigation.WindowVisibilityChanged _ ->
                     Audio.none
 
-        CommandMenuMsg commandMsg ->
-            case commandMsg of
-                CommandMenu.MenuPressed ->
+        OrderMenuMsg orderMsg ->
+            case orderMsg of
+                OrderMenu.MenuPressed ->
                     Audio.none
 
-                CommandMenu.InfoClicked ->
+                OrderMenu.InfoClicked ->
                     Audio.uiAffirm
 
-                CommandMenu.CancelClicked ->
+                OrderMenu.CancelClicked ->
                     Audio.uiCancel
 
-                CommandMenu.CommandFocused _ ->
+                OrderMenu.OrderFocused _ ->
                     Audio.none
 
-                CommandMenu.CommandPicked command ->
-                    case command of
-                        UnitCommand.StandGround ->
+                OrderMenu.OrderPicked order ->
+                    case order of
+                        UnitOrder.StandGround ->
                             Audio.uiAffirm
 
-                        UnitCommand.HoldPosition ->
+                        UnitOrder.HoldPosition ->
                             Audio.uiConfirm
 
-                        UnitCommand.Move ->
+                        UnitOrder.Move ->
                             Audio.uiAffirm
 
-                        UnitCommand.AttackMove ->
+                        UnitOrder.AttackMove ->
                             Audio.uiAffirm
 
-                        UnitCommand.IndirectFire ->
+                        UnitOrder.IndirectFire ->
                             Audio.uiAffirm
 
-                        UnitCommand.Sabotage ->
+                        UnitOrder.Sabotage ->
                             Audio.uiConfirm
 
-                        UnitCommand.DigIn ->
+                        UnitOrder.DigIn ->
                             Audio.uiConfirm
 
-                        UnitCommand.Ambush ->
+                        UnitOrder.Ambush ->
                             Audio.uiAffirm
 
-                CommandMenu.ArrowedUpCommandMenu _ ->
+                OrderMenu.ArrowedUpOrderMenu _ ->
                     Audio.uiAffirm
 
-                CommandMenu.ArrowedDownCommandMenu _ ->
+                OrderMenu.ArrowedDownOrderMenu _ ->
                     Audio.uiAffirm
 
         GameMenuMsg menuMsg ->
@@ -2499,13 +2534,13 @@ playAudio msg model =
                 GameMenu.HomeClicked ->
                     Audio.uiConfirm
 
-        PreviousCommandPressed ->
+        PreviousOrderPressed ->
             Audio.uiAffirm
 
-        NextCommandPressed ->
+        NextOrderPressed ->
             Audio.uiAffirm
 
-        CommandFocusCompleted _ ->
+        OrderFocusCompleted _ ->
             Audio.none
 
         PanLeftKeyPressed ->
@@ -2580,7 +2615,7 @@ playAudio msg model =
         ClearMoveClicked ->
             Audio.uiAffirm
 
-        BackToCommandsClicked ->
+        CancelOrderClicked ->
             Audio.uiCancel
 
         CargoUnitClicked _ ->
@@ -2621,6 +2656,12 @@ playAudio msg model =
 
         InspectorCloseClicked ->
             Audio.uiCancel
+
+        UnitHelpClicked _ ->
+            Audio.uiAffirm
+
+        UnitHelpFocusReturned _ ->
+            Audio.none
 
         EscapePressed ->
             Audio.uiCancel
@@ -2962,44 +3003,44 @@ applyPlaybackFrame next model =
         |> setVisibleTiles next.frame.visibleTiles
 
 
-handleCommandMsg : CommandMenu.Msg -> Model -> ( Model, Eff Msg )
-handleCommandMsg commandMsg model =
-    case commandMsg of
-        CommandMenu.MenuPressed ->
+handleOrderMsg : OrderMenu.Msg -> Model -> ( Model, Eff Msg )
+handleOrderMsg orderMsg model =
+    case orderMsg of
+        OrderMenu.MenuPressed ->
             model |> E.withOut
 
-        CommandMenu.InfoClicked ->
+        OrderMenu.InfoClicked ->
             if hasDialog model then
                 model |> E.withOut
 
             else
                 model
-                    |> mapPlanning (OrderPlanning.openCommandGuide model.map model.units (ownPlayerNumbers model))
+                    |> mapPlanning (OrderPlanning.openOrderGuide model.map model.units (ownPlayerNumbers model))
                     |> E.withOut
 
-        CommandMenu.CancelClicked ->
+        OrderMenu.CancelClicked ->
             model
                 |> clearSelection
                 |> E.withOut
 
-        CommandMenu.CommandFocused command ->
+        OrderMenu.OrderFocused order ->
             model
-                |> focusCommand command
+                |> focusOrder order
                 |> E.withOut
 
-        CommandMenu.CommandPicked command ->
+        OrderMenu.OrderPicked order ->
             model
-                |> applyCommand command
+                |> applyOrder order
                 |> E.withOut
 
-        CommandMenu.ArrowedUpCommandMenu current ->
+        OrderMenu.ArrowedUpOrderMenu current ->
             ( model
-            , focusAdjacentCommand List.reverse (Just current) model
+            , focusAdjacentOrder List.reverse (Just current) model
             )
 
-        CommandMenu.ArrowedDownCommandMenu current ->
+        OrderMenu.ArrowedDownOrderMenu current ->
             ( model
-            , focusAdjacentCommand identity (Just current) model
+            , focusAdjacentOrder identity (Just current) model
             )
 
 
@@ -3052,7 +3093,7 @@ battlefieldView model =
                 |> H.fromUnstyled
             ]
             |> H.map BattlefieldMsg
-        , commandMenu model
+        , orderMenu model
         ]
 
 
@@ -3132,7 +3173,7 @@ battlefieldInteraction model =
                         ChoosingDirection planning ->
                             battlefieldDirection unit planning
 
-                        CommandMenu _ ->
+                        OrderMenu _ ->
                             Battlefield.Inspecting
 
                 _ ->
@@ -3208,28 +3249,28 @@ view model =
         }
 
 
-commandMenu : Model -> Html Msg
-commandMenu model =
+orderMenu : Model -> Html Msg
+orderMenu model =
     let
         menuUnit : Maybe Unit
         menuUnit =
-            if commandGuideOpen model then
+            if orderGuideOpen model then
                 selectedUnit model
 
             else
-                commandMenuUnit model
+                orderMenuUnit model
     in
     case menuUnit of
         Just unit ->
             case Unit.physicalPosition model.units unit of
                 Just position ->
-                    CommandMenu.toHtml
+                    OrderMenu.toHtml
                         model.depots
                         model.map
                         (BattlefieldNavigation.camera model.navigation)
                         position
                         unit
-                        |> H.map CommandMenuMsg
+                        |> H.map OrderMenuMsg
 
                 Nothing ->
                     H.text ""
@@ -3240,6 +3281,26 @@ commandMenu model =
 
 selectionView : Model -> Html Msg
 selectionView model =
+    case unloadPlanning model.currentTurn.phase of
+        Just planning ->
+            case planning.cargo of
+                UnloadCargo.Crate index ->
+                    model.units
+                        |> ListUtil.find (\unit -> unit.id == UnloadingTruck.unitId planning.truck)
+                        |> Maybe.andThen .resources
+                        |> Maybe.andThen (.supplyCargo >> List.drop index >> List.head)
+                        |> Maybe.map (BattlefieldInspection.unloadingFreight index)
+                        |> Maybe.withDefault (battlefieldSelectionView model)
+
+                UnloadCargo.Passenger _ ->
+                    battlefieldSelectionView model
+
+        Nothing ->
+            battlefieldSelectionView model
+
+
+battlefieldSelectionView : Model -> Html Msg
+battlefieldSelectionView model =
     let
         inspectedUnit : Maybe Unit
         inspectedUnit =
@@ -3268,10 +3329,20 @@ selectionView model =
                         |> ListUtil.find (\original -> original.id == unit.id)
                         |> Maybe.withDefault unit
 
-                revoke : Maybe Msg
-                revoke =
+                canCancelOrder : Bool
+                canCancelOrder =
+                    (Maybe.map .id (selectedUnit model) == Just unit.id)
+                        && ((pathPreview model /= Nothing)
+                                || (choosingDirection model && not (choosingAmbush model))
+                           )
+
+                portraitAction : Maybe (UnitStatus.Action Msg)
+                portraitAction =
                     if canRevokeOrder model unit then
-                        Just ClearMoveClicked
+                        Just (UnitStatus.RevokeOrder ClearMoveClicked)
+
+                    else if canCancelOrder then
+                        Just (UnitStatus.CancelOrder CancelOrderClicked)
 
                     else
                         Nothing
@@ -3279,13 +3350,13 @@ selectionView model =
                 content : List (Html Msg)
                 content =
                     [ UnitStatus.toHtml
+                        { onHelp = UnitHelpClicked }
                         (ownerName model unit |> Maybe.withDefault "")
                         authoritativeUnit
-                        revoke
+                        portraitAction
                     , BattlefieldInspection.cargo
                         { units = model.units
                         , ownPlayers = ownPlayerNumbers model
-                        , orders = plannedOrders model
                         , onSelectPassenger = CargoUnitClicked
                         }
                         unit
@@ -3338,26 +3409,7 @@ movementView model =
                         ]
 
                     else if isChoosingUnload model then
-                        let
-                            unloadingCargoLabel : String
-                            unloadingCargoLabel =
-                                case
-                                    unloadPlanning model.currentTurn.phase
-                                        |> Maybe.map .cargo
-                                of
-                                    Just (UnloadCargo.Crate index) ->
-                                        "cargo " ++ String.fromInt (index + 1)
-
-                                    _ ->
-                                        Unit.label unit
-                        in
-                        [ H.p
-                            []
-                            [ H.text ("choose an adjacent square to unload " ++ unloadingCargoLabel)
-                            ]
-                        , Button.primary "skip remaining cargo" UnloadSkipped
-                            |> Button.toHtml
-                        ]
+                        []
 
                     else if Unit.carrierId unit /= Nothing then
                         transportDetails model unit
@@ -3384,14 +3436,10 @@ movementView model =
                         [ H.p [] [ H.text "choose a stand ground direction on the map, or press an arrow key / wasd" ]
                         , H.p [] [ H.text "combat ready when attacked; does not fire" ]
                         , H.p [] [ H.text ("supplies: normal upkeep + " ++ String.fromInt unit.combatRules.readinessCost ++ " readiness") ]
-                        , Button.primary "back to commands" BackToCommandsClicked
-                            |> Button.toHtml
                         ]
 
                     else if choosingDirection model then
                         [ H.p [] [ H.text "choose final attack direction around the destination. click to save, or press an arrow key or wasd." ]
-                        , Button.primary "back to commands" BackToCommandsClicked
-                            |> Button.toHtml
                         ]
 
                     else
@@ -3460,30 +3508,6 @@ unitOrderView model unit =
     case ( pathPreview model, maybePlan ) of
         ( Just preview, _ ) ->
             let
-                budget : String
-                budget =
-                    let
-                        ruleAppliesToUnit : Movement.Rule -> Bool
-                        ruleAppliesToUnit rule =
-                            rule.kind == unit.kind
-                    in
-                    model.movementRules
-                        |> ListUtil.find ruleAppliesToUnit
-                        |> Maybe.map (.budget >> Movement.pointsLabel)
-                        |> Maybe.withDefault "?"
-
-                previewDetails : List (Html Msg)
-                previewDetails =
-                    [ H.p
-                        []
-                        [ H.text "choose a destination on the map"
-                        ]
-                    , H.p
-                        []
-                        [ H.text ("movement: " ++ Movement.pointsLabel preview.cost ++ " / " ++ budget)
-                        ]
-                    ]
-
                 attackPlanning : Bool
                 attackPlanning =
                     TurnLifecycle.planning model.currentTurn.phase
@@ -3494,18 +3518,12 @@ unitOrderView model unit =
                 loadingDetails : List (Html Msg)
                 loadingDetails =
                     if attackPlanning then
-                        [ H.p [] [ H.text "stops at the first enemy and attacks. allies are passable." ] ]
+                        []
 
                     else
                         loadingNotice model unit preview.destination
-
-                controls : List (Html Msg)
-                controls =
-                    [ Button.primary "back to commands" BackToCommandsClicked
-                        |> Button.toHtml
-                    ]
             in
-            previewDetails ++ loadingDetails ++ controls
+            loadingDetails
 
         ( Nothing, Just plan ) ->
             let
@@ -4227,17 +4245,23 @@ depotLoadingDialog model id source =
         content
 
 
-{-| Dialogs derive from the game menu, command guide, turn introduction, playback loss, or the active planning workflow.
+{-| Dialogs derive from inspector help, the game menu, order guide, turn introduction, playback loss, or the active planning workflow.
 -}
 dialog : Model -> Maybe (Dialog Msg)
 dialog model =
     MaybeUtil.lazyFirst
-        [ gameMenuDialog model
-        , commandGuideDialog model
+        [ unitHelpDialog model
+        , gameMenuDialog model
+        , orderGuideDialog model
         , introductionDialog model
         , lossDialog model
         , planningDialog model
         ]
+
+
+unitHelpDialog : Model -> () -> Maybe (Dialog Msg)
+unitHelpDialog model _ =
+    Maybe.map (UnitStatus.dialog DialogDismissed) model.unitHelp
 
 
 gameMenuDialog : Model -> () -> Maybe (Dialog Msg)
@@ -4264,11 +4288,11 @@ gameMenuDialog model _ =
         Nothing
 
 
-commandGuideDialog : Model -> () -> Maybe (Dialog Msg)
-commandGuideDialog model _ =
-    if commandGuideOpen model then
+orderGuideDialog : Model -> () -> Maybe (Dialog Msg)
+orderGuideDialog model _ =
+    if orderGuideOpen model then
         Just
-            (CommandGuide.dialog DialogDismissed
+            (OrderGuide.dialog DialogDismissed
                 |> Dialog.onCancel EscapePressed
             )
 
@@ -4561,12 +4585,12 @@ turnFeedback players ownStatus opponentStatus outcome error =
 keyCommands : Model -> KeyCmd Msg
 keyCommands model =
     let
-        commandShortcuts : KeyCmd Msg
-        commandShortcuts =
-            case commandMenuUnit model of
+        orderShortcuts : KeyCmd Msg
+        orderShortcuts =
+            case orderMenuUnit model of
                 Just unit ->
-                    CommandMenu.keyCommands model.map model.depots unit
-                        |> KeyCmd.map CommandMenuMsg
+                    OrderMenu.keyCommands model.map model.depots unit
+                        |> KeyCmd.map OrderMenuMsg
 
                 Nothing ->
                     KeyCmd.none
@@ -4598,9 +4622,9 @@ keyCommands model =
                             ChoosingIndirectFire _ ->
                                 []
 
-                            CommandMenu _ ->
-                                [ KeyCmd.upGamerKeys PreviousCommandPressed
-                                , KeyCmd.downGamerKeys NextCommandPressed
+                            OrderMenu _ ->
+                                [ KeyCmd.upGamerKeys PreviousOrderPressed
+                                , KeyCmd.downGamerKeys NextOrderPressed
                                 ]
 
                     Just (Inspecting _) ->
@@ -4638,7 +4662,7 @@ keyCommands model =
     else
         KeyCmd.batch
             [ KeyCmd.escape EscapePressed
-            , commandShortcuts
+            , orderShortcuts
             , camera
             , unitSelection
             , submission

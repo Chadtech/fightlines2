@@ -165,7 +165,7 @@ gun and trucks near the base. Depot squares stay clear.
   occupy a fortress for protection or spend a later turn sabotaging it.
   Fortresses supply no resources: four rear supply depots, two rear fuel depots,
   and two contested forward supply caches make deliveries and interdiction useful.
-  Fortress squares use plain ground, allowing their infantry occupants to dig in.
+  Infantry cannot dig in on fortress squares, even where the underlying ground is plain.
 - **Convoy Country**: a mirrored green battlefield built around fuel-efficient,
   exposed roads and concealed woodland approaches. A direct east–west highway,
   two road loops, and a central connecting road offer flexible convoy routes.

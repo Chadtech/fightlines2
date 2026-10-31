@@ -1,5 +1,5 @@
 module Game.Selection exposing
-    ( CommandMenuState(..)
+    ( OrderMenuState(..)
     , SelectedUnit
     , Selection(..)
     , UnitInteraction(..)
@@ -11,8 +11,8 @@ import Game.DirectionPlanning exposing (DirectionPlanning)
 import Game.IndirectFirePlanning exposing (IndirectFirePlanning)
 import Game.Inspection as Inspection exposing (Inspection(..))
 import Game.MovePlanning exposing (MovePlanning)
-import Game.UnitCommand as UnitCommand
 import Game.UnitId as UnitId exposing (UnitId)
+import Game.UnitOrder as UnitOrder
 
 
 
@@ -33,15 +33,15 @@ type alias SelectedUnit =
 
 
 type UnitInteraction
-    = CommandMenu CommandMenuState
+    = OrderMenu OrderMenuState
     | ChoosingMove MovePlanning
     | ChoosingDirection DirectionPlanning
     | ChoosingIndirectFire IndirectFirePlanning
 
 
-type CommandMenuState
-    = ChoosingCommand (Maybe UnitCommand.MenuOption)
-    | ReadingGuide (Maybe UnitCommand.MenuOption)
+type OrderMenuState
+    = ChoosingOrder (Maybe UnitOrder.MenuOption)
+    | ReadingGuide (Maybe UnitOrder.MenuOption)
 
 
 

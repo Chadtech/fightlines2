@@ -151,7 +151,8 @@ check rules fixture =
                     , direction = Just Direction.East
                     , resources =
                         Just
-                            { supplyCargo = []
+                            { exhaustionTurnsRemaining = Nothing
+                            , supplyCargo = []
                             , hitPoints =
                                 { current = 16
                                 , maximum = 16
@@ -324,7 +325,8 @@ traceChecks rules =
                     , direction = Just Direction.East
                     , resources =
                         Just
-                            { supplyCargo = []
+                            { exhaustionTurnsRemaining = Nothing
+                            , supplyCargo = []
                             , hitPoints =
                                 { current = 16
                                 , maximum = 16
@@ -701,7 +703,8 @@ reservationChecks rules =
                     , direction = Just Direction.East
                     , resources =
                         Just
-                            { supplyCargo = []
+                            { exhaustionTurnsRemaining = Nothing
+                            , supplyCargo = []
                             , hitPoints =
                                 { current = 16
                                 , maximum = 16
@@ -797,7 +800,8 @@ fuelChecks rules =
                     , direction = Just Direction.East
                     , resources =
                         Just
-                            { supplyCargo = []
+                            { exhaustionTurnsRemaining = Nothing
+                            , supplyCargo = []
                             , hitPoints =
                                 { current = 16
                                 , maximum = 16
@@ -1031,7 +1035,8 @@ supplyChecks rules =
                     , direction = Just Direction.East
                     , resources =
                         Just
-                            { supplyCargo = []
+                            { exhaustionTurnsRemaining = Nothing
+                            , supplyCargo = []
                             , hitPoints =
                                 { current = 16
                                 , maximum = 16
@@ -1358,7 +1363,8 @@ transportChecks rules =
                             }
                     , resources =
                         Just
-                            { supplyCargo = []
+                            { exhaustionTurnsRemaining = Nothing
+                            , supplyCargo = []
                             , hitPoints =
                                 { current = 16
                                 , maximum = 16

@@ -22,6 +22,7 @@ type alias UnitResources =
     , supplies : Supplies
     , fuel : Maybe Fuel
     , supplyCargo : List Supply.CargoStock
+    , exhaustionTurnsRemaining : Maybe Int
     }
 
 
@@ -32,6 +33,7 @@ selection =
         |> SS.with (ResourcesApi.supplies Supplies.selection)
         |> SS.with (ResourcesApi.fuel Fuel.selection)
         |> SS.with (ResourcesApi.supplyCargo Supply.cargoSelection)
+        |> SS.with ResourcesApi.exhaustionTurnsRemaining
 
 
 setSupplies : Supplies -> UnitResources -> UnitResources

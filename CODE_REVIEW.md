@@ -17,7 +17,7 @@ compiler success do not establish that these checks pass.
   strings, integers, booleans, and positional tuples for identifiers, ownership,
   statuses, and validated values.
 - [ ] State specific to one alternative lives inside that alternative. A pending
-  command requires a selected unit and the appropriate planning stage; the type
+  order requires a selected unit and the appropriate planning stage; the type
   should enforce that relationship. Avoid parallel fields that must be kept in
   sync or variants that callers must handle even though they cannot occur there.
 - [ ] Meaningful statuses and errors are custom types, converted to text at the
@@ -29,7 +29,7 @@ compiler success do not establish that these checks pass.
   half-points and nested `Dict` keys.
 - [ ] Names describe the actual concept: ownership is `PlayerNumber`, a board is
   domain data rather than a `Model`, and an HTML identifier is `htmlId` or
-  `commandHtmlId`. Avoid redundant names such as `DirectionEnum`.
+  `orderHtmlId`. Avoid redundant names such as `DirectionEnum`.
 - [ ] Before renaming, adding an optional field, or adding another representation,
   trace its construction, consumers, and behavior. Reuse shared domain types
   rather than introducing editable copies or redundant codecs without a reason.
@@ -37,8 +37,8 @@ compiler success do not establish that these checks pass.
 ## Ownership and module boundaries
 
 - [ ] A function or value lives with the concept that owns it. For example,
-  direction enumeration belongs with direction/facing, command behavior with
-  commands, and board mutations behind the board's API.
+  direction enumeration belongs with direction/facing, order behavior with
+  orders, and board mutations behind the board's API.
 - [ ] Coordinated interaction state stays with its owning page. Avoid splitting
   a page into child `Model`/`update` pairs that make parent and sibling changes
   awkward. A view can expose `Msg` while its parent handles those messages.
@@ -172,7 +172,7 @@ compiler success do not establish that these checks pass.
 The strongest repeated corrections were “Style.elm please,” named functions and
 conditions, type signatures, vertical formatting, and keeping state with its
 conceptual owner. These recur across the October 6–13 movement, viewport,
-command-menu, combat, and map-editor reviews. Semantic component APIs were
+order-menu, combat, and map-editor reviews. Semantic component APIs were
 revisited in the October 4 card review and October 10–13 control reviews.
 Initialization/`Flags` ownership was revisited from the first lobby work through
 the map editor. This checklist captures those reusable lessons rather than

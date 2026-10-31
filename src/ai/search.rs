@@ -277,6 +277,7 @@ fn candidates(
         && unit.entrenchment() == Entrenchment::Exposed
         && available >= rules.dig_in_cost
         && !scenario.map.tile_at(origin).is_some_and(Terrain::is_road)
+        && !scenario.depots.iter().any(|depot| depot.position == origin)
     {
         let mut order = hold(unit, origin);
         order.dig_in = Some(true);
@@ -509,6 +510,7 @@ mod tests {
         map::{Map, RoadShape},
         map_definition::MapDefinition,
         map_id::MapId,
+        scenario::{BuildingKind, Depot},
         test_support::{FixtureValue, TestResult},
         turns,
     };
@@ -645,12 +647,45 @@ mod tests {
     }
 
     #[test]
-    fn guards_supply_point_by_digging_in() -> TestResult {
+    fn building_candidates_exclude_digging_and_plans_remain_legal() -> TestResult {
+        let initial = MapDefinition::parse(r#"{
+            "width": 5, "height": 3, "theme": "GreenForest", "features": [], "depots": [],
+            "units": [
+                {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "Player1", "kind": "Infantry", "direction": "East"},
+                {"id": 2, "position": {"x": 4, "y": 2}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
+            ]
+        }"#).fixture()?.scenario().fixture()?;
+        for kind in [
+            BuildingKind::Supply,
+            BuildingKind::Fuel,
+            BuildingKind::Fortress,
+        ] {
+            for destroyed in [false, true] {
+                let mut scenario = initial.clone();
+                let mut depot = Depot::new(kind, Coordinate::new(0, 0));
+                if destroyed {
+                    depot.sabotage();
+                }
+                scenario.depots = vec![depot];
+                let unit = scenario.units.first().fixture()?;
+                let goal = StrategicGoal::new(&scenario, unit).fixture()?;
+                let orders = candidates(&scenario, unit, &BTreeSet::new(), &goal).fixture()?;
+                assert!(orders.iter().all(|order| order.dig_in != Some(true)));
+                let orders = plan(&scenario, PlayerNumber::Player1).fixture()?;
+                assert!(orders.iter().all(|order| order.dig_in != Some(true)));
+                turns::validate(&scenario, PlayerNumber::Player1, orders).fixture()?;
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn guards_beside_supply_point_by_digging_in() -> TestResult {
         let mut scenario = MapDefinition::parse(r#"{
         "width": 12, "height": 5, "theme": "GreenForest", "features": [],
         "depots": [{"position": {"x": 6, "y": 2}, "kind": "Supply"}],
         "units": [
-            {"id": 1, "position": {"x": 6, "y": 2}, "playerNumber": "Player1", "kind": "Infantry", "direction": "East"},
+            {"id": 1, "position": {"x": 5, "y": 2}, "playerNumber": "Player1", "kind": "Infantry", "direction": "East"},
             {"id": 2, "position": {"x": 11, "y": 4}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
         ]
         }"#).fixture()?.scenario().fixture()?;

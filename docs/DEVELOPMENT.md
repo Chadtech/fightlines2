@@ -14,7 +14,7 @@ Read [architecture](../ARCHITECTURE.md) for state ownership and cross-module flo
 - [Game archives and replay](#game-archives-and-replay)
 - [Audio manager](#audio-manager)
 - [Dev panel](#dev-panel)
-- [Backdrop review](#backdrop-review)
+- [Backdrop review](#backdrop-review) · [combat chart](#combat-chart)
 
 ## Local setup
 
@@ -37,7 +37,7 @@ specific seed for debugging; see [deployment](../DEPLOYMENT.md#game-archives).
 `src/DevTools.elm` runs the separate map editor, game archive/replay, and backdrop
 review app under `/dev`, with its own `DevTools.Route`, `DevTools.Flags`, and
 `DevTools.Shared`. Open [the tools index](http://127.0.0.1:8080/dev) for links to
-`/dev/map-editor`, `/dev/logged-games`, and `/dev/backdrop-review`.
+`/dev/map-editor`, `/dev/logged-games`, `/dev/backdrop-review`, and `/dev/combat-chart`.
 Both apps use `Effect.Eff` and outgoing ports in `Ports.Js.To`. Their route modules
 provide typed `Route.pushUrl` helpers for in-app navigation; `Effect.load` opens
 another app's document. Player pages
@@ -180,7 +180,7 @@ confirm. They last 230ms, 230ms, and 300ms respectively; source credit and
 extraction details are in `public/audio/README.md`.
 Live-game messages select their UI cue in `GamePage.playAudio`, including nested
 view and playback messages. Opening menus, selecting objects, adjusting discrete
-camera controls, and choosing commands play `uiAffirm`. Saving orders, confirming
+camera controls, and choosing orders play `uiAffirm`. Saving orders, confirming
 cargo choices, submitting, resigning, and continuing dialogs play `uiConfirm`.
 Closing, backing out, and declining cargo choices play `uiCancel`.
 Keyboard actions use the same cue categories. Hover, focus, continuous pointer
@@ -271,3 +271,15 @@ is selected, and the source must have saved settings for it. Check **all unit ty
 to explicitly enable **copy and save all unit calibrations**; this replaces all
 matching destination unit settings while preserving types absent from the source.
 For example, reuse road settings for snowy road, then fine-tune if needed.
+
+## Combat chart
+
+Open `/dev/combat-chart` to compare every armed attacker against infantry, tanks,
+field guns, and trucks. Readiness and facing appear side by side, with open-ground
+and hills/forest columns. Change attack type, both units' health, attacker aim,
+ready defender order, infantry entrenchment, and fortress protection. Indirect
+fire shows only field guns and ready/unready columns, with no facing controls.
+Select a value to inspect remaining HP and the exact damage factors. Values
+come from Rust's ordinary combat calculator through the read-only `combatChart`
+query; changing settings never changes a game. Comparisons assume a legal hit,
+independently of firing coverage, supply affordability, and return fire.

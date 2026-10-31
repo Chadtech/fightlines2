@@ -185,8 +185,8 @@ planningErrorDetails violation =
         OrderPlanning.PlanningUnitNotFound unitId ->
             "planning unit not found: " ++ UnitId.toString unitId
 
-        OrderPlanning.CommandUnitHasNoPosition unitId ->
-            "command unit has no position: " ++ UnitId.toString unitId
+        OrderPlanning.OrderUnitHasNoPosition unitId ->
+            "order unit has no position: " ++ UnitId.toString unitId
 
         OrderPlanning.LoadingOrderNotFound unitId ->
             "loading order not found: " ++ UnitId.toString unitId
@@ -209,13 +209,13 @@ planningErrorDetails violation =
 
         OrderPlanning.DirectionInvariantViolated direction ->
             case direction of
-                DirectionPlanning.CommandUnitNotOnMap unitId ->
-                    "direction command unit not on map: " ++ UnitId.toString unitId
+                DirectionPlanning.OrderUnitNotOnMap unitId ->
+                    "direction order unit not on map: " ++ UnitId.toString unitId
 
         OrderPlanning.IndirectFireInvariantViolated indirectFire ->
             case indirectFire of
-                IndirectFirePlanning.CommandUnitNotOnMap unitId ->
-                    "indirect fire command unit not on map: " ++ UnitId.toString unitId
+                IndirectFirePlanning.OrderUnitNotOnMap unitId ->
+                    "indirect fire order unit not on map: " ++ UnitId.toString unitId
 
 
 

@@ -26,7 +26,7 @@ The control stays in the same viewport position inside native dialogs.
 Remember mute in local storage across reloads and both apps, and synchronize
 open tabs. Audio starts unmuted when no preference has been saved.
 
-Use short recordings of physical switches for tactile command feedback. Affirm
+Use short recordings of physical switches for tactile UI feedback. Affirm
 uses the desk-lamp switch press, cancel its release, and confirm the more
 substantial old-switch audition A. Preserve their recorded texture and original
 pitch, with short edge fades. Runtime files and source credits are documented in
@@ -34,6 +34,9 @@ pitch, with short edge fades. Runtime files and source credits are documented in
 
 ## Typography and copy
 
+- Call unit instructions **orders** throughout the UI, guide, and gameplay code.
+  Use **orders** for the menu, **cancel order** while planning, and **revoke order**
+  for a saved order.
 - All visible UI text is lowercase: titles, labels, buttons, instructions,
   status messages, and errors. Write application copy in lowercase; the global
   CSS reset also renders dynamic text and field values in lowercase.
@@ -79,6 +82,10 @@ Secondary buttons use a gray1 face with gray3 light edges and gray0 shadow
 edges (`outdentStrong`, reversed with `indentStrong` when pressed). Their faces
 brighten to gray2 on hover and press, with gray4 labels brightening to gray5.
 Disabled buttons retain their gray1 face and gray3 text.
+Use `Button.danger` for cancellation actions that need red emphasis. It uses a
+red0 face with gray5 text and a red bevel: red1 light edges and dark red
+(`#300C10`) shadow edges through `redOutdent` and `redIndent`. It brightens on hover and press,
+reverses its bevel when pressed, and shows an outline for keyboard focus.
 Regular buttons use 1rem horizontal and 0.75rem vertical padding.
 Use `Button.small` for compact controls:
 0.25rem padding on every side with the normal text size and color variant.
@@ -259,9 +266,13 @@ omits this decorative cycle and retains the original green background.
   `close` button, using regular padding to match the size of `revoke order`.
   Omit the roster and other floating cards.
   Use gold primary buttons for unit actions in this panel, including
-  back to commands, revoke order, and skip remaining cargo.
-  Place revoke order directly below the unit portrait, spanning the available
-  panel content width, before resource gauges.
+  revoke order. Keep cargo rows focused on stock, without unload coordinates;
+  omit the adjacent-square instruction and skip button while choosing cargo exits.
+  Use a full-width red `cancel order (esc)`
+  button to abandon the current order preview and clear selection, matching Escape.
+  Place cancel order and revoke order in the same action slot directly below
+  the unit portrait, spanning the available panel content width, before resource
+  gauges. Show the action appropriate to the current planning state.
 - The bottom-left control panel is flush with the screen's bottom and left edges,
   reserving its actual height below the battlefield. Use a short horizontal strip
   sized to its content, capped by the available width, with a bevel on its top
@@ -314,44 +325,53 @@ omits this decorative cycle and retains the original green background.
   terrain visibility descriptions, with no per-unit movement-cost list. Mouse
   focus has no enclosing outline; keyboard focus underlines the terrain row. Keep it tied to
   the selected object (or a passenger's carrier), and clear it with selection.
-- Unit, supply, fuel, and terrain info markers expand keyboard-accessible
-  explanations using the shared `View.InfoMarker`: a centered `i` inside a
-  circular outline, also used in the command menu and depot details. Show
-  explanations on padded yellow2 backgrounds with gray5 text. Hit points have
-  no info marker or expandable help. The flat unit help section spans
-  the panel width, without a heading or bevel. Resource gauges show the
-  server-provided current and maximum values. Enemy resources are withheld from the selection panel and have no gauges there.
-- While planning, selecting your own unit shows illustrated command rows in a
-  popup beside it on the battlefield. Anchor passenger commands beside their
+- Unit, supply, and fuel info markers open centered native reference dialogs
+  with the existing explanations, a title-bar close button, and a secondary
+  `close` action. Escape dismisses help while preserving selection and order
+  planning. Keep the inspector layout stable when help opens. Use the shared
+  `View.InfoMarker`: a centered `i` inside a circular outline, also used in
+  the order menu, terrain, and depot details. Terrain help remains an inline
+  disclosure with a padded yellow2 background and gray5 text. Hit points have
+  no info marker or help. Resource gauges show the server-provided current
+  and maximum values. Enemy resources are withheld from the selection panel
+  and have no gauges there. Live games and replays use the same inspector help;
+  opening help during a replay pauses playback.
+- While planning, selecting your own unit shows illustrated order rows in a
+  popup beside it on the battlefield. Anchor passenger orders beside their
   truck. Keep the popup at a fixed display size as the board zooms, constrain it
   inside the battlefield edges, and scroll its contents when the viewport is
-  shorter than the menu. The title bar reads `command`, with a dark circular info
+  shorter than the menu. The title bar reads `orders`, with a dark circular info
   icon on a transparent button followed by a gray beveled close (×) button at the
   right. Info has subtle text-color hover feedback and a visible keyboard focus
   outline. Close clears selection
-  while preserving saved orders. Put move and hold position first. Carried units have no command popup.
+  while preserving saved orders. Order available rows as move, attack move,
+  ambush, hold position, indirect fire, stand ground, dig in, then sabotage.
+  Keep dig in and sabotage together at the bottom as specialized actions.
+  The guide and keyboard navigation follow the same sequence.
+  Carried units have no order popup.
   Rows are flat at rest; hover and keyboard focus add an outset bevel, and
-  pressing reverses it. Unimplemented commands are disabled. Tab enters the
-  list; up/down arrows or W/S cycle enabled commands whenever the popup is open, including
-  before list focus, and Enter/Space chooses the focused command. Cancel and
+  pressing reverses it. Unimplemented orders are disabled. Tab enters the
+  list; up/down arrows or W/S cycle enabled orders whenever the popup is open, including
+  before list focus, and Enter/Space chooses the focused order. Cancel and
   Escape clear selection while preserving saved orders.
-  Append the shortcut in parentheses to each command name: `move (m)`,
+  Append the shortcut in parentheses to each order name: `move (m)`,
   `hold position (h)`, `attack move (a)`, `ambush (b)`, `stand ground (g)`,
   `indirect fire (i)`, `dig in (d)`, and `sabotage (x)`. Show `cancel (esc)`.
-  Plain letter keys immediately activate enabled commands only while the popup
+  Plain letter keys immediately activate enabled orders only while the popup
   is open, including before list focus. Preserve W/S navigation and the normal
-  route/facing controls after choosing a command.
-  Move closes the popup and shows a destination prompt, preview cost/budget,
-  and back to commands. Saving a destination or choosing hold position replaces
+  route/facing controls after choosing an order.
+  Move closes the popup and keeps `cancel order (esc)` in the inspector. Omit the
+  destination prompt, movement cost/budget, and attack-move explanation while
+  previewing a route. Saving a destination or choosing hold position replaces
   the popup with the chosen order and revoke order in the side panel. Revoking
   keeps the unit inspected with the popup closed. Clicking it again reopens
-  commands when eligible. Do not show commands and a saved order simultaneously. Locked orders cannot
+  orders when eligible. Do not show orders and a saved order simultaneously. Locked orders cannot
   be revoked. Keep resource explanations in the expandable gauge help.
 - Primary-button dragging pans after a 6px threshold. A drag never selects a tile;
   a click still inspects units, depots and terrain. Scroll zooms around the cursor,
   bounded to 35–300% of the overview scale. Open at 100%, centered on the whole map.
   Reset restores that centered overview at 100%; the bottom-left panel supplies pan arrows, zoom and reset controls. Keyboard
-  arrows or WASD pan through game-page window commands while the command popup is closed
+  arrows or WASD pan through game-page window commands while the order popup is closed
   and movement and ambush selection are inactive,
   without requiring battlefield focus.
   Plus/minus zoom through game-page window commands without requiring battlefield
@@ -396,7 +416,7 @@ omits this decorative cycle and retains the original green background.
 - Render terrain below depots and units, with a thin, muted gold square inset inside the selected
   tile. Keep its entire stroke within that cell, without a fill or animation. Identify ownership as player 1 and player 2, independently of map position. Show player labels and
   selected-unit details so color is not the only identifier.
-- Selecting your own unit shows commands without enabling movement.
+- Selecting your own unit shows orders without enabling movement.
   Choosing move highlights reachable squares with inset gold outlines
   and a faint fill. While choosing a move or unload destination, dim unavailable
   terrain and depots to 60% of their normal brightness, preserving existing fog
@@ -408,9 +428,9 @@ omits this decorative cycle and retains the original green background.
   cannot reach a square within budget, fall back to an affordable route from the
   unit. Saving ends hover editing and hides reachable-square highlights;
   reselecting the unit and choosing move restores both.
-  Keep the selected unit active while choosing a destination. Show movement
-  budget and preview cost while planning, then the chosen destination/cost and
-  revoke order in the right panel. Arrow keys or WASD extend or retrace the
+  Keep the selected unit active while choosing a destination. Show the chosen
+  destination/cost and revoke order after saving in the right panel.
+  Arrow keys or WASD extend or retrace the
   previewed route without panning; Enter saves that route. Reachable tiles support Tab and Enter/Space.
   Units with saved orders render their board artwork at
   60% brightness until the order is revoked or the turn resolves. Keep facing
@@ -503,13 +523,14 @@ omits this decorative cycle and retains the original green background.
   and passenger exits, but not enemies or other crates. Disable unchecked cargo
   when adding it would prevent a complete placement, and explain unavailable
   space or insufficient supplies beneath the checklist. Checked cargo stays enabled
-  so it can be deselected. Show the current
-  cargo item and a skip-remaining action in the side panel, and list saved unload
-  choices under the truck's order. Extend a solid gold branch from the truck's
+  so it can be deselected. While choosing each exit, inspect the current passenger
+  or show the current crate or drum's illustration and resource gauge, using the
+  same freight details as ground selection. Advance the inspector with each cargo
+  item. Extend a solid gold branch from the truck's
   destination dot to an outlined diamond on each saved unloading square. Keep
   these markers visible above unit artwork and preserve tile interaction.
   The selected passenger's exit uses a larger filled gold diamond with a bright
-  ivory tile outline, following selection while issuing infantry commands.
+  ivory tile outline, following selection while issuing infantry orders.
   Passengers appear after truck movement during
   resolution. Carried units do not have independent board sprites or focus targets.
 
@@ -556,6 +577,12 @@ Use a red (`red1`) heart on light gray (`gray5`), a dark brown (`yellow1`)
 `ø` on gold (`yellow5`) with an opaque near-black (`gray0`) border, and a red
 (`red1`) `E` on near-black (`gray0`). Draw symbols as vector
 shapes so they remain clear and the fuel symbol stays uppercase.
+At zero supplies, replace the `ø` with a boxed `!` using the same gold badge.
+Keep the living unit visible, and use `exhausted` in its accessible warning label.
+The shared inspector shows `exhausted · resupply within 2 turns`, decreasing to
+`1 turn` on the final rescue turn. Keep the countdown private with resource gauges.
+Replenishment must leave supplies after upkeep to clear exhaustion; a unit that
+first exhausts at the end of turn 5 dies at the end of turn 7 if still unsupplied.
 Blink the badges together on a two-second cycle: one second visible, one second
 hidden. Reduced-motion preferences keep them steady. Combat and unit-loss focus
 pause the animation with the surrounding interface. Ignore pointer events and
@@ -613,7 +640,7 @@ line or five-square field-gun plus sign: three squares forward and one on each
 side of the middle square. Saved ambush coverage and facing remain
 visible while planning. The right panel explains range, damage, and separate
 readiness/firing supply costs, then shows the saved direction and revoke action.
-Insufficient readiness supplies disable the command with an explanatory tooltip.
+Insufficient readiness supplies disable the order with an explanatory tooltip.
 
 Server-projected volleys render quick expanding bursts on target units, without
 attacker flashes, connecting lines, or floating damage numbers.
@@ -774,7 +801,7 @@ keyboard input cannot select it.
 Pointing or focusing a square turns it red and previews final facing in the endpoint
 arrow; clicking, Enter/Space on a square, or an arrow/WASD key saves the attack move.
 The chosen red square remains beside the saved destination. The inspector explains
-the direction step and offers a return to commands. The saved arrow shows final facing independently of the
+the direction step and offers cancel order. The saved arrow shows final facing independently of the
 last route segment. Keep orders revocable and preserve
 selection after saving. Enemy squares are legal destinations; allies remain
 passable, and attack move offers no loading or unloading choices.
@@ -839,10 +866,10 @@ even on occupied tiles. A selected on-board unit standing on a depot also shows
 the complete depot inspection beneath its own row. Unknown stock has no map bar
 or numeric value; the inspector row says `stock outside sight`.
 
-Treat a truck move, its unload choices, and its infantry commands as one planning
-sequence. Escape cancels that truck order and all dependent commands while the
-sequence is unfinished, including after some infantry commands have been saved.
-After every unloading infantry has a command, Escape only clears selection and
+Treat a truck move, its unload choices, and its infantry orders as one planning
+sequence. Escape cancels that truck order and all dependent orders while the
+sequence is unfinished, including after some infantry orders have been saved.
+After every unloading infantry has an order, Escape only clears selection and
 keeps the completed plan. Trucks unloading only field guns or freight complete
 the sequence when their final cargo choice is saved.
 
@@ -888,7 +915,7 @@ Show `8 / 8` HP initially and explain the 75% damage reduction for occupying
 units, with a minimum 1 HP per hit. Show no resource stock bar, gauge, or loading
 dialog. The destroyed inspector reads `destroyed · no defense bonus`.
 
-Infantry already occupying a surviving depot also receive a `sabotage` command
+Infantry already occupying a surviving depot also receive a `sabotage` order
 with the transparent illustrated red demolition charge and brass-plunger icon.
 Its saved order retains revoke and explains the whole-turn action, normal upkeep,
 and completion after combat if the infantry survives. Hide it away from depots,
@@ -993,7 +1020,7 @@ and reflects horizontal facing.
 
 ## Indirect fire
 
-Field guns enable the existing indirect-fire command. Choosing it highlights all
+Field guns enable the existing indirect-fire order. Choosing it highlights all
 in-range tiles, including fog, with the existing quiet gold tile outlines. Tile
 buttons say `fire indirectly at (x, y)` and support Tab and Enter/Space. Saving
 keeps the gun selected, shows target coordinates and revoke, and leaves the
@@ -1020,7 +1047,7 @@ sheltering underground. Retain their calibrated placements and impact timing.
 When no target is confirmed outside sight, cover the
 target terrain with a fog overlay and a centered question mark. Keep clear terrain
 for unconfirmed landings on tiles within sight.
-Above the scene, explain that an enemy
+Below the scene and above the controls, explain that an enemy
 field gun fired from an unknown location at this space; for an observable gun, explain
 that a field gun fired indirectly at this space. For an observed target, state
 whether it was hit or destroyed. Otherwise state that no target
@@ -1030,8 +1057,9 @@ indirect fire as their cause without an attacker portrait or location.
 ## Infantry digging and entrenchment
 
 Enable the existing `dig in` menu action only for unentrenched infantry that
-can afford the server-provided digging cost plus upkeep. Keep it disabled on roads
-and during a planned dismount. Saving shows `dig in`, its supply cost, the end-of-turn
+can afford the server-provided digging cost plus upkeep. Keep it disabled on roads,
+depots, fortresses, building wreckage, and during a planned dismount.
+Saving shows `dig in`, its supply cost, the end-of-turn
 completion, and the standard revoke action. Infantry cannot fire while digging.
 An entrenched unit uses its approved red or blue dug-in sprite on the board,
 in the inspector, with existing facing mirroring. In the combat theater, show two
@@ -1059,7 +1087,7 @@ and failure states.
 Replay reuses the full-viewport battlefield and inspection panel. Replace the
 submission controls with the game name, back link, previous/play/pause/next,
 turn and player-view selectors, and the existing camera controls. Keep order
-commands unavailable. Bound the replay control panel to 40% of viewport height,
+entry unavailable. Bound the replay control panel to 40% of viewport height,
 with internal scrolling when its controls wrap on narrow or short screens. Turn
 zero shows the starting board. Include a checked-by-default `fog of war` checkbox
 below the turn and view selectors. Unchecking reveals the complete recorded
@@ -1115,3 +1143,22 @@ all unit calibrations**. State that copying replaces matching destination settin
 and uses saved source values. Disable a single-unit copy if the source lacks saved
 settings for that type. Show completion and failures beside the action. Disable
 copying to the same backdrop and prevent concurrent copy/save requests.
+
+## Combat chart
+
+The DevTools combat chart uses three ordinary beveled cards: controls, the
+comparison table, and selected-hit details. Arrange controls in three columns on desktop,
+wrapping into two or one at smaller widths. Group defenders into inset green table
+headers, with attacker rows and readiness/facing column groups. Compare open
+ground with hills/forest side by side; contain horizontal overflow in the table
+on narrow screens. Label terrain explicitly. Damage cells show a numeric hit
+and a small fill proportional to defender health; red surfaces identify lethal
+hits and a gold border identifies selection. Keep keyboard focus visible and
+include damage and remaining HP in each cell's accessible label.
+
+For indirect fire, omit attacker aim and directional columns and show only
+field-gun rows. Field guns and trucks always appear exposed, with em dashes in
+ready columns. Keep health and protection controls available. Selected-hit
+details show damage, remaining HP, and expandable factors. Refreshes clearly
+identify previous results and disable damage cells; failures retain settings
+and previous results beside a retry action.

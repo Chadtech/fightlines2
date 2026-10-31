@@ -223,7 +223,7 @@ checks =
                         && TurnLifecycle.setSelection (Just selection) playing
                         == playing
                     )
-                , expect "submission failure must recover drafts as inspection without reopening a command or preview"
+                , expect "submission failure must recover drafts as inspection without reopening an order or preview"
                     (TurnLifecycle.selection (TurnLifecycle.finishSubmission 1 pending) == Just (Inspecting (UnitInspection unitId)))
                 , expect "playback without a selected object must finish with no selection"
                     (Maybe.map (.phase >> TurnLifecycle.selection) (TurnLifecycle.tick 1000 playing) == Just Nothing)

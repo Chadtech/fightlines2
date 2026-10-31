@@ -26,7 +26,7 @@ import Game.OrderDependencies as OrderDependencies
 import Game.OrderPlanning as OrderPlanning
 import Game.PlannedOrder as PlannedOrder
 import Game.PlannedTransport as PlannedTransport
-import Game.Selection exposing (CommandMenuState(..), Selection(..), UnitInteraction(..))
+import Game.Selection exposing (OrderMenuState(..), Selection(..), UnitInteraction(..))
 import Game.Supply as Supply exposing (CargoStock)
 import Game.Terrain as Terrain
 import Game.TurnLifecycle as TurnLifecycle
@@ -34,8 +34,8 @@ import Game.Unit as Unit exposing (Unit)
 import Game.Unit.Fuel as Fuel
 import Game.Unit.Location as Location exposing (Location)
 import Game.Unit.Supplies
-import Game.UnitCommand as UnitCommand
 import Game.UnitId as UnitId exposing (UnitId)
+import Game.UnitOrder as UnitOrder
 import Game.UnitResources as UnitResources exposing (UnitResources)
 import Game.UnloadCargo as UnloadCargo
 import InvariantCheck as IC exposing (InvariantCheck)
@@ -142,7 +142,7 @@ interruptedDismountChecks infantryId truckId passengerId =
                             , unrelatedOrder
                             ]
                         |> OrderPlanning.setSelection (Just (Inspecting (UnitInspection truckId)))
-                        |> OrderPlanning.promptDismountedCommands context.map context.units
+                        |> OrderPlanning.promptDismountedOrders context.map context.units
 
                 unrelatedOrder : PlannedOrder.PlannedOrder
                 unrelatedOrder =
@@ -154,24 +154,24 @@ interruptedDismountChecks infantryId truckId passengerId =
 
                 hold : OrderPlanning.Model -> OrderPlanning.Model
                 hold model =
-                    OrderPlanning.applyCommand context.map context.units context.playerNumbers context.movementRules [] [] UnitCommand.HoldPosition model
+                    OrderPlanning.applyOrder context.map context.units context.playerNumbers context.movementRules [] [] UnitOrder.HoldPosition model
                         |> fixtureValue
 
                 escaped : OrderPlanning.Model
                 escaped =
                     cancel ready
 
-                firstCommand : OrderPlanning.Model
-                firstCommand =
+                firstOrder : OrderPlanning.Model
+                firstOrder =
                     hold ready
 
                 completed : OrderPlanning.Model
                 completed =
-                    hold firstCommand
+                    hold firstOrder
 
                 movingInfantry : OrderPlanning.Model
                 movingInfantry =
-                    OrderPlanning.applyCommand context.map context.units context.playerNumbers context.movementRules [] [] UnitCommand.Move ready
+                    OrderPlanning.applyOrder context.map context.units context.playerNumbers context.movementRules [] [] UnitOrder.Move ready
                         |> fixtureValue
 
                 checklist : OrderPlanning.Model
@@ -217,7 +217,7 @@ interruptedDismountChecks infantryId truckId passengerId =
                 deployOtherPassenger fixture =
                     escaped
                         |> (OrderPlanning.selectUnit fixture.map fixture.units fixture.playerNumbers fixture.movementRules [] [] otherTruckId >> fixtureValue)
-                        |> (OrderPlanning.applyCommand fixture.map fixture.units fixture.playerNumbers fixture.movementRules [] [] UnitCommand.Move >> fixtureValue)
+                        |> (OrderPlanning.applyOrder fixture.map fixture.units fixture.playerNumbers fixture.movementRules [] [] UnitOrder.Move >> fixtureValue)
                         |> (OrderPlanning.selectTile fixture.map fixture.units fixture.playerNumbers fixture.movementRules [] [] { x = 5, y = 3 } >> fixtureValue)
                         |> OrderPlanning.toggleUnloadPassenger gunId True
                         |> (OrderPlanning.confirmPassengers fixture.map fixture.units fixture.playerNumbers fixture.movementRules [] [] >> fixtureValue)
@@ -236,21 +236,21 @@ interruptedDismountChecks infantryId truckId passengerId =
                     deployOtherPassenger infantryContext
             in
             List.concat
-                [ expect "the initial truck opens its infantry commands"
-                    (Maybe.map .id (OrderPlanning.commandMenuUnit context.map context.units ready) == Just infantryId)
+                [ expect "the initial truck opens its infantry orders"
+                    (Maybe.map .id (OrderPlanning.orderMenuUnit context.map context.units ready) == Just infantryId)
                 , expect "Escape cancels the truck and both unloads while preserving unrelated orders"
                     (OrderPlanning.orders escaped
                         == [ unrelatedOrder ]
                         && OrderPlanning.selection escaped
                         == Nothing
                     )
-                , expect "Escape during the second infantry command cancels the first infantry command too"
-                    (OrderPlanning.orders (cancel firstCommand) == [ unrelatedOrder ])
+                , expect "Escape during the second infantry order cancels the first infantry order too"
+                    (OrderPlanning.orders (cancel firstOrder) == [ unrelatedOrder ])
                 , expect "Escape during infantry movement selection cancels the entire truck sequence"
                     (OrderPlanning.orders (cancel movingInfantry) == [ unrelatedOrder ])
                 , expect "Escape cancels the checklist, exit selection, and partially chosen exits"
                     (List.all (\model -> OrderPlanning.orders (cancel model) == [ unrelatedOrder ]) [ checklist, movingChecklist, exits, firstExit ])
-                , expect "Escape after the last infantry command preserves the completed plan"
+                , expect "Escape after the last infantry order preserves the completed plan"
                     (OrderPlanning.orders (cancel completed)
                         == OrderPlanning.orders completed
                         && List.length (OrderPlanning.orders completed)
@@ -259,7 +259,7 @@ interruptedDismountChecks infantryId truckId passengerId =
                         == Nothing
                     )
                 , expect "deploying another truck's field gun does not reopen skipped infantry menus"
-                    (OrderPlanning.commandMenuUnit context.map context.units gunDeployed
+                    (OrderPlanning.orderMenuUnit context.map context.units gunDeployed
                         == Nothing
                         && List.length (List.concatMap PlannedOrder.unloads (OrderPlanning.orders gunDeployed))
                         == 1
@@ -268,11 +268,11 @@ interruptedDismountChecks infantryId truckId passengerId =
                     )
                 , expect "Escape after unloading only a field gun keeps the completed truck plan"
                     (OrderPlanning.orders (cancel gunDeployed) == OrderPlanning.orders gunDeployed)
-                , expect "closing the infantry command guide keeps the sequence but Escape cancels it"
+                , expect "closing the infantry order guide keeps the sequence but Escape cancels it"
                     (let
                         readingGuide : OrderPlanning.Model
                         readingGuide =
-                            OrderPlanning.openCommandGuide context.map context.units context.playerNumbers ready
+                            OrderPlanning.openOrderGuide context.map context.units context.playerNumbers ready
                      in
                      OrderPlanning.orders (cancel readingGuide)
                         == [ unrelatedOrder ]
@@ -280,7 +280,7 @@ interruptedDismountChecks infantryId truckId passengerId =
                         == OrderPlanning.orders ready
                     )
                 , expect "another truck prompts only its own dismounting infantry"
-                    (Maybe.map .id (OrderPlanning.commandMenuUnit infantryContext.map infantryContext.units infantryDeployed) == Just gunId)
+                    (Maybe.map .id (OrderPlanning.orderMenuUnit infantryContext.map infantryContext.units infantryDeployed) == Just gunId)
                 ]
 
         _ ->
@@ -298,8 +298,8 @@ diggingTerrainChecks infantryId =
         base =
             board [ infantry ]
 
-        checkTerrain : Bool -> Terrain.Terrain -> List String
-        checkTerrain allowed terrain =
+        checkTerrain : Bool -> List Depot -> Terrain.Terrain -> List String
+        checkTerrain allowed depots terrain =
             let
                 context : BoardFixture
                 context =
@@ -309,20 +309,20 @@ diggingTerrainChecks infantryId =
 
                 selected : OrderPlanning.Model
                 selected =
-                    OrderPlanning.selectUnit context.map context.units context.playerNumbers context.movementRules [] [] infantryId OrderPlanning.init
+                    OrderPlanning.selectUnit context.map context.units context.playerNumbers context.movementRules [] depots infantryId OrderPlanning.init
                         |> fixtureValue
 
                 applied : OrderPlanning.Model
                 applied =
-                    OrderPlanning.applyCommand context.map context.units context.playerNumbers context.movementRules [] [] UnitCommand.DigIn selected
+                    OrderPlanning.applyOrder context.map context.units context.playerNumbers context.movementRules [] depots UnitOrder.DigIn selected
                         |> fixtureValue
             in
             List.concat
-                [ expect "dig in availability respects every road shape and preserves other land"
-                    (UnitCommand.canUse context.map [] infantry UnitCommand.DigIn == allowed)
-                , expect "keyboard command navigation excludes digging on roads"
-                    (List.member (UnitCommand.CommandOption UnitCommand.DigIn) (UnitCommand.enabledOptions context.map [] infantry) == allowed)
-                , expect "applying dig in on roads leaves planning unchanged"
+                [ expect "dig in availability respects roads, buildings, and wreckage"
+                    (UnitOrder.canUse context.map depots infantry UnitOrder.DigIn == allowed)
+                , expect "keyboard order navigation excludes digging on blocked tiles"
+                    (List.member (UnitOrder.OrderOption UnitOrder.DigIn) (UnitOrder.enabledOptions context.map depots infantry) == allowed)
+                , expect "applying dig in on blocked tiles leaves planning unchanged"
                     (if allowed then
                         OrderPlanning.orders applied == [ { unitId = infantryId, action = PlannedOrder.DigIn { x = 1, y = 1 } } ]
 
@@ -338,9 +338,33 @@ diggingTerrainChecks infantryId =
         land : List Terrain.Terrain
         land =
             [ Terrain.Plain, Terrain.Hills, Terrain.Forest, Terrain.Mountains, Terrain.Beach ]
+
+        checkBuilding : BuildingKind -> List String
+        checkBuilding kind =
+            let
+                checkHp : Int -> List String
+                checkHp current =
+                    let
+                        checkPosition : Coordinate -> List String
+                        checkPosition position =
+                            let
+                                depot : Depot
+                                depot =
+                                    { kind = kind
+                                    , position = position
+                                    , stock = Nothing
+                                    , hp = { current = current, maximum = 1 }
+                                    }
+                            in
+                            checkTerrain (position /= { x = 1, y = 1 }) [ depot ] Terrain.Plain
+                    in
+                    List.concatMap checkPosition [ { x = 1, y = 1 }, { x = 2, y = 1 } ]
+            in
+            List.concatMap checkHp [ 0, 1 ]
     in
-    List.concatMap (checkTerrain False) roads
-        ++ List.concatMap (checkTerrain True) land
+    List.concatMap (checkTerrain False []) roads
+        ++ List.concatMap (checkTerrain True []) land
+        ++ List.concatMap checkBuilding BuildingKind.list
 
 
 sabotagePlanningChecks : UnitId -> UnitId -> List String
@@ -379,7 +403,7 @@ sabotagePlanningChecks infantryId truckId =
 
         saved : OrderPlanning.Model
         saved =
-            OrderPlanning.applyCommand context.map context.units context.playerNumbers context.movementRules [] [ depot ] UnitCommand.Sabotage selected
+            OrderPlanning.applyOrder context.map context.units context.playerNumbers context.movementRules [] [ depot ] UnitOrder.Sabotage selected
                 |> fixtureValue
 
         blocked : List Unit
@@ -412,28 +436,28 @@ sabotagePlanningChecks infantryId truckId =
 
         fortressSaved : OrderPlanning.Model
         fortressSaved =
-            OrderPlanning.applyCommand context.map context.units context.playerNumbers context.movementRules [] [ fortress ] UnitCommand.Sabotage fortressSelected
+            OrderPlanning.applyOrder context.map context.units context.playerNumbers context.movementRules [] [ fortress ] UnitOrder.Sabotage fortressSelected
                 |> fixtureValue
     in
     List.concat
         [ expect "sabotage is offered only to infantry already on an operational depot"
-            (List.member UnitCommand.Sabotage (UnitCommand.available [ depot ] infantry)
-                && not (List.member UnitCommand.Sabotage (UnitCommand.available [] infantry))
+            (List.member UnitOrder.Sabotage (UnitOrder.available [ depot ] infantry)
+                && not (List.member UnitOrder.Sabotage (UnitOrder.available [] infantry))
                 && not
-                    (UnitCommand.canUse context.map
+                    (UnitOrder.canUse context.map
                         [ depot
                             |> setDepotHp
                                 { current = 0, maximum = 3 }
                         ]
                         infantry
-                        UnitCommand.Sabotage
+                        UnitOrder.Sabotage
                     )
-                && List.all (\candidate -> not (UnitCommand.canUse context.map [ depot ] candidate UnitCommand.Sabotage)) blocked
+                && List.all (\candidate -> not (UnitOrder.canUse context.map [ depot ] candidate UnitOrder.Sabotage)) blocked
             )
         , expect "intact fortresses support the same exclusive sabotage order"
-            (UnitCommand.canUse context.map [ fortress ] infantry UnitCommand.Sabotage
+            (UnitOrder.canUse context.map [ fortress ] infantry UnitOrder.Sabotage
                 && not
-                    (UnitCommand.canUse context.map
+                    (UnitOrder.canUse context.map
                         [ { fortress
                             | hp =
                                 { current = 0
@@ -442,7 +466,7 @@ sabotagePlanningChecks infantryId truckId =
                           }
                         ]
                         infantry
-                        UnitCommand.Sabotage
+                        UnitOrder.Sabotage
                     )
                 && OrderPlanning.orders fortressSaved
                 == [ { unitId = infantryId
@@ -450,10 +474,10 @@ sabotagePlanningChecks infantryId truckId =
                      }
                    ]
             )
-        , expect "sabotage saves a revocable stationary order and closes commands"
+        , expect "sabotage saves a revocable stationary order and closes orders"
             (OrderPlanning.orders saved
                 == [ { unitId = infantryId, action = PlannedOrder.Sabotage depot.position } ]
-                && OrderPlanning.commandMenuUnit context.map context.units saved
+                && OrderPlanning.orderMenuUnit context.map context.units saved
                 == Nothing
                 && List.isEmpty (OrderPlanning.orders (OrderPlanning.revokeSelectedOrder context.map context.units context.playerNumbers saved |> fixtureValue))
             )
@@ -486,7 +510,7 @@ groundPickupChecks infantryId truckId =
         hold context id =
             OrderPlanning.init
                 |> OrderPlanning.selectUnit context.map context.units context.playerNumbers context.movementRules context.supplyCrates context.depots id
-                |> IC.andThen (OrderPlanning.applyCommand context.map context.units context.playerNumbers context.movementRules context.supplyCrates context.depots UnitCommand.HoldPosition)
+                |> IC.andThen (OrderPlanning.applyOrder context.map context.units context.playerNumbers context.movementRules context.supplyCrates context.depots UnitOrder.HoldPosition)
                 |> fixtureValue
 
         asksFor : ResourceKind -> OrderPlanning.Model -> Bool
@@ -539,7 +563,7 @@ groundPickupChecks infantryId truckId =
                 moving =
                     OrderPlanning.init
                         |> OrderPlanning.selectUnit movingContext.map movingContext.units movingContext.playerNumbers movingContext.movementRules movingContext.supplyCrates movingContext.depots truckId
-                        |> IC.andThen (OrderPlanning.applyCommand movingContext.map movingContext.units movingContext.playerNumbers movingContext.movementRules movingContext.supplyCrates movingContext.depots UnitCommand.Move)
+                        |> IC.andThen (OrderPlanning.applyOrder movingContext.map movingContext.units movingContext.playerNumbers movingContext.movementRules movingContext.supplyCrates movingContext.depots UnitOrder.Move)
                         |> IC.andThen (OrderPlanning.selectTile movingContext.map movingContext.units movingContext.playerNumbers movingContext.movementRules movingContext.supplyCrates movingContext.depots { x = 3, y = 1 })
                         |> fixtureValue
 
@@ -660,7 +684,7 @@ cargoLoadingChecks infantryId truckId passengerId =
         hold fixture =
             OrderPlanning.init
                 |> OrderPlanning.selectUnit fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots truckId
-                |> IC.andThen (OrderPlanning.applyCommand fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots UnitCommand.HoldPosition)
+                |> IC.andThen (OrderPlanning.applyOrder fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots UnitOrder.HoldPosition)
                 |> fixtureValue
 
         skipsLoading : OrderPlanning.Model -> Bool
@@ -705,7 +729,7 @@ cargoLoadingChecks infantryId truckId passengerId =
         arriving fixture =
             OrderPlanning.init
                 |> OrderPlanning.selectUnit fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots infantryId
-                |> IC.andThen (OrderPlanning.applyCommand fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots UnitCommand.Move)
+                |> IC.andThen (OrderPlanning.applyOrder fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots UnitOrder.Move)
                 |> IC.andThen (OrderPlanning.selectTile fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots { x = 3, y = 1 })
                 |> fixtureValue
 
@@ -779,7 +803,7 @@ mutualPickupChecks infantryId truckId gunId =
         startMove fixture id model =
             model
                 |> OrderPlanning.selectUnit fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots id
-                |> IC.andThen (OrderPlanning.applyCommand fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots UnitCommand.Move)
+                |> IC.andThen (OrderPlanning.applyOrder fixture.map fixture.units fixture.playerNumbers fixture.movementRules fixture.supplyCrates fixture.depots UnitOrder.Move)
                 |> fixtureValue
 
         saveMove : BoardFixture -> UnitId -> OrderPlanning.Model -> OrderPlanning.Model
@@ -957,11 +981,11 @@ indirectPlanningChecks unitId carrierId =
     List.concat
         [ expect "indirect targeting requires a map position at initialization"
             (IndirectFirePlanning.start passenger
-                == IC.violated (IndirectFirePlanning.CommandUnitNotOnMap unitId) Nothing
+                == IC.violated (IndirectFirePlanning.OrderUnitNotOnMap unitId) Nothing
             )
         , expect "indirect order construction requires a current map position"
             (IndirectFirePlanning.order context.map passenger validTarget
-                == IC.violated (IndirectFirePlanning.CommandUnitNotOnMap unitId) Nothing
+                == IC.violated (IndirectFirePlanning.OrderUnitNotOnMap unitId) Nothing
             )
         , expect "indirect targeting owns legal preview selection and clearing"
             ((IndirectFirePlanning.start gun |> IC.andThen checkPlanning) == IC.happy True)
@@ -1016,11 +1040,11 @@ directionPlanningChecks unitId carrierId =
             (DirectionPlanning.stationaryOrder DirectionPlanning.StandGroundPurpose infantry DirectionEnum.West
                 == IC.happy (Just { unitId = unitId, action = PlannedOrder.StandGround { position = { x = 1, y = 1 }, direction = DirectionEnum.West } })
             )
-        , expect "both stationary direction commands require a map position"
+        , expect "both stationary direction orders require a map position"
             (List.all
                 (\planning ->
                     DirectionPlanning.stationaryOrder planning passenger DirectionEnum.North
-                        == IC.violated (DirectionPlanning.CommandUnitNotOnMap unitId) Nothing
+                        == IC.violated (DirectionPlanning.OrderUnitNotOnMap unitId) Nothing
                 )
                 [ DirectionPlanning.AmbushPurpose, DirectionPlanning.StandGroundPurpose ]
             )
@@ -1211,14 +1235,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         attackContext.map
                         attackContext.units
                         attackContext.playerNumbers
                         attackContext.movementRules
                         attackContext.supplyCrates
                         attackContext.depots
-                        UnitCommand.AttackMove
+                        UnitOrder.AttackMove
                         >> fixtureValue
                    )
                 |> OrderPlanning.extendPath
@@ -1269,8 +1293,8 @@ planningChecks infantryId truckId passengerId =
             )
                 attackSaved
 
-        reopenedCommands : OrderPlanning.Model
-        reopenedCommands =
+        reopenedOrders : OrderPlanning.Model
+        reopenedOrders =
             (OrderPlanning.selectUnit
                 attackContext.map
                 attackContext.units
@@ -1313,14 +1337,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         lowSupplyContext.map
                         lowSupplyContext.units
                         lowSupplyContext.playerNumbers
                         lowSupplyContext.movementRules
                         lowSupplyContext.supplyCrates
                         lowSupplyContext.depots
-                        UnitCommand.AttackMove
+                        UnitOrder.AttackMove
                         >> fixtureValue
                    )
                 |> OrderPlanning.extendPath
@@ -1349,14 +1373,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         context.map
                         context.units
                         context.playerNumbers
                         context.movementRules
                         context.supplyCrates
                         context.depots
-                        UnitCommand.AttackMove
+                        UnitOrder.AttackMove
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -1403,14 +1427,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         indirectContext.map
                         indirectContext.units
                         indirectContext.playerNumbers
                         indirectContext.movementRules
                         indirectContext.supplyCrates
                         indirectContext.depots
-                        UnitCommand.IndirectFire
+                        UnitOrder.IndirectFire
                         >> fixtureValue
                    )
 
@@ -1485,14 +1509,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         outOfRangeContext.map
                         outOfRangeContext.units
                         outOfRangeContext.playerNumbers
                         outOfRangeContext.movementRules
                         outOfRangeContext.supplyCrates
                         outOfRangeContext.depots
-                        UnitCommand.IndirectFire
+                        UnitOrder.IndirectFire
                         >> fixtureValue
                    )
 
@@ -1509,14 +1533,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         context.map
                         context.units
                         context.playerNumbers
                         context.movementRules
                         context.supplyCrates
                         context.depots
-                        UnitCommand.DigIn
+                        UnitOrder.DigIn
                         >> fixtureValue
                    )
 
@@ -1533,14 +1557,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         context.map
                         context.units
                         context.playerNumbers
                         context.movementRules
                         context.supplyCrates
                         context.depots
-                        UnitCommand.StandGround
+                        UnitOrder.StandGround
                         >> fixtureValue
                    )
 
@@ -1582,14 +1606,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         context.map
                         context.units
                         context.playerNumbers
                         context.movementRules
                         context.supplyCrates
                         context.depots
-                        UnitCommand.Ambush
+                        UnitOrder.Ambush
                         >> fixtureValue
                    )
                 |> OrderPlanning.previewDirection DirectionEnum.East
@@ -1614,14 +1638,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         context.map
                         context.units
                         context.playerNumbers
                         context.movementRules
                         context.supplyCrates
                         context.depots
-                        UnitCommand.Ambush
+                        UnitOrder.Ambush
                         >> fixtureValue
                    )
                 |> (OrderPlanning.saveDirection
@@ -1645,14 +1669,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         context.map
                         context.units
                         context.playerNumbers
                         context.movementRules
                         context.supplyCrates
                         context.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> OrderPlanning.extendPath
@@ -1728,14 +1752,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         context.map
                         context.units
                         context.playerNumbers
                         context.movementRules
                         context.supplyCrates
                         context.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -1762,14 +1786,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         context.map
                         context.units
                         context.playerNumbers
                         context.movementRules
                         context.supplyCrates
                         context.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -1811,14 +1835,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         context.map
                         context.units
                         context.playerNumbers
                         context.movementRules
                         context.supplyCrates
                         context.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -1845,14 +1869,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         context.map
                         context.units
                         context.playerNumbers
                         context.movementRules
                         context.supplyCrates
                         context.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -1918,14 +1942,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         context.map
                         context.units
                         context.playerNumbers
                         context.movementRules
                         context.supplyCrates
                         context.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile context.map
@@ -1954,14 +1978,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         context.map
                         context.units
                         context.playerNumbers
                         context.movementRules
                         context.supplyCrates
                         context.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile context.map
@@ -2017,14 +2041,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         context.map
                         context.units
                         context.playerNumbers
                         context.movementRules
                         context.supplyCrates
                         context.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile context.map
@@ -2056,14 +2080,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         chainContext.map
                         chainContext.units
                         chainContext.playerNumbers
                         chainContext.movementRules
                         chainContext.supplyCrates
                         chainContext.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -2086,14 +2110,14 @@ planningChecks infantryId truckId passengerId =
                         passengerId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         chainContext.map
                         chainContext.units
                         chainContext.playerNumbers
                         chainContext.movementRules
                         chainContext.supplyCrates
                         chainContext.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -2116,14 +2140,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         chainContext.map
                         chainContext.units
                         chainContext.playerNumbers
                         chainContext.movementRules
                         chainContext.supplyCrates
                         chainContext.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -2174,14 +2198,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         rendezvousContext.map
                         rendezvousContext.units
                         rendezvousContext.playerNumbers
                         rendezvousContext.movementRules
                         rendezvousContext.supplyCrates
                         rendezvousContext.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -2204,14 +2228,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         rendezvousContext.map
                         rendezvousContext.units
                         rendezvousContext.playerNumbers
                         rendezvousContext.movementRules
                         rendezvousContext.supplyCrates
                         rendezvousContext.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -2234,14 +2258,14 @@ planningChecks infantryId truckId passengerId =
                         passengerId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         rendezvousContext.map
                         rendezvousContext.units
                         rendezvousContext.playerNumbers
                         rendezvousContext.movementRules
                         rendezvousContext.supplyCrates
                         rendezvousContext.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -2268,14 +2292,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         rendezvousContext.map
                         rendezvousContext.units
                         rendezvousContext.playerNumbers
                         rendezvousContext.movementRules
                         rendezvousContext.supplyCrates
                         rendezvousContext.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -2298,14 +2322,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         rendezvousContext.map
                         rendezvousContext.units
                         rendezvousContext.playerNumbers
                         rendezvousContext.movementRules
                         rendezvousContext.supplyCrates
                         rendezvousContext.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -2356,14 +2380,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         freightRendezvousContext.map
                         freightRendezvousContext.units
                         freightRendezvousContext.playerNumbers
                         freightRendezvousContext.movementRules
                         freightRendezvousContext.supplyCrates
                         freightRendezvousContext.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -2391,14 +2415,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         freightRendezvousContext.map
                         freightRendezvousContext.units
                         freightRendezvousContext.playerNumbers
                         freightRendezvousContext.movementRules
                         freightRendezvousContext.supplyCrates
                         freightRendezvousContext.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -2425,14 +2449,14 @@ planningChecks infantryId truckId passengerId =
                         passengerId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         freightRendezvousContext.map
                         freightRendezvousContext.units
                         freightRendezvousContext.playerNumbers
                         freightRendezvousContext.movementRules
                         freightRendezvousContext.supplyCrates
                         freightRendezvousContext.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -2479,14 +2503,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         context.map
                         context.units
                         context.playerNumbers
                         context.movementRules
                         context.supplyCrates
                         context.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -2551,14 +2575,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         cargoContext.map
                         cargoContext.units
                         cargoContext.playerNumbers
                         cargoContext.movementRules
                         cargoContext.supplyCrates
                         cargoContext.depots
-                        UnitCommand.HoldPosition
+                        UnitOrder.HoldPosition
                         >> fixtureValue
                    )
 
@@ -2632,14 +2656,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         cargoContext.map
                         cargoContext.units
                         cargoContext.playerNumbers
                         cargoContext.movementRules
                         cargoContext.supplyCrates
                         cargoContext.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -2694,14 +2718,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         twoInfantryContext.map
                         twoInfantryContext.units
                         twoInfantryContext.playerNumbers
                         twoInfantryContext.movementRules
                         twoInfantryContext.supplyCrates
                         twoInfantryContext.depots
-                        UnitCommand.HoldPosition
+                        UnitOrder.HoldPosition
                         >> fixtureValue
                    )
                 |> OrderPlanning.toggleUnloadPassenger infantryId True
@@ -2736,31 +2760,31 @@ planningChecks infantryId truckId passengerId =
                         >> fixtureValue
                    )
 
-        secondInfantryCommand : OrderPlanning.Model
-        secondInfantryCommand =
+        secondInfantryOrder : OrderPlanning.Model
+        secondInfantryOrder =
             twoInfantryReady
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         twoInfantryContext.map
                         twoInfantryContext.units
                         twoInfantryContext.playerNumbers
                         twoInfantryContext.movementRules
                         twoInfantryContext.supplyCrates
                         twoInfantryContext.depots
-                        UnitCommand.HoldPosition
+                        UnitOrder.HoldPosition
                         >> fixtureValue
                    )
 
-        bothInfantryCommanded : OrderPlanning.Model
-        bothInfantryCommanded =
-            secondInfantryCommand
-                |> (OrderPlanning.applyCommand
+        bothInfantryOrdered : OrderPlanning.Model
+        bothInfantryOrdered =
+            secondInfantryOrder
+                |> (OrderPlanning.applyOrder
                         twoInfantryContext.map
                         twoInfantryContext.units
                         twoInfantryContext.playerNumbers
                         twoInfantryContext.movementRules
                         twoInfantryContext.supplyCrates
                         twoInfantryContext.depots
-                        UnitCommand.StandGround
+                        UnitOrder.StandGround
                         >> fixtureValue
                    )
                 |> (OrderPlanning.saveDirection
@@ -2774,14 +2798,14 @@ planningChecks infantryId truckId passengerId =
         dismountAttack : OrderPlanning.Model
         dismountAttack =
             completed
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         cargoContext.map
                         cargoContext.units
                         cargoContext.playerNumbers
                         cargoContext.movementRules
                         cargoContext.supplyCrates
                         cargoContext.depots
-                        UnitCommand.AttackMove
+                        UnitOrder.AttackMove
                         >> fixtureValue
                    )
                 |> OrderPlanning.extendPath
@@ -2810,14 +2834,14 @@ planningChecks infantryId truckId passengerId =
         dismountHold : OrderPlanning.Model
         dismountHold =
             completed
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         cargoContext.map
                         cargoContext.units
                         cargoContext.playerNumbers
                         cargoContext.movementRules
                         cargoContext.supplyCrates
                         cargoContext.depots
-                        UnitCommand.HoldPosition
+                        UnitOrder.HoldPosition
                         >> fixtureValue
                    )
 
@@ -2875,14 +2899,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         mixedContext.map
                         mixedContext.units
                         mixedContext.playerNumbers
                         mixedContext.movementRules
                         mixedContext.supplyCrates
                         mixedContext.depots
-                        UnitCommand.HoldPosition
+                        UnitOrder.HoldPosition
                         >> fixtureValue
                    )
 
@@ -2974,14 +2998,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         crateOnlyContext.map
                         crateOnlyContext.units
                         crateOnlyContext.playerNumbers
                         crateOnlyContext.movementRules
                         crateOnlyContext.supplyCrates
                         crateOnlyContext.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile crateOnlyContext.map
@@ -3034,14 +3058,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         twoCrateContext.map
                         twoCrateContext.units
                         twoCrateContext.playerNumbers
                         twoCrateContext.movementRules
                         twoCrateContext.supplyCrates
                         twoCrateContext.depots
-                        UnitCommand.HoldPosition
+                        UnitOrder.HoldPosition
                         >> fixtureValue
                    )
                 |> OrderPlanning.toggleUnloadCargo (UnloadCargo.Crate 0) True
@@ -3141,14 +3165,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         fuelContext.map
                         fuelContext.units
                         fuelContext.playerNumbers
                         fuelContext.movementRules
                         fuelContext.supplyCrates
                         fuelContext.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> OrderPlanning.extendPath
@@ -3181,14 +3205,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         depotContext.map
                         depotContext.units
                         depotContext.playerNumbers
                         depotContext.movementRules
                         depotContext.supplyCrates
                         depotContext.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> OrderPlanning.extendPath
@@ -3238,14 +3262,14 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         depotContext.map
                         depotContext.units
                         depotContext.playerNumbers
                         depotContext.movementRules
                         depotContext.supplyCrates
                         depotContext.depots
-                        UnitCommand.Move
+                        UnitOrder.Move
                         >> fixtureValue
                    )
                 |> (OrderPlanning.selectTile
@@ -3272,14 +3296,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         depotContext.map
                         depotContext.units
                         depotContext.playerNumbers
                         depotContext.movementRules
                         depotContext.supplyCrates
                         depotContext.depots
-                        UnitCommand.HoldPosition
+                        UnitOrder.HoldPosition
                         >> fixtureValue
                    )
 
@@ -3305,14 +3329,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         depotCargoContext.map
                         depotCargoContext.units
                         depotCargoContext.playerNumbers
                         depotCargoContext.movementRules
                         depotCargoContext.supplyCrates
                         depotCargoContext.depots
-                        UnitCommand.HoldPosition
+                        UnitOrder.HoldPosition
                         >> fixtureValue
                    )
 
@@ -3377,14 +3401,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         depotMixedContext.map
                         depotMixedContext.units
                         depotMixedContext.playerNumbers
                         depotMixedContext.movementRules
                         depotMixedContext.supplyCrates
                         depotMixedContext.depots
-                        UnitCommand.HoldPosition
+                        UnitOrder.HoldPosition
                         >> fixtureValue
                    )
                 |> OrderPlanning.toggleUnloadCargo (UnloadCargo.Crate 0) True
@@ -3448,14 +3472,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         narrowContext.map
                         narrowContext.units
                         narrowContext.playerNumbers
                         narrowContext.movementRules
                         narrowContext.supplyCrates
                         narrowContext.depots
-                        UnitCommand.HoldPosition
+                        UnitOrder.HoldPosition
                         >> fixtureValue
                    )
                 |> (OrderPlanning.toggleAvailableUnloadCargo
@@ -3486,14 +3510,14 @@ planningChecks infantryId truckId passengerId =
                         truckId
                         >> fixtureValue
                    )
-                |> (OrderPlanning.applyCommand
+                |> (OrderPlanning.applyOrder
                         narrowCrateContext.map
                         narrowCrateContext.units
                         narrowCrateContext.playerNumbers
                         narrowCrateContext.movementRules
                         narrowCrateContext.supplyCrates
                         narrowCrateContext.depots
-                        UnitCommand.HoldPosition
+                        UnitOrder.HoldPosition
                         >> fixtureValue
                    )
                 |> (OrderPlanning.toggleAvailableUnloadCargo
@@ -3600,11 +3624,11 @@ planningChecks infantryId truckId passengerId =
         guideMenu : OrderPlanning.Model
         guideMenu =
             afterOrder
-                |> OrderPlanning.focusCommand context.map context.units (UnitCommand.CommandOption UnitCommand.Move)
+                |> OrderPlanning.focusOrder context.map context.units (UnitOrder.OrderOption UnitOrder.Move)
 
         readingGuide : OrderPlanning.Model
         readingGuide =
-            OrderPlanning.openCommandGuide context.map context.units context.playerNumbers guideMenu
+            OrderPlanning.openOrderGuide context.map context.units context.playerNumbers guideMenu
 
         guideLocked : TurnLifecycle.Phase
         guideLocked =
@@ -3614,23 +3638,23 @@ planningChecks infantryId truckId passengerId =
         missingContext =
             board [ truck ]
 
-        missingCommand : OrderPlanning.Model
-        missingCommand =
+        missingOrder : OrderPlanning.Model
+        missingOrder =
             OrderPlanning.init
                 |> OrderPlanning.setOrders [ { unitId = truckId, action = PlannedOrder.Hold { x = 3, y = 1 } } ]
-                |> OrderPlanning.setSelection (Just (UnitSelection { id = infantryId, interaction = CommandMenu (ChoosingCommand Nothing) }))
+                |> OrderPlanning.setSelection (Just (UnitSelection { id = infantryId, interaction = OrderMenu (ChoosingOrder Nothing) }))
 
-        missingCommandCheck : InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
-        missingCommandCheck =
-            OrderPlanning.applyCommand
+        missingOrderCheck : InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
+        missingOrderCheck =
+            OrderPlanning.applyOrder
                 missingContext.map
                 missingContext.units
                 missingContext.playerNumbers
                 missingContext.movementRules
                 missingContext.supplyCrates
                 missingContext.depots
-                UnitCommand.Move
-                missingCommand
+                UnitOrder.Move
+                missingOrder
 
         missingNextPassenger : InvariantCheck OrderPlanning.InvariantViolation OrderPlanning.Model
         missingNextPassenger =
@@ -3660,19 +3684,19 @@ planningChecks infantryId truckId passengerId =
         brokenTurn : CurrentTurn.Model
         brokenTurn =
             initialTurn
-                |> CurrentTurn.setPhase (TurnLifecycle.Planning missingCommand)
+                |> CurrentTurn.setPhase (TurnLifecycle.Planning missingOrder)
 
         checkedTurn : InvariantCheck Error.Error CurrentTurn.Model
         checkedTurn =
             CurrentTurn.mapPlanning
-                (OrderPlanning.applyCommand
+                (OrderPlanning.applyOrder
                     missingContext.map
                     missingContext.units
                     missingContext.playerNumbers
                     missingContext.movementRules
                     missingContext.supplyCrates
                     missingContext.depots
-                    UnitCommand.Move
+                    UnitOrder.Move
                 )
                 brokenTurn
                 |> IC.mapError Error.OrderPlanningInvariantViolated
@@ -3708,8 +3732,8 @@ planningChecks infantryId truckId passengerId =
                 && not available
     in
     List.concat
-        [ expect "a failed command lookup reports the missing unit without changing selection or drafts"
-            (missingCommandCheck == IC.violated (OrderPlanning.PlanningUnitNotFound infantryId) missingCommand)
+        [ expect "a failed order lookup reports the missing unit without changing selection or drafts"
+            (missingOrderCheck == IC.violated (OrderPlanning.PlanningUnitNotFound infantryId) missingOrder)
         , expect "a checked transition does not inspect unrelated broken state"
             (CurrentTurn.mapPlanning (OrderPlanning.previewDirection DirectionEnum.North >> IC.happy) brokenTurn
                 == IC.happy brokenTurn
@@ -3736,7 +3760,7 @@ planningChecks infantryId truckId passengerId =
                 cargoContext.playerNumbers
                 DirectionEnum.North
                 choosingStandGround
-                == IC.violated (OrderPlanning.DirectionInvariantViolated (DirectionPlanning.CommandUnitNotOnMap infantryId)) choosingStandGround
+                == IC.violated (OrderPlanning.DirectionInvariantViolated (DirectionPlanning.OrderUnitNotOnMap infantryId)) choosingStandGround
             )
         , expect "a missing indirect firing unit retains targeting and existing drafts"
             (OrderPlanning.selectTile missingContext.map missingContext.units missingContext.playerNumbers missingContext.movementRules missingContext.supplyCrates missingContext.depots { x = 2, y = 1 } aiming
@@ -3744,7 +3768,7 @@ planningChecks infantryId truckId passengerId =
             )
         , expect "indirect firing position diagnostics propagate without changing targeting or drafts"
             (OrderPlanning.selectTile cargoContext.map cargoContext.units cargoContext.playerNumbers cargoContext.movementRules cargoContext.supplyCrates cargoContext.depots { x = 2, y = 1 } aiming
-                == IC.violated (OrderPlanning.IndirectFireInvariantViolated (IndirectFirePlanning.CommandUnitNotOnMap infantryId)) aiming
+                == IC.violated (OrderPlanning.IndirectFireInvariantViolated (IndirectFirePlanning.OrderUnitNotOnMap infantryId)) aiming
             )
         , expect "failed movement lookup retains the original tile-inspection fallback"
             (OrderPlanning.confirmPath
@@ -3835,7 +3859,7 @@ planningChecks infantryId truckId passengerId =
                 && List.isEmpty (OrderPlanning.moveOptions (fixtureValue missingNextPassenger))
             )
         , expect "checked composition continues with the fallback value while retaining its diagnostic"
-            (missingCommandCheck
+            (missingOrderCheck
                 |> IC.andThen
                     (OrderPlanning.selectUnit
                         context.map
@@ -3851,7 +3875,7 @@ planningChecks infantryId truckId passengerId =
                 |> (==) (Just (Inspecting (UnitInspection truckId)))
             )
         , expect "checked composition retains the first diagnostic"
-            (missingCommandCheck
+            (missingOrderCheck
                 |> IC.andThen
                     (OrderPlanning.selectUnit
                         context.map
@@ -3867,14 +3891,14 @@ planningChecks infantryId truckId passengerId =
             )
         , expect "no selection, stale clicks, absent previews and out-of-phase actions remain silent"
             (List.all silentNoOp
-                [ OrderPlanning.applyCommand
+                [ OrderPlanning.applyOrder
                     context.map
                     context.units
                     context.playerNumbers
                     context.movementRules
                     context.supplyCrates
                     context.depots
-                    UnitCommand.Move
+                    UnitOrder.Move
                 , OrderPlanning.confirmPath
                     context.map
                     context.units
@@ -3922,14 +3946,14 @@ planningChecks infantryId truckId passengerId =
                     attackAiming
                 == IC.happy attackAiming
             )
-        , expect "unavailable commands remain silent"
-            (OrderPlanning.applyCommand context.map
+        , expect "unavailable orders remain silent"
+            (OrderPlanning.applyOrder context.map
                 context.units
                 context.playerNumbers
                 context.movementRules
                 context.supplyCrates
                 context.depots
-                UnitCommand.Ambush
+                UnitOrder.Ambush
                 (fixtureValue
                     (OrderPlanning.selectUnit
                         context.map
@@ -3951,45 +3975,45 @@ planningChecks infantryId truckId passengerId =
                 stale =
                     OrderPlanning.setSelection (Just (Inspecting (UnitInspection passengerId))) OrderPlanning.init
              in
-             OrderPlanning.restoreCommands context.map context.units context.playerNumbers stale == IC.happy stale
+             OrderPlanning.restoreOrderMenu context.map context.units context.playerNumbers stale == IC.happy stale
             )
-        , expect "command guide preserves orders and returns to the focused command menu"
-            (OrderPlanning.commandGuideOpen readingGuide
+        , expect "order guide preserves orders and returns to the focused order menu"
+            (OrderPlanning.orderGuideOpen readingGuide
                 && OrderPlanning.orders readingGuide
                 == OrderPlanning.orders guideMenu
-                && OrderPlanning.focusedCommand readingGuide
-                == Just (UnitCommand.CommandOption UnitCommand.Move)
+                && OrderPlanning.focusedOrder readingGuide
+                == Just (UnitOrder.OrderOption UnitOrder.Move)
                 && OrderPlanning.dismissDialog readingGuide
                 == guideMenu
             )
-        , expect "command guide only opens from an ordinary command menu"
-            (OrderPlanning.openCommandGuide context.map context.units context.playerNumbers OrderPlanning.init
+        , expect "order guide only opens from an ordinary order menu"
+            (OrderPlanning.openOrderGuide context.map context.units context.playerNumbers OrderPlanning.init
                 == OrderPlanning.init
-                && OrderPlanning.openCommandGuide context.map context.units context.playerNumbers moving
+                && OrderPlanning.openOrderGuide context.map context.units context.playerNumbers moving
                 == moving
-                && OrderPlanning.openCommandGuide context.map context.units context.playerNumbers crateChoice
+                && OrderPlanning.openOrderGuide context.map context.units context.playerNumbers crateChoice
                 == crateChoice
-                && OrderPlanning.openCommandGuide
+                && OrderPlanning.openOrderGuide
                     context.map
                     context.units
                     context.playerNumbers
                     (OrderPlanning.showSubmissionWarning guideMenu)
                 == OrderPlanning.showSubmissionWarning guideMenu
             )
-        , expect "command guide blocks command edits, unit cycling and submission"
-            ((OrderPlanning.applyCommand
+        , expect "order guide blocks order edits, unit cycling and submission"
+            ((OrderPlanning.applyOrder
                 context.map
                 context.units
                 context.playerNumbers
                 context.movementRules
                 context.supplyCrates
                 context.depots
-                UnitCommand.HoldPosition
+                UnitOrder.HoldPosition
                 >> fixtureValue
              )
                 readingGuide
                 == readingGuide
-                && OrderPlanning.focusCommand context.map context.units UnitCommand.CancelOption readingGuide
+                && OrderPlanning.focusOrder context.map context.units UnitOrder.CancelOption readingGuide
                 == readingGuide
                 && OrderPlanning.selectNextUnorderedUnit context.map context.units context.playerNumbers readingGuide
                 == readingGuide
@@ -4005,7 +4029,7 @@ planningChecks infantryId truckId passengerId =
                 == Nothing
                 && TurnLifecycle.selection guideLocked
                 == Just (Inspecting (UnitInspection truckId))
-                && not (OrderPlanning.commandGuideOpen (OrderPlanning.setSelection Nothing readingGuide))
+                && not (OrderPlanning.orderGuideOpen (OrderPlanning.setSelection Nothing readingGuide))
             )
         , expect "passenger and crate share the only crate-compatible exit"
             (let
@@ -4161,14 +4185,14 @@ planningChecks infantryId truckId passengerId =
                                 truckId
                                 >> fixtureValue
                            )
-                        |> (OrderPlanning.applyCommand
+                        |> (OrderPlanning.applyOrder
                                 contextWithFreight.map
                                 contextWithFreight.units
                                 contextWithFreight.playerNumbers
                                 contextWithFreight.movementRules
                                 contextWithFreight.supplyCrates
                                 contextWithFreight.depots
-                                UnitCommand.HoldPosition
+                                UnitOrder.HoldPosition
                                 >> fixtureValue
                            )
                         |> (OrderPlanning.toggleAvailableUnloadCargo
@@ -4327,14 +4351,14 @@ planningChecks infantryId truckId passengerId =
                                 truckId
                                 >> fixtureValue
                            )
-                        |> (OrderPlanning.applyCommand
+                        |> (OrderPlanning.applyOrder
                                 moveContext.map
                                 moveContext.units
                                 moveContext.playerNumbers
                                 moveContext.movementRules
                                 moveContext.supplyCrates
                                 moveContext.depots
-                                UnitCommand.Move
+                                UnitOrder.Move
                                 >> fixtureValue
                            )
                         |> (OrderPlanning.selectTile
@@ -4438,9 +4462,9 @@ planningChecks infantryId truckId passengerId =
             )
         , expect "attack move previews reserve readiness and firing supplies"
             (OrderPlanning.pathPreview lowSupplyAttack |> Maybe.map (\option -> option.path == [ { x = 1, y = 1 }, { x = 2, y = 1 } ]) |> Maybe.withDefault False)
-        , expect "attack move command requires readiness supplies before walking"
+        , expect "attack move order requires readiness supplies before walking"
             (not
-                (UnitCommand.canUse context.map
+                (UnitOrder.canUse context.map
                     []
                     (lowSupplyInfantry
                         |> Unit.setResources
@@ -4453,19 +4477,19 @@ planningChecks infantryId truckId passengerId =
                                 lowSupplyInfantry.resources
                             )
                     )
-                    UnitCommand.AttackMove
+                    UnitOrder.AttackMove
                 )
             )
         , expect "attack move cannot board an allied truck"
             (List.isEmpty (OrderPlanning.orders attackLoading) && OrderPlanning.destinationFeedback attackLoading == DestinationUnavailable)
-        , expect "saved orders can be revoked from inspection or a command menu"
+        , expect "saved orders can be revoked from inspection or an order menu"
             (OrderPlanning.canRevokeOrder context.map context.units context.playerNumbers infantryId saved
                 && OrderPlanning.canRevokeOrder
                     context.map
                     context.units
                     context.playerNumbers
                     infantryId
-                    ((OrderPlanning.restoreCommands
+                    ((OrderPlanning.restoreOrderMenu
                         context.map
                         context.units
                         context.playerNumbers
@@ -4483,17 +4507,17 @@ planningChecks infantryId truckId passengerId =
                 , attackAiming
                 , aiming
                 , choosingStandGround
-                , (OrderPlanning.applyCommand
+                , (OrderPlanning.applyOrder
                     context.map
                     context.units
                     context.playerNumbers
                     context.movementRules
                     context.supplyCrates
                     context.depots
-                    UnitCommand.Ambush
+                    UnitOrder.Ambush
                     >> fixtureValue
                   )
-                    reopenedCommands
+                    reopenedOrders
                 ]
             )
         , expect "dialogs and unfinished unloading cannot be revoked through a stale event"
@@ -4506,41 +4530,35 @@ planningChecks infantryId truckId passengerId =
             (revocationBlocked { context | playerNumbers = [ PlayerNumber.Player2 ] } infantryId saved
                 && revocationBlocked cargoContext infantryId saved
             )
-        , expect "revoking retains inspection without commands or movement previews"
+        , expect "revoking retains inspection without orders or movement previews"
             (List.isEmpty (OrderPlanning.orders attackRevoked)
                 && OrderPlanning.selection attackRevoked
                 == Just (Inspecting (UnitInspection infantryId))
-                && OrderPlanning.commandMenuUnit attackContext.map attackContext.units attackRevoked
+                && OrderPlanning.orderMenuUnit attackContext.map attackContext.units attackRevoked
                 == Nothing
                 && OrderPlanning.pathPreview attackRevoked
                 == Nothing
             )
-        , expect "back to commands drops movement previews and reopens the menu"
-            (OrderPlanning.commandMenuUnit
-                attackContext.map
-                attackContext.units
-                ((OrderPlanning.restoreCommands
-                    attackContext.map
-                    attackContext.units
-                    attackContext.playerNumbers
-                    >> fixtureValue
-                 )
-                    attacking
-                )
-                == Just infantry
-                && OrderPlanning.pathPreview
-                    ((OrderPlanning.restoreCommands
-                        attackContext.map
-                        attackContext.units
-                        attackContext.playerNumbers
-                        >> fixtureValue
-                     )
-                        attacking
-                    )
-                == Nothing
+        , expect "cancel order clears selection, previews, and menus while preserving saved orders"
+            (let
+                cancelsSelection : BoardFixture -> OrderPlanning.Model -> Bool
+                cancelsSelection boardFixture planning =
+                    let
+                        canceled : OrderPlanning.Model
+                        canceled =
+                            OrderPlanning.cancelInteraction boardFixture.map boardFixture.units planning
+                                |> fixtureValue
+                    in
+                    (OrderPlanning.selection canceled == Nothing)
+                        && (OrderPlanning.pathPreview canceled == Nothing)
+                        && (OrderPlanning.orderMenuUnit boardFixture.map boardFixture.units canceled == Nothing)
+                        && (OrderPlanning.orders canceled == OrderPlanning.orders planning)
+             in
+             List.all (cancelsSelection context) [ moving, aiming, choosingStandGround, saved ]
+                && List.all (cancelsSelection attackContext) [ attacking, attackAiming, attackSaved ]
             )
-        , expect "clicking the revoked unit reopens commands and clicking again deselects"
-            (OrderPlanning.commandMenuUnit attackContext.map attackContext.units reopenedCommands
+        , expect "clicking the revoked unit reopens orders and clicking again deselects"
+            (OrderPlanning.orderMenuUnit attackContext.map attackContext.units reopenedOrders
                 == Just infantry
                 && OrderPlanning.selection
                     ((OrderPlanning.selectUnit
@@ -4553,7 +4571,7 @@ planningChecks infantryId truckId passengerId =
                         infantryId
                         >> fixtureValue
                      )
-                        reopenedCommands
+                        reopenedOrders
                     )
                 == Nothing
             )
@@ -4713,23 +4731,23 @@ planningChecks infantryId truckId passengerId =
                     )
             )
         , expect "indirect fire excludes other kinds, passengers, and insufficient supplies"
-            (not (UnitCommand.canUse context.map [] infantry UnitCommand.IndirectFire)
-                && not (UnitCommand.canUse context.map [] truck UnitCommand.IndirectFire)
+            (not (UnitOrder.canUse context.map [] infantry UnitOrder.IndirectFire)
+                && not (UnitOrder.canUse context.map [] truck UnitOrder.IndirectFire)
                 && not
-                    (UnitCommand.canUse context.map
+                    (UnitOrder.canUse context.map
                         []
                         (fieldGun
                             |> Unit.setLocation (Location.Aboard truckId)
                         )
-                        UnitCommand.IndirectFire
+                        UnitOrder.IndirectFire
                     )
                 && not
-                    (UnitCommand.canUse context.map
+                    (UnitOrder.canUse context.map
                         []
                         (insufficientReadiness
                             |> Unit.setKind Kind.FieldGun
                         )
-                        UnitCommand.IndirectFire
+                        UnitOrder.IndirectFire
                     )
             )
         , expect "stand ground chooses direction before saving and can be revoked"
@@ -4756,32 +4774,32 @@ planningChecks infantryId truckId passengerId =
             )
         , expect "dig in excludes entrenched infantry, dismounts, field guns, trucks and insufficient supplies"
             (not
-                (UnitCommand.canUse context.map
+                (UnitOrder.canUse context.map
                     []
                     (infantry
                         |> Unit.setEntrenchment Entrenchment.Entrenched
                     )
-                    UnitCommand.DigIn
+                    UnitOrder.DigIn
                 )
                 && not
-                    (UnitCommand.canUse context.map
+                    (UnitOrder.canUse context.map
                         []
                         (infantry
                             |> Unit.setLocation (Location.dismounting { x = 1, y = 1 })
                         )
-                        UnitCommand.DigIn
+                        UnitOrder.DigIn
                     )
-                && not (UnitCommand.canUse context.map [] insufficientReadiness UnitCommand.DigIn)
-                && not (UnitCommand.canUse context.map [] fieldGun UnitCommand.DigIn)
-                && not (UnitCommand.canUse context.map [] truck UnitCommand.DigIn)
-                && not (List.member UnitCommand.DigIn (UnitCommand.available [] fieldGun))
+                && not (UnitOrder.canUse context.map [] insufficientReadiness UnitOrder.DigIn)
+                && not (UnitOrder.canUse context.map [] fieldGun UnitOrder.DigIn)
+                && not (UnitOrder.canUse context.map [] truck UnitOrder.DigIn)
+                && not (List.member UnitOrder.DigIn (UnitOrder.available [] fieldGun))
             )
         , expect "stand ground requires readiness supplies and excludes trucks and passengers"
-            (not (UnitCommand.canUse context.map [] insufficientReadiness UnitCommand.StandGround)
-                && not (List.member UnitCommand.StandGround (UnitCommand.available [] truck))
+            (not (UnitOrder.canUse context.map [] insufficientReadiness UnitOrder.StandGround)
+                && not (List.member UnitOrder.StandGround (UnitOrder.available [] truck))
                 && not
-                    (List.member UnitCommand.StandGround
-                        (UnitCommand.available []
+                    (List.member UnitOrder.StandGround
+                        (UnitOrder.available []
                             (infantry
                                 |> Unit.setLocation (Location.Aboard truckId)
                             )
@@ -4805,24 +4823,24 @@ planningChecks infantryId truckId passengerId =
                 && List.isEmpty (OrderPlanning.orders truckAmbush)
             )
         , expect "unordered selection cycles through eligible units and wraps"
-            (OrderPlanning.commandMenuUnit
+            (OrderPlanning.orderMenuUnit
                 context.map
                 context.units
                 firstUnordered
                 == Just infantry
-                && OrderPlanning.commandMenuUnit
+                && OrderPlanning.orderMenuUnit
                     context.map
                     context.units
                     secondUnordered
                 == Just truck
-                && OrderPlanning.commandMenuUnit
+                && OrderPlanning.orderMenuUnit
                     context.map
                     context.units
                     wrappedUnordered
                 == Just infantry
             )
         , expect "unordered selection leaves a preview without saving a move"
-            (OrderPlanning.commandMenuUnit
+            (OrderPlanning.orderMenuUnit
                 context.map
                 context.units
                 afterPreview
@@ -4830,7 +4848,7 @@ planningChecks infantryId truckId passengerId =
                 && List.isEmpty (OrderPlanning.orders afterPreview)
             )
         , expect "unordered selection skips saved orders and keeps the last eligible unit selected"
-            (OrderPlanning.commandMenuUnit
+            (OrderPlanning.orderMenuUnit
                 context.map
                 context.units
                 afterOrder
@@ -4926,7 +4944,7 @@ planningChecks infantryId truckId passengerId =
                     (OrderPlanning.orders loading)
             )
         , expect "a receiving truck is inspection only"
-            (OrderPlanning.commandMenuUnit
+            (OrderPlanning.orderMenuUnit
                 context.map
                 context.units
                 receiving
@@ -4934,9 +4952,9 @@ planningChecks infantryId truckId passengerId =
                 && OrderPlanning.selection receiving
                 == Just (Inspecting (UnitInspection truckId))
             )
-        , expect "revoking loading and receiver holds keeps the truck inspected without commands"
+        , expect "revoking loading and receiver holds keeps the truck inspected without orders"
             (List.isEmpty (OrderPlanning.orders revoked)
-                && OrderPlanning.commandMenuUnit context.map context.units revoked
+                && OrderPlanning.orderMenuUnit context.map context.units revoked
                 == Nothing
                 && OrderPlanning.selection revoked
                 == Just (Inspecting (UnitInspection truckId))
@@ -4949,7 +4967,7 @@ planningChecks infantryId truckId passengerId =
             (List.concatMap PlannedOrder.unloads (OrderPlanning.orders completed) == [ { unitId = infantryId, destination = { x = 3, y = 2 } }, { unitId = passengerId, destination = { x = 4, y = 1 } } ] && OrderPlanning.unloadPlanning completed == Nothing)
         , expect "moving truck exits use the planned truck destination"
             (List.concatMap PlannedOrder.unloads (OrderPlanning.orders truckMove) == [ { unitId = infantryId, destination = { x = 5, y = 1 } } ])
-        , expect "dismounted infantry needs a command while other cargo receives holds for submission"
+        , expect "dismounted infantry needs an order while other cargo receives holds for submission"
             (List.map .id
                 (OrderPlanning.missingOrders
                     cargoContext.map
@@ -4961,29 +4979,29 @@ planningChecks infantryId truckId passengerId =
                 && List.length ordersForSubmission
                 == 3
             )
-        , expect "saving the first infantry command opens commands for the second dismount"
-            (OrderPlanning.commandMenuUnit
+        , expect "saving the first infantry order opens orders for the second dismount"
+            (OrderPlanning.orderMenuUnit
                 twoInfantryContext.map
                 twoInfantryContext.units
-                secondInfantryCommand
+                secondInfantryOrder
                 |> Maybe.map .id
                 |> (==) (Just passengerId)
             )
-        , expect "both dismounted infantry can save independent commands"
+        , expect "both dismounted infantry can save independent orders"
             (List.isEmpty
                 (OrderPlanning.missingOrders
                     twoInfantryContext.map
                     twoInfantryContext.units
                     twoInfantryContext.playerNumbers
-                    (OrderPlanning.orders bothInfantryCommanded)
+                    (OrderPlanning.orders bothInfantryOrdered)
                 )
-                && OrderPlanning.commandMenuUnit twoInfantryContext.map twoInfantryContext.units bothInfantryCommanded
+                && OrderPlanning.orderMenuUnit twoInfantryContext.map twoInfantryContext.units bothInfantryOrdered
                 == Nothing
-                && List.length (OrderPlanning.orders bothInfantryCommanded)
+                && List.length (OrderPlanning.orders bothInfantryOrdered)
                 == 3
             )
-        , expect "completing exits opens the dismounted infantry command menu"
-            (OrderPlanning.commandMenuUnit
+        , expect "completing exits opens the dismounted infantry order menu"
+            (OrderPlanning.orderMenuUnit
                 cargoContext.map
                 cargoContext.units
                 completed
@@ -4994,7 +5012,7 @@ planningChecks infantryId truckId passengerId =
             (OrderPlanning.orders dismountAttack
                 |> List.any (\order -> order.unitId == infantryId && PlannedOrder.isAttackMove order && List.head (PlannedOrder.path order) == Just { x = 3, y = 2 })
             )
-        , expect "dismounted hold uses the exit and clears the missing command"
+        , expect "dismounted hold uses the exit and clears the missing order"
             (List.isEmpty
                 (OrderPlanning.missingOrders
                     cargoContext.map
@@ -5004,7 +5022,7 @@ planningChecks infantryId truckId passengerId =
                 )
                 && List.any (\order -> order.unitId == infantryId && PlannedOrder.path order == [ { x = 3, y = 2 } ]) (OrderPlanning.orders dismountHold)
             )
-        , expect "revoking transport also revokes its dismounted infantry command"
+        , expect "revoking transport also revokes its dismounted infantry order"
             (not (List.any (\order -> order.unitId == infantryId) (OrderPlanning.orders revokedDismount)))
         , expect "explicit crate loading reserves the truck berths against later boarding drafts"
             (List.map .unitId (OrderPlanning.orders tryingFullTruck) == [ truckId ])
@@ -5203,7 +5221,8 @@ unit id kind location =
     , location = location
     , resources =
         Just
-            { supplyCargo = []
+            { exhaustionTurnsRemaining = Nothing
+            , supplyCargo = []
             , hitPoints =
                 { current = 16
                 , maximum = 16
