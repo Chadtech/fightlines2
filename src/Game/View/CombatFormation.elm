@@ -1,5 +1,6 @@
 module Game.View.CombatFormation exposing
     ( Animation
+    , TrenchOccupancy(..)
     , exhaustionEndsAt
     , exhaustionToSvg
     , figureCount
@@ -13,9 +14,10 @@ import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
-import Game.BackdropCalibration exposing (Calibration)
+import Game.BackdropCalibration as BackdropCalibration exposing (Calibration)
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
 import Game.View.CombatAttack as CombatAttack
+import Game.View.CombatBazooka as CombatBazooka
 import Game.View.CombatExplosion as CombatExplosion
 import Game.View.CombatInfantry as CombatInfantry
 import Game.View.UnitSprite as UnitSprite exposing (Appearance)
@@ -31,7 +33,13 @@ type alias Animation =
     , impactDelay : Float
     , attack : CombatAttack.Attack
     , infantryLoadout : CombatInfantry.Loadout
+    , trenchOccupancy : TrenchOccupancy
     }
+
+
+type TrenchOccupancy
+    = Occupied
+    | ShelteringUnderground
 
 
 {-| Theater figures summarize health; they do not change authoritative damage.
@@ -210,7 +218,18 @@ combatantToSvg : Int -> Animation -> Appearance -> Svg msg
 combatantToSvg index animation unit =
     case unit.kind of
         Kind.Infantry ->
-            CombatInfantry.toSvg animation.infantryLoadout index unit
+            case animation.infantryLoadout of
+                CombatInfantry.Bazookas ->
+                    CombatBazooka.toSvg
+                        { elapsed = animation.elapsed, figureIndex = index }
+                        animation.attack
+                        unit
+
+                CombatInfantry.SmallArms ->
+                    CombatInfantry.toSvg
+                        { elapsed = animation.elapsed, figureIndex = index }
+                        animation.attack
+                        unit
 
         _ ->
             CombatAttack.toSvg { elapsed = animation.elapsed, figureIndex = index } animation.attack unit
@@ -252,6 +271,7 @@ exhaustionToSvg calibration elapsed =
         , impactDelay = 0
         , attack = CombatAttack.NotAttacking
         , infantryLoadout = CombatInfantry.SmallArms
+        , trenchOccupancy = Occupied
         }
 
 
@@ -296,33 +316,46 @@ usesTrenches loadout unit =
         && (loadout == CombatInfantry.SmallArms)
 
 
-{-| Both trench drawings resize around their bottom footing and stay centered
-side by side with a fixed gap. Their size and footing are independent of the
-exposed infantry formation’s calibration.
+{-| Each trench resizes around its own bottom footing, preserving the inner gap.
+Their size and footing are independent of each other and the exposed formation.
 -}
 trenchPlacements : Maybe Calibration -> List Placement
 trenchPlacements calibration =
     let
-        footing : Float
-        footing =
-            64 * Maybe.withDefault 86 (Maybe.map .trenchFooting calibration) / 100
+        settings : Calibration
+        settings =
+            Maybe.withDefault BackdropCalibration.suggested calibration
 
-        width : Float
-        width =
-            96 * Maybe.withDefault 35 (Maybe.map .trenchSize calibration) / 100
+        place : { x : Float, footing : Float, size : Float } -> Placement
+        place row =
+            let
+                width : Float
+                width =
+                    96 * row.size / 100
 
-        place : Float -> Placement
-        place x =
-            { x = x
+                footing : Float
+                footing =
+                    64 * row.footing / 100
+            in
+            { x = row.x
             , y = footing - width * 809 / 1945
             , size = width
             }
     in
-    List.map place [ 44.4 - width, 51.6 ]
+    List.map place
+        [ { x = 44.4 - 96 * settings.trenchSize / 100
+          , footing = settings.trenchFooting
+          , size = settings.trenchSize
+          }
+        , { x = 51.6
+          , footing = settings.secondTrenchFooting
+          , size = settings.secondTrenchSize
+          }
+        ]
 
 
-trenchToSvg : Maybe Calibration -> Appearance -> List (Svg msg)
-trenchToSvg calibration unit =
+trenchToSvg : TrenchOccupancy -> Maybe Calibration -> Appearance -> List (Svg msg)
+trenchToSvg occupancy calibration unit =
     let
         team : String
         team =
@@ -333,10 +366,19 @@ trenchToSvg calibration unit =
                 PlayerNumber.Player2 ->
                     "blue"
 
+        path : String
+        path =
+            case occupancy of
+                Occupied ->
+                    "/assets/combat-trench-overlay-anime-v2/" ++ team ++ ".png"
+
+                ShelteringUnderground ->
+                    "/assets/combat-trench-overlay-anime-v2/empty.png"
+
         trench : Placement -> Svg msg
         trench placement =
             Svg.image
-                [ SA.xlinkHref ("/assets/combat-trench-overlay-anime-v2/" ++ team ++ ".png")
+                [ SA.xlinkHref path
                 , SA.x (String.fromFloat placement.x)
                 , SA.y (String.fromFloat placement.y)
                 , SA.width (String.fromFloat placement.size)
@@ -580,13 +622,29 @@ layersToSvg effect calibration layers animation health unit =
                 scale =
                     placement.size / UnitSprite.portraitWidth unit
 
-                x : Float
-                x =
-                    if unit.spriteFacing == SpriteFacing.Left then
-                        96 - placement.x - placement.size
+                needsFlashSpace : Bool
+                needsFlashSpace =
+                    (unit.kind == Kind.Infantry)
+                        && (animation.infantryLoadout == CombatInfantry.SmallArms)
+                        && not (usesTrenches animation.infantryLoadout unit)
+
+                placementX : Float
+                placementX =
+                    if needsFlashSpace then
+                        -- Reserve the widest flash's 90/512 extension on ready
+                        -- frames too, keeping edge figures still while firing.
+                        min placement.x (96 - placement.size * 1.18)
 
                     else
                         placement.x
+
+                x : Float
+                x =
+                    if unit.spriteFacing == SpriteFacing.Left then
+                        96 - placementX - placement.size
+
+                    else
+                        placementX
 
                 lost : Bool
                 lost =
@@ -765,7 +823,7 @@ layersToSvg effect calibration layers animation health unit =
             case layer of
                 Combatants ->
                     if showingTrenches then
-                        trenchToSvg calibration unit
+                        trenchToSvg animation.trenchOccupancy calibration unit
 
                     else
                         List.map (renderFigure layer) visiblePlacements

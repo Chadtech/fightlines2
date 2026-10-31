@@ -28,7 +28,7 @@ buildBackdropCalibrationInput :
     BackdropCalibrationInputRequiredFields
     -> BackdropCalibrationInput
 buildBackdropCalibrationInput required____ =
-    { frontFooting = required____.frontFooting, rowSpacing = required____.rowSpacing, unitSize = required____.unitSize, rearScale = required____.rearScale, trenchFooting = required____.trenchFooting, trenchSize = required____.trenchSize }
+    { frontFooting = required____.frontFooting, rowSpacing = required____.rowSpacing, unitSize = required____.unitSize, rearScale = required____.rearScale, trenchFooting = required____.trenchFooting, trenchSize = required____.trenchSize, secondTrenchFooting = required____.secondTrenchFooting, secondTrenchSize = required____.secondTrenchSize }
 
 
 type alias BackdropCalibrationInputRequiredFields =
@@ -38,6 +38,8 @@ type alias BackdropCalibrationInputRequiredFields =
     , rearScale : Float
     , trenchFooting : Float
     , trenchSize : Float
+    , secondTrenchFooting : Float
+    , secondTrenchSize : Float
     }
 
 
@@ -50,6 +52,8 @@ type alias BackdropCalibrationInput =
     , rearScale : Float
     , trenchFooting : Float
     , trenchSize : Float
+    , secondTrenchFooting : Float
+    , secondTrenchSize : Float
     }
 
 
@@ -58,7 +62,7 @@ type alias BackdropCalibrationInput =
 encodeBackdropCalibrationInput : BackdropCalibrationInput -> Value
 encodeBackdropCalibrationInput input____ =
     Encode.maybeObject
-        [ ( "frontFooting", Encode.float input____.frontFooting |> Just ), ( "rowSpacing", Encode.float input____.rowSpacing |> Just ), ( "unitSize", Encode.float input____.unitSize |> Just ), ( "rearScale", Encode.float input____.rearScale |> Just ), ( "trenchFooting", Encode.float input____.trenchFooting |> Just ), ( "trenchSize", Encode.float input____.trenchSize |> Just ) ]
+        [ ( "frontFooting", Encode.float input____.frontFooting |> Just ), ( "rowSpacing", Encode.float input____.rowSpacing |> Just ), ( "unitSize", Encode.float input____.unitSize |> Just ), ( "rearScale", Encode.float input____.rearScale |> Just ), ( "trenchFooting", Encode.float input____.trenchFooting |> Just ), ( "trenchSize", Encode.float input____.trenchSize |> Just ), ( "secondTrenchFooting", Encode.float input____.secondTrenchFooting |> Just ), ( "secondTrenchSize", Encode.float input____.secondTrenchSize |> Just ) ]
 
 
 buildCoordinateInput :

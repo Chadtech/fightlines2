@@ -28,7 +28,11 @@ mod visibility;
 use actix_files::{Files, NamedFile};
 use actix_web::{App, HttpServer, middleware::DefaultHeaders, web};
 
-use std::{env, io, net::TcpListener, path::PathBuf};
+use std::{
+    env, io,
+    net::TcpListener,
+    path::{Path, PathBuf},
+};
 
 fn main() -> io::Result<()> {
     if env::args().nth(1).as_deref() == Some("--export-schema") {
@@ -97,22 +101,15 @@ async fn run() -> io::Result<()> {
     let editor_enabled = env::args().any(|argument| argument == "--map-editor");
     let editor = web::Data::new(map_editor::Editor {
         directory: map_id::directory(),
-        index: frontend.join("dev-tools.html"),
+        frontend: frontend.clone(),
         writes: std::sync::Mutex::new(()),
     });
-    if editor_enabled {
-        println!("Map editor: http://{}/map-editor", listener.local_addr()?);
-    }
     let archives_enabled = env::args().any(|argument| argument == "--game-logs");
     let archives = web::Data::new(game_archive::Browser {
         directory: log_path,
-        index: frontend.join("dev-tools.html"),
     });
-    if archives_enabled {
-        println!(
-            "Logged games: http://{}/logged-games",
-            listener.local_addr()?
-        );
+    if frontend.join("dev-tools.html").is_file() {
+        println!("Development tools: http://{}/dev", listener.local_addr()?);
     }
     let store = web::Data::new(store);
     let schema = web::Data::new(graphql::schema());
@@ -123,16 +120,7 @@ async fn run() -> io::Result<()> {
             .app_data(store.clone())
             .app_data(schema.clone())
             .route("/graphql", web::post().to(graphql::handle))
-            .route(
-                "/backdrop-review",
-                web::get().to({
-                    let index = frontend.join("dev-tools.html");
-                    move || {
-                        let index = index.clone();
-                        async move { NamedFile::open(index) }
-                    }
-                }),
-            )
+            .service(dev_tools(&frontend))
             .route(
                 "/new",
                 web::get().to({
@@ -171,15 +159,10 @@ async fn run() -> io::Result<()> {
                 }),
             );
         if archives_enabled {
-            app = app
-                .app_data(archives.clone())
-                .route("/logged-games", web::get().to(game_archive::page))
-                .route("/logged-games/{id}", web::get().to(game_archive::page));
+            app = app.app_data(archives.clone());
         }
         if editor_enabled {
-            app = app
-                .app_data(editor.clone())
-                .configure(|config| map_editor::configure(config, true));
+            app = app.app_data(editor.clone());
         }
         app.service(Files::new("/", &frontend).index_file("index.html"))
     })
@@ -190,3 +173,58 @@ async fn run() -> io::Result<()> {
 
 #[cfg(test)]
 mod test_support;
+
+// Elm owns every route within the tools app, including unknown-page handling.
+fn dev_tools(frontend: &Path) -> actix_web::Scope {
+    let index = frontend.join("dev-tools.html");
+    web::scope("/dev").default_service(web::get().to(move || {
+        let index = index.clone();
+        async move { NamedFile::open(index) }
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::TestResult;
+    use actix_web::{http::StatusCode, test};
+    use std::fs;
+
+    #[actix_web::test]
+    async fn dev_prefix_serves_elm_routes_and_stays_within_its_boundary() -> TestResult<()> {
+        let directory =
+            env::temp_dir().join(format!("fightlines-dev-routes-{}", std::process::id()));
+        fs::create_dir_all(&directory)?;
+        fs::write(directory.join("dev-tools.html"), "development tools")?;
+        let app = test::init_service(App::new().service(dev_tools(&directory))).await;
+        for uri in [
+            "/dev",
+            "/dev/",
+            "/dev/map-editor",
+            "/dev/logged-games/example-archive",
+            "/dev/backdrop-review",
+            "/dev/future-tool/nested-page",
+        ] {
+            let response =
+                test::call_service(&app, test::TestRequest::get().uri(uri).to_request()).await;
+            assert_eq!(response.status(), StatusCode::OK, "{uri}");
+            assert_eq!(test::read_body(response).await, "development tools");
+        }
+        for uri in [
+            "/developer",
+            "/map-editor",
+            "/logged-games",
+            "/backdrop-review",
+        ] {
+            let response =
+                test::call_service(&app, test::TestRequest::get().uri(uri).to_request()).await;
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{uri}");
+        }
+        fs::remove_file(directory.join("dev-tools.html"))?;
+        let response =
+            test::call_service(&app, test::TestRequest::get().uri("/dev").to_request()).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
+}

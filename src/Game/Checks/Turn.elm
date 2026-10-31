@@ -30,6 +30,7 @@ import Game.UnitLoss as UnitLoss
 import Game.UnitLoss.Cause as LossCause
 import Game.UnitResources as UnitResources
 import Game.View.CombatAttack as CombatAttack
+import Game.View.CombatBazooka as CombatBazooka
 import Game.View.CombatExplosion as CombatExplosion
 import Game.View.CombatFormation as CombatFormation
 import Game.View.CombatInfantry as CombatInfantry
@@ -2075,16 +2076,15 @@ combatPlaybackChecks first second =
                         |> Maybe.map (.attackerHealth >> .after >> .current)
                         |> (==) (Just 16)
 
-                delayForShots : List Shot -> Maybe Float
-                delayForShots shots =
+                panelForShots : List Shot -> Maybe TurnPlayback.Panel
+                panelForShots shots =
                     let
-                        panelDelay : TurnPlayback.CombatExchange -> Float
-                        panelDelay pair =
-                            CombatTheater.attackDelay
-                                { encounter = TurnPlayback.Exchange pair
-                                , elapsed = 0
-                                , mapView = TurnPlayback.CardVisible
-                                }
+                        panelForExchange : TurnPlayback.CombatExchange -> TurnPlayback.Panel
+                        panelForExchange pair =
+                            { encounter = TurnPlayback.Exchange pair
+                            , elapsed = 0
+                            , mapView = TurnPlayback.CardVisible
+                            }
                     in
                     focused
                         [ before
@@ -2093,7 +2093,11 @@ combatPlaybackChecks first second =
                         , waiting
                         ]
                         |> Maybe.andThen TurnPlayback.combat
-                        |> Maybe.map panelDelay
+                        |> Maybe.map panelForExchange
+
+                delayForShots : List Shot -> Maybe Float
+                delayForShots shots =
+                    panelForShots shots |> Maybe.map CombatTheater.attackDelay
 
                 zeroDamage : Shot -> Shot
                 zeroDamage fired =
@@ -2106,6 +2110,70 @@ combatPlaybackChecks first second =
                 flankingShot : Shot
                 flankingShot =
                     { shot | flankBonus = True }
+
+                infantryShot : Shot
+                infantryShot =
+                    shot
+                        |> setShotAttacker (Unit.setKind Kind.Infantry attacker)
+                        |> setShotTarget (Unit.setKind Kind.Infantry target)
+
+                infantryReturnShot : Shot
+                infantryReturnShot =
+                    returnShot
+                        |> setShotAttacker (Unit.setKind Kind.Infantry target)
+                        |> setShotTarget (Unit.setKind Kind.Infantry attacker)
+
+                lethalInfantryShot : Shot
+                lethalInfantryShot =
+                    { infantryShot
+                        | damage = 16
+                        , targetHealth = { before = { current = 16, maximum = 16 }, after = { current = 0, maximum = 16 } }
+                    }
+
+                infantryImpactsWhileFiring : TurnPlayback.Panel -> Bool
+                infantryImpactsWhileFiring panel =
+                    let
+                        impactFinishesDuringBurst : Float -> Bool
+                        impactFinishesDuringBurst time =
+                            time + CombatExplosion.durationMs < 3120
+                    in
+                    (CombatTheater.impactTimes panel == [ 2280, 2400, 2520, 2640, 2760, 2880, 3000 ])
+                        && (CombatInfantry.frameAt
+                                { elapsed = 2280, figureIndex = 0 }
+                                (CombatAttack.Attacking { startsAt = 1200 })
+                                == 1
+                           )
+                        && List.all impactFinishesDuringBurst (CombatTheater.impactTimes panel)
+
+                closesAt : Float -> TurnPlayback.Panel -> Bool
+                closesAt elapsed panel =
+                    not (CombatTheater.readyToAutomaticallyClose (setPanelElapsed (elapsed - 1) panel))
+                        && CombatTheater.readyToAutomaticallyClose (setPanelElapsed elapsed panel)
+                        && not (CombatTheater.readyToAutomaticallyClose (setPanelElapsed 6000 { panel | mapView = TurnPlayback.SeeingMap }))
+
+                firingAt : Float -> List Shot -> List Audio.FiringInfantry
+                firingAt elapsed shots =
+                    panelForShots shots
+                        |> Maybe.map (setPanelElapsed elapsed >> CombatTheater.firingInfantry)
+                        |> Maybe.withDefault []
+
+                peekFiring : TurnPlayback.Panel -> List Audio.FiringInfantry
+                peekFiring panel =
+                    CombatTheater.firingInfantry { panel | elapsed = 1300, mapView = TurnPlayback.SeeingMap }
+
+                firingState :
+                    { playback : Maybe TurnPlayback.Playback
+                    , paused : Bool
+                    , camera : Maybe PlaybackPresentation.PlaybackCamera
+                    }
+                firingState =
+                    { playback =
+                        focused [ before, opening |> TurnPlayback.setFrameShots [ infantryShot ], waiting ]
+                            |> Maybe.andThen (TurnPlayback.tick 300 >> Tuple.first)
+                            |> Maybe.andThen (TurnPlayback.tick 1300 >> Tuple.first)
+                    , paused = False
+                    , camera = Nothing
+                    }
 
                 flankingReturn : Shot
                 flankingReturn =
@@ -2165,14 +2233,93 @@ combatPlaybackChecks first second =
                         |> Maybe.map exchangeFlankBonuses
                         |> (==) (Just ( False, True ))
                     )
-                ++ expect "defending tanks do not fire merely because they appear in a theater"
+                ++ expect "bazookas animate against a non-firing tank without starting a tank attack"
                     (delayForShots
                         [ shot
                             |> setShotAttacker (Unit.setKind Kind.Infantry attacker)
                         ]
-                        == Just 0
+                        == Just 1170
                         && delayForShots [ shot ]
                         == Just 1420
+                    )
+                ++ expect "zero-damage bazooka volleys retain their firing phase"
+                    (delayForShots
+                        [ zeroDamage (shot |> setShotAttacker (Unit.setKind Kind.Infantry attacker)) ]
+                        == Just 1170
+                    )
+                ++ expect "small-arms impacts retain their midpoint timing, including zero damage and return fire"
+                    (delayForShots [ zeroDamage infantryShot ]
+                        == Just 1060
+                        && delayForShots [ infantryShot, infantryReturnShot ]
+                        == Just 1105
+                    )
+                ++ expect "infantry are still flashing while target impacts play"
+                    (panelForShots [ lethalInfantryShot ]
+                        |> Maybe.map infantryImpactsWhileFiring
+                        |> (==) (Just True)
+                    )
+                ++ expect "zero-damage infantry fire holds the theater through the full burst and closing pause"
+                    (panelForShots [ zeroDamage infantryShot ]
+                        |> Maybe.map (closesAt 3620)
+                        |> (==) (Just True)
+                    )
+                ++ expect "returning infantry keep the theater open through their later firing end"
+                    (panelForShots [ zeroDamage infantryShot, zeroDamage infantryReturnShot ]
+                        |> Maybe.map (closesAt 3665)
+                        |> (==) (Just True)
+                    )
+                ++ expect "infantry sound starts and stops at the animation boundaries, including zero damage"
+                    (List.isEmpty (firingAt 1199 [ infantryShot ])
+                        && firingAt 1200 [ zeroDamage infantryShot ]
+                        == [ { unitId = first, elapsedMs = 0, remainingMs = 1920 } ]
+                        && firingAt 3000 [ infantryShot ]
+                        == [ { unitId = first, elapsedMs = 1800, remainingMs = 120 } ]
+                        && List.isEmpty (firingAt 3120 [ infantryShot ])
+                    )
+                ++ expect "returning infantry have their own sound phase and finish 45ms later"
+                    (firingAt 1245 [ zeroDamage infantryShot, zeroDamage infantryReturnShot ]
+                        == [ { unitId = first, elapsedMs = 45, remainingMs = 1875 }
+                           , { unitId = second, elapsedMs = 0, remainingMs = 1920 }
+                           ]
+                        && firingAt 3120 [ zeroDamage infantryShot, zeroDamage infantryReturnShot ]
+                        == [ { unitId = second, elapsedMs = 1875, remainingMs = 45 } ]
+                        && List.isEmpty (firingAt 3165 [ zeroDamage infantryShot, zeroDamage infantryReturnShot ])
+                    )
+                ++ expect "bazookas, trenches, and non-firing targets do not play small-arms audio"
+                    (List.isEmpty (firingAt 1300 [ shot |> setShotAttacker (Unit.setKind Kind.Infantry attacker) ])
+                        && List.isEmpty
+                            (firingAt 1300
+                                [ infantryShot |> setShotAttacker { attacker | kind = Kind.Infantry, entrenchment = Entrenchment.Entrenched } ]
+                            )
+                        && List.map .unitId (firingAt 1300 [ infantryShot ])
+                        == [ first ]
+                    )
+                ++ expect "infantry sound stops when its last firing figure disappears"
+                    (List.map .unitId (firingAt 3074 [ lethalInfantryShot, infantryReturnShot ])
+                        == [ first, second ]
+                        && List.map .unitId (firingAt 3075 [ lethalInfantryShot, infantryReturnShot ])
+                        == [ first ]
+                    )
+                ++ expect "map peeks, playback pause, camera holds and leaving combat silence infantry"
+                    (not (List.isEmpty (PlaybackPresentation.firingInfantry firingState))
+                        && List.isEmpty (PlaybackPresentation.firingInfantry { firingState | paused = True })
+                        && List.isEmpty
+                            (PlaybackPresentation.firingInfantry
+                                { firingState | camera = Just { camera = { offset = { x = 0, y = 0 }, zoom = 1 }, remainingPanMs = 10 } }
+                            )
+                        && List.isEmpty (PlaybackPresentation.firingInfantry { firingState | playback = Nothing })
+                        && (panelForShots [ infantryShot ]
+                                |> Maybe.map peekFiring
+                           )
+                        == Just []
+                    )
+                ++ expect "infantry snapshots refresh active voices and stop them on exit without idle traffic"
+                    (Audio.syncInfantryFire { before = [], after = firingAt 1300 [ infantryShot ] }
+                        == Audio.SyncInfantryFire [ { unitId = first, elapsedMs = 100, remainingMs = 1820 } ]
+                        && Audio.syncInfantryFire { before = firingAt 1300 [ infantryShot ], after = [] }
+                        == Audio.SyncInfantryFire []
+                        && Audio.syncInfantryFire { before = [], after = [] }
+                        == Audio.none
                     )
                 ++ expect "fewer firing tanks shorten the firing phase using before-health"
                     (delayForShots
@@ -2199,13 +2346,13 @@ combatPlaybackChecks first second =
                         ]
                         == Just 1210
                     )
-                ++ expect "receiving fire does not start a field-gun animation"
+                ++ expect "a non-firing field gun leaves only the infantry burst on the attack clock"
                     (delayForShots
                         [ shot
                             |> setShotAttacker (Unit.setKind Kind.Infantry attacker)
                             |> setShotTarget (Unit.setKind Kind.FieldGun target)
                         ]
-                        == Just 0
+                        == Just 1060
                     )
                 ++ expect "recorded field-gun return fire shares the stagger and recovery delay"
                     (delayForShots
@@ -3866,6 +4013,19 @@ combatTheaterChecks =
         expectedPaths : List String
         expectedPaths =
             List.map (\name -> "/assets/combat-backdrops-anime-v1/" ++ name ++ ".png") names
+
+        smallArmsAttack : CombatAttack.Attack
+        smallArmsAttack =
+            CombatAttack.Attacking { startsAt = 1200 }
+
+        infantryFrames : Float -> List Int
+        infantryFrames elapsed =
+            let
+                frame : Int -> Int
+                frame index =
+                    CombatInfantry.frameAt { elapsed = elapsed, figureIndex = index } smallArmsAttack
+            in
+            List.map frame (List.range 0 6)
     in
     List.concat
         [ expect "theater figures each represent a quarter of health, including partially intact quarters"
@@ -3935,10 +4095,59 @@ combatTheaterChecks =
                 && CombatAttack.endsAt (CombatAttack.Attacking { startsAt = 1200 }) Kind.Tank 0
                 == 0
             )
-        , expect "units without firing artwork keep their existing timeline"
+        , expect "generic atlas timing leaves infantry to its own renderer and keeps trucks unarmed"
             (CombatAttack.endsAt (CombatAttack.Attacking { startsAt = 1200 }) Kind.Infantry 8
                 == 0
                 && CombatAttack.endsAt (CombatAttack.Attacking { startsAt = 1200 }) Kind.Truck 4
+                == 0
+            )
+        , expect "infantry flashes last 40ms and the machine gun fires again after 90ms"
+            (List.map (\elapsed -> CombatInfantry.frameAt { elapsed = elapsed, figureIndex = 0 } smallArmsAttack)
+                [ 1199, 1200, 1239, 1240, 1289, 1290, 1329, 1330, 2190, 3090, 3120, 6000 ]
+                == [ 0, 1, 1, 0, 0, 1, 1, 0, 1, 1, 0, 0 ]
+            )
+        , expect "infantry phases differ even for repeated kneeling and prone poses"
+            (infantryFrames 1200
+                == [ 1, 0, 0, 0, 0, 0, 0 ]
+                && infantryFrames 1260
+                == [ 0, 1, 0, 1, 0, 0, 0 ]
+                && infantryFrames 1300
+                == [ 1, 0, 0, 0, 1, 0, 1 ]
+                && infantryFrames 1199
+                == List.repeat 7 0
+                && infantryFrames 3120
+                == List.repeat 7 0
+                && CombatInfantry.frameAt { elapsed = 1200, figureIndex = 0 } CombatAttack.NotAttacking
+                == 0
+                && CombatInfantry.frameAt { elapsed = 1200, figureIndex = 0 } (CombatAttack.Attacking { startsAt = 1245 })
+                == 0
+            )
+        , expect "infantry fire for 1920ms, including returning fire and empty formations"
+            (CombatInfantry.endsAt smallArmsAttack 7
+                == 3120
+                && CombatInfantry.endsAt (CombatAttack.Attacking { startsAt = 1245 }) 7
+                == 3165
+                && CombatInfantry.endsAt smallArmsAttack 1
+                == 3120
+                && CombatInfantry.endsAt smallArmsAttack 0
+                == 0
+                && CombatInfantry.endsAt CombatAttack.NotAttacking 7
+                == 0
+            )
+        , expect "bazooka teams brace, launch briefly, clear smoke, and hold ready without looping"
+            (List.map CombatBazooka.frameAt [ -1, 0, 139, 140, 179, 180, 259, 260, 419, 420, 609, 610, 799, 800, 6000 ]
+                == [ 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7 ]
+            )
+        , expect "bazooka impact delays cover the last pair, returning fire, and empty formations"
+            (CombatBazooka.endsAt (CombatAttack.Attacking { startsAt = 1200 }) 4
+                == 2270
+                && CombatBazooka.endsAt (CombatAttack.Attacking { startsAt = 1245 }) 4
+                == 2315
+                && CombatBazooka.endsAt (CombatAttack.Attacking { startsAt = 1200 }) 1
+                == 2000
+                && CombatBazooka.endsAt CombatAttack.NotAttacking 4
+                == 0
+                && CombatBazooka.endsAt (CombatAttack.Attacking { startsAt = 1200 }) 0
                 == 0
             )
         , expect "field-gun crews signal, brace, fire, recoil, recover once, and hold the final drawing"

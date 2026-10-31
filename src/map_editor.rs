@@ -7,7 +7,6 @@ use crate::{
     map_thumbnail,
     scenario::{BuildingKind, Direction, PlayerNumber, UnitKind},
 };
-use actix_files::NamedFile;
 use actix_web::{HttpRequest, web};
 use juniper::{FieldResult, GraphQLInputObject, GraphQLObject};
 use std::{
@@ -18,7 +17,7 @@ use std::{
 
 pub struct Editor {
     pub directory: PathBuf,
-    pub index: PathBuf,
+    pub frontend: PathBuf,
     pub writes: Mutex<()>,
 }
 
@@ -173,11 +172,32 @@ pub fn save_map(
     definition: MapDefinitionInput,
     thumbnail: Option<String>,
 ) -> FieldResult<NamedMap> {
+    write_map(context, map_type, definition, thumbnail, WriteMode::Update)
+}
+
+pub fn create_map(
+    context: &Context,
+    map_type: MapId,
+    definition: MapDefinitionInput,
+    thumbnail: Option<String>,
+) -> FieldResult<NamedMap> {
+    write_map(context, map_type, definition, thumbnail, WriteMode::Create)
+}
+
+enum WriteMode {
+    Create,
+    Update,
+}
+
+fn write_map(
+    context: &Context,
+    map_type: MapId,
+    definition: MapDefinitionInput,
+    thumbnail: Option<String>,
+    mode: WriteMode,
+) -> FieldResult<NamedMap> {
     let editor = context.editor.write()?;
     let name = map_type.as_str();
-    if !editor.directory.join(format!("{name}.json")).is_file() {
-        return Err("unknown map".into());
-    }
     let definition = definition.definition()?;
     definition
         .scenario()
@@ -185,9 +205,15 @@ pub fn save_map(
     let json = serde_json::to_string_pretty(&definition)? + "\n";
     let _guard = editor.writes.lock().map_err(|error| error.to_string())?;
     let destination = editor.directory.join(format!("{name}.json"));
+    match mode {
+        WriteMode::Create if destination.exists() => {
+            return Err("a map with this name already exists".into());
+        }
+        WriteMode::Update if !destination.is_file() => return Err("unknown map".into()),
+        WriteMode::Create | WriteMode::Update => {}
+    }
     if let Some(thumbnail) = thumbnail {
-        let frontend = editor.index.parent().ok_or("missing frontend directory")?;
-        map_thumbnail::save(frontend, &definition, &thumbnail)?;
+        map_thumbnail::save(&editor.frontend, &definition, &thumbnail)?;
     }
     let temporary = destination.with_extension("json.tmp");
     fs::write(&temporary, json)?;
@@ -198,26 +224,11 @@ pub fn save_map(
     })
 }
 
-pub fn configure(config: &mut web::ServiceConfig, enabled: bool) {
-    if enabled {
-        config.route("/map-editor", web::get().to(page));
-    }
-}
-
 fn local_request(request: &HttpRequest) -> bool {
     request
         .peer_addr()
         .is_some_and(|peer| peer.ip().is_loopback())
 }
-pub async fn page(request: HttpRequest, editor: web::Data<Editor>) -> actix_web::Result<NamedFile> {
-    if !local_request(&request) {
-        return Err(actix_web::error::ErrorForbidden(
-            "map editing requires localhost",
-        ));
-    }
-    Ok(NamedFile::open(&editor.index)?)
-}
-
 fn same_origin(request: &HttpRequest) -> bool {
     let connection = request.connection_info();
     let host = connection.host();
@@ -241,6 +252,7 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
     const SAVE: &str = "mutation Save($definition: MapDefinitionInput!, $kind: MapId!) { saveMap(mapType: $kind, definition: $definition) { mapType definition { description theme width depots { kind } } } }";
+    const CREATE: &str = "mutation Create($definition: MapDefinitionInput!, $kind: MapId!) { createMap(mapType: $kind, definition: $definition) { mapType } }";
 
     fn store() -> web::Data<crate::lobby::Store> {
         web::Data::new(crate::lobby::Store::new(crate::seed::Seed::new([0; 32])))
@@ -248,7 +260,7 @@ mod tests {
     fn editor(directory: PathBuf) -> web::Data<Editor> {
         web::Data::new(Editor {
             directory,
-            index: PathBuf::new(),
+            frontend: PathBuf::new(),
             writes: Mutex::new(()),
         })
     }
@@ -304,12 +316,11 @@ mod tests {
             App::new()
                 .app_data(store())
                 .app_data(web::Data::new(crate::graphql::schema()))
-                .route("/graphql", web::post().to(crate::graphql::handle))
-                .configure(|config| configure(config, false)),
+                .route("/graphql", web::post().to(crate::graphql::handle)),
         )
         .await;
         let valid = graphql_definition()?;
-        for query in ["{ maps { first { mapType } } }", SAVE] {
+        for query in ["{ maps { first { mapType } } }", SAVE, CREATE] {
             let request = test::TestRequest::post()
                 .uri("/graphql")
                 .peer_addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234))
@@ -341,11 +352,6 @@ mod tests {
                 StatusCode::NOT_FOUND
             );
         }
-        let request = test::TestRequest::get().uri("/map-editor").to_request();
-        assert_eq!(
-            test::call_service(&app, request).await.status(),
-            StatusCode::NOT_FOUND
-        );
         Ok(())
     }
 
@@ -519,6 +525,101 @@ mod tests {
     }
 
     #[actix_web::test]
+    async fn creates_maps_without_overwriting_and_rejects_invalid_or_unauthorized_creation()
+    -> TestResult<()> {
+        let directory =
+            std::env::temp_dir().join(format!("fightlines-create-map-{}", std::process::id()));
+        fs::create_dir_all(&directory)?;
+        let destination = directory.join("new-battlefield.json");
+        let app = test::init_service(
+            App::new()
+                .app_data(store())
+                .app_data(editor(directory.clone()))
+                .app_data(web::Data::new(crate::graphql::schema()))
+                .route("/graphql", web::post().to(crate::graphql::handle)),
+        )
+        .await;
+        let valid = json!({
+            "description": "creation fixture", "width": 2, "height": 2,
+            "theme": "GREEN_FOREST", "features": [], "depots": [],
+            "units": [
+                {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "PLAYER1", "kind": "INFANTRY", "direction": "EAST"},
+                {"id": 2, "position": {"x": 1, "y": 1}, "playerNumber": "PLAYER2", "kind": "INFANTRY", "direction": "WEST"}
+            ]
+        });
+        let mut original = None;
+        for attempt in [
+            "remote",
+            "origin",
+            "empty-forces",
+            "invalid-name",
+            "create",
+            "duplicate",
+        ] {
+            let mut definition = valid.clone();
+            if attempt == "empty-forces" {
+                definition["units"] = json!([]);
+            }
+            if attempt == "duplicate" {
+                definition["description"] = json!("must not replace the original");
+            }
+            let kind = if attempt == "invalid-name" {
+                "../new-battlefield"
+            } else {
+                "new-battlefield"
+            };
+            let peer = if attempt == "remote" {
+                Ipv4Addr::new(192, 168, 1, 2)
+            } else {
+                Ipv4Addr::LOCALHOST
+            };
+            let origin = if attempt == "origin" {
+                "http://example.com"
+            } else {
+                "http://localhost:8080"
+            };
+            let request = test::TestRequest::post()
+                .uri("/graphql")
+                .peer_addr(SocketAddr::new(IpAddr::V4(peer), 1234))
+                .insert_header(("host", "localhost:8080"))
+                .insert_header(("origin", origin))
+                .set_json(
+                    json!({"query": CREATE, "variables": {"kind": kind, "definition": definition}}),
+                )
+                .to_request();
+            let body: Value = test::call_and_read_body_json(&app, request).await;
+            if attempt == "create" {
+                assert!(body.get("errors").is_none(), "{body}");
+                assert_eq!(body["data"]["createMap"]["mapType"], json!(kind));
+                let saved = fs::read_to_string(&destination)?;
+                MapDefinition::parse(&saved)
+                    .map_err(|error| error.to_string())?
+                    .scenario()
+                    .map_err(|error| error.to_string())?;
+                let catalog = map_id::catalog_in(&directory).map_err(|error| error.to_string())?;
+                assert_eq!(catalog.len(), 1);
+                assert_eq!(
+                    catalog
+                        .first()
+                        .ok_or("missing created map")?
+                        .map_type
+                        .as_str(),
+                    kind
+                );
+                original = Some(saved);
+            } else {
+                assert!(body.get("errors").is_some(), "{attempt}: {body}");
+                match &original {
+                    Some(saved) => assert_eq!(&fs::read_to_string(&destination)?, saved),
+                    None => assert!(!destination.exists()),
+                }
+            }
+        }
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
+
+    #[actix_web::test]
     async fn saves_thumbnail_with_its_map_and_rejects_invalid_image_before_map_write()
     -> TestResult<()> {
         use base64::{Engine, engine::general_purpose::STANDARD};
@@ -537,7 +638,7 @@ mod tests {
                 .app_data(store())
                 .app_data(web::Data::new(Editor {
                     directory: maps.clone(),
-                    index: frontend.join("index.html"),
+                    frontend: frontend.clone(),
                     writes: Mutex::new(()),
                 }))
                 .app_data(web::Data::new(crate::graphql::schema()))

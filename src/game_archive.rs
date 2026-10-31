@@ -9,14 +9,12 @@ use crate::{
     turns::GameOutcome,
     visibility::PlayerObservation,
 };
-use actix_files::NamedFile;
 use actix_web::web;
 use juniper::{FieldResult, GraphQLEnum, GraphQLObject, GraphQLUnion, graphql_object};
 use std::{fs, io, path::PathBuf, sync::Arc};
 
 pub struct Browser {
     pub directory: PathBuf,
-    pub index: PathBuf,
 }
 
 pub enum Access {
@@ -300,10 +298,6 @@ pub fn turn(
     Ok(snapshot)
 }
 
-pub async fn page(browser: web::Data<Browser>) -> actix_web::Result<NamedFile> {
-    Ok(NamedFile::open(&browser.index)?)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -478,35 +472,16 @@ mod tests {
         let broken = root.join(format!("{}-1", "02".repeat(16)));
         fs::create_dir(&broken)?;
         fs::write(broken.join("00000000.json"), b"{")?;
-        let index = root.join("index.html");
-        fs::write(&index, "<html>archive replay</html>")?;
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(Store::new(Seed::new([0; 32]))))
                 .app_data(web::Data::new(graphql::schema()))
                 .app_data(web::Data::new(Browser {
                     directory: root.clone(),
-                    index,
                 }))
-                .route("/graphql", web::post().to(graphql::handle))
-                .route("/logged-games", web::get().to(page))
-                .route("/logged-games/{id}", web::get().to(page)),
+                .route("/graphql", web::post().to(graphql::handle)),
         )
         .await;
-        for uri in ["/logged-games".to_owned(), format!("/logged-games/{id}")] {
-            let request = test::TestRequest::get()
-                .uri(&uri)
-                .peer_addr(SocketAddr::from(([192, 0, 2, 1], 1234)))
-                .insert_header(("host", "fightlines.example"))
-                .insert_header(("origin", "https://fightlines.example"))
-                .to_request();
-            let response = test::call_service(&app, request).await;
-            assert!(response.status().is_success());
-            assert_eq!(
-                test::read_body(response).await,
-                "<html>archive replay</html>"
-            );
-        }
         for (turn, player, fog_argument, expected_units) in [
             (0, "PLAYER1", "", 1),
             (0, "PLAYER2", "", 1),

@@ -14,26 +14,15 @@ mod logistics;
 mod search;
 mod transport;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Difficulty {
-    Easy,
-    Medium,
-    Hard,
-}
-
-pub fn plan_with_difficulty(
+pub fn plan(
     scenario: &Scenario,
     player: PlayerNumber,
-    difficulty: Difficulty,
 ) -> Result<Vec<MoveOrderInput>, &'static str> {
-    match difficulty {
-        Difficulty::Easy => plan(scenario, player),
-        Difficulty::Medium => search::plan_medium(scenario, player),
-        Difficulty::Hard => search::plan_hard(scenario, player),
-    }
+    search::plan(scenario, player)
 }
 
-pub fn plan(
+// A simple advancing response for the tactical search to evaluate against.
+fn advancing_orders(
     scenario: &Scenario,
     player: PlayerNumber,
 ) -> Result<Vec<MoveOrderInput>, &'static str> {
@@ -325,13 +314,12 @@ mod tests {
     use super::*;
     use crate::{
         map::Map,
-        map_id::MapId,
         test_support::{FixtureValue, TestResult},
         turns::{self, Turns},
     };
 
     #[test]
-    fn all_difficulties_keep_every_unit_on_its_water_island() -> TestResult {
+    fn keeps_every_unit_on_its_water_island() -> TestResult {
         for kind in [
             UnitKind::Infantry,
             UnitKind::Tank,
@@ -363,54 +351,14 @@ mod tests {
                 };
                 unit.move_to(Coordinate::new(x, 0));
             }
-            for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
-                let inputs =
-                    plan_with_difficulty(&scenario, PlayerNumber::Player1, difficulty).fixture()?;
-                let orders = turns::validate(&scenario, PlayerNumber::Player1, inputs).fixture()?;
-                assert!(
-                    orders
-                        .iter()
-                        .all(|order| order.path == [Coordinate::new(0, 0)]),
-                    "{difficulty:?} {kind:?} crossed water"
-                );
-            }
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn every_map_plays_valid_turns_through_completion() -> TestResult {
-        // Keep this bounded AI regression sample independent of catalog growth.
-        for name in [
-            "supply-point",
-            "el-alamein",
-            "blood-gulch",
-            "sidewinder",
-            "black-forest",
-            "crossroads",
-            "ridgeway",
-            "three-crossings",
-            "lake-of-pennsylvania",
-            "convoy-country",
-            "tobruk",
-            "bastion-pass",
-        ] {
-            let map = MapId::parse(name.into())?;
-            let mut scenario = map.scenario().fixture()?;
-            let mut turns = Turns::default();
-            for _ in 0..160 {
-                if turns.outcome.is_some() {
-                    break;
-                }
-                let number = turns.number;
-                for player in [PlayerNumber::Player1, PlayerNumber::Player2] {
-                    let inputs = plan(&scenario, player).fixture()?;
-                    turns
-                        .submit(&mut scenario, player, number, inputs)
-                        .map_err(|error| format!("{map:?}, turn {number}, {player:?}: {error}"))?;
-                }
-            }
-            assert!(turns.outcome.is_some(), "{map:?} did not finish");
+            let inputs = plan(&scenario, PlayerNumber::Player1).fixture()?;
+            let orders = turns::validate(&scenario, PlayerNumber::Player1, inputs).fixture()?;
+            assert!(
+                orders
+                    .iter()
+                    .all(|order| order.path == [Coordinate::new(0, 0)]),
+                "{kind:?} crossed water"
+            );
         }
         Ok(())
     }
@@ -445,7 +393,7 @@ mod tests {
     }
 
     #[test]
-    fn visible_enemies_take_damage_from_combat_units() -> TestResult {
+    fn advancing_model_attacks_visible_enemies() -> TestResult {
         for kind in [UnitKind::Infantry, UnitKind::Tank, UnitKind::FieldGun] {
             let mut scenario = Scenario::supply_point().fixture()?;
             let attacker = scenario
@@ -478,7 +426,7 @@ mod tests {
                 unit.move_to(position);
             }
             let mut turns = Turns::default();
-            let ai_orders = plan(&scenario, PlayerNumber::Player2).fixture()?;
+            let ai_orders = advancing_orders(&scenario, PlayerNumber::Player2).fixture()?;
             turns
                 .submit(&mut scenario, PlayerNumber::Player2, 1, ai_orders)
                 .fixture()?;

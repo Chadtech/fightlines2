@@ -162,6 +162,8 @@ compiler success do not establish that these checks pass.
   pointer/keyboard paths, loading/failure states, focus, and native disclosure
   resets in the browser. Check artwork in its actual map/inspector/theater use.
 - [ ] Run `make check` for code changes and `git diff --check` before finishing.
+  The check-in workflow in `AGENTS.md` requires `make check-all`, including slow
+  simulations, before approval to commit and push.
   Documentation-only edits need content and whitespace checks. Report exact
   failures and remaining unverified behavior without claiming a clean suite.
 

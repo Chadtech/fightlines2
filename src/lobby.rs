@@ -1,6 +1,6 @@
 use crate::graphql::Context;
 use crate::{
-    ai::{self, Difficulty},
+    ai,
     game_archive::review::RecordedOrder,
     game_log::{Directory, GameLog, GameStarted, RecordedPlayer, Submission, SubmissionResult},
     lobby_id::LobbyId,
@@ -172,23 +172,21 @@ impl Game {
 #[derive(Clone)]
 enum PlayerController {
     Human(SessionToken),
-    Ai(Difficulty),
+    Ai,
 }
 
 impl PlayerController {
     fn kind(&self) -> Controller {
         match self {
             Self::Human(_) => Controller::Human,
-            Self::Ai(Difficulty::Easy) => Controller::Ai,
-            Self::Ai(Difficulty::Medium) => Controller::AiMedium,
-            Self::Ai(Difficulty::Hard) => Controller::AiHard,
+            Self::Ai => Controller::Ai,
         }
     }
 
     fn session(&self) -> Option<&SessionToken> {
         match self {
             Self::Human(session) => Some(session),
-            Self::Ai(_) => None,
+            Self::Ai => None,
         }
     }
 }
@@ -197,10 +195,8 @@ impl PlayerController {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
 pub enum Controller {
     Human,
-    /// The original Easy AI; retains the existing AI wire value.
+    #[serde(alias = "AiMedium", alias = "AiHard")]
     Ai,
-    AiMedium,
-    AiHard,
 }
 
 #[derive(Clone)]
@@ -701,17 +697,11 @@ pub fn set_controller(
     lobby
         .players
         .retain(|player| player.controller.session().is_some());
-    let difficulty = match controller {
-        Controller::Human => None,
-        Controller::Ai => Some(Difficulty::Easy),
-        Controller::AiMedium => Some(Difficulty::Medium),
-        Controller::AiHard => Some(Difficulty::Hard),
-    };
-    if let Some(difficulty) = difficulty {
+    if controller == Controller::Ai {
         let player_number = vacant_side(&lobby.players)?;
         lobby.players.push(Player {
             player_number,
-            controller: PlayerController::Ai(difficulty),
+            controller: PlayerController::Ai,
             name: ai_name,
         });
     }
@@ -936,16 +926,16 @@ pub fn submit_turn(
         .players
         .iter()
         .find_map(|player| match player.controller {
-            PlayerController::Ai(difficulty) => Some((player.player_number, difficulty)),
+            PlayerController::Ai => Some(player.player_number),
             PlayerController::Human(_) => None,
         });
     let mut next_turns = game.turns.clone();
     let mut next_scenario = game.scenario.clone();
     let mut submissions = Vec::new();
-    if let Some((ai_player, difficulty)) = ai_player {
+    if let Some(ai_player) = ai_player {
         // Planning sees only the AI's observation of the pre-turn board. It never
         // receives the human's draft or submitted orders.
-        let ai_orders = ai::plan_with_difficulty(&game.scenario, ai_player, difficulty)
+        let ai_orders = ai::plan(&game.scenario, ai_player)
             .map_err(|message| FieldError::new(message, juniper::Value::null()))?;
         submissions.push(Submission {
             player_number: ai_player,

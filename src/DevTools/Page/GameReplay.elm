@@ -4,6 +4,7 @@ module DevTools.Page.GameReplay exposing
     , Msg(..)
     , ambience
     , dialog
+    , firingInfantry
     , getShared
     , init
     , keyCommands
@@ -55,7 +56,6 @@ import Graphql.Operation exposing (RootQuery)
 import Graphql.SelectionSet as SS
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
-import Json.Decode as Decode
 import KeyCmd
 import Ports.Js.To as ToJs
 import Style as S
@@ -335,6 +335,20 @@ movingUnits model =
                 , paused = playing.paused
                 , camera = playing.camera
                 , skipLossDialogs = model.skipUnitLossDialogs
+                }
+
+        Ready ->
+            []
+
+
+firingInfantry : Model -> List Audio.FiringInfantry
+firingInfantry model =
+    case model.timeline of
+        Playing playing ->
+            PlaybackPresentation.firingInfantry
+                { playback = Just playing.animation
+                , paused = playing.paused
+                , camera = playing.camera
                 }
 
         Ready ->
@@ -1412,44 +1426,6 @@ controls model =
                     "turn " ++ String.fromInt turn
             }
 
-        playerDecoder : Decode.Decoder PlayerNumber
-        playerDecoder =
-            Decode.string |> Decode.andThen decodePlayer
-
-        decodePlayer : String -> Decode.Decoder PlayerNumber
-        decodePlayer value =
-            case value of
-                "1" ->
-                    Decode.succeed PlayerNumber.Player1
-
-                "2" ->
-                    Decode.succeed PlayerNumber.Player2
-
-                _ ->
-                    Decode.fail "invalid replay player"
-
-        playerValue : PlayerNumber -> String
-        playerValue player =
-            case player of
-                PlayerNumber.Player1 ->
-                    "1"
-
-                PlayerNumber.Player2 ->
-                    "2"
-
-        turnDecoder : Decode.Decoder Int
-        turnDecoder =
-            Decode.string |> Decode.andThen decodeTurn
-
-        decodeTurn : String -> Decode.Decoder Int
-        decodeTurn value =
-            case String.toInt value of
-                Just turn ->
-                    Decode.succeed turn
-
-                Nothing ->
-                    Decode.fail "invalid replay turn"
-
         loadingStatus : String
         loadingStatus =
             if busy then
@@ -1489,15 +1465,13 @@ controls model =
                     ]
                 ]
                 [ H.text "turn"
-                , Select.toHtml
-                    { htmlId = "replay-turn"
-                    , disabled = busy
-                    , selected = model.position.turn
+                , Select.new
+                    { selected = model.position.turn
                     , options = List.map turnOption (List.range 0 model.game.turnCount)
-                    , toValue = String.fromInt
-                    , decoder = turnDecoder
                     , onChange = TurnSelected
                     }
+                    |> Select.disabled busy
+                    |> Select.toHtml
                 ]
 
         playerSelector : Html Msg
@@ -1511,10 +1485,8 @@ controls model =
                     ]
                 ]
                 [ H.text "view"
-                , Select.toHtml
-                    { htmlId = "replay-player"
-                    , disabled = busy
-                    , selected = model.position.player
+                , Select.new
+                    { selected = model.position.player
                     , options =
                         [ { value = PlayerNumber.Player1
                           , label = "player 1 (red)"
@@ -1523,10 +1495,10 @@ controls model =
                           , label = "player 2 (blue)"
                           }
                         ]
-                    , toValue = playerValue
-                    , decoder = playerDecoder
                     , onChange = PlayerSelected
                     }
+                    |> Select.disabled busy
+                    |> Select.toHtml
                 ]
     in
     TurnControls.replayPanel

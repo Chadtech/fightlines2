@@ -8,6 +8,10 @@ const { createHash } = require('node:crypto');
 
 const source = readFileSync('public/audio-manager.js', 'utf8');
 
+function assertSeconds(actual, expected, message) {
+  assert.ok(Math.abs(actual - expected) < 1e-9, `${message}: expected ${expected}, received ${actual}`);
+}
+
 function boot({ loadFails = false, decodeFails = false, resumeFails = false, deferredLoad = false } = {}) {
   const events = {};
   const documentEvents = {};
@@ -150,8 +154,9 @@ async function main() {
     '/audio/movement/truck-volvo-6s.ogg',
     '/audio/movement/tank-monosfera-6s.ogg',
     '/audio/movement/infantry-stib-2x.ogg',
+    '/audio/combat/infantry-fire-heavy-v1.ogg',
   ]);
-  assert.equal(app.contexts[0].decodes, 21);
+  assert.equal(app.contexts[0].decodes, 22);
   await app.audio.handleEvent({ play: 'uiAffirm' });
   assert.equal(app.voices.length, 1, 'rapid duplicate requests are coalesced');
   for (let index = 0; index < 4; index++) {
@@ -160,7 +165,7 @@ async function main() {
   }
   assert.equal(app.voices.length, 5);
   assert.equal(app.voices[0].stopped, true, 'voice limit replaces the oldest voice');
-  assert.equal(app.contexts[0].decodes, 21, 'decoded buffers are reused');
+  assert.equal(app.contexts[0].decodes, 22, 'decoded buffers are reused');
   app.voices[1].finish();
   assert.equal(app.voices[1].disconnected, true);
   app.audio.setVolume(0);
@@ -273,7 +278,7 @@ async function main() {
   await ambience.audio.handleEvent({ ambience: [plains] });
   assert.equal(ambience.contexts.length, 0, 'ambience cannot unlock the context');
   await ambience.gesture();
-  assert.equal(ambience.requests.length, 21, 'ambience loads only when the theater needs it');
+  assert.equal(ambience.requests.length, 22, 'ambience loads only when the theater needs it');
   await ambience.audio.handleEvent({ ambience: [plains, forest] });
   assert.equal(ambience.voices.length, 2);
   assert.ok(ambience.voices.every(voice => voice.loop && voice.started));
@@ -397,6 +402,103 @@ async function main() {
   assert.equal(movement.warnings.length, 1, 'malformed movement is bounded and does not throw');
 
   const infantry = { unitId: 'infantry-1', sound: 'infantry' };
+  const fire = { unitId: 'infantry-1', elapsedMs: 0, remainingMs: 1920 };
+  const firing = boot();
+  await firing.audio.handleEvent({ infantryFire: [fire] });
+  assert.equal(firing.voices.length, 0, 'firing requires an audio-unlocking gesture');
+  await firing.gesture();
+  await firing.audio.handleEvent({ infantryFire: [fire] });
+  assert.equal(firing.voices[0].offset, 0);
+  assert.equal(firing.voices[0].stopsAt, 1.92, 'firing stops at the animation deadline');
+  assert.notEqual(firing.voices[0].loop, true, 'the approved burst plays once');
+  assert.equal(firing.gains[1].gain.ramps[0].value, 1, 'a single formation plays at the baked-in asset volume');
+  firing.contexts[0].currentTime = 0.1;
+  firing.advance(100);
+  const progressedFire = { ...fire, elapsedMs: 100, remainingMs: 1820 };
+  await firing.audio.handleEvent({ infantryFire: [progressedFire] });
+  await firing.audio.handleEvent({ infantryFire: [progressedFire] });
+  assert.equal(firing.voices.length, 1, 'ordinary frames and unrelated updates preserve the voice');
+  await firing.audio.handleEvent({ infantryFire: [] });
+  assertSeconds(firing.voices[0].stopsAt, 0.105, 'pause, map peeks and exit stop firing promptly');
+  await firing.audio.handleEvent({ infantryFire: [progressedFire] });
+  assert.equal(firing.voices[1].offset, 0.1, 'resume seeks to the animation position');
+  assertSeconds(firing.voices[1].stopsAt, 1.92, 'resume does not extend the firing window');
+  await firing.audio.handleEvent({ infantryFire: [{ ...fire, elapsedMs: 900, remainingMs: 1020 }] });
+  assert.equal(firing.voices[2].offset, 0.9, 'long animation ticks correct audio drift');
+  await firing.audio.handleEvent({ infantryFire: [{ ...fire, elapsedMs: 20, remainingMs: 1900 }] });
+  assert.equal(firing.voices[3].offset, 0.02, 'rewinding starts a new voice at the earlier position');
+  firing.voices[3].finish();
+  await firing.audio.handleEvent({ infantryFire: [{ ...fire, elapsedMs: 20, remainingMs: 1900 }] });
+  assert.equal(firing.voices.length, 4, 'an ended burst is not replayed by stale snapshots');
+  await firing.audio.handleEvent({ infantryFire: [] });
+
+  const reciprocalFire = boot();
+  await reciprocalFire.gesture();
+  await reciprocalFire.audio.handleEvent({ infantryFire: [
+    { ...fire, elapsedMs: 45, remainingMs: 1875 },
+    { ...fire, unitId: 'infantry-2' },
+  ] });
+  assert.deepEqual(reciprocalFire.voices.map(voice => voice.offset), [0.045, 0], 'return fire keeps its separate phase');
+  assert.equal(reciprocalFire.voices[0].buffer, reciprocalFire.voices[1].buffer, 'formations share the approved decoded recording');
+  assert.ok(reciprocalFire.gains.slice(1).every(gain => gain.gain.ramps[0].value === 1 / Math.sqrt(2)),
+    'simultaneous formations normalize their mix without an extra volume boost');
+  for (let index = 0; index < 10; index++) await reciprocalFire.audio.handleEvent({ play: 'combatImpact' });
+  assert.equal(reciprocalFire.voices[0].stopsAt, 1.875, 'combat voice limits never evict sustained infantry fire');
+  await reciprocalFire.audio.handleEvent({ muted: true });
+  assert.equal(reciprocalFire.voices[0].stopsAt, 0, 'mute stops firing immediately');
+  await reciprocalFire.audio.handleEvent({ muted: false });
+  await reciprocalFire.audio.handleEvent({ infantryFire: [{ ...fire, elapsedMs: 600, remainingMs: 1320 }] });
+  assert.equal(reciprocalFire.voices.at(-1).offset, 0.6, 'unmute resumes the current animation phase');
+  reciprocalFire.document.hidden = true;
+  reciprocalFire.documentEvents.visibilitychange();
+  assert.equal(reciprocalFire.voices.at(-1).stopsAt, 0, 'hidden tabs stop infantry immediately');
+  reciprocalFire.document.hidden = false;
+  await reciprocalFire.audio.handleEvent({ infantryFire: [{ ...fire, elapsedMs: 800, remainingMs: 1120 }] });
+  assert.equal(reciprocalFire.voices.at(-1).offset, 0.8);
+  reciprocalFire.events.pagehide();
+  assert.equal(reciprocalFire.voices.at(-1).stopsAt, 0, 'page exit stops infantry immediately');
+
+  for (const cancel of ['stop', 'hidden', 'pagehide', 'muted', 'expired']) {
+    const pending = boot({ deferredLoad: true });
+    await pending.gesture();
+    const play = pending.audio.handleEvent({ infantryFire: [fire] });
+    if (cancel === 'stop') await pending.audio.handleEvent({ infantryFire: [] });
+    if (cancel === 'hidden') {
+      pending.document.hidden = true;
+      pending.documentEvents.visibilitychange();
+      pending.document.hidden = false;
+    }
+    if (cancel === 'pagehide') pending.events.pagehide();
+    if (cancel === 'muted') {
+      await pending.audio.handleEvent({ muted: true });
+      await pending.audio.handleEvent({ muted: false });
+    }
+    if (cancel === 'expired') pending.advance(1921);
+    pending.release();
+    await play;
+    assert.equal(pending.voices.length, 0, `pending infantry fire cancelled by ${cancel} cannot start late`);
+  }
+  const delayedFire = boot({ deferredLoad: true });
+  await delayedFire.gesture();
+  const delayedStart = delayedFire.audio.handleEvent({ infantryFire: [fire] });
+  delayedFire.advance(100);
+  await delayedFire.audio.handleEvent({ infantryFire: [progressedFire] });
+  delayedFire.advance(50);
+  delayedFire.release();
+  await delayedStart;
+  assert.equal(delayedFire.voices[0].offset, 0.15, 'decode completion uses the newest phase plus elapsed load time');
+  assert.equal(delayedFire.voices[0].stopsAt, 1.77, 'decode latency consumes the remaining window');
+  for (const timing of [{ elapsedMs: -1 }, { elapsedMs: NaN }, { remainingMs: 0 }, { remainingMs: Infinity }]) {
+    await firing.audio.handleEvent({ infantryFire: [{ ...fire, ...timing }] });
+  }
+  assert.equal(firing.errors.length, 1, 'invalid firing timing reports once without throwing');
+  assert.equal(firing.errors[0].operation, 'invalid infantry fire');
+  const infantryManifest = JSON.parse(readFileSync('public/audio/combat/infantry-fire-sources.json', 'utf8'));
+  const infantryBytes = readFileSync(`public/audio/combat/${infantryManifest.file}`);
+  assert.equal(infantryBytes.subarray(0, 4).toString(), 'OggS');
+  assert.equal(createHash('sha256').update(infantryBytes).digest('hex'), infantryManifest.sha256);
+  assert.equal(infantryManifest.durationSeconds, 1.92);
+  assert.ok(infantryManifest.sourceRecordings.every(recording => recording.license === 'CC0-1.0'));
   const marching = boot();
   await marching.gesture();
   await marching.audio.handleEvent({ movement: [infantry, truck] });

@@ -74,21 +74,14 @@ the right card; the cards stack on narrow screens. Each player can choose
 **your side**: **player 1 (red)** or **player 2 (blue)**. Choosing the other side
 swaps assignments with the opponent, including an AI. Hosting permissions stay
 with the host, and sides lock when the game starts.
-For a solo game, set the other side’s dropdown to **ai easy**, **ai medium**, or **ai hard**,
-then choose **Start game**. The AI controls the other side and responds automatically when
-you submit
-a turn. It advances toward supply points, attacks visible enemies, uses field-gun
-indirect fire, and seeks supply or fuel depots when low. It follows normal fog,
-movement, resource, combat, and victory rules. **Easy** uses the original tactical policy.
-**Medium** compares candidate orders by simulating a turn through the normal game
-engine: it weighs damage and casualties, coordinates fire to avoid wasting shots,
-considers flanking routes, digs in to defend supply points, and balances advancing
-with resupply. It assumes visible enemies are healthy and supplied because their
-actual gauges are private, and models stationary enemy defenses rather than
-reading your orders. **Hard** tests each plan against both stationary defenses and
-an advancing opponent, favors plans with safer worst-case results, considers more
-approaches and short escape moves, and revisits allied orders to improve coordination.
-All three modes obey fog of war and use the same resources and rules as human
+For a solo game, set the other side’s dropdown to **ai**, then choose **Start game**.
+The AI controls the other side and responds automatically when you submit a turn.
+It evaluates candidate orders through the normal game engine, coordinating fire,
+considering flanking routes, defending supply points, and balancing advances with
+resupply. It tests plans against stationary defenses and an advancing opponent,
+favors safer worst-case results, and revisits allied orders to improve coordination.
+Planning uses visible enemies with assumed healthy resources because their actual
+gauges are private. The AI obeys fog of war and uses the same resources and rules as human
 players. Trucks compare fuel escorts, supply deliveries, and passenger transport
 by urgency, travel distance, and the time a ride would save. Supplies can go to
 infantry, field guns, tanks, or other trucks; fuel can go to either vehicle kind.

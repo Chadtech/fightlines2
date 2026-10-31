@@ -23,6 +23,7 @@ import Effect as E exposing (Eff)
 import Game.BackdropCalibration as Calibration
     exposing
         ( Calibration
+        , CopyScope(..)
         , Entry
         , Key
         )
@@ -34,12 +35,13 @@ import Graphql.SelectionSet as SS
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
-import Json.Decode as Decode
+import NonEmptyList exposing (NonEmpty)
 import Random
 import Style as S
 import View.Button as Button
 import View.Card as Card
 import View.CardHeader as CardHeader
+import View.Checkbox as Checkbox
 import View.Range as Range
 import View.Select as Select
 
@@ -56,39 +58,23 @@ type alias Backdrop =
     }
 
 
-type alias BackdropCatalog =
-    { first : Backdrop
-    , rest : List Backdrop
-    }
-
-
 type alias Model =
     { shared : Shared.Model
     , backdropCalibrations : List Entry
-    , backdrops : List Backdrop
-    , left : Scene
-    , right : Scene
-    , drafts : List Entry
-    , saveStatus : SaveStatus
-    , copySource : String
-    , copyDestination : String
-    , copyStatus : CopyStatus
-    }
-
-
-type alias Scene =
-    { backdrop : String
+    , backdrops : NonEmpty Backdrop
+    , backdrop : String
     , kind : UnitKind
     , player : PlayerNumber
     , facing : SpriteFacing
     , hitPoints : Int
     , entrenchment : Entrenchment.Entrenchment
+    , drafts : List Entry
+    , saveStatus : SaveStatus
+    , copySource : String
+    , copyDestination : String
+    , copyScope : Maybe CopyScope
+    , copyStatus : CopyStatus
     }
-
-
-type Side
-    = Left
-    | Right
 
 
 type Parameter
@@ -98,6 +84,8 @@ type Parameter
     | RearScale
     | TrenchFooting
     | TrenchSize
+    | SecondTrenchFooting
+    | SecondTrenchSize
 
 
 type SaveStatus
@@ -128,23 +116,26 @@ type alias PendingCopy =
     , source : String
     , destination : String
     , drafts : List Entry
+    , scope : CopyScope
     }
 
 
 type Msg
     = CopySourceChanged String
     | CopyDestinationChanged String
+    | CopyUnitChanged (Maybe UnitKind)
+    | CopyAllUnitsChanged Bool
     | CopyClicked
     | CopyResponseReceived RequestId (ApiRequest.Response (List Entry))
-    | ParameterChanged Side Parameter Float
-    | SaveClicked Side
+    | ParameterChanged Parameter Float
+    | SaveClicked
     | SaveResponseReceived RequestId (ApiRequest.Response Entry)
-    | BackdropChanged Side String
-    | KindChanged Side UnitKind
-    | PlayerChanged Side PlayerNumber
-    | FacingChanged Side SpriteFacing
-    | HitPointsChanged Side Int
-    | EntrenchmentChanged Side Entrenchment.Entrenchment
+    | BackdropChanged String
+    | KindChanged UnitKind
+    | PlayerChanged PlayerNumber
+    | FacingLeftChanged Bool
+    | HitPointsChanged Int
+    | EntrenchmentChanged Entrenchment.Entrenchment
 
 
 
@@ -155,7 +146,7 @@ type Msg
 
 type alias Flags =
     { backdropCalibrations : List Entry
-    , backdrops : BackdropCatalog
+    , backdrops : NonEmpty Backdrop
     }
 
 
@@ -165,7 +156,7 @@ load =
         |> SS.with Calibration.catalogSelection
         |> SS.with
             (Api.Query.combatBackdrops
-                (SS.succeed BackdropCatalog
+                (SS.succeed NonEmptyList.fromCons
                     |> SS.with (BackdropCatalogApi.first backdropSelection)
                     |> SS.with (BackdropCatalogApi.rest backdropSelection)
                 )
@@ -183,38 +174,25 @@ backdropSelection =
 init : Shared.Model -> Flags -> Model
 init shared flags =
     let
-        leftBackdrop : String
-        leftBackdrop =
+        backdrop : String
+        backdrop =
             initialBackdrop "road" flags.backdrops
-
-        rightBackdrop : String
-        rightBackdrop =
-            initialBackdrop "snowy-road" flags.backdrops
     in
     { shared = shared
     , backdropCalibrations = flags.backdropCalibrations
-    , backdrops = flags.backdrops.first :: flags.backdrops.rest
-    , copySource = initialCopySource leftBackdrop flags.backdropCalibrations
-    , copyDestination = rightBackdrop
+    , backdrops = flags.backdrops
+    , copySource = initialCopySource backdrop flags.backdropCalibrations
+    , copyDestination = initialBackdrop "snowy-road" flags.backdrops
+    , copyScope = Nothing
     , copyStatus = CopyReady
     , drafts = []
     , saveStatus = Idle
-    , left =
-        { backdrop = leftBackdrop
-        , kind = UnitKind.Tank
-        , player = PlayerNumber.Player1
-        , facing = SpriteFacing.Right
-        , hitPoints = 16
-        , entrenchment = Entrenchment.Exposed
-        }
-    , right =
-        { backdrop = rightBackdrop
-        , kind = UnitKind.Tank
-        , player = PlayerNumber.Player2
-        , facing = SpriteFacing.Left
-        , hitPoints = 16
-        , entrenchment = Entrenchment.Exposed
-        }
+    , backdrop = backdrop
+    , kind = UnitKind.Tank
+    , player = PlayerNumber.Player1
+    , facing = SpriteFacing.Right
+    , hitPoints = 16
+    , entrenchment = Entrenchment.Exposed
     }
 
 
@@ -234,6 +212,13 @@ setCopyStatus copyStatus model =
     { model | copyStatus = copyStatus }
 
 
+setCopyScope : Maybe CopyScope -> Model -> Model
+setCopyScope copyScope model =
+    { model
+        | copyScope = copyScope
+    }
+
+
 setBackdropCalibrations : List Entry -> Model -> Model
 setBackdropCalibrations backdropCalibrations model =
     { model | backdropCalibrations = backdropCalibrations }
@@ -251,7 +236,7 @@ setShared shared model =
     }
 
 
-initialBackdrop : String -> BackdropCatalog -> String
+initialBackdrop : String -> NonEmpty Backdrop -> String
 initialBackdrop preferred catalog =
     let
         preferredPath : String
@@ -262,11 +247,11 @@ initialBackdrop preferred catalog =
         available backdrop =
             backdrop.path == preferredPath
     in
-    if List.any available (catalog.first :: catalog.rest) then
+    if NonEmptyList.any available catalog then
         preferredPath
 
     else
-        catalog.first.path
+        (NonEmptyList.head catalog).path
 
 
 backdropOptions : Model -> List { value : String, label : String }
@@ -278,33 +263,19 @@ backdropOptions model =
             , label = backdrop.label
             }
     in
-    List.map option model.backdrops
+    NonEmptyList.map option model.backdrops
+        |> NonEmptyList.toList
 
 
-sceneAt : Side -> Model -> Scene
-sceneAt side model =
-    case side of
-        Left ->
-            model.left
-
-        Right ->
-            model.right
+sceneHtmlId : String -> String
+sceneHtmlId suffix =
+    "backdrop-scene-" ++ suffix
 
 
-sideName : Side -> String
-sideName side =
-    case side of
-        Left ->
-            "left"
-
-        Right ->
-            "right"
-
-
-sceneKey : Scene -> Key
-sceneKey config =
-    { backdrop = config.backdrop
-    , unitKind = config.kind
+selectedKey : Model -> Key
+selectedKey model =
+    { backdrop = model.backdrop
+    , unitKind = model.kind
     }
 
 
@@ -345,6 +316,12 @@ changeCalibration key parameter value model =
                 TrenchFooting ->
                     { current | trenchFooting = clamp 25 98 (toFloat (round value)) }
 
+                SecondTrenchSize ->
+                    { current | secondTrenchSize = clamp 10 45 (toFloat (round value)) }
+
+                SecondTrenchFooting ->
+                    { current | secondTrenchFooting = clamp 25 98 (toFloat (round value)) }
+
                 RearScale ->
                     { current
                         | rearScale = clamp 35 100 (toFloat (round value))
@@ -359,20 +336,6 @@ changeCalibration key parameter value model =
                 }
                 model.drafts
             )
-
-
-mapScene : Side -> (Scene -> Scene) -> Model -> Model
-mapScene side transform model =
-    case side of
-        Left ->
-            { model
-                | left = transform model.left
-            }
-
-        Right ->
-            { model
-                | right = transform model.right
-            }
 
 
 initialCopySource : String -> List Entry -> String
@@ -401,11 +364,25 @@ canCopy model =
     let
         savedSource : Entry -> Bool
         savedSource entry =
-            entry.backdrop == model.copySource
+            (entry.backdrop == model.copySource)
+                && copyIncludes model.copyScope entry.unitKind
     in
     not (writing model)
         && (model.copySource /= model.copyDestination)
         && List.any savedSource model.backdropCalibrations
+
+
+copyIncludes : Maybe CopyScope -> UnitKind -> Bool
+copyIncludes scope kind =
+    case scope of
+        Just AllUnits ->
+            True
+
+        Just (OneUnit selectedKind) ->
+            kind == selectedKind
+
+        Nothing ->
+            False
 
 
 backdropLabel : String -> String
@@ -469,38 +446,65 @@ update msg model =
             )
                 |> E.withOut
 
+        CopyUnitChanged kind ->
+            model
+                |> setCopyScope (Maybe.map OneUnit kind)
+                |> setCopyStatus (resetCopyFeedback model.copyStatus)
+                |> E.withOut
+
+        CopyAllUnitsChanged checked ->
+            let
+                scope : Maybe CopyScope
+                scope =
+                    if checked then
+                        Just AllUnits
+
+                    else
+                        Nothing
+            in
+            model
+                |> setCopyScope scope
+                |> setCopyStatus (resetCopyFeedback model.copyStatus)
+                |> E.withOut
+
         CopyClicked ->
-            if not (canCopy model) then
-                model
-                    |> E.withOut
+            case model.copyScope of
+                Nothing ->
+                    E.withOut model
 
-            else
-                let
-                    request :
-                        { requestId : RequestId
-                        , shared : Shared.Model
-                        }
-                    request =
-                        nextRequest model.shared
+                Just scope ->
+                    if not (canCopy model) then
+                        E.withOut model
 
-                    pending : PendingCopy
-                    pending =
-                        { requestId = request.requestId
-                        , source = model.copySource
-                        , destination = model.copyDestination
-                        , drafts = model.drafts
-                        }
-                in
-                ( model
-                    |> setCopyStatus (Copying pending)
-                    |> setShared request.shared
-                , E.request (CopyResponseReceived pending.requestId)
-                    (Calibration.copy
-                        { source = pending.source
-                        , destination = pending.destination
-                        }
-                    )
-                )
+                    else
+                        let
+                            request :
+                                { requestId : RequestId
+                                , shared : Shared.Model
+                                }
+                            request =
+                                nextRequest model.shared
+
+                            pending : PendingCopy
+                            pending =
+                                { requestId = request.requestId
+                                , source = model.copySource
+                                , destination = model.copyDestination
+                                , drafts = model.drafts
+                                , scope = scope
+                                }
+                        in
+                        ( model
+                            |> setCopyStatus (Copying pending)
+                            |> setShared request.shared
+                        , E.request (CopyResponseReceived pending.requestId)
+                            (Calibration.copy
+                                { source = pending.source
+                                , destination = pending.destination
+                                , scope = pending.scope
+                                }
+                            )
+                        )
 
         CopyResponseReceived requestId result ->
             case model.copyStatus of
@@ -547,11 +551,11 @@ update msg model =
                     model
                         |> E.withOut
 
-        ParameterChanged side parameter value ->
-            changeCalibration (sceneKey (sceneAt side model)) parameter value model
+        ParameterChanged parameter value ->
+            changeCalibration (selectedKey model) parameter value model
                 |> E.withOut
 
-        SaveClicked side ->
+        SaveClicked ->
             case ( model.saveStatus, model.copyStatus ) of
                 ( Saving _, _ ) ->
                     model
@@ -565,9 +569,9 @@ update msg model =
                     let
                         entry : Entry
                         entry =
-                            { backdrop = (sceneAt side model).backdrop
-                            , unitKind = (sceneAt side model).kind
-                            , calibration = draftCalibration (sceneKey (sceneAt side model)) model
+                            { backdrop = model.backdrop
+                            , unitKind = model.kind
+                            , calibration = draftCalibration (selectedKey model) model
                             }
 
                         request :
@@ -620,58 +624,49 @@ update msg model =
                     model
                         |> E.withOut
 
-        BackdropChanged side path ->
-            mapScene side
-                (\config ->
-                    { config
-                        | backdrop = path
-                    }
-                )
-                model
+        BackdropChanged path ->
+            { model
+                | backdrop = path
+            }
                 |> E.withOut
 
-        KindChanged side kind ->
-            mapScene side
-                (\config ->
-                    { config
-                        | kind = kind
-                    }
-                )
-                model
+        KindChanged kind ->
+            { model
+                | kind = kind
+            }
                 |> E.withOut
 
-        PlayerChanged side player ->
-            mapScene side
-                (\config ->
-                    { config
-                        | player = player
-                    }
-                )
-                model
+        PlayerChanged player ->
+            { model
+                | player = player
+            }
                 |> E.withOut
 
-        FacingChanged side facing ->
-            mapScene side
-                (\config ->
-                    { config
-                        | facing = facing
-                    }
-                )
-                model
+        FacingLeftChanged checked ->
+            let
+                facing : SpriteFacing
+                facing =
+                    if checked then
+                        SpriteFacing.Left
+
+                    else
+                        SpriteFacing.Right
+            in
+            { model
+                | facing = facing
+            }
                 |> E.withOut
 
-        EntrenchmentChanged side entrenchment ->
-            mapScene side (\config -> { config | entrenchment = entrenchment }) model
+        EntrenchmentChanged entrenchment ->
+            { model
+                | entrenchment = entrenchment
+            }
                 |> E.withOut
 
-        HitPointsChanged side hitPoints ->
-            mapScene side
-                (\config ->
-                    { config
-                        | hitPoints = hitPoints
-                    }
-                )
-                model
+        HitPointsChanged hitPoints ->
+            { model
+                | hitPoints = hitPoints
+            }
                 |> E.withOut
 
 
@@ -685,73 +680,62 @@ view : Model -> List (Html Msg)
 view model =
     [ H.div
         [ A.css
-            [ S.col
+            [ S.grid
+            , S.gridCols1
+            , S.md
+                [ S.gridColumns "minmax(0, 3fr) minmax(0, 2fr)"
+                ]
+            , S.itemsStart
             , S.g3
             , S.wFull
             , S.maxW256
             , S.mAuto
             ]
         ]
-        [ copyControls model
-        , H.div
-            [ A.css
-                [ S.grid
-                , S.gridCols1
-                , S.md
-                    [ S.gridCols2
-                    ]
-                , S.g3
-                ]
-            ]
-            [ scenePanel Left model model.left
-            , scenePanel Right model model.right
-            ]
+        [ scenePanel model
+        , copyControls model
         ]
     ]
 
 
-scenePanel : Side -> Model -> Scene -> Html Msg
-scenePanel side model config =
+scenePanel : Model -> Html Msg
+scenePanel model =
     let
         card : Card.Card
         card =
             Card.simple
-                |> Card.withHeader (CardHeader.simple (sideName side ++ " scene"))
+                |> Card.withHeader (CardHeader.simple "scene")
     in
     Card.toHtml card
-        [ previewSelectors side model config
-        , sceneView model config
-        , calibrationControls side model config
+        [ previewSelectors model
+        , sceneView model
+        , calibrationControls model
         , H.details
             []
             [ H.summary
                 []
                 [ H.text "more preview options"
                 ]
-            , controls side config
+            , controls model
             ]
         ]
 
 
-previewSelectors : Side -> Model -> Scene -> Html Msg
-previewSelectors side model config =
+previewSelectors : Model -> Html Msg
+previewSelectors model =
     let
-        prefix : String
-        prefix =
-            sideName side
-
         options :
             List
                 { value : String
                 , label : String
                 }
         options =
-            if List.any (\option -> option.value == config.backdrop) (backdropOptions model) then
+            if List.any (\option -> option.value == model.backdrop) (backdropOptions model) then
                 backdropOptions model
 
             else
                 backdropOptions model
-                    ++ [ { value = config.backdrop
+                    ++ [ { value = model.backdrop
                          , label = "custom backdrop"
                          }
                        ]
@@ -769,21 +753,19 @@ previewSelectors side model config =
 
         entrenchmentControl : Html Msg
         entrenchmentControl =
-            if config.kind == UnitKind.Infantry then
-                field (prefix ++ "-entrenchment")
+            if model.kind == UnitKind.Infantry then
+                field (sceneHtmlId "entrenchment")
                     "infantry position"
-                    (Select.toHtml
-                        { htmlId = prefix ++ "-entrenchment"
-                        , disabled = False
-                        , selected = config.entrenchment
+                    (Select.new
+                        { selected = model.entrenchment
                         , options =
                             [ { value = Entrenchment.Exposed, label = "exposed infantry" }
                             , { value = Entrenchment.Entrenched, label = "entrenched infantry" }
                             ]
-                        , toValue = Entrenchment.toString
-                        , decoder = Entrenchment.decoder
-                        , onChange = EntrenchmentChanged side
+                        , onChange = EntrenchmentChanged
                         }
+                        |> Select.withHtmlId (sceneHtmlId "entrenchment")
+                        |> Select.toHtml
                     )
 
             else
@@ -795,64 +777,57 @@ previewSelectors side model config =
             , S.g3
             ]
         ]
-        [ field (prefix ++ "-backdrop")
+        [ field (sceneHtmlId "backdrop")
             "backdrop"
-            (Select.toHtml
-                { htmlId = prefix ++ "-backdrop"
-                , disabled = False
-                , selected = config.backdrop
+            (Select.new
+                { selected = model.backdrop
                 , options = options
-                , toValue = identity
-                , decoder = Decode.string
-                , onChange = BackdropChanged side
+                , onChange = BackdropChanged
                 }
+                |> Select.withHtmlId (sceneHtmlId "backdrop")
+                |> Select.toHtml
             )
-        , field (prefix ++ "-kind")
+        , field (sceneHtmlId "kind")
             "unit type"
-            (Select.toHtml
-                { htmlId = prefix ++ "-kind"
-                , disabled = False
-                , selected = config.kind
+            (Select.new
+                { selected = model.kind
                 , options = List.map kindOption UnitKind.list
-                , toValue = UnitKind.toString
-                , decoder = UnitKind.decoder
-                , onChange = KindChanged side
+                , onChange = KindChanged
                 }
+                |> Select.withHtmlId (sceneHtmlId "kind")
+                |> Select.toHtml
             )
+        , Checkbox.new
+            { label = "face left"
+            , checked = model.facing == SpriteFacing.Left
+            , onCheck = FacingLeftChanged
+            }
+            |> Checkbox.toHtml [ H.text "face left" ]
         , entrenchmentControl
         ]
 
 
-sceneView : Model -> Scene -> Html Msg
-sceneView model config =
+sceneView : Model -> Html Msg
+sceneView model =
     let
         appearance : Appearance
         appearance =
-            { kind = config.kind
-            , playerNumber = config.player
-            , spriteFacing = config.facing
-            , entrenchment = config.entrenchment
+            { kind = model.kind
+            , playerNumber = model.player
+            , spriteFacing = model.facing
+            , entrenchment = model.entrenchment
             }
     in
     CombatTheater.preview
-        (Just (draftCalibration (sceneKey config) model))
-        config.backdrop
-        config.hitPoints
+        (Just (draftCalibration (selectedKey model) model))
+        model.backdrop
+        model.hitPoints
         appearance
 
 
-controls : Side -> Scene -> Html Msg
-controls side config =
+controls : Model -> Html Msg
+controls model =
     let
-        prefix : String
-        prefix =
-            case side of
-                Left ->
-                    "left"
-
-                Right ->
-                    "right"
-
         playerOption :
             PlayerNumber
             ->
@@ -868,17 +843,6 @@ controls side config =
 
                     PlayerNumber.Player2 ->
                         "blue"
-            }
-
-        facingOption :
-            SpriteFacing
-            ->
-                { value : SpriteFacing
-                , label : String
-                }
-        facingOption facing =
-            { value = facing
-            , label = String.toLower (SpriteFacing.toString facing)
             }
 
         healthOption :
@@ -898,50 +862,32 @@ controls side config =
             , S.g3
             ]
         ]
-        [ field (prefix ++ "-player")
+        [ field (sceneHtmlId "player")
             "team"
-            (Select.toHtml
-                { htmlId = prefix ++ "-player"
-                , disabled = False
-                , selected = config.player
+            (Select.new
+                { selected = model.player
                 , options = List.map playerOption PlayerNumber.list
-                , toValue = PlayerNumber.toString
-                , decoder = PlayerNumber.decoder
-                , onChange = PlayerChanged side
+                , onChange = PlayerChanged
                 }
+                |> Select.withHtmlId (sceneHtmlId "player")
+                |> Select.toHtml
             )
-        , field (prefix ++ "-facing")
-            "facing"
-            (Select.toHtml
-                { htmlId = prefix ++ "-facing"
-                , disabled = False
-                , selected = config.facing
-                , options = List.map facingOption SpriteFacing.list
-                , toValue = SpriteFacing.toString
-                , decoder = SpriteFacing.decoder
-                , onChange = FacingChanged side
-                }
-            )
-        , field (prefix ++ "-health")
+        , field (sceneHtmlId "health")
             "hit points"
-            (Select.toHtml
-                { htmlId = prefix ++ "-health"
-                , disabled = False
-                , selected = config.hitPoints
+            (Select.new
+                { selected = model.hitPoints
                 , options = List.map healthOption (List.range 0 16)
-                , toValue = String.fromInt
-                , decoder =
-                    Decode.string
-                        |> Decode.andThen decodeHitPoints
-                , onChange = HitPointsChanged side
+                , onChange = HitPointsChanged
                 }
+                |> Select.withHtmlId (sceneHtmlId "health")
+                |> Select.toHtml
             )
-        , field (prefix ++ "-path")
+        , field (sceneHtmlId "path")
             "custom backdrop path or url"
             (H.input
-                [ A.id (prefix ++ "-path")
-                , A.value config.backdrop
-                , Ev.onInput (BackdropChanged side)
+                [ A.id (sceneHtmlId "path")
+                , A.value model.backdrop
+                , Ev.onInput BackdropChanged
                 , A.css
                     [ S.wFull
                     , S.minW0
@@ -974,26 +920,12 @@ field htmlId label control =
         ]
 
 
-decodeHitPoints : String -> Decode.Decoder Int
-decodeHitPoints value =
-    case String.toInt value of
-        Just hitPoints ->
-            if (hitPoints >= 0) && (hitPoints <= 16) then
-                Decode.succeed hitPoints
-
-            else
-                Decode.fail "hit points must be between 0 and 16"
-
-        Nothing ->
-            Decode.fail "hit points must be an integer"
-
-
-calibrationControls : Side -> Model -> Scene -> Html Msg
-calibrationControls side model config =
+calibrationControls : Model -> Html Msg
+calibrationControls model =
     let
         key : Key
         key =
-            sceneKey config
+            selectedKey model
 
         settings : Calibration
         settings =
@@ -1013,7 +945,7 @@ calibrationControls side model config =
                     case parameter of
                         TrenchSize ->
                             { suffix = "trench-size"
-                            , label = "trench size (each row’s width)"
+                            , label = "trench 1 size"
                             , value = settings.trenchSize
                             , minimum = 10
                             , maximum = 45
@@ -1021,7 +953,7 @@ calibrationControls side model config =
 
                         TrenchFooting ->
                             { suffix = "trench-footing"
-                            , label = "trench height (from top)"
+                            , label = "trench 1 y position (from top)"
                             , value = settings.trenchFooting
                             , minimum = 25
                             , maximum = 98
@@ -1032,6 +964,22 @@ calibrationControls side model config =
                             , label = "front row position"
                             , value = settings.frontFooting
                             , minimum = 55
+                            , maximum = 98
+                            }
+
+                        SecondTrenchSize ->
+                            { suffix = "second-trench-size"
+                            , label = "trench 2 size"
+                            , value = settings.secondTrenchSize
+                            , minimum = 10
+                            , maximum = 45
+                            }
+
+                        SecondTrenchFooting ->
+                            { suffix = "second-trench-footing"
+                            , label = "trench 2 y position (from top)"
+                            , value = settings.secondTrenchFooting
+                            , minimum = 25
                             , maximum = 98
                             }
 
@@ -1060,23 +1008,29 @@ calibrationControls side model config =
                             }
             in
             Range.toHtml
-                { htmlId = sideName side ++ "-" ++ range.suffix
+                { htmlId = sceneHtmlId range.suffix
                 , label = range.label
                 , value = range.value
                 , minimum = range.minimum
                 , maximum = range.maximum
-                , onChange = ParameterChanged side parameter
+                , onChange = ParameterChanged parameter
                 }
 
         previewingTrenches : Bool
         previewingTrenches =
-            (config.kind == UnitKind.Infantry) && (config.entrenchment == Entrenchment.Entrenched)
+            (model.kind == UnitKind.Infantry) && (model.entrenchment == Entrenchment.Entrenched)
 
         parameters : List (Html Msg)
         parameters =
             if previewingTrenches then
                 [ slider TrenchFooting
                 , slider TrenchSize
+                , slider SecondTrenchFooting
+                , slider SecondTrenchSize
+                , H.p
+                    []
+                    [ H.text "trench 1 is behind trench 2 in the direction the infantry face. smaller y values move a trench higher."
+                    ]
                 ]
 
             else
@@ -1109,7 +1063,7 @@ calibrationControls side model config =
                     |> Button.toHtml
 
             else
-                Button.primary "save calibration" (SaveClicked side)
+                Button.primary "save calibration" SaveClicked
                     |> Button.toHtml
 
         status : String
@@ -1158,14 +1112,61 @@ copyControls model =
         sources =
             List.filter savedSource (backdropOptions model)
 
+        allUnits : Bool
+        allUnits =
+            model.copyScope == Just AllUnits
+
+        selectedKind : Maybe UnitKind
+        selectedKind =
+            case model.copyScope of
+                Just (OneUnit kind) ->
+                    Just kind
+
+                _ ->
+                    Nothing
+
+        kindOption : UnitKind -> { value : Maybe UnitKind, label : String }
+        kindOption kind =
+            { value = Just kind
+            , label = UnitKindLabel.label kind
+            }
+
+        buttonLabel : String
+        buttonLabel =
+            case model.copyScope of
+                Just AllUnits ->
+                    "copy and save all unit calibrations"
+
+                Just (OneUnit kind) ->
+                    "copy and save " ++ UnitKindLabel.label kind ++ " calibration"
+
+                Nothing ->
+                    "copy and save calibration"
+
+        scopeDescription : String
+        scopeDescription =
+            case model.copyScope of
+                Just AllUnits ->
+                    "copies saved settings for all available unit types, replacing matching destination settings."
+
+                Just (OneUnit kind) ->
+                    if canCopy model || writing model then
+                        "copies saved " ++ UnitKindLabel.label kind ++ " settings, replacing only that unit type at the destination."
+
+                    else
+                        "the source has no saved " ++ UnitKindLabel.label kind ++ " calibration."
+
+                Nothing ->
+                    "choose a unit type to copy."
+
         copyButton : Html Msg
         copyButton =
             if canCopy model then
-                Button.primary "copy and save all unit calibrations" CopyClicked
+                Button.primary buttonLabel CopyClicked
                     |> Button.toHtml
 
             else
-                Button.disabled "copy and save all unit calibrations"
+                Button.disabled buttonLabel
                     |> Button.toHtml
 
         status : String
@@ -1179,13 +1180,22 @@ copyControls model =
                         "choose different source and destination backdrops."
 
                     else
-                        "copies saved settings for all available unit types, replacing matching destination settings."
+                        scopeDescription
 
                 Copying _ ->
                     "copying calibrations…"
 
                 CopyDone destination count ->
-                    "saved " ++ String.fromInt count ++ " unit calibrations to " ++ backdropLabel destination
+                    let
+                        unitLabel : String
+                        unitLabel =
+                            if count == 1 then
+                                "unit calibration"
+
+                            else
+                                "unit calibrations"
+                    in
+                    "saved " ++ String.fromInt count ++ " " ++ unitLabel ++ " to " ++ backdropLabel destination
 
                 CopyFailed error ->
                     error
@@ -1198,27 +1208,41 @@ copyControls model =
     Card.toHtml card
         [ field "copy-source"
             "from"
-            (Select.toHtml
-                { htmlId = "copy-source"
-                , disabled = False
-                , selected = model.copySource
+            (Select.new
+                { selected = model.copySource
                 , options = sources
-                , toValue = identity
-                , decoder = Decode.string
                 , onChange = CopySourceChanged
                 }
+                |> Select.withHtmlId "copy-source"
+                |> Select.toHtml
             )
         , field "copy-destination"
             "to"
-            (Select.toHtml
-                { htmlId = "copy-destination"
-                , disabled = False
-                , selected = model.copyDestination
+            (Select.new
+                { selected = model.copyDestination
                 , options = backdropOptions model
-                , toValue = identity
-                , decoder = Decode.string
                 , onChange = CopyDestinationChanged
                 }
+                |> Select.withHtmlId "copy-destination"
+                |> Select.toHtml
+            )
+        , Checkbox.new
+            { label = "all unit types"
+            , checked = allUnits
+            , onCheck = CopyAllUnitsChanged
+            }
+            |> Checkbox.disabled (writing model)
+            |> Checkbox.toHtml [ H.text "all unit types" ]
+        , field "copy-kind"
+            "unit type"
+            (Select.new
+                { selected = selectedKind
+                , options = { value = Nothing, label = "choose unit type" } :: List.map kindOption UnitKind.list
+                , onChange = CopyUnitChanged
+                }
+                |> Select.withHtmlId "copy-kind"
+                |> Select.disabled (allUnits || writing model)
+                |> Select.toHtml
             )
         , copyButton
         , H.p

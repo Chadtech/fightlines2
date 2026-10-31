@@ -8,20 +8,15 @@ import Json.Decode as Decode exposing (Decoder)
 
 
 {-| A player's public control kind, without human session credentials.
-
-  - Ai - The original Easy AI; retains the existing AI wire value.
-
 -}
 type Controller
     = Human
     | Ai
-    | AiMedium
-    | AiHard
 
 
 list : List Controller
 list =
-    [ Human, Ai, AiMedium, AiHard ]
+    [ Human, Ai ]
 
 
 decoder : Decoder Controller
@@ -35,12 +30,6 @@ decoder =
 
                     "AI" ->
                         Decode.succeed Ai
-
-                    "AI_MEDIUM" ->
-                        Decode.succeed AiMedium
-
-                    "AI_HARD" ->
-                        Decode.succeed AiHard
 
                     _ ->
                         Decode.fail ("Invalid Controller type, " ++ string ++ " try re-running the @dillonkearns/elm-graphql CLI ")
@@ -57,12 +46,6 @@ toString enum____ =
 
         Ai ->
             "AI"
-
-        AiMedium ->
-            "AI_MEDIUM"
-
-        AiHard ->
-            "AI_HARD"
 
 
 {-| Convert from a String representation to an elm representation enum.
@@ -84,12 +67,6 @@ fromString enumString____ =
 
         "AI" ->
             Just Ai
-
-        "AI_MEDIUM" ->
-            Just AiMedium
-
-        "AI_HARD" ->
-            Just AiHard
 
         _ ->
             Nothing

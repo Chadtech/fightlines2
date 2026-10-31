@@ -258,13 +258,7 @@ playerLabel player =
                     "human"
 
                 Controller.Ai ->
-                    "ai easy"
-
-                Controller.AiMedium ->
-                    "ai medium"
-
-                Controller.AiHard ->
-                    "ai hard"
+                    "ai"
     in
     PlayerNumber.label player.playerNumber ++ ": " ++ player.name ++ " (" ++ controller ++ ")"
 

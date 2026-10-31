@@ -30,7 +30,7 @@ async function main() {
   }
   const trenchOverlay = path.join(root, 'public/assets/combat-trench-overlay-anime-v2');
   await fs.mkdir(trenchOverlay, { recursive: true });
-  for (const team of ['red', 'blue']) {
+  for (const team of ['red', 'blue', 'empty']) {
     await fs.copyFile(
       path.join(root, `artwork/combat/trench-overlay-anime-v2/${team}.png`),
       path.join(trenchOverlay, `${team}.png`)

@@ -22,6 +22,10 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode exposing (Decoder)
 
 
+type alias CopyBackdropCalibrationsOptionalArguments =
+    { unitKind : OptionalArgument Api.Enum.UnitKind.UnitKind }
+
+
 type alias CopyBackdropCalibrationsRequiredArguments =
     { sourceBackdrop : String
     , destinationBackdrop : String
@@ -29,11 +33,20 @@ type alias CopyBackdropCalibrationsRequiredArguments =
 
 
 copyBackdropCalibrations :
-    CopyBackdropCalibrationsRequiredArguments
+    (CopyBackdropCalibrationsOptionalArguments -> CopyBackdropCalibrationsOptionalArguments)
+    -> CopyBackdropCalibrationsRequiredArguments
     -> SelectionSet decodesTo Api.Object.CalibratedBackdrop
     -> SelectionSet (List decodesTo) RootMutation
-copyBackdropCalibrations requiredArgs____ object____ =
-    Object.selectionForCompositeField "copyBackdropCalibrations" [ Argument.required "sourceBackdrop" requiredArgs____.sourceBackdrop Encode.string, Argument.required "destinationBackdrop" requiredArgs____.destinationBackdrop Encode.string ] object____ (Basics.identity >> Decode.list)
+copyBackdropCalibrations fillInOptionals____ requiredArgs____ object____ =
+    let
+        filledInOptionals____ =
+            fillInOptionals____ { unitKind = Absent }
+
+        optionalArgs____ =
+            [ Argument.optional "unitKind" filledInOptionals____.unitKind (Encode.enum Api.Enum.UnitKind.toString) ]
+                |> List.filterMap Basics.identity
+    in
+    Object.selectionForCompositeField "copyBackdropCalibrations" (optionalArgs____ ++ [ Argument.required "sourceBackdrop" requiredArgs____.sourceBackdrop Encode.string, Argument.required "destinationBackdrop" requiredArgs____.destinationBackdrop Encode.string ]) object____ (Basics.identity >> Decode.list)
 
 
 type alias SaveBackdropCalibrationRequiredArguments =
@@ -49,6 +62,33 @@ saveBackdropCalibration :
     -> SelectionSet decodesTo RootMutation
 saveBackdropCalibration requiredArgs____ object____ =
     Object.selectionForCompositeField "saveBackdropCalibration" [ Argument.required "backdrop" requiredArgs____.backdrop Encode.string, Argument.required "unitKind" requiredArgs____.unitKind (Encode.enum Api.Enum.UnitKind.toString), Argument.required "calibration" requiredArgs____.calibration Api.InputObject.encodeBackdropCalibrationInput ] object____ Basics.identity
+
+
+type alias CreateMapOptionalArguments =
+    { thumbnail : OptionalArgument String }
+
+
+type alias CreateMapRequiredArguments =
+    { mapType : Api.ScalarCodecs.MapId
+    , definition : Api.InputObject.MapDefinitionInput
+    }
+
+
+createMap :
+    (CreateMapOptionalArguments -> CreateMapOptionalArguments)
+    -> CreateMapRequiredArguments
+    -> SelectionSet decodesTo Api.Object.NamedMap
+    -> SelectionSet decodesTo RootMutation
+createMap fillInOptionals____ requiredArgs____ object____ =
+    let
+        filledInOptionals____ =
+            fillInOptionals____ { thumbnail = Absent }
+
+        optionalArgs____ =
+            [ Argument.optional "thumbnail" filledInOptionals____.thumbnail Encode.string ]
+                |> List.filterMap Basics.identity
+    in
+    Object.selectionForCompositeField "createMap" (optionalArgs____ ++ [ Argument.required "mapType" requiredArgs____.mapType (Api.ScalarCodecs.codecs |> Api.Scalar.unwrapEncoder .codecMapId), Argument.required "definition" requiredArgs____.definition Api.InputObject.encodeMapDefinitionInput ]) object____ Basics.identity
 
 
 type alias SaveMapOptionalArguments =

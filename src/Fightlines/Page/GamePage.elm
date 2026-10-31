@@ -4,6 +4,7 @@ module Fightlines.Page.GamePage exposing
     , Msg
     , ambience
     , dialog
+    , firingInfantry
     , init
     , keyCommands
     , load
@@ -643,6 +644,15 @@ movingUnits model =
         , paused = False
         , camera = playbackCamera model
         , skipLossDialogs = model.skipUnitLossDialogs
+        }
+
+
+firingInfantry : Model -> List Audio.FiringInfantry
+firingInfantry model =
+    PlaybackPresentation.firingInfantry
+        { playback = playback model
+        , paused = False
+        , camera = playbackCamera model
         }
 
 

@@ -475,7 +475,7 @@ pub(super) fn deployment(
 mod tests {
     use super::*;
     use crate::{
-        ai::{self, Difficulty},
+        ai,
         map_definition::MapDefinition,
         scenario::PlayerNumber,
         supplies::CargoStock,
@@ -535,41 +535,32 @@ mod tests {
 
     #[test]
     fn picks_up_carries_and_deploys_both_passenger_kinds_on_both_sides() -> TestResult {
-        for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
-            for player in [PlayerNumber::Player1, PlayerNumber::Player2] {
-                for kind in [UnitKind::Infantry, UnitKind::FieldGun] {
-                    let mut scenario = fixture(kind, player)?;
-                    let mut turns = Turns::default();
-                    let mut boarded = false;
-                    let mut deployed = false;
-                    for _ in 0..12 {
-                        let orders =
-                            ai::plan_with_difficulty(&scenario, player, difficulty).fixture()?;
-                        resolve(&mut scenario, &mut turns, player, orders)?;
-                        let passenger = scenario
-                            .units
-                            .iter()
-                            .find(|unit| unit.id() == "1")
-                            .fixture()?;
-                        boarded |= passenger.carrier_id().is_some();
-                        if boarded && let Some(position) = passenger.board_position() {
-                            let progress = match player {
-                                PlayerNumber::Player1 => position.x(),
-                                PlayerNumber::Player2 => 39 - position.x(),
-                            };
-                            assert!(
-                                progress > 12,
-                                "{difficulty:?} {kind:?} unloaded too early at {position:?}"
-                            );
-                            deployed = true;
-                            break;
-                        }
+        for player in [PlayerNumber::Player1, PlayerNumber::Player2] {
+            for kind in [UnitKind::Infantry, UnitKind::FieldGun] {
+                let mut scenario = fixture(kind, player)?;
+                let mut turns = Turns::default();
+                let mut boarded = false;
+                let mut deployed = false;
+                for _ in 0..12 {
+                    let orders = ai::plan(&scenario, player).fixture()?;
+                    resolve(&mut scenario, &mut turns, player, orders)?;
+                    let passenger = scenario
+                        .units
+                        .iter()
+                        .find(|unit| unit.id() == "1")
+                        .fixture()?;
+                    boarded |= passenger.carrier_id().is_some();
+                    if boarded && let Some(position) = passenger.board_position() {
+                        let progress = match player {
+                            PlayerNumber::Player1 => position.x(),
+                            PlayerNumber::Player2 => 39 - position.x(),
+                        };
+                        assert!(progress > 12, "{kind:?} unloaded too early at {position:?}");
+                        deployed = true;
+                        break;
                     }
-                    assert!(
-                        boarded && deployed,
-                        "{difficulty:?} {player:?} never transported {kind:?}"
-                    );
                 }
+                assert!(boarded && deployed, "{player:?} never transported {kind:?}");
             }
         }
         Ok(())
@@ -577,32 +568,29 @@ mod tests {
 
     #[test]
     fn mixes_one_freight_load_with_a_passenger_without_exceeding_capacity() -> TestResult {
-        for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
-            let mut scenario = fixture(UnitKind::FieldGun, PlayerNumber::Player1)?;
-            scenario
-                .units
-                .iter_mut()
-                .find(|unit| unit.kind() == UnitKind::Truck)
-                .fixture()?
-                .supply_cargo
-                .push(CargoStock::new(ResourceKind::Fuel, 256));
-            let mut turns = Turns::default();
-            let orders =
-                ai::plan_with_difficulty(&scenario, PlayerNumber::Player1, difficulty).fixture()?;
-            resolve(&mut scenario, &mut turns, PlayerNumber::Player1, orders)?;
-            let passenger = scenario
-                .units
-                .iter()
-                .find(|unit| unit.id() == "1")
-                .fixture()?;
-            let truck = scenario
-                .units
-                .iter()
-                .find(|unit| unit.kind() == UnitKind::Truck)
-                .fixture()?;
-            assert_eq!(passenger.carrier_id(), Some(truck.unit_id()));
-            assert_eq!(supplies::occupied_berths(&scenario, truck), 2);
-        }
+        let mut scenario = fixture(UnitKind::FieldGun, PlayerNumber::Player1)?;
+        scenario
+            .units
+            .iter_mut()
+            .find(|unit| unit.kind() == UnitKind::Truck)
+            .fixture()?
+            .supply_cargo
+            .push(CargoStock::new(ResourceKind::Fuel, 256));
+        let mut turns = Turns::default();
+        let orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
+        resolve(&mut scenario, &mut turns, PlayerNumber::Player1, orders)?;
+        let passenger = scenario
+            .units
+            .iter()
+            .find(|unit| unit.id() == "1")
+            .fixture()?;
+        let truck = scenario
+            .units
+            .iter()
+            .find(|unit| unit.kind() == UnitKind::Truck)
+            .fixture()?;
+        assert_eq!(passenger.carrier_id(), Some(truck.unit_id()));
+        assert_eq!(supplies::occupied_berths(&scenario, truck), 2);
         Ok(())
     }
 
@@ -623,8 +611,7 @@ mod tests {
             .fixture()?
             .board(carrier);
         let mut turns = Turns::default();
-        let orders = ai::plan_with_difficulty(&scenario, PlayerNumber::Player1, Difficulty::Medium)
-            .fixture()?;
+        let orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
         resolve(&mut scenario, &mut turns, PlayerNumber::Player1, orders)?;
         assert!(
             scenario
@@ -640,70 +627,66 @@ mod tests {
 
     #[test]
     fn field_gun_can_fire_on_the_turn_after_deployment() -> TestResult {
-        for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
-            let mut scenario = fixture(UnitKind::FieldGun, PlayerNumber::Player1)?;
-            let truck = scenario
-                .units
-                .iter_mut()
-                .find(|unit| unit.id() == "2")
-                .fixture()?;
-            truck.move_to(Coordinate::new(23, 3));
-            let carrier = truck.unit_id();
-            scenario
-                .units
-                .iter_mut()
-                .find(|unit| unit.id() == "1")
+        let mut scenario = fixture(UnitKind::FieldGun, PlayerNumber::Player1)?;
+        let truck = scenario
+            .units
+            .iter_mut()
+            .find(|unit| unit.id() == "2")
+            .fixture()?;
+        truck.move_to(Coordinate::new(23, 3));
+        let carrier = truck.unit_id();
+        scenario
+            .units
+            .iter_mut()
+            .find(|unit| unit.id() == "1")
+            .fixture()?
+            .board(carrier);
+        scenario
+            .units
+            .iter_mut()
+            .find(|unit| unit.id() == "3")
+            .fixture()?
+            .move_to(Coordinate::new(28, 3));
+        let mut turns = Turns::default();
+        let orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
+        assert!(
+            orders
+                .iter()
+                .find(|order| order.unit_id == "1")
                 .fixture()?
-                .board(carrier);
+                .indirect_fire
+                .is_none()
+        );
+        resolve(&mut scenario, &mut turns, PlayerNumber::Player1, orders)?;
+        assert!(
             scenario
-                .units
-                .iter_mut()
-                .find(|unit| unit.id() == "3")
-                .fixture()?
-                .move_to(Coordinate::new(28, 3));
-            let mut turns = Turns::default();
-            let orders =
-                ai::plan_with_difficulty(&scenario, PlayerNumber::Player1, difficulty).fixture()?;
-            assert!(
-                orders
-                    .iter()
-                    .find(|order| order.unit_id == "1")
-                    .fixture()?
-                    .indirect_fire
-                    .is_none()
-            );
-            resolve(&mut scenario, &mut turns, PlayerNumber::Player1, orders)?;
-            assert!(
-                scenario
-                    .units
-                    .iter()
-                    .find(|unit| unit.id() == "1")
-                    .fixture()?
-                    .board_position()
-                    .is_some()
-            );
-            let mut orders =
-                ai::plan_with_difficulty(&scenario, PlayerNumber::Player1, difficulty).fixture()?;
-            let gun = scenario
                 .units
                 .iter()
                 .find(|unit| unit.id() == "1")
-                .fixture()?;
-            let mut firing = hold(gun, gun.board_position().fixture()?);
-            firing.indirect_fire = Some(coordinate_input(Coordinate::new(28, 3)));
-            logistics::replace_order(&mut orders, gun, firing).fixture()?;
-            resolve(&mut scenario, &mut turns, PlayerNumber::Player1, orders)?;
-            assert!(
-                turns
-                    .last_resolution
-                    .as_ref()
-                    .fixture()?
-                    .frames
-                    .iter()
-                    .any(|frame| !frame.indirect_impacts.is_empty()
-                        || frame.shots.iter().any(|shot| shot.attacker.id() == "1"))
-            );
-        }
+                .fixture()?
+                .board_position()
+                .is_some()
+        );
+        let mut orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
+        let gun = scenario
+            .units
+            .iter()
+            .find(|unit| unit.id() == "1")
+            .fixture()?;
+        let mut firing = hold(gun, gun.board_position().fixture()?);
+        firing.indirect_fire = Some(coordinate_input(Coordinate::new(28, 3)));
+        logistics::replace_order(&mut orders, gun, firing).fixture()?;
+        resolve(&mut scenario, &mut turns, PlayerNumber::Player1, orders)?;
+        assert!(
+            turns
+                .last_resolution
+                .as_ref()
+                .fixture()?
+                .frames
+                .iter()
+                .any(|frame| !frame.indirect_impacts.is_empty()
+                    || frame.shots.iter().any(|shot| shot.attacker.id() == "1"))
+        );
         Ok(())
     }
 
@@ -726,8 +709,7 @@ mod tests {
         }"#).fixture()?.scenario().fixture()?;
         scenario.units.push(extra.units.first().fixture()?.clone());
         let mut turns = Turns::default();
-        let orders = ai::plan_with_difficulty(&scenario, PlayerNumber::Player1, Difficulty::Medium)
-            .fixture()?;
+        let orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
         let submitted = serde_json::to_string(&orders).fixture()?;
         resolve(&mut scenario, &mut turns, PlayerNumber::Player1, orders)?;
         let truck = scenario
@@ -737,9 +719,7 @@ mod tests {
             .fixture()?;
         assert_eq!(scenario.passenger_count(truck.unit_id()), 2, "{submitted}");
         for _ in 0..8 {
-            let orders =
-                ai::plan_with_difficulty(&scenario, PlayerNumber::Player1, Difficulty::Medium)
-                    .fixture()?;
+            let orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
             resolve(&mut scenario, &mut turns, PlayerNumber::Player1, orders)?;
             let first = scenario
                 .units
@@ -797,35 +777,30 @@ mod tests {
             .fixture()?
             .supply_cargo
             .push(CargoStock::new(ResourceKind::Fuel, 68));
-        for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
-            let mut board = scenario.clone();
-            let orders =
-                ai::plan_with_difficulty(&board, PlayerNumber::Player1, difficulty).fixture()?;
-            let carrier_order = orders.iter().find(|order| order.unit_id == "3").fixture()?;
-            let gun_exit = carrier_order
-                .unloads
-                .as_ref()
-                .fixture()?
+        let mut board = scenario.clone();
+        let orders = ai::plan(&board, PlayerNumber::Player1).fixture()?;
+        let carrier_order = orders.iter().find(|order| order.unit_id == "3").fixture()?;
+        let gun_exit = carrier_order
+            .unloads
+            .as_ref()
+            .fixture()?
+            .iter()
+            .map(UnloadOrderInput::destination_coordinate)
+            .collect::<Result<Vec<_>, _>>()
+            .fixture()?;
+        let arriving = board.units.iter().find(|unit| unit.id() == "4").fixture()?;
+        assert!(!gun_exit.contains(&logistics::planned_destination(&orders, arriving).fixture()?));
+        let mut turns = Turns::default();
+        resolve(&mut board, &mut turns, PlayerNumber::Player1, orders)?;
+        assert!(
+            board
+                .units
                 .iter()
-                .map(UnloadOrderInput::destination_coordinate)
-                .collect::<Result<Vec<_>, _>>()
-                .fixture()?;
-            let arriving = board.units.iter().find(|unit| unit.id() == "4").fixture()?;
-            assert!(
-                !gun_exit.contains(&logistics::planned_destination(&orders, arriving).fixture()?)
-            );
-            let mut turns = Turns::default();
-            resolve(&mut board, &mut turns, PlayerNumber::Player1, orders)?;
-            assert!(
-                board
-                    .units
-                    .iter()
-                    .find(|unit| unit.id() == "2")
-                    .fixture()?
-                    .board_position()
-                    .is_some()
-            );
-        }
+                .find(|unit| unit.id() == "2")
+                .fixture()?
+                .board_position()
+                .is_some()
+        );
         Ok(())
     }
 
@@ -859,42 +834,39 @@ mod tests {
             .supply_cargo
             .push(CargoStock::new(ResourceKind::Supply, 256));
         scenario.units.push(donor);
-        for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
-            let mut board = scenario.clone();
-            let orders =
-                ai::plan_with_difficulty(&board, PlayerNumber::Player1, difficulty).fixture()?;
-            assert!(
-                !orders
-                    .iter()
-                    .find(|order| order.unit_id == "2")
-                    .fixture()?
-                    .unloads
-                    .as_ref()
-                    .fixture()?
-                    .is_empty()
-            );
-            let mut turns = Turns::default();
-            resolve(&mut board, &mut turns, PlayerNumber::Player1, orders)?;
-            assert!(
-                board
-                    .units
-                    .iter()
-                    .find(|unit| unit.id() == "1")
-                    .fixture()?
-                    .board_position()
-                    .is_some()
-            );
-            assert!(
-                board
-                    .units
-                    .iter()
-                    .find(|unit| unit.id() == "2")
-                    .fixture()?
-                    .supplies()
-                    .current()
-                    > 8
-            );
-        }
+        let mut board = scenario.clone();
+        let orders = ai::plan(&board, PlayerNumber::Player1).fixture()?;
+        assert!(
+            !orders
+                .iter()
+                .find(|order| order.unit_id == "2")
+                .fixture()?
+                .unloads
+                .as_ref()
+                .fixture()?
+                .is_empty()
+        );
+        let mut turns = Turns::default();
+        resolve(&mut board, &mut turns, PlayerNumber::Player1, orders)?;
+        assert!(
+            board
+                .units
+                .iter()
+                .find(|unit| unit.id() == "1")
+                .fixture()?
+                .board_position()
+                .is_some()
+        );
+        assert!(
+            board
+                .units
+                .iter()
+                .find(|unit| unit.id() == "2")
+                .fixture()?
+                .supplies()
+                .current()
+                > 8
+        );
         Ok(())
     }
 }

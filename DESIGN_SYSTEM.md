@@ -163,6 +163,12 @@ omits this decorative cycle and retains the original green background.
   a fixed header and scrolling body when headered.
 - Labels sit above their fields with a smaller `g1` gap. Use larger gaps between
   groups and between fields and actions.
+- Build selects with `Select.new`, apply modifiers, then render with
+  `Select.toHtml`. The constructor takes the selected value, labeled options,
+  and change callback; the component handles DOM values and event decoding.
+  Selects start enabled with no HTML ID. Use `Select.disabled condition` for
+  controls that need to be disabled and `Select.withHtmlId` when a separate
+  label or another element refers to the control. Wrapping labels need no ID.
 - Buttons size to their labels and align to the start of the form.
 - The spacing unit is 0.25rem: `p1`/`g1` are 0.25rem, `p2`/`g2` are 0.5rem,
   and `p3`/`g3` are 0.75rem. `p2px` is a literal 2px inset.
@@ -201,10 +207,9 @@ omits this decorative cycle and retains the original green background.
   column at the right. Reserve inset green surfaces for editable controls.
   Label sides `player 1 (red)` and `player 2 (blue)` and place occupants according
   to their assigned side. The host’s side reads `human`; the host can select
-  `human`, `ai easy`, `ai medium`, or `ai hard` for the other side. Easy uses the original
-  AI; Medium evaluates tactics using one-turn simulations; Hard also tests advancing
-  enemy responses and revisits allied choices. Keep these choices
-  in the existing controller selector. Disable that selector once a human joins.
+  `human` or `ai` for the other side. The AI evaluates tactics using one-turn
+  simulations, tests advancing enemy responses, and revisits allied choices.
+  Keep these choices in the existing controller selector. Disable that selector once a human joins.
   Guests see controller types as read-only text. Above the occupied count, show
   each member a `your side` select using the shared inset control. Explain that
   switching sides also moves the opponent. Keep host and own-player labels on
@@ -654,6 +659,16 @@ each rifleman as a two-HP figure. Use three columns and three depth rows:
 standing / kneeling / prone in the rear; empty / machine-gun team / prone in
 the middle; kneeling / empty / prone in the front. Preserve the larger gun team
 and prone riflemen and the slightly smaller kneeling riflemen.
+Exposed infantry that actually fire alternate their existing team-colored poses
+with matching muzzle-flash frames for a 1920ms burst. Keep flashes brief (40ms),
+with independent offsets and 160-200ms rifle cadences so repeated poses fire out
+of sync; the machine-gun team fires faster, every 90ms. Preserve the original
+figure pixels, scale, and footing while allowing the flash beyond the idle canvas.
+Recorded return fire retains its 45ms offset. Pause the flicker with the theater
+clock and hold ready afterward. Start impacts 100ms after the burst's midpoint,
+so infantry keep firing while targets are hit. Keep the theater open until both
+firing and impacts finish, then apply the ordinary automatic-close delay.
+Reduced motion keeps the ready drawing; trenches retain their existing artwork.
 When infantry fire at tanks, including recorded return fire, show four two-person
 bazooka teams in two depth rows at full health. Each pair represents four HP;
 retain partially intact pairs. Use the existing red and blue standing-shooter /
@@ -951,6 +966,10 @@ editor previews, and terrain inspection share the same artwork and fog styling.
 Contain all editor content in beveled cards within the viewport; the page itself
 does not scroll. The top editor card contains map selection, undo/redo, the gold
 save action, play navigation, theme, dimensions, resize, and live save feedback.
+Place a secondary **new map** button beside the map actions. It reveals an inline
+map-name field with **create draft** and **cancel**, with validation beside the
+field. A new draft starts with a blank 17 × 17 board and uses the existing theme,
+resize, and save controls. Keep gold reserved for **save map**.
 Let controls wrap, with internal scrolling on short or narrow screens.
 
 Use one tools card with a fixed title bar and scrolling body beside a headerless
@@ -995,7 +1014,10 @@ with the observable firing gun beside the target terrain, the existing explosion
 animation, and theater controls. Preserve horizontal map order. If the firing gun
 is concealed, omit its portrait and origin. Show any observed target with its
 authoritative health transition and the `indirect fire` heading; preserve trench
-artwork over its terrain backdrop. When no target is confirmed outside sight, cover the
+artwork over its terrain backdrop. Entrenched infantry receiving indirect fire
+show empty trench segments with no soldiers or weapons, implying they are
+sheltering underground. Retain their calibrated placements and impact timing.
+When no target is confirmed outside sight, cover the
 target terrain with a fog overlay and a centered question mark. Keep clear terrain
 for unconfirmed landings on tiles within sight.
 Above the scene, explain that an enemy
@@ -1015,9 +1037,9 @@ An entrenched unit uses its approved red or blue dug-in sprite on the board,
 in the inspector, with existing facing mirroring. In the combat theater, show two
 team-colored trench segments side by side over the terrain backdrop. Each segment
 defaults to 35% of the panel width; mirror the pair toward the opponent. The
-backdrop’s infantry calibration independently controls trench size and bottom
-position. Resize both around that bottom edge, keeping the pair centered with
-a gap between them. Use the revised infantry artwork and existing team palettes.
+backdrop’s infantry calibration independently controls each trench’s size and
+bottom position. Resize each around its own bottom edge, keeping a horizontal
+gap between them. Use the revised infantry artwork and existing team palettes.
 Preserve existing impact timing; hits follow the trench placement and the painted
 soldiers remain static through losses.
 Name the selected unit `entrenched infantry` and include this status in its
@@ -1064,25 +1086,32 @@ enemy readiness while fog is enabled, including in combat portraits.
 
 ## Backdrop calibration review
 
-The development backdrop review page has two responsive scene editors. Each
-places backdrop/unit selectors above the exact gameplay scene, then four sliders:
+The development backdrop review page has one scene editor. Place backdrop/unit
+selectors and an unchecked **face left** checkbox above the exact gameplay scene,
+then four sliders:
 front footing position, row separation, front unit size, and rear size relative
 to the front. For infantry, expose an **infantry position** selector. Choosing
-**entrenched infantry** replaces those sliders with **trench height** and
-**trench size**, controlling both segments independently of the exposed formation.
+**entrenched infantry** replaces those sliders with independent **y position**
+and **size** sliders for **trench 1** and **trench 2**. Trench 1 is behind trench 2
+in the direction the infantry face; smaller y values move that trench higher.
 Size is each segment’s width as a percentage of the panel (10–45%). Keep the preview unobstructed and use the sliders for adjustments.
-Keep unit size changes anchored on ground contact. The same backdrop/unit pair
-shares settings across panels; other unit types remain
-independent. Keep save state
+Keep unit size changes anchored on ground contact. The checkbox switches the
+preview between right-facing (unchecked) and left-facing (checked), using the
+same calibration. Each backdrop/unit pair retains its independent draft. Keep save state
 and errors beside **save calibration**, preserve drafts after errors, and disable
-repeat saves while one is pending. Secondary team/facing/health/custom-path
+repeat saves while one is pending. Secondary team/health/custom-path
 controls live under **more preview options**. Unconfigured backdrops begin with
 an explicitly unsaved suggested preview; gameplay keeps legacy placements until
 that backdrop has been saved.
 
 
-Place a **copy calibrations** group above the scene editors, with saved source
-and destination selectors and **copy and save all unit calibrations**. State
-that copying replaces matching destination settings and uses saved source values.
-Show completion and failures beside the action. Disable copying to the same
-backdrop and prevent concurrent copy/save requests.
+Place a **copy calibrations** card to the right of the wider scene card, aligned
+at the top. Stack it below the scene on narrow screens. Include saved source
+and destination selectors, a **unit type** selector, and an unchecked **all unit types**
+checkbox. Require an explicit unit selection before enabling a single-unit copy;
+checking **all unit types** disables the selector and enables copying all saved
+unit settings. The action label names the selected type or says **copy and save
+all unit calibrations**. State that copying replaces matching destination settings
+and uses saved source values. Disable a single-unit copy if the source lacks saved
+settings for that type. Show completion and failures beside the action. Disable
+copying to the same backdrop and prevent concurrent copy/save requests.

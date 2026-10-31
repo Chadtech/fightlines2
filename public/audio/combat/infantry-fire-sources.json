@@ -1,0 +1,37 @@
+{
+  "file": "infantry-fire-heavy-v1.ogg",
+  "durationSeconds": 1.92,
+  "sampleRate": 48000,
+  "channels": 2,
+  "sha256": "07760222e897fe9b627efbfa7e067288365441ef4848782fa796d8012ff9aeeb",
+  "approvedMasterSha256": "aa91f46296262742509dd0874e3bcd3b11f5743d50077a5f0802a67723437fcb",
+  "sourceRecordings": [
+    {
+      "id": 67566,
+      "title": "m240h_machine_gun_burst_3.flac",
+      "creator": "qubodup",
+      "page": "https://freesound.org/people/qubodup/sounds/67566/",
+      "download": "https://cdn.freesound.org/previews/67/67566_71257-hq.mp3",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": 239138,
+      "title": "50 Cal MG",
+      "creator": "qubodup",
+      "page": "https://freesound.org/people/qubodup/sounds/239138/",
+      "download": "https://cdn.freesound.org/previews/239/239138_71257-hq.mp3",
+      "license": "CC0-1.0"
+    },
+    {
+      "id": 482121,
+      "title": "Machine Gun Burst",
+      "creator": "qubodup",
+      "page": "https://freesound.org/people/qubodup/sounds/482121/",
+      "download": "https://cdn.freesound.org/previews/482/482121_71257-hq.mp3",
+      "license": "CC0-1.0"
+    }
+  ],
+  "processing": "Reduced upper-frequency chatter; prominent .50-cal layer slowed to 82%; original designed 65\u2013390 Hz noise percussion aligned to detected gun attacks; brief reflection and saturation; 1920 ms runtime with edge fades. Gain matched to the previous -20 LUFS target using repeated cue measurement. Runtime encoding applies a 2x amplitude boost (approximately +6 dB), raising the target to approximately -14 LUFS; no extra playback boost is applied.",
+  "retainedSources": "audio-experiments/infantry-fire-heavy-v1/",
+  "rebuild": "python3 make_heavy_burst.py --duration-ms 1920 (from retained source directory); encode infantry-heavy-1920ms.wav with FFmpeg using -af volume=2 -c:a libvorbis -q:a 6 and retain the Ogg source attribution metadata."
+}

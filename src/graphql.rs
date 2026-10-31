@@ -117,8 +117,9 @@ impl Mutation {
         context: &Context,
         source_backdrop: String,
         destination_backdrop: String,
+        unit_kind: Option<UnitKind>,
     ) -> FieldResult<Vec<backdrop_calibration::CalibratedBackdrop>> {
-        backdrop_calibration::copy(context, source_backdrop, destination_backdrop)
+        backdrop_calibration::copy(context, source_backdrop, destination_backdrop, unit_kind)
     }
 
     fn save_backdrop_calibration(
@@ -128,6 +129,15 @@ impl Mutation {
         calibration: backdrop_calibration::BackdropCalibrationInput,
     ) -> FieldResult<backdrop_calibration::CalibratedBackdrop> {
         backdrop_calibration::save(context, backdrop, unit_kind, calibration)
+    }
+
+    fn create_map(
+        context: &Context,
+        map_type: MapId,
+        definition: map_editor::MapDefinitionInput,
+        thumbnail: Option<String>,
+    ) -> FieldResult<NamedMap> {
+        map_editor::create_map(context, map_type, definition, thumbnail)
     }
 
     fn save_map(
@@ -721,28 +731,21 @@ mod tests {
             selected["data"]["setLobbyController"]["players"][1]["isAi"],
             true
         );
-        for (choice, expected) in [
-            ("AI_MEDIUM", "AI_MEDIUM"),
-            ("AI_HARD", "AI_HARD"),
-            ("AI", "AI"),
-            ("AI_MEDIUM", "AI_MEDIUM"),
-        ] {
-            let (updated, _) = execute!(
-                format!(
-                    "mutation {{ setLobbyController(id: \"{id}\", controller: {choice}) {{ players {{ controller isAi }} }} }}"
-                ),
-                host.clone()
-            );
-            assert!(updated.get("errors").is_none(), "{updated}");
-            assert_eq!(
-                updated["data"]["setLobbyController"]["players"][0]["controller"],
-                "HUMAN"
-            );
-            assert_eq!(
-                updated["data"]["setLobbyController"]["players"][1]["controller"],
-                expected
-            );
-        }
+        let (updated, _) = execute!(
+            format!(
+                "mutation {{ setLobbyController(id: \"{id}\", controller: AI) {{ players {{ controller isAi }} }} }}"
+            ),
+            host.clone()
+        );
+        assert!(updated.get("errors").is_none(), "{updated}");
+        assert_eq!(
+            updated["data"]["setLobbyController"]["players"][0]["controller"],
+            "HUMAN"
+        );
+        assert_eq!(
+            updated["data"]["setLobbyController"]["players"][1]["controller"],
+            "AI"
+        );
         let (public, _) = execute!(
             format!("{{ lobby(id: \"{id}\") {{ isMember isHost }} }}"),
             None
@@ -762,8 +765,7 @@ mod tests {
                 .len(),
             1
         );
-        let hard = ai.replace("controller: AI", "controller: AI_HARD");
-        let (selected, _) = execute!(&hard, host.clone());
+        let (selected, _) = execute!(&ai, host.clone());
         assert!(selected.get("errors").is_none());
         let (started, _) = execute!(
             format!("mutation {{ startGame(id: \"{id}\") {{ gameUrl }} }}"),
@@ -777,7 +779,7 @@ mod tests {
         );
         let (game, _) = execute!(&game_query, host.clone());
         assert_eq!(game["data"]["game"]["players"][1]["isAi"], true);
-        assert_eq!(game["data"]["game"]["players"][1]["controller"], "AI_HARD");
+        assert_eq!(game["data"]["game"]["players"][1]["controller"], "AI");
         assert_eq!(game["data"]["game"]["players"][1]["isYou"], false);
         for number in 1..=3 {
             let (game, _) = execute!(&game_query, host.clone());
@@ -842,7 +844,7 @@ mod tests {
         );
         assert!(joined.get("errors").is_none());
         let change = format!(
-            "mutation {{ setLobbyController(id: \"{other_id}\", controller: AI_HARD) {{ id }} }}"
+            "mutation {{ setLobbyController(id: \"{other_id}\", controller: AI) {{ id }} }}"
         );
         for cookie in [host, guest] {
             let (denied, _) = execute!(&change, cookie);
@@ -877,7 +879,7 @@ mod tests {
             None
         );
         assert!(outsider.get("errors").is_none());
-        for controller in ["HUMAN", "AI_MEDIUM", "AI_HARD"] {
+        for controller in ["HUMAN", "AI"] {
             let ai = controller != "HUMAN";
             for host_side in [PlayerNumber::Player1, PlayerNumber::Player2] {
                 let side = match host_side {

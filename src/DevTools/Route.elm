@@ -20,7 +20,8 @@ import Url.Parser as P
 
 
 type Route
-    = BackdropReview
+    = Home
+    | BackdropReview
     | MapEditor
     | LoggedGames
     | Replay GameLogId
@@ -28,13 +29,14 @@ type Route
 
 fromUrl : Url -> Maybe Route
 fromUrl =
-    P.parse parser
+    P.parse (P.s "dev" </> parser)
 
 
 parser : Parser (Route -> a) a
 parser =
     P.oneOf
-        [ P.map BackdropReview (P.s "backdrop-review")
+        [ P.map Home P.top
+        , P.map BackdropReview (P.s "backdrop-review")
         , P.map LoggedGames (P.s "logged-games")
         , P.map Replay (P.s "logged-games" </> P.custom "gameLogId" (GameLogId.parse >> Result.toMaybe))
         , P.map MapEditor (P.s "map-editor")
@@ -52,6 +54,9 @@ toString route =
         parts : List String
         parts =
             case route of
+                Home ->
+                    []
+
                 LoggedGames ->
                     [ "logged-games" ]
 
@@ -64,4 +69,4 @@ toString route =
                 MapEditor ->
                     [ "map-editor" ]
     in
-    Url.Builder.absolute parts []
+    Url.Builder.absolute ("dev" :: parts) []

@@ -63,8 +63,8 @@ directory is available. A fresh clone does not include that directory.
   Beach corners bend the straight beach edge through a quarter turn,
   preserving its sand, foam, and shallow-water depth at both adjoining edges.
   The renderer rotates them from neighboring terrain, while
-  animated water stays beneath. `beach.png` also supplies the beach impact
-  backdrop in `combat-backdrops-anime-v1/`. Sources and generation requests live
+  animated water stays beneath. Beach combat and impact scenes use
+  `combat-backdrops-anime-v1/beach-ocean.png`. Sources and generation requests live
   in `artwork/terrain/illustrated/coast-v1/`; the terrain exporter copies them.
 - `coast-illustrated-v2/`: directional cliffs for a fixed camera looking from
   the south. `cliff-front-edge.png` exposes a tall wall when water is south of land;
@@ -357,6 +357,14 @@ imagegen produced the revised drawing and team recolors; local masters and
 prompts are in `artwork/combat/trench-overlay-anime-v2/`. The generated alpha
 channels are preserved without further image processing.
 
+`combat-trench-overlay-anime-v2/empty.png` (1945 x 809) removes all infantry
+and weapons from the same trench, retaining its transparent background, framing,
+sandbags, earth and timber. Built-in imagegen edited the red overlay; the local
+master and edit prompt are `artwork/combat/trench-overlay-anime-v2/empty.png`
+and `empty-prompt.txt`. Entrenched targets of indirect fire use this shared
+empty sprite for both teams, implying the soldiers are sheltering underground.
+Confirmed exchanges and observed targets of concealed guns use the same selection.
+
 `CombatFormation` selects the team by player number and places two copies side
 by side over the usual combat backdrop. Each defaults to 35% of panel width.
 Backdrop review’s **entrenched infantry** preview adjusts and saves both trench
@@ -382,6 +390,19 @@ including recorded return fire. The standing shooter and kneeling loader remain
 together through casualties; this formation replaces the static trench soldiers
 for anti-tank exchanges.
 
+`bazooka-firing-v1/{red,blue}.png` supplies eight complete drawn poses for those
+pairs: ready, brace, launch, backblast, smoke, clearing, wisps, and ready again.
+Each atlas has four columns and two rows of 640×512 cells. The whole drawings
+are registered on their boots; no body parts are articulated during export.
+The firing sequence lasts 800ms per pair, staggered by 90ms, and holds the exact
+ready drawing afterward. The last smoky pose uses that same ready drawing under
+a separate smoke layer, keeping the launcher geometry fixed as the wisps clear.
+Theater impacts wait for the last firing pair and
+100ms of travel; reduced motion keeps the ready drawing. `tools/build-bazooka-firing.cjs` exports
+the built-in imagegen masters and writes full-size and small animated previews
+under `output/imagegen/bazooka-firing-v1/`. Source drawings and generation prompts
+are retained locally under `artwork/units/illustrated/combat-theater/bazooka-firing-v1/`.
+
 `node tools/build-combat-infantry.cjs` exports the existing built-in-imagegen
 masters in `artwork/units/illustrated/firing-positions-neutral-v1/` (selected
 `heavy-machine-gun-team-side-v1-{red,blue}.png`,
@@ -397,3 +418,20 @@ masters received a built-in imagegen color edit so their pouches, belts, webbing
 backpacks, and canteen covers match the red or blue uniforms, like the other
 infantry. Source prompts remain with those local masters, including
 `bazooka-equipment-color-prompts.json` for this correction.
+
+The eight `combat-infantry-v1/{standing,kneeling,prone,machine-gun-team}-{red,blue}-firing.png`
+variants add the approved generated muzzle flash to those exact team sprites.
+The exporter copies the original figure pixels and adds transparent right padding
+for the flash (96px for riflemen, 128px for the gun team). SVG rendering retains
+the idle image scale, framing, and footing; padding never shrinks the figure.
+The formation reserves flash space at the scene edge even on ready frames.
+The original built-in-imagegen flash and prompts remain under
+`artwork/units/illustrated/firing-flashes-neutral-v1/`.
+`CombatInfantry` alternates ready/firing frames for a 1920ms burst, with 40ms flashes,
+independent figure phases, 160-200ms rifle cadences, and a 90ms machine-gun cadence.
+Only recorded firing participants animate, including return fire and zero damage.
+The presentation clock controls pauses and replays; impacts start 100ms after the
+burst's midpoint, while infantry keep firing. The theater stays open until firing
+and impacts finish, then applies its ordinary automatic-close delay. Reduced motion
+keeps the ready drawing. Trenches retain their existing artwork. `AppShell` preloads
+both teams' ready/firing images.

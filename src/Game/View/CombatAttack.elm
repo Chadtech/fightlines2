@@ -5,6 +5,7 @@ module Game.View.CombatAttack exposing
     , firingTimes
     , frameAt
     , preload
+    , staggerMs
     , toSvg
     )
 

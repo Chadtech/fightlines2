@@ -5,8 +5,10 @@
       "rowSpacing": 10.0,
       "unitSize": 18.0,
       "rearScale": 65.0,
-      "trenchFooting": 85.0,
-      "trenchSize": 41.0
+      "trenchFooting": 69.0,
+      "trenchSize": 30.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 39.0
     },
     "Tank": {
       "frontFooting": 80.0,
@@ -14,7 +16,9 @@
       "unitSize": 28.0,
       "rearScale": 71.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 83.0,
@@ -22,7 +26,9 @@
       "unitSize": 31.0,
       "rearScale": 98.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 82.0,
@@ -30,17 +36,21 @@
       "unitSize": 27.0,
       "rearScale": 75.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/depot.png": {
     "Infantry": {
-      "frontFooting": 75.0,
-      "rowSpacing": 26.0,
-      "unitSize": 25.0,
-      "rearScale": 64.0,
+      "frontFooting": 77.0,
+      "rowSpacing": 15.0,
+      "unitSize": 21.0,
+      "rearScale": 59.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 75.0,
@@ -48,7 +58,9 @@
       "unitSize": 29.0,
       "rearScale": 62.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 77.0,
@@ -56,7 +68,9 @@
       "unitSize": 37.0,
       "rearScale": 76.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 76.0,
@@ -64,17 +78,21 @@
       "unitSize": 29.0,
       "rearScale": 66.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/desert-forest.png": {
     "Infantry": {
-      "frontFooting": 91.0,
-      "rowSpacing": 24.0,
+      "frontFooting": 79.0,
+      "rowSpacing": 9.0,
       "unitSize": 21.0,
-      "rearScale": 75.0,
-      "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "rearScale": 72.0,
+      "trenchFooting": 72.0,
+      "trenchSize": 29.0,
+      "secondTrenchFooting": 89.0,
+      "secondTrenchSize": 37.0
     },
     "Tank": {
       "frontFooting": 87.0,
@@ -82,7 +100,9 @@
       "unitSize": 33.0,
       "rearScale": 75.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 92.0,
@@ -90,7 +110,9 @@
       "unitSize": 31.0,
       "rearScale": 100.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 87.0,
@@ -98,17 +120,21 @@
       "unitSize": 32.0,
       "rearScale": 76.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/desert-hills.png": {
     "Infantry": {
-      "frontFooting": 90.0,
-      "rowSpacing": 9.0,
-      "unitSize": 24.0,
+      "frontFooting": 87.0,
+      "rowSpacing": 5.0,
+      "unitSize": 22.0,
       "rearScale": 78.0,
-      "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchFooting": 82.0,
+      "trenchSize": 28.0,
+      "secondTrenchFooting": 96.0,
+      "secondTrenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 86.0,
@@ -116,7 +142,9 @@
       "unitSize": 31.0,
       "rearScale": 76.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 86.0,
@@ -124,7 +152,9 @@
       "unitSize": 30.0,
       "rearScale": 100.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 86.0,
@@ -132,17 +162,21 @@
       "unitSize": 31.0,
       "rearScale": 78.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/desert-mountains.png": {
     "Infantry": {
-      "frontFooting": 85.0,
-      "rowSpacing": 15.0,
+      "frontFooting": 84.0,
+      "rowSpacing": 7.0,
       "unitSize": 20.0,
-      "rearScale": 60.0,
-      "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "rearScale": 52.0,
+      "trenchFooting": 79.0,
+      "trenchSize": 26.0,
+      "secondTrenchFooting": 96.0,
+      "secondTrenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 81.0,
@@ -150,7 +184,9 @@
       "unitSize": 22.0,
       "rearScale": 70.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 83.0,
@@ -158,7 +194,9 @@
       "unitSize": 23.0,
       "rearScale": 83.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 86.0,
@@ -166,17 +204,21 @@
       "unitSize": 23.0,
       "rearScale": 68.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/desert-plains.png": {
     "Infantry": {
-      "frontFooting": 81.0,
-      "rowSpacing": 26.0,
+      "frontFooting": 80.0,
+      "rowSpacing": 14.0,
       "unitSize": 20.0,
-      "rearScale": 58.0,
-      "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "rearScale": 48.0,
+      "trenchFooting": 65.0,
+      "trenchSize": 23.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 73.0,
@@ -184,7 +226,9 @@
       "unitSize": 32.0,
       "rearScale": 48.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 82.0,
@@ -192,7 +236,9 @@
       "unitSize": 32.0,
       "rearScale": 87.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 85.0,
@@ -200,17 +246,21 @@
       "unitSize": 31.0,
       "rearScale": 75.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/forest.png": {
     "Infantry": {
-      "frontFooting": 91.0,
-      "rowSpacing": 24.0,
-      "unitSize": 21.0,
-      "rearScale": 75.0,
-      "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "frontFooting": 84.0,
+      "rowSpacing": 12.0,
+      "unitSize": 20.0,
+      "rearScale": 74.0,
+      "trenchFooting": 72.0,
+      "trenchSize": 30.0,
+      "secondTrenchFooting": 93.0,
+      "secondTrenchSize": 36.0
     },
     "Tank": {
       "frontFooting": 87.0,
@@ -218,7 +268,9 @@
       "unitSize": 33.0,
       "rearScale": 75.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 92.0,
@@ -226,7 +278,9 @@
       "unitSize": 31.0,
       "rearScale": 100.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 87.0,
@@ -234,25 +288,31 @@
       "unitSize": 32.0,
       "rearScale": 76.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/fortress.png": {
     "Infantry": {
-      "frontFooting": 85.0,
-      "rowSpacing": 26.0,
-      "unitSize": 25.0,
-      "rearScale": 66.0,
+      "frontFooting": 77.0,
+      "rowSpacing": 14.0,
+      "unitSize": 20.0,
+      "rearScale": 59.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 75.0,
-      "rowSpacing": 20.0,
+      "rowSpacing": 24.0,
       "unitSize": 29.0,
-      "rearScale": 65.0,
+      "rearScale": 62.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 77.0,
@@ -260,25 +320,31 @@
       "unitSize": 37.0,
       "rearScale": 76.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 76.0,
-      "rowSpacing": 19.0,
+      "rowSpacing": 23.0,
       "unitSize": 29.0,
-      "rearScale": 71.0,
+      "rearScale": 66.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/hills.png": {
     "Infantry": {
       "frontFooting": 82.0,
-      "rowSpacing": 10.0,
-      "unitSize": 23.0,
+      "rowSpacing": 6.0,
+      "unitSize": 19.0,
       "rearScale": 60.0,
-      "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchFooting": 80.0,
+      "trenchSize": 30.0,
+      "secondTrenchFooting": 93.0,
+      "secondTrenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 83.0,
@@ -286,7 +352,9 @@
       "unitSize": 26.0,
       "rearScale": 76.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 85.0,
@@ -294,7 +362,9 @@
       "unitSize": 22.0,
       "rearScale": 100.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 83.0,
@@ -302,17 +372,21 @@
       "unitSize": 23.0,
       "rearScale": 79.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/mountains.png": {
     "Infantry": {
-      "frontFooting": 85.0,
-      "rowSpacing": 15.0,
-      "unitSize": 20.0,
-      "rearScale": 60.0,
-      "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "frontFooting": 83.0,
+      "rowSpacing": 6.0,
+      "unitSize": 18.0,
+      "rearScale": 51.0,
+      "trenchFooting": 80.0,
+      "trenchSize": 27.0,
+      "secondTrenchFooting": 94.0,
+      "secondTrenchSize": 34.0
     },
     "Tank": {
       "frontFooting": 86.0,
@@ -320,7 +394,9 @@
       "unitSize": 25.0,
       "rearScale": 70.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 83.0,
@@ -328,7 +404,9 @@
       "unitSize": 23.0,
       "rearScale": 83.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 86.0,
@@ -336,17 +414,21 @@
       "unitSize": 23.0,
       "rearScale": 68.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/plains.png": {
     "Infantry": {
       "frontFooting": 81.0,
-      "rowSpacing": 26.0,
+      "rowSpacing": 15.0,
       "unitSize": 20.0,
-      "rearScale": 58.0,
-      "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "rearScale": 43.0,
+      "trenchFooting": 67.0,
+      "trenchSize": 26.0,
+      "secondTrenchFooting": 87.0,
+      "secondTrenchSize": 34.0
     },
     "Tank": {
       "frontFooting": 73.0,
@@ -354,7 +436,9 @@
       "unitSize": 32.0,
       "rearScale": 48.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 82.0,
@@ -362,7 +446,9 @@
       "unitSize": 32.0,
       "rearScale": 87.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 85.0,
@@ -370,7 +456,9 @@
       "unitSize": 31.0,
       "rearScale": 75.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/road.png": {
@@ -380,7 +468,9 @@
       "unitSize": 24.0,
       "rearScale": 69.0,
       "trenchFooting": 78.0,
-      "trenchSize": 45.0
+      "trenchSize": 45.0,
+      "secondTrenchFooting": 78.0,
+      "secondTrenchSize": 45.0
     },
     "Tank": {
       "frontFooting": 77.0,
@@ -388,7 +478,9 @@
       "unitSize": 40.0,
       "rearScale": 76.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 70.0,
@@ -396,7 +488,9 @@
       "unitSize": 39.0,
       "rearScale": 100.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 76.0,
@@ -404,17 +498,21 @@
       "unitSize": 38.0,
       "rearScale": 74.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/snowy-depot.png": {
     "Infantry": {
-      "frontFooting": 75.0,
-      "rowSpacing": 26.0,
-      "unitSize": 25.0,
-      "rearScale": 64.0,
+      "frontFooting": 77.0,
+      "rowSpacing": 15.0,
+      "unitSize": 21.0,
+      "rearScale": 59.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 75.0,
@@ -422,7 +520,9 @@
       "unitSize": 29.0,
       "rearScale": 62.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 77.0,
@@ -430,7 +530,9 @@
       "unitSize": 37.0,
       "rearScale": 76.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 76.0,
@@ -438,17 +540,21 @@
       "unitSize": 29.0,
       "rearScale": 66.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/snowy-forest.png": {
     "Infantry": {
-      "frontFooting": 91.0,
-      "rowSpacing": 24.0,
-      "unitSize": 21.0,
-      "rearScale": 75.0,
-      "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "frontFooting": 84.0,
+      "rowSpacing": 11.0,
+      "unitSize": 20.0,
+      "rearScale": 74.0,
+      "trenchFooting": 75.0,
+      "trenchSize": 29.0,
+      "secondTrenchFooting": 94.0,
+      "secondTrenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 87.0,
@@ -456,7 +562,9 @@
       "unitSize": 33.0,
       "rearScale": 75.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 92.0,
@@ -464,7 +572,9 @@
       "unitSize": 31.0,
       "rearScale": 100.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 87.0,
@@ -472,17 +582,21 @@
       "unitSize": 32.0,
       "rearScale": 76.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/snowy-fortress.png": {
     "Infantry": {
-      "frontFooting": 85.0,
-      "rowSpacing": 26.0,
-      "unitSize": 25.0,
-      "rearScale": 66.0,
+      "frontFooting": 76.0,
+      "rowSpacing": 13.0,
+      "unitSize": 20.0,
+      "rearScale": 59.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 75.0,
@@ -490,7 +604,9 @@
       "unitSize": 29.0,
       "rearScale": 65.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 77.0,
@@ -498,7 +614,9 @@
       "unitSize": 37.0,
       "rearScale": 76.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 76.0,
@@ -506,17 +624,21 @@
       "unitSize": 29.0,
       "rearScale": 71.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/snowy-hills.png": {
     "Infantry": {
-      "frontFooting": 87.0,
-      "rowSpacing": 12.0,
-      "unitSize": 18.0,
-      "rearScale": 69.0,
-      "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "frontFooting": 85.0,
+      "rowSpacing": 6.0,
+      "unitSize": 19.0,
+      "rearScale": 60.0,
+      "trenchFooting": 83.0,
+      "trenchSize": 27.0,
+      "secondTrenchFooting": 96.0,
+      "secondTrenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 84.0,
@@ -524,7 +646,9 @@
       "unitSize": 28.0,
       "rearScale": 74.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 83.0,
@@ -532,7 +656,9 @@
       "unitSize": 27.0,
       "rearScale": 93.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 86.0,
@@ -540,17 +666,21 @@
       "unitSize": 27.0,
       "rearScale": 74.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/snowy-mountains.png": {
     "Infantry": {
-      "frontFooting": 85.0,
-      "rowSpacing": 15.0,
-      "unitSize": 20.0,
-      "rearScale": 60.0,
-      "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "frontFooting": 82.0,
+      "rowSpacing": 6.0,
+      "unitSize": 18.0,
+      "rearScale": 51.0,
+      "trenchFooting": 81.0,
+      "trenchSize": 30.0,
+      "secondTrenchFooting": 97.0,
+      "secondTrenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 84.0,
@@ -558,7 +688,9 @@
       "unitSize": 23.0,
       "rearScale": 70.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 84.0,
@@ -566,7 +698,9 @@
       "unitSize": 23.0,
       "rearScale": 83.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 85.0,
@@ -574,17 +708,21 @@
       "unitSize": 22.0,
       "rearScale": 68.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/snowy-road.png": {
     "Infantry": {
-      "frontFooting": 69.0,
-      "rowSpacing": 22.0,
-      "unitSize": 25.0,
-      "rearScale": 75.0,
-      "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "frontFooting": 75.0,
+      "rowSpacing": 13.0,
+      "unitSize": 24.0,
+      "rearScale": 69.0,
+      "trenchFooting": 78.0,
+      "trenchSize": 45.0,
+      "secondTrenchFooting": 78.0,
+      "secondTrenchSize": 45.0
     },
     "Tank": {
       "frontFooting": 77.0,
@@ -592,7 +730,9 @@
       "unitSize": 40.0,
       "rearScale": 76.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 70.0,
@@ -600,7 +740,9 @@
       "unitSize": 39.0,
       "rearScale": 100.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 76.0,
@@ -608,17 +750,21 @@
       "unitSize": 38.0,
       "rearScale": 74.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/tundra-plains.png": {
     "Infantry": {
-      "frontFooting": 81.0,
-      "rowSpacing": 26.0,
+      "frontFooting": 79.0,
+      "rowSpacing": 14.0,
       "unitSize": 20.0,
-      "rearScale": 58.0,
-      "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "rearScale": 43.0,
+      "trenchFooting": 71.0,
+      "trenchSize": 28.0,
+      "secondTrenchFooting": 90.0,
+      "secondTrenchSize": 34.0
     },
     "Tank": {
       "frontFooting": 73.0,
@@ -626,7 +772,9 @@
       "unitSize": 32.0,
       "rearScale": 48.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 82.0,
@@ -634,7 +782,9 @@
       "unitSize": 32.0,
       "rearScale": 87.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 85.0,
@@ -642,7 +792,9 @@
       "unitSize": 31.0,
       "rearScale": 75.0,
       "trenchFooting": 86.0,
-      "trenchSize": 35.0
+      "trenchSize": 35.0,
+      "secondTrenchFooting": 86.0,
+      "secondTrenchSize": 35.0
     }
   }
 }

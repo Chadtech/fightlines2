@@ -1795,7 +1795,9 @@ focusPositions playback =
             let
                 combatantIds : List UnitId
                 combatantIds =
-                    List.concatMap (\shot -> [ shot.attacker.id, shot.target.id ]) playback.current.shots
+                    List.concatMap
+                        (\shot -> [ shot.attacker.id, shot.target.id ])
+                        playback.current.shots
 
                 casualtyPositions : List Point
                 casualtyPositions =
@@ -1849,7 +1851,9 @@ movementCameraPositions frame frames segments =
 
                         continue : List Point
                         continue =
-                            nextUnit |> Maybe.map (\other -> route other next rest) |> Maybe.withDefault []
+                            nextUnit
+                                |> Maybe.map (\other -> route other next rest)
+                                |> Maybe.withDefault []
                     in
                     case observedMovement transition unit of
                         Just edge ->

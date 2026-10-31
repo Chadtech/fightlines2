@@ -33,6 +33,8 @@ function createAudioManager(reportError = () => {}) {
     infantry: "/audio/movement/infantry-stib-2x.ogg",
   });
   const movingUnits = new Map();
+  const infantryFireFile = "/audio/combat/infantry-fire-heavy-v1.ogg";
+  const firingInfantry = new Map();
   const ambienceFiles = Object.freeze({
     plains: "/audio/ambience/plains.ogg",
     forest: "/audio/ambience/forest.ogg",
@@ -108,6 +110,7 @@ function createAudioManager(reportError = () => {}) {
       }
       for (const file of Object.values(sounds).flat()) load(file);
       for (const file of Object.values(movementFiles)) load(file);
+      load(infantryFireFile);
     } catch (error) {
       report("initialization", error);
     }
@@ -116,6 +119,7 @@ function createAudioManager(reportError = () => {}) {
   function stopAll() {
     generation += 1;
     movingUnits.clear();
+    firingInfantry.clear();
     ambientVoices.clear();
     for (const source of activeSources.keys()) {
       source.stop();
@@ -197,6 +201,107 @@ function createAudioManager(reportError = () => {}) {
       const voice = { sound, source: null, gain: null };
       movingUnits.set(id, voice);
       pending.push(startMovement(id, voice));
+    }
+    await Promise.all(pending);
+  }
+
+  function stopInfantryFire(id, voice) {
+    firingInfantry.delete(id);
+    if (!voice.source || voice.finished) return;
+    const now = context.currentTime;
+    voice.gain.gain.cancelScheduledValues(now);
+    voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
+    voice.gain.gain.linearRampToValueAtTime(0, now + 0.005);
+    voice.source.stop(now + 0.005);
+  }
+
+  async function startInfantryFire(id, voice) {
+    try {
+      if (resuming) await resuming;
+      if (context.state !== "running") return;
+      const buffer = await load(infantryFireFile);
+      if (firingInfantry.get(id) !== voice || document.hidden || muted || context.state !== "running") return;
+      // Decode latency consumes the firing window; resume from the latest clock
+      // snapshot rather than playing the beginning late or extending the burst.
+      const latencyMs = performance.now() - voice.receivedAt;
+      const offset = (voice.elapsedMs + latencyMs) / 1000;
+      const remaining = Math.min((voice.remainingMs - latencyMs) / 1000, buffer.duration - offset);
+      if (remaining <= 0) {
+        voice.finished = true;
+        return;
+      }
+      const source = context.createBufferSource();
+      const gain = context.createGain();
+      const now = context.currentTime;
+      source.buffer = buffer;
+      source.connect(gain);
+      gain.connect(master);
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(voice.level, now + Math.min(0.003, remaining / 2));
+      gain.gain.setValueAtTime(voice.level, now + Math.max(Math.min(0.003, remaining / 2), remaining - 0.005));
+      gain.gain.linearRampToValueAtTime(0, now + remaining);
+      voice.source = source;
+      voice.gain = gain;
+      voice.startedAt = now;
+      voice.offsetMs = offset * 1000;
+      source.onended = () => {
+        voice.finished = true;
+        activeSources.delete(source);
+        source.disconnect();
+        gain.disconnect();
+      };
+      activeSources.set(source, "infantryFire");
+      source.start(0, offset);
+      source.stop(now + remaining);
+    } catch (error) {
+      if (voice.source) {
+        activeSources.delete(voice.source);
+        voice.source.disconnect();
+        voice.gain.disconnect();
+      }
+      if (firingInfantry.get(id) === voice) firingInfantry.delete(id);
+      report("firing infantry", error);
+    } finally {
+      if (!voice.source && !voice.finished && firingInfantry.get(id) === voice) firingInfantry.delete(id);
+    }
+  }
+
+  async function syncInfantryFire(units) {
+    // Audio.encodeFiringInfantry owns the snapshot shape. Check only timing
+    // constraints that Elm's Float type cannot guarantee for Web Audio.
+    const validTiming = units.every(unit =>
+      Number.isFinite(unit.elapsedMs) && unit.elapsedMs >= 0 &&
+      Number.isFinite(unit.remainingMs) && unit.remainingMs > 0);
+    if (!validTiming) {
+      report("invalid infantry fire", units);
+      return;
+    }
+    const desired = new Map(units.map(unit => [unit.unitId, unit]));
+    for (const [id, voice] of firingInfantry) {
+      const unit = desired.get(id);
+      const rewound = unit && unit.elapsedMs < voice.elapsedMs - 1;
+      const drifted = unit && voice.source && !voice.finished &&
+        Math.abs(unit.elapsedMs - voice.offsetMs - (context.currentTime - voice.startedAt) * 1000) > 100;
+      if (!unit || rewound || drifted) stopInfantryFire(id, voice);
+    }
+    if (!context || document.hidden || muted) return;
+    const pending = [];
+    const level = 1 / Math.sqrt(Math.max(1, units.length));
+    for (const [id, unit] of desired) {
+      const existing = firingInfantry.get(id);
+      if (existing) {
+        existing.elapsedMs = unit.elapsedMs;
+        existing.remainingMs = unit.remainingMs;
+        existing.receivedAt = performance.now();
+        if (existing.level !== level && existing.source && !existing.finished) {
+          existing.gain.gain.setValueAtTime(level, context.currentTime);
+        }
+        existing.level = level;
+        continue;
+      }
+      const voice = { ...unit, receivedAt: performance.now(), level, source: null, gain: null, finished: false };
+      firingInfantry.set(id, voice);
+      pending.push(startInfantryFire(id, voice));
     }
     await Promise.all(pending);
   }
@@ -310,6 +415,11 @@ function createAudioManager(reportError = () => {}) {
       muted = event.muted;
       if (master) master.gain.setValueAtTime(muted ? 0 : volume, context.currentTime);
       if (muted) stopAll();
+      return;
+    }
+    if (typeof event === "object" && !Array.isArray(event) &&
+        Object.keys(event).length === 1 && Object.hasOwn(event, "infantryFire")) {
+      await syncInfantryFire(event.infantryFire);
       return;
     }
     if (typeof event === "object" && !Array.isArray(event) &&

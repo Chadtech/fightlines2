@@ -18,10 +18,12 @@ DevTools bundle, copied HTML, and startup script from earlier development builds
 editor, logged-game list, archive replay, and backdrop preview pages are
 unavailable. This target defaults to `PRODUCTION=true`; `make dev`, `make editor`,
 and `make logs` use `false`. Rebuilding with standalone `make frontend` also defaults
-to `false` and builds the separate DevTools app at the existing development URLs.
+to `false` and builds the separate DevTools app under `/dev`. The server serves
+its entry point for `/dev` and all `/dev/…` paths; Elm handles individual tool
+routes. `/dev` lists links to the tools.
 Command-line assignments such as `make build PRODUCTION=false` override these
 defaults. The flag controls frontend availability; continue to omit `--map-editor` and `--game-logs` on public
-servers to disable their server routes and GraphQL operations. Serve behind an
+servers to disable their GraphQL operations. Serve behind an
 HTTPS reverse proxy for internet hosting.
 
 Frontend pages and assets use `Cache-Control: no-cache` so browsers revalidate
@@ -95,8 +97,8 @@ error. Restore storage and retry. Recording is synchronous, so use reliable loca
 storage. A filesystem supporting hard links is required.
 
 To browse saved games, run `make logs`, or add `--game-logs` to the
-server command, then open `/logged-games` at the server's deployment address
-(`http://127.0.0.1:8080/logged-games` locally). `make dev` also
+server command, then open `/dev/logged-games` at the server's deployment address
+(`http://127.0.0.1:8080/dev/logged-games` locally). `make dev` also
 enables these pages. The list includes unfinished recordings and isolates errors
 for malformed archives. Replay reads saved boards and frames rather than rerunning
 orders, so it can display archives after rule changes. Pending submissions do not
@@ -104,8 +106,9 @@ appear as completed turns. Turn zero is the starting board; turns one onward
 play their recorded resolution. The player selector applies normal fog and
 remembered freight, with the final reveal after terminal playback.
 
-Both HTML routes and the `loggedGames`, `loggedGame`, and `loggedTurn` GraphQL
-queries require this opt-in flag. They accept remote connections and deployment
+The `loggedGames`, `loggedGame`, and `loggedTurn` GraphQL queries require this
+opt-in flag; serving the DevTools entry point does not grant archive access.
+These queries accept remote connections and deployment
 hostnames, including behind HTTPS reverse proxies. Operator password protection
 is not implemented yet; when enabled, anyone who can reach the server can browse
 recordings. Leave the flag off on public deployments until operator access is
@@ -136,8 +139,8 @@ need to reproduce historical behavior exactly.
 
 ## Map authoring
 
-`make editor` enables `--map-editor` without seeding a fixture. Only this flag
-registers `/map-editor` and enables the `maps` and `saveMap` operations on
+`make editor` enables `--map-editor` without seeding a fixture. Open
+`/dev/map-editor`; the flag enables the `maps`, `createMap`, and `saveMap` operations on
 `/graphql`. These fields remain visible in the shared schema when the flag is
 absent, but their resolvers reject requests before filesystem access. Editor
 reads require loopback clients; saves additionally require a matching localhost
@@ -158,7 +161,7 @@ error. Existing games are unaffected by saves.
 Ship `public/backdrop-calibrations.json` with the frontend assets. The server's
 public GraphQL calibration query reads it at startup-page load, including in
 production; malformed or missing data surfaces a frontend configuration error.
-`/backdrop-review` loads the DevTools app in development frontend builds. Saving
+`/dev/backdrop-review` loads the DevTools app in development frontend builds. Saving
 uses the same localhost, same-origin, and `--map-editor` requirements as map authoring.
 Omit that flag on hosted servers. Saving atomically updates the file, preserving
 other backdrop/unit entries; refresh gameplay/replay pages to load changes. With a custom

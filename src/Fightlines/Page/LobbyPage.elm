@@ -1244,13 +1244,7 @@ controllerLabel controller =
             "human"
 
         Ai ->
-            "ai easy"
-
-        AiMedium ->
-            "ai medium"
-
-        AiHard ->
-            "ai hard"
+            "ai"
 
 
 startControlsView : Model -> Html Msg
@@ -1376,15 +1370,14 @@ sideView model =
                     ]
                     [ H.text "your side"
                     ]
-                , Select.toHtml
-                    { htmlId = "your-side"
-                    , disabled = isBusy model || (model.gameUrl /= Nothing)
-                    , selected = selectedSide player
+                , Select.new
+                    { selected = selectedSide player
                     , options = List.map option Api.Enum.PlayerNumber.list
-                    , toValue = Api.Enum.PlayerNumber.toString
-                    , decoder = Api.Enum.PlayerNumber.decoder
                     , onChange = SideInputChanged
                     }
+                    |> Select.withHtmlId "your-side"
+                    |> Select.disabled (isBusy model || (model.gameUrl /= Nothing))
+                    |> Select.toHtml
                 , H.p
                     []
                     [ H.text "switching sides also moves the other player."
@@ -1474,15 +1467,14 @@ playerSlotView model playerNumber =
         control : Html Msg
         control =
             if canConfigure then
-                Select.toHtml
-                    { htmlId = controllerHtmlId
-                    , disabled = isBusy model || hasJoinedHuman model
-                    , selected = controller
+                Select.new
+                    { selected = controller
                     , options = List.map option Api.Enum.Controller.list
-                    , toValue = Api.Enum.Controller.toString
-                    , decoder = Api.Enum.Controller.decoder
                     , onChange = ControllerInputChanged
                     }
+                    |> Select.withHtmlId controllerHtmlId
+                    |> Select.disabled (isBusy model || hasJoinedHuman model)
+                    |> Select.toHtml
 
             else
                 H.span

@@ -3,6 +3,7 @@ module Audio exposing
     , AmbientScene
     , Audio(..)
     , Event(..)
+    , FiringInfantry
     , MovementSound(..)
     , MovingUnit
     , MuteState(..)
@@ -13,6 +14,7 @@ module Audio exposing
     , loadMutePreference
     , none
     , syncAmbience
+    , syncInfantryFire
     , syncMovement
     , tankFire
     , toggleMute
@@ -34,6 +36,7 @@ type Event
     | Play Audio
     | SyncMovement (List MovingUnit)
     | SyncAmbience (List AmbientScene)
+    | SyncInfantryFire (List FiringInfantry)
     | SetMute MuteState
 
 
@@ -109,6 +112,22 @@ type MovementSound
     = Infantry
     | Truck
     | Tank
+
+
+type alias FiringInfantry =
+    { unitId : UnitId
+    , elapsedMs : Float
+    , remainingMs : Float
+    }
+
+
+syncInfantryFire : { before : List FiringInfantry, after : List FiringInfantry } -> Event
+syncInfantryFire units =
+    if List.isEmpty units.before && List.isEmpty units.after then
+        None
+
+    else
+        SyncInfantryFire units.after
 
 
 type alias MovingUnit =
@@ -221,6 +240,19 @@ encodeEvent event =
         SyncAmbience scenes ->
             Je.object
                 [ ( "ambience", Je.list encodeAmbientScene scenes ) ]
+
+        SyncInfantryFire units ->
+            Je.object
+                [ ( "infantryFire", Je.list encodeFiringInfantry units ) ]
+
+
+encodeFiringInfantry : FiringInfantry -> Je.Value
+encodeFiringInfantry unit =
+    Je.object
+        [ ( "unitId", Je.string (UnitId.toString unit.unitId) )
+        , ( "elapsedMs", Je.float unit.elapsedMs )
+        , ( "remainingMs", Je.float unit.remainingMs )
+        ]
 
 
 encodeAmbientScene : AmbientScene -> Je.Value

@@ -1,6 +1,7 @@
-.PHONY: build frontend generate-api sprites check run dev editor logs
+.PHONY: build frontend generate-api sprites check check-all run dev editor logs
 
 PRODUCTION ?= false
+RUST_TEST_ARGS ?=
 
 build: PRODUCTION = true
 build: frontend
@@ -19,10 +20,13 @@ frontend: generate-api
 	elm make src/Fightlines.elm --output=public/elm.js
 	node tools/build-dev-tools.cjs $(PRODUCTION)
 
+check-all: RUST_TEST_ARGS = --include-ignored
+check-all: check
+
 check:
 	cargo fmt --all -- --check
 	cargo clippy --locked --all-targets -- -D warnings
-	cargo test --locked
+	cargo test --locked -- $(RUST_TEST_ARGS)
 	elm-format src --validate
 	node tools/check-movement.cjs
 	node tools/check-shoreline.cjs

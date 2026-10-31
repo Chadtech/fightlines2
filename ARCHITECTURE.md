@@ -31,17 +31,19 @@ all recorded results using the current engine; it does not regenerate AI orders 
 restore browser sessions. These archives are for operator debugging and never go
 through player GraphQL responses. `game_archive.rs` exposes separate read-only
 `loggedGames`, `loggedGame`, and `loggedTurn` queries only when `--game-logs` is
-enabled. `/logged-games` and `/logged-games/:archiveId` are registered with the
-same flag. Browsing works through the server's deployment address, including
+enabled. Elm routes `/dev/logged-games` and `/dev/logged-games/:archiveId` to the
+archive pages; their data queries require the flag. The server serves one
+DevTools entry point for the entire `/dev` prefix without knowing the individual
+tool routes. Browsing works through the server's deployment address, including
 HTTPS reverse proxies. There is no operator authentication yet: enabled archive
 pages and queries are accessible to anyone who can reach the server.
 An archive ID includes its start timestamp, distinguishing
 games whose lobby ID was reused after restart. `GameLogId` validates this ID at
 the Elm boundary.
 
-Each archived roster entry records its own `Controller` (human, easy AI, or medium
-AI) in `controller`. Readers also accept the legacy `opponent` field, while new
-records always write `controller`.
+Each archived roster entry records its own `Controller` (human or AI) in
+`controller`. Readers also accept the legacy `opponent` field and map old AI
+difficulty labels to AI, while new records always write `controller`.
 
 `game_log::Archive` reads contiguous published records, validates their versions
 and turn sequence, and ignores pending writes. The list uses a `LoggedGameEntry`
@@ -184,7 +186,7 @@ remains available to tests for concise fixtures. Initial layouts and deployments
 were preserved during migration, including ElAlamein's asymmetric eastern base.
 Themes affect artwork only; movement, sight and scenario geometry remain separate.
 
-`MapEditor` is an Elm page reached through `/map-editor`. `DevTools` owns its initial
+`MapEditor` is an Elm page reached through `/dev/map-editor`. `DevTools` owns its initial
 load and failure dispatch; `EditableMap` owns the authoring data and its generated
 GraphQL boundary.
 The page keeps a draft, saved snapshot, and bounded undo/redo history per map;
@@ -200,13 +202,17 @@ update the submitted map's saved snapshot, preserving later draft edits and map
 selection. Editing errors shown during a request retain the pending save.
 The page owns its initialization `Flags` and GraphQL selection. `map_editor.rs`
 owns map authoring resolvers exposed through the ordinary `/graphql` schema.
-The schema includes `maps` and `saveMap`; both reject requests unless the server
+The schema includes `maps`, `createMap`, and `saveMap`; all reject requests unless the server
 starts with `--map-editor`. Request-derived editor access also restricts reads to
 loopback clients and saves to matching localhost Origins. Ordinary game queries
 and mutations retain their own authorization. `EditableMap` uses the shared
 `Api.*` enums, selections and inputs without editor enum conversions. All requests
 use `ApiRequest` and `Effect.request`.
-Saves validate before atomically replacing an existing map file in the configured
+New-map drafts begin with a blank 17 × 17 board and no saved snapshot. Their first
+save uses `createMap`, which rejects existing filenames under the editor's write
+lock. Later saves use `saveMap`, which requires an existing file. Both paths share
+validation and thumbnail handling. Draft creation preserves other map documents.
+Saves validate before atomically writing a map file in the configured
 catalog directory. `MapId::scenario` reads its latest definition at game creation
 in every mode. Existing games own independent scenarios.
 
@@ -246,8 +252,7 @@ while reconnecting members can rejoin a full lobby.
 
 `PlayerController` distinguishes a human session from an AI without giving bots
 browser credentials. The host can call `setLobbyController(id, controller)` with
-`Human`, `Ai` (Easy), `AiMedium`, or `AiHard` before starting. The AI controller owns its
-`ai::Difficulty`, which stays with the AI when players swap sides. Selecting AI
+`Human` or `Ai` before starting. Selecting AI
 fills the side opposite the host;
 selecting human removes the AI and opens that slot. A joined human cannot be
 displaced. Both lobby and game
@@ -260,11 +265,11 @@ saved settings or interfere with a newer poll.
 
 `ai.rs` builds deterministic ordinary `MoveOrderInput` values from its assigned
 side's fog-projected pre-turn scenario. It receives neither human orders nor
-hidden enemy positions as planning inputs. Its basic policy advances toward central supply
+hidden enemy positions as planning inputs. Its advancing enemy model moves toward central supply
 points, engages visible enemies with attack moves or field-gun indirect fire,
 and seeks depots for low supplies or fuel. Weighted pathfinding respects terrain,
 resource limits, occupied allied squares, and destination reservations. Passengers
-hold. This tactical policy remains Easy. `ai/search.rs` performs bounded,
+hold in that model. `ai/search.rs` performs bounded,
 deterministic one-turn searches over
 holds, ambushes, digging, indirect targets and affordable route prefixes. Each
 candidate uses `Turns::submit` for validation and resolution against assumed
@@ -275,21 +280,20 @@ reads human orders. Before simulation, private enemy health, supplies and fuel
 are replaced with a full-resource assumption, private cargo is cleared, and
 unseen depot stock uses its default capacity; projection flags alone do not
 erase underlying values.
-Medium ranks route prefixes and scores objective progress by remaining terrain
+The search ranks route prefixes and scores objective progress by remaining terrain
 movement cost, so a detour around mountains can start by moving away from the
 objective. Per-unit reverse searches are reused across candidate simulations;
 impassable objectives use the closest tiles in the unit's reachable terrain
 component. Route generation and resolution still handle occupancy and resources.
-Medium scouts the opposing half using public map geometry and keeps one infantry
-guarding the central supply point. Hard shares this search and its sanitized
-observation, but evaluates two enemy responses: stationary defenses and the Easy
-policy's advancing orders, computed on that sanitized board. It scores twice the
+The AI scouts the opposing half using public map geometry and keeps one infantry
+guarding the central supply point. It evaluates two enemy responses: stationary
+defenses and advancing orders, computed on the sanitized board. It scores twice the
 worst response plus the mean response, considers six approaches per movement mode
 and up to four one-step escapes. When enemies are observed, it performs a second
 coordination pass with all other allied destinations reserved. These are same-turn counterfactuals, not
 knowledge of submitted human orders or a multi-turn search. Both responses use
 `Turns::submit`; there are no resource bonuses.
-All difficulties finish with `ai/logistics.rs` on the same projected observation.
+Planning finishes with `ai/logistics.rs` on the same projected observation.
 Empty trucks seek stocked depots or visible ground freight, explicitly request
 ground pickup or load depot cargo within shared berth and stock limits, and carry it to planned allied
 destinations. Typed `TruckMission` bids compare proportionate resource shortages,
@@ -383,8 +387,8 @@ storing it in their own models. Each app decodes its own startup flags through
 `Fightlines.Flags` or `DevTools.Flags`, loads its pages' required initialization data, and
 shows retry actions on failure.
 Backdrop calibrations belong to the consuming pages' initialization data.
-`Fightlines.Route` parses player routes; `DevTools.Route` parses tool routes at their existing
-URLs. Each app handles its own routes and page dispatch, converting effects to
+`Fightlines.Route` parses player routes; `DevTools.Route` parses tool routes
+under `/dev`. Each app handles its own routes and page dispatch, converting effects to
 commands at its application boundary. Links outside an app's routes load a new
 document so the server can select the correct bundle. Each app owns its browser
 state through `Fightlines.Shared` for the player app and `DevTools.Shared` for
@@ -453,7 +457,9 @@ opt-in flags.
 
 Both documents load `public/audio-manager.js` before the shared interop. Each
 `startElmApp` creates one manager. `Effect.audio` accepts an `Audio.Event` and
-sends it through `Ports.Js.To.Audio`: `Audio.none` encodes as `null`, and
+sends it through `Ports.Js.To.Audio` in a
+`{ "tag": "audio", "event": ... }` envelope. Within that envelope,
+`Audio.none` encodes as `null`, and
 `Audio.uiAffirm`, `Audio.uiCancel`, and `Audio.uiConfirm` as
 `{ "play": "uiAffirm" }`, `{ "play": "uiCancel" }`, and
 `{ "play": "uiConfirm" }`. `Audio.tankFire` encodes as `{ "play": "tankFire" }`;
@@ -470,11 +476,11 @@ a shared decoding error.
 an active dialog receives it through `Dialog.withOverlay` so native modality
 does not block it. The audio manager silences master gain, stops all voices,
 and invalidates pending playback on mute, while retaining the previous volume.
-Shared interop routes these events
-to the manager before dispatching tagged clipboard, dialog, storage or thumbnail
-messages. Elm updates remain the only source of playback requests; pointer and
+Shared interop dispatches on `tag`, passing audio's `event` to the manager alongside
+clipboard, dialog, storage, and thumbnail messages. New audio event kinds do not
+change this routing. Elm updates remain the only source of playback requests; pointer and
 keyboard listeners only unlock the browser audio context and preload its clips.
-The manager caches decoded buffers, preloading all twenty-one clips on unlock. UI
+The manager caches decoded buffers, preloading all twenty-two clips on unlock. UI
 playback allows four voices and coalesces identical requests within 40ms. Combat
 playback allows eight independent voices, cycles five variants per weapon or impact cue, and
 never coalesces separate shots or hits. Requests delayed more than 250ms are dropped.
@@ -516,6 +522,21 @@ animation frame's timing without per-shot messages or independent timers;
 `GamePage.playAudio` continues to select UI feedback. Tank clips live at
 `/audio/combat/tank-fire-{01,02,03,04,05}.ogg` and retain their procedural source
 recordings, documented in `public/audio/README.md`.
+
+Infantry small-arms fire uses `CombatTheater.firingInfantry` snapshots instead of
+individual flash cues. They share the exposed-infantry renderer's 1920ms window
+and recorded attack/return-fire timing, excluding bazookas, static trenches,
+non-firing targets, and formations whose last figure has disappeared.
+`PlaybackPresentation.firingInfantry` gates these snapshots on playback pause,
+camera holds, and visible combat panels. Both app entry points synchronize them
+alongside movement and ambience, including an empty snapshot on navigation.
+`Audio.syncInfantryFire` encodes `{ "infantryFire": [{ "unitId": "...",
+"elapsedMs": 100, "remainingMs": 1820 }] }`. The manager seeks into the approved
+burst and schedules its stop at the remaining deadline, accounting for load
+latency. Active snapshots preserve sources; rewinds and drift over 100ms reseek.
+Pause, map peeks, mute, hidden tabs and exit cancel active and pending firing.
+Resuming uses the current animation phase. These voices have their own gain
+nodes and are independent of the UI/impact voice limits.
 
 `PlaybackPresentation.movingUnits` derives typed unit IDs and movement sounds
 from the same projected `TurnPlayback.movingPositions` edges used by sprites.
@@ -1504,12 +1525,34 @@ represents infantry as a four-HP machine-gun team plus six two-HP riflemen
 (seven groups at full health), and every four HP with one figure for other kinds.
 `Game.View.CombatInfantry` selects team-colored artwork for the gun team, three
 prone riflemen, two kneeling riflemen, and one standing rifleman. The gun team
-remains together as the last surviving group. Infantry firing at tanks instead use
+remains together as the last surviving group. Exposed small-arms attackers alternate
+ready/firing PNGs for a 1920ms burst. Flashes last 40ms, with independent phases and
+160-200ms rifle cadences; the gun team fires every 90ms. This uses the presentation
+clock and recorded attack eligibility, including return fire, so pauses freeze
+the current frame and receiving fire alone never animates a defender. SVG keeps
+the idle image framing and footing while firing images add transparent right
+padding. Reduced motion displays the ready drawing. `CombatTheater.attackDelay`
+starts impacts 100ms after the burst's midpoint, while infantry keep firing.
+The theater stays open until firing and impacts finish, then applies its ordinary
+automatic-close delay. `AppShell` preloads both teams' ready/firing images.
+Trenches retain their static artwork.
+Infantry firing at tanks instead use
 four two-person bazooka teams at full health, each representing four HP. Recorded
 return fire uses the same selection; non-firing infantry retain their ordinary
 formation. The bazooka formation replaces the static trench illustration for
 that exchange and shares the backdrop's infantry calibration. The formation then
 sequences individual casualty explosions and disappearance after a one-second anticipation beat.
+`Game.View.CombatBazooka` renders eight drawn ready/brace/launch/smoke/recovery
+poses from the red and blue `bazooka-firing-v1` atlases. Each pair fires once over
+800ms with the shared 90ms figure stagger; recorded return fire retains its 45ms
+offset. `CombatTheater.attackDelay` includes bazooka recovery when choosing the
+shared impact clock, including zero-damage volleys. The 640×512 atlas cells are
+registered on their boots and rendered at the existing pair width and footing.
+The final pose exactly repeats ready; the last smoky pose uses the same ready
+drawing under a separate smoke layer to preserve launcher geometry. Reduced motion
+keeps the static ready drawing.
+`AppShell` preloads both team atlases. `tools/build-bazooka-firing.cjs` registers
+the complete imagegen drawings and exports the atlases and animated previews.
 `Game.View.CombatExplosion` selects six illustrated horizontal impact frames from that
 same clock, with a 100ms duration and figure removal beneath the blast at 50ms.
 Approach and contact occupy the first 20ms; the final clearing tail takes 20ms.
@@ -2052,11 +2095,14 @@ patterns are projected between front and rear footing lines and scaled by depth.
 `UnitSprite.portraitFooting` excludes transparent padding so resizing stays
 anchored at boots, tracks, wheels, or the gun carriage. Impacts use the same
 transformed placements. Entrenched infantry use two team-colored trench overlays
-with independently calibrated `trenchFooting` (scene height from the top to the
-bottom edge) and `trenchSize` (each segment’s percentage of panel width). Resizing
-keeps the bottom edge anchored, the pair centered, and a fixed gap between them;
-impact positions and sizes follow the overlays. Missing values in existing JSON
-default to 86% footing and 35% size; ordinary formation settings remain independent.
+with independently calibrated bottom positions and widths: `trenchFooting` and
+`trenchSize` for the first, `secondTrenchFooting` and `secondTrenchSize` for the
+second. Footing is a percentage of scene height from the top to the bottom edge;
+size is a percentage of panel width. Resizing keeps each bottom edge anchored
+and a fixed horizontal gap between the segments; impact positions and sizes follow
+the overlays. Legacy JSON without second-trench settings inherits the first
+trench’s values, preserving existing layouts. Missing first-trench values default
+to 86% footing and 35% size; ordinary formation settings remain independent.
 `CombatFormation` selects the revised red/blue sprites by player number for preview,
 live games, and replay.
 
@@ -2070,9 +2116,11 @@ and save requests. Its initial `combatBackdrops` query reads the available PNG
 assets from the configured frontend directory, including uncalibrated backdrops,
 and supplies paths and labels for preview and copy selectors. An unreadable or
 empty asset directory fails loading explicitly. The frontend keeps no fixed
-backdrop list. Sliders adjust the preview without overlays. Both panels
-resolve a backdrop/unit pair through the same draft catalog; changing unit type
-selects its independent settings. Save responses update the
+backdrop list. A single scene editor resolves the selected backdrop/unit pair
+through its draft catalog; changing unit type selects its independent settings.
+A **face left** checkbox switches the typed `SpriteFacing` without changing
+calibration data. Sliders adjust the preview without overlays. The copy card sits
+to the right of the scene on wide screens and below it on narrow screens. Save responses update the
 review page's saved catalog without replacing newer draft edits. Read-only public
 GraphQL loading reads `public/backdrop-calibrations.json`; save mutations reuse
 `map_editor::Access` and its write lock, require localhost/same-origin access
@@ -2087,13 +2135,18 @@ unit types. Subsequent saves merge only the selected pair. The JSON catalog stor
 a typed unit-kind map inside each backdrop, preserving other units and backdrops.
 
 
-The review page's bulk-copy action sends source and destination backdrop paths.
-The server validates both and copies all saved source unit settings into the
-destination under the same write lock and atomic JSON replacement used for
-individual saves. Units absent from the source retain their destination settings.
+The review page's copy action requires an explicit unit selection by default;
+its unchecked **all unit types** checkbox opts into copying every saved unit type.
+The request sends source and destination backdrop paths plus an optional
+`unitKind`: present copies only that unit, omitted copies all saved source units.
+The server validates both backdrops and rejects a selected type without saved
+source settings. Copying uses the same write lock and atomic JSON replacement as
+individual saves. Unselected units and types absent from the source retain their
+destination settings.
 The UI snapshots destination drafts, removes unchanged drafts for copied units
 after success, and preserves edits made while copying or after failure. Save and
 copy requests exclude one another; source choices include only saved backdrops.
 Save and copy responses carry request IDs drawn from the shared random seed, so
-responses from an earlier page visit cannot complete a later request. Copy selectors
-remain editable during a request; completion uses the submitted destination.
+responses from an earlier page visit cannot complete a later request. Source and
+destination selectors remain editable during a request; the scope controls are
+disabled and completion uses the submitted destination.

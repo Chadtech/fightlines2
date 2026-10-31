@@ -4,6 +4,7 @@ module Game.View.CombatTheater exposing
     , attackDelay
     , attackerOnLeft
     , backdropPath
+    , firingInfantry
     , firingTimes
     , impactTimes
     , preview
@@ -39,6 +40,7 @@ import Game.Unit as Unit exposing (Unit)
 import Game.Unit.HitPoints exposing (HitPoints)
 import Game.UnitKind as UnitKindLabel
 import Game.View.CombatAttack as CombatAttack
+import Game.View.CombatBazooka as CombatBazooka
 import Game.View.CombatExplosion as CombatExplosion
 import Game.View.CombatFormation as CombatFormation
 import Game.View.CombatInfantry as CombatInfantry
@@ -78,6 +80,12 @@ type alias Scenery =
 type alias DepotDamage =
     { depot : Depot
     , elapsed : Float
+    }
+
+
+type alias AttackTiming =
+    { impactsReadyAt : Float
+    , endsAt : Float
     }
 
 
@@ -169,41 +177,87 @@ ordinaryAnimationEndsAt panel =
             participantsEndAt panel
 
 
-{-| Hit clocks are shifted together so shots, casualties, rumble, and automatic
-closing all agree. Unsupported attack kinds retain their existing hit timing.
+{-| Hit clocks are shifted together so shots, casualties, and rumble agree.
+Small arms keep firing through impacts; other attacks finish before impacts.
 -}
 attackDelay : Panel -> Float
 attackDelay panel =
     let
-        firingEndsAt : Unit -> Int -> Float
-        firingEndsAt unit health =
-            CombatAttack.endsAt (attackFor panel unit) unit.kind (CombatFormation.figureCount (infantryLoadout panel unit) unit.kind health)
-
-        endsAt : Float
-        endsAt =
-            case panel.encounter of
-                Exchange exchange ->
-                    max
-                        (firingEndsAt exchange.attacker exchange.attackerHealth.before.current)
-                        (firingEndsAt exchange.target exchange.targetHealth.before.current)
-
-                Impact impact ->
-                    impact.attackers
-                        |> List.map (\attacker -> firingEndsAt attacker.unit attacker.health.current)
-                        |> List.maximum
-                        |> Maybe.withDefault 0
-
-                Sabotage _ ->
-                    0
-
-                Exhaustion _ ->
-                    0
+        readyAt : Float
+        readyAt =
+            attackTimings panel
+                |> List.map .impactsReadyAt
+                |> List.maximum
+                |> Maybe.withDefault 0
     in
-    if endsAt > 0 then
-        endsAt - CombatAttack.anticipationMs + 100
+    if readyAt > 0 then
+        readyAt - CombatAttack.anticipationMs + 100
 
     else
         0
+
+
+attackTimings : Panel -> List AttackTiming
+attackTimings panel =
+    let
+        timingFor : Unit -> Int -> AttackTiming
+        timingFor unit health =
+            let
+                loadout : CombatInfantry.Loadout
+                loadout =
+                    infantryLoadout panel unit
+
+                figures : Int
+                figures =
+                    CombatFormation.figureCount loadout unit.kind health
+
+                exposedInfantry : Bool
+                exposedInfantry =
+                    (unit.kind == UnitKind.Infantry) && (unit.entrenchment == Entrenchment.Exposed)
+
+                attack : CombatAttack.Attack
+                attack =
+                    attackFor panel unit
+
+                endsAt : Float
+                endsAt =
+                    case loadout of
+                        CombatInfantry.Bazookas ->
+                            CombatBazooka.endsAt attack figures
+
+                        CombatInfantry.SmallArms ->
+                            if exposedInfantry then
+                                CombatInfantry.endsAt attack figures
+
+                            else
+                                CombatAttack.endsAt attack unit.kind figures
+
+                impactsReadyAt : Float
+                impactsReadyAt =
+                    if exposedInfantry && (loadout == CombatInfantry.SmallArms) then
+                        CombatInfantry.impactsStartAt attack figures
+
+                    else
+                        endsAt
+            in
+            { impactsReadyAt = impactsReadyAt, endsAt = endsAt }
+    in
+    case panel.encounter of
+        Exchange exchange ->
+            [ timingFor exchange.attacker exchange.attackerHealth.before.current
+            , timingFor exchange.target exchange.targetHealth.before.current
+            ]
+
+        Impact impact ->
+            List.map
+                (\attacker -> timingFor attacker.unit attacker.health.current)
+                impact.attackers
+
+        Sabotage _ ->
+            []
+
+        Exhaustion _ ->
+            []
 
 
 attackFor : Panel -> Unit -> CombatAttack.Attack
@@ -289,6 +343,82 @@ firingTimes kind panel =
 
         Exhaustion _ ->
             []
+
+
+{-| Use the small-arms animation's exact window and recorded firing participants.
+Hidden cards and formations whose last figure has disappeared stay silent.
+-}
+firingInfantry : Panel -> List Audio.FiringInfantry
+firingInfantry panel =
+    if panel.mapView /= CardVisible then
+        []
+
+    else
+        let
+            firing : Unit -> CombatHealth -> Maybe Audio.FiringInfantry
+            firing unit health =
+                let
+                    figures : Int
+                    figures =
+                        CombatFormation.figureCount
+                            CombatInfantry.SmallArms
+                            unit.kind
+                            health.before.current
+
+                    attack : CombatAttack.Attack
+                    attack =
+                        attackFor panel unit
+
+                    lastFigureDisappearsAt : Float
+                    lastFigureDisappearsAt =
+                        if health.after.current <= 0 then
+                            CombatFormation.lossStartsAt { surviving = 0, index = figures - 1 }
+                                + attackDelay panel
+                                + CombatExplosion.spriteDisappearsAt
+
+                        else
+                            CombatInfantry.endsAt attack figures
+
+                    endsAt : Float
+                    endsAt =
+                        min (CombatInfantry.endsAt attack figures) lastFigureDisappearsAt
+                in
+                case attack of
+                    CombatAttack.Attacking timing ->
+                        let
+                            usesSmallArmsAnimation : Bool
+                            usesSmallArmsAnimation =
+                                (unit.kind == UnitKind.Infantry)
+                                    && (unit.entrenchment == Entrenchment.Exposed)
+                                    && (infantryLoadout panel unit == CombatInfantry.SmallArms)
+                        in
+                        if
+                            usesSmallArmsAnimation
+                                && (figures > 0)
+                                && (panel.elapsed >= timing.startsAt)
+                                && (panel.elapsed < endsAt)
+                        then
+                            Just
+                                { unitId = unit.id
+                                , elapsedMs = panel.elapsed - timing.startsAt
+                                , remainingMs = endsAt - panel.elapsed
+                                }
+
+                        else
+                            Nothing
+
+                    CombatAttack.NotAttacking ->
+                        Nothing
+        in
+        case panel.encounter of
+            Exchange exchange ->
+                List.filterMap identity
+                    [ firing exchange.attacker exchange.attackerHealth
+                    , firing exchange.target exchange.targetHealth
+                    ]
+
+            _ ->
+                []
 
 
 {-| Include both stages regardless of the current elapsed time so a delayed
@@ -436,10 +566,22 @@ participantBaseImpactStarts panel =
 
 participantsEndAt : Panel -> Float
 participantsEndAt panel =
-    participantImpactStarts panel
-        |> List.maximum
-        |> Maybe.withDefault (CombatAttack.anticipationMs + attackDelay panel)
-        |> (+) (impactContactDelayMs + rumbleDurationMs)
+    let
+        impactsEndAt : Float
+        impactsEndAt =
+            participantImpactStarts panel
+                |> List.maximum
+                |> Maybe.withDefault (CombatAttack.anticipationMs + attackDelay panel)
+                |> (+) (impactContactDelayMs + rumbleDurationMs)
+
+        attacksEndAt : Float
+        attacksEndAt =
+            attackTimings panel
+                |> List.map .endsAt
+                |> List.maximum
+                |> Maybe.withDefault 0
+    in
+    max impactsEndAt attacksEndAt
 
 
 {-| Finish the participant hits before cutting to the building as a whole.
@@ -1386,6 +1528,35 @@ portrait scenery panel health unit =
         ]
 
 
+{-| Both confirmed exchanges and landings from concealed guns can have observed
+targets. Only the bombarded participant shelters; firing guns keep their artwork.
+-}
+trenchOccupancy : Panel -> Unit -> CombatFormation.TrenchOccupancy
+trenchOccupancy panel unit =
+    let
+        entrenchedInfantry : Bool
+        entrenchedInfantry =
+            (unit.kind == UnitKind.Infantry) && (unit.entrenchment == Entrenchment.Entrenched)
+
+        underIndirectFire : Bool
+        underIndirectFire =
+            case panel.encounter of
+                Exchange exchange ->
+                    (exchange.kind == CombatKind.IndirectFire) && (unit.id == exchange.target.id)
+
+                Impact impact ->
+                    Maybe.map (.unit >> .id) impact.target == Just unit.id
+
+                _ ->
+                    False
+    in
+    if entrenchedInfantry && underIndirectFire then
+        CombatFormation.ShelteringUnderground
+
+    else
+        CombatFormation.Occupied
+
+
 portraitScene : Scenery -> Panel -> CombatHealth -> Unit -> Html Msg
 portraitScene scenery panel health unit =
     let
@@ -1395,6 +1566,7 @@ portraitScene scenery panel health unit =
             , impactDelay = attackDelay panel
             , attack = attackFor panel unit
             , infantryLoadout = infantryLoadout panel unit
+            , trenchOccupancy = trenchOccupancy panel unit
             }
 
         path : String
@@ -1410,7 +1582,12 @@ portraitScene scenery panel health unit =
                     ": two-person bazooka teams; "
 
                 CombatInfantry.SmallArms ->
-                    ": "
+                    case animation.trenchOccupancy of
+                        CombatFormation.ShelteringUnderground ->
+                            ": sheltering underground in empty trenches; "
+
+                        CombatFormation.Occupied ->
+                            ": "
 
         description : String
         description =
@@ -1468,6 +1645,7 @@ preview calibration path hitPoints unit =
             , impactDelay = 0
             , attack = CombatAttack.NotAttacking
             , infantryLoadout = CombatInfantry.SmallArms
+            , trenchOccupancy = CombatFormation.Occupied
             }
             health
             unit

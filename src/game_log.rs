@@ -451,13 +451,22 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn legacy_ai_difficulties_decode_as_ai() -> TestResult<()> {
+        for controller in ["Ai", "AiMedium", "AiHard"] {
+            let value = json!({
+                "player_number": "Player1",
+                "name": "Recorded AI",
+                "controller": controller,
+            });
+            let player: RecordedPlayer = serde_json::from_value(value)?;
+            assert_eq!(player.controller, Controller::Ai);
+        }
+        Ok(())
+    }
+
+    #[test]
     fn recorded_players_accept_legacy_opponent_fields_and_write_controller() -> TestResult<()> {
-        for controller in [
-            Controller::Human,
-            Controller::Ai,
-            Controller::AiMedium,
-            Controller::AiHard,
-        ] {
+        for controller in [Controller::Human, Controller::Ai] {
             let current = json!({
                 "player_number": "Player1",
                 "name": "Recorded player",

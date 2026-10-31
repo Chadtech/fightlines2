@@ -55,6 +55,7 @@ import View.Dialog as Dialog exposing (Dialog)
 
 type Page
     = AppInitError Decode.Error
+    | Home Shared.Model
     | LoadingBackdropReview Shared.Model BackdropReviewLoadId
     | BackdropReviewLoadFailed Shared.Model String
     | BackdropReview BackdropReview.Model
@@ -182,6 +183,9 @@ getShared page =
         AppInitError _ ->
             Nothing
 
+        Home shared ->
+            Just shared
+
         LoadingBackdropReview shared _ ->
             Just shared
 
@@ -227,6 +231,9 @@ setShared shared page =
     case page of
         AppInitError _ ->
             page
+
+        Home _ ->
+            Home shared
 
         LoadingBackdropReview _ requestId ->
             LoadingBackdropReview shared requestId
@@ -302,6 +309,9 @@ loadBackdropReview shared =
 handleRoute : Shared.Model -> Maybe Route -> ( Page, Eff Msg )
 handleRoute shared route =
     case route of
+        Just Route.Home ->
+            ( Home shared, E.none )
+
         Just Route.LoggedGames ->
             ( LoadingLoggedGames shared, E.request LoggedGamesResponseReceived LoggedGames.load )
 
@@ -347,11 +357,21 @@ withPlaybackAudio before after =
 
                 _ ->
                     []
+
+        firing : Page -> List Audio.FiringInfantry
+        firing page =
+            case page of
+                Replay _ model ->
+                    GameReplay.firingInfantry model
+
+                _ ->
+                    []
     in
     ( after
     , E.batch
         [ E.audio (Audio.syncMovement { before = moving before, after = moving after })
         , E.audio (Audio.syncAmbience { before = ambient before, after = ambient after })
+        , E.audio (Audio.syncInfantryFire { before = firing before, after = firing after })
         ]
     )
 
@@ -572,6 +592,9 @@ shell page =
         AppInitError error ->
             AppInitError.view error
 
+        Home _ ->
+            homeView
+
         LoadingBackdropReview _ _ ->
             [ H.p
                 [ Aria.role Aria.Status
@@ -644,6 +667,32 @@ shell page =
               ]
                 |> Card.toHtml Card.simple
             ]
+
+
+homeView : List (Html msg)
+homeView =
+    let
+        link : Route -> String -> Html msg
+        link route label =
+            H.a
+                [ A.href (Route.toString route)
+                , A.css
+                    [ S.link
+                    ]
+                ]
+                [ H.text label
+                ]
+    in
+    [ Card.toHtml Card.simple
+        [ H.p
+            []
+            [ H.text "development tools"
+            ]
+        , link Route.MapEditor "map editor"
+        , link Route.LoggedGames "logged games"
+        , link Route.BackdropReview "backdrop review"
+        ]
+    ]
 
 
 loadFailure : Route -> String -> List (Html msg)

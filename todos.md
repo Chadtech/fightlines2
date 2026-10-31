@@ -3,18 +3,24 @@
 # Done
 
 ## doing now
-- infantry shooting and moving sounds
-- field gun moving sounds
-- Infantry attack animation
+
 
 ## Bugs
-
+- There is lag when clicking, moving, and going through the unload dialog
+- if I am unloading fuel and supplies, there is no indicator which one is unloading first
+- How much is the flank bonus for tank v tank combat compared to tank v tank combat without a flank bonus
+- If I drive a truck to a depot, and unload it entirely, the resulting load menu does not grant me full capacity to load up
 
 ## Immediately
-
+- Proofread all screen text
+- make the low supply, low health, and low fuel indicators bigger
+- The from behind flank bonus on entrenched infantry should be huge
+- Death animation for entrenched infantry?
+- Settings page
+- Consider hardcoding unit backdrop callibrations
 
 ## Soon
-- Proofread all screen text
+
 
 
 ## Later
@@ -29,10 +35,11 @@
 
 ### Future units
 - Semi truck, truck that can carry more and travel faster than a truck but can only travel on roads
+- Oil truck, truck that can carry a ton of oil and travel faster than a truck but can only travel on roads
 - Artillery, huge range gun that cannot move itself
-- Self propelled gun, acts just like field gun except it has high mobility and consumes fuel
+- Self-propelled gun, acts just like field gun except it has high mobility and consumes fuel
 - Recon plane, high line of sight, highly mobile plane
-- fighter, high line of sight, highly mobile, high fuel consumption attack plane. Fighter plane can pass over any ground unit
+- fighter plane, high line of sight, highly mobile, high fuel consumption attack plane. Fighter plane can pass over any ground unit
 - bomber, highly mobile, high fuel consumption attack plane that can target and hit squares on selection, similar to indirect attack
 - Cargo plane, can carry 4 cargo slots, can paradrop cargo and infantry
 - Anti Air gun, cheap air ambush unit that cannot move. Must be transported by truck

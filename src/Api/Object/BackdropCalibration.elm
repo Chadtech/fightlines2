@@ -47,3 +47,13 @@ trenchFooting =
 trenchSize : SelectionSet Float Api.Object.BackdropCalibration
 trenchSize =
     Object.selectionForField "Float" "trenchSize" [] Decode.float
+
+
+secondTrenchFooting : SelectionSet Float Api.Object.BackdropCalibration
+secondTrenchFooting =
+    Object.selectionForField "Float" "secondTrenchFooting" [] Decode.float
+
+
+secondTrenchSize : SelectionSet Float Api.Object.BackdropCalibration
+secondTrenchSize =
+    Object.selectionForField "Float" "secondTrenchSize" [] Decode.float

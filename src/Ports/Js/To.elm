@@ -31,7 +31,9 @@ encode msg =
             Encode.openDialog dialog
 
         Audio audio ->
-            Audio.encodeEvent audio
+            Encode.message "audio"
+                [ ( "event", Audio.encodeEvent audio )
+                ]
 
         GenerateMapThumbnail { htmlId, requestId } ->
             Encode.message "generateMapThumbnail"

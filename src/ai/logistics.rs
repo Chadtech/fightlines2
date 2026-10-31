@@ -598,7 +598,7 @@ fn protect_reserve(
 mod tests {
     use super::*;
     use crate::{
-        ai::{self, Difficulty},
+        ai,
         map::{Coordinate, RoadShape, Terrain},
         map_definition::{MapDefinition, TerrainPlacement},
         supplies::{CargoStock, GroundSupplyCrate},
@@ -680,10 +680,9 @@ mod tests {
         scenario: &mut Scenario,
         turns: &mut Turns,
         player: PlayerNumber,
-        difficulty: Difficulty,
     ) -> TestResult {
         let number = turns.number;
-        let orders = ai::plan_with_difficulty(scenario, player, difficulty).fixture()?;
+        let orders = ai::plan(scenario, player).fixture()?;
         let enemy = if player == PlayerNumber::Player1 {
             PlayerNumber::Player2
         } else {
@@ -702,154 +701,139 @@ mod tests {
 
     #[test]
     fn loads_fuel_and_refuels_a_tank_beyond_its_unassisted_range() -> TestResult {
-        for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
-            for player in [PlayerNumber::Player1, PlayerNumber::Player2] {
-                let mut scenario = convoy_fixture(player)?;
-                let mut turns = Turns::default();
-                let mut loaded = false;
-                let mut delivered = false;
-                let mut furthest = 0;
-                for _ in 0..12 {
-                    let before = scenario
-                        .units
-                        .iter()
-                        .find(|unit| unit.kind() == UnitKind::Tank)
-                        .fixture()?
-                        .fuel()
-                        .fixture()?
-                        .current;
-                    resolve_turn(&mut scenario, &mut turns, player, difficulty)?;
-                    let tank = scenario
-                        .units
-                        .iter()
-                        .find(|unit| unit.kind() == UnitKind::Tank)
-                        .fixture()?;
-                    let position = tank.board_position().fixture()?;
-                    let progress = match player {
-                        PlayerNumber::Player1 => position.x(),
-                        PlayerNumber::Player2 => 41 - position.x(),
-                    };
-                    furthest = furthest.max(progress);
-                    delivered |= progress > 2 && tank.fuel().fixture()?.current > before;
-                    loaded |= scenario.units.iter().any(|unit| {
-                        unit.kind() == UnitKind::Truck
-                            && unit
-                                .supply_cargo
-                                .iter()
-                                .any(|cargo| cargo.kind == ResourceKind::Fuel)
-                    });
-                    assert!(
-                        tank.fuel().fixture()?.current > 0,
-                        "{difficulty:?} stranded its tank at {position:?}"
-                    );
-                }
-                assert!(loaded, "{difficulty:?} never loaded fuel");
-                assert!(delivered, "{difficulty:?} never refueled in the field");
-                assert!(furthest > 18, "{difficulty:?} only reached {furthest}");
-            }
-        }
-        Ok(())
-    }
-
-    #[test]
-    fn unsupported_tank_returns_before_spending_its_return_fuel() -> TestResult {
-        for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
-            let mut scenario = convoy_fixture(PlayerNumber::Player1)?;
-            scenario.units.retain(|unit| unit.kind() != UnitKind::Truck);
+        for player in [PlayerNumber::Player1, PlayerNumber::Player2] {
+            let mut scenario = convoy_fixture(player)?;
             let mut turns = Turns::default();
-            let mut advanced = false;
-            let mut returned = false;
-            for _ in 0..8 {
-                resolve_turn(&mut scenario, &mut turns, PlayerNumber::Player1, difficulty)?;
+            let mut loaded = false;
+            let mut delivered = false;
+            let mut furthest = 0;
+            for _ in 0..12 {
+                let before = scenario
+                    .units
+                    .iter()
+                    .find(|unit| unit.kind() == UnitKind::Tank)
+                    .fixture()?
+                    .fuel()
+                    .fixture()?
+                    .current;
+                resolve_turn(&mut scenario, &mut turns, player)?;
                 let tank = scenario
                     .units
                     .iter()
                     .find(|unit| unit.kind() == UnitKind::Tank)
                     .fixture()?;
                 let position = tank.board_position().fixture()?;
-                advanced |= position.x() > 2;
-                returned |= advanced && position.x() <= 2;
+                let progress = match player {
+                    PlayerNumber::Player1 => position.x(),
+                    PlayerNumber::Player2 => 41 - position.x(),
+                };
+                furthest = furthest.max(progress);
+                delivered |= progress > 2 && tank.fuel().fixture()?.current > before;
+                loaded |= scenario.units.iter().any(|unit| {
+                    unit.kind() == UnitKind::Truck
+                        && unit
+                            .supply_cargo
+                            .iter()
+                            .any(|cargo| cargo.kind == ResourceKind::Fuel)
+                });
                 assert!(
                     tank.fuel().fixture()?.current > 0,
-                    "{difficulty:?} ran dry returning home"
+                    "stranded its tank at {position:?}"
                 );
             }
-            assert!(
-                advanced && returned,
-                "{difficulty:?} did not make a safe sortie"
-            );
+            assert!(loaded, "never loaded fuel");
+            assert!(delivered, "never refueled in the field");
+            assert!(furthest > 18, "only reached {furthest}");
         }
         Ok(())
     }
 
     #[test]
+    fn unsupported_tank_returns_before_spending_its_return_fuel() -> TestResult {
+        let mut scenario = convoy_fixture(PlayerNumber::Player1)?;
+        scenario.units.retain(|unit| unit.kind() != UnitKind::Truck);
+        let mut turns = Turns::default();
+        let mut advanced = false;
+        let mut returned = false;
+        for _ in 0..8 {
+            resolve_turn(&mut scenario, &mut turns, PlayerNumber::Player1)?;
+            let tank = scenario
+                .units
+                .iter()
+                .find(|unit| unit.kind() == UnitKind::Tank)
+                .fixture()?;
+            let position = tank.board_position().fixture()?;
+            advanced |= position.x() > 2;
+            returned |= advanced && position.x() <= 2;
+            assert!(tank.fuel().fixture()?.current > 0, "ran dry returning home");
+        }
+        assert!(advanced && returned, "did not make a safe sortie");
+        Ok(())
+    }
+
+    #[test]
     fn explicitly_collects_ground_fuel_or_loads_partial_depot_stock() -> TestResult {
-        for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
-            for ground_freight in [false, true] {
-                let mut scenario = convoy_fixture(PlayerNumber::Player1)?;
-                scenario.depots.first_mut().fixture()?.stock.current = 19;
-                if ground_freight {
-                    scenario.supply_crates.push(GroundSupplyCrate {
-                        position: Coordinate::new(1, 1),
-                        stock: CargoStock::new(ResourceKind::Fuel, 23),
-                    });
-                }
-                let orders = ai::plan_with_difficulty(&scenario, PlayerNumber::Player1, difficulty)
-                    .fixture()?;
-                let truck_order = orders.iter().find(|order| order.unit_id == "2").fixture()?;
-                if ground_freight {
-                    assert_eq!(truck_order.pickup_ground_freight, Some(ResourceKind::Fuel));
-                    assert_eq!(truck_order.load_crates, None);
-                } else {
-                    assert_eq!(truck_order.pickup_ground_freight, None);
-                    assert_eq!(truck_order.load_crates, Some(1));
-                }
-                let mut turns = Turns::default();
-                resolve_turn(&mut scenario, &mut turns, PlayerNumber::Player1, difficulty)?;
-                let truck = scenario
-                    .units
-                    .iter()
-                    .find(|unit| unit.kind() == UnitKind::Truck)
-                    .fixture()?;
-                assert_eq!(truck.supply_cargo.len(), 1);
-                let stock = truck.supply_cargo.first().fixture()?;
-                assert_eq!(stock.kind, ResourceKind::Fuel);
-                assert_eq!(stock.current, if ground_freight { 23 } else { 19 });
-                assert!(scenario.supply_crates.is_empty());
+        for ground_freight in [false, true] {
+            let mut scenario = convoy_fixture(PlayerNumber::Player1)?;
+            scenario.depots.first_mut().fixture()?.stock.current = 19;
+            if ground_freight {
+                scenario.supply_crates.push(GroundSupplyCrate {
+                    position: Coordinate::new(1, 1),
+                    stock: CargoStock::new(ResourceKind::Fuel, 23),
+                });
             }
+            let orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
+            let truck_order = orders.iter().find(|order| order.unit_id == "2").fixture()?;
+            if ground_freight {
+                assert_eq!(truck_order.pickup_ground_freight, Some(ResourceKind::Fuel));
+                assert_eq!(truck_order.load_crates, None);
+            } else {
+                assert_eq!(truck_order.pickup_ground_freight, None);
+                assert_eq!(truck_order.load_crates, Some(1));
+            }
+            let mut turns = Turns::default();
+            resolve_turn(&mut scenario, &mut turns, PlayerNumber::Player1)?;
+            let truck = scenario
+                .units
+                .iter()
+                .find(|unit| unit.kind() == UnitKind::Truck)
+                .fixture()?;
+            assert_eq!(truck.supply_cargo.len(), 1);
+            let stock = truck.supply_cargo.first().fixture()?;
+            assert_eq!(stock.kind, ResourceKind::Fuel);
+            assert_eq!(stock.current, if ground_freight { 23 } else { 19 });
+            assert!(scenario.supply_crates.is_empty());
         }
         Ok(())
     }
 
     #[test]
     fn carries_supplies_to_infantry_when_no_tanks_need_an_escort() -> TestResult {
-        for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
-            let mut scenario = MapDefinition::parse(r#"{
-                "width": 20, "height": 5, "theme": "GreenForest", "features": [],
-                "depots": [{"position": {"x": 1, "y": 1}, "kind": "Supply"}],
-                "units": [
-                    {"id": 1, "position": {"x": 10, "y": 1}, "playerNumber": "Player1", "kind": "Infantry", "direction": "East"},
-                    {"id": 2, "position": {"x": 1, "y": 1}, "playerNumber": "Player1", "kind": "Truck"},
-                    {"id": 3, "position": {"x": 19, "y": 4}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
-                ]
-            }"#).fixture()?.scenario().fixture()?;
-            scenario
-                .units
-                .first_mut()
-                .fixture()?
-                .set_supplies_for_test(64);
-            let mut turns = Turns::default();
-            resolve_turn(&mut scenario, &mut turns, PlayerNumber::Player1, difficulty)?;
-            let before = scenario.units.first().fixture()?.supplies().current();
-            let mut delivered = false;
-            for _ in 0..3 {
-                resolve_turn(&mut scenario, &mut turns, PlayerNumber::Player1, difficulty)?;
-                let infantry = scenario.units.first().fixture()?;
-                delivered |= infantry.board_position().fixture()?.x() > 2
-                    && infantry.supplies().current() > before;
-            }
-            assert!(delivered, "{difficulty:?} did not deliver provisions");
+        let mut scenario = MapDefinition::parse(r#"{
+            "width": 20, "height": 5, "theme": "GreenForest", "features": [],
+            "depots": [{"position": {"x": 1, "y": 1}, "kind": "Supply"}],
+            "units": [
+                {"id": 1, "position": {"x": 10, "y": 1}, "playerNumber": "Player1", "kind": "Infantry", "direction": "East"},
+                {"id": 2, "position": {"x": 1, "y": 1}, "playerNumber": "Player1", "kind": "Truck"},
+                {"id": 3, "position": {"x": 19, "y": 4}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
+            ]
+        }"#).fixture()?.scenario().fixture()?;
+        scenario
+            .units
+            .first_mut()
+            .fixture()?
+            .set_supplies_for_test(64);
+        let mut turns = Turns::default();
+        resolve_turn(&mut scenario, &mut turns, PlayerNumber::Player1)?;
+        let before = scenario.units.first().fixture()?.supplies().current();
+        let mut delivered = false;
+        for _ in 0..3 {
+            resolve_turn(&mut scenario, &mut turns, PlayerNumber::Player1)?;
+            let infantry = scenario.units.first().fixture()?;
+            delivered |= infantry.board_position().fixture()?.x() > 2
+                && infantry.supplies().current() > before;
         }
+        assert!(delivered, "did not deliver provisions");
         Ok(())
     }
 
@@ -870,11 +854,8 @@ mod tests {
             ]
         }"#).fixture()?.scenario().fixture()?;
         scenario.units.first_mut().fixture()?.set_fuel_for_test(32);
-        for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
-            let orders =
-                ai::plan_with_difficulty(&scenario, PlayerNumber::Player1, difficulty).fixture()?;
-            assert_eq!(orders.first().fixture()?.path.len(), 1);
-        }
+        let orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
+        assert_eq!(orders.first().fixture()?.path.len(), 1);
         Ok(())
     }
 
@@ -888,119 +869,110 @@ mod tests {
             position: hidden,
             stock: CargoStock::new(ResourceKind::Fuel, 256),
         });
-        for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
-            let original =
-                ai::plan_with_difficulty(&scenario, PlayerNumber::Player1, difficulty).fixture()?;
-            let other =
-                ai::plan_with_difficulty(&changed, PlayerNumber::Player1, difficulty).fixture()?;
-            assert_eq!(
-                serde_json::to_value(original).fixture()?,
-                serde_json::to_value(other).fixture()?
-            );
-        }
+        let original = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
+        let other = ai::plan(&changed, PlayerNumber::Player1).fixture()?;
+        assert_eq!(
+            serde_json::to_value(original).fixture()?,
+            serde_json::to_value(other).fixture()?
+        );
         Ok(())
     }
 
     #[test]
     fn fuel_escort_replenishes_its_own_provisions_before_resuming_delivery() -> TestResult {
-        for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
-            let mut scenario = convoy_fixture(PlayerNumber::Player1)?;
-            let truck = scenario
-                .units
-                .iter_mut()
-                .find(|unit| unit.kind() == UnitKind::Truck)
-                .fixture()?;
-            truck.move_to(Coordinate::new(29, 2));
-            truck.set_supplies_for_test(8);
+        let mut scenario = convoy_fixture(PlayerNumber::Player1)?;
+        let truck = scenario
+            .units
+            .iter_mut()
+            .find(|unit| unit.kind() == UnitKind::Truck)
+            .fixture()?;
+        truck.move_to(Coordinate::new(29, 2));
+        truck.set_supplies_for_test(8);
+        truck
+            .supply_cargo
+            .push(CargoStock::new(ResourceKind::Fuel, 256));
+        let mut turns = Turns::default();
+        resolve_turn(&mut scenario, &mut turns, PlayerNumber::Player1)?;
+        let truck = scenario
+            .units
+            .iter()
+            .find(|unit| unit.kind() == UnitKind::Truck)
+            .fixture()?;
+        assert_eq!(
+            truck.supplies().current(),
+            truck.supplies().maximum() - truck.supplies().upkeep_per_turn()
+        );
+        assert!(
             truck
                 .supply_cargo
-                .push(CargoStock::new(ResourceKind::Fuel, 256));
-            let mut turns = Turns::default();
-            resolve_turn(&mut scenario, &mut turns, PlayerNumber::Player1, difficulty)?;
-            let truck = scenario
-                .units
                 .iter()
-                .find(|unit| unit.kind() == UnitKind::Truck)
-                .fixture()?;
-            assert_eq!(
-                truck.supplies().current(),
-                truck.supplies().maximum() - truck.supplies().upkeep_per_turn()
-            );
-            assert!(
-                truck
-                    .supply_cargo
-                    .iter()
-                    .any(|cargo| cargo.kind == ResourceKind::Fuel && cargo.current > 0)
-            );
-        }
+                .any(|cargo| cargo.kind == ResourceKind::Fuel && cargo.current > 0)
+        );
         Ok(())
     }
 
     #[test]
     fn urgent_provisions_outrank_a_healthy_tank_and_other_trucks_take_other_jobs() -> TestResult {
-        for difficulty in [Difficulty::Easy, Difficulty::Medium, Difficulty::Hard] {
-            let mut scenario = MapDefinition::parse(r#"{
-                "width": 24, "height": 7, "theme": "GreenForest", "features": [],
-                "depots": [
-                    {"position": {"x": 1, "y": 3}, "kind": "Supply"},
-                    {"position": {"x": 1, "y": 2}, "kind": "Fuel"}
-                ],
-                "units": [
-                    {"id": 1, "position": {"x": 1, "y": 3}, "playerNumber": "Player1", "kind": "Truck"},
-                    {"id": 2, "position": {"x": 1, "y": 2}, "playerNumber": "Player1", "kind": "Truck"},
-                    {"id": 3, "position": {"x": 5, "y": 3}, "playerNumber": "Player1", "kind": "Tank", "direction": "East"},
-                    {"id": 4, "position": {"x": 9, "y": 3}, "playerNumber": "Player1", "kind": "FieldGun", "direction": "East"},
-                    {"id": 5, "position": {"x": 23, "y": 6}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
-                ]
-            }"#).fixture()?.scenario().fixture()?;
+        let mut scenario = MapDefinition::parse(r#"{
+            "width": 24, "height": 7, "theme": "GreenForest", "features": [],
+            "depots": [
+                {"position": {"x": 1, "y": 3}, "kind": "Supply"},
+                {"position": {"x": 1, "y": 2}, "kind": "Fuel"}
+            ],
+            "units": [
+                {"id": 1, "position": {"x": 1, "y": 3}, "playerNumber": "Player1", "kind": "Truck"},
+                {"id": 2, "position": {"x": 1, "y": 2}, "playerNumber": "Player1", "kind": "Truck"},
+                {"id": 3, "position": {"x": 5, "y": 3}, "playerNumber": "Player1", "kind": "Tank", "direction": "East"},
+                {"id": 4, "position": {"x": 9, "y": 3}, "playerNumber": "Player1", "kind": "FieldGun", "direction": "East"},
+                {"id": 5, "position": {"x": 23, "y": 6}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
+            ]
+        }"#).fixture()?.scenario().fixture()?;
+        scenario
+            .units
+            .iter_mut()
+            .find(|unit| unit.id() == "4")
+            .fixture()?
+            .set_supplies_for_test(28);
+        let orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
+        assert!(
+            orders
+                .iter()
+                .find(|order| order.unit_id == "1")
+                .fixture()?
+                .load_crates
+                .is_some()
+        );
+        assert!(
+            orders
+                .iter()
+                .find(|order| order.unit_id == "2")
+                .fixture()?
+                .load_crates
+                .is_some()
+        );
+        assert_eq!(
+            orders
+                .iter()
+                .find(|order| order.unit_id == "4")
+                .fixture()?
+                .path
+                .len(),
+            1
+        );
+        let mut turns = Turns::default();
+        for _ in 0..5 {
+            resolve_turn(&mut scenario, &mut turns, PlayerNumber::Player1)?;
+        }
+        assert!(
             scenario
                 .units
-                .iter_mut()
+                .iter()
                 .find(|unit| unit.id() == "4")
                 .fixture()?
-                .set_supplies_for_test(28);
-            let orders =
-                ai::plan_with_difficulty(&scenario, PlayerNumber::Player1, difficulty).fixture()?;
-            assert!(
-                orders
-                    .iter()
-                    .find(|order| order.unit_id == "1")
-                    .fixture()?
-                    .load_crates
-                    .is_some()
-            );
-            assert!(
-                orders
-                    .iter()
-                    .find(|order| order.unit_id == "2")
-                    .fixture()?
-                    .load_crates
-                    .is_some()
-            );
-            assert_eq!(
-                orders
-                    .iter()
-                    .find(|order| order.unit_id == "4")
-                    .fixture()?
-                    .path
-                    .len(),
-                1
-            );
-            let mut turns = Turns::default();
-            for _ in 0..5 {
-                resolve_turn(&mut scenario, &mut turns, PlayerNumber::Player1, difficulty)?;
-            }
-            assert!(
-                scenario
-                    .units
-                    .iter()
-                    .find(|unit| unit.id() == "4")
-                    .fixture()?
-                    .supplies()
-                    .current()
-                    > 28
-            );
-        }
+                .supplies()
+                .current()
+                > 28
+        );
         Ok(())
     }
 }

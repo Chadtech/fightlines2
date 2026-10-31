@@ -48,13 +48,11 @@ function startElmApp(elmApp, handleMessage) {
   });
 
   app.ports.toJs.subscribe(async (message) => {
-    if (message === null || (typeof message === "object" &&
-        (Object.hasOwn(message, "play") || Object.hasOwn(message, "movement") ||
-         Object.hasOwn(message, "ambience") || Object.hasOwn(message, "muted")))) {
-      await audio.handleEvent(message);
-      return;
-    }
     switch (message.tag) {
+      case "audio": {
+        await audio.handleEvent(message.event);
+        break;
+      }
       case "setLocalStorage": {
         setLocalStorage(message.key, message.value);
         break;

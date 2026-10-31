@@ -119,6 +119,36 @@ clips.
 The previous isolated demung cue remains in `audio-experiments/gamelan-metal-v2/`;
 the rejected xylophone cue remains in `audio-experiments/gamelan-v1/`.
 
+## Infantry firing
+
+`combat/infantry-fire-heavy-v1.ogg` is the approved heavy 1.920-second stereo,
+48kHz burst, encoded at Vorbis quality 6 from its approved WAV master with
+a baked-in 2× amplitude boost (approximately +6dB).
+`combat/infantry-fire-sources.json` retains the runtime and master hashes, source
+URLs, licenses, and processing. Its three recorded layers are CC0 recordings
+by qubodup: [M240H burst](https://freesound.org/people/qubodup/sounds/67566/),
+[50 Cal MG](https://freesound.org/people/qubodup/sounds/239138/), and
+[Machine Gun Burst](https://freesound.org/people/qubodup/sounds/482121/).
+The mix uses their public high-quality MP3 renditions, continuous overlapping
+weapon layers, a slowed heavy gun, reduced upper-frequency chatter, and original
+low-frequency noise percussion attached to the recorded attacks. It retains
+the audition's short edge fades; the baked-in boost raises its approximately
+-20 LUFS target to -14 LUFS.
+
+Live games and logged replays synchronize one voice per visibly firing
+small-arms formation to the animation clock. Sound starts at the matching clip
+offset and stops at the remaining firing deadline, including when the final
+firing figure disappears. Return fire keeps its 45ms offset. Pauses, camera
+holds, map peeks, leaving combat, mute, and hidden tabs stop the voice; resuming
+seeks to the current animation position. Formation voices share the decoded
+clip, blend at `1 / sqrt(count)` gain, and are independent
+of impact/UI voice limits. Bazookas and the static entrenched artwork do not
+trigger this sound.
+
+Sources, page snapshots, generation scripts and the approved master remain in
+the ignored `audio-experiments/infantry-fire-heavy-v1/` directory. Normal builds
+need only the committed runtime asset and manifest.
+
 ## Tank firing
 
 `combat/tank-fire-01.ogg` through `combat/tank-fire-05.ogg` are the five original

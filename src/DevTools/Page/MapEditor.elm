@@ -18,7 +18,7 @@ import Api.Enum.PlayerNumber as PlayerNumber exposing (PlayerNumber)
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Api.Object.MapCatalog as CatalogApi
 import Api.Query as Query
-import Api.Scalar exposing (MapId)
+import Api.Scalar exposing (MapId(..))
 import ApiRequest
 import Browser.Dom
 import Browser.Events
@@ -74,7 +74,7 @@ type alias Flags =
 type alias Document =
     { mapType : MapId
     , draft : Definition
-    , saved : Definition
+    , saved : Maybe Definition
     , undo : List Definition
     , redo : List Definition
     }
@@ -98,7 +98,21 @@ type alias Model =
     , spaceHeld : Bool
     , widthInput : String
     , heightInput : String
+    , newMapForm : Maybe NewMapForm
     }
+
+
+type alias NewMapForm =
+    { name : String
+    , error : Maybe NewMapNameError
+    }
+
+
+type NewMapNameError
+    = InvalidNameLength
+    | InvalidNameCharacters
+    | InvalidNameStartOrEnd
+    | DuplicateMapName
 
 
 type Brush
@@ -158,6 +172,7 @@ type SaveState
 
 type alias PendingSave =
     { mapType : MapId
+    , mode : EditableMap.SaveMode
     , definition : Definition
     , requestId : SaveRequestId
     , phase : SavePhase
@@ -182,6 +197,11 @@ type alias ThumbnailResult =
 
 type Msg
     = MapInputChanged String
+    | NewMapButtonClicked
+    | NewMapNameInputChanged String
+    | NewMapFormSubmitted
+    | NewMapCancelled
+    | NewMapNameFocusReceived (Result Browser.Dom.Error ())
     | BrushButtonClicked Brush
     | PlayerNumberInputChanged String
     | FacingInputChanged String
@@ -241,6 +261,7 @@ init shared flags =
       , spaceHeld = False
       , widthInput = String.fromInt flags.first.definition.width
       , heightInput = String.fromInt flags.first.definition.height
+      , newMapForm = Nothing
       }
     , measureViewport
     )
@@ -269,7 +290,7 @@ setShared shared model =
 
 saveEffect : PendingSave -> String -> Eff Msg
 saveEffect pending thumbnail =
-    EditableMap.saveMutation pending.mapType pending.definition thumbnail
+    EditableMap.saveMutation pending.mode pending.mapType pending.definition thumbnail
         |> ApiRequest.mutationRequest
         |> E.request (SaveResponseReceived pending.requestId)
 
@@ -348,6 +369,11 @@ setPendingSaveFeedback feedback model =
 saveRequestIdValue : SaveRequestId -> Int
 saveRequestIdValue (SaveRequestId value) =
     value
+
+
+newMapNameHtmlId : String
+newMapNameHtmlId =
+    "map-editor-new-map-name"
 
 
 thumbnailHtmlId : String
@@ -557,11 +583,42 @@ editFailed message state =
             Failed message
 
 
+newMapId : List MapId -> String -> Result NewMapNameError MapId
+newMapId existing name =
+    let
+        value : String
+        value =
+            name |> String.words |> String.join "-" |> String.toLower
+
+        allowed : Char -> Bool
+        allowed char =
+            ((char >= 'a') && (char <= 'z')) || Char.isDigit char || (char == '-')
+
+        mapType : MapId
+        mapType =
+            MapId value
+    in
+    if String.isEmpty value || (String.length value > 100) then
+        Err InvalidNameLength
+
+    else if not (String.all allowed value) then
+        Err InvalidNameCharacters
+
+    else if String.startsWith "-" value || String.endsWith "-" value then
+        Err InvalidNameStartOrEnd
+
+    else if List.member mapType existing then
+        Err DuplicateMapName
+
+    else
+        Ok mapType
+
+
 document : NamedMap -> Document
 document named =
     { mapType = named.mapType
     , draft = named.definition
-    , saved = named.definition
+    , saved = Just named.definition
     , undo = []
     , redo = []
     }
@@ -877,7 +934,7 @@ update msg model =
                                     markSaved item =
                                         if item.mapType == pending.mapType then
                                             { item
-                                                | saved = pending.definition
+                                                | saved = Just pending.definition
                                             }
 
                                         else
@@ -936,6 +993,13 @@ update msg model =
                         pending : PendingSave
                         pending =
                             { mapType = finished.current.mapType
+                            , mode =
+                                case finished.current.saved of
+                                    Nothing ->
+                                        EditableMap.CreateMap
+
+                                    Just _ ->
+                                        EditableMap.UpdateMap
                             , definition = finished.current.draft
                             , feedback = Nothing
                             , requestId = SaveRequestId (Tuple.first request)
@@ -947,6 +1011,85 @@ update msg model =
                         |> setShared (Shared.setSeed (Tuple.second request) finished.shared)
                     , E.toJs (ToJs.GenerateMapThumbnail { htmlId = thumbnailHtmlId, requestId = saveRequestIdValue pending.requestId })
                     )
+
+        NewMapButtonClicked ->
+            case model.newMapForm of
+                Just _ ->
+                    ( model, E.focus { htmlId = newMapNameHtmlId } NewMapNameFocusReceived )
+
+                Nothing ->
+                    ( { model | newMapForm = Just { name = "", error = Nothing } }
+                    , E.batch
+                        [ measureViewport
+                        , E.focus { htmlId = newMapNameHtmlId } NewMapNameFocusReceived
+                        ]
+                    )
+
+        NewMapNameFocusReceived result ->
+            case result of
+                Ok () ->
+                    ( model, E.none )
+
+                Err error ->
+                    ( model
+                        |> setShared (Shared.addError (Just (Error.ElementFocusFailed error)) model.shared)
+                    , E.none
+                    )
+
+        NewMapNameInputChanged value ->
+            ( { model | newMapForm = Maybe.map (\form -> { form | name = value, error = Nothing }) model.newMapForm }, E.none )
+
+        NewMapCancelled ->
+            ( { model | newMapForm = Nothing }, measureViewport )
+
+        NewMapFormSubmitted ->
+            case model.newMapForm of
+                Nothing ->
+                    ( model, E.none )
+
+                Just form ->
+                    case newMapId model.mapOptions form.name of
+                        Err error ->
+                            ( { model | newMapForm = Just { form | error = Just error } }, measureViewport )
+
+                        Ok mapType ->
+                            let
+                                finished : Model
+                                finished =
+                                    finishGesture model
+
+                                definition : Definition
+                                definition =
+                                    { description = ""
+                                    , width = 17
+                                    , height = 17
+                                    , theme = MapTheme.GreenForest
+                                    , features = []
+                                    , depots = []
+                                    , units = []
+                                    }
+
+                                created : Document
+                                created =
+                                    { mapType = mapType
+                                    , draft = definition
+                                    , saved = Nothing
+                                    , undo = []
+                                    , redo = []
+                                    }
+                            in
+                            ( { finished
+                                | current = created
+                                , others = finished.current :: finished.others
+                                , mapOptions = finished.mapOptions ++ [ mapType ]
+                                , newMapForm = Nothing
+                                , canvasView = FitWorkspace
+                                , widthInput = "17"
+                                , heightInput = "17"
+                                , saveState = editingSaveState finished.saveState
+                              }
+                            , measureViewport
+                            )
 
         MapInputChanged value ->
             let
@@ -1427,6 +1570,7 @@ toolbar model =
             [ toolbarActions model
             , mapSettings model
             ]
+        , newMapControls model.newMapForm
         , H.p
             [ A.attribute "role" "status"
             , A.css
@@ -1461,7 +1605,9 @@ toolbarActions model =
                 , S.itemsCenter
                 ]
             ]
-            [ action "undo" (List.isEmpty model.current.undo) UndoButtonClicked
+            [ Button.secondary "new map" NewMapButtonClicked
+                |> Button.toHtml
+            , action "undo" (List.isEmpty model.current.undo) UndoButtonClicked
             , action "redo" (List.isEmpty model.current.redo) RedoButtonClicked
             , saveButton model
             , H.a
@@ -1480,6 +1626,81 @@ toolbarActions model =
                 ]
             ]
         ]
+
+
+newMapNameErrorToString : NewMapNameError -> String
+newMapNameErrorToString error =
+    case error of
+        InvalidNameLength ->
+            "enter a map name with 1–100 characters"
+
+        InvalidNameCharacters ->
+            "use letters a–z, digits, spaces, or hyphens"
+
+        InvalidNameStartOrEnd ->
+            "start and end the map name with a letter or digit"
+
+        DuplicateMapName ->
+            "a map with this name already exists"
+
+
+newMapControls : Maybe NewMapForm -> Html Msg
+newMapControls form =
+    case form of
+        Nothing ->
+            H.text ""
+
+        Just creating ->
+            let
+                feedback : Html Msg
+                feedback =
+                    case creating.error of
+                        Nothing ->
+                            H.text ""
+
+                        Just error ->
+                            H.p
+                                [ A.attribute "role" "alert"
+                                , A.css
+                                    [ S.m0
+                                    ]
+                                ]
+                                [ H.text (newMapNameErrorToString error)
+                                ]
+            in
+            H.form
+                [ Ev.onSubmit NewMapFormSubmitted
+                , A.css
+                    [ S.col
+                    , S.g2
+                    ]
+                ]
+                [ H.div
+                    [ A.css
+                        [ S.row
+                        , S.flexWrap
+                        , S.itemsEnd
+                        , S.g3
+                        ]
+                    ]
+                    [ H.label
+                        [ A.css
+                            [ S.col
+                            , S.g1
+                            ]
+                        ]
+                        [ H.text "map name"
+                        , TextField.simple creating.name NewMapNameInputChanged
+                            |> TextField.withHtmlId newMapNameHtmlId
+                            |> TextField.toHtml
+                        ]
+                    , Button.secondary "create draft" NewMapFormSubmitted
+                        |> Button.toHtml
+                    , Button.secondary "cancel" NewMapCancelled
+                        |> Button.toHtml
+                    ]
+                , feedback
+                ]
 
 
 workspace : Model -> Html Msg
@@ -1611,17 +1832,22 @@ status model =
         Saved ->
             "saved to maps/"
                 ++ EditableMap.name model.current.mapType
-                ++ ".json. new development games use this map; rebuild for production."
+                ++ ".json. new games use this map."
 
         Failed error ->
             error
 
         Idle ->
-            if model.current.draft /= model.current.saved then
-                "unsaved changes · drafts stay here while switching maps"
+            case model.current.saved of
+                Nothing ->
+                    "new map draft · add starting units for both players, then save map"
 
-            else
-                "no unsaved changes · existing games keep their board"
+                Just saved ->
+                    if model.current.draft /= saved then
+                        "unsaved changes · drafts stay here while switching maps"
+
+                    else
+                        "no unsaved changes · existing games keep their board"
 
 
 select : String -> String -> String -> (String -> Msg) -> List ( String, String ) -> Html Msg
@@ -1644,15 +1870,13 @@ select htmlId label value changed options =
             ]
             [ H.text label
             ]
-        , Select.toHtml
-            { htmlId = htmlId
-            , disabled = False
-            , selected = value
+        , Select.new
+            { selected = value
             , options = List.map option options
-            , toValue = identity
-            , decoder = D.string
             , onChange = changed
             }
+            |> Select.withHtmlId htmlId
+            |> Select.toHtml
         ]
 
 

@@ -21,7 +21,7 @@ into a forest. An army that wins the firefight can still run out of supplies.
 FightLines makes logistics part of the fight: trucks share cargo space between
 troops, provisions, and fuel, while finite depots turn every delivery route into
 a tactical decision. Play against another person through an invite lobby, or
-choose one of three AI difficulties.
+choose an AI opponent.
 
 - **Combined arms:** infantry, tanks, field guns, and transports; directional
   ambushes, attack moves, indirect fire, entrenchment, and sabotage.
@@ -77,8 +77,8 @@ responses. Playback and camera framing use those filtered observations.
 
 ### Tactical AI that uses the game engine
 
-Medium and hard opponents evaluate candidate plans through the ordinary turn
-validator and resolver. Hard difficulty compares stationary and advancing enemy
+The AI evaluates candidate plans through the ordinary turn
+validator and resolver. It compares stationary and advancing enemy
 responses and favors safer worst-case outcomes. Planning uses observed enemies
 and assumed resources, while truck coordination weighs transport, supply, and
 fuel needs.
@@ -135,7 +135,8 @@ player. Use separate browser profiles when testing both sides on one machine.
 | --- | --- |
 | `make run` | Build and start the game locally |
 | `make dev` | Enable a preview game, map editor, replay browser, and backdrop tools |
-| `make check` | Check Rust formatting, Clippy, tests, Elm formatting, behavior checks, and compilation |
+| `make check` | Check formatting, Clippy, fast tests, frontend behavior, and compilation |
+| `make check-all` | Run all checks, including slow AI simulations |
 | `make build` | Build the server and production player frontend |
 
 **Current status:** playable prototype under active development. Active games and

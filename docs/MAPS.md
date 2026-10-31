@@ -43,8 +43,14 @@ player 2 has blue units. Either participant can control either starting army.
 
 ## Edit maps locally
 
-Run `make editor`, then open http://127.0.0.1:8080/map-editor. `make dev`
+Run `make editor`, then open http://127.0.0.1:8080/dev/map-editor. `make dev`
 also enables the editor alongside the development game.
+
+Choose **new map**, enter a unique name, and choose **create draft** to start a
+blank 17 × 17 map. Spaces in names become hyphens in filenames. Resize, choose a
+theme, and add starting units for both players before choosing **save map**.
+The first save creates a new catalog file; existing maps are never replaced by
+new-map creation. New drafts stay available in the map selector until refresh.
 
 Choose a map and paint terrain by clicking or dragging. Place starting units for
 either player, choose their facing, and place supply or fuel depots. Larger
@@ -83,7 +89,7 @@ board. Choose **play in new tab** to create a normal lobby and test the saved ma
 Ship the map directory with production deployments; map changes require no rebuild.
 The editor edits every map in the server catalog.
 
-The page is absent and the `maps` and `saveMap` operations on `/graphql` are
+The `maps`, `createMap`, and `saveMap` operations on `/graphql` are
 disabled unless the server starts with `--map-editor`. Editor requests require
 localhost; saves require a matching Origin. Ordinary `make run` leaves editing
 disabled. See [DEPLOYMENT.md](../DEPLOYMENT.md).

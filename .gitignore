@@ -98,6 +98,11 @@
 !/public/assets/combat-infantry-v1/
 !/public/assets/combat-infantry-v1/*.png
 
+# Bazooka combat-theater firing atlases.
+!/public/assets/bazooka-firing-v1/
+!/public/assets/bazooka-firing-v1/red.png
+!/public/assets/bazooka-firing-v1/blue.png
+
 # Tank combat-theater firing atlases.
 !/public/assets/tank-firing-rigged-v1/
 !/public/assets/tank-firing-rigged-v1/*.png

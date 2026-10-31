@@ -13,7 +13,7 @@ try {
   // and measurements stay unexecuted; an empty document is sufficient.
   global.window = { addEventListener() {}, navigator: { userAgent: 'replay-checks' } };
   global.document = {
-    location: { href: 'http://localhost/logged-games' },
+    location: { href: 'http://localhost/dev/logged-games' },
     title: 'replay state checks',
     body: { nodeType: 1, tagName: 'BODY', attributes: [], childNodes: [] },
     createTextNode: text => ({ nodeType: 3, textContent: text }),
@@ -24,7 +24,7 @@ try {
   const sounds = [];
   app.ports.toJs.subscribe(message => {
     if (message.tag === 'openDialog') dialogs.push(message.htmlId);
-    if (message.play) sounds.push(message.play);
+    if (message.tag === 'audio' && message.event?.play) sounds.push(message.event.play);
   });
   app.ports.results.subscribe(failures => {
     // Cmd.batch has no ordering guarantee. Allow both ports to deliver before

@@ -7,6 +7,7 @@ module Game.PlaybackPresentation exposing
     , cameraPanDurationMs
     , combatOverlay
     , encodePreference
+    , firingInfantry
     , frameCamera
     , loadPreference
     , loss
@@ -176,6 +177,28 @@ ambience state =
         state.playback
             |> Maybe.andThen TurnPlayback.panels
             |> Maybe.map (CombatTheater.ambience state.map)
+            |> Maybe.withDefault []
+
+
+firingInfantry :
+    { playback : Maybe TurnPlayback.Playback
+    , paused : Bool
+    , camera : Maybe PlaybackCamera
+    }
+    -> List Audio.FiringInfantry
+firingInfantry state =
+    let
+        cameraSettling : Bool
+        cameraSettling =
+            (state.camera |> Maybe.map .remainingPanMs |> Maybe.withDefault 0) > 0
+    in
+    if state.paused || cameraSettling then
+        []
+
+    else
+        state.playback
+            |> Maybe.andThen TurnPlayback.panels
+            |> Maybe.map CombatTheater.firingInfantry
             |> Maybe.withDefault []
 
 

@@ -244,8 +244,10 @@ prototype; do not update it unless the task explicitly requires that.
   APIs, and style helpers. Formatter and compiler checks do not enforce every
   convention here.
 - For code changes, run `make check`: Rust formatting, Clippy with warnings
-  denied, Rust tests, Elm format validation, and compilation of the application
+  denied, fast Rust tests, Elm format validation, and compilation of the application
   and copied view modules.
+- Before the check-in workflow in `AGENTS.md`, run `make check-all` to include
+  slow simulations as well as routine checks.
 - Add focused tests for changed rules, validation, authorization, and state
   transitions. Verify changed UI behavior in a browser when compilation alone
   cannot establish it.

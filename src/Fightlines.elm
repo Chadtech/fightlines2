@@ -330,11 +330,21 @@ withPlaybackAudio before after =
 
                 _ ->
                     []
+
+        firing : Page -> List Audio.FiringInfantry
+        firing page =
+            case page of
+                Game _ model ->
+                    GamePage.firingInfantry model
+
+                _ ->
+                    []
     in
     ( after
     , E.batch
         [ E.audio (Audio.syncMovement { before = moving before, after = moving after })
         , E.audio (Audio.syncAmbience { before = ambient before, after = ambient after })
+        , E.audio (Audio.syncInfantryFire { before = firing before, after = firing after })
         ]
     )
 

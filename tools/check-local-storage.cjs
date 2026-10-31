@@ -72,23 +72,24 @@ async function checkInterop() {
   }
   assert.equal(JSON.stringify(boot(undefined, { readFails: true }).flags.localStorage), '{}');
   const app = boot('{"existing":{"enabled":true},"count":1}');
-  await app.send(null);
-  await app.send({ play: 'uiAffirm' });
+  await app.send({ tag: 'audio', event: null });
+  await app.send({ tag: 'audio', event: { play: 'uiAffirm' } });
   assert.equal(app.warnings.length, 0);
   assert.equal(app.messages.length, 0);
   for (const entryPoint of ['Fightlines', 'DevTools']) {
     const audioApp = boot(undefined, { entryPoint });
-    await audioApp.send({ muted: true });
-    await audioApp.send({ ambience: [] });
+    for (const event of [null, { play: 'uiAffirm' }, { muted: true }, { ambience: [] }, { movement: [] }, { infantryFire: [] }]) {
+      await audioApp.send({ tag: 'audio', event });
+    }
     assert.equal(audioApp.warnings.length, 0);
-    await audioApp.send({ muted: 'invalid' });
-    await audioApp.send({ ambience: 'invalid' });
+    await audioApp.send({ tag: 'audio', event: { muted: 'invalid' } });
+    await audioApp.send({ tag: 'audio', event: { ambience: 'invalid' } });
     assert.equal(audioApp.warnings.length, 2, 'both apps route mute and ambience through audio validation');
     assert.deepEqual(audioApp.messages, [
       { type: 'audio error', payload: { operation: 'invalid event', details: '{"muted":"invalid"}' } },
       { type: 'audio error', payload: { operation: 'invalid ambience', details: '"invalid"' } },
     ], 'both apps forward audio errors to their shared Elm listener');
-    await audioApp.send({ muted: 'invalid' });
+    await audioApp.send({ tag: 'audio', event: { muted: 'invalid' } });
     assert.equal(audioApp.messages.length, 2, 'repeated failures do not flood the dev panel');
     audioApp.events.pointerdown({ isTrusted: true });
     await new Promise(resolve => setImmediate(resolve));

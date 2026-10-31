@@ -1,5 +1,6 @@
 module Game.BackdropCalibration exposing
     ( Calibration
+    , CopyScope(..)
     , Entry
     , Key
     , catalogSelection
@@ -20,13 +21,14 @@ import Api.Query
 import ApiRequest
 import Graphql.Http
 import Graphql.Operation exposing (RootQuery)
+import Graphql.OptionalArgument as OptionalArgument
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 
 
 {-| Percentages of the scene: footing is measured from the top, spacing is
 vertical separation, unit size is the front vehicle width, rear scale is relative.
-Trench footing independently positions the bottom of the trench overlays;
-trench size is each overlay’s width as a percentage of the scene.
+Each trench has its own bottom footing and width as percentages of the scene.
+The second trench is ahead of the first in the direction the infantry face.
 -}
 type alias Calibration =
     { frontFooting : Float
@@ -35,6 +37,8 @@ type alias Calibration =
     , rearScale : Float
     , trenchFooting : Float
     , trenchSize : Float
+    , secondTrenchFooting : Float
+    , secondTrenchSize : Float
     }
 
 
@@ -43,6 +47,11 @@ type alias Entry =
     , unitKind : UnitKind
     , calibration : Calibration
     }
+
+
+type CopyScope
+    = OneUnit UnitKind
+    | AllUnits
 
 
 type alias Key =
@@ -59,6 +68,8 @@ suggested =
     , rearScale = 78
     , trenchFooting = 86
     , trenchSize = 35
+    , secondTrenchFooting = 86
+    , secondTrenchSize = 35
     }
 
 
@@ -101,6 +112,8 @@ selection =
                     |> SS.with CalibrationApi.rearScale
                     |> SS.with CalibrationApi.trenchFooting
                     |> SS.with CalibrationApi.trenchSize
+                    |> SS.with CalibrationApi.secondTrenchFooting
+                    |> SS.with CalibrationApi.secondTrenchSize
                 )
             )
 
@@ -124,10 +137,22 @@ save entry =
 copy :
     { source : String
     , destination : String
+    , scope : CopyScope
     }
     -> Graphql.Http.Request (List Entry)
 copy request =
+    let
+        unitKind : OptionalArgument.OptionalArgument UnitKind
+        unitKind =
+            case request.scope of
+                OneUnit kind ->
+                    OptionalArgument.Present kind
+
+                AllUnits ->
+                    OptionalArgument.Absent
+    in
     Api.Mutation.copyBackdropCalibrations
+        (\options -> { options | unitKind = unitKind })
         { sourceBackdrop = request.source
         , destinationBackdrop = request.destination
         }

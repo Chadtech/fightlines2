@@ -35,7 +35,9 @@ specific seed for debugging; see [deployment](../DEPLOYMENT.md#game-archives).
 
 `src/Fightlines.elm` runs the player app (home, lobbies, and live games).
 `src/DevTools.elm` runs the separate map editor, game archive/replay, and backdrop
-review app, with its own `DevTools.Route`, `DevTools.Flags`, and `DevTools.Shared`.
+review app under `/dev`, with its own `DevTools.Route`, `DevTools.Flags`, and
+`DevTools.Shared`. Open [the tools index](http://127.0.0.1:8080/dev) for links to
+`/dev/map-editor`, `/dev/logged-games`, and `/dev/backdrop-review`.
 Both apps use `Effect.Eff` and outgoing ports in `Ports.Js.To`. Their route modules
 provide typed `Route.pushUrl` helpers for in-app navigation; `Effect.load` opens
 another app's document. Player pages
@@ -65,14 +67,32 @@ Ordinary `make run` keeps the normal lobby workflow.
 ```sh
 make sprites # Optional: re-export sprites using locally retained source artwork
 make build   # Generate the API client and build the production frontend and backend
-make check   # Check formatting, lint, test, and compile
+make check   # Routine formatting, lint, fast tests, and compilation
+make check-all # Full checks, including slow AI simulations
 ```
 
-`make check` runs Rust formatting, Clippy with warnings denied, Rust tests, Elm
+`make check` runs Rust formatting, Clippy with warnings denied, fast Rust tests, Elm
 format validation, the behavior checks in `tools/check-*.cjs`, API generation,
 and compilation of both apps and shared views. Documentation-only changes need
 content, link, and whitespace checks rather than a full build. Finish with
 `git diff --check` and report any incomplete verification.
+
+### Slow simulations
+
+Long AI simulations use Rust's `#[ignore]` attribute with a reason naming
+`make check-all`. They still compile during routine checks. `make check-all`
+runs the same checks with `--include-ignored`, so both fast and slow Rust tests
+run once. Run it before committing and pushing through the workflow below.
+
+### Check in workflow
+
+Ask the agent to **check in all changes** to invoke the workflow in
+[AGENTS.md](../AGENTS.md#check-in-workflow). This includes staged, unstaged, and
+untracked project files from all current work. The agent reviews the changes,
+runs `make check-all`, and shows a high-level summary of added, modified, renamed,
+and deleted files, plus a proposed commit message. It then waits for your
+approval before committing and pushing to `main`. Defining this workflow does
+not itself commit or push anything.
 
 ### Generated API
 
@@ -98,7 +118,10 @@ The player entry files are `public/index.html` and `public/main.js`; both apps u
 `public/elm-interop.js` for shared startup flags, dialogs, and browser storage.
 The player script handles clipboard commands; the tools script handles map
 thumbnail commands.
-The server serves the appropriate app at the existing URLs; links between apps load a new document. Production builds emit
+The server serves the DevTools entry point for `/dev` and every path under
+`/dev/`; Elm owns the individual tool routes and unknown-page handling. Other
+app links load a new document. Tool data and mutations still require their
+existing server flags and authorization checks. Production builds emit
 only the player app and remove previous DevTools outputs from `public`, preserving
 the sources in `dev-tools/`.
 Live-game turn playback remains available. Rebuild with `make frontend` to restore
@@ -120,7 +143,7 @@ The export scripts remain in `tools/`. Back up source artwork separately.
 ## Game archives and replay
 
 Run `make logs` (or start the server with `--game-logs`) and open
-[/logged-games](http://127.0.0.1:8080/logged-games) to browse recordings by name,
+[/dev/logged-games](http://127.0.0.1:8080/dev/logged-games) to browse recordings by name,
 players, map, date, outcome, and completed turns. Choose **replay game** to inspect
 the starting board, play/pause the game, jump between turns, or switch player views.
 **play** continues through the remaining recorded turns; choosing a turn or using
@@ -141,8 +164,9 @@ The floating speaker in the upper-left corner toggles all audio, including
 during native dialogs. `Shared` owns the typed mute state across routes in each
 app. The `audioMuted` Boolean in `fightlines.localStorage` remembers the setting
 across reloads and both apps, and storage events synchronize open tabs.
-`Audio.SetMute` sends `{ "muted": true }` or `{ "muted": false }` through
-the shared interop. Muting zeros the master gain, stops active voices, invalidates
+Audio port messages use `{ "tag": "audio", "event": ... }`; the shared interop
+passes `event` to the audio manager. `Audio.SetMute` uses `{ "muted": true }` or
+`{ "muted": false }` as its event. Muting zeros the master gain, stops active voices, invalidates
 pending playback, and discards new playback requests. Unmuting restores the previous
 volume; current movement and ambience resume on the next playback snapshot.
 
@@ -171,6 +195,14 @@ frames, with no separate per-tank timers.
 projectile contact, including nonlethal hits, unconfirmed indirect landings,
 building follow-ups and sabotage. It shares the combat voice limit and the same
 clock-crossing behavior; supply exhaustion stays silent.
+Infantry small-arms fire synchronizes the approved heavy 1.920-second recording
+with the full firing animation, including its overlap with target impacts.
+Each recorded firing formation has one voice and its own return-fire phase.
+Snapshots carry the elapsed clip position and remaining firing time, so pause,
+camera holds, map peeks, mute, leaving combat and hidden tabs stop it, and resume
+seeks to the current animation position. Bazookas and static trenches stay silent.
+The source manifest and credits are in `public/audio/README.md` and
+`public/audio/combat/infantry-fire-sources.json`.
 During battlefield playback, each visibly moving infantry, field gun, truck or
 tank plays its approved movement loop: 12.909-second marching for infantry and
 field guns, six-second engines for vehicles. Each starts from an independent
@@ -208,20 +240,24 @@ playback failures filling the history.
 
 ## Backdrop review
 
-Open `/backdrop-review` in a development build to compare combat backdrops
+Open `/dev/backdrop-review` in a development build to compare combat backdrops
 with infantry, tanks, trucks, or field guns using the gameplay renderer. Select
-a backdrop and unit type, adjust the placement sliders, then choose **save calibration**.
+a backdrop and unit type in the single scene editor, adjust the placement sliders,
+then choose **save calibration**. Check **face left** to preview the opposite facing;
+unchecking restores right-facing units without changing the calibration.
+The copy controls sit to the right of the scene, or below it on narrow screens.
 For infantry, choose **entrenched infantry** under **infantry position** to preview
-two team-colored trench segments side by side. **trench height** moves both vertically;
-smaller values place them higher. **trench size** changes each segment’s width
-from 10–45% of the panel, keeping its bottom anchored and the pair centered.
-Both settings save independently for each backdrop, alongside that backdrop’s
+two team-colored trench segments. Each has its own **y position** and **size**
+slider: smaller y values place that trench higher, and size sets its width from
+10–45% of the panel while keeping its bottom anchored. Trench 1 sits behind
+trench 2 in the direction the infantry face; mirroring preserves their identities.
+All four settings save for each backdrop, alongside that backdrop’s
 exposed-infantry calibration. The team selector under **more preview options**
 chooses the same red or blue artwork used in live games and replays.
-Each backdrop and unit type has its own calibration; panels showing the same pair
-share settings. Backdrop choices come from the server's combat backdrop asset
+Each backdrop and unit type has its own calibration and retains its draft when
+switching selections. Backdrop choices come from the server's combat backdrop asset
 directory, including images without saved calibrations. Extra preview controls
-include team, facing, health, and a custom image path.
+include team, health, and a custom image path.
 
 Saving requires a localhost server started with `--map-editor` (`make dev` or
 `make editor`). It writes `public/backdrop-calibrations.json`, preserving other
@@ -229,6 +265,9 @@ backdrop/unit pairs. Commit that file with the artwork. Gameplay and replays loa
 saved settings whenever their page opens or refreshes; unsaved adjustments stay
 in the review page. Backdrops
 without saved settings retain their original gameplay placements. Use **copy calibrations** to select a saved source and a destination backdrop,
-then **copy and save all unit calibrations**. This copies all saved source unit
-types at once, replacing matching destination settings while preserving others.
+then choose a **unit type**. **copy and save [unit type] calibration** replaces
+only that unit type at the destination. Copying stays disabled until a unit type
+is selected, and the source must have saved settings for it. Check **all unit types**
+to explicitly enable **copy and save all unit calibrations**; this replaces all
+matching destination unit settings while preserving types absent from the source.
 For example, reuse road settings for snowy road, then fine-tune if needed.

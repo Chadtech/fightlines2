@@ -2,6 +2,7 @@ module EditableMap exposing
     ( Definition
     , DepotPlacement
     , NamedMap
+    , SaveMode(..)
     , UnitPlacement
     , map
     , name
@@ -70,6 +71,11 @@ type alias NamedMap =
     , definition : Definition
     , thumbnailUrl : String
     }
+
+
+type SaveMode
+    = CreateMap
+    | UpdateMap
 
 
 setFeatures : List TerrainFeature -> Definition -> Definition
@@ -188,9 +194,23 @@ unitSelection =
         |> SS.with UnitApi.direction
 
 
-saveMutation : MapId -> Definition -> String -> SelectionSet () RootMutation
-saveMutation mapType definition thumbnail =
-    Mutation.saveMap
+saveMutation : SaveMode -> MapId -> Definition -> String -> SelectionSet () RootMutation
+saveMutation mode mapType definition thumbnail =
+    let
+        mutation :
+            (Mutation.CreateMapOptionalArguments -> Mutation.CreateMapOptionalArguments)
+            -> Mutation.CreateMapRequiredArguments
+            -> SelectionSet () Api.Object.NamedMap
+            -> SelectionSet () RootMutation
+        mutation =
+            case mode of
+                CreateMap ->
+                    Mutation.createMap
+
+                UpdateMap ->
+                    Mutation.saveMap
+    in
+    mutation
         (\options -> { options | thumbnail = Optional.Present thumbnail })
         { mapType = mapType
         , definition = definitionInput definition

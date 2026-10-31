@@ -2,8 +2,10 @@ module View.AppShell exposing (toHtml)
 
 import Css.Global
 import Game.View.CombatAttack as CombatAttack
+import Game.View.CombatBazooka as CombatBazooka
 import Game.View.CombatEffects as CombatEffects
 import Game.View.CombatExplosion as CombatExplosion
+import Game.View.CombatInfantry as CombatInfantry
 import Game.View.CombatTheater as CombatTheater
 import Game.View.DepotStock as DepotStock
 import Game.View.TargetSight as TargetSight
@@ -39,6 +41,8 @@ toHtml content =
             , CombatExplosion.styles
             , CombatExplosion.preload
             , CombatAttack.preload
+            , CombatBazooka.preload
+            , CombatInfantry.preload
             , UnitDeath.styles
             , CombatTheater.styles
             , CombatEffects.styles

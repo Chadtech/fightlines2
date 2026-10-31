@@ -72,10 +72,6 @@ async function main() {
     }
     await fs.copyFile(source, path.join(coastExport, `${name}.png`));
   }
-  await fs.copyFile(
-    path.join(coastDirectory, "beach.png"),
-    path.join(root, "public/assets/combat-backdrops-anime-v1/beach.png"),
-  );
   const cliffDirectory = path.join(root, "artwork/terrain/illustrated/coast-v2");
   const cliffExport = path.join(root, "public/assets/coast-illustrated-v2");
   await fs.mkdir(cliffExport, { recursive: true });
