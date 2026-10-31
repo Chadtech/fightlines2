@@ -87,6 +87,17 @@
 !/public/assets/combat-trench-interior-v1/
 !/public/assets/combat-trench-interior-v1/*.png
 
+# Transparent combat-theater trench overlay artwork.
+!/public/assets/combat-trench-overlay-anime-v1/
+!/public/assets/combat-trench-overlay-anime-v1/*.png
+!/public/assets/combat-trench-overlay-anime-v2/
+!/public/assets/combat-trench-overlay-anime-v2/red.png
+!/public/assets/combat-trench-overlay-anime-v2/blue.png
+
+# Mixed infantry combat-theater poses.
+!/public/assets/combat-infantry-v1/
+!/public/assets/combat-infantry-v1/*.png
+
 # Tank combat-theater firing atlases.
 !/public/assets/tank-firing-rigged-v1/
 !/public/assets/tank-firing-rigged-v1/*.png

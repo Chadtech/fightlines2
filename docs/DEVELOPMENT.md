@@ -137,6 +137,15 @@ They remain available after restarting the server with the same archive director
 
 ## Audio manager
 
+The floating speaker in the upper-left corner toggles all audio, including
+during native dialogs. `Shared` owns the typed mute state across routes in each
+app. The `audioMuted` Boolean in `fightlines.localStorage` remembers the setting
+across reloads and both apps, and storage events synchronize open tabs.
+`Audio.SetMute` sends `{ "muted": true }` or `{ "muted": false }` through
+the shared interop. Muting zeros the master gain, stops active voices, invalidates
+pending playback, and discards new playback requests. Unmuting restores the previous
+volume; current movement and ambience resume on the next playback snapshot.
+
 Updates can request audio with `E.audio Audio.uiAffirm`, `Audio.uiCancel`, or
 `Audio.uiConfirm`; `Audio.none` produces no sound. Both apps share a JavaScript
 manager that loads and caches clips, unlocks
@@ -158,12 +167,30 @@ share this timing; pauses and camera holds do not repeat shots. The manager
 preloads and cycles five distinct original procedural firing variants per weapon, with up to eight
 overlapping combat voices independent of UI feedback. Timing follows animation
 frames, with no separate per-tank timers.
-During battlefield playback, each visibly moving truck or tank plays its approved
-six-second engine loop from an independent random offset. Consecutive movement
-tiles keep the same voice; stopping fades it out over 20ms. Camera holds, casualty
-dialogs, replay pause, navigation, and hidden tabs silence movement. Live games
+`Audio.combatImpact` uses five original procedural small-explosion variants at
+projectile contact, including nonlethal hits, unconfirmed indirect landings,
+building follow-ups and sabotage. It shares the combat voice limit and the same
+clock-crossing behavior; supply exhaustion stays silent.
+During battlefield playback, each visibly moving infantry, field gun, truck or
+tank plays its approved movement loop: 12.909-second marching for infantry and
+field guns, six-second engines for vehicles. Each starts from an independent
+random offset. Consecutive
+movement tiles and other units' intermediate arrivals keep the same voice. Camera adjustments
+during travel preserve movement and its sound. Stopping fades it out over 20ms.
+Initial camera holds, casualty dialogs, replay pause, navigation, and hidden tabs
+silence movement. Live games
 and logged replays share this behavior. Source and license status are documented
 in `public/audio/README.md`.
+
+Combat theaters also synchronize `Audio.syncAmbience` snapshots from their displayed
+scenes. Five approved CC0 field recordings cover plains (Oklahoma prairie choice C),
+forest, snow, desert and beach. Matching environments share one centered loop;
+distinct environments blend quietly with gentle stereo positioning. Scene changes
+crossfade over 350ms. Held cards and map peeks preserve loops; replay pause and
+leaving the theater fade them out, while hidden pages stop immediately. Assets load
+on demand. Run `python3 tools/build-combat-ambience.py` to rebuild from retained
+local recordings with FFmpeg. Credits and processing are in `public/audio/README.md`
+and `public/audio/ambience/sources.json`.
 
 ## Dev panel
 
@@ -173,12 +200,24 @@ newest first. Choose **test error** to add an error to that same history.
 Press Escape, press backtick again, or use the header’s × button to close the
 panel; its selected tab and error history are preserved
 when it opens again.
+Audio-manager failures also enter this history in both apps through the shared
+JavaScript port. Entries include the audio operation and error details (including
+a stack trace when available), and retain the browser console warning. Each
+operation is reported only once per audio-manager instance to avoid repeated
+playback failures filling the history.
 
 ## Backdrop review
 
 Open `/backdrop-review` in a development build to compare combat backdrops
 with infantry, tanks, trucks, or field guns using the gameplay renderer. Select
-a backdrop and unit type, adjust the four sliders, then choose **save calibration**.
+a backdrop and unit type, adjust the placement sliders, then choose **save calibration**.
+For infantry, choose **entrenched infantry** under **infantry position** to preview
+two team-colored trench segments side by side. **trench height** moves both vertically;
+smaller values place them higher. **trench size** changes each segment’s width
+from 10–45% of the panel, keeping its bottom anchored and the pair centered.
+Both settings save independently for each backdrop, alongside that backdrop’s
+exposed-infantry calibration. The team selector under **more preview options**
+chooses the same red or blue artwork used in live games and replays.
 Each backdrop and unit type has its own calibration; panels showing the same pair
 share settings. Backdrop choices come from the server's combat backdrop asset
 directory, including images without saved calibrations. Extra preview controls

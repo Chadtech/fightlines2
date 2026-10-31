@@ -1,9 +1,11 @@
 module Game.View.CombatTheater exposing
     ( Msg(..)
+    , ambience
     , attackDelay
     , attackerOnLeft
     , backdropPath
     , firingTimes
+    , impactTimes
     , preview
     , readyToAutomaticallyClose
     , styles
@@ -17,6 +19,7 @@ import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
 import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing exposing (SpriteFacing)
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
+import Audio
 import Css
 import Game.BackdropCalibration as BackdropCalibration
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
@@ -38,6 +41,7 @@ import Game.UnitKind as UnitKindLabel
 import Game.View.CombatAttack as CombatAttack
 import Game.View.CombatExplosion as CombatExplosion
 import Game.View.CombatFormation as CombatFormation
+import Game.View.CombatInfantry as CombatInfantry
 import Game.View.CombatReadiness as CombatReadiness
 import Game.View.UnitSprite as UnitSprite exposing (Appearance)
 import Html.Styled as H exposing (Html)
@@ -173,7 +177,7 @@ attackDelay panel =
     let
         firingEndsAt : Unit -> Int -> Float
         firingEndsAt unit health =
-            CombatAttack.endsAt (attackFor panel unit) unit.kind (CombatFormation.figureCount unit.kind health)
+            CombatAttack.endsAt (attackFor panel unit) unit.kind (CombatFormation.figureCount (infantryLoadout panel unit) unit.kind health)
 
         endsAt : Float
         endsAt =
@@ -229,6 +233,32 @@ attackFor panel unit =
             CombatAttack.NotAttacking
 
 
+infantryLoadout : Panel -> Unit -> CombatInfantry.Loadout
+infantryLoadout panel unit =
+    let
+        targetKind : Maybe UnitKind
+        targetKind =
+            case panel.encounter of
+                Exchange exchange ->
+                    if unit.id == exchange.attacker.id then
+                        Just exchange.target.kind
+
+                    else if unit.id == exchange.target.id then
+                        Just exchange.attacker.kind
+
+                    else
+                        Nothing
+
+                _ ->
+                    Nothing
+    in
+    CombatInfantry.loadoutFor
+        { kind = unit.kind
+        , attack = attackFor panel unit
+        , targetKind = targetKind
+        }
+
+
 {-| Sound cues use the same formation clocks and before-health as the flash.
 Only recorded firing participants of the requested kind contribute timestamps.
 -}
@@ -238,7 +268,7 @@ firingTimes kind panel =
         starts : Unit -> Int -> List Float
         starts unit health =
             if unit.kind == kind then
-                CombatAttack.firingTimes (attackFor panel unit) unit.kind (CombatFormation.figureCount unit.kind health)
+                CombatAttack.firingTimes (attackFor panel unit) unit.kind (CombatFormation.figureCount (infantryLoadout panel unit) unit.kind health)
 
             else
                 []
@@ -261,6 +291,116 @@ firingTimes kind panel =
             []
 
 
+{-| Include both stages regardless of the current elapsed time so a delayed
+tick cannot skip participant hits when it crosses into the building scene.
+Sounds begin at contact, after the projectile's short approach.
+-}
+impactTimes : Panel -> List Float
+impactTimes panel =
+    let
+        buildingStarts : List Float
+        buildingStarts =
+            depotSceneStartsAt panel
+                |> Maybe.map (\startsAt -> [ startsAt + depotImpactStartsAt ])
+                |> Maybe.withDefault []
+    in
+    (participantImpactStarts panel ++ buildingStarts)
+        |> List.map ((+) impactContactDelayMs)
+        |> List.sort
+
+
+{-| Use exactly the displayed scene positions, including the later building
+cut. Concealed firing origins never contribute an environment or stereo side.
+-}
+ambience : Map -> Panel -> List Audio.AmbientScene
+ambience map panel =
+    let
+        participantPositions : List (Maybe Coordinate)
+        participantPositions =
+            case panel.encounter of
+                Exchange exchange ->
+                    if attackerOnLeft panel then
+                        [ Unit.mapPosition exchange.attacker
+                        , Unit.mapPosition exchange.target
+                        ]
+
+                    else
+                        [ Unit.mapPosition exchange.target
+                        , Unit.mapPosition exchange.attacker
+                        ]
+
+                Impact impact ->
+                    impact.destination
+                        :: List.map
+                            (\attacker ->
+                                Unit.mapPosition attacker.unit
+                                    |> Maybe.withDefault impact.destination
+                            )
+                            impact.attackers
+                        |> List.sortBy Coordinate.key
+                        |> List.map Just
+
+                Sabotage building ->
+                    [ Just building.position ]
+
+                Exhaustion unit ->
+                    [ Unit.mapPosition unit ]
+
+        positions : List (Maybe Coordinate)
+        positions =
+            case depotDamageAt panel of
+                Just damage ->
+                    [ Just damage.depot.position ]
+
+                Nothing ->
+                    participantPositions
+
+        sceneCount : Int
+        sceneCount =
+            List.length positions
+
+        ambientScene : Int -> Maybe Coordinate -> Audio.AmbientScene
+        ambientScene index position =
+            let
+                terrain : Terrain
+                terrain =
+                    position |> Maybe.map (Map.terrainAt map) |> Maybe.withDefault map.baseTile
+
+                pan : Float
+                pan =
+                    if sceneCount > 1 then
+                        -0.35 + 0.7 * toFloat index / toFloat (sceneCount - 1)
+
+                    else
+                        0
+            in
+            { ambience = environment map.theme terrain, pan = pan }
+    in
+    List.indexedMap ambientScene positions
+
+
+environment : MapTheme -> Terrain -> Audio.Ambience
+environment theme terrain =
+    case ( theme, terrain ) of
+        ( _, Terrain.Water ) ->
+            Audio.Beach
+
+        ( _, Terrain.Beach ) ->
+            Audio.Beach
+
+        ( MapTheme.Snow, _ ) ->
+            Audio.Snow
+
+        ( MapTheme.Desert, _ ) ->
+            Audio.Desert
+
+        ( MapTheme.GreenForest, Terrain.Forest ) ->
+            Audio.Forest
+
+        ( MapTheme.GreenForest, _ ) ->
+            Audio.Plains
+
+
 participantImpactStarts : Panel -> List Float
 participantImpactStarts panel =
     List.map ((+) (attackDelay panel)) (participantBaseImpactStarts panel)
@@ -270,13 +410,19 @@ participantBaseImpactStarts : Panel -> List Float
 participantBaseImpactStarts panel =
     case panel.encounter of
         Exchange exchange ->
-            CombatFormation.impactStarts exchange.attacker.kind exchange.attackerHealth
-                ++ CombatFormation.impactStarts exchange.target.kind exchange.targetHealth
+            CombatFormation.impactStarts
+                (infantryLoadout panel exchange.attacker)
+                exchange.attacker.kind
+                exchange.attackerHealth
+                ++ CombatFormation.impactStarts
+                    (infantryLoadout panel exchange.target)
+                    exchange.target.kind
+                    exchange.targetHealth
 
         Impact { target } ->
             case target of
                 Just observed ->
-                    CombatFormation.impactStarts observed.unit.kind observed.health
+                    CombatFormation.impactStarts (infantryLoadout panel observed.unit) observed.unit.kind observed.health
 
                 Nothing ->
                     List.map ((+) CombatAttack.anticipationMs) [ 0, 130, 260, 390 ]
@@ -1173,13 +1319,69 @@ unconfirmedFog =
 
 portrait : Scenery -> Panel -> CombatHealth -> Unit -> Html Msg
 portrait scenery panel health unit =
+    let
+        hasFlankBonus : Bool
+        hasFlankBonus =
+            case panel.encounter of
+                Exchange exchange ->
+                    if unit.id == exchange.attacker.id then
+                        exchange.attackerFlankBonus
+
+                    else if unit.id == exchange.target.id then
+                        exchange.targetFlankBonus
+
+                    else
+                        False
+
+                _ ->
+                    False
+
+        corner : Css.Style
+        corner =
+            case unit.spriteFacing of
+                SpriteFacing.Right ->
+                    S.left2
+
+                SpriteFacing.Left ->
+                    S.right2
+
+        flankChip : Html Msg
+        flankChip =
+            if hasFlankBonus then
+                H.span
+                    [ A.attribute "data-flank-bonus" ""
+                    , A.css
+                        [ S.absolute
+                        , S.top2
+                        , corner
+                        , S.px2
+                        , S.py1
+                        , S.bgYellow1
+                        , S.textYellow6
+                        , S.border
+                        , S.borderGray4
+                        , S.noWrap
+                        , S.pointerEventsNone
+                        ]
+                    ]
+                    [ H.text "flank bonus" ]
+
+            else
+                H.text ""
+    in
     H.div
         [ A.css
             [ S.col
             , S.g2
             ]
         ]
-        [ portraitScene scenery panel health unit
+        [ H.div
+            [ A.css
+                [ S.relative ]
+            ]
+            [ portraitScene scenery panel health unit
+            , flankChip
+            ]
         , CombatReadiness.toHtml unit.combatState
         ]
 
@@ -1192,6 +1394,7 @@ portraitScene scenery panel health unit =
             { elapsed = panel.elapsed
             , impactDelay = attackDelay panel
             , attack = attackFor panel unit
+            , infantryLoadout = infantryLoadout panel unit
             }
 
         path : String
@@ -1200,90 +1403,49 @@ portraitScene scenery panel health unit =
                 |> Maybe.map (backdropAt scenery)
                 |> Maybe.withDefault (backdropPath scenery.map.theme scenery.map.baseTile)
 
+        formationLabel : String
+        formationLabel =
+            case animation.infantryLoadout of
+                CombatInfantry.Bazookas ->
+                    ": two-person bazooka teams; "
+
+                CombatInfantry.SmallArms ->
+                    ": "
+
         description : String
         description =
             Unit.label unit
-                ++ ": "
-                ++ String.fromInt (CombatFormation.figureCount unit.kind health.before.current)
+                ++ formationLabel
+                ++ String.fromInt
+                    (CombatFormation.figureCount
+                        animation.infantryLoadout
+                        unit.kind
+                        health.before.current
+                    )
                 ++ " before combat, "
-                ++ String.fromInt (CombatFormation.figureCount unit.kind health.after.current)
+                ++ String.fromInt
+                    (CombatFormation.figureCount
+                        animation.infantryLoadout
+                        unit.kind
+                        health.after.current
+                    )
                 ++ " remaining"
-
-        isEntrenchedInfantry : Bool
-        isEntrenchedInfantry =
-            (unit.kind == UnitKind.Infantry) && (unit.entrenchment == Entrenchment.Entrenched)
-
-        team : String
-        team =
-            case unit.playerNumber of
-                PlayerNumber.Player1 ->
-                    "red"
-
-                PlayerNumber.Player2 ->
-                    "blue"
-
-        underFieldGunFire : Bool
-        underFieldGunFire =
-            case panel.encounter of
-                Exchange exchange ->
-                    if unit.id == exchange.target.id then
-                        exchange.attacker.kind == UnitKind.FieldGun
-
-                    else
-                        -- Recorded reciprocal shots also include zero-damage return fire.
-                        (exchange.target.kind == UnitKind.FieldGun)
-                            && exchange.targetFired
-
-                Impact impact ->
-                    Maybe.map (.unit >> .id) impact.target == Just unit.id
-
-                _ ->
-                    False
-
-        trenchPath : String
-        trenchPath =
-            if underFieldGunFire then
-                "/assets/combat-trench-interior-v1/taking-cover-" ++ team ++ ".png"
-
-            else
-                "/assets/combat-trench-interior-v1/" ++ team ++ ".png"
-
-        trenchImage : Svg.Svg Msg
-        trenchImage =
-            Svg.image
-                [ SA.xlinkHref trenchPath
-                , SA.x "-4"
-                , SA.y "-4"
-                , SA.width "104"
-                , SA.height "72"
-                , SA.preserveAspectRatio "xMidYMid slice"
-                , SA.transform trenchFacing
-                , Aria.hidden True
-                ]
-                []
-
-        trenchFacing : String
-        trenchFacing =
-            case unit.spriteFacing of
-                SpriteFacing.Left ->
-                    "translate(96 0) scale(-1 1)"
-
-                SpriteFacing.Right ->
-                    ""
     in
-    if isEntrenchedInfantry then
-        scene
-            Nothing
-            (rumbleTransform panel)
-            (Unit.label unit)
-            (trenchImage :: CombatFormation.impactsToSvg animation health (UnitSprite.appearance unit))
-
-    else
-        scene
-            (Just path)
-            (rumbleTransform panel)
-            description
-            (CombatFormation.toSvgWithCalibration (BackdropCalibration.find { backdrop = path, unitKind = unit.kind } scenery.calibrations) animation health (UnitSprite.appearance unit))
+    scene
+        (Just path)
+        (rumbleTransform panel)
+        description
+        (CombatFormation.toSvgWithCalibration
+            (BackdropCalibration.find
+                { backdrop = path
+                , unitKind = unit.kind
+                }
+                scenery.calibrations
+            )
+            animation
+            health
+            (UnitSprite.appearance unit)
+        )
 
 
 {-| Review artwork with the exact gameplay crop, sprites, and formation placements.
@@ -1298,7 +1460,18 @@ preview calibration path hitPoints unit =
             , after = { current = hitPoints, maximum = 16 }
             }
     in
-    scene (Just path) "none" (UnitKindLabel.label unit.kind) (CombatFormation.toSvgWithCalibration calibration { elapsed = 0, impactDelay = 0, attack = CombatAttack.NotAttacking } health unit)
+    scene (Just path)
+        "none"
+        (UnitKindLabel.label unit.kind)
+        (CombatFormation.toSvgWithCalibration calibration
+            { elapsed = 0
+            , impactDelay = 0
+            , attack = CombatAttack.NotAttacking
+            , infantryLoadout = CombatInfantry.SmallArms
+            }
+            health
+            unit
+        )
 
 
 scene : Maybe String -> String -> String -> List (Svg.Svg msg) -> Html msg

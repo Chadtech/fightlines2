@@ -149,6 +149,9 @@ pub struct Shot {
     pub origin: Coordinate,
     pub destination: Coordinate,
     pub damage: i32,
+    /// A ready defender was struck from its flank or rear. Older recordings omit this cue.
+    #[serde(default)]
+    pub flank_bonus: bool,
     pub attacker: Unit,
     pub target: Unit,
     pub attacker_health: CombatHealth,
@@ -436,11 +439,7 @@ impl Combat {
         weapon_readiness(unit, self.fired.contains(&unit.unit_id())) == WeaponReadiness::CanFire
     }
 
-    /// Resolve against the pre-volley board so reciprocal fire is simultaneous.
-    fn damage(&self, board: &Scenario, shooter: &Unit, target: &Unit, kind: CombatKind) -> i32 {
-        let health = shooter.hit_points();
-        let strength = f64::from(health.current()) / f64::from(health.maximum());
-        // A prepared gun can fire, but its exposed crew cannot gain defensive readiness.
+    fn defensively_ready(&self, target: &Unit) -> bool {
         let order = if self.standing_ground.contains(&target.unit_id()) {
             UnitOrderKind::StandGround
         } else if self.ambushers.contains(&target.unit_id()) {
@@ -450,9 +449,27 @@ impl Combat {
         } else {
             UnitOrderKind::Hold
         };
-        let defensively_ready = combat_state(target, order, self.fired.contains(&target.unit_id()))
-            .defense
-            == DefenseReadiness::Ready;
+        combat_state(target, order, self.fired.contains(&target.unit_id())).defense
+            == DefenseReadiness::Ready
+    }
+
+    fn flank_bonus(&self, shooter: &Unit, target: &Unit) -> bool {
+        self.defensively_ready(target)
+            && match attack_aspect(target, shooter) {
+                AttackAspect::Front => false,
+                AttackAspect::Flank | AttackAspect::Rear => true,
+            }
+    }
+
+    /// Resolve against the pre-volley board so reciprocal fire is simultaneous.
+    fn damage(&self, board: &Scenario, shooter: &Unit, target: &Unit, kind: CombatKind) -> i32 {
+        // Only a health disadvantage reduces firepower; equally wounded units
+        // retain full power against each other without a bonus for healthier attackers.
+        let strength = (f64::from(shooter.hit_points().current())
+            / f64::from(target.hit_points().current().max(1)))
+        .min(1.0);
+        // A prepared gun can fire, but its exposed crew cannot gain defensive readiness.
+        let defensively_ready = self.defensively_ready(target);
         let matchup = match (shooter.kind(), target.kind()) {
             (UnitKind::Truck, _) => 0.0,
             (_, UnitKind::Truck) => 3.5,
@@ -586,6 +603,7 @@ impl Combat {
                 origin,
                 destination,
                 damage: self.damage(board, shooter, target, CombatKind::Ambush),
+                flank_bonus: self.flank_bonus(shooter, target),
                 attacker: theater_participant(shooter),
                 target: theater_participant(target),
                 attacker_health: CombatHealth {
@@ -843,6 +861,7 @@ impl Combat {
                         origin,
                         destination,
                         damage: self.damage(board, shooter, target, CombatKind::AttackMove),
+                        flank_bonus: self.flank_bonus(shooter, target),
                         attacker: theater_participant(shooter),
                         target: theater_participant(target),
                         attacker_health: CombatHealth {
@@ -926,6 +945,7 @@ impl Combat {
                         origin,
                         destination: *destination,
                         damage: self.damage(board, shooter, target, CombatKind::IndirectFire),
+                        flank_bonus: self.flank_bonus(shooter, target),
                         attacker: theater_participant(shooter),
                         target: theater_participant(target),
                         attacker_health: CombatHealth {
@@ -1587,7 +1607,7 @@ mod tests {
             .fixture()?;
         assert_eq!(gun_shot.damage, 5);
         assert_eq!(tank_shot.attacker_health.before.current(), 11);
-        assert_eq!(tank_shot.damage, 11);
+        assert_eq!(tank_shot.damage, 16);
         assert_eq!(tank_shot.target_health.after.current(), 0);
         for unit in &returning.units {
             let initial = board
@@ -1721,7 +1741,7 @@ mod tests {
         assert_eq!(shots.first().fixture()?.kind, CombatKind::Ambush);
         assert_eq!(shots.first().fixture()?.damage, 5);
         assert_eq!(shots.get(1).fixture()?.attacker_health.before.current(), 11);
-        assert_eq!(shots.get(1).fixture()?.damage, 11);
+        assert_eq!(shots.get(1).fixture()?.damage, 16);
         assert_eq!(board.units.first().fixture()?.hit_points().current(), 0);
         assert_eq!(board.units.get(1).fixture()?.hit_points().current(), 11);
 
@@ -1912,8 +1932,7 @@ mod tests {
     }
 
     #[test]
-    fn health_reduces_firepower_quadratically_and_simultaneous_fire_uses_initial_health()
-    -> TestResult<()> {
+    fn health_disadvantage_reduces_firepower_quadratically() -> TestResult<()> {
         for (lost_health, expected) in [(0, 12), (4, 7), (8, 3), (12, 1), (16, 0)] {
             let (mut board, orders) =
                 fixture(UnitKind::Tank, UnitKind::Tank, Coordinate::new(4, 3))?;
@@ -1929,20 +1948,76 @@ mod tests {
                 expected
             );
         }
-        let (mut board, mut orders) =
-            fixture(UnitKind::Tank, UnitKind::Tank, Coordinate::new(4, 3))?;
-        for unit in &mut board.units {
-            unit.take_damage(8);
+        Ok(())
+    }
+
+    #[test]
+    fn damage_scales_with_relative_health_for_every_attack_kind() -> TestResult<()> {
+        for kind in [
+            CombatKind::Ambush,
+            CombatKind::AttackMove,
+            CombatKind::IndirectFire,
+        ] {
+            for (attacker_hp, target_hp, expected) in [
+                (16, 16, 15),
+                (8, 8, 15),
+                (5, 5, 15),
+                (5, 2, 15),
+                (5, 10, 4),
+                (4, 8, 4),
+                (8, 16, 4),
+                (2, 8, 1),
+                (1, 16, 1),
+                (0, 5, 0),
+            ] {
+                let (mut board, mut orders) =
+                    fixture(UnitKind::FieldGun, UnitKind::Tank, Coordinate::new(4, 3))?;
+                board.map = Map::new(9, 9, Terrain::Hills, BTreeMap::new()).fixture()?;
+                orders.get_mut(1).fixture()?.facing = FacingOrder::StandGround(Direction::West);
+                board
+                    .units
+                    .first_mut()
+                    .fixture()?
+                    .take_damage(16 - attacker_hp);
+                board
+                    .units
+                    .get_mut(1)
+                    .fixture()?
+                    .take_damage(16 - target_hp);
+                let combat = Combat::prepare(&mut board, &orders);
+                assert_eq!(
+                    combat.damage(
+                        &board,
+                        board.units.first().fixture()?,
+                        board.units.get(1).fixture()?,
+                        kind,
+                    ),
+                    expected,
+                    "{kind:?}: {attacker_hp} HP against {target_hp} HP",
+                );
+            }
         }
-        orders[1].facing = crate::turns::FacingOrder::Ambush(Direction::West);
-        let result = resolve_completed_movement(&board, &orders, 1)?;
-        let shots = shots(&result);
-        assert_eq!(shots.len(), 2);
-        for shot in shots {
-            assert_eq!(shot.damage, 2);
-            assert_eq!(shot.attacker_health.before.current(), 8);
-            assert_eq!(shot.attacker_health.after.current(), 6);
-            assert_eq!(shot.target_health.after.current(), 6);
+        Ok(())
+    }
+
+    #[test]
+    fn equally_wounded_tanks_ambush_at_full_power_simultaneously() -> TestResult<()> {
+        for health in [16, 8, 5, 1] {
+            let (mut board, mut orders) =
+                fixture(UnitKind::Tank, UnitKind::Tank, Coordinate::new(4, 3))?;
+            for unit in &mut board.units {
+                unit.take_damage(16 - health);
+            }
+            orders.get_mut(1).fixture()?.facing = FacingOrder::Ambush(Direction::West);
+            let result = resolve_completed_movement(&board, &orders, 1)?;
+            let shots = shots(&result);
+            assert_eq!(shots.len(), 2);
+            for shot in shots {
+                assert_eq!(shot.damage, 8);
+                assert_eq!(shot.attacker_health.before.current(), health);
+                assert_eq!(shot.attacker_health.after.current(), (health - 8).max(0));
+                assert_eq!(shot.target_health.after.current(), (health - 8).max(0));
+            }
         }
         Ok(())
     }
@@ -2026,6 +2101,79 @@ mod tests {
                 10
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn shot_flank_bonus_requires_ready_defense_and_a_side_or_rear_hit() -> TestResult<()> {
+        for kind in [
+            UnitKind::Infantry,
+            UnitKind::Tank,
+            UnitKind::FieldGun,
+            UnitKind::Truck,
+        ] {
+            for (travel, facing, prepared) in [
+                (TravelMode::Normal, FacingOrder::Unchanged, false),
+                (TravelMode::AttackMove, FacingOrder::Unchanged, true),
+                (
+                    TravelMode::Normal,
+                    FacingOrder::Ambush(Direction::West),
+                    true,
+                ),
+                (
+                    TravelMode::Normal,
+                    FacingOrder::StandGround(Direction::West),
+                    true,
+                ),
+            ] {
+                let (mut board, mut orders) =
+                    fixture(UnitKind::Infantry, kind, Coordinate::new(4, 3))?;
+                let target_order = orders.get_mut(1).fixture()?;
+                target_order.travel = travel;
+                target_order.facing = facing;
+                let mut combat = Combat::prepare(&mut board, &orders);
+                // Attack movers retain their defense after spending their shot.
+                if travel == TravelMode::AttackMove {
+                    combat.fired.insert(board.units.get(1).fixture()?.unit_id());
+                }
+                for direction in [Direction::West, Direction::North, Direction::East] {
+                    board.units.get_mut(1).fixture()?.rotate(direction);
+                    let shooter = board.units.first().fixture()?;
+                    let target = board.units.get(1).fixture()?;
+                    let engagement = combat.engagement(&board, shooter, target).fixture()?;
+                    let can_defend = match kind {
+                        UnitKind::Infantry | UnitKind::Tank => true,
+                        UnitKind::FieldGun | UnitKind::Truck => false,
+                    };
+                    assert_eq!(
+                        engagement.shot.flank_bonus,
+                        prepared && can_defend && direction != Direction::West,
+                        "{kind:?}, {travel:?}, {facing:?}, {direction:?}"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn shot_flank_bonus_round_trips_and_older_shots_default_to_no_cue() -> TestResult<()> {
+        let (mut board, mut orders) =
+            fixture(UnitKind::Infantry, UnitKind::Tank, Coordinate::new(4, 3))?;
+        orders.get_mut(1).fixture()?.facing = FacingOrder::StandGround(Direction::North);
+        let combat = Combat::prepare(&mut board, &orders);
+        let shot = combat
+            .engagement(
+                &board,
+                board.units.first().fixture()?,
+                board.units.get(1).fixture()?,
+            )
+            .fixture()?
+            .shot;
+        let mut recorded = serde_json::to_value(&shot)?;
+        assert!(serde_json::from_value::<Shot>(recorded.clone())?.flank_bonus);
+        recorded.as_object_mut().fixture()?.remove("flank_bonus");
+        assert!(!serde_json::from_value::<Shot>(recorded)?.flank_bonus);
         Ok(())
     }
 

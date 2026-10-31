@@ -1,6 +1,5 @@
 function startElmApp(elmApp, handleMessage) {
   const ELM_LOCALSTORAGE_KEY = "fightlines.localStorage";
-  const audio = createAudioManager();
 
   function getLocalStorage() {
     try {
@@ -27,6 +26,8 @@ function startElmApp(elmApp, handleMessage) {
     app.ports.fromJs.send({ type: tag, payload });
   }
 
+  const audio = createAudioManager(failure => toElm("audio error", failure));
+
   function setLocalStorage(key, value) {
     const storage = { ...getLocalStorage(), [key]: value };
     try {
@@ -48,7 +49,8 @@ function startElmApp(elmApp, handleMessage) {
 
   app.ports.toJs.subscribe(async (message) => {
     if (message === null || (typeof message === "object" &&
-        (Object.hasOwn(message, "play") || Object.hasOwn(message, "movement")))) {
+        (Object.hasOwn(message, "play") || Object.hasOwn(message, "movement") ||
+         Object.hasOwn(message, "ambience") || Object.hasOwn(message, "muted")))) {
       await audio.handleEvent(message);
       return;
     }

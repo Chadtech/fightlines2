@@ -1,5 +1,6 @@
 module Fightlines.View.CommandMenu exposing
     ( Msg(..)
+    , keyCommands
     , optionHtmlId
     , toHtml
     )
@@ -16,6 +17,7 @@ import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Html.Styled.Lazy as Lazy
 import Json.Decode as Decode exposing (Decoder)
+import KeyCmd exposing (KeyCmd)
 import Point exposing (Point)
 import Style as S
 import View.Aria as Aria
@@ -30,6 +32,19 @@ type Msg
     | CommandPicked Command
     | ArrowedUpCommandMenu MenuOption
     | ArrowedDownCommandMenu MenuOption
+
+
+keyCommands : Map -> List Depot -> Unit -> KeyCmd Msg
+keyCommands map depots unit =
+    let
+        commandKey : Command -> KeyCmd Msg
+        commandKey command =
+            KeyCmd.fromKeys [ Command.shortcut command ] (CommandPicked command)
+    in
+    Command.available depots unit
+        |> List.filter (Command.canUse map depots unit)
+        |> List.map commandKey
+        |> KeyCmd.batch
 
 
 toHtml : List Depot -> Map -> Camera -> Coordinate -> Unit -> Html Msg
@@ -254,6 +269,7 @@ cancelRow =
         , Ev.onClick CancelClicked
         , Ev.onFocus (CommandFocused CancelOption)
         , Ev.custom "keydown" (navigationDecoder CancelOption)
+        , A.attribute "aria-keyshortcuts" "Escape"
         , A.css commandRowStyles
         ]
         [ H.span
@@ -265,7 +281,7 @@ cancelRow =
                 ]
             ]
             []
-        , H.text "cancel"
+        , H.text "cancel (esc)"
         ]
 
 
@@ -320,10 +336,11 @@ commandButton map depots unit command =
         , Ev.onClick (CommandPicked command)
         , Ev.onFocus (CommandFocused (CommandOption command))
         , Ev.custom "keydown" (navigationDecoder (CommandOption command))
+        , A.attribute "aria-keyshortcuts" (Command.shortcut command)
         , A.css styles
         ]
         [ commandIcon command
-        , H.text (Command.label command)
+        , H.text (Command.label command ++ " (" ++ Command.shortcut command ++ ")")
         ]
 
 

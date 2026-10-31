@@ -2,11 +2,12 @@ module Fightlines.Page.GamePage exposing
     ( Flags
     , Model
     , Msg
+    , ambience
     , dialog
     , init
     , keyCommands
     , load
-    , movingVehicles
+    , movingUnits
     , setDepots
     , setShared
     , setUnits
@@ -626,9 +627,18 @@ playback model =
     TurnLifecycle.playback model.currentTurn.phase
 
 
-movingVehicles : Model -> List Audio.MovingVehicle
-movingVehicles model =
-    PlaybackPresentation.movingVehicles
+ambience : Model -> List Audio.AmbientScene
+ambience model =
+    PlaybackPresentation.ambience
+        { map = model.map
+        , playback = playback model
+        , paused = False
+        }
+
+
+movingUnits : Model -> List Audio.MovingUnit
+movingUnits model =
+    PlaybackPresentation.movingUnits
         { playback = playback model
         , paused = False
         , camera = playbackCamera model
@@ -4541,6 +4551,16 @@ turnFeedback players ownStatus opponentStatus outcome error =
 keyCommands : Model -> KeyCmd Msg
 keyCommands model =
     let
+        commandShortcuts : KeyCmd Msg
+        commandShortcuts =
+            case commandMenuUnit model of
+                Just unit ->
+                    CommandMenu.keyCommands model.map model.depots unit
+                        |> KeyCmd.map CommandMenuMsg
+
+                Nothing ->
+                    KeyCmd.none
+
         navigation : List (KeyCmd Msg)
         navigation =
             if hasDialog model then
@@ -4608,6 +4628,7 @@ keyCommands model =
     else
         KeyCmd.batch
             [ KeyCmd.escape EscapePressed
+            , commandShortcuts
             , camera
             , unitSelection
             , submission

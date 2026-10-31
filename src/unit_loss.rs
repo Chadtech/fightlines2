@@ -265,6 +265,7 @@ mod tests {
             origin: attacker.board_position().fixture()?,
             destination: truck.board_position().fixture()?,
             damage: 16,
+            flank_bonus: false,
             attacker: attacker.clone(),
             target: truck.clone(),
             attacker_health: CombatHealth {

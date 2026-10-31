@@ -47,6 +47,7 @@ import Url
 import View.AppInitError as AppInitError
 import View.AppShell as AppShell
 import View.Aria as Aria
+import View.AudioMute as AudioMute
 import View.Button as Button
 import View.Card as Card
 import View.Dialog as Dialog exposing (Dialog)
@@ -107,7 +108,7 @@ main =
                     ( newPage, eff ) =
                         update msg page
                             |> restorePageDialog page
-                            |> E.andThen (withMovementAudio page)
+                            |> E.andThen (withPlaybackAudio page)
                 in
                 case getShared newPage of
                     Just shared ->
@@ -138,6 +139,7 @@ init value url key =
                     Shared.init flags.seed flags.operatingSystem flags.localStorage url key
             in
             handleRoute shared (Route.fromUrl url)
+                |> E.and (E.audio (Audio.SetMute shared.audioMute))
 
         Err error ->
             ( AppInitError error, E.none )
@@ -308,20 +310,32 @@ handleRoute shared route =
 ----------------------------------------------------------------
 
 
-withMovementAudio : Page -> Page -> ( Page, Eff Msg )
-withMovementAudio before after =
+withPlaybackAudio : Page -> Page -> ( Page, Eff Msg )
+withPlaybackAudio before after =
     let
-        moving : Page -> List Audio.MovingVehicle
+        moving : Page -> List Audio.MovingUnit
         moving page =
             case page of
                 Game _ model ->
-                    GamePage.movingVehicles model
+                    GamePage.movingUnits model
+
+                _ ->
+                    []
+
+        ambient : Page -> List Audio.AmbientScene
+        ambient page =
+            case page of
+                Game _ model ->
+                    GamePage.ambience model
 
                 _ ->
                     []
     in
     ( after
-    , E.audio (Audio.syncMovement { before = moving before, after = moving after })
+    , E.batch
+        [ E.audio (Audio.syncMovement { before = moving before, after = moving after })
+        , E.audio (Audio.syncAmbience { before = ambient before, after = ambient after })
+        ]
     )
 
 
@@ -536,16 +550,30 @@ update msg page =
 view : Page -> Browser.Document Msg
 view page =
     let
-        dialogContent : List (Html Msg)
-        dialogContent =
-            case
-                dialog page
-            of
-                Just activeDialog ->
-                    [ Dialog.toHtml activeDialog ]
+        audioContent : List (Html Msg)
+        audioContent =
+            case getShared page of
+                Just shared ->
+                    [ AudioMute.toHtml
+                        { mute = shared.audioMute
+                        , onClick = GotSharedMsg Shared.audioMuteButtonClicked
+                        }
+                    ]
 
                 Nothing ->
                     []
+
+        dialogContent : List (Html Msg)
+        dialogContent =
+            case dialog page of
+                Just activeDialog ->
+                    [ activeDialog
+                        |> Dialog.withOverlay audioContent
+                        |> Dialog.toHtml
+                    ]
+
+                Nothing ->
+                    audioContent
 
         content : List (Html Msg)
         content =

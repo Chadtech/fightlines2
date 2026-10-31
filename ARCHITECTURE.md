@@ -457,17 +457,36 @@ sends it through `Ports.Js.To.Audio`: `Audio.none` encodes as `null`, and
 `Audio.uiAffirm`, `Audio.uiCancel`, and `Audio.uiConfirm` as
 `{ "play": "uiAffirm" }`, `{ "play": "uiCancel" }`, and
 `{ "play": "uiConfirm" }`. `Audio.tankFire` encodes as `{ "play": "tankFire" }`;
-`Audio.fieldGunFire` uses `{ "play": "fieldGunFire" }`.
+`Audio.fieldGunFire` uses `{ "play": "fieldGunFire" }`;
+`Audio.combatImpact` uses `{ "play": "combatImpact" }`.
+`Shared.Model.audioMute` owns the document-wide `Audio.MuteState`. Its click
+transition emits `Audio.SetMute`, encoded as `{ "muted": true/false }`, and saves
+the `audioMuted` Boolean under `fightlines.localStorage`. Both apps restore it
+at startup and apply it to the manager before user interaction. Storage changes
+synchronize the control and manager across open tabs; clearing storage restores
+unmuted audio. Missing values default to unmuted; malformed values also retain
+a shared decoding error.
+`View.AudioMute` renders the shared floating control in both app entry points;
+an active dialog receives it through `Dialog.withOverlay` so native modality
+does not block it. The audio manager silences master gain, stops all voices,
+and invalidates pending playback on mute, while retaining the previous volume.
 Shared interop routes these events
 to the manager before dispatching tagged clipboard, dialog, storage or thumbnail
 messages. Elm updates remain the only source of playback requests; pointer and
 keyboard listeners only unlock the browser audio context and preload its clips.
-The manager caches decoded buffers, preloading all fifteen clips on unlock. UI
+The manager caches decoded buffers, preloading all twenty-one clips on unlock. UI
 playback allows four voices and coalesces identical requests within 40ms. Combat
-playback allows eight independent voices, cycles five variants per weapon, and
-never coalesces separate shots. Requests delayed more than 250ms are dropped.
+playback allows eight independent voices, cycles five variants per weapon or impact cue, and
+never coalesces separate shots or hits. Requests delayed more than 250ms are dropped.
 Hidden pages and page exit stop sounds and invalidate pending playback. Audio
 failures produce bounded console warnings without rejecting the Elm port handler.
+The manager also passes each reported failure to a bootstrap callback, which
+sends an `audio error` message through the existing `fromJs` port with string
+`operation` and `details` fields. `Shared.listeners` decodes it into
+`Error.AudioFailed` and prepends it to the dev panel history in both apps.
+The warning and history entry share once-per-operation deduplication for the
+manager's lifetime. Native errors retain their stack when available; invalid
+payloads become printable text before crossing the port.
 The three cues map to `/audio/ui-{affirm,cancel,confirm}-switch-v1.ogg`, excerpts
 from CC0 physical switch recordings by Joseph Sardin credited in
 `public/audio/README.md`. Affirm uses a desk-lamp switch press (230ms), cancel
@@ -481,19 +500,24 @@ invalid submission attempts emit no audio.
 
 `PlaybackPresentation.audioBetween` compares the old and new theater clocks
 inside `GamePage.advancePlayback` and `GameReplay`'s frame-elapsed handler.
-Unrelated updates and live-game camera holds do not check for firing audio.
+Unrelated updates and live-game camera holds do not check for combat audio.
 It emits the matching tank-fire or field-gun-fire event for
 each shot time in `(previousElapsed, elapsed]` within the same encounter.
 `CombatTheater.firingTimes` derives those times from the recorded firing
 participants and `CombatAttack`'s sprite stagger, including zero-damage shots.
 Field-gun cues include their 320ms preparation and visible indirect-fire crews.
+`CombatTheater.impactTimes` supplies contact times from the same formation,
+unconfirmed-landing, building and sabotage clocks, including the 20ms projectile
+approach. It includes both participant and building stages regardless of current
+elapsed time, so long ticks preserve every hit. Exhaustion produces no impacts.
+Generic blast variants carry no additional information about concealed targets.
 Unchanged clocks, rewinds, and encounter changes emit nothing. This shares the
 animation frame's timing without per-shot messages or independent timers;
 `GamePage.playAudio` continues to select UI feedback. Tank clips live at
 `/audio/combat/tank-fire-{01,02,03,04,05}.ogg` and retain their procedural source
 recordings, documented in `public/audio/README.md`.
 
-`PlaybackPresentation.movingVehicles` derives typed unit IDs and vehicle kinds
+`PlaybackPresentation.movingUnits` derives typed unit IDs and movement sounds
 from the same projected `TurnPlayback.movingPositions` edges used by sprites.
 Each page supplies its pause, camera-hold and loss-dialog state. Both app entry
 points send `Audio.syncMovement` snapshots after updates, including an empty
@@ -501,12 +525,30 @@ snapshot when leaving playback. Active snapshots repeat so returning from a
 hidden tab can restore sound without restarting continuing voices on ordinary
 frames. This adds no movement state to `GamePage.superUpdate` or the game rules.
 The browser manager keeps one loop source per unit, starting it at a random
-offset in its approved six-second recording and preserving it across consecutive
-tiles. Random offsets are browser audio variation only and do not affect game
+offset in its approved recording (12.909 seconds for infantry and field guns,
+six for vehicles) and preserving it across consecutive tiles. Random offsets are browser audio variation only and do not affect game
 seeds or recorded results. Voices fade in over 15ms and out over 20ms. Removing
 a unit invalidates pending decoding, and UI/combat voice limits do not evict
-moving vehicles. Runtime assets and their source status live in
+moving units. Runtime assets and their source status live in
 `public/audio/README.md`.
+
+`CombatTheater.ambience` resolves the displayed scene positions, including the
+later building cut, into typed `Audio.AmbientScene` values. `PlaybackPresentation`
+returns these only for an open, unpaused theater. Each page exposes its current
+ambience; the app entry points synchronize it alongside movement audio, including
+an empty snapshot on navigation. Active snapshots refresh after hidden tabs
+return, without restarting continuing loops. `Audio.syncAmbience` encodes
+`{ "ambience": [{ "environment": "plains", "pan": -0.35 }] }`.
+Only projected participants contribute; concealed firing origins stay absent.
+Map peeks and the capped card clock preserve the environment; replay pause stops it.
+The manager lazily loads five approved CC0 field recordings from
+`/audio/ambience/`. Matching environments share a centered voice; distinct
+recordings mix at `0.65 / sqrt(count)` gain and average their scene pans.
+Gain/pan changes and scene exits use 350ms fades. Hidden tabs and page exit stop
+immediately and cancel pending loads. These sources have their own gain/pan nodes
+and are independent of combat/UI voice limits. `public/audio/ambience/sources.json`
+retains source credit and processing; `tools/build-combat-ambience.py` rebuilds
+the 20-second overlapping loops from retained local recordings.
 
 `NewLobby`, `JoinLobby`, `LobbyPage`, `LobbyLoadFailed`, `GamePage`, and
 `GameLoadFailed` own their page state and views.
@@ -1101,8 +1143,15 @@ server-projected initial frame and advances all arriving units together. Each fr
 carries `durationMs`, the elapsed time from the preceding frame, alongside observable
 units and the sight mask at that boundary. Movement spans a nominal 2520ms turn;
 transport and final-state transitions use 180ms. It interpolates units observed at both ends
-of an edge, updates facing during movement, and applies transport transitions
-after movement. Fractional presentation positions go only to `GamePage`.
+of an edge across intervening arrivals by other units. At playback initialization,
+Elm prepares each frame's movement segments, elapsed edge times, and camera routes
+once. Lookahead stops at feedback, transport, or a gap in that unit's sightings.
+Playback ticks, sprite facing, movement audio, fog-exit fading, and camera tracking
+read these prepared values instead of searching future snapshots again. Playback
+keeps only its local frame clock running, so camera holds and dialogs need no
+movement recalculation. It updates facing during movement
+and applies transport transitions after movement. Fractional presentation
+positions go to the shared battlefield renderer.
 Refresh starts directly at
 the completed snapshot; it does not automatically replay old turns. Same-turn polling preserves
 local drafts and monotonic submission flags. Page response messages retain the
@@ -1389,8 +1438,9 @@ Normal upkeep remains a single end-of-turn charge. Dead units cannot shoot, move
 block occupancy, or grant sight. Cargo of destroyed carriers is also destroyed.
 Final resource cleanup removes dead units and returns their death presentation.
 
-Damage is calculated in `Combat::damage` from weapon matchup, squared attacker
-health fraction, defender readiness, both participants' facing, terrain cover,
+Damage is calculated in `Combat::damage` from weapon matchup, the squared ratio
+of attacker current HP to target current HP (capped at 1), defender readiness,
+both participants' facing, terrain cover,
 and an ambush advantage against attack movers. Infantry ambushing a ready tank
 from its flank or rear use a ×5 ambush factor instead of the ordinary factor;
 frontal exchanges retain their low infantry damage. Defensive facing only applies
@@ -1406,6 +1456,12 @@ attack-moving tanks or opposing tank ambushes inside their eligible firing area
 in a separate first volley.
 Surviving tanks then fire with reduced health. Outside that area, against an
 unready gun, or after its shot is spent, tank contact uses the normal volley.
+
+`Shot.flankBonus` records whether the shot hit a ready defender's flank or rear,
+using the same readiness and aspect rules as damage. Elm retains a separate bonus
+for each firing side when pairing reciprocal shots and places a corner chip over
+that formation. Missing metadata in older archives defaults to no chip. Offline
+replay verification compares authoritative outcomes independently of this cue.
 
 
 `TurnFrame.shots` carries origin, destination, and damage for each volley. Fog
@@ -1440,12 +1496,20 @@ frame's projected depots. It chooses each participant's backdrop from its
 on-board position, using the shared industrial yard on depot tiles (with its
 snowy variant on snow maps), a distinct concrete courtyard on fortress tiles
 (also with a snowy variant), and terrain and map theme elsewhere. Empty
-indirect-fire impacts use the same selection; entrenched infantry retain their
-trench interior. `Game.View.CombatFormation` maps
+indirect-fire impacts use the same selection. Entrenched infantry retain this
+backdrop beneath two transparent trench segments, mirrored toward the opponent.
+`Game.View.CombatFormation` maps
 authoritative before/after health to staggered figures for every unit kind and
-represents every two HP with one smaller infantry figure (up to eight), and
-every four HP with one figure for other kinds, then sequences individual
-casualty explosions and disappearance after a one-second anticipation beat.
+represents infantry as a four-HP machine-gun team plus six two-HP riflemen
+(seven groups at full health), and every four HP with one figure for other kinds.
+`Game.View.CombatInfantry` selects team-colored artwork for the gun team, three
+prone riflemen, two kneeling riflemen, and one standing rifleman. The gun team
+remains together as the last surviving group. Infantry firing at tanks instead use
+four two-person bazooka teams at full health, each representing four HP. Recorded
+return fire uses the same selection; non-firing infantry retain their ordinary
+formation. The bazooka formation replaces the static trench illustration for
+that exchange and shares the backdrop's infantry calibration. The formation then
+sequences individual casualty explosions and disappearance after a one-second anticipation beat.
 `Game.View.CombatExplosion` selects six illustrated horizontal impact frames from that
 same clock, with a 100ms duration and figure removal beneath the blast at 50ms.
 Approach and contact occupy the first 20ms; the final clearing tail takes 20ms.
@@ -1530,7 +1594,7 @@ presentation sequence does not change simultaneous resolution. This permits enem
 encounter card without exposing enemy supplies or fuel through `Unit.resources`.
 Panel state owns its capped presentation clock and `CardVisible | SeeingMap`
 mode. Its 6000ms capped clock allows the 200ms opening expansion, a one-second
-anticipation beat, up to eight staggered infantry casualties, and the automatic-close pause
+anticipation beat, up to seven staggered infantry group casualties, and the automatic-close pause
 to finish, including a subsequent depot strike. When an indirect impact includes depot
 damage, the theater finishes the participant hits, then replaces their scenes with
 one centered depot map sprite over the tile's terrain and map-theme backdrop.
@@ -1558,10 +1622,14 @@ the clear area beside the inspector. It tests
 projected subject tiles against that view in pixels and leaves it unchanged when
 they fit. Clipped subjects trigger a pan with one tile of padding and a zoom
 reduction only when needed to fit the group. The board eases necessary changes
-over 1200ms; the playback view owns the remaining settling time and holds the
-animation clock until the camera arrives. Reduced motion disables the CSS pan.
-Movement subjects use interpolated visible sightings; idle frames request no
-framing change. Encounter-only portraits never contribute. The planning
+over 1200ms. The initial view and stationary encounters hold the animation clock
+until the camera settles; reframing during travel preserves the clock and engine
+voices. Reduced motion disables the CSS pan.
+`TurnPlayback.cameraPositions` includes the upcoming route within the current sight
+mask, stopping at feedback, transport, or a gap in sightings. It excludes future-only
+units and newly revealed tiles. Movement subjects also include interpolated
+visible sightings; idle frames request no framing change. Encounter-only portraits
+never contribute. The planning
 navigation retains its saved pan and zoom. After playback, `BattlefieldNavigation`
 owns the temporary return-animation status until the saved view settles or the
 user navigates.
@@ -1966,7 +2034,7 @@ Elm carries `PlannedOrder.DigIn` through the existing save/revoke/submission
 workflow. `Game.Unit.Location.Dismounting` describes a projected unloading position
 for planning, while excluding digging on that turn. Ordinary commands can use
 that projected map position. `Game.View.UnitSprite` uses the approved team-colored
-entrenched masters for board cells, inspector portraits, and theater figures;
+entrenched masters for board cells and inspector portraits;
 `tools/build-entrenched-sprites.cjs` packs them without changing their sources.
 `TurnPlayback` clears the displayed entrenchment as actual movement begins.
 
@@ -1983,7 +2051,14 @@ placements for uncalibrated scenery. For calibrated scenery, unit-specific row
 patterns are projected between front and rear footing lines and scaled by depth.
 `UnitSprite.portraitFooting` excludes transparent padding so resizing stays
 anchored at boots, tracks, wheels, or the gun carriage. Impacts use the same
-transformed placements. Entrenched scenes retain their existing presentation.
+transformed placements. Entrenched infantry use two team-colored trench overlays
+with independently calibrated `trenchFooting` (scene height from the top to the
+bottom edge) and `trenchSize` (each segment’s percentage of panel width). Resizing
+keeps the bottom edge anchored, the pair centered, and a fixed gap between them;
+impact positions and sizes follow the overlays. Missing values in existing JSON
+default to 86% footing and 35% size; ordinary formation settings remain independent.
+`CombatFormation` selects the revised red/blue sprites by player number for preview,
+live games, and replay.
 
 `UnitSprite.Appearance` contains only kind, team, facing, and entrenchment.
 Gameplay projects units into this record; backdrop review supplies its visual

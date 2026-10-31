@@ -25,12 +25,16 @@ import Graphql.SelectionSet as SS exposing (SelectionSet)
 
 {-| Percentages of the scene: footing is measured from the top, spacing is
 vertical separation, unit size is the front vehicle width, rear scale is relative.
+Trench footing independently positions the bottom of the trench overlays;
+trench size is each overlay’s width as a percentage of the scene.
 -}
 type alias Calibration =
     { frontFooting : Float
     , rowSpacing : Float
     , unitSize : Float
     , rearScale : Float
+    , trenchFooting : Float
+    , trenchSize : Float
     }
 
 
@@ -53,6 +57,8 @@ suggested =
     , rowSpacing = 9
     , unitSize = 25
     , rearScale = 78
+    , trenchFooting = 86
+    , trenchSize = 35
     }
 
 
@@ -93,6 +99,8 @@ selection =
                     |> SS.with CalibrationApi.rowSpacing
                     |> SS.with CalibrationApi.unitSize
                     |> SS.with CalibrationApi.rearScale
+                    |> SS.with CalibrationApi.trenchFooting
+                    |> SS.with CalibrationApi.trenchSize
                 )
             )
 

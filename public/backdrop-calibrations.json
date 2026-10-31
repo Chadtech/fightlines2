@@ -1,28 +1,36 @@
 {
   "/assets/combat-backdrops-anime-v1/beach-ocean.png": {
     "Infantry": {
-      "frontFooting": 83.0,
-      "rowSpacing": 24.0,
-      "unitSize": 20.0,
-      "rearScale": 78.0
+      "frontFooting": 82.0,
+      "rowSpacing": 10.0,
+      "unitSize": 18.0,
+      "rearScale": 65.0,
+      "trenchFooting": 85.0,
+      "trenchSize": 41.0
     },
     "Tank": {
       "frontFooting": 80.0,
       "rowSpacing": 15.0,
       "unitSize": 28.0,
-      "rearScale": 71.0
+      "rearScale": 71.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 83.0,
       "rowSpacing": 24.0,
       "unitSize": 31.0,
-      "rearScale": 98.0
+      "rearScale": 98.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 82.0,
       "rowSpacing": 15.0,
       "unitSize": 27.0,
-      "rearScale": 75.0
+      "rearScale": 75.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/depot.png": {
@@ -30,25 +38,33 @@
       "frontFooting": 75.0,
       "rowSpacing": 26.0,
       "unitSize": 25.0,
-      "rearScale": 64.0
+      "rearScale": 64.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 75.0,
       "rowSpacing": 24.0,
       "unitSize": 29.0,
-      "rearScale": 62.0
+      "rearScale": 62.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 77.0,
       "rowSpacing": 26.0,
       "unitSize": 37.0,
-      "rearScale": 76.0
+      "rearScale": 76.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 76.0,
       "rowSpacing": 23.0,
       "unitSize": 29.0,
-      "rearScale": 66.0
+      "rearScale": 66.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/desert-forest.png": {
@@ -56,25 +72,33 @@
       "frontFooting": 91.0,
       "rowSpacing": 24.0,
       "unitSize": 21.0,
-      "rearScale": 75.0
+      "rearScale": 75.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 87.0,
       "rowSpacing": 18.0,
       "unitSize": 33.0,
-      "rearScale": 75.0
+      "rearScale": 75.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 92.0,
       "rowSpacing": 26.0,
       "unitSize": 31.0,
-      "rearScale": 100.0
+      "rearScale": 100.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 87.0,
       "rowSpacing": 15.0,
       "unitSize": 32.0,
-      "rearScale": 76.0
+      "rearScale": 76.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/desert-hills.png": {
@@ -82,25 +106,33 @@
       "frontFooting": 90.0,
       "rowSpacing": 9.0,
       "unitSize": 24.0,
-      "rearScale": 78.0
+      "rearScale": 78.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 86.0,
       "rowSpacing": 10.0,
       "unitSize": 31.0,
-      "rearScale": 76.0
+      "rearScale": 76.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 86.0,
       "rowSpacing": 9.0,
       "unitSize": 30.0,
-      "rearScale": 100.0
+      "rearScale": 100.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 86.0,
       "rowSpacing": 7.0,
       "unitSize": 31.0,
-      "rearScale": 78.0
+      "rearScale": 78.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/desert-mountains.png": {
@@ -108,25 +140,33 @@
       "frontFooting": 85.0,
       "rowSpacing": 15.0,
       "unitSize": 20.0,
-      "rearScale": 60.0
+      "rearScale": 60.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 81.0,
       "rowSpacing": 11.0,
       "unitSize": 22.0,
-      "rearScale": 70.0
+      "rearScale": 70.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 83.0,
       "rowSpacing": 11.0,
       "unitSize": 23.0,
-      "rearScale": 83.0
+      "rearScale": 83.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 86.0,
       "rowSpacing": 13.0,
       "unitSize": 23.0,
-      "rearScale": 68.0
+      "rearScale": 68.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/desert-plains.png": {
@@ -134,25 +174,33 @@
       "frontFooting": 81.0,
       "rowSpacing": 26.0,
       "unitSize": 20.0,
-      "rearScale": 58.0
+      "rearScale": 58.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 73.0,
       "rowSpacing": 22.0,
       "unitSize": 32.0,
-      "rearScale": 48.0
+      "rearScale": 48.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 82.0,
       "rowSpacing": 25.0,
       "unitSize": 32.0,
-      "rearScale": 87.0
+      "rearScale": 87.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 85.0,
       "rowSpacing": 22.0,
       "unitSize": 31.0,
-      "rearScale": 75.0
+      "rearScale": 75.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/forest.png": {
@@ -160,25 +208,33 @@
       "frontFooting": 91.0,
       "rowSpacing": 24.0,
       "unitSize": 21.0,
-      "rearScale": 75.0
+      "rearScale": 75.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 87.0,
       "rowSpacing": 18.0,
       "unitSize": 33.0,
-      "rearScale": 75.0
+      "rearScale": 75.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 92.0,
       "rowSpacing": 26.0,
       "unitSize": 31.0,
-      "rearScale": 100.0
+      "rearScale": 100.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 87.0,
       "rowSpacing": 15.0,
       "unitSize": 32.0,
-      "rearScale": 76.0
+      "rearScale": 76.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/fortress.png": {
@@ -186,25 +242,33 @@
       "frontFooting": 85.0,
       "rowSpacing": 26.0,
       "unitSize": 25.0,
-      "rearScale": 66.0
+      "rearScale": 66.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 75.0,
       "rowSpacing": 20.0,
       "unitSize": 29.0,
-      "rearScale": 65.0
+      "rearScale": 65.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 77.0,
       "rowSpacing": 26.0,
       "unitSize": 37.0,
-      "rearScale": 76.0
+      "rearScale": 76.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 76.0,
       "rowSpacing": 19.0,
       "unitSize": 29.0,
-      "rearScale": 71.0
+      "rearScale": 71.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/hills.png": {
@@ -212,25 +276,33 @@
       "frontFooting": 82.0,
       "rowSpacing": 10.0,
       "unitSize": 23.0,
-      "rearScale": 60.0
+      "rearScale": 60.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 83.0,
       "rowSpacing": 10.0,
       "unitSize": 26.0,
-      "rearScale": 76.0
+      "rearScale": 76.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 85.0,
       "rowSpacing": 15.0,
       "unitSize": 22.0,
-      "rearScale": 100.0
+      "rearScale": 100.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 83.0,
       "rowSpacing": 9.0,
       "unitSize": 23.0,
-      "rearScale": 79.0
+      "rearScale": 79.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/mountains.png": {
@@ -238,25 +310,33 @@
       "frontFooting": 85.0,
       "rowSpacing": 15.0,
       "unitSize": 20.0,
-      "rearScale": 60.0
+      "rearScale": 60.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 86.0,
       "rowSpacing": 12.0,
       "unitSize": 25.0,
-      "rearScale": 70.0
+      "rearScale": 70.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 83.0,
       "rowSpacing": 11.0,
       "unitSize": 23.0,
-      "rearScale": 83.0
+      "rearScale": 83.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 86.0,
       "rowSpacing": 13.0,
       "unitSize": 23.0,
-      "rearScale": 68.0
+      "rearScale": 68.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/plains.png": {
@@ -264,51 +344,67 @@
       "frontFooting": 81.0,
       "rowSpacing": 26.0,
       "unitSize": 20.0,
-      "rearScale": 58.0
+      "rearScale": 58.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 73.0,
       "rowSpacing": 22.0,
       "unitSize": 32.0,
-      "rearScale": 48.0
+      "rearScale": 48.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 82.0,
       "rowSpacing": 25.0,
       "unitSize": 32.0,
-      "rearScale": 87.0
+      "rearScale": 87.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 85.0,
       "rowSpacing": 22.0,
       "unitSize": 31.0,
-      "rearScale": 75.0
+      "rearScale": 75.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/road.png": {
     "Infantry": {
-      "frontFooting": 69.0,
-      "rowSpacing": 22.0,
-      "unitSize": 25.0,
-      "rearScale": 75.0
+      "frontFooting": 75.0,
+      "rowSpacing": 13.0,
+      "unitSize": 24.0,
+      "rearScale": 69.0,
+      "trenchFooting": 78.0,
+      "trenchSize": 45.0
     },
     "Tank": {
       "frontFooting": 77.0,
       "rowSpacing": 21.0,
       "unitSize": 40.0,
-      "rearScale": 76.0
+      "rearScale": 76.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 70.0,
       "rowSpacing": 25.0,
       "unitSize": 39.0,
-      "rearScale": 100.0
+      "rearScale": 100.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 76.0,
       "rowSpacing": 22.0,
       "unitSize": 38.0,
-      "rearScale": 74.0
+      "rearScale": 74.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/snowy-depot.png": {
@@ -316,25 +412,33 @@
       "frontFooting": 75.0,
       "rowSpacing": 26.0,
       "unitSize": 25.0,
-      "rearScale": 64.0
+      "rearScale": 64.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 75.0,
       "rowSpacing": 24.0,
       "unitSize": 29.0,
-      "rearScale": 62.0
+      "rearScale": 62.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 77.0,
       "rowSpacing": 26.0,
       "unitSize": 37.0,
-      "rearScale": 76.0
+      "rearScale": 76.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 76.0,
       "rowSpacing": 23.0,
       "unitSize": 29.0,
-      "rearScale": 66.0
+      "rearScale": 66.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/snowy-forest.png": {
@@ -342,25 +446,33 @@
       "frontFooting": 91.0,
       "rowSpacing": 24.0,
       "unitSize": 21.0,
-      "rearScale": 75.0
+      "rearScale": 75.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 87.0,
       "rowSpacing": 18.0,
       "unitSize": 33.0,
-      "rearScale": 75.0
+      "rearScale": 75.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 92.0,
       "rowSpacing": 26.0,
       "unitSize": 31.0,
-      "rearScale": 100.0
+      "rearScale": 100.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 87.0,
       "rowSpacing": 15.0,
       "unitSize": 32.0,
-      "rearScale": 76.0
+      "rearScale": 76.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/snowy-fortress.png": {
@@ -368,25 +480,33 @@
       "frontFooting": 85.0,
       "rowSpacing": 26.0,
       "unitSize": 25.0,
-      "rearScale": 66.0
+      "rearScale": 66.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 75.0,
       "rowSpacing": 20.0,
       "unitSize": 29.0,
-      "rearScale": 65.0
+      "rearScale": 65.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 77.0,
       "rowSpacing": 26.0,
       "unitSize": 37.0,
-      "rearScale": 76.0
+      "rearScale": 76.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 76.0,
       "rowSpacing": 19.0,
       "unitSize": 29.0,
-      "rearScale": 71.0
+      "rearScale": 71.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/snowy-hills.png": {
@@ -394,25 +514,33 @@
       "frontFooting": 87.0,
       "rowSpacing": 12.0,
       "unitSize": 18.0,
-      "rearScale": 69.0
+      "rearScale": 69.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 84.0,
       "rowSpacing": 10.0,
       "unitSize": 28.0,
-      "rearScale": 74.0
+      "rearScale": 74.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 83.0,
       "rowSpacing": 7.0,
       "unitSize": 27.0,
-      "rearScale": 93.0
+      "rearScale": 93.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 86.0,
       "rowSpacing": 11.0,
       "unitSize": 27.0,
-      "rearScale": 74.0
+      "rearScale": 74.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/snowy-mountains.png": {
@@ -420,25 +548,33 @@
       "frontFooting": 85.0,
       "rowSpacing": 15.0,
       "unitSize": 20.0,
-      "rearScale": 60.0
+      "rearScale": 60.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 84.0,
       "rowSpacing": 12.0,
       "unitSize": 23.0,
-      "rearScale": 70.0
+      "rearScale": 70.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 84.0,
       "rowSpacing": 12.0,
       "unitSize": 23.0,
-      "rearScale": 83.0
+      "rearScale": 83.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 85.0,
       "rowSpacing": 13.0,
       "unitSize": 22.0,
-      "rearScale": 68.0
+      "rearScale": 68.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/snowy-road.png": {
@@ -446,25 +582,33 @@
       "frontFooting": 69.0,
       "rowSpacing": 22.0,
       "unitSize": 25.0,
-      "rearScale": 75.0
+      "rearScale": 75.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 77.0,
       "rowSpacing": 21.0,
       "unitSize": 40.0,
-      "rearScale": 76.0
+      "rearScale": 76.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 70.0,
       "rowSpacing": 25.0,
       "unitSize": 39.0,
-      "rearScale": 100.0
+      "rearScale": 100.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 76.0,
       "rowSpacing": 22.0,
       "unitSize": 38.0,
-      "rearScale": 74.0
+      "rearScale": 74.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   },
   "/assets/combat-backdrops-anime-v1/tundra-plains.png": {
@@ -472,25 +616,33 @@
       "frontFooting": 81.0,
       "rowSpacing": 26.0,
       "unitSize": 20.0,
-      "rearScale": 58.0
+      "rearScale": 58.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Tank": {
       "frontFooting": 73.0,
       "rowSpacing": 22.0,
       "unitSize": 32.0,
-      "rearScale": 48.0
+      "rearScale": 48.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "FieldGun": {
       "frontFooting": 82.0,
       "rowSpacing": 25.0,
       "unitSize": 32.0,
-      "rearScale": 87.0
+      "rearScale": 87.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     },
     "Truck": {
       "frontFooting": 85.0,
       "rowSpacing": 22.0,
       "unitSize": 31.0,
-      "rearScale": 75.0
+      "rearScale": 75.0,
+      "trenchFooting": 86.0,
+      "trenchSize": 35.0
     }
   }
 }

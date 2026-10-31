@@ -28,7 +28,15 @@ async function main() {
       path.join(trenchDestination, `taking-cover-${team}.png`)
     );
   }
-  console.log(`Exported all ${names.length} combat terrain backdrops and the firing and taking-cover trench interiors.`);
+  const trenchOverlay = path.join(root, 'public/assets/combat-trench-overlay-anime-v2');
+  await fs.mkdir(trenchOverlay, { recursive: true });
+  for (const team of ['red', 'blue']) {
+    await fs.copyFile(
+      path.join(root, `artwork/combat/trench-overlay-anime-v2/${team}.png`),
+      path.join(trenchOverlay, `${team}.png`)
+    );
+  }
+  console.log(`Exported all ${names.length} combat terrain backdrops and the trench overlay and retained interiors.`);
 }
 
 main().catch(error => {

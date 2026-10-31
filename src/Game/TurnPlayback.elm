@@ -12,9 +12,11 @@ module Game.TurnPlayback exposing
     , Presentation(..)
     , acknowledgeLoss
     , activeEncounter
+    , cameraPositions
     , combat
     , continueCombat
     , focusPositions
+    , init
     , initial
     , lossEvent
     , losses
@@ -105,10 +107,53 @@ type alias ImpactEncounter =
 
 type alias Playback =
     { current : Frame
-    , remaining : List Frame
+    , remaining : List PreparedFrame
     , elapsed : Float
     , presentation : Presentation
     , acknowledgedLosses : List UnitId
+    , movement : FrameMovement
+    }
+
+
+{-| Movement is prepared once for each authoritative boundary. Its elapsed time
+excludes the current frame's local clock, so pauses need no timeline changes.
+-}
+type alias FrameMovement =
+    { segments : List MovementSegment
+    , cameraPositions : List Point
+    }
+
+
+type alias MovementSegment =
+    { unitId : UnitId
+    , edge : MovementEdge
+    , durationMs : Float
+    , elapsedMs : Float
+    }
+
+
+{-| A combined volley retains its final snapshot, but entering it still uses
+the opening frame's duration. Keep that arrival delay with the prepared frame.
+-}
+type alias PreparedFrame =
+    { frame : Frame
+    , arrivalDurationMs : Int
+    , movement : FrameMovement
+    }
+
+
+type alias PreparedTurn =
+    { current : PreparedFrame
+    , remaining : List PreparedFrame
+    }
+
+
+{-| Time already traveled toward each unit's next arrival, before the current
+shared frame. Other units' arrivals must not restart that edge's clock.
+-}
+type alias MovementElapsed =
+    { unitId : UnitId
+    , elapsedMs : Float
     }
 
 
@@ -150,6 +195,8 @@ type alias CombatExchange =
     , attackerHealth : CombatHealth
     , targetHealth : CombatHealth
     , targetFired : Bool
+    , attackerFlankBonus : Bool
+    , targetFlankBonus : Bool
     }
 
 
@@ -439,6 +486,12 @@ exchanges frame =
                         remaining : List CombatExchange
                         remaining =
                             collect (List.filter differentPair rest)
+
+                        flankingReturn : Shot -> Bool
+                        flankingReturn other =
+                            not (differentPair other)
+                                && (other.attacker.id == shot.target.id)
+                                && other.flankBonus
                     in
                     { kind = kind
                     , attacker = shot.attacker
@@ -447,6 +500,8 @@ exchanges frame =
                     , targetHealth = shot.targetHealth
                     , targetFired =
                         List.any (\other -> not (differentPair other) && other.attacker.id == shot.target.id) rest
+                    , attackerFlankBonus = shot.flankBonus
+                    , targetFlankBonus = List.any flankingReturn rest
                     }
                         :: remaining
     in
@@ -720,19 +775,14 @@ combineImpactTargets first second =
             first
 
 
-beginFrame : FrameTransition -> List Frame -> Playback
-beginFrame transition pending =
+beginFrame : Frame -> PreparedTurn -> Playback
+beginFrame before prepared =
     let
-        ( next, remaining ) =
-            combineReturnFire transition.next pending
-
         frames : FrameTransition
         frames =
-            { transition | next = next }
-
-        before : Frame
-        before =
-            frames.current
+            { current = before
+            , next = prepared.current.frame
+            }
 
         presentation : Presentation
         presentation =
@@ -751,10 +801,11 @@ beginFrame transition pending =
                     Battlefield
     in
     { current = frames.next
-    , remaining = remaining
+    , remaining = prepared.remaining
     , elapsed = 0
     , presentation = presentation
     , acknowledgedLosses = []
+    , movement = prepared.current.movement
     }
 
 
@@ -988,20 +1039,69 @@ initial frames fallback =
         |> Maybe.withDefault fallback
 
 
+{-| Prepare a nonempty sequence of projected snapshots for local playback.
+All movement lookahead, boundary checks and camera routes are resolved here.
+-}
+init : Frame -> List Frame -> Playback
+init current remaining =
+    beginFrame current (prepareFrames [] current remaining)
+
+
 start : List Frame -> Maybe Playback
 start frames =
     case clearPresentedDeaths [] frames of
         current :: next :: remaining ->
-            Just
-                (beginFrame
-                    { current = current
-                    , next = current
-                    }
-                    (next :: remaining)
-                )
+            Just (init current (next :: remaining))
 
         _ ->
             Nothing
+
+
+prepareFrames : List MovementElapsed -> Frame -> List Frame -> PreparedTurn
+prepareFrames elapsed opening pending =
+    let
+        ( current, remaining ) =
+            combineReturnFire opening pending
+
+        frames : List Frame
+        frames =
+            movementFrames current remaining
+
+        segments : List MovementSegment
+        segments =
+            List.filterMap (prepareMovementSegment frames elapsed current) current.units
+
+        following : List PreparedFrame
+        following =
+            case remaining of
+                next :: rest ->
+                    let
+                        prepared : PreparedTurn
+                        prepared =
+                            prepareFrames
+                                (carryMovementElapsed elapsed
+                                    { current = current
+                                    , next = next
+                                    }
+                                )
+                                next
+                                rest
+                    in
+                    prepared.current :: prepared.remaining
+
+                [] ->
+                    []
+    in
+    { current =
+        { frame = current
+        , arrivalDurationMs = opening.durationMs
+        , movement =
+            { segments = segments
+            , cameraPositions = movementCameraPositions current frames segments
+            }
+        }
+    , remaining = following
+    }
 
 
 {-| Combat keeps casualties in authoritative snapshots until end-of-turn cleanup.
@@ -1211,7 +1311,7 @@ No concealed portrait is added to the battlefield, and cargo follows its carrier
 deathDuration : Playback -> Float
 deathDuration playback =
     List.head playback.remaining
-        |> Maybe.map (.durationMs >> toFloat)
+        |> Maybe.map (.arrivalDurationMs >> toFloat)
         |> Maybe.withDefault 1400
 
 
@@ -1289,11 +1389,14 @@ tickBattlefield lossPolicy delta playback =
                 elapsed =
                     playback.elapsed + delta
             in
-            if elapsed >= toFloat next.durationMs then
+            if elapsed >= toFloat next.arrivalDurationMs then
                 let
                     advanced : Playback
                     advanced =
-                        beginFrame { current = playback.current, next = next } remaining
+                        beginFrame playback.current
+                            { current = next
+                            , remaining = remaining
+                            }
                 in
                 case advanced.presentation of
                     Combat focus ->
@@ -1307,31 +1410,31 @@ tickBattlefield lossPolicy delta playback =
                             ( Just advanced, advanced.current )
 
                         else
-                            tickWithLossPause lossPolicy (elapsed - toFloat next.durationMs) advanced
+                            tickWithLossPause lossPolicy (elapsed - toFloat next.arrivalDurationMs) advanced
 
             else
                 ( Just
                     (playback
                         |> setElapsed elapsed
                     )
-                , presentationFrame playback next
+                , presentationFrame playback
                 )
 
 
-presentationFrame : Playback -> Frame -> Frame
-presentationFrame playing next =
+presentationFrame : Playback -> Frame
+presentationFrame playing =
     let
         faceMovement : Unit -> Unit
         faceMovement unit =
             case
-                observedMovement
-                    { current = playing.current
-                    , next = next
-                    }
-                    unit
+                ListUtil.find (\segment -> segment.unitId == unit.id) playing.movement.segments
             of
-                Just edge ->
+                Just segment ->
                     let
+                        edge : MovementEdge
+                        edge =
+                            segment.edge
+
                         movementDirection : Maybe Direction
                         movementDirection =
                             Direction.between edge.origin edge.destination
@@ -1412,49 +1515,185 @@ observedMovement frames unit =
             Nothing
 
 
-{-| Interpolate shared sightings and server-projected exits. Exits stop at the
-edge of the last visible square; hidden destinations and routes are never sent.
+frameHasFeedback : Frame -> Bool
+frameHasFeedback frame =
+    not (List.isEmpty frame.shots && List.isEmpty frame.losses && List.isEmpty frame.indirectImpacts && List.isEmpty frame.sabotages)
+
+
+{-| Feedback and transport are real pauses. Visibility changes alone are not:
+only sightings of the same unit at the same square may bridge a boundary.
+-}
+canContinueMovement : FrameTransition -> Bool
+canContinueMovement frames =
+    let
+        passengers : List Unit
+        passengers =
+            (frames.current.units ++ frames.next.units)
+                |> List.filter (\unit -> Unit.carrierId unit /= Nothing)
+
+        changesCarrier : Unit -> Bool
+        changesCarrier unit =
+            case
+                ( ListUtil.find (\other -> other.id == unit.id) frames.current.units
+                , ListUtil.find (\other -> other.id == unit.id) frames.next.units
+                )
+            of
+                ( Just before, Just after ) ->
+                    Unit.carrierId before /= Unit.carrierId after
+
+                _ ->
+                    False
+    in
+    not
+        (frameHasFeedback frames.current
+            || frameHasFeedback frames.next
+            || List.any changesCarrier passengers
+        )
+
+
+elapsedMovement : UnitId -> List MovementElapsed -> Float
+elapsedMovement unitId elapsed =
+    elapsed
+        |> ListUtil.find (\movement -> movement.unitId == unitId)
+        |> Maybe.map .elapsedMs
+        |> Maybe.withDefault 0
+
+
+{-| During preparation, include the boundary itself for direct movement such
+as unloading. Movement never looks beyond feedback or transport pauses.
+-}
+movementFrames : Frame -> List Frame -> List Frame
+movementFrames frame pending =
+    let
+        untilPause : Frame -> List Frame -> List Frame
+        untilPause current remaining =
+            case remaining of
+                next :: rest ->
+                    if canContinueMovement { current = current, next = next } then
+                        next :: untilPause next rest
+
+                    else
+                        [ next ]
+
+                [] ->
+                    []
+    in
+    untilPause frame pending
+
+
+carryMovementElapsed : List MovementElapsed -> FrameTransition -> List MovementElapsed
+carryMovementElapsed elapsed frames =
+    let
+        carry : Unit -> Maybe MovementElapsed
+        carry unit =
+            let
+                unchangedPosition : Unit -> Bool
+                unchangedPosition other =
+                    (other.id == unit.id)
+                        && (Unit.mapPosition other == Unit.mapPosition unit)
+            in
+            if Unit.onMap unit && List.any unchangedPosition frames.next.units then
+                Just
+                    { unitId = unit.id
+                    , elapsedMs = elapsedMovement unit.id elapsed + toFloat frames.next.durationMs
+                    }
+
+            else
+                Nothing
+    in
+    if canContinueMovement frames then
+        List.filterMap carry frames.current.units
+
+    else
+        []
+
+
+prepareMovementSegment : List Frame -> List MovementElapsed -> Frame -> Unit -> Maybe MovementSegment
+prepareMovementSegment frames elapsed frame unit =
+    let
+        findArrival : Frame -> List Frame -> Float -> Maybe MovementSegment
+        findArrival current remaining durationMs =
+            case remaining of
+                next :: rest ->
+                    let
+                        transition : FrameTransition
+                        transition =
+                            { current = current, next = next }
+
+                        totalMs : Float
+                        totalMs =
+                            durationMs + toFloat next.durationMs
+
+                        sameSquare : Unit -> Bool
+                        sameSquare other =
+                            (other.id == unit.id)
+                                && Unit.onMap other
+                                && (Unit.mapPosition other == Unit.mapPosition unit)
+                    in
+                    case observedMovement transition unit of
+                        Just edge ->
+                            Just
+                                { unitId = unit.id
+                                , edge = edge
+                                , durationMs = totalMs
+                                , elapsedMs = elapsedMovement unit.id elapsed
+                                }
+
+                        Nothing ->
+                            if Unit.onMap unit && List.any sameSquare next.units then
+                                findArrival next rest totalMs
+
+                            else
+                                Nothing
+
+                [] ->
+                    Nothing
+    in
+    if Unit.isDying unit then
+        Nothing
+
+    else
+        findArrival frame frames (elapsedMovement unit.id elapsed)
+
+
+{-| Each unit uses the whole interval between its own arrivals, including
+intervening arrivals by other units. Exits stop at the visible square's edge.
 -}
 movingPositions : Maybe Playback -> List { unitId : UnitId, position : Point }
 movingPositions playback =
     let
         positions : Playback -> List { unitId : UnitId, position : Point }
         positions playing =
-            case ( playing.presentation, playing.remaining ) of
-                ( Battlefield, next :: _ ) ->
+            let
+                moving : MovementSegment -> { unitId : UnitId, position : Point }
+                moving segment =
                     let
-                        moving : Unit -> Maybe { unitId : UnitId, position : Point }
-                        moving unit =
-                            case
-                                observedMovement
-                                    { current = playing.current
-                                    , next = next
-                                    }
-                                    unit
-                            of
-                                Just edge ->
-                                    Just
-                                        { unitId = unit.id
-                                        , position =
-                                            { x =
-                                                toFloat edge.origin.x
-                                                    + toFloat (edge.destination.x - edge.origin.x)
-                                                    * edge.portion
-                                                    * playing.elapsed
-                                                    / toFloat next.durationMs
-                                            , y =
-                                                toFloat edge.origin.y
-                                                    + toFloat (edge.destination.y - edge.origin.y)
-                                                    * edge.portion
-                                                    * playing.elapsed
-                                                    / toFloat next.durationMs
-                                            }
-                                        }
+                        edge : MovementEdge
+                        edge =
+                            segment.edge
 
-                                Nothing ->
-                                    Nothing
+                        progress : Float
+                        progress =
+                            movementProgress playing.elapsed segment
                     in
-                    List.filterMap moving playing.current.units
+                    { unitId = segment.unitId
+                    , position =
+                        { x =
+                            toFloat edge.origin.x
+                                + toFloat (edge.destination.x - edge.origin.x)
+                                * edge.portion
+                                * progress
+                        , y =
+                            toFloat edge.origin.y
+                                + toFloat (edge.destination.y - edge.origin.y)
+                                * edge.portion
+                                * progress
+                        }
+                    }
+            in
+            case playing.presentation of
+                Battlefield ->
+                    List.map moving playing.movement.segments
 
                 _ ->
                     []
@@ -1462,22 +1701,21 @@ movingPositions playback =
     Maybe.map positions playback |> Maybe.withDefault []
 
 
+movementProgress : Float -> MovementSegment -> Float
+movementProgress elapsed segment =
+    clamp 0 1 ((segment.elapsedMs + elapsed) / max 1 segment.durationMs)
+
+
 unitOpacity : Maybe Playback -> UnitId -> Float
 unitOpacity playback unitId =
     case playback of
         Just playing ->
-            case ( playing.presentation, playing.remaining ) of
-                ( Battlefield, next :: _ ) ->
-                    let
-                        departing : Bool
-                        departing =
-                            List.any (\departure -> departure.unitId == unitId) playing.current.departures
-                    in
-                    if departing then
-                        1 - clamp 0 1 (playing.elapsed / toFloat next.durationMs)
-
-                    else
-                        1
+            case playing.presentation of
+                Battlefield ->
+                    playing.movement.segments
+                        |> ListUtil.find (\segment -> (segment.unitId == unitId) && (segment.edge.portion < 1))
+                        |> Maybe.map (\segment -> 1 - movementProgress playing.elapsed segment)
+                        |> Maybe.withDefault 1
 
                 _ ->
                     1
@@ -1577,6 +1815,83 @@ focusPositions playback =
 
             else
                 feedback
+
+
+{-| Frame the upcoming visible travel before it starts. Stop at feedback,
+transport, or a gap in a unit's sightings, and never use a newly revealed tile
+or a future-only unit to aim the camera.
+-}
+cameraPositions : Playback -> List Point
+cameraPositions playback =
+    case playback.presentation of
+        Battlefield ->
+            focusPositions playback ++ playback.movement.cameraPositions
+
+        _ ->
+            focusPositions playback
+
+
+movementCameraPositions : Frame -> List Frame -> List MovementSegment -> List Point
+movementCameraPositions frame frames segments =
+    let
+        route : Unit -> Frame -> List Frame -> List Point
+        route unit current remaining =
+            case remaining of
+                next :: rest ->
+                    let
+                        transition : FrameTransition
+                        transition =
+                            { current = current, next = next }
+
+                        nextUnit : Maybe Unit
+                        nextUnit =
+                            ListUtil.find (\other -> other.id == unit.id) next.units
+
+                        continue : List Point
+                        continue =
+                            nextUnit |> Maybe.map (\other -> route other next rest) |> Maybe.withDefault []
+                    in
+                    case observedMovement transition unit of
+                        Just edge ->
+                            if
+                                List.member
+                                    edge.origin
+                                    frame.visibleTiles
+                                    && List.member edge.destination frame.visibleTiles
+                            then
+                                { x = toFloat edge.origin.x, y = toFloat edge.origin.y }
+                                    :: { x = toFloat edge.destination.x, y = toFloat edge.destination.y }
+                                    :: continue
+
+                            else
+                                []
+
+                        Nothing ->
+                            if
+                                Unit.onMap unit
+                                    && (Maybe.andThen Unit.mapPosition nextUnit == Unit.mapPosition unit)
+                            then
+                                continue
+
+                            else
+                                []
+
+                [] ->
+                    []
+
+        movingRoute : Unit -> List Point
+        movingRoute unit =
+            if List.any (\segment -> segment.unitId == unit.id) segments then
+                route unit frame frames
+
+            else
+                []
+    in
+    if frameHasFeedback frame then
+        []
+
+    else
+        List.concatMap movingRoute frame.units
 
 
 visibleIndirectImpacts : Playback -> List Coordinate

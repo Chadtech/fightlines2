@@ -56,6 +56,9 @@ their matching team artwork, mirrored toward the opponent. This also plays for
 observable indirect-fire guns. Hits and casualties wait until the last firing figure
 recovers, followed by a short travel beat. Units that only receive fire stay
 still. Live games and logged replays share this sequence.
+A `flank bonus` chip in a formation's outer top corner means its shot benefits
+from hitting a battle-ready defender from the side or rear. Return fire can earn
+its own chip. Older recordings without this shot metadata omit the indicator.
 Sabotage opens a theater showing a demolition charge beside the structure over
 the tile’s terrain backdrop, then leaving the structure in wreckage. Supply-exhaustion
 losses open a separate theater where skulls and crossbones pulse slowly three times
@@ -157,6 +160,11 @@ Press Escape to clear the current selection and path preview while keeping saved
 Press `.` to select the next of your on-board units without orders, cycling through
 them and opening its commands. Saved orders remain intact; the shortcut is inactive
 while a dialog is open or orders are locked.
+While a unit's command menu is open, press `m` for move, `h` for hold position,
+`a` for attack move, `b` for ambush, `g` for stand ground, `i` for indirect fire,
+`d` for dig in, or `x` for sabotage. Each command shows its key beside its name.
+Keys immediately choose enabled commands; unavailable commands are ignored.
+Up/down arrows or W/S still navigate the menu, and Escape cancels.
 Select one of your units, choose **move** to highlight reachable
 squares. Click a highlighted square to save a move. Hover across squares to preview your exact route; retrace
 the line to shorten it. Skipped squares connect from the current path tip within
@@ -437,6 +445,12 @@ initial balance values. Readiness is charged even without a target, and upkeep
 is reserved before firing. Units without enough supplies for readiness cannot
 choose ambush; a unit can maintain readiness without enough supplies to fire.
 Trucks and carried units cannot ambush. Ambush orders last for one resolved turn.
+
+Firepower falls with the square of the attacker's current HP divided by the
+target's current HP, capped at full power. Equal HP gives full weapon power even
+when both units are wounded: 5 HP against 5 HP hits as hard as 16 HP against
+16 HP. A 5 HP attacker against a 10 HP target has one-quarter power. This also
+applies to attack moves and indirect fire.
 
 The server records observable enemies already in each ambush firing area when
 readiness begins. Those enemies get a chance to leave: they are targeted only

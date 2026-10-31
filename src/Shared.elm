@@ -2,6 +2,7 @@ module Shared exposing
     ( Model
     , Msg
     , addError
+    , audioMuteButtonClicked
     , devPanelErrors
     , devPanelMsg
     , gotFromJsError
@@ -11,6 +12,7 @@ module Shared exposing
     , superUpdate
     )
 
+import Audio
 import Browser.Dom
 import Browser.Navigation as Navigation
 import DevPanel
@@ -50,20 +52,28 @@ type alias Model fields =
         , errors : ErrorHistory.Model Error
         , devPanel : DevPanel.Model
         , devPanelOpen : Bool
+        , audioMute : Audio.MuteState
     }
 
 
 type Msg
     = GotLocalstorage LocalStorage
     | GotFromJsError FromJs.Error
+    | AudioErrorReceived Error
     | DevPanelToggleKeyPressed
     | DevPanelMsg DevPanel.Msg
+    | AudioMuteButtonClicked
 
 
 
 ----------------------------------------------------------------
 -- API --
 ----------------------------------------------------------------
+
+
+audioMuteButtonClicked : Msg
+audioMuteButtonClicked =
+    AudioMuteButtonClicked
 
 
 devPanelErrors : Model fields -> List DevPanel.Error
@@ -97,6 +107,14 @@ addError maybeError model =
 ----------------------------------------------------------------
 
 
+audioErrorDecoder : Decode.Decoder Error
+audioErrorDecoder =
+    Decode.map2
+        (\operation details -> Error.AudioFailed { operation = operation, details = details })
+        (Decode.field "operation" Decode.string)
+        (Decode.field "details" Decode.string)
+
+
 setDevPanelOpen : Bool -> Model fields -> Model fields
 setDevPanelOpen devPanelOpen model =
     { model | devPanelOpen = devPanelOpen }
@@ -127,6 +145,12 @@ toDevPanelError error =
             DevPanel.Error
                 { title = "javascript message failed"
                 , details = FromJs.errorToString failure
+                }
+
+        Error.AudioFailed failure ->
+            DevPanel.Error
+                { title = "audio " ++ failure.operation
+                , details = failure.details
                 }
 
         Error.ElementFocusFailed failure ->
@@ -228,6 +252,19 @@ superUpdate msg model =
 update : Msg -> Model fields -> ( Model fields, Eff Msg )
 update msg model =
     case msg of
+        AudioMuteButtonClicked ->
+            let
+                audioMute : Audio.MuteState
+                audioMute =
+                    Audio.toggleMute model.audioMute
+            in
+            ( { model | audioMute = audioMute }
+            , E.batch
+                [ E.audio (Audio.SetMute audioMute)
+                , E.toJs (ToJs.SetLocalStorage (Audio.encodeMutePreference audioMute))
+                ]
+            )
+
         DevPanelToggleKeyPressed ->
             ( model
                 |> setDevPanelOpen (not model.devPanelOpen)
@@ -254,10 +291,28 @@ update msg model =
                     ( addError (Just Error.TestError) model, E.none )
 
         GotLocalstorage localStorage ->
-            ( { model | localStorage = localStorage }, E.none )
+            let
+                ( audioMute, muteError ) =
+                    Audio.loadMutePreference localStorage
+
+                effect : Eff Msg
+                effect =
+                    if audioMute == model.audioMute then
+                        E.none
+
+                    else
+                        E.audio (Audio.SetMute audioMute)
+            in
+            ( { model | localStorage = localStorage, audioMute = audioMute }
+                |> addError muteError
+            , effect
+            )
 
         GotFromJsError error ->
             ( addError (Just (Error.FromJsFailed error)) model, E.none )
+
+        AudioErrorReceived error ->
+            ( addError (Just error) model, E.none )
 
 
 
@@ -273,7 +328,13 @@ keyCommands =
 
 listeners : FromJs.Listener Msg
 listeners =
-    FromJs.data
-        "local storage changed"
-        LocalStorage.decoder
-        GotLocalstorage
+    FromJs.batch
+        [ FromJs.data
+            "local storage changed"
+            LocalStorage.decoder
+            GotLocalstorage
+        , FromJs.data
+            "audio error"
+            audioErrorDecoder
+            AudioErrorReceived
+        ]

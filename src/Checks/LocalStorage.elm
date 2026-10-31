@@ -1,8 +1,10 @@
-port module LocalStorageChecks exposing (main)
+port module Checks.LocalStorage exposing (main)
 
+import Audio
 import Error exposing (Error(..))
 import Fightlines.UserName as UserName
 import Json.Decode as JD
+import Json.Encode as Encode
 import LocalStorage
 import Platform
 import Preference
@@ -74,6 +76,9 @@ checks =
                 FromJsFailed _ ->
                     "unexpected JavaScript message error while reading local storage"
 
+                AudioFailed _ ->
+                    "unexpected audio error while reading local storage"
+
                 ElementFocusFailed _ ->
                     "unexpected element focus error while reading local storage"
 
@@ -106,6 +111,34 @@ checks =
                 Ok _ ->
                     False
 
+        readMute : String -> Result String ( Audio.MuteState, Maybe String )
+        readMute json =
+            JD.decodeString LocalStorage.decoder json
+                |> Result.mapError JD.errorToString
+                |> Result.map (Audio.loadMutePreference >> Tuple.mapSecond (Maybe.map storageErrorDetails))
+
+        muteRoundTrip : Audio.MuteState -> Bool
+        muteRoundTrip state =
+            let
+                entry : { key : String, value : Encode.Value }
+                entry =
+                    Audio.encodeMutePreference state
+            in
+            Encode.object [ ( entry.key, entry.value ) ]
+                |> Encode.encode 0
+                |> readMute
+                |> (==) (Ok ( state, Nothing ))
+
+        invalidMutePreservesError : Bool
+        invalidMutePreservesError =
+            case JD.decodeString JD.bool "42" of
+                Err error ->
+                    readMute "{\"audioMuted\":42}"
+                        == Ok ( Audio.Unmuted, Just ("audioMuted: " ++ JD.errorToString error) )
+
+                Ok _ ->
+                    False
+
         invalidNamePreservesError : Bool
         invalidNamePreservesError =
             case JD.decodeString JD.string "42" of
@@ -132,4 +165,9 @@ checks =
         , check "stored true overrides a false preference default" (readPreference JD.bool False "{\"preference\":true}" == Ok ( True, Nothing ))
         , check "preferences support non-Boolean values" (readPreference JD.int 7 "{\"preference\":12}" == Ok ( 12, Nothing ))
         , check "malformed preference retains its key and decoder error" invalidPreferencePreservesError
+        , check "missing mute preference defaults to unmuted" (readMute "{}" == Ok ( Audio.Unmuted, Nothing ))
+        , check "saved mute is restored" (readMute "{\"audioMuted\":true}" == Ok ( Audio.Muted, Nothing ))
+        , check "saved unmute is restored" (readMute "{\"audioMuted\":false}" == Ok ( Audio.Unmuted, Nothing ))
+        , check "both mute states survive storage round trips" (List.all muteRoundTrip [ Audio.Muted, Audio.Unmuted ])
+        , check "invalid mute defaults to unmuted and retains its decoder error" invalidMutePreservesError
         ]

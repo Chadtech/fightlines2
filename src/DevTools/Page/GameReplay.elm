@@ -2,12 +2,13 @@ module DevTools.Page.GameReplay exposing
     ( Flags
     , Model
     , Msg(..)
+    , ambience
     , dialog
     , getShared
     , init
     , keyCommands
     , load
-    , movingVehicles
+    , movingUnits
     , setShared
     , subscriptions
     , update
@@ -316,11 +317,20 @@ playback model =
             Nothing
 
 
-movingVehicles : Model -> List Audio.MovingVehicle
-movingVehicles model =
+ambience : Model -> List Audio.AmbientScene
+ambience model =
+    PlaybackPresentation.ambience
+        { map = model.battlefield.map
+        , playback = playback model
+        , paused = isPaused model
+        }
+
+
+movingUnits : Model -> List Audio.MovingUnit
+movingUnits model =
     case model.timeline of
         Playing playing ->
-            PlaybackPresentation.movingVehicles
+            PlaybackPresentation.movingUnits
                 { playback = Just playing.animation
                 , paused = playing.paused
                 , camera = playing.camera

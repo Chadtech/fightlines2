@@ -76,6 +76,26 @@ async function checkInterop() {
   await app.send({ play: 'uiAffirm' });
   assert.equal(app.warnings.length, 0);
   assert.equal(app.messages.length, 0);
+  for (const entryPoint of ['Fightlines', 'DevTools']) {
+    const audioApp = boot(undefined, { entryPoint });
+    await audioApp.send({ muted: true });
+    await audioApp.send({ ambience: [] });
+    assert.equal(audioApp.warnings.length, 0);
+    await audioApp.send({ muted: 'invalid' });
+    await audioApp.send({ ambience: 'invalid' });
+    assert.equal(audioApp.warnings.length, 2, 'both apps route mute and ambience through audio validation');
+    assert.deepEqual(audioApp.messages, [
+      { type: 'audio error', payload: { operation: 'invalid event', details: '{"muted":"invalid"}' } },
+      { type: 'audio error', payload: { operation: 'invalid ambience', details: '"invalid"' } },
+    ], 'both apps forward audio errors to their shared Elm listener');
+    await audioApp.send({ muted: 'invalid' });
+    assert.equal(audioApp.messages.length, 2, 'repeated failures do not flood the dev panel');
+    audioApp.events.pointerdown({ isTrusted: true });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(audioApp.messages.at(-1).payload.operation, 'initialization');
+    assert.match(audioApp.messages.at(-1).payload.details, /AudioContext is not defined/,
+      'browser audio failures retain exception details in both apps');
+  }
   assert.equal(app.flags.localStorage.count, 1);
   await app.send({ tag: 'setLocalStorage', key: 'count', value: 2 });
   assert.deepEqual(JSON.parse(app.stored.get(key)), { existing: { enabled: true }, count: 2 });
@@ -151,9 +171,9 @@ async function main() {
   const directory = mkdtempSync(join(tmpdir(), 'fightlines-local-storage-'));
   try {
     const output = join(directory, 'checks.js');
-    execFileSync('elm', ['make', 'src/LocalStorageChecks.elm', `--output=${output}`], { stdio: 'inherit' });
+    execFileSync('elm', ['make', 'src/Checks/LocalStorage.elm', `--output=${output}`], { stdio: 'inherit' });
     const { Elm } = require(output);
-    const app = Elm.LocalStorageChecks.init({ flags: null });
+    const app = Elm.Checks.LocalStorage.init({ flags: null });
     app.ports.results.subscribe(failures => {
       if (failures.length) {
         console.error(failures.join('\n'));

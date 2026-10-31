@@ -469,6 +469,7 @@ audioChecks initial =
                               , attacker = attacker
                               , target = target
                               , damage = 0
+                              , flankBonus = False
                               , attackerHealth = health
                               , targetHealth = health
                               }

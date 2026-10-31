@@ -37,3 +37,13 @@ unitSize =
 rearScale : SelectionSet Float Api.Object.BackdropCalibration
 rearScale =
     Object.selectionForField "Float" "rearScale" [] Decode.float
+
+
+trenchFooting : SelectionSet Float Api.Object.BackdropCalibration
+trenchFooting =
+    Object.selectionForField "Float" "trenchFooting" [] Decode.float
+
+
+trenchSize : SelectionSet Float Api.Object.BackdropCalibration
+trenchSize =
+    Object.selectionForField "Float" "trenchSize" [] Decode.float

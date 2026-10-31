@@ -2,6 +2,7 @@ module Fightlines.Shared exposing
     ( Model
     , Msg
     , addError
+    , audioMuteButtonClicked
     , devPanelErrors
     , devPanelMsg
     , gotFromJsError
@@ -12,6 +13,7 @@ module Fightlines.Shared exposing
     , superUpdate
     )
 
+import Audio
 import Browser.Navigation as Navigation
 import DevPanel
 import Effect exposing (Eff)
@@ -56,6 +58,10 @@ type alias Msg =
 
 init : Random.Seed -> OperatingSystem -> LocalStorage -> Url -> Navigation.Key -> Model
 init seed operatingSystem localStorage url key =
+    let
+        ( audioMute, muteError ) =
+            Audio.loadMutePreference localStorage
+    in
     { key = key
     , operatingSystem = operatingSystem
     , localStorage = localStorage
@@ -63,6 +69,7 @@ init seed operatingSystem localStorage url key =
     , errors = ErrorHistory.init
     , devPanel = DevPanel.init
     , devPanelOpen = False
+    , audioMute = audioMute
     , origin =
         Url.toString
             { url
@@ -71,12 +78,18 @@ init seed operatingSystem localStorage url key =
                 , fragment = Nothing
             }
     }
+        |> Shared.addError muteError
 
 
 
 ----------------------------------------------------------------
 -- API --
 ----------------------------------------------------------------
+
+
+audioMuteButtonClicked : Msg
+audioMuteButtonClicked =
+    Shared.audioMuteButtonClicked
 
 
 devPanelErrors : Model -> List DevPanel.Error

@@ -3,22 +3,19 @@
 # Done
 
 ## doing now
-- unit disappears when it starves with no notice
-- I put a field gun into the ambush range of my field gun, and it didn't move and my field gun did not attack
-- Tank and truck movement sounds
-- Sabotage combat theater animation
-
-## Bugs
-- Lag between when move is clicked and when command menu is opened
-
-## Immediately
-- Out of supplies theater animation should have flashing skull and bones
-
-## Soon
-- Proofread all screen text
 - infantry shooting and moving sounds
 - field gun moving sounds
 - Infantry attack animation
+
+## Bugs
+
+
+## Immediately
+
+
+## Soon
+- Proofread all screen text
+
 
 ## Later
 - Launch

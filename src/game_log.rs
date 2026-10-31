@@ -409,6 +409,17 @@ pub fn replay(directory: &Path) -> io::Result<String> {
                         }
                     }
                 }
+                // This presentation cue was absent in older records. Verify the
+                // authoritative damage and health without requiring the cue to match.
+                for result in [&mut actual, &mut submitted] {
+                    if let Some(resolution) = &mut result.resolution {
+                        for frame in &mut resolution.frames {
+                            for shot in &mut frame.shots {
+                                shot.flank_bonus = false;
+                            }
+                        }
+                    }
+                }
                 if serde_json::to_value(&actual)? != serde_json::to_value(&submitted)? {
                     return Err(io::Error::other(format!(
                         "{}: replay differs from recorded turn {}",
@@ -590,6 +601,21 @@ mod tests {
         replay(&log.directory)?;
         let final_path = log.directory.join("00000002.json");
         let final_bytes = fs::read(&final_path)?;
+        // Presentation cues do not change authoritative replay verification.
+        let mut presentation_only: serde_json::Value = serde_json::from_slice(&final_bytes)?;
+        let frames = presentation_only["event"]["data"]["resolution"]["frames"]
+            .as_array_mut()
+            .fixture()?;
+        let mut changed_cues = 0;
+        for frame in frames {
+            for shot in frame["shots"].as_array_mut().fixture()? {
+                shot["flank_bonus"] = json!(true);
+                changed_cues += 1;
+            }
+        }
+        assert!(changed_cues > 0);
+        fs::write(&final_path, serde_json::to_vec(&presentation_only)?)?;
+        replay(&log.directory)?;
         fs::write(&final_path, b"{")?;
         assert!(replay(&log.directory).is_err());
         fs::write(&final_path, final_bytes)?;
@@ -640,6 +666,9 @@ mod tests {
             {
                 for frame in frames {
                     frame.as_object_mut().fixture()?.remove("losses");
+                    for shot in frame["shots"].as_array_mut().fixture()? {
+                        shot.as_object_mut().fixture()?.remove("flank_bonus");
+                    }
                 }
             }
             fs::write(&path, serde_json::to_vec(&record)?)?;

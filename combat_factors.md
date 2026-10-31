@@ -6,16 +6,22 @@
 - Units that are not battle ready should pretty much always lose at a great cost. Unready tanks should take big losses to ready infantry
 - Ready tanks should obliterate infantry in frontal mutual combat; infantry should barely damage ready tanks except when ambushing their flank or rear
 - Unready units do not establish a front, flank, or rear defense
-- Units with lower health should be less powerful. This should not scale linearly. A unit with half health should be less than half effective.
+- Units with less health than their opponent should be less powerful. This should not scale linearly: half the opponent's health gives one-quarter firepower. Equally wounded units retain full firepower against each other.
 - Flanking. A unit that is attacking or being attacked head on should do better than a unit being attacked adjacent or behind the direction it is facing.
 - Being in hills and forests should give a slight defensive advantage
 - If two units end up in direct combat, and one is attacking and the other is ambushing, the ambushing unit should have a slight bonus.
 
 ## Implemented damage model
 
-Damage is deterministic and calculated in Rust for both ambushes and attack moves:
+Damage is deterministic and calculated in Rust for ambushes, attack moves, and indirect fire:
 
-`round(base power × (attacker HP / maximum HP)² × matchup × readiness × defender facing × attacker aim × cover × ambush advantage × entrenchment)`
+`round(base power × min(1, attacker HP / target HP)² × matchup × readiness × defender facing × attacker aim × cover × ambush advantage × entrenchment)`
+
+The health ratio uses both units' current HP before the volley. A 5 HP attacker
+against a 5 HP target has the same weapon power as a 16 HP attacker against a
+16 HP target. Against a 10 HP target, that 5 HP attacker has one-quarter power.
+Healthier attackers gain no bonus beyond full weapon power, so a 5 HP attacker
+can finish a 2 HP target without the old maximum-health penalty.
 
 Round only once at the end; living armed shooters deal at least 1 HP, with damage
 capped at the target's maximum HP (currently 16). Damage may exceed remaining HP;
@@ -105,7 +111,8 @@ Being ambushed still does not trigger automatic return fire or stop a surviving
 attack mover's remaining route.
 The 12-damage infantry hit against an unready tank applies from every direction.
 
-Wounded attackers lose power much faster than their health percentage:
+Attackers with less current HP than their target lose power quadratically.
+The defenders in this table all start at 16 HP:
 
 | Attacker and remaining HP | Defender | Damage | Defender HP left |
 | --- | --- | ---: | ---: |
@@ -124,13 +131,15 @@ matchup outcomes. Rounding and the minimum 1 HP hit make very small attacks less
 smooth. Some complete head-on exchanges on open ground:
 
 - Two full-health tanks ambushing one another each deal 8 damage; both finish at 8 HP.
-- Two half-health tanks ambushing one another each deal 2 damage; both finish at 6 HP.
+- Two half-health tanks ambushing one another each deal 8 damage; both are destroyed.
+- Two 5 HP tanks ambushing one another each deal 8 damage; both are destroyed.
 - A full-health infantry unit and tank ambushing one another deal 1 and 16 damage respectively; the infantry is destroyed and the tank finishes at 15 HP.
 - Full-health infantry attack-moving into a ready tank's firing line deal 1 damage. The tank fires back for 16, destroying the infantry and finishing at 15 HP, even if the infantry are on a hill.
-- A half-health ready field gun intercepting a full-health attack-moving tank deals 5 first. The tank survives at 11 HP and returns an 11-damage hit, destroying the gun.
+- A half-health ready field gun intercepting a full-health attack-moving tank deals 5 first. The tank survives at 11 HP and returns a 16-damage hit against the 8 HP gun, destroying it.
 
 Reciprocal shots use pre-volley strength; the field-gun interception is a separate
-volley, so the tank's return shot uses its reduced health.
+volley, so the tank's return shot compares its reduced health with the gun's
+current health.
 
 ## Tank and field-gun exchanges
 

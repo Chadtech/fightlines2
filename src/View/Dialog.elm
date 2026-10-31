@@ -9,6 +9,7 @@ module View.Dialog exposing
     , reference
     , toHtml
     , withCloseButton
+    , withOverlay
     , workspace
     )
 
@@ -37,6 +38,7 @@ type Dialog msg
         , body : List (Html msg)
         , placement : Placement
         , showCloseButton : Bool
+        , overlay : List (Html msg)
         }
 
 
@@ -79,7 +81,15 @@ make dialogHtmlId title canceled body =
         , body = body
         , placement = Centered
         , showCloseButton = False
+        , overlay = []
         }
+
+
+{-| Keep viewport controls in the native top layer while the page is inert.
+-}
+withOverlay : List (Html msg) -> Dialog msg -> Dialog msg
+withOverlay overlay (Dialog model) =
+    Dialog { model | overlay = overlay }
 
 
 withCloseButton : Dialog msg -> Dialog msg
@@ -123,6 +133,7 @@ map toMsg (Dialog model) =
         , body = List.map (H.map toMsg) model.body
         , placement = model.placement
         , showCloseButton = model.showCloseButton
+        , overlay = List.map (H.map toMsg) model.overlay
         }
 
 
@@ -246,6 +257,20 @@ toHtml (Dialog model) =
         dialogStyles : List Css.Style
         dialogStyles =
             baseStyles ++ placementStyles
+
+        content : List (Html msg)
+        content =
+            [ headerContent
+            , H.div
+                [ A.css
+                    [ S.col
+                    , S.g3
+                    , S.p3
+                    ]
+                ]
+                model.body
+            ]
+                ++ model.overlay
     in
     H.node "dialog"
         [ A.id model.htmlId
@@ -253,13 +278,4 @@ toHtml (Dialog model) =
         , Ev.preventDefaultOn "cancel" (Decode.succeed ( model.onCancel, True ))
         , A.css dialogStyles
         ]
-        [ headerContent
-        , H.div
-            [ A.css
-                [ S.col
-                , S.g3
-                , S.p3
-                ]
-            ]
-            model.body
-        ]
+        content

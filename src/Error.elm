@@ -13,6 +13,7 @@ type Error
     | LocalStorageDecodeFailed { key : String, error : JD.Error }
     | UnitOwnerNotFound { unitId : UnitId, playerNumber : PlayerNumber }
     | FromJsFailed FromJs.Error
+    | AudioFailed { operation : String, details : String }
     | ElementFocusFailed Browser.Dom.Error
     | BattlefieldMeasurementFailed Browser.Dom.Error
     | OrderPlanningInvariantViolated OrderPlanning.InvariantViolation

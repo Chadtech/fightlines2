@@ -18,6 +18,14 @@ the design direction changes. User feedback takes precedence.
 
 ## UI sound
 
+Keep a small, borderless speaker icon in the upper-left corner of both apps.
+Use an 18px gray icon, a transparent 36px click target (44px on touch), and no
+visible label. Clicking toggles all audio; the muted state uses a crossed speaker.
+Keep its accessible label, pressed state, tooltip, and keyboard focus clear.
+The control stays in the same viewport position inside native dialogs.
+Remember mute in local storage across reloads and both apps, and synchronize
+open tabs. Audio starts unmuted when no preference has been saved.
+
 Use short recordings of physical switches for tactile command feedback. Affirm
 uses the desk-lamp switch press, cancel its release, and confirm the more
 substantial old-switch audition A. Preserve their recorded texture and original
@@ -322,6 +330,12 @@ omits this decorative cycle and retains the original green background.
   list; up/down arrows or W/S cycle enabled commands whenever the popup is open, including
   before list focus, and Enter/Space chooses the focused command. Cancel and
   Escape clear selection while preserving saved orders.
+  Append the shortcut in parentheses to each command name: `move (m)`,
+  `hold position (h)`, `attack move (a)`, `ambush (b)`, `stand ground (g)`,
+  `indirect fire (i)`, `dig in (d)`, and `sabotage (x)`. Show `cancel (esc)`.
+  Plain letter keys immediately activate enabled commands only while the popup
+  is open, including before list focus. Preserve W/S navigation and the normal
+  route/facing controls after choosing a command.
   Move closes the popup and shows a destination prompt, preview cost/budget,
   and back to commands. Saving a destination or choosing hold position replaces
   the popup with the chosen order and revoke order in the side panel. Revoking
@@ -514,7 +528,8 @@ omits this decorative cycle and retains the original green background.
 ## Movement encounters
 
 Turn playback follows the server's shared arrival timeline. Multiple units can
-advance at one boundary; interpolation uses each frame's supplied duration.
+advance at one boundary. Interpolate each unit continuously between its own
+arrivals, spanning intervening arrivals by other units using the supplied durations.
 Fog and selection occupancy change at boundaries. A departing enemy moves only
 to the edge of its last visible square while fading out. Hidden destinations and
 remaining paths stay concealed; loss of sight alone does not imply movement.
@@ -615,18 +630,38 @@ Supply and fuel depot tiles use a shared industrial yard, with a snowy variant
 on snow maps. Both show warehouses, crates, drums, and storage tanks against
 open sky, with no distant terrain. Leave the paved yard open for the formations,
 with packed snow in the winter variant. Use the same yard for indirect-fire impacts on depots;
-entrenched infantry retain their trench interior. Fortress tiles use their own
+entrenched infantry use two small transparent trench segments over the same backdrop. Fortress tiles use their own
 concrete casemate courtyard with thick sloped blast walls, firing slits, a steel
 door, and sandbagged parapets. Keep the foreground fighting deck open for unit
 formations; snow maps use the matching snow-covered fortress courtyard.
 Omit visible unit/player labels. The western participant appears
 left, facing right; the eastern participant appears right, facing left. For a
 vertical encounter, the northern participant appears left.
+When a recorded shot benefits from hitting a ready defender's flank or rear,
+show a static `flank bonus` chip over the firing formation's outer top corner:
+top left for the left formation, top right for the right. Use a square yellow1
+surface, yellow6 text, and a gray4 border with `px2`/`py1` padding and a `p2`
+corner inset. Keep the chip outside the rumbling artwork and clear of pointer
+events. Return fire retains its own bonus; both formations may show a chip.
+The server supplies this shot metadata without exposing orders or supplies.
 When only one scene is shown, center it at the same width and aspect ratio as
 one scene in the paired layout, including concealed-gun impacts and depot damage.
 The card opens with a 200ms expansion and slight overshoot. Every unit kind
-uses staggered figures. Infantry has eight smaller figures at full health, each
-representing two HP. Other kinds have four figures at 13–16 HP, three at 9–12,
+uses staggered figures. Full-health infantry has one two-man machine-gun team,
+three prone riflemen, two kneeling riflemen, and one standing rifleman, using
+team-colored pose artwork. Keep the gun team together as a four-HP group and
+each rifleman as a two-HP figure. Use three columns and three depth rows:
+standing / kneeling / prone in the rear; empty / machine-gun team / prone in
+the middle; kneeling / empty / prone in the front. Preserve the larger gun team
+and prone riflemen and the slightly smaller kneeling riflemen.
+When infantry fire at tanks, including recorded return fire, show four two-person
+bazooka teams in two depth rows at full health. Each pair represents four HP;
+retain partially intact pairs. Use the existing red and blue standing-shooter /
+kneeling-loader artwork and infantry backdrop calibration. This formation also
+replaces the static trench soldiers during anti-tank fire. Infantry that do not
+fire retain their ordinary formation.
+Paint figures from back to front while keeping their casualty identities stable.
+Anchor every pose to the ground and mirror the whole formation toward its opponent. Other kinds have four figures at 13–16 HP, three at 9–12,
 two at 5–8, one at 1–4, and none at zero. Partially intact figures remain visible.
 Field-gun formations use one full-size gun centered in the foreground and three
 smaller guns scattered horizontally behind it, with shallow vertical variation.
@@ -664,6 +699,19 @@ Start at impact, after the 20ms projectile approach; later contacts kick again.
 Overscan backdrop artwork to avoid exposed edges, keep the card controls still,
 and suppress the shake for reduced motion. Damage within a count band shows an impact without inventing
 a casualty. Supplies and fuel stay concealed.
+Play the original small-explosion sound variants at each projectile contact,
+after the 20ms approach, including the later building strike and sabotage.
+Unconfirmed indirect landings use the same generic sound without implying a
+hidden hit. Supply exhaustion has no explosion sound. Live games and replays
+share timing; paused clocks and map peeks do not repeat cues.
+Under the theater, use the approved real outdoor ambience: Oklahoma prairie
+choice C, forest canopy, snowstorm wind, Atacama wind and Atlantic surf. Blend
+different displayed environments quietly with gentle left/right positioning.
+Matching environments share one centered recording, keeping total background
+energy consistent across scene counts. Fade starts, changes and exits over 350ms.
+Map peeks and held cards keep the environment running; replay pause silences it.
+The building follow-up changes to its destination environment alone. Concealed
+firing origins never contribute an ambient layer.
 The card offers an `automatically close` checkbox beside its actions. It defaults
 to unchecked and remembers its Boolean in local storage. When checked, the card
 continues 500ms after its last impact and camera shake finish. Each encounter
@@ -676,12 +724,16 @@ Keyboard users hold Enter or Space on `see map`; releasing restores the card
 without continuing combat. Moving keyboard focus away also restores the card.
 Keep the battlefield camera still while projected action fits the current view,
 including when another visible unit starts moving or combat begins. When action
-leaves the viewport, pan with a 1.2-second ease-in-out transition and pause
-playback until the camera settles. Include one tile of breathing room when
-reframing; reduce zoom only when simultaneous subjects cannot fit together.
+leaves the viewport, pan with a 1.2-second ease-in-out transition. Settle the
+initial view and stationary encounters before advancing; camera adjustments
+during travel keep movement and engine audio running. Include one tile of
+breathing room when reframing; reduce zoom only when simultaneous subjects
+cannot fit together.
 Keep subject tiles in the navigation surface between the header and bottom
 controls, and clear of the inspector's measured width when it is open.
-Track interpolated visible movement so a route leaving the view can trigger a
+Frame the upcoming currently visible route before travel starts, stopping lookahead
+at combat, transport, or a gap in sightings. Future sightings and newly revealed
+tiles must not steer the camera. Track interpolated movement for any further
 necessary pan. Idle frames retain the last playback view. Combat, casualty
 pauses, and projected indirect-fire impacts use the same visibility rule.
 Ease back to the saved pan and zoom when playback finishes. Reduced motion makes
@@ -943,7 +995,7 @@ with the observable firing gun beside the target terrain, the existing explosion
 animation, and theater controls. Preserve horizontal map order. If the firing gun
 is concealed, omit its portrait and origin. Show any observed target with its
 authoritative health transition and the `indirect fire` heading; preserve trench
-and taking-cover artwork. When no target is confirmed outside sight, cover the
+artwork over its terrain backdrop. When no target is confirmed outside sight, cover the
 target terrain with a fog overlay and a centered question mark. Keep clear terrain
 for unconfirmed landings on tiles within sight.
 Above the scene, explain that an enemy
@@ -960,14 +1012,14 @@ can afford the server-provided digging cost plus upkeep. Keep it disabled on roa
 and during a planned dismount. Saving shows `dig in`, its supply cost, the end-of-turn
 completion, and the standard revoke action. Infantry cannot fire while digging.
 An entrenched unit uses its approved red or blue dug-in sprite on the board,
-in the inspector, with existing facing mirroring. In the combat theater, replace
-its formation and terrain backdrop with the approved team-colored trench interior
-scene, mirrored toward the opponent. Fill the scene without letterboxing and
-overscan the artwork for camera shake, cropping the sides as needed. Preserve
-existing impact timing; the painted soldiers remain static through losses.
-Use the matching team-colored taking-cover illustration when the infantry is
-attacked by a field gun, including indirect fire and reciprocal return fire.
-An infantry attack on a field gun that does not return fire keeps the firing scene.
+in the inspector, with existing facing mirroring. In the combat theater, show two
+team-colored trench segments side by side over the terrain backdrop. Each segment
+defaults to 35% of the panel width; mirror the pair toward the opponent. The
+backdrop’s infantry calibration independently controls trench size and bottom
+position. Resize both around that bottom edge, keeping the pair centered with
+a gap between them. Use the revised infantry artwork and existing team palettes.
+Preserve existing impact timing; hits follow the trench placement and the painted
+soldiers remain static through losses.
 Name the selected unit `entrenched infantry` and include this status in its
 accessible label. Changing facing preserves the sprite; successful movement
 restores the ordinary infantry sprite, and leaves no terrain graphic behind.
@@ -1015,7 +1067,10 @@ enemy readiness while fog is enabled, including in combat portraits.
 The development backdrop review page has two responsive scene editors. Each
 places backdrop/unit selectors above the exact gameplay scene, then four sliders:
 front footing position, row separation, front unit size, and rear size relative
-to the front. Keep the preview unobstructed and use the sliders for adjustments.
+to the front. For infantry, expose an **infantry position** selector. Choosing
+**entrenched infantry** replaces those sliders with **trench height** and
+**trench size**, controlling both segments independently of the exposed formation.
+Size is each segment’s width as a percentage of the panel (10–45%). Keep the preview unobstructed and use the sliders for adjustments.
 Keep unit size changes anchored on ground contact. The same backdrop/unit pair
 shares settings across panels; other unit types remain
 independent. Keep save state

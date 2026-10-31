@@ -2,6 +2,7 @@ module Game.PlaybackPresentation exposing
     ( Msg(..)
     , PlaybackCamera
     , Preference(..)
+    , ambience
     , audioBetween
     , cameraPanDurationMs
     , combatOverlay
@@ -11,7 +12,7 @@ module Game.PlaybackPresentation exposing
     , loss
     , lossDialog
     , lossError
-    , movingVehicles
+    , movingUnits
     , ownerName
     , readyToAutomaticallyClose
     , setRemainingPanMs
@@ -98,7 +99,7 @@ cameraPanDurationMs =
     1200
 
 
-{-| Fire once as the presentation clock crosses each muzzle-flash timestamp.
+{-| Play once as the presentation clock crosses each muzzle flash or impact.
 An unchanged clock (pause or camera hold) cannot replay a cue. A new encounter
 or rewind starts a fresh interval instead of catching up old shots.
 -}
@@ -127,10 +128,28 @@ audioBetween transition =
                     cues kind sound =
                         CombatTheater.firingTimes kind after
                             |> List.map (\startsAt -> { startsAt = startsAt, sound = sound })
+
+                    impacts : List { startsAt : Float, sound : Audio.Event }
+                    impacts =
+                        CombatTheater.impactTimes after
+                            |> List.map
+                                (\startsAt ->
+                                    { startsAt = startsAt
+                                    , sound = Audio.combatImpact
+                                    }
+                                )
                 in
-                (cues UnitKind.Tank Audio.tankFire ++ cues UnitKind.FieldGun Audio.fieldGunFire)
+                (cues
+                    UnitKind.Tank
+                    Audio.tankFire
+                    ++ cues UnitKind.FieldGun Audio.fieldGunFire
+                    ++ impacts
+                )
                     |> List.sortBy .startsAt
-                    |> List.filter (\cue -> (before.elapsed < cue.startsAt) && (cue.startsAt <= after.elapsed))
+                    |> List.filter
+                        (\cue ->
+                            (before.elapsed < cue.startsAt) && (cue.startsAt <= after.elapsed)
+                        )
                     |> List.map .sound
 
             else
@@ -140,17 +159,37 @@ audioBetween transition =
             []
 
 
+{-| Keep quiet environment loops under the displayed theater, including map
+peeks and held cards. Replay pause and leaving the theater stop the snapshot.
+-}
+ambience :
+    { map : Map
+    , playback : Maybe TurnPlayback.Playback
+    , paused : Bool
+    }
+    -> List Audio.AmbientScene
+ambience state =
+    if state.paused then
+        []
+
+    else
+        state.playback
+            |> Maybe.andThen TurnPlayback.panels
+            |> Maybe.map (CombatTheater.ambience state.map)
+            |> Maybe.withDefault []
+
+
 {-| Follow the same projected movement edges as the sprites. Camera holds,
 replay pauses and casualty dialogs freeze movement and therefore silence it.
 -}
-movingVehicles :
+movingUnits :
     { playback : Maybe TurnPlayback.Playback
     , paused : Bool
     , camera : Maybe PlaybackCamera
     , skipLossDialogs : Bool
     }
-    -> List Audio.MovingVehicle
-movingVehicles state =
+    -> List Audio.MovingUnit
+movingUnits state =
     let
         cameraSettling : Bool
         cameraSettling =
@@ -160,19 +199,22 @@ movingVehicles state =
         lossHeld =
             loss state.skipLossDialogs state.playback /= Nothing
 
-        vehicle : Unit -> Maybe Audio.MovingVehicle
-        vehicle unit =
+        movementSound : Unit -> Maybe Audio.MovingUnit
+        movementSound unit =
             case unit.kind of
+                UnitKind.Infantry ->
+                    Just { unitId = unit.id, sound = Audio.Infantry }
+
                 UnitKind.Truck ->
-                    Just { unitId = unit.id, vehicle = Audio.Truck }
+                    Just { unitId = unit.id, sound = Audio.Truck }
 
                 UnitKind.Tank ->
-                    Just { unitId = unit.id, vehicle = Audio.Tank }
+                    Just { unitId = unit.id, sound = Audio.Tank }
 
-                _ ->
-                    Nothing
+                UnitKind.FieldGun ->
+                    Just { unitId = unit.id, sound = Audio.Infantry }
 
-        moving : TurnPlayback.Playback -> List Audio.MovingVehicle
+        moving : TurnPlayback.Playback -> List Audio.MovingUnit
         moving animation =
             let
                 ids : List UnitId
@@ -181,7 +223,7 @@ movingVehicles state =
             in
             animation.current.units
                 |> List.filter (\unit -> List.member unit.id ids && not (Unit.isDying unit))
-                |> List.filterMap vehicle
+                |> List.filterMap movementSound
     in
     if state.paused || cameraSettling || lossHeld then
         []
@@ -190,6 +232,9 @@ movingVehicles state =
         state.playback |> Maybe.map moving |> Maybe.withDefault []
 
 
+{-| Anticipate visible travel before it starts. Once moving, a pan runs alongside
+the animation so camera tracking cannot repeatedly interrupt movement voices.
+-}
 frameCamera : Camera.Viewport -> Map -> Camera -> TurnPlayback.Playback -> Maybe PlaybackCamera -> PlaybackCamera
 frameCamera viewport map saved animation held =
     let
@@ -199,11 +244,15 @@ frameCamera viewport map saved animation held =
 
         target : Camera
         target =
-            Camera.frame viewport map (TurnPlayback.focusPositions animation) previous
+            Camera.frame viewport map (TurnPlayback.cameraPositions animation) previous
+
+        holdForPan : Bool
+        holdForPan =
+            (held == Nothing) || List.isEmpty (TurnPlayback.movingPositions (Just animation))
 
         remainingPanMs : Float
         remainingPanMs =
-            if target /= previous then
+            if (target /= previous) && holdForPan then
                 cameraPanDurationMs
 
             else

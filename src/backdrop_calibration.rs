@@ -15,6 +15,10 @@ pub struct BackdropCalibration {
     pub row_spacing: f64,
     pub unit_size: f64,
     pub rear_scale: f64,
+    #[serde(default = "default_trench_footing")]
+    pub trench_footing: f64,
+    #[serde(default = "default_trench_size")]
+    pub trench_size: f64,
 }
 
 #[derive(GraphQLInputObject)]
@@ -23,6 +27,8 @@ pub struct BackdropCalibrationInput {
     row_spacing: f64,
     unit_size: f64,
     rear_scale: f64,
+    trench_footing: f64,
+    trench_size: f64,
 }
 
 #[derive(GraphQLObject)]
@@ -62,6 +68,14 @@ const UNIT_KINDS: [UnitKind; 4] = [
 const FILE_NAME: &str = "backdrop-calibrations.json";
 const ASSET_PREFIX: &str = "/assets/combat-backdrops-anime-v1/";
 
+fn default_trench_footing() -> f64 {
+    86.0
+}
+
+fn default_trench_size() -> f64 {
+    35.0
+}
+
 impl BackdropCalibration {
     fn validate(&self) -> Result<(), String> {
         for (name, value, minimum, maximum) in [
@@ -69,6 +83,8 @@ impl BackdropCalibration {
             ("row spacing", self.row_spacing, 0.0, 26.0),
             ("unit size", self.unit_size, 12.0, 40.0),
             ("rear scale", self.rear_scale, 35.0, 100.0),
+            ("trench footing", self.trench_footing, 25.0, 98.0),
+            ("trench size", self.trench_size, 10.0, 45.0),
         ] {
             if !value.is_finite() || value < minimum || value > maximum {
                 return Err(format!("{name} must be between {minimum} and {maximum}"));
@@ -195,6 +211,8 @@ pub fn save(
         row_spacing: input.row_spacing,
         unit_size: input.unit_size,
         rear_scale: input.rear_scale,
+        trench_footing: input.trench_footing,
+        trench_size: input.trench_size,
     };
     persist(editor, &backdrop, unit_kind, &calibration)?;
     Ok(CalibratedBackdrop {
@@ -358,6 +376,11 @@ mod tests {
                 .values()
                 .all(|settings| settings.unit_size == 35.0)
         );
+        assert!(
+            migrated_road
+                .values()
+                .all(|settings| (settings.trench_footing == 86.0) && (settings.trench_size == 35.0))
+        );
         let editor = Editor {
             directory: directory.as_path().into(),
             index: directory.as_path().join("index.html"),
@@ -368,6 +391,8 @@ mod tests {
             row_spacing: 9.0,
             unit_size: 25.0,
             rear_scale: 78.0,
+            trench_footing: 86.0,
+            trench_size: 35.0,
         };
         persist(
             &editor,
@@ -376,6 +401,8 @@ mod tests {
             &settings,
         )?;
         settings.unit_size = 30.0;
+        settings.trench_footing = 65.0;
+        settings.trench_size = 25.0;
         persist(
             &editor,
             &format!("{ASSET_PREFIX}plains.png"),
@@ -412,6 +439,28 @@ mod tests {
             road.get(&UnitKind::Truck).ok_or("missing truck")?.unit_size,
             35.0
         );
+        assert_eq!(
+            road.get(&UnitKind::Tank)
+                .ok_or("missing tank")?
+                .trench_footing,
+            86.0
+        );
+        assert_eq!(
+            road.get(&UnitKind::Infantry)
+                .ok_or("missing infantry")?
+                .trench_footing,
+            65.0
+        );
+        assert_eq!(
+            road.get(&UnitKind::Tank).ok_or("missing tank")?.trench_size,
+            35.0
+        );
+        assert_eq!(
+            road.get(&UnitKind::Infantry)
+                .ok_or("missing infantry")?
+                .trench_size,
+            25.0
+        );
         let road_before = road.clone();
         let copied = copy_saved(
             &editor,
@@ -429,6 +478,20 @@ mod tests {
                 .ok_or("missing copied tank")?
                 .unit_size,
             30.0
+        );
+        assert_eq!(
+            road_after
+                .get(&UnitKind::Tank)
+                .ok_or("missing copied tank")?
+                .trench_footing,
+            65.0
+        );
+        assert_eq!(
+            road_after
+                .get(&UnitKind::Tank)
+                .ok_or("missing copied tank")?
+                .trench_size,
+            25.0
         );
         assert_eq!(
             road_after.get(&UnitKind::Infantry),
@@ -465,6 +528,32 @@ mod tests {
         assert_eq!(before, fs::read(directory.as_path().join(FILE_NAME))?);
 
         assert_eq!(read(directory.as_path())?.len(), 2);
+        for invalid_size in [9.0, 46.0, f64::NAN] {
+            settings.trench_size = invalid_size;
+            assert!(
+                persist(
+                    &editor,
+                    &format!("{ASSET_PREFIX}road.png"),
+                    UnitKind::Infantry,
+                    &settings
+                )
+                .is_err()
+            );
+            assert_eq!(before, fs::read(directory.as_path().join(FILE_NAME))?);
+        }
+        settings.trench_size = 25.0;
+        settings.trench_footing = 99.0;
+        assert!(
+            persist(
+                &editor,
+                &format!("{ASSET_PREFIX}road.png"),
+                UnitKind::Infantry,
+                &settings
+            )
+            .is_err()
+        );
+        assert_eq!(before, fs::read(directory.as_path().join(FILE_NAME))?);
+        settings.trench_footing = 65.0;
         settings.rear_scale = 101.0;
         assert!(
             persist(

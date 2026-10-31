@@ -2,6 +2,7 @@ module DevTools.Shared exposing
     ( Model
     , Msg
     , addError
+    , audioMuteButtonClicked
     , devPanelErrors
     , devPanelMsg
     , gotFromJsError
@@ -12,6 +13,7 @@ module DevTools.Shared exposing
     , update
     )
 
+import Audio
 import Browser.Navigation as Navigation
 import DevPanel
 import Effect exposing (Eff)
@@ -49,6 +51,10 @@ type alias Msg =
 
 init : Random.Seed -> OperatingSystem -> LocalStorage -> Navigation.Key -> Model
 init seed operatingSystem localStorage key =
+    let
+        ( audioMute, muteError ) =
+            Audio.loadMutePreference localStorage
+    in
     { key = key
     , operatingSystem = operatingSystem
     , localStorage = localStorage
@@ -56,13 +62,20 @@ init seed operatingSystem localStorage key =
     , errors = ErrorHistory.init
     , devPanel = DevPanel.init
     , devPanelOpen = False
+    , audioMute = audioMute
     }
+        |> Shared.addError muteError
 
 
 
 ----------------------------------------------------------------
 -- API --
 ----------------------------------------------------------------
+
+
+audioMuteButtonClicked : Msg
+audioMuteButtonClicked =
+    Shared.audioMuteButtonClicked
 
 
 devPanelErrors : Model -> List DevPanel.Error

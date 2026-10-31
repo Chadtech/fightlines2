@@ -139,6 +139,7 @@ module Style exposing
     , h7p5
     , h8
     , h80
+    , h9
     , hAuto
     , hFull
     , hFullViewport
@@ -167,6 +168,8 @@ module Style exposing
     , justifySpaceAround
     , justifySpaceBetween
     , left0
+    , left1
+    , left2
     , left30Pct
     , left4
     , left50Pct
@@ -403,6 +406,7 @@ module Style exposing
     , w0
     , w1
     , w104
+    , w11
     , w12
     , w120
     , w128
@@ -433,6 +437,7 @@ module Style exposing
     , w72
     , w7p5
     , w8
+    , w9
     , w96
     , wAuto
     , wFitContent
@@ -1144,6 +1149,16 @@ w8 =
     Css.width s8
 
 
+w9 : Css.Style
+w9 =
+    Css.width (Css.rem 2.25)
+
+
+w11 : Css.Style
+w11 =
+    Css.width (Css.rem 2.75)
+
+
 w12 : Css.Style
 w12 =
     Css.width s12
@@ -1369,6 +1384,11 @@ h6 =
 h8 : Css.Style
 h8 =
     Css.height s8
+
+
+h9 : Css.Style
+h9 =
+    Css.height (Css.rem 2.25)
 
 
 h12 : Css.Style
@@ -2636,6 +2656,16 @@ bottom24 =
 left0 : Css.Style
 left0 =
     Css.left Css.zero
+
+
+left1 : Css.Style
+left1 =
+    Css.left s1
+
+
+left2 : Css.Style
+left2 =
+    Css.left s2
 
 
 leftNeg128 : Css.Style

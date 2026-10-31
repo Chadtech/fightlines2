@@ -4,18 +4,20 @@ module Game.View.CombatFormation exposing
     , exhaustionToSvg
     , figureCount
     , impactStarts
-    , impactsToSvg
     , lossStartsAt
     , toSvg
     , toSvgWithCalibration
     )
 
+import Api.Enum.Entrenchment as Entrenchment
+import Api.Enum.PlayerNumber as PlayerNumber
 import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Game.BackdropCalibration exposing (Calibration)
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
 import Game.View.CombatAttack as CombatAttack
 import Game.View.CombatExplosion as CombatExplosion
+import Game.View.CombatInfantry as CombatInfantry
 import Game.View.UnitSprite as UnitSprite exposing (Appearance)
 import Html.Styled.Attributes as A
 import Style as S
@@ -28,26 +30,32 @@ type alias Animation =
     { elapsed : Float
     , impactDelay : Float
     , attack : CombatAttack.Attack
+    , infantryLoadout : CombatInfantry.Loadout
     }
 
 
 {-| Theater figures summarize health; they do not change authoritative damage.
-Infantry figures represent two HP; other figures represent four HP.
+The two-man machine-gun team represents four HP; six riflemen each represent two.
+Bazooka teams and other unit kinds have four HP per figure.
 A partially intact figure stays visible.
 -}
-figureCount : UnitKind -> Int -> Int
-figureCount kind hitPoints =
-    let
-        hitPointsPerFigure : Int
-        hitPointsPerFigure =
-            case kind of
-                Kind.Infantry ->
-                    2
+figureCount : CombatInfantry.Loadout -> UnitKind -> Int -> Int
+figureCount loadout kind hitPoints =
+    case kind of
+        Kind.Infantry ->
+            case loadout of
+                CombatInfantry.Bazookas ->
+                    clamp 0 4 ((max 0 hitPoints + 3) // 4)
 
-                _ ->
-                    4
-    in
-    clamp 0 (16 // hitPointsPerFigure) ((max 0 hitPoints + hitPointsPerFigure - 1) // hitPointsPerFigure)
+                CombatInfantry.SmallArms ->
+                    if hitPoints <= 0 then
+                        0
+
+                    else
+                        1 + clamp 0 6 ((max 0 (hitPoints - 4) + 1) // 2)
+
+        _ ->
+            clamp 0 4 ((max 0 hitPoints + 3) // 4)
 
 
 lossStartsAt : { surviving : Int, index : Int } -> Float
@@ -62,16 +70,16 @@ impactStartsAt =
     CombatAttack.anticipationMs
 
 
-impactStarts : UnitKind -> CombatHealth -> List Float
-impactStarts kind health =
+impactStarts : CombatInfantry.Loadout -> UnitKind -> CombatHealth -> List Float
+impactStarts loadout kind health =
     let
         beforeCount : Int
         beforeCount =
-            figureCount kind health.before.current
+            figureCount loadout kind health.before.current
 
         afterCount : Int
         afterCount =
-            figureCount kind health.after.current
+            figureCount loadout kind health.after.current
 
         damaged : Bool
         damaged =
@@ -95,6 +103,12 @@ type alias Placement =
     { x : Float
     , y : Float
     , size : Float
+    }
+
+
+type alias PlacedFigure =
+    { index : Int
+    , placement : Placement
     }
 
 
@@ -134,37 +148,33 @@ placements kind =
     in
     case kind of
         Kind.Infantry ->
-            [ { x = 7
-              , y = 29
-              , size = 17
+            [ { x = 28.5
+              , y = 7
+              , size = 39
               }
-            , { x = 31
-              , y = 30
-              , size = 17
+            , { x = 5.5
+              , y = 1.3
+              , size = 25
               }
-            , { x = 56
-              , y = 28
-              , size = 17
-              }
-            , { x = 19
-              , y = 36
-              , size = 18
-              }
-            , { x = 45
-              , y = 35
-              , size = 18
-              }
-            , { x = 69
-              , y = 37
-              , size = 18
+            , { x = 38
+              , y = 4
+              , size = 20
               }
             , { x = 8
-              , y = 43
-              , size = 20
-              }
-            , { x = 39
               , y = 44
               , size = 20
+              }
+            , { x = 58
+              , y = -11.2
+              , size = 36
+              }
+            , { x = 57
+              , y = 7.9
+              , size = 38
+              }
+            , { x = 56
+              , y = 25
+              , size = 40
               }
             ]
 
@@ -196,14 +206,19 @@ placements kind =
             vehiclePlacements
 
 
+combatantToSvg : Int -> Animation -> Appearance -> Svg msg
+combatantToSvg index animation unit =
+    case unit.kind of
+        Kind.Infantry ->
+            CombatInfantry.toSvg animation.infantryLoadout index unit
+
+        _ ->
+            CombatAttack.toSvg { elapsed = animation.elapsed, figureIndex = index } animation.attack unit
+
+
 toSvg : Animation -> CombatHealth -> Appearance -> List (Svg msg)
 toSvg =
     layersToSvg ShellImpact Nothing [ Combatants, Impacts ]
-
-
-impactsToSvg : Animation -> CombatHealth -> Appearance -> List (Svg msg)
-impactsToSvg =
-    layersToSvg ShellImpact Nothing [ Impacts ]
 
 
 toSvgWithCalibration : Maybe Calibration -> Animation -> CombatHealth -> Appearance -> List (Svg msg)
@@ -233,25 +248,186 @@ exhaustionToSvg calibration elapsed =
     layersToSvg SupplyExhaustion
         calibration
         [ Combatants, ExhaustionMarkers ]
-        { elapsed = elapsed, impactDelay = 0, attack = CombatAttack.NotAttacking }
+        { elapsed = elapsed
+        , impactDelay = 0
+        , attack = CombatAttack.NotAttacking
+        , infantryLoadout = CombatInfantry.SmallArms
+        }
 
 
-formationPlacements : Maybe Calibration -> Appearance -> List Placement
-formationPlacements calibration unit =
-    case calibration of
-        Nothing ->
-            placements unit.kind
+formationPlacements : CombatInfantry.Loadout -> Maybe Calibration -> Appearance -> List Placement
+formationPlacements loadout calibration unit =
+    if usesTrenches loadout unit then
+        trenchImpactPlacements calibration
 
-        Just settings ->
-            calibratedPlacements settings unit
+    else
+        case calibration of
+            Nothing ->
+                if (unit.kind == Kind.Infantry) && (loadout == CombatInfantry.Bazookas) then
+                    [ { x = 7
+                      , y = 5
+                      , size = 32
+                      }
+                    , { x = 49
+                      , y = 8
+                      , size = 32
+                      }
+                    , { x = 11
+                      , y = 27
+                      , size = 36
+                      }
+                    , { x = 55
+                      , y = 29
+                      , size = 36
+                      }
+                    ]
+
+                else
+                    placements unit.kind
+
+            Just settings ->
+                calibratedPlacements loadout settings unit
+
+
+usesTrenches : CombatInfantry.Loadout -> Appearance -> Bool
+usesTrenches loadout unit =
+    (unit.kind == Kind.Infantry)
+        && (unit.entrenchment == Entrenchment.Entrenched)
+        && (loadout == CombatInfantry.SmallArms)
+
+
+{-| Both trench drawings resize around their bottom footing and stay centered
+side by side with a fixed gap. Their size and footing are independent of the
+exposed infantry formation’s calibration.
+-}
+trenchPlacements : Maybe Calibration -> List Placement
+trenchPlacements calibration =
+    let
+        footing : Float
+        footing =
+            64 * Maybe.withDefault 86 (Maybe.map .trenchFooting calibration) / 100
+
+        width : Float
+        width =
+            96 * Maybe.withDefault 35 (Maybe.map .trenchSize calibration) / 100
+
+        place : Float -> Placement
+        place x =
+            { x = x
+            , y = footing - width * 809 / 1945
+            , size = width
+            }
+    in
+    List.map place [ 44.4 - width, 51.6 ]
+
+
+trenchToSvg : Maybe Calibration -> Appearance -> List (Svg msg)
+trenchToSvg calibration unit =
+    let
+        team : String
+        team =
+            case unit.playerNumber of
+                PlayerNumber.Player1 ->
+                    "red"
+
+                PlayerNumber.Player2 ->
+                    "blue"
+
+        trench : Placement -> Svg msg
+        trench placement =
+            Svg.image
+                [ SA.xlinkHref ("/assets/combat-trench-overlay-anime-v2/" ++ team ++ ".png")
+                , SA.x (String.fromFloat placement.x)
+                , SA.y (String.fromFloat placement.y)
+                , SA.width (String.fromFloat placement.size)
+                , SA.height (String.fromFloat (placement.size * 809 / 1945))
+                , A.attribute "data-combat-trench" ""
+                , Aria.hidden True
+                ]
+                []
+
+        facing : String
+        facing =
+            case unit.spriteFacing of
+                SpriteFacing.Left ->
+                    "translate(96 0) scale(-1 1)"
+
+                SpriteFacing.Right ->
+                    ""
+    in
+    [ Svg.g
+        [ SA.transform facing ]
+        (List.map trench (trenchPlacements calibration))
+    ]
+
+
+{-| Keep the existing seven infantry hit cues, positioned inside the two trenches.
+The painted soldiers remain static through losses, as in the previous interior art.
+-}
+trenchImpactPlacements : Maybe Calibration -> List Placement
+trenchImpactPlacements calibration =
+    let
+        soldiers : Int -> Placement -> List Placement
+        soldiers row placement =
+            let
+                offsets : List Float
+                offsets =
+                    if row == 0 then
+                        [ 0.08, 0.29, 0.5, 0.71 ]
+
+                    else
+                        [ 0.12, 0.4, 0.68 ]
+
+                soldier : Float -> Placement
+                soldier offset =
+                    { x = placement.x + placement.size * offset
+                    , y = placement.y + placement.size * offset * 0.25
+                    , size = placement.size * 8 / 33.6
+                    }
+            in
+            List.map soldier offsets
+    in
+    trenchPlacements calibration
+        |> List.indexedMap soldiers
+        |> List.concat
 
 
 {-| Depth runs from zero at the rear to one at the front. Formation patterns
 remain unit-specific; the selected backdrop/unit calibration supplies ground and scale values.
 -}
-calibratedPlacements : Calibration -> Appearance -> List Placement
-calibratedPlacements settings unit =
+calibratedPlacements : CombatInfantry.Loadout -> Calibration -> Appearance -> List Placement
+calibratedPlacements loadout settings unit =
     let
+        -- Keep three readable rows around the calibrated ground band's center.
+        -- Limit their span to half the scene height on deep terrain calibrations.
+        footingAtDepth : Float -> Float
+        footingAtDepth depth =
+            case unit.kind of
+                Kind.Infantry ->
+                    let
+                        center : Float
+                        center =
+                            64 * (settings.frontFooting - settings.rowSpacing / 2) / 100
+
+                        span : Float
+                        span =
+                            min 32 (64 * settings.rowSpacing * 2.6 / 100)
+                    in
+                    center + (depth - 0.5) * span
+
+                _ ->
+                    64 * (settings.frontFooting - settings.rowSpacing * (1 - depth)) / 100
+
+        -- Keep the expanded grid inside the scene on lower-footing backdrops.
+        verticalOffset : Float
+        verticalOffset =
+            case unit.kind of
+                Kind.Infantry ->
+                    min 0 (63 - footingAtDepth 1)
+
+                _ ->
+                    0
+
         pattern :
             List
                 { center : Float
@@ -261,39 +437,56 @@ calibratedPlacements settings unit =
         pattern =
             case unit.kind of
                 Kind.Infantry ->
-                    [ { center = 16
-                      , depth = 0
-                      , proportion = 0.7
-                      }
-                    , { center = 40
-                      , depth = 0
-                      , proportion = 0.7
-                      }
-                    , { center = 67
-                      , depth = 0
-                      , proportion = 0.7
-                      }
-                    , { center = 28
-                      , depth = 0.5
-                      , proportion = 0.7
-                      }
-                    , { center = 54
-                      , depth = 0.5
-                      , proportion = 0.7
-                      }
-                    , { center = 78
-                      , depth = 0.5
-                      , proportion = 0.7
-                      }
-                    , { center = 18
-                      , depth = 1
-                      , proportion = 0.7
-                      }
-                    , { center = 49
-                      , depth = 1
-                      , proportion = 0.7
-                      }
-                    ]
+                    if loadout == CombatInfantry.Bazookas then
+                        [ { center = 24
+                          , depth = 0
+                          , proportion = 1.3
+                          }
+                        , { center = 68
+                          , depth = 0
+                          , proportion = 1.3
+                          }
+                        , { center = 28
+                          , depth = 1
+                          , proportion = 1.3
+                          }
+                        , { center = 74
+                          , depth = 1
+                          , proportion = 1.3
+                          }
+                        ]
+
+                    else
+                        -- Rows: standing/kneeling/prone; empty/gun team/prone; kneeling/empty/prone.
+                        [ { center = 48
+                          , depth = 0.5
+                          , proportion = 1.58
+                          }
+                        , { center = 18
+                          , depth = 0
+                          , proportion = 0.95
+                          }
+                        , { center = 48
+                          , depth = 0
+                          , proportion = 0.76
+                          }
+                        , { center = 18
+                          , depth = 1
+                          , proportion = 0.76
+                          }
+                        , { center = 78
+                          , depth = 0
+                          , proportion = 1.3
+                          }
+                        , { center = 78
+                          , depth = 0.5
+                          , proportion = 1.3
+                          }
+                        , { center = 78
+                          , depth = 1
+                          , proportion = 1.3
+                          }
+                        ]
 
                 Kind.FieldGun ->
                     [ { center = 16
@@ -351,7 +544,7 @@ calibratedPlacements settings unit =
 
                 footing : Float
                 footing =
-                    64 * (settings.frontFooting - settings.rowSpacing * (1 - position.depth)) / 100
+                    footingAtDepth position.depth + verticalOffset
 
                 center : Float
                 center =
@@ -374,11 +567,11 @@ layersToSvg effect calibration layers animation health unit =
 
         beforeCount : Int
         beforeCount =
-            figureCount unit.kind health.before.current
+            figureCount animation.infantryLoadout unit.kind health.before.current
 
         afterCount : Int
         afterCount =
-            figureCount unit.kind health.after.current
+            figureCount animation.infantryLoadout unit.kind health.after.current
 
         figure : Layer -> Int -> Placement -> Svg msg
         figure layer index placement =
@@ -444,7 +637,7 @@ layersToSvg effect calibration layers animation health unit =
                             , SA.class "fightlines-combat-figure"
                             , A.attribute "data-figure-index" (String.fromInt index)
                             ]
-                            [ CombatAttack.toSvg { elapsed = animation.elapsed, figureIndex = index } animation.attack unit ]
+                            [ combatantToSvg index animation unit ]
                         ]
 
                     else
@@ -543,12 +736,41 @@ layersToSvg effect calibration layers animation health unit =
                 ]
                 content
 
-        visiblePlacements : List Placement
+        -- Keep casualty identities stable while painting foreground figures over rear ones.
+        paintOrder : PlacedFigure -> Float
+        paintOrder placed =
+            if (unit.kind == Kind.Infantry) && not (usesTrenches animation.infantryLoadout unit) then
+                placed.placement.y + placed.placement.size / UnitSprite.portraitWidth unit * UnitSprite.portraitFooting unit
+
+            else
+                toFloat placed.index
+
+        visiblePlacements : List PlacedFigure
         visiblePlacements =
-            List.take beforeCount (formationPlacements calibration unit)
+            formationPlacements animation.infantryLoadout calibration unit
+                |> List.take beforeCount
+                |> List.indexedMap PlacedFigure
+                |> List.sortBy paintOrder
+
+        renderFigure : Layer -> PlacedFigure -> Svg msg
+        renderFigure layer placed =
+            figure layer placed.index placed.placement
+
+        showingTrenches : Bool
+        showingTrenches =
+            usesTrenches animation.infantryLoadout unit && (health.before.current > 0)
 
         renderLayer : Layer -> List (Svg msg)
         renderLayer layer =
-            List.indexedMap (figure layer) visiblePlacements
+            case layer of
+                Combatants ->
+                    if showingTrenches then
+                        trenchToSvg calibration unit
+
+                    else
+                        List.map (renderFigure layer) visiblePlacements
+
+                _ ->
+                    List.map (renderFigure layer) visiblePlacements
     in
     List.concatMap renderLayer layers

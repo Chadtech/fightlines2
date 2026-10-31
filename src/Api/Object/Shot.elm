@@ -44,6 +44,13 @@ damage =
     Object.selectionForField "Int" "damage" [] Decode.int
 
 
+{-| A ready defender was struck from its flank or rear. Older recordings omit this cue.
+-}
+flankBonus : SelectionSet Bool Api.Object.Shot
+flankBonus =
+    Object.selectionForField "Bool" "flankBonus" [] Decode.bool
+
+
 attacker :
     SelectionSet decodesTo Api.Object.Unit
     -> SelectionSet decodesTo Api.Object.Shot

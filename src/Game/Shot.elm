@@ -21,6 +21,7 @@ type alias Shot =
     , attacker : Unit
     , target : Unit
     , damage : Int
+    , flankBonus : Bool
     , attackerHealth : CombatHealth
     , targetHealth : CombatHealth
     }
@@ -35,6 +36,7 @@ selection =
         |> SS.with (ShotApi.attacker Unit.selection)
         |> SS.with (ShotApi.target Unit.selection)
         |> SS.with ShotApi.damage
+        |> SS.with ShotApi.flankBonus
         |> SS.with (ShotApi.attackerHealth CombatHealth.selection)
         |> SS.with (ShotApi.targetHealth CombatHealth.selection)
 

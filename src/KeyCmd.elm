@@ -11,6 +11,7 @@ module KeyCmd exposing
     , downGamerKeys
     , enter
     , escape
+    , fromKeys
     , leftArrow
     , leftGamerKeys
     , map
@@ -253,11 +254,19 @@ subscriptions os keyCmds =
 
                             else
                                 eventCtrlKey
+
+                        commandMatches : Bool
+                        commandMatches =
+                            case model.command of
+                                Command True ->
+                                    cmdKeyPressed
+
+                                Command False ->
+                                    not (eventCmdKey || eventCtrlKey)
                     in
                     if
                         List.member eventKey model.keys
-                            && model.command
-                            == Command cmdKeyPressed
+                            && commandMatches
                             && model.shift
                             == eventShiftKey
                     then
@@ -285,18 +294,31 @@ subscriptions os keyCmds =
 
                 Nothing ->
                     Decode.fail "Key Down event did not match any I was listening for"
+
+        keyDecoder : Decoder msg
+        keyDecoder =
+            Decode.map4
+                (fromEvent <| batch keyCmds)
+                (Decode.field "metaKey" Decode.bool
+                    |> Decode.map Cmd
+                )
+                (Decode.field "shiftKey" Decode.bool
+                    |> Decode.map Shift
+                )
+                (Decode.field "key" Decode.string)
+                (Decode.field "ctrlKey" Decode.bool
+                    |> Decode.map Ctrl
+                )
+                |> Decode.andThen fromMaybe
+
+        withoutAlt : Bool -> Decoder msg
+        withoutAlt altPressed =
+            if altPressed then
+                Decode.fail "alt shortcuts belong to the browser"
+
+            else
+                keyDecoder
     in
-    Decode.map4
-        (fromEvent <| batch keyCmds)
-        (Decode.field "metaKey" Decode.bool
-            |> Decode.map Cmd
-        )
-        (Decode.field "shiftKey" Decode.bool
-            |> Decode.map Shift
-        )
-        (Decode.field "key" Decode.string)
-        (Decode.field "ctrlKey" Decode.bool
-            |> Decode.map Ctrl
-        )
-        |> Decode.andThen fromMaybe
+    Decode.field "altKey" Decode.bool
+        |> Decode.andThen withoutAlt
         |> Browser.Events.onKeyDown

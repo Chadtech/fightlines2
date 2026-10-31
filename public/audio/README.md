@@ -1,5 +1,24 @@
 # Runtime audio
 
+## Infantry movement
+
+`movement/infantry-stib-2x.ogg` is the approved 12.909-second stereo, 48kHz
+marching loop, encoded at Vorbis quality 6 from its WAV master without changing
+gain, pitch, or channel layout.
+
+- Source: [marching-loop.aif by stib](https://freesound.org/people/stib/sounds/240724/).
+- License: **CC0**, as listed on the source page.
+- Downloaded rendition: [public high-quality MP3](https://cdn.freesound.org/previews/240/240724_470543-hq.mp3).
+- Processing: Rubber Band R3, `--fine --tempo 2 --pitch 0`, halves the
+  25.818-second recording's duration while preserving pitch.
+
+The source, page snapshot, WAV master, MP3 audition and hashes remain in the
+ignored `audio-experiments/infantry-marching-stib-v1/` directory. No EQ,
+normalization, downmixing, or baked-in fades were added. Infantry and field guns
+share this marching loop and use the same per-unit random offsets, continuity,
+visibility gating and start/stop fades as vehicle movement in live games and
+logged replays.
+
 ## Vehicle movement
 
 The approved six-second mono, 48kHz loops are copied unchanged from the local
@@ -126,3 +145,60 @@ These effects do not use the gamelan recording.
 The manager preloads and cycles all five independently of tank variants, sharing
 the eight combat voices. Each cue starts at its crew's muzzle flash, after
 320ms of preparation, for direct fire, return fire, and visible indirect fire.
+
+## Combat impacts
+
+`combat/impact-01.ogg` through `combat/impact-05.ogg` reuse the five original
+procedural small-explosion effects, copied unchanged from
+`audio-experiments/first-pass-v1/public/audio/fightlines-v1/combat/combat.explosion-small-{01,02,03,04,05}.ogg`.
+These mono, 48kHz Vorbis clips last about 1.1–1.2 seconds. The ignored archive
+retains the manifest and WAV masters; normal builds use the runtime Oggs.
+
+Live games and logged replays play them at the theater's projectile contacts,
+20ms after each illustrated strike starts. This includes formation damage,
+unconfirmed indirect landings, the later building strike, and sabotage.
+Unconfirmed landings use the same generic blast without implying hidden damage.
+Supply exhaustion has no impact cue. The manager cycles the five variants,
+allows overlapping hits, and shares the eight-voice combat limit with firing.
+Pauses, unchanged clocks, rewinds, and encounter changes do not replay cues.
+
+## Combat-theater ambience
+
+The five approved real field recordings are released under **CC0 1.0**, allowing
+commercial use, adaptation and redistribution without required attribution.
+
+| Runtime loop | Recording and author | Source selection |
+| --- | --- | --- |
+| `ambience/plains.ogg` | [Tall Grass Prairie, Oklahoma](https://freesound.org/people/felix.blume/sounds/215414/) — Félix Blume | 30–51s; approved plains choice C |
+| `ambience/forest.ogg` | [Wind in the Trees](https://bigsoundbank.com/forest-wind-in-the-trees-s0904.html) — Joseph Sardin | 20–41s |
+| `ambience/snow.ogg` | [Wind during snow storm #1](https://freesound.org/people/guyburns/sounds/473815/) — guyburns | 30–51s |
+| `ambience/desert.ogg` | [Wind through cactus spines, Atacama](https://freesound.org/people/felix.blume/sounds/156414/) — Félix Blume | 20–41s |
+| `ambience/beach.ogg` | [Sea Waves](https://bigsoundbank.com/sea-waves-s0698.html) — Joseph Sardin | 20–41s |
+
+The public MP3 renditions were retained with their source pages and auditions in
+ignored `audio-experiments/outdoor-ambience-recordings-v1/`. The original plains
+pick, Wind in Tall Grass, was rejected and is not a runtime asset. Each selected
+21-second section removes sub-bass below 45Hz, is level-matched to −24 LUFS,
+and overlaps its final and first
+second with a linear crossfade to produce a continuous 20-second stereo loop.
+The body plays first, followed by the tail/head blend, so no edge fade or silence
+is baked into the repeating recording. Export uses stereo 48kHz Vorbis quality 5.
+Source URLs, licenses, hashes, exact processing and output hashes are committed in
+`ambience/sources.json`; artist, source and license are also embedded in each Ogg.
+
+Rebuild with `python3 tools/build-combat-ambience.py` when the retained source
+recordings and FFmpeg are available. Normal builds use only the runtime files.
+
+Theater scenes select plains for ordinary green terrain, forest for green forest,
+snow or desert for those themes, and beach for water or beach in any theme.
+Buildings inherit the destination terrain/theme. Only displayed, projected
+participants contribute: hidden guns do not add a sound. The later building
+scene uses only its destination environment.
+
+Matching environments share one centered voice. Distinct environments blend at
+`0.65 / sqrt(distinct environments)` gain per recording, with gentle stereo
+positioning matching the portraits. Existing voices continue through ordinary
+updates, held cards and map peeks; changes fade over 350ms. Replay pause and
+leaving the theater fade them out. Hidden tabs and page exit stop immediately.
+Ambience loads on demand, uses independent random loop offsets, respects master
+volume, and has no effect on simulation or recorded results.

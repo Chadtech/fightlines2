@@ -8,6 +8,7 @@ module Game.UnitCommand exposing
     , enabledOptions
     , isImplemented
     , label
+    , shortcut
     )
 
 import Api.Enum.Entrenchment as Entrenchment
@@ -128,6 +129,34 @@ label command =
 
         Ambush ->
             "ambush"
+
+
+shortcut : Command -> String
+shortcut command =
+    case command of
+        Move ->
+            "m"
+
+        HoldPosition ->
+            "h"
+
+        AttackMove ->
+            "a"
+
+        Ambush ->
+            "b"
+
+        StandGround ->
+            "g"
+
+        IndirectFire ->
+            "i"
+
+        DigIn ->
+            "d"
+
+        Sabotage ->
+            "x"
 
 
 assetName : Command -> String

@@ -82,6 +82,7 @@ type alias Scene =
     , player : PlayerNumber
     , facing : SpriteFacing
     , hitPoints : Int
+    , entrenchment : Entrenchment.Entrenchment
     }
 
 
@@ -95,6 +96,8 @@ type Parameter
     | RowSpacing
     | UnitSize
     | RearScale
+    | TrenchFooting
+    | TrenchSize
 
 
 type SaveStatus
@@ -141,6 +144,7 @@ type Msg
     | PlayerChanged Side PlayerNumber
     | FacingChanged Side SpriteFacing
     | HitPointsChanged Side Int
+    | EntrenchmentChanged Side Entrenchment.Entrenchment
 
 
 
@@ -201,6 +205,7 @@ init shared flags =
         , player = PlayerNumber.Player1
         , facing = SpriteFacing.Right
         , hitPoints = 16
+        , entrenchment = Entrenchment.Exposed
         }
     , right =
         { backdrop = rightBackdrop
@@ -208,6 +213,7 @@ init shared flags =
         , player = PlayerNumber.Player2
         , facing = SpriteFacing.Left
         , hitPoints = 16
+        , entrenchment = Entrenchment.Exposed
         }
     }
 
@@ -332,6 +338,12 @@ changeCalibration key parameter value model =
                     { current
                         | unitSize = clamp 12 40 (toFloat (round value))
                     }
+
+                TrenchSize ->
+                    { current | trenchSize = clamp 10 45 (toFloat (round value)) }
+
+                TrenchFooting ->
+                    { current | trenchFooting = clamp 25 98 (toFloat (round value)) }
 
                 RearScale ->
                     { current
@@ -648,6 +660,10 @@ update msg model =
                 model
                 |> E.withOut
 
+        EntrenchmentChanged side entrenchment ->
+            mapScene side (\config -> { config | entrenchment = entrenchment }) model
+                |> E.withOut
+
         HitPointsChanged side hitPoints ->
             mapScene side
                 (\config ->
@@ -705,7 +721,7 @@ scenePanel side model config =
     Card.toHtml card
         [ previewSelectors side model config
         , sceneView model config
-        , calibrationControls side model (sceneKey config)
+        , calibrationControls side model config
         , H.details
             []
             [ H.summary
@@ -750,6 +766,28 @@ previewSelectors side model config =
             { value = kind
             , label = UnitKindLabel.label kind
             }
+
+        entrenchmentControl : Html Msg
+        entrenchmentControl =
+            if config.kind == UnitKind.Infantry then
+                field (prefix ++ "-entrenchment")
+                    "infantry position"
+                    (Select.toHtml
+                        { htmlId = prefix ++ "-entrenchment"
+                        , disabled = False
+                        , selected = config.entrenchment
+                        , options =
+                            [ { value = Entrenchment.Exposed, label = "exposed infantry" }
+                            , { value = Entrenchment.Entrenched, label = "entrenched infantry" }
+                            ]
+                        , toValue = Entrenchment.toString
+                        , decoder = Entrenchment.decoder
+                        , onChange = EntrenchmentChanged side
+                        }
+                    )
+
+            else
+                H.text ""
     in
     H.div
         [ A.css
@@ -781,6 +819,7 @@ previewSelectors side model config =
                 , onChange = KindChanged side
                 }
             )
+        , entrenchmentControl
         ]
 
 
@@ -792,7 +831,7 @@ sceneView model config =
             { kind = config.kind
             , playerNumber = config.player
             , spriteFacing = config.facing
-            , entrenchment = Entrenchment.Exposed
+            , entrenchment = config.entrenchment
             }
     in
     CombatTheater.preview
@@ -949,9 +988,13 @@ decodeHitPoints value =
             Decode.fail "hit points must be an integer"
 
 
-calibrationControls : Side -> Model -> Key -> Html Msg
-calibrationControls side model key =
+calibrationControls : Side -> Model -> Scene -> Html Msg
+calibrationControls side model config =
     let
+        key : Key
+        key =
+            sceneKey config
+
         settings : Calibration
         settings =
             draftCalibration key model
@@ -968,6 +1011,22 @@ calibrationControls side model key =
                     }
                 range =
                     case parameter of
+                        TrenchSize ->
+                            { suffix = "trench-size"
+                            , label = "trench size (each row’s width)"
+                            , value = settings.trenchSize
+                            , minimum = 10
+                            , maximum = 45
+                            }
+
+                        TrenchFooting ->
+                            { suffix = "trench-footing"
+                            , label = "trench height (from top)"
+                            , value = settings.trenchFooting
+                            , minimum = 25
+                            , maximum = 98
+                            }
+
                         FrontFooting ->
                             { suffix = "front"
                             , label = "front row position"
@@ -1009,6 +1068,36 @@ calibrationControls side model key =
                 , onChange = ParameterChanged side parameter
                 }
 
+        previewingTrenches : Bool
+        previewingTrenches =
+            (config.kind == UnitKind.Infantry) && (config.entrenchment == Entrenchment.Entrenched)
+
+        parameters : List (Html Msg)
+        parameters =
+            if previewingTrenches then
+                [ slider TrenchFooting
+                , slider TrenchSize
+                ]
+
+            else
+                [ slider FrontFooting
+                , slider RowSpacing
+                , slider UnitSize
+                , slider RearScale
+                ]
+
+        actions : List (Html Msg)
+        actions =
+            [ saveButton
+            , H.p
+                [ A.attribute "role" "status" ]
+                [ H.text status ]
+            ]
+
+        content : List (Html Msg)
+        content =
+            parameters ++ actions
+
         saving : Bool
         saving =
             writing model
@@ -1042,17 +1131,7 @@ calibrationControls side model key =
             , S.g3
             ]
         ]
-        [ slider FrontFooting
-        , slider RowSpacing
-        , slider UnitSize
-        , slider RearScale
-        , saveButton
-        , H.p
-            [ A.attribute "role" "status"
-            ]
-            [ H.text status
-            ]
-        ]
+        content
 
 
 calibrationStatus : Key -> Calibration -> Model -> String

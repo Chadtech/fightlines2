@@ -296,7 +296,7 @@ generation prompt are `artwork/combat/backdrops/anime-v1/depot.png` and
 `depot-prompt.txt`. The final built-in imagegen edit removed the background hills
 and vegetation; its exact prompt is `depot-no-terrain-prompt.txt`, alongside the
 master. The combat theater also uses it for empty indirect-fire
-impacts on depot tiles; entrenched infantry keep their trench interior.
+impacts on depot tiles, including scenes with transparent trench overlays.
 
 `snowy-depot.png` preserves that industrial composition for snow maps, adding
 settled snow on roofs, crates, tanks, and ledges, with packed snow and icy patches
@@ -348,8 +348,52 @@ master in `artwork/effects/illustrated/target-sight/target-sight-v1.png`.
 
 ## Entrenched infantry
 
+`combat-trench-overlay-anime-v2/red.png` (1942 x 809) and `blue.png`
+(1944 x 809) are transparent combat-theater overlays: four muscular infantry
+with the same angular faces, ink outlines, uniforms, and team palettes as the
+existing infantry sprites, aiming right from a short timber-reinforced trench.
+Sandbags, soil, wood, skin, and rifles retain their natural colors. Built-in
+imagegen produced the revised drawing and team recolors; local masters and
+prompts are in `artwork/combat/trench-overlay-anime-v2/`. The generated alpha
+channels are preserved without further image processing.
+
+`CombatFormation` selects the team by player number and places two copies side
+by side over the usual combat backdrop. Each defaults to 35% of panel width.
+Backdrop review’s **entrenched infantry** preview adjusts and saves both trench
+height and size per backdrop. Gameplay and replay use the same placements and
+team sprites. `tools/build-combat-backdrops.cjs` exports both overlays.
+
 `infantry-entrenched-v1/red.png` and `blue.png` contain the approved dug-in
 infantry in transparent 256px cells. They replace the normal idle atlas cell
-while entrenched, including inspector and combat portraits.
+while entrenched on the board and in inspector portraits.
 `tools/build-entrenched-sprites.cjs` (included in `make sprites`) trims and fits
 the local `infantry-dug-in-{red,blue}-v4.png` masters without recoloring them.
+
+## Mixed infantry combat formation
+
+`combat-infantry-v1/` contains transparent red and blue machine-gun team, prone,
+kneeling, standing, and two-person bazooka-team PNGs. `Game.View.CombatInfantry`
+and `CombatFormation` use one two-man gun team, three prone riflemen, two kneeling riflemen, and one
+standing rifleman at full health. The team is one four-HP casualty group; each
+rifleman represents two HP. These poses share the theater's existing hit,
+exhaustion, facing, and backdrop-calibration behavior in games and replays.
+Infantry firing at tanks use four bazooka pairs at full health (four HP per pair),
+including recorded return fire. The standing shooter and kneeling loader remain
+together through casualties; this formation replaces the static trench soldiers
+for anti-tank exchanges.
+
+`node tools/build-combat-infantry.cjs` exports the existing built-in-imagegen
+masters in `artwork/units/illustrated/firing-positions-neutral-v1/` (selected
+`heavy-machine-gun-team-side-v1-{red,blue}.png`,
+`prone-rifleman-{red,blue}.png`, `kneeling-rifleman-{red,blue}.png`, and
+`bazooka-team-standing-{red,blue}.png`) plus
+the first frame of `artwork/units/illustrated/idle/previous/infantry-{red,blue}.png`
+for standing, using the current orange-red and sky-blue artwork rather than the
+older darker infantry artwork. Standing frames retain their native 627px square
+resolution and transparent margins, without resizing or trimming. The gameplay
+SVG frames and scales the figure around its footing. Other poses are trimmed
+and resized to 512px wide without recoloring. The bazooka
+masters received a built-in imagegen color edit so their pouches, belts, webbing,
+backpacks, and canteen covers match the red or blue uniforms, like the other
+infantry. Source prompts remain with those local masters, including
+`bazooka-equipment-color-prompts.json` for this correction.
