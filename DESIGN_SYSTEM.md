@@ -572,7 +572,7 @@ On-board living units with visible resources show a square health warning badge
 below 75% of maximum health. Supplies and fuel show warning badges at 25% of
 their maximum or below. Pack only active badges horizontally
 from the tile's upper-left corner, in health, supplies, fuel order. Each square
-is 3.2 logical pixels wide (20% of a tile), inset 0.64 pixels with 0.24-pixel gaps.
+is 4.8 logical pixels wide (30% of a tile), inset 0.64 pixels with 0.24-pixel gaps.
 Use a red (`red1`) heart on light gray (`gray5`), a dark brown (`yellow1`)
 `ø` on gold (`yellow5`) with an opaque near-black (`gray0`) border, and a red
 (`red1`) `E` on near-black (`gray0`). Draw symbols as vector
@@ -665,7 +665,9 @@ with packed snow in the winter variant. Use the same yard for indirect-fire impa
 entrenched infantry use two small transparent trench segments over the same backdrop. Fortress tiles use their own
 concrete casemate courtyard with thick sloped blast walls, firing slits, a steel
 door, and sandbagged parapets. Keep the foreground fighting deck open for unit
-formations; snow maps use the matching snow-covered fortress courtyard.
+formations; snow maps use the matching snow-covered fortress courtyard. Infantry
+on fortress tiles use ordinary formations without occupied or empty trench
+overlays, even when their recorded status is entrenched.
 Omit visible unit/player labels. The western participant appears
 left, facing right; the eastern participant appears right, facing left. For a
 vertical encounter, the northern participant appears left.
@@ -1068,8 +1070,11 @@ defaults to 35% of the panel width; mirror the pair toward the opponent. The
 backdrop’s infantry calibration independently controls each trench’s size and
 bottom position. Resize each around its own bottom edge, keeping a horizontal
 gap between them. Use the revised infantry artwork and existing team palettes.
-Preserve existing impact timing; hits follow the trench placement and the painted
-soldiers remain static through losses.
+Preserve existing impact timing; hits follow the trench placement with bursts at
+2.5 times the ordinary figure scale. When all health groups in either segment
+are lost, switch it to the empty trench and briefly fade a skull and crossbones
+over it. Once the whole unit is destroyed, hold one centered skull until the
+encounter closes. Wait for segment markers to finish before automatic close.
 Name the selected unit `entrenched infantry` and include this status in its
 accessible label. Changing facing preserves the sprite; successful movement
 restores the ordinary infantry sprite, and leaves no terrain graphic behind.

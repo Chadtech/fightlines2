@@ -394,7 +394,8 @@ Each entry point owns its own top-level `Page` and `Msg` unions and a separate
 storing it in their own models. Each app decodes its own startup flags through
 `Fightlines.Flags` or `DevTools.Flags`, loads its pages' required initialization data, and
 shows retry actions on failure.
-Backdrop calibrations belong to the consuming pages' initialization data.
+Gameplay and replays use the generated combat calibration catalog; the backdrop
+reviewer loads editable calibrations as page initialization data.
 `Fightlines.Route` parses player routes; `DevTools.Route` parses tool routes
 under `/dev`. Each app handles its own routes and page dispatch, converting effects to
 commands at its application boundary. Links outside an app's routes load a new
@@ -1552,7 +1553,12 @@ padding. Reduced motion displays the ready drawing. `CombatTheater.attackDelay`
 starts impacts 100ms after the burst's midpoint, while infantry keep firing.
 The theater stays open until firing and impacts finish, then applies its ordinary
 automatic-close delay. `AppShell` preloads both teams' ready/firing images.
-Trenches retain their static artwork.
+Trench impacts use 2.5 times the ordinary figure scale. Their four rear and
+three front health groups retain individual hit timing; once all groups in a
+segment are lost, its artwork switches to the empty trench. A skull fades over
+that segment for 650ms after its final blast. After the final segment cue, a
+centered skull persists until the encounter closes. `CombatFormation.trenchLossEndsAt`
+extends the shared participant completion clock to cover these markers.
 Infantry firing at tanks instead use
 four two-person bazooka teams at full health, each representing four HP. Recorded
 return fire uses the same selection; non-firing infantry retain their ordinary
@@ -1801,6 +1807,9 @@ capacity including incoming boarding orders, known depot availability, unique
 slots, adjacent exits, and reservations against the observed board. Unknown depot
 stock or concealed exit occupants do not leak through validation. Actual stock,
 arrived trucks, and full-board occupancy decide success after transport and combat.
+Passenger exits free freight berths during validation and planning, while boarding
+still reserves space before unloading. Resolution caps freight loads using actual
+remaining passengers, so blocked exits cannot overfill a truck.
 Loading cannot combine with crate unloading in the same turn. Resolution removes
 unloaded slots in descending order to preserve identities. Competing freight orders
 use alternating player priority and stable unit IDs, independently of submission order.
@@ -2106,12 +2115,16 @@ entrenched masters for board cells and inspector portraits;
 
 ## Combat backdrop calibration
 
-`Game.BackdropCalibration` owns the typed catalog and GraphQL selections.
-Each of `GamePage`, `GameReplay`, and `BackdropReview` loads its own catalog
-with its initialization flags. The owning app dispatches each page's loading and
-failure states; unrelated routes do not request calibrations. The loaded page
-owns its catalog independently of `Shared.Model`; active games and replays pass it through
-`PlaybackPresentation` to `CombatTheater`. `CombatFormation` retains its legacy
+`Game.BackdropCalibration` owns the calibration types and editor GraphQL selections.
+`make combat-theater-calibrations` generates `Game.CombatTheaterCalibrations.catalog`
+from `public/backdrop-calibrations.json`. Frontend builds and routine checks run
+this generation automatically. The generator validates the authoring data and
+formats the module before replacing it; legacy shared settings and trench defaults
+match the editor loader. Both the JSON source and generated Elm are committed.
+`GamePage` and `GameReplay` pass the compiled catalog through
+`PlaybackPresentation` to `CombatTheater`, without requesting calibrations or
+storing them in page state. `BackdropReview` loads its editable catalog through
+its initialization flags; its owning app dispatches loading and failure states. `CombatFormation` retains its legacy
 placements for uncalibrated scenery. For calibrated scenery, unit-specific row
 patterns are projected between front and rear footing lines and scaled by depth.
 `UnitSprite.portraitFooting` excludes transparent padding so resizing stays
@@ -2149,8 +2162,9 @@ GraphQL loading reads `public/backdrop-calibrations.json`; save mutations reuse
 with `--map-editor`, validate bounds and local backdrop paths, merge one
 backdrop/unit entry,
 and atomically replace the JSON file. Invalid input or unreadable configuration
-leaves the saved file intact. Entering or reloading any consuming page loads
-current saved settings without synchronizing catalogs across pages.
+leaves the saved file intact. Entering or reloading the reviewer loads current
+saved settings. Gameplay and replays receive saved changes after regenerating
+the catalog and rebuilding the frontend.
 
 Legacy shared calibration entries load as identical starting settings for all four
 unit types. Subsequent saves merge only the selected pair. The JSON catalog stores

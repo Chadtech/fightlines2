@@ -113,16 +113,16 @@ visibilityText terrain =
             "units on top of hills have greater line of sight and can see over obstacles (forests and other hills)."
 
         Terrain.Mountains ->
-            "mountains give +2 line of sight and let infantry see over obstacles. each mountain square costs infantry 2 movement points (1 extra). tanks, trucks, and field guns cannot cross mountains."
+            "mountains give +2 line of sight and let infantry see over obstacles. infantry are slowed down traversing mountains, and tanks, trucks, and field guns cannot cross mountains at all."
 
         Terrain.Forest ->
             "units inside forests are completely concealed, forests also obstruct line of sight."
 
         Terrain.Water ->
-            "water cannot be entered or crossed by infantry, tanks, trucks, or field guns, including when unloading. it does not block line of sight."
+            "water cannot be entered or crossed by infantry, tanks, trucks, or field guns, including when unloading."
 
         Terrain.Beach ->
-            "a sandy shore with a gentle water edge. all current units can cross it and unload here using ordinary plain movement and supply costs. it does not provide cover or block sight."
+            "a sandy shore with a gentle water edge."
 
-        _ ->
+        Terrain.Road _ ->
             "a paved road with ordinary plain movement and supply costs. vehicles use less fuel when entering road squares. roads provide no cover and do not block sight."

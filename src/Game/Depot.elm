@@ -147,10 +147,10 @@ description : Depot -> String
 description depot =
     case depot.kind of
         BuildingKind.Supply ->
-            "a neutral supply source for either player. replenishes units on its square or one cardinally adjacent square at the end of the turn, before upkeep. three shell hits or one turn of infantry sabotage destroy it and its stock."
+            "a neutral supply source for either player. replenishes units on top of or next to the depot at the end of the turn, before upkeep. three shell hits or one turn of infantry sabotage destroy it and its stock."
 
         BuildingKind.Fuel ->
-            "a neutral fuel source for either player. refills living tanks and trucks on its square or one cardinally adjacent square at the end of the turn, before upkeep. one shell hit or one turn of infantry sabotage destroys it and its stock."
+            "a neutral fuel source for either player. refills tanks and trucks on top of or next to the depot at the end of the turn, before upkeep. one shell hit or one turn of infantry sabotage destroys it and its stock."
 
         BuildingKind.Fortress ->
             "a neutral defensive position for either player. units occupying its square take 75% less damage from direct and indirect fire, with a minimum of one hp per hit. protection stacks with terrain and entrenchment while the fortress survives. eight shell hits or one turn of infantry sabotage destroy it and remove its protection. provides no supplies, fuel, or freight."

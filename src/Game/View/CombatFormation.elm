@@ -8,6 +8,7 @@ module Game.View.CombatFormation exposing
     , lossStartsAt
     , toSvg
     , toSvgWithCalibration
+    , trenchLossEndsAt
     )
 
 import Api.Enum.Entrenchment as Entrenchment
@@ -354,8 +355,63 @@ trenchPlacements calibration =
         ]
 
 
-trenchToSvg : TrenchOccupancy -> Maybe Calibration -> Appearance -> List (Svg msg)
-trenchToSvg occupancy calibration unit =
+trenchLossEndsAt : CombatInfantry.Loadout -> Appearance -> CombatHealth -> Float
+trenchLossEndsAt loadout unit health =
+    if usesTrenches loadout unit then
+        [ trenchLossAt health 0, trenchLossAt health 1 ]
+            |> List.filterMap identity
+            |> List.maximum
+            |> Maybe.map (\startsAt -> startsAt + CombatExplosion.durationMs + trenchMarkerDurationMs)
+            |> Maybe.withDefault 0
+
+    else
+        0
+
+
+trenchMarkerDurationMs : Float
+trenchMarkerDurationMs =
+    650
+
+
+{-| Match the four rear and three front hit positions. A segment is lost only
+when all of its health groups are gone; partial damage keeps it occupied.
+-}
+trenchLossAt : CombatHealth -> Int -> Maybe Float
+trenchLossAt health row =
+    let
+        first : Int
+        first =
+            if row == 0 then
+                0
+
+            else
+                4
+
+        last : Int
+        last =
+            if row == 0 then
+                3
+
+            else
+                6
+
+        before : Int
+        before =
+            figureCount CombatInfantry.SmallArms Kind.Infantry health.before.current
+
+        after : Int
+        after =
+            figureCount CombatInfantry.SmallArms Kind.Infantry health.after.current
+    in
+    if (before > first) && (after <= first) then
+        Just (lossStartsAt { surviving = after, index = min last (before - 1) })
+
+    else
+        Nothing
+
+
+trenchToSvg : TrenchOccupancy -> Maybe Calibration -> Float -> CombatHealth -> Appearance -> List (Svg msg)
+trenchToSvg occupancy calibration elapsed health unit =
     let
         team : String
         team =
@@ -366,24 +422,42 @@ trenchToSvg occupancy calibration unit =
                 PlayerNumber.Player2 ->
                     "blue"
 
-        path : String
-        path =
-            case occupancy of
-                Occupied ->
-                    "/assets/combat-trench-overlay-anime-v2/" ++ team ++ ".png"
+        trench : Int -> Placement -> Svg msg
+        trench row placement =
+            let
+                firstGroup : Int
+                firstGroup =
+                    if row == 0 then
+                        0
 
-                ShelteringUnderground ->
-                    "/assets/combat-trench-overlay-anime-v2/empty.png"
+                    else
+                        4
 
-        trench : Placement -> Svg msg
-        trench placement =
+                lostBefore : Bool
+                lostBefore =
+                    figureCount CombatInfantry.SmallArms Kind.Infantry health.before.current <= firstGroup
+
+                lostNow : Bool
+                lostNow =
+                    trenchLossAt health row
+                        |> Maybe.map (\startsAt -> elapsed >= startsAt + CombatExplosion.spriteDisappearsAt)
+                        |> Maybe.withDefault False
+
+                path : String
+                path =
+                    if (occupancy == ShelteringUnderground) || lostBefore || lostNow then
+                        "/assets/combat-trench-overlay-anime-v2/empty.png"
+
+                    else
+                        "/assets/combat-trench-overlay-anime-v2/" ++ team ++ ".png"
+            in
             Svg.image
                 [ SA.xlinkHref path
                 , SA.x (String.fromFloat placement.x)
                 , SA.y (String.fromFloat placement.y)
                 , SA.width (String.fromFloat placement.size)
                 , SA.height (String.fromFloat (placement.size * 809 / 1945))
-                , A.attribute "data-combat-trench" ""
+                , A.attribute "data-combat-trench" (String.fromInt row)
                 , Aria.hidden True
                 ]
                 []
@@ -399,12 +473,88 @@ trenchToSvg occupancy calibration unit =
     in
     [ Svg.g
         [ SA.transform facing ]
-        (List.map trench (trenchPlacements calibration))
+        (List.indexedMap trench (trenchPlacements calibration))
     ]
 
 
+{-| Brief segment markers follow their final blast. The final unit marker stays
+until the encounter closes. All timing uses the pausable theater clock.
+-}
+trenchMarkersToSvg : Maybe Calibration -> Float -> CombatHealth -> Appearance -> List (Svg msg)
+trenchMarkersToSvg calibration elapsed health unit =
+    let
+        destroyed : Bool
+        destroyed =
+            health.after.current <= 0
+
+        finalBlastEndsAt : Float
+        finalBlastEndsAt =
+            impactStarts CombatInfantry.SmallArms Kind.Infantry health
+                |> List.maximum
+                |> Maybe.withDefault impactStartsAt
+                |> (+) CombatExplosion.durationMs
+
+        marker : String -> Float -> Placement -> Svg msg
+        marker name opacity placement =
+            let
+                size : Float
+                size =
+                    placement.size * 0.65
+
+                centerX : Float
+                centerX =
+                    placement.x + placement.size / 2
+
+                x : Float
+                x =
+                    if unit.spriteFacing == SpriteFacing.Left then
+                        96 - centerX - size / 2
+
+                    else
+                        centerX - size / 2
+            in
+            Svg.image
+                [ SA.xlinkHref "/assets/death-skull-illustrated-v1.png"
+                , SA.x (String.fromFloat x)
+                , SA.y (String.fromFloat (placement.y - size * 0.4))
+                , SA.width (String.fromFloat size)
+                , SA.height (String.fromFloat size)
+                , SA.opacity (String.fromFloat opacity)
+                , SA.pointerEvents "none"
+                , A.attribute "data-trench-loss-marker" name
+                , Aria.hidden True
+                ]
+                []
+
+        segmentMarker : Int -> Placement -> List (Svg msg)
+        segmentMarker row placement =
+            case trenchLossAt health row of
+                Just startsAt ->
+                    let
+                        age : Float
+                        age =
+                            elapsed - startsAt - CombatExplosion.durationMs
+                    in
+                    if (age >= 0) && (age < trenchMarkerDurationMs) then
+                        [ marker (String.fromInt row) (1 - age / trenchMarkerDurationMs) placement ]
+
+                    else
+                        []
+
+                Nothing ->
+                    []
+    in
+    if destroyed && (elapsed >= finalBlastEndsAt + trenchMarkerDurationMs) then
+        [ marker "unit" 1 { x = 28, y = 27, size = 40 } ]
+
+    else
+        trenchPlacements calibration
+            |> List.indexedMap segmentMarker
+            |> List.concat
+
+
 {-| Keep the existing seven infantry hit cues, positioned inside the two trenches.
-The painted soldiers remain static through losses, as in the previous interior art.
+Individual losses keep the artwork intact until a whole segment is lost.
 -}
 trenchImpactPlacements : Maybe Calibration -> List Placement
 trenchImpactPlacements calibration =
@@ -721,6 +871,14 @@ layersToSvg effect calibration layers animation health unit =
                         && (elapsed >= impactStart)
                         && (elapsed < impactStart + CombatExplosion.durationMs)
 
+                impactScale : Float
+                impactScale =
+                    if usesTrenches animation.infantryLoadout unit then
+                        scale * 2.5
+
+                    else
+                        scale
+
                 impact : List (Svg msg)
                 impact =
                     if showingImpact then
@@ -731,7 +889,7 @@ layersToSvg effect calibration layers animation health unit =
                                     ++ " "
                                     ++ String.fromFloat (scale * 8)
                                     ++ ") scale("
-                                    ++ String.fromFloat scale
+                                    ++ String.fromFloat impactScale
                                     ++ ")"
                                 )
                             , A.attribute "data-casualty" (String.fromInt index)
@@ -823,12 +981,33 @@ layersToSvg effect calibration layers animation health unit =
             case layer of
                 Combatants ->
                     if showingTrenches then
-                        trenchToSvg animation.trenchOccupancy calibration unit
+                        case effect of
+                            ShellImpact ->
+                                trenchToSvg animation.trenchOccupancy calibration elapsed health unit
+
+                            SupplyExhaustion ->
+                                trenchToSvg animation.trenchOccupancy calibration 0 health unit
 
                     else
                         List.map (renderFigure layer) visiblePlacements
 
-                _ ->
+                Impacts ->
+                    let
+                        impacts : List (Svg msg)
+                        impacts =
+                            List.map (renderFigure layer) visiblePlacements
+
+                        markers : List (Svg msg)
+                        markers =
+                            if showingTrenches then
+                                trenchMarkersToSvg calibration elapsed health unit
+
+                            else
+                                []
+                    in
+                    impacts ++ markers
+
+                ExhaustionMarkers ->
                     List.map (renderFigure layer) visiblePlacements
     in
     List.concatMap renderLayer layers

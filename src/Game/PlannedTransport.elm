@@ -171,7 +171,8 @@ boardingPassengers units truckId drafts =
 
 
 {-| Shared berths available for freight after existing cargo and planned
-boarding. Passenger exits do not free berths for loading in the same turn.
+boarding. Planned passenger exits free space before freight loads. Blocked exits
+are accounted for by the server when the turn resolves.
 -}
 cargoRoom : List Unit -> Unit -> List PlannedOrder -> Int
 cargoRoom units truck drafts =
@@ -186,7 +187,15 @@ cargoRoom units truck drafts =
             boardingPassengers units truck.id drafts
                 |> List.length
     in
-    max 0 (truck.cargoCapacity - passengers - Unit.freightCount truck - incoming)
+    max 0 (truck.cargoCapacity - passengers + unloadingPassengers truck.id drafts - Unit.freightCount truck - incoming)
+
+
+unloadingPassengers : UnitId -> List PlannedOrder -> Int
+unloadingPassengers truckId drafts =
+    drafts
+        |> List.filter (\order -> order.unitId == truckId)
+        |> List.concatMap PlannedOrder.unloads
+        |> List.length
 
 
 receivingLoad : List Unit -> Unit -> List PlannedOrder -> Bool
@@ -495,12 +504,13 @@ boardingSpace units mover target drafts =
 
         fitsCargo : Bool
         fitsCargo =
-            alreadyAboard
-                + Unit.freightCount truck
-                + plannedCrates
-                + incomingPassengers
-                + movingPassenger
-                <= truck.cargoCapacity
+            let
+                occupiedBeforeUnloading : Int
+                occupiedBeforeUnloading =
+                    alreadyAboard + Unit.freightCount truck + incomingPassengers + movingPassenger
+            in
+            (occupiedBeforeUnloading <= truck.cargoCapacity)
+                && (occupiedBeforeUnloading - unloadingPassengers truck.id drafts + plannedCrates <= truck.cargoCapacity)
 
         compatible : Bool
         compatible =

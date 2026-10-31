@@ -914,7 +914,9 @@ pub fn validate(
                     "ground pickup cannot combine with depot loading or freight unloading.",
                 );
             }
-            if supplies::occupied_berths(scenario, unit) >= unit.cargo_capacity() as usize {
+            if supplies::occupied_berths(scenario, unit) - unloads.len()
+                >= unit.cargo_capacity() as usize
+            {
                 return Err("the truck has no room for ground freight.");
             }
             if !planning_scenario
@@ -926,7 +928,7 @@ pub fn validate(
             }
         }
         if load_crates > 0 {
-            if load_crates + supplies::occupied_berths(scenario, unit)
+            if load_crates + supplies::occupied_berths(scenario, unit) - unloads.len()
                 > unit.cargo_capacity() as usize
             {
                 return Err("the truck has no room for these crates.");
@@ -1133,9 +1135,13 @@ pub fn validate(
             .iter()
             .filter(|load| load.truck == order.unit_id)
             .count();
+        // Boarding happens before unloading; freight loads after passenger exits.
+        let occupied_before_unloading = supplies::occupied_berths(scenario, truck) + incoming;
+        let occupied_after_loading =
+            occupied_before_unloading - order.unloads.len() + order.supply.loading_count();
         if incoming > 0
-            && supplies::occupied_berths(scenario, truck) + incoming + order.supply.loading_count()
-                > truck.cargo_capacity() as usize
+            && (occupied_before_unloading > truck.cargo_capacity() as usize
+                || occupied_after_loading > truck.cargo_capacity() as usize)
         {
             return Err("the truck has no room for another unit.");
         }
@@ -3708,6 +3714,73 @@ mod tests {
         }]);
         set_path(&mut orders, "1", &[(0, 8), (0, 9)])?;
         Ok(orders)
+    }
+
+    #[test]
+    fn passenger_exit_frees_depot_freight_space_unless_blocked() -> TestResult<()> {
+        for moving in [false, true] {
+            for blocked in [false, true] {
+                for kind in [BuildingKind::Supply, BuildingKind::Fuel] {
+                    let mut depot = Scenario::supply_point()
+                        .fixture()?
+                        .depots
+                        .first()
+                        .fixture()?
+                        .clone();
+                    depot.position = Coordinate::new(1, 8);
+                    depot.kind = kind;
+                    let mut scenario = infantry_dismount_fixture()?;
+                    scenario.depots.push(depot);
+                    if blocked {
+                        let exit = Coordinate::new(0, 8);
+                        scenario.map = Map::new(
+                            17,
+                            17,
+                            Terrain::Plain,
+                            BTreeMap::from([(exit, Terrain::Forest)]),
+                        )
+                        .fixture()?;
+                        vehicle(&mut scenario, "6")?.move_to(exit);
+                    }
+                    let mut orders = infantry_dismount_inputs(&scenario)?;
+                    if !moving {
+                        vehicle(&mut scenario, "4")?.move_to(Coordinate::new(1, 8));
+                        set_path(&mut orders, "4", &[(1, 8)])?;
+                    }
+                    orders
+                        .iter_mut()
+                        .find(|order| order.unit_id == "4")
+                        .fixture()?
+                        .load_crates = Some(2);
+                    let mut turns = Turns::default();
+                    resolve_orders(&mut scenario, &mut turns, orders)?;
+                    let truck = vehicle(&mut scenario, "4")?;
+                    assert_eq!(truck.supply_cargo.len(), if blocked { 1 } else { 2 });
+                    assert!(
+                        truck
+                            .supply_cargo
+                            .iter()
+                            .all(|cargo| Some(cargo.kind) == kind.resource_kind())
+                    );
+                    assert_eq!(
+                        vehicle(&mut scenario, "1")?.carrier_id(),
+                        if blocked { UnitId::parse("4") } else { None }
+                    );
+                    assert_eq!(
+                        supplies::occupied_berths(
+                            &scenario,
+                            scenario
+                                .units
+                                .iter()
+                                .find(|unit| unit.id() == "4")
+                                .fixture()?
+                        ),
+                        2
+                    );
+                }
+            }
+        }
+        Ok(())
     }
 
     #[test]

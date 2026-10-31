@@ -1,4 +1,4 @@
-.PHONY: build frontend generate-api sprites check check-all run dev editor logs
+.PHONY: build frontend generate-api combat-theater-calibrations sprites check check-all run dev editor logs
 
 PRODUCTION ?= false
 RUST_TEST_ARGS ?=
@@ -15,7 +15,10 @@ generate-api:
 sprites:
 	npm run build-sprites
 
-frontend: generate-api
+combat-theater-calibrations:
+	node tools/build-combat-theater-calibrations.cjs
+
+frontend: generate-api combat-theater-calibrations
 	node tools/build-config.cjs $(PRODUCTION)
 	elm make src/Fightlines.elm --output=public/elm.js
 	node tools/build-dev-tools.cjs $(PRODUCTION)
@@ -23,11 +26,12 @@ frontend: generate-api
 check-all: RUST_TEST_ARGS = --include-ignored
 check-all: check
 
-check:
+check: combat-theater-calibrations
 	cargo fmt --all -- --check
 	cargo clippy --locked --all-targets -- -D warnings
 	cargo test --locked -- $(RUST_TEST_ARGS)
 	elm-format src --validate
+	node --test tools/check-combat-theater-calibrations.cjs
 	node tools/check-movement.cjs
 	node tools/check-shoreline.cjs
 	node tools/check-roads.cjs

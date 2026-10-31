@@ -221,10 +221,10 @@ badge index warning =
     in
     Svg.svg
         [ A.attribute "data-unit-warning" (warningLabel warning)
-        , SA.x (String.fromFloat (0.64 + toFloat index * 3.44))
+        , SA.x (String.fromFloat (0.64 + toFloat index * 5.04))
         , SA.y "0.64"
-        , SA.width "3.2"
-        , SA.height "3.2"
+        , SA.width "4.8"
+        , SA.height "4.8"
         , SA.viewBox "0 0 24 24"
         ]
         [ Svg.rect

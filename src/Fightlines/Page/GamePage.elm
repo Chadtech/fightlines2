@@ -50,11 +50,11 @@ import Fightlines.View.OrderMenu as OrderMenu
 import Fightlines.View.TurnIntroduction as TurnIntroduction
 import Fightlines.View.UnloadPassenger as UnloadPassenger
 import Game.AnimationFrame as AnimationFrame
-import Game.BackdropCalibration as BackdropCalibration
 import Game.BattlefieldNavigation as BattlefieldNavigation
 import Game.BattlefieldSnapshot as BattlefieldSnapshot exposing (Player)
 import Game.Camera as Camera
 import Game.CombatRules as CombatRules
+import Game.CombatTheaterCalibrations as CombatTheaterCalibrations
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.CurrentTurn as CurrentTurn
 import Game.Depot as Depot
@@ -152,7 +152,6 @@ import View.Dialog as Dialog exposing (Dialog)
 type alias Model =
     { currentTurn : CurrentTurn.Model
     , shared : Shared.Model
-    , backdropCalibrations : List BackdropCalibration.Entry
     , skipTurnIntroduction : Bool
     , skipUnplannedUnitsWarning : Bool
     , skipUnitLossDialogs : Bool
@@ -267,7 +266,6 @@ type Msg
 
 type alias Flags =
     { snapshot : Snapshot
-    , backdropCalibrations : List BackdropCalibration.Entry
     }
 
 
@@ -306,7 +304,6 @@ init shared flags =
                     |> Shared.addError introductionPreferenceError
                     |> Shared.addError submissionPreferenceError
             , skipTurnIntroduction = skipTurnIntroduction
-            , backdropCalibrations = flags.backdropCalibrations
             , skipUnplannedUnitsWarning = skipUnplannedUnitsWarning
             , skipUnitLossDialogs = skipLossDialogs
             , automaticallyCloseCombatTheater = automaticallyCloseCombatTheater
@@ -351,7 +348,6 @@ load : LobbyId -> Graphql.Http.Request Flags
 load id =
     SS.succeed Flags
         |> SS.with (Api.Query.game { id = LobbyId.toString id } snapshotSelection)
-        |> SS.with BackdropCalibration.catalogSelection
         |> ApiRequest.queryRequest
 
 
@@ -3241,7 +3237,7 @@ view model =
         , onCloseInspection = InspectorCloseClicked
         , combatOverlay =
             PlaybackPresentation.combatOverlay
-                model.backdropCalibrations
+                CombatTheaterCalibrations.catalog
                 model.automaticallyCloseCombatTheater
                 model.map
                 (playback model)

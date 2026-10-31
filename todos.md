@@ -3,21 +3,15 @@
 # Done
 
 ## doing now
-- There is lag when clicking, moving, and going through the unload dialog
-
-## Bugs
-
-- if I am unloading fuel and supplies, there is no indicator which one is unloading first
-- How much is the flank bonus for tank v tank combat compared to tank v tank combat without a flank bonus
-- If I drive a truck to a depot, and unload it entirely, the resulting load menu does not grant me full capacity to load up
-
-## Immediately
-- Proofread all screen text
 - make the low supply, low health, and low fuel indicators bigger
-- The from behind flank bonus on entrenched infantry should be huge
 - Death animation for entrenched infantry?
 - Settings page
-- Consider hardcoding unit backdrop calibrations
+- - Consider hardcoding unit backdrop calibrations
+## Bugs
+
+
+## Immediately
+
 
 ## Soon
 
@@ -29,8 +23,6 @@
 ## After prod launch
 - Tutorial missions
 - Manufacturing and cities
-- Infantry weapon diversity (bazooka, mounted machine gun)
-- Fortresses
 - Credits / About
 
 ### Future units

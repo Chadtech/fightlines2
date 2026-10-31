@@ -3369,6 +3369,11 @@ planningChecks infantryId truckId passengerId =
             )
                 depotExits
 
+        hasTwoFreightBerths : Unit -> Bool
+        hasTwoFreightBerths cargoTruck =
+            (cargoTruck.id == truckId)
+                && (PlannedTransport.cargoRoom depotCargoContext.units cargoTruck (OrderPlanning.orders depotCompleted) == 2)
+
         depotCompleted : OrderPlanning.Model
         depotCompleted =
             (OrderPlanning.chooseUnloadSquare
@@ -4392,19 +4397,18 @@ planningChecks infantryId truckId passengerId =
                 == Nothing
                 && List.isEmpty (OrderPlanning.orders (OrderPlanning.setSelection Nothing exits))
             )
-        , expect "passenger exits preserve the plan without offering loading into occupied berths"
-            (not (choosingCrates depotCompleted)
+        , expect "passenger exits free freight berths while preserving the unload plan"
+            (choosingCrates depotCompleted
+                && List.any hasTwoFreightBerths depotCargoContext.units
                 && List.concatMap PlannedOrder.unloads (OrderPlanning.orders depotCompleted)
                 == List.concatMap PlannedOrder.unloads (OrderPlanning.orders completed)
-                && not
-                    (choosingCrates
-                        (OrderPlanning.skipUnloading
-                            depotCargoContext.map
-                            depotCargoContext.units
-                            depotCargoContext.supplyCrates
-                            depotCargoContext.depots
-                            depotFirstExit
-                        )
+                && choosingCrates
+                    (OrderPlanning.skipUnloading
+                        depotCargoContext.map
+                        depotCargoContext.units
+                        depotCargoContext.supplyCrates
+                        depotCargoContext.depots
+                        depotFirstExit
                     )
                 && List.concatMap PlannedOrder.unloads
                     (OrderPlanning.orders

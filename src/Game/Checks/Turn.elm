@@ -4045,6 +4045,16 @@ combatTheaterChecks =
         smallArmsAttack =
             CombatAttack.Attacking { startsAt = 1200 }
 
+        trenchEndAt : Int -> Int -> Float
+        trenchEndAt before after =
+            CombatFormation.trenchLossEndsAt CombatInfantry.SmallArms
+                { kind = Kind.Infantry
+                , playerNumber = PlayerNumber.Player1
+                , spriteFacing = SpriteFacing.Right
+                , entrenchment = Entrenchment.Entrenched
+                }
+                (health before after)
+
         infantryFrames : Float -> List Int
         infantryFrames elapsed =
             let
@@ -4057,6 +4067,12 @@ combatTheaterChecks =
     List.concat
         [ expect "theater figures each represent a quarter of health, including partially intact quarters"
             (counts == [ 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4 ])
+        , expect "partial trench damage and previously empty trenches produce no new skull hold"
+            (trenchEndAt 16 12 == 0 && trenchEndAt 10 8 == 0 && trenchEndAt 10 10 == 0)
+        , expect "a lost trench holds through its final staggered impact and brief skull"
+            (trenchEndAt 16 10 == 2190)
+        , expect "final trench destruction and simultaneous trench losses finish before the persistent skull"
+            (trenchEndAt 10 0 == 2310 && trenchEndAt 16 0 == 2670)
         , expect "infantry keeps a four-HP gun team and six two-HP riflemen, including partial groups"
             (List.map (CombatFormation.figureCount CombatInfantry.SmallArms Kind.Infantry) (List.range 0 16)
                 == [ 0, 1, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7 ]

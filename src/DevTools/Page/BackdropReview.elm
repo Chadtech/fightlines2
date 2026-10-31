@@ -1091,7 +1091,7 @@ calibrationControls model =
 calibrationStatus : Key -> Calibration -> Model -> String
 calibrationStatus key settings model =
     if Calibration.find key model.backdropCalibrations == Just settings then
-        "saved · used when opening gameplay"
+        "saved · rebuild frontend to use in gameplay"
 
     else
         "unsaved preview · save for this unit type and backdrop"

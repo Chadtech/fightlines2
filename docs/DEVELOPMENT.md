@@ -19,7 +19,7 @@ Read [architecture](../ARCHITECTURE.md) for state ownership and cross-module flo
 ## Local setup
 
 Requires Rust/Cargo, Elm 0.19.3, Node.js 22 or newer, npm, and Make.
-Install `elm-format` to run the development checks.
+Install `elm-format` for calibration generation and the development checks.
 
 ```sh
 npm ci
@@ -65,6 +65,7 @@ Ordinary `make run` keeps the normal lobby workflow.
 ## Checks and builds
 
 ```sh
+make combat-theater-calibrations # Generate the Elm catalog from saved backdrop settings
 make sprites # Optional: re-export sprites using locally retained source artwork
 make build   # Generate the API client and build the production frontend and backend
 make check   # Routine formatting, lint, fast tests, and compilation
@@ -261,9 +262,14 @@ include team, health, and a custom image path.
 
 Saving requires a localhost server started with `--map-editor` (`make dev` or
 `make editor`). It writes `public/backdrop-calibrations.json`, preserving other
-backdrop/unit pairs. Commit that file with the artwork. Gameplay and replays load
-saved settings whenever their page opens or refreshes; unsaved adjustments stay
-in the review page. Backdrops
+backdrop/unit pairs. Run `make combat-theater-calibrations` to generate
+`src/Game/CombatTheaterCalibrations.elm`, then rebuild the frontend to use the
+saved settings in gameplay and replays. `make frontend` (including `make dev`,
+`make run`, and `make build`) and `make check` generate the catalog automatically.
+Generation validates paths, artwork existence, unit kinds, and numeric bounds;
+invalid input fails without replacing the generated module. Commit both the JSON
+and generated Elm file with the artwork. The reviewer loads saved JSON directly
+and previews edits immediately; unsaved adjustments stay in that page. Backdrops
 without saved settings retain their original gameplay placements. Use **copy calibrations** to select a saved source and a destination backdrop,
 then choose a **unit type**. **copy and save [unit type] calibration** replaces
 only that unit type at the destination. Copying stays disabled until a unit type

@@ -342,6 +342,8 @@ dialog. Choose **pick up** to collect it when the turn resolves, or **leave on g
 to keep the route without collecting it. Escape also leaves it on the ground.
 Either player can collect neutral freight, and its remaining stock is preserved.
 Full trucks leave the freight on the ground.
+Passenger unloads free berths for freight loading in the same turn. If an exit is
+blocked, only freight that fits alongside passengers still aboard is loaded.
 Loading is always explicit and shares cargo capacity with passengers. Each
 crate takes up to 256 supplies from the depot; the last crate may be partially
 filled. Moving or holding a loaded truck opens the shared **unload** checklist.

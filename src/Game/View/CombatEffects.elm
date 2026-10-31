@@ -1,19 +1,21 @@
 module Game.View.CombatEffects exposing
-    ( explosion
-    , impacts
+    ( impacts
     , mapPeek
     , spotlight
     , styles
     )
 
+import Api.Enum.SpriteFacing as SpriteFacing
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Map as Map exposing (Map)
 import Game.Shot as Shot exposing (Shot)
 import Game.Unit as Unit exposing (Unit)
+import Game.View.CombatExplosion as CombatExplosion
 import Html.Styled as H exposing (Html)
 import Style as S
 import Svg exposing (Svg)
 import Svg.Attributes as SA
+import Svg.Styled as StyledSvg
 import View.Aria as Aria
 
 
@@ -33,21 +35,9 @@ styles =
             .fightlines-combat-map-peek .fightlines-combat-shine {
                 animation: fightlines-combat-shine 900ms ease-in-out infinite;
             }
-            @keyframes fightlines-combat-impact {
-                0% { transform: scale(.2); opacity: 0; }
-                20% { transform: scale(.85); opacity: 1; }
-                50% { transform: scale(1.1); opacity: 1; }
-                100% { transform: scale(1.5); opacity: 0; }
-            }
-            .fightlines-combat-impact {
-                animation: fightlines-combat-impact 360ms ease-out both;
-                transform-box: fill-box;
-                transform-origin: center;
-            }
             @media (prefers-reduced-motion: reduce) {
                 .fightlines-combat-shine,
                 .fightlines-combat-map-peek .fightlines-combat-shine { animation: none; opacity: .45; }
-                .fightlines-combat-impact { animation: none; opacity: .85; }
             }
         """
         ]
@@ -208,13 +198,13 @@ impacts landings units shots =
             Svg.g
                 [ SA.transform
                     ("translate("
-                        ++ String.fromInt (position.x * 16 + 8)
+                        ++ String.fromInt (position.x * 16)
                         ++ " "
-                        ++ String.fromInt (position.y * 16 + 8)
-                        ++ ") scale(0.8)"
+                        ++ String.fromInt (position.y * 16)
+                        ++ ")"
                     )
                 ]
-                [ explosion
+                [ CombatExplosion.mapToSvg SpriteFacing.Right |> StyledSvg.toUnstyled
                 ]
 
         explosions : List (Svg msg)
@@ -230,26 +220,3 @@ impacts landings units shots =
             , Aria.svgLabel "combat impact"
             ]
             explosions
-
-
-explosion : Svg msg
-explosion =
-    Svg.g
-        [ SA.class "fightlines-combat-impact"
-        ]
-        [ Svg.polygon
-            [ SA.points "0,-7 1.7,-3 5,-5 3,0 7,2 2.5,3 0,7 -1.5,3 -6,5 -3,0 -7,-2 -2.5,-3"
-            , SA.fill S.red1Str
-            ]
-            []
-        , Svg.circle
-            [ SA.r "3.8"
-            , SA.fill S.yellow5Str
-            ]
-            []
-        , Svg.circle
-            [ SA.r "1.8"
-            , SA.fill S.gray5Str
-            ]
-            []
-        ]

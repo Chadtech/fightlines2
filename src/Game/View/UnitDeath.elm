@@ -58,7 +58,7 @@ styles =
             }
             .fightlines-death-focus *:not(["""
                 ++ CombatExplosion.casualtyAnimationAttribute
-                ++ """]):not(.fightlines-combat-impact),
+                ++ """]),
             .fightlines-death-focus *::before,
             .fightlines-death-focus *::after {
                 animation-play-state: paused !important;

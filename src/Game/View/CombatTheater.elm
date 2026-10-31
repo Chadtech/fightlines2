@@ -580,8 +580,32 @@ participantsEndAt panel =
                 |> List.map .endsAt
                 |> List.maximum
                 |> Maybe.withDefault 0
+
+        trenchMarkersEndAt : Float
+        trenchMarkersEndAt =
+            let
+                endsAt : Unit -> CombatHealth -> Float
+                endsAt unit health =
+                    CombatFormation.trenchLossEndsAt
+                        (infantryLoadout panel unit)
+                        (UnitSprite.appearance unit)
+                        health
+                        + attackDelay panel
+            in
+            case panel.encounter of
+                Exchange exchange ->
+                    max (endsAt exchange.attacker exchange.attackerHealth)
+                        (endsAt exchange.target exchange.targetHealth)
+
+                Impact impact ->
+                    impact.target
+                        |> Maybe.map (\observed -> endsAt observed.unit observed.health)
+                        |> Maybe.withDefault 0
+
+                _ ->
+                    0
     in
-    max impactsEndAt attacksEndAt
+    max trenchMarkersEndAt (max impactsEndAt attacksEndAt)
 
 
 {-| Finish the participant hits before cutting to the building as a whole.
@@ -1531,12 +1555,12 @@ portrait scenery panel health unit =
 {-| Both confirmed exchanges and landings from concealed guns can have observed
 targets. Only the bombarded participant shelters; firing guns keep their artwork.
 -}
-trenchOccupancy : Panel -> Unit -> CombatFormation.TrenchOccupancy
-trenchOccupancy panel unit =
+trenchOccupancy : Appearance -> Panel -> Unit -> CombatFormation.TrenchOccupancy
+trenchOccupancy appearance panel unit =
     let
         entrenchedInfantry : Bool
         entrenchedInfantry =
-            (unit.kind == UnitKind.Infantry) && (unit.entrenchment == Entrenchment.Entrenched)
+            (appearance.kind == UnitKind.Infantry) && (appearance.entrenchment == Entrenchment.Entrenched)
 
         underIndirectFire : Bool
         underIndirectFire =
@@ -1560,13 +1584,26 @@ trenchOccupancy panel unit =
 portraitScene : Scenery -> Panel -> CombatHealth -> Unit -> Html Msg
 portraitScene scenery panel health unit =
     let
+        insideFortress : Depot -> Bool
+        insideFortress depot =
+            (depot.kind == BuildingKind.Fortress)
+                && (Unit.mapPosition unit == Just depot.position)
+
+        appearance : Appearance
+        appearance =
+            if List.any insideFortress scenery.depots then
+                UnitSprite.appearance (Unit.setEntrenchment Entrenchment.Exposed unit)
+
+            else
+                UnitSprite.appearance unit
+
         animation : CombatFormation.Animation
         animation =
             { elapsed = panel.elapsed
             , impactDelay = attackDelay panel
             , attack = attackFor panel unit
             , infantryLoadout = infantryLoadout panel unit
-            , trenchOccupancy = trenchOccupancy panel unit
+            , trenchOccupancy = trenchOccupancy appearance panel unit
             }
 
         path : String
@@ -1621,7 +1658,7 @@ portraitScene scenery panel health unit =
             )
             animation
             health
-            (UnitSprite.appearance unit)
+            appearance
         )
 
 
