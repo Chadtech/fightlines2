@@ -44,9 +44,12 @@ import Effect as E
 import Error exposing (Error)
 import Fightlines.Route as Route
 import Fightlines.Shared as Shared
+import Fightlines.View.About as About
 import Fightlines.View.GameMenu as GameMenu
 import Fightlines.View.OrderGuide as OrderGuide
 import Fightlines.View.OrderMenu as OrderMenu
+import Fightlines.View.PrivacyPolicy as PrivacyPolicy
+import Fightlines.View.Settings as Settings
 import Fightlines.View.TurnIntroduction as TurnIntroduction
 import Fightlines.View.UnloadPassenger as UnloadPassenger
 import Game.AnimationFrame as AnimationFrame
@@ -170,7 +173,7 @@ type alias Model =
     , battlefieldViewport : Maybe Camera.Viewport
     , frame : AnimationFrame.Frame
     , resigning : Bool
-    , menuOpen : Bool
+    , menu : Menu
     , unitHelp : Maybe UnitStatus.Help
     }
 
@@ -197,6 +200,15 @@ type alias PollStatus =
     }
 
 
+type Menu
+    = MenuClosed
+    | MainMenu
+    | ConfirmingResignation ResignationDestination
+    | AboutMenu
+    | PrivacyPolicyMenu
+    | SettingsMenu Settings.Tab
+
+
 type alias RotationSelection =
     { unitId : UnitId
     , position : Coordinate
@@ -213,6 +225,8 @@ type Msg
     | BattlefieldNavigationMsg BattlefieldNavigation.Msg
     | OrderMenuMsg OrderMenu.Msg
     | GameMenuMsg GameMenu.Msg
+    | SettingsMsg Settings.Msg
+    | FocusCompleted (Result Browser.Dom.Error ())
     | PreviousOrderPressed
     | NextOrderPressed
     | OrderFocusCompleted (Result Browser.Dom.Error ())
@@ -273,7 +287,9 @@ init : Shared.Model -> Flags -> ( Model, Eff Msg )
 init shared flags =
     let
         ( automaticallyCloseCombatTheater, maybeError ) =
-            PlaybackPresentation.loadPreference PlaybackPresentation.AutomaticallyCloseCombat shared.localStorage
+            PlaybackPresentation.loadPreference
+                PlaybackPresentation.AutomaticallyCloseCombat
+                shared.localStorage
 
         ( skipTurnIntroduction, introductionPreferenceError ) =
             Preference.load
@@ -292,7 +308,9 @@ init shared flags =
                 shared.localStorage
 
         ( skipLossDialogs, lossPreferenceError ) =
-            PlaybackPresentation.loadPreference PlaybackPresentation.SkipLossDialogs shared.localStorage
+            PlaybackPresentation.loadPreference
+                PlaybackPresentation.SkipLossDialogs
+                shared.localStorage
 
         model : Model
         model =
@@ -321,7 +339,7 @@ init shared flags =
             , battlefieldViewport = Nothing
             , frame = AnimationFrame.first
             , resigning = False
-            , menuOpen = False
+            , menu = MenuClosed
             , unitHelp = Nothing
             }
 
@@ -375,7 +393,16 @@ setCurrentTurn currentTurn model =
 
 setMenuOpen : Bool -> Model -> Model
 setMenuOpen menuOpen model =
-    { model | menuOpen = menuOpen }
+    let
+        menu : Menu
+        menu =
+            if menuOpen then
+                MainMenu
+
+            else
+                MenuClosed
+    in
+    { model | menu = menu }
 
 
 setMap : Map -> Model -> Model
@@ -431,8 +458,7 @@ unplannedUnitsWarningPreferenceKey =
 rememberPlaybackPreference : PlaybackPresentation.Preference -> Bool -> Eff msg
 rememberPlaybackPreference preference enabled =
     PlaybackPresentation.encodePreference preference enabled
-        |> ToJs.SetLocalStorage
-        |> E.toJs
+        |> E.setLocalStorage
 
 
 showTurnIntroduction : Model -> Bool
@@ -583,7 +609,7 @@ dismissDialog model =
     if model.unitHelp /= Nothing then
         { model | unitHelp = Nothing }
 
-    else if model.menuOpen then
+    else if model.menu /= MenuClosed then
         model
             |> setMenuOpen False
 
@@ -696,30 +722,8 @@ recordLossDetailsErrorIfPresent model =
 
 activeDialogHtmlId : Model -> Maybe String
 activeDialogHtmlId model =
-    if model.unitHelp /= Nothing then
-        Just UnitStatus.dialogHtmlId
-
-    else if model.menuOpen then
-        Just GameMenu.dialogHtmlId
-
-    else if orderGuideOpen model then
-        Just OrderGuide.dialogHtmlId
-
-    else if showTurnIntroduction model then
-        Just TurnIntroduction.dialogHtmlId
-
-    else
-        playbackDialogHtmlId model
-
-
-playbackDialogHtmlId : Model -> Maybe String
-playbackDialogHtmlId model =
-    case unitLoss model of
-        Just loss ->
-            Just (UnitDeath.dialogHtmlId loss)
-
-        Nothing ->
-            cargoDialogHtmlId model.currentTurn.phase
+    dialog model
+        |> Maybe.map Dialog.htmlId
 
 
 combatEncounter : Model -> Maybe TurnPlayback.Encounter
@@ -741,7 +745,11 @@ planningLocked model =
 
 unitsWithoutOrders : Model -> List Unit
 unitsWithoutOrders model =
-    OrderPlanning.missingOrders model.map model.units (ownPlayerNumbers model) (plannedOrders model)
+    OrderPlanning.missingOrders
+        model.map
+        model.units
+        (ownPlayerNumbers model)
+        (plannedOrders model)
 
 
 readyToSubmit : Model -> Bool
@@ -1316,22 +1324,6 @@ mapNavigation change model =
         |> updatePlaybackCamera
 
 
-cargoDialogHtmlId : TurnLifecycle.Phase -> Maybe String
-cargoDialogHtmlId phase =
-    case phase of
-        TurnLifecycle.Planning (OrderPlanning.ChoosingCrates _ _ _) ->
-            Just loadCratesDialogHtmlId
-
-        TurnLifecycle.Planning (OrderPlanning.ChoosingGroundFreight _ _ _) ->
-            Just groundPickupDialogHtmlId
-
-        TurnLifecycle.Planning (OrderPlanning.ChoosingPassengers _) ->
-            Just unloadDialogHtmlId
-
-        _ ->
-            Nothing
-
-
 groundPickupDialogHtmlId : String
 groundPickupDialogHtmlId =
     "ground-freight-pickup-dialog"
@@ -1582,16 +1574,37 @@ handleBattlefieldMsg msg model =
                 |> mapNavigation BattlefieldNavigation.resetViewport
 
 
+requestResignation : ResignationDestination -> Model -> ( Model, Eff Msg )
+requestResignation destination model =
+    let
+        canRequestResignation : Bool
+        canRequestResignation =
+            (model.menu == MainMenu)
+                && not model.resigning
+                && (model.currentTurn.outcome == Nothing)
+    in
+    if canRequestResignation then
+        ( { model | menu = ConfirmingResignation destination }
+        , E.focus
+            { htmlId = GameMenu.resignationCancelButtonHtmlId }
+            (GameMenu.FocusReturned >> GameMenuMsg)
+        )
+
+    else
+        E.withOut model
+
+
 resignGame : LobbyId -> ResignationDestination -> Model -> ( Model, Eff Msg )
 resignGame lobbyId destination model =
     let
         canResign : Bool
         canResign =
-            model.menuOpen && not model.resigning && (model.currentTurn.outcome == Nothing)
+            (model.menu == ConfirmingResignation destination) && not model.resigning && (model.currentTurn.outcome == Nothing)
     in
     if canResign then
         ( model
             |> setResigning True
+            |> setMenuOpen True
         , Api.Mutation.resignGame { id = LobbyId.toString lobbyId } snapshotSelection
             |> ApiRequest.mutationRequest
             |> E.request (ResignResponseReceived destination)
@@ -1799,6 +1812,17 @@ update lobbyId msg model =
     case msg of
         GameMenuMsg menuMsg ->
             handleGameMenuMsg lobbyId menuMsg model
+
+        SettingsMsg settingsMsg ->
+            case model.menu of
+                SettingsMenu _ ->
+                    handleSettingsMsg settingsMsg model
+
+                _ ->
+                    E.withOut model
+
+        FocusCompleted result ->
+            E.withOut (recordFocusResult result model)
 
         ResignResponseReceived destination result ->
             case result of
@@ -2107,7 +2131,7 @@ update lobbyId msg model =
             if model.unitHelp /= Nothing then
                 dismissUnitHelp model
 
-            else if model.menuOpen || showTurnIntroduction model then
+            else if (model.menu /= MenuClosed) || showTurnIntroduction model then
                 model
                     |> dismissDialog
                     |> E.withOut
@@ -2157,12 +2181,10 @@ update lobbyId msg model =
 
         SkipUnplannedUnitsWarningChanged skip ->
             ( { model | skipUnplannedUnitsWarning = skip }
-            , E.toJs
-                (ToJs.SetLocalStorage
-                    { key = unplannedUnitsWarningPreferenceKey
-                    , value = Encode.bool skip
-                    }
-                )
+            , E.setLocalStorage
+                { key = unplannedUnitsWarningPreferenceKey
+                , value = Encode.bool skip
+                }
             )
 
         SubmitResponseReceived turnNumber result ->
@@ -2287,7 +2309,10 @@ update lobbyId msg model =
                 TurnIntroduction.SkipDialogsChanged skip ->
                     ( { model | skipTurnIntroduction = skip }
                         |> setCurrentTurn (CurrentTurn.acknowledgeIntroduction model.currentTurn)
-                    , E.toJs (ToJs.SetLocalStorage { key = turnIntroductionPreferenceKey, value = Encode.bool skip })
+                    , E.setLocalStorage
+                        { key = turnIntroductionPreferenceKey
+                        , value = Encode.bool skip
+                        }
                     )
 
         UnitDeathMsg lossMsg ->
@@ -2513,9 +2538,32 @@ playAudio msg model =
                 OrderMenu.ArrowedDownOrderMenu _ ->
                     Audio.uiAffirm
 
+        SettingsMsg settingsMsg ->
+            case settingsMsg of
+                Settings.VolumeChanged _ _ ->
+                    Audio.none
+
+                Settings.CloseClicked ->
+                    Audio.uiConfirm
+
+                _ ->
+                    Audio.uiAffirm
+
+        FocusCompleted _ ->
+            Audio.none
+
         GameMenuMsg menuMsg ->
             case menuMsg of
                 GameMenu.OpenClicked ->
+                    Audio.uiAffirm
+
+                GameMenu.SettingsClicked ->
+                    Audio.uiAffirm
+
+                GameMenu.AboutClicked ->
+                    Audio.uiAffirm
+
+                GameMenu.PrivacyPolicyClicked ->
                     Audio.uiAffirm
 
                 GameMenu.CloseClicked ->
@@ -2524,8 +2572,14 @@ playAudio msg model =
                 GameMenu.FocusReturned _ ->
                     Audio.none
 
-                GameMenu.ResignClicked ->
+                GameMenu.ResignationCanceled ->
+                    Audio.uiCancel
+
+                GameMenu.ResignationConfirmed ->
                     Audio.uiConfirm
+
+                GameMenu.ResignClicked ->
+                    Audio.uiAffirm
 
                 GameMenu.HomeClicked ->
                     Audio.uiConfirm
@@ -2736,6 +2790,37 @@ handleGameMenuMsg lobbyId msg model =
             else
                 E.withOut model
 
+        GameMenu.AboutClicked ->
+            if (model.menu == MainMenu) && not model.resigning then
+                ( { model | menu = AboutMenu }
+                , E.focus
+                    { htmlId = About.htmlId ++ "-title" }
+                    (GameMenu.FocusReturned >> GameMenuMsg)
+                )
+
+            else
+                E.withOut model
+
+        GameMenu.PrivacyPolicyClicked ->
+            if (model.menu == MainMenu) && not model.resigning then
+                ( { model | menu = PrivacyPolicyMenu }
+                , E.focus
+                    { htmlId = PrivacyPolicy.htmlId ++ "-title" }
+                    (GameMenu.FocusReturned >> GameMenuMsg)
+                )
+
+            else
+                E.withOut model
+
+        GameMenu.SettingsClicked ->
+            if (model.menu == MainMenu) && not model.resigning then
+                ( { model | menu = SettingsMenu Settings.Dialogs }
+                , E.focus { htmlId = Settings.dialogHtmlId ++ "-title" } FocusCompleted
+                )
+
+            else
+                E.withOut model
+
         GameMenu.CloseClicked ->
             ( model
                 |> setMenuOpen False
@@ -2746,20 +2831,108 @@ handleGameMenuMsg lobbyId msg model =
             )
 
         GameMenu.ResignClicked ->
-            resignGame lobbyId RemainInGame model
+            requestResignation RemainInGame model
+
+        GameMenu.ResignationConfirmed ->
+            case model.menu of
+                ConfirmingResignation destination ->
+                    resignGame lobbyId destination model
+
+                _ ->
+                    E.withOut model
+
+        GameMenu.ResignationCanceled ->
+            case model.menu of
+                ConfirmingResignation _ ->
+                    ( setMenuOpen True model
+                    , E.focus
+                        { htmlId = GameMenu.closeButtonHtmlId }
+                        (GameMenu.FocusReturned >> GameMenuMsg)
+                    )
+
+                _ ->
+                    E.withOut model
 
         GameMenu.HomeClicked ->
-            if not model.menuOpen || model.resigning then
+            if (model.menu /= MainMenu) || model.resigning then
                 E.withOut model
 
             else if model.currentTurn.outcome /= Nothing then
                 ( model, Route.pushUrl Route.Home )
 
             else
-                resignGame lobbyId GoHome model
+                requestResignation GoHome model
 
         GameMenu.FocusReturned result ->
             E.withOut (recordFocusResult result model)
+
+
+handleSettingsMsg : Settings.Msg -> Model -> ( Model, Eff Msg )
+handleSettingsMsg msg model =
+    case msg of
+        Settings.CloseClicked ->
+            ( setMenuOpen False model
+            , E.focus { htmlId = GameMenu.buttonHtmlId } FocusCompleted
+            )
+
+        Settings.TabClicked tab ->
+            ( { model | menu = SettingsMenu tab }, E.none )
+
+        Settings.TabNavigationPressed tab ->
+            ( { model | menu = SettingsMenu tab }
+            , E.focus { htmlId = Settings.tabHtmlId tab } FocusCompleted
+            )
+
+        Settings.SkipIntroductionChanged skip ->
+            ( { model | skipTurnIntroduction = skip }
+            , E.setLocalStorage
+                { key = turnIntroductionPreferenceKey
+                , value = Encode.bool skip
+                }
+            )
+
+        Settings.SkipLossesChanged skip ->
+            ( { model | skipUnitLossDialogs = skip }
+            , rememberPlaybackPreference PlaybackPresentation.SkipLossDialogs skip
+            )
+
+        Settings.SkipOrdersWarningChanged skip ->
+            ( { model | skipUnplannedUnitsWarning = skip }
+            , E.setLocalStorage
+                { key = unplannedUnitsWarningPreferenceKey
+                , value = Encode.bool skip
+                }
+            )
+
+        Settings.MuteChanged muted ->
+            let
+                mute : Audio.MuteState
+                mute =
+                    if muted then
+                        Audio.Muted
+
+                    else
+                        Audio.Unmuted
+            in
+            ( setShared (Shared.setAudioMute mute model.shared) model
+            , E.batch
+                [ E.audio (Audio.SetMute mute)
+                , E.setLocalStorage (Audio.encodeMutePreference mute)
+                ]
+            )
+
+        Settings.VolumeChanged channel volume ->
+            let
+                volumes : Audio.Volumes
+                volumes =
+                    Audio.setChannelVolume channel volume model.shared.audioVolumes
+            in
+            ( setShared (Shared.setAudioVolumes volumes model.shared) model
+            , E.batch
+                [ E.audio (Audio.SetVolumes volumes)
+                , E.setLocalStorage (Audio.encodeVolumesPreference volumes)
+                ]
+            )
 
 
 handleTurnControlsMsg : LobbyId -> TurnControls.Msg -> Model -> ( Model, Eff Msg )
@@ -2813,11 +2986,9 @@ requestSubmission lobbyId model =
             |> submitTurn lobbyId
 
     else
-        ( model
+        model
             |> mapPlanning OrderPlanning.showSubmissionWarning
-        , E.toJs
-            (ToJs.OpenDialog { htmlId = partialOrdersDialogHtmlId })
-        )
+            |> E.withOut
 
 
 handleCurrentTurnMsg : LobbyId -> CurrentTurn.Msg -> Model -> ( Model, Eff Msg )
@@ -4262,26 +4433,49 @@ unitHelpDialog model _ =
 
 gameMenuDialog : Model -> () -> Maybe (Dialog Msg)
 gameMenuDialog model _ =
-    let
-        status : GameMenu.Status
-        status =
-            if model.resigning then
-                GameMenu.Resigning
+    case model.menu of
+        MainMenu ->
+            let
+                status : GameMenu.Status
+                status =
+                    if model.resigning then
+                        GameMenu.Resigning
 
-            else if model.currentTurn.outcome == Nothing then
-                GameMenu.ActiveGame
+                    else if model.currentTurn.outcome == Nothing then
+                        GameMenu.ActiveGame
 
-            else
-                GameMenu.FinishedGame
-    in
-    if model.menuOpen then
-        Just
-            (GameMenu.dialog status
-                |> Dialog.map GameMenuMsg
-            )
+                    else
+                        GameMenu.FinishedGame
+            in
+            Just (GameMenu.dialog status |> Dialog.map GameMenuMsg)
 
-    else
-        Nothing
+        ConfirmingResignation destination ->
+            Just
+                (GameMenu.resignationDialog { goingHome = destination == GoHome }
+                    |> Dialog.map GameMenuMsg
+                )
+
+        AboutMenu ->
+            Just (About.dialog { onClose = GameMenuMsg GameMenu.CloseClicked })
+
+        PrivacyPolicyMenu ->
+            Just (PrivacyPolicy.dialog { onClose = GameMenuMsg GameMenu.CloseClicked })
+
+        SettingsMenu tab ->
+            Just
+                (Settings.dialog
+                    { tab = tab
+                    , skipIntroduction = model.skipTurnIntroduction
+                    , skipLosses = model.skipUnitLossDialogs
+                    , skipOrdersWarning = model.skipUnplannedUnitsWarning
+                    , mute = model.shared.audioMute
+                    , volumes = model.shared.audioVolumes
+                    }
+                    |> Dialog.map SettingsMsg
+                )
+
+        MenuClosed ->
+            Nothing
 
 
 orderGuideDialog : Model -> () -> Maybe (Dialog Msg)

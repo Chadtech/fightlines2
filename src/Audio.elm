@@ -2,17 +2,24 @@ module Audio exposing
     ( Ambience(..)
     , AmbientScene
     , Audio(..)
+    , Channel(..)
     , Event(..)
     , FiringInfantry
     , MovementSound(..)
     , MovingUnit
     , MuteState(..)
+    , Volumes
+    , channelVolume
     , combatImpact
+    , defaultVolumes
     , encodeEvent
     , encodeMutePreference
+    , encodeVolumesPreference
     , fieldGunFire
     , loadMutePreference
+    , loadVolumesPreference
     , none
+    , setChannelVolume
     , syncAmbience
     , syncInfantryFire
     , syncMovement
@@ -38,6 +45,125 @@ type Event
     | SyncAmbience (List AmbientScene)
     | SyncInfantryFire (List FiringInfantry)
     | SetMute MuteState
+    | SetVolumes Volumes
+
+
+{-| Percentages from 0 to 100. Defaults preserve the existing audio mix.
+-}
+type alias Volumes =
+    { master : Float
+    , combat : Float
+    , movement : Float
+    , ambience : Float
+    , interface : Float
+    }
+
+
+type Channel
+    = Master
+    | Combat
+    | Movement
+    | Environment
+    | Interface
+
+
+defaultVolumes : Volumes
+defaultVolumes =
+    { master = 50
+    , combat = 100
+    , movement = 100
+    , ambience = 100
+    , interface = 100
+    }
+
+
+channelVolume : Channel -> Volumes -> Float
+channelVolume channel volumes =
+    case channel of
+        Master ->
+            volumes.master
+
+        Combat ->
+            volumes.combat
+
+        Movement ->
+            volumes.movement
+
+        Environment ->
+            volumes.ambience
+
+        Interface ->
+            volumes.interface
+
+
+setChannelVolume : Channel -> Float -> Volumes -> Volumes
+setChannelVolume channel raw volumes =
+    let
+        value : Float
+        value =
+            clamp 0 100 raw
+    in
+    case channel of
+        Master ->
+            { volumes | master = value }
+
+        Combat ->
+            { volumes | combat = value }
+
+        Movement ->
+            { volumes | movement = value }
+
+        Environment ->
+            { volumes | ambience = value }
+
+        Interface ->
+            { volumes | interface = value }
+
+
+loadVolumesPreference : LocalStorage -> ( Volumes, Maybe Error )
+loadVolumesPreference =
+    let
+        percentage : Decode.Decoder Float
+        percentage =
+            Decode.float |> Decode.andThen validPercentage
+
+        validPercentage : Float -> Decode.Decoder Float
+        validPercentage value =
+            if (value >= 0) && (value <= 100) then
+                Decode.succeed value
+
+            else
+                Decode.fail "audio volume must be between 0 and 100"
+    in
+    Preference.load
+        { key = "audioVolumes"
+        , decoder =
+            Decode.map5 Volumes
+                (Decode.field "master" percentage)
+                (Decode.field "combat" percentage)
+                (Decode.field "movement" percentage)
+                (Decode.field "ambience" percentage)
+                (Decode.field "interface" percentage)
+        , defaultValue = defaultVolumes
+        }
+
+
+encodeVolumes : Volumes -> Je.Value
+encodeVolumes volumes =
+    Je.object
+        [ ( "master", Je.float volumes.master )
+        , ( "combat", Je.float volumes.combat )
+        , ( "movement", Je.float volumes.movement )
+        , ( "ambience", Je.float volumes.ambience )
+        , ( "interface", Je.float volumes.interface )
+        ]
+
+
+encodeVolumesPreference : Volumes -> { key : String, value : Je.Value }
+encodeVolumesPreference volumes =
+    { key = "audioVolumes"
+    , value = encodeVolumes volumes
+    }
 
 
 type MuteState
@@ -228,6 +354,9 @@ encodeEvent event =
         SetMute state ->
             Je.object
                 [ ( "muted", Je.bool (state == Muted) ) ]
+
+        SetVolumes volumes ->
+            Je.object [ ( "volumes", encodeVolumes volumes ) ]
 
         Play audio ->
             Je.object

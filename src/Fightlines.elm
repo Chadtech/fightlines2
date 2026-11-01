@@ -140,6 +140,7 @@ init value url key =
             in
             handleRoute shared (Route.fromUrl url)
                 |> E.and (E.audio (Audio.SetMute shared.audioMute))
+                |> E.and (E.audio (Audio.SetVolumes shared.audioVolumes))
 
         Err error ->
             ( AppInitError error, E.none )
@@ -615,6 +616,10 @@ dialog page =
 pageDialog : Page -> Maybe (Dialog Msg)
 pageDialog page =
     case page of
+        Home model ->
+            Home.dialog model
+                |> Maybe.map (Dialog.map HomeMsg)
+
         Game id model ->
             GamePage.dialog model
                 |> Maybe.map (Dialog.map (GameMsg id))

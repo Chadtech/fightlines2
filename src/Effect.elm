@@ -12,6 +12,7 @@ module Effect exposing
     , none
     , pushUrl
     , request
+    , setLocalStorage
     , toCmd
     , toJs
     , with
@@ -26,6 +27,7 @@ import Audio
 import Browser.Dom
 import Browser.Navigation as Navigation
 import Graphql.Http
+import Json.Encode as Encode
 import Ports.Js.To as ToJs
 import Process
 import Task
@@ -103,6 +105,11 @@ toJs =
 audio : Audio.Event -> Eff msg
 audio sound =
     toJs (ToJs.Audio sound)
+
+
+setLocalStorage : { key : String, value : Encode.Value } -> Eff msg
+setLocalStorage entry =
+    toJs (ToJs.SetLocalStorage entry)
 
 
 request : (Response response -> msg) -> Graphql.Http.Request response -> Eff msg

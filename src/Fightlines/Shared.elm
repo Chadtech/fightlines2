@@ -9,6 +9,8 @@ module Fightlines.Shared exposing
     , init
     , keyCommands
     , listeners
+    , setAudioMute
+    , setAudioVolumes
     , setSeed
     , superUpdate
     )
@@ -61,6 +63,9 @@ init seed operatingSystem localStorage url key =
     let
         ( audioMute, muteError ) =
             Audio.loadMutePreference localStorage
+
+        ( audioVolumes, volumesError ) =
+            Audio.loadVolumesPreference localStorage
     in
     { key = key
     , operatingSystem = operatingSystem
@@ -70,6 +75,7 @@ init seed operatingSystem localStorage url key =
     , devPanel = DevPanel.init
     , devPanelOpen = False
     , audioMute = audioMute
+    , audioVolumes = audioVolumes
     , origin =
         Url.toString
             { url
@@ -79,6 +85,7 @@ init seed operatingSystem localStorage url key =
             }
     }
         |> Shared.addError muteError
+        |> Shared.addError volumesError
 
 
 
@@ -105,6 +112,16 @@ devPanelMsg =
 gotFromJsError : FromJs.Error -> Msg
 gotFromJsError =
     Shared.gotFromJsError
+
+
+setAudioMute : Audio.MuteState -> Model -> Model
+setAudioMute =
+    Shared.setAudioMute
+
+
+setAudioVolumes : Audio.Volumes -> Model -> Model
+setAudioVolumes =
+    Shared.setAudioVolumes
 
 
 setSeed : Random.Seed -> Model -> Model

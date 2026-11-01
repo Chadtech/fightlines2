@@ -1,29 +1,27 @@
 # Todo
 
-# Done
+## Done
 
 ## doing now
-- make the low supply, low health, and low fuel indicators bigger
-- Death animation for entrenched infantry?
-- Settings page
-- - Consider hardcoding unit backdrop calibrations
+- About page
+
 ## Bugs
 
-
 ## Immediately
-
+- Chat
+- Privacy Policy
+- Launch
+- get rid of all these annoying blue focus outlines
 
 ## Soon
 
-
-
 ## Later
-- Launch
 
 ## After prod launch
 - Tutorial missions
 - Manufacturing and cities
-- Credits / About
+- Air planes and boats
+
 
 ### Future units
 - Semi truck, truck that can carry more and travel faster than a truck but can only travel on roads

@@ -8,7 +8,6 @@ import Error exposing (Error)
 import Json.Decode as JD
 import Json.Encode as JE
 import LocalStorage exposing (LocalStorage)
-import Ports.Js.To as ToJs
 
 
 fromLocalStorage : LocalStorage -> Result Error (Maybe String)
@@ -19,12 +18,10 @@ fromLocalStorage storage =
 
 remember : String -> Eff msg
 remember name =
-    E.toJs
-        (ToJs.SetLocalStorage
-            { key = key
-            , value = JE.string (String.trim name)
-            }
-        )
+    E.setLocalStorage
+        { key = key
+        , value = JE.string (String.trim name)
+        }
 
 
 key : String

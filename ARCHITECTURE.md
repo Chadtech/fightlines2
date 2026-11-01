@@ -591,6 +591,9 @@ image is invisible. Position centers stay toward the right side on every screen
 size. Bradley's portrait composites over a page-green backing masked to its
 silhouette, retaining its subdued tone while blocking screenshots behind it.
 `Home.update` also owns the play button's navigation to `/new`.
+Home owns its About/Privacy selection and exposes its dialog through
+`Fightlines.pageDialog`, sharing mute overlays and dev-panel focus restoration
+with game dialogs.
 `LobbyPage.load` and `GamePage.load` define their initial requests. `Fightlines` owns
 initial requests and dispatches failures, and initializes each loaded page only
 after a successful response. `LobbyPage` retains its loaded roster while polling.
@@ -640,7 +643,7 @@ page listeners rather than adding ports.
 with the caller's decoder. Each app's shared `localStorage` field receives the
 startup `localStorage` flag. JavaScript stores the object under `fightlines.localStorage`;
 missing, malformed, or inaccessible storage starts empty. Pages write individual
-keys through `Effect.toJs (ToJs.SetLocalStorage { key = key, value = value })`,
+keys through `Effect.setLocalStorage { key = key, value = value }`,
 where `value` is a `Json.Encode.Value`. Writes preserve other keys. Successful
 writes notify the current Elm app; browser storage events notify other tabs,
 including removal or clearing of the stored object. Both apps listen for
@@ -1888,8 +1891,10 @@ supplies native focus trapping with lower-screen placement and a transparent bac
 `UnitLoss.resolve` combines projected losses with the page's roster lookup for
 both dialog rendering and update-time error reporting. `GamePage.superUpdate`
 logs `Error.UnitOwnerNotFound` in `Shared.Model.errors` only when opening a
-newly active loss dialog. Unchanged or absent dialogs perform no additional
-owner resolution, and rendering does not log errors.
+newly active loss dialog. Native-dialog identity comes from the same
+`GamePage.dialog` selection used by rendering, through `View.Dialog.htmlId`.
+Unchanged or absent dialogs do not log additional errors, and rendering does
+not log errors.
 
 ## Turn introduction
 

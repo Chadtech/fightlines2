@@ -54,6 +54,9 @@ init seed operatingSystem localStorage key =
     let
         ( audioMute, muteError ) =
             Audio.loadMutePreference localStorage
+
+        ( audioVolumes, volumesError ) =
+            Audio.loadVolumesPreference localStorage
     in
     { key = key
     , operatingSystem = operatingSystem
@@ -63,8 +66,10 @@ init seed operatingSystem localStorage key =
     , devPanel = DevPanel.init
     , devPanelOpen = False
     , audioMute = audioMute
+    , audioVolumes = audioVolumes
     }
         |> Shared.addError muteError
+        |> Shared.addError volumesError
 
 
 

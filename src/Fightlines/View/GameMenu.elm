@@ -2,9 +2,13 @@ module Fightlines.View.GameMenu exposing
     ( Msg(..)
     , Status(..)
     , buttonHtmlId
+    , closeButtonHtmlId
     , dialog
     , dialogHtmlId
     , panel
+    , resignationCancelButtonHtmlId
+    , resignationDialog
+    , resignationDialogHtmlId
     )
 
 import Browser.Dom
@@ -26,9 +30,14 @@ import View.Dialog as Dialog exposing (Dialog)
 
 type Msg
     = OpenClicked
+    | SettingsClicked
+    | AboutClicked
+    | PrivacyPolicyClicked
     | CloseClicked
     | FocusReturned (Result Browser.Dom.Error ())
     | ResignClicked
+    | ResignationConfirmed
+    | ResignationCanceled
     | HomeClicked
 
 
@@ -52,6 +61,16 @@ buttonHtmlId =
 dialogHtmlId : String
 dialogHtmlId =
     "game-menu"
+
+
+closeButtonHtmlId : String
+closeButtonHtmlId =
+    dialogHtmlId ++ "-close"
+
+
+resignationCancelButtonHtmlId : String
+resignationCancelButtonHtmlId =
+    resignationDialogHtmlId ++ "-cancel"
 
 
 panel : { enabled : Bool, turnNumber : Int } -> Html Msg
@@ -139,7 +158,7 @@ dialog status =
         resignButton =
             case status of
                 ActiveGame ->
-                    Button.secondary "resign game" ResignClicked
+                    Button.danger "resign game" ResignClicked
 
                 Resigning ->
                     Button.disabled "resigning…"
@@ -150,16 +169,69 @@ dialog status =
     Dialog.make dialogHtmlId
         "menu"
         CloseClicked
-        [ Button.disabled "settings"
+        [ Button.primary "close" CloseClicked
+            |> Button.withHtmlId closeButtonHtmlId
+            |> Button.fullWidth
+            |> Button.toHtml
+        , Button.secondary "settings" SettingsClicked
+            |> Button.fullWidth
+            |> Button.toHtml
+        , Button.secondary "about" AboutClicked
+            |> Button.fullWidth
+            |> Button.toHtml
+        , Button.secondary "privacy policy" PrivacyPolicyClicked
             |> Button.fullWidth
             |> Button.toHtml
         , homeButton
             |> Button.fullWidth
             |> Button.toHtml
-        , resignButton
+        , H.div
+            [ A.css
+                [ S.mt4
+                ]
+            ]
+            [ resignButton
+                |> Button.fullWidth
+                |> Button.toHtml
+            ]
+        ]
+
+
+resignationDialogHtmlId : String
+resignationDialogHtmlId =
+    "confirm-resignation"
+
+
+resignationDialog : { goingHome : Bool } -> Dialog Msg
+resignationDialog config =
+    let
+        explanation : String
+        explanation =
+            if config.goingHome then
+                "going home will resign this game. your opponent will win, and this cannot be undone."
+
+            else
+                "resigning ends this game. your opponent will win, and this cannot be undone."
+
+        confirmLabel : String
+        confirmLabel =
+            if config.goingHome then
+                "resign and go home"
+
+            else
+                "resign game"
+    in
+    Dialog.make resignationDialogHtmlId
+        "resign game?"
+        ResignationCanceled
+        [ H.p
+            []
+            [ H.text explanation ]
+        , Button.primary "cancel" ResignationCanceled
             |> Button.fullWidth
+            |> Button.withHtmlId resignationCancelButtonHtmlId
             |> Button.toHtml
-        , Button.secondary "close" CloseClicked
+        , Button.danger confirmLabel ResignationConfirmed
             |> Button.fullWidth
             |> Button.toHtml
         ]

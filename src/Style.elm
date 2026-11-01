@@ -226,6 +226,7 @@ module Style exposing
     , minH36
     , minH6
     , minH76
+    , minH88
     , minH96
     , minHFullViewport
     , minW0
@@ -1533,6 +1534,11 @@ minH14 =
 minH32 : Css.Style
 minH32 =
     Css.minHeight s32
+
+
+minH88 : Css.Style
+minH88 =
+    Css.minHeight (Css.rem 22)
 
 
 minH96 : Css.Style

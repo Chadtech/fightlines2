@@ -52,6 +52,8 @@ function createAudioManager(reportError = () => {}) {
   const maxDelayMs = 250;
   let context = null;
   let master = null;
+  const channels = {};
+  let channelVolumes = { combat: 100, movement: 100, ambience: 100, interface: 100 };
   let volume = 0.5;
   let muted = false;
   let resuming = null;
@@ -100,6 +102,12 @@ function createAudioManager(reportError = () => {}) {
         master = context.createGain();
         master.gain.value = muted ? 0 : volume;
         master.connect(context.destination);
+        for (const [name, percent] of Object.entries(channelVolumes)) {
+          const bus = context.createGain();
+          bus.gain.value = percent / 100;
+          bus.connect(master);
+          channels[name] = bus;
+        }
       }
       if (context.state !== "running") {
         if (!resuming) {
@@ -151,7 +159,7 @@ function createAudioManager(reportError = () => {}) {
       source.buffer = buffer;
       source.loop = true;
       source.connect(gain);
-      gain.connect(master);
+      gain.connect(channels.movement);
       gain.gain.setValueAtTime(0, context.currentTime);
       gain.gain.linearRampToValueAtTime(1, context.currentTime + 0.015);
       voice.source = source;
@@ -235,7 +243,7 @@ function createAudioManager(reportError = () => {}) {
       const now = context.currentTime;
       source.buffer = buffer;
       source.connect(gain);
-      gain.connect(master);
+      gain.connect(channels.combat);
       gain.gain.setValueAtTime(0, now);
       gain.gain.linearRampToValueAtTime(voice.level, now + Math.min(0.003, remaining / 2));
       gain.gain.setValueAtTime(voice.level, now + Math.max(Math.min(0.003, remaining / 2), remaining - 0.005));
@@ -336,7 +344,7 @@ function createAudioManager(reportError = () => {}) {
       source.loop = true;
       source.connect(gain);
       gain.connect(panner);
-      panner.connect(master);
+      panner.connect(channels.ambience);
       gain.gain.setValueAtTime(0, context.currentTime);
       gain.gain.linearRampToValueAtTime(voice.level, context.currentTime + ambienceFadeSeconds);
       panner.pan.setValueAtTime(voice.pan, context.currentTime);
@@ -411,6 +419,24 @@ function createAudioManager(reportError = () => {}) {
   async function handleEvent(event) {
     if (event === null) return;
     if (typeof event === "object" && !Array.isArray(event) &&
+        Object.keys(event).length === 1 && Object.hasOwn(event, "volumes")) {
+      const values = event.volumes;
+      const names = ["master", "combat", "movement", "ambience", "interface"];
+      if (!values || typeof values !== "object" || Array.isArray(values) ||
+          Object.keys(values).length !== names.length ||
+          !names.every(name => Number.isFinite(values[name]) && values[name] >= 0 && values[name] <= 100)) {
+        report("invalid volumes", values);
+        return;
+      }
+      setVolume(values.master / 100);
+      channelVolumes = { ...values };
+      delete channelVolumes.master;
+      for (const [name, bus] of Object.entries(channels)) {
+        bus.gain.setValueAtTime(channelVolumes[name] / 100, context.currentTime);
+      }
+      return;
+    }
+    if (typeof event === "object" && !Array.isArray(event) &&
         Object.keys(event).length === 1 && typeof event.muted === "boolean") {
       muted = event.muted;
       if (master) master.gain.setValueAtTime(muted ? 0 : volume, context.currentTime);
@@ -471,7 +497,7 @@ function createAudioManager(reportError = () => {}) {
       }
       const source = context.createBufferSource();
       source.buffer = buffer;
-      source.connect(master);
+      source.connect(channels[combat ? "combat" : "interface"]);
       source.onended = () => {
         activeSources.delete(source);
         source.disconnect();

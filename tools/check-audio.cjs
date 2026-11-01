@@ -119,6 +119,39 @@ async function main() {
   }
   assert.equal(ambienceManifest.clips.find(clip => clip.environment === 'plains').sourcePage,
     'https://freesound.org/people/felix.blume/sounds/215414/', 'plains uses approved Oklahoma choice C');
+  const mixer = boot();
+  const mix = { master: 40, combat: 70, movement: 30, ambience: 20, interface: 60 };
+  await mixer.audio.handleEvent({ volumes: mix });
+  await mixer.gesture();
+  assert.equal(mixer.contexts[0].master.gain.value, 0.4, 'saved master volume applies before unlocking');
+  await mixer.audio.handleEvent({ play: 'uiAffirm' });
+  await mixer.audio.handleEvent({ play: 'tankFire' });
+  await mixer.audio.handleEvent({ movement: [{ unitId: 'mixer-truck', sound: 'truck' }] });
+  await mixer.audio.handleEvent({ ambience: [{ environment: 'plains', pan: 0 }] });
+  await mixer.audio.handleEvent({ infantryFire: [{ unitId: 'mixer-infantry', elapsedMs: 0, remainingMs: 1000 }] });
+  const uiBus = mixer.voices[0].destination;
+  const combatBus = mixer.voices[1].destination;
+  const movementBus = mixer.voices[2].destination.destination;
+  const ambienceBus = mixer.panners[0].destination;
+  assert.equal(uiBus.gain.value, 0.6);
+  assert.equal(combatBus.gain.value, 0.7);
+  assert.equal(movementBus.gain.value, 0.3);
+  assert.equal(ambienceBus.gain.value, 0.2);
+  assert.equal(mixer.voices[4].destination.destination, combatBus, 'infantry fire uses combat volume');
+  await mixer.audio.handleEvent({ volumes: { ...mix, combat: 0, movement: 55 } });
+  assert.equal(combatBus.gain.value, 0, 'changing volume affects voices already playing');
+  assert.equal(movementBus.gain.value, 0.55);
+  assert.equal(uiBus.gain.value, 0.6, 'channels remain independent');
+  assert.ok(mixer.voices.slice(0, 4).every(voice => !voice.stopped), 'adjustments preserve current playback timing');
+  await mixer.audio.handleEvent({ muted: true });
+  await mixer.audio.handleEvent({ volumes: { ...mix, master: 90 } });
+  assert.equal(mixer.contexts[0].master.gain.value, 0, 'volume adjustments respect mute');
+  await mixer.audio.handleEvent({ muted: false });
+  assert.equal(mixer.contexts[0].master.gain.value, 0.9);
+  await mixer.audio.handleEvent({ volumes: { ...mix, combat: 101 } });
+  assert.equal(combatBus.gain.value, 0.7, 'invalid mixes cannot partially change a channel');
+  assert.equal(mixer.errors[0].operation, 'invalid volumes');
+
   const app = boot();
   await app.audio.handleEvent(null);
   await app.audio.handleEvent({ play: 'uiAffirm' });
@@ -283,20 +316,20 @@ async function main() {
   assert.equal(ambience.voices.length, 2);
   assert.ok(ambience.voices.every(voice => voice.loop && voice.started));
   assert.deepEqual(ambience.panners.map(panner => panner.pan.value), [-0.35, 0.35]);
-  assert.ok(ambience.gains.slice(1).every(gain => gain.gain.value === 0.65 / Math.sqrt(2)));
-  assert.ok(ambience.gains.slice(1).every(gain => gain.gain.ramps[0].time === 0.35), 'opening fades in over 350ms');
+  assert.ok(ambience.voices.map(voice => voice.destination).every(gain => gain.gain.value === 0.65 / Math.sqrt(2)));
+  assert.ok(ambience.voices.map(voice => voice.destination).every(gain => gain.gain.ramps[0].time === 0.35), 'opening fades in over 350ms');
   assert.equal(ambience.voices[0].destination.destination, ambience.panners[0]);
-  assert.equal(ambience.panners[0].destination, ambience.contexts[0].master, 'ambience respects master volume');
+  assert.equal(ambience.panners[0].destination.destination, ambience.contexts[0].master, 'ambience respects master volume');
   await ambience.audio.handleEvent({ ambience: [plains, forest] });
   assert.equal(ambience.voices.length, 2, 'ordinary frames and map peeks retain the same loops');
-  assert.equal(ambience.gains[1].gain.ramps.length, 1, 'refreshing a snapshot does not restart the fade');
+  assert.equal(ambience.voices[0].destination.gain.ramps.length, 1, 'refreshing a snapshot does not restart the fade');
   await ambience.audio.handleEvent({ ambience: [plains, { environment: 'plains', pan: 0.35 }] });
   assert.equal(ambience.voices.length, 2, 'matching environments share one source');
   assert.equal(ambience.panners[0].pan.value, 0, 'a shared environment is centered');
-  assert.equal(ambience.gains[1].gain.value, 0.65, 'a single loop has the same total mix energy');
+  assert.equal(ambience.voices[0].destination.gain.value, 0.65, 'a single loop has the same total mix energy');
   assert.equal(ambience.voices[1].stopsAt, 0.35, 'scene changes fade removed environments');
   ambience.voices[1].finish();
-  assert.equal(ambience.gains[2].disconnected, true);
+  assert.equal(ambience.voices[1].destination.disconnected, true);
   assert.equal(ambience.panners[1].disconnected, true);
   await ambience.audio.handleEvent({ ambience: [beach] });
   assert.equal(ambience.voices.length, 3, 'building follow-ups can switch to one destination environment');
@@ -411,7 +444,7 @@ async function main() {
   assert.equal(firing.voices[0].offset, 0);
   assert.equal(firing.voices[0].stopsAt, 1.92, 'firing stops at the animation deadline');
   assert.notEqual(firing.voices[0].loop, true, 'the approved burst plays once');
-  assert.equal(firing.gains[1].gain.ramps[0].value, 1, 'a single formation plays at the baked-in asset volume');
+  assert.equal(firing.voices[0].destination.gain.ramps[0].value, 1, 'a single formation plays at the baked-in asset volume');
   firing.contexts[0].currentTime = 0.1;
   firing.advance(100);
   const progressedFire = { ...fire, elapsedMs: 100, remainingMs: 1820 };
@@ -440,7 +473,7 @@ async function main() {
   ] });
   assert.deepEqual(reciprocalFire.voices.map(voice => voice.offset), [0.045, 0], 'return fire keeps its separate phase');
   assert.equal(reciprocalFire.voices[0].buffer, reciprocalFire.voices[1].buffer, 'formations share the approved decoded recording');
-  assert.ok(reciprocalFire.gains.slice(1).every(gain => gain.gain.ramps[0].value === 1 / Math.sqrt(2)),
+  assert.ok(reciprocalFire.voices.map(voice => voice.destination).every(gain => gain.gain.ramps[0].value === 1 / Math.sqrt(2)),
     'simultaneous formations normalize their mix without an extra volume boost');
   for (let index = 0; index < 10; index++) await reciprocalFire.audio.handleEvent({ play: 'combatImpact' });
   assert.equal(reciprocalFire.voices[0].stopsAt, 1.875, 'combat voice limits never evict sustained infantry fire');

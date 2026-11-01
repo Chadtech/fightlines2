@@ -1,6 +1,7 @@
 module Fightlines.Page.Home exposing
     ( Model
     , Msg
+    , dialog
     , init
     , setShared
     , styles
@@ -8,18 +9,25 @@ module Fightlines.Page.Home exposing
     , view
     )
 
+import Audio
+import Browser.Dom
 import Effect as E exposing (Eff)
+import Error
 import Fightlines.Route as Route
 import Fightlines.Shared as Shared
+import Fightlines.View.About as About
+import Fightlines.View.PrivacyPolicy as PrivacyPolicy
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Json.Decode as Decode
+import Ports.Js.To as ToJs
 import Random
 import Style as S
 import View.Aria as Aria
 import View.Button as Button
 import View.Card as Card
+import View.Dialog exposing (Dialog)
 
 
 
@@ -30,15 +38,27 @@ import View.Card as Card
 
 type Msg
     = PlayButtonClicked
+    | AboutButtonClicked
+    | AboutDialogClosed
+    | PrivacyPolicyButtonClicked
+    | PrivacyPolicyDialogClosed
+    | DialogButtonFocusReturned (Result Browser.Dom.Error ())
     | SceneCycleCompleted BackgroundScene
 
 
 type alias Model =
     { shared : Shared.Model
+    , activeDialog : ActiveDialog
     , snow : ScenePosition
     , desert : ScenePosition
     , logistics : ScenePosition
     }
+
+
+type ActiveDialog
+    = NoDialog
+    | AboutDialog
+    | PrivacyPolicyDialog
 
 
 type BackgroundScene
@@ -80,6 +100,7 @@ init shared =
             Random.step scenePositionGenerator desertSeed
     in
     { shared = Shared.setSeed nextSeed shared
+    , activeDialog = NoDialog
     , snow = snow
     , desert = desert
     , logistics = logistics
@@ -95,6 +116,16 @@ init shared =
 setShared : Shared.Model -> Model -> Model
 setShared shared model =
     { model | shared = shared }
+
+
+closeDialog : String -> Model -> ( Model, Eff Msg )
+closeDialog buttonHtmlId model =
+    ( { model | activeDialog = NoDialog }
+    , E.batch
+        [ E.focus { htmlId = buttonHtmlId } DialogButtonFocusReturned
+        , E.audio Audio.uiCancel
+        ]
+    )
 
 
 scenePositionGenerator : Random.Generator ScenePosition
@@ -174,6 +205,38 @@ update msg model =
         PlayButtonClicked ->
             ( model, Route.pushUrl Route.NewLobby )
 
+        AboutButtonClicked ->
+            ( { model | activeDialog = AboutDialog }
+            , E.batch
+                [ E.toJs (ToJs.OpenDialog { htmlId = About.htmlId })
+                , E.audio Audio.uiAffirm
+                ]
+            )
+
+        AboutDialogClosed ->
+            closeDialog aboutButtonHtmlId model
+
+        PrivacyPolicyButtonClicked ->
+            ( { model | activeDialog = PrivacyPolicyDialog }
+            , E.batch
+                [ E.toJs (ToJs.OpenDialog { htmlId = PrivacyPolicy.htmlId })
+                , E.audio Audio.uiAffirm
+                ]
+            )
+
+        PrivacyPolicyDialogClosed ->
+            closeDialog privacyPolicyButtonHtmlId model
+
+        DialogButtonFocusReturned result ->
+            case result of
+                Ok () ->
+                    E.withOut model
+
+                Err error ->
+                    model
+                        |> setShared (Shared.addError (Just (Error.ElementFocusFailed error)) model.shared)
+                        |> E.withOut
+
         SceneCycleCompleted scene ->
             repositionScene scene model
                 |> E.withOut
@@ -183,6 +246,19 @@ update msg model =
 ----------------------------------------------------------------
 -- VIEW --
 ----------------------------------------------------------------
+
+
+dialog : Model -> Maybe (Dialog Msg)
+dialog model =
+    case model.activeDialog of
+        AboutDialog ->
+            Just (About.dialog { onClose = AboutDialogClosed })
+
+        PrivacyPolicyDialog ->
+            Just (PrivacyPolicy.dialog { onClose = PrivacyPolicyDialogClosed })
+
+        NoDialog ->
+            Nothing
 
 
 view : Model -> List (Html Msg)
@@ -252,12 +328,30 @@ view model =
             [ [ Button.primary "play" PlayButtonClicked
                     |> Button.fullWidth
                     |> Button.toHtml
+              , Button.secondary "about" AboutButtonClicked
+                    |> Button.fullWidth
+                    |> Button.withHtmlId aboutButtonHtmlId
+                    |> Button.toHtml
+              , Button.secondary "privacy policy" PrivacyPolicyButtonClicked
+                    |> Button.fullWidth
+                    |> Button.withHtmlId privacyPolicyButtonHtmlId
+                    |> Button.toHtml
               ]
                 |> Card.toHtml Card.simple
             ]
         , quotation
         ]
     ]
+
+
+aboutButtonHtmlId : String
+aboutButtonHtmlId =
+    "home-about-button"
+
+
+privacyPolicyButtonHtmlId : String
+privacyPolicyButtonHtmlId =
+    "home-privacy-policy-button"
 
 
 battlefieldBackground : Model -> Html Msg

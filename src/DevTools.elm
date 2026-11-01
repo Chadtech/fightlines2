@@ -149,6 +149,7 @@ init value url key =
             in
             handleRoute shared (Route.fromUrl url)
                 |> E.and (E.audio (Audio.SetMute shared.audioMute))
+                |> E.and (E.audio (Audio.SetVolumes shared.audioVolumes))
 
         Err error ->
             ( AppInitError error, E.none )

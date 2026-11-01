@@ -128,6 +128,22 @@ the sources in `dev-tools/`.
 Live-game turn playback remains available. Rebuild with `make frontend` to restore
 the development tools.
 
+## About content
+
+The home and game menus share the **about** dialog in
+`src/Fightlines/View/About.elm`.
+The `Section` type defines `Intro` and `Pacifism`; `all` controls
+their display order. Edit `sectionTitle` and the multiline values in `sectionText`
+to fill in each section. Blank lines create paragraph spacing.
+To include a portrait, add the photo to `public/assets/` and set
+`aboutPhotoSource` to `Just "/assets/your-photo.jpg"`. Its original proportions
+are preserved. `Nothing` hides the portrait. Rebuild the frontend after editing.
+
+The **privacy policy** dialog follows the same section-based structure in
+`src/Fightlines/View/PrivacyPolicy.elm`. Its `all` list orders overview,
+information collected, storage and retention, and contact. Fill in `sectionText`
+with the policy wording; the section bodies start empty.
+
 ## Artwork and runtime assets
 
 Builds use the committed runtime sprites and desert SVG in `public/assets/`. Source artwork,
@@ -170,6 +186,12 @@ passes `event` to the audio manager. `Audio.SetMute` uses `{ "muted": true }` or
 `{ "muted": false }` as its event. Muting zeros the master gain, stops active voices, invalidates
 pending playback, and discards new playback requests. Unmuting restores the previous
 volume; current movement and ambience resume on the next playback snapshot.
+The game menu's settings dialog edits the existing skip preferences and audio
+levels. `audioVolumes` stores percentages for `master`, `combat`, `movement`,
+`ambience`, and `interface`. Both apps restore and synchronize them across tabs.
+Missing values preserve the existing mix (50% master, 100% per channel); malformed
+mixes use that default and retain a diagnostic. `Audio.SetVolumes` updates master
+and channel gain buses without restarting active voices or changing playback timing.
 
 Updates can request audio with `E.audio Audio.uiAffirm`, `Audio.uiCancel`, or
 `Audio.uiConfirm`; `Audio.none` produces no sound. Both apps share a JavaScript

@@ -120,8 +120,14 @@ lettering, thick yellow underline, flush g descender, and small explosion.
 The logo scales proportionally up to 40rem wide with viewport gutters, centered
 slightly above the viewport midpoint with the menu beneath it. Its image
 supplies the accessible heading. The ordinary beveled card has no title bar
-and contains one full-width primary `play` button. Keep it at most 24rem wide with
-viewport gutters. The button opens the existing lobby creation form at `/new`.
+and contains a full-width primary `play` button followed by a secondary `about`
+button, then a secondary `privacy policy` button. Keep it at most 24rem wide with viewport gutters. Play opens the existing
+lobby creation form at `/new`. About opens a standard reference dialog with
+titled intro and pacifism sections and an optional creator portrait.
+Preserve paragraph breaks, wrap long text, and scroll within the viewport. The close controls and Escape dismiss
+it and restore focus to the About button. Privacy policy uses the same reference
+dialog layout with titled sections, and is also available from the game menu.
+Closing it returns focus to its home button or the game menu button.
 On entry, fade the logo in while lowering it from 2rem above its resting position
 over 900ms with an ease-out curve. Reduced motion shows it immediately in place.
 Omar Bradley's monochrome portrait sits behind the logo and navigation, fitted
@@ -177,6 +183,11 @@ omits this decorative cycle and retains the original green background.
   controls that need to be disabled and `Select.withHtmlId` when a separate
   label or another element refers to the control. Wrapping labels need no ID.
 - Buttons size to their labels and align to the start of the form.
+- Build vertical side tabs with `View.Tabs`. Supply typed options, the selected
+  value, HTML IDs, and click/navigation callbacks to `Tabs.new`; render the
+  navigation with `Tabs.toHtml` and its content with `Tabs.panel`. The component
+  owns tab styling, ARIA links, and Up/Down/Home/End navigation. The caller owns
+  selection, keyboard focus effects, content spacing, and the surrounding layout.
 - The spacing unit is 0.25rem: `p1`/`g1` are 0.25rem, `p2`/`g2` are 0.5rem,
   and `p3`/`g3` are 0.75rem. `p2px` is a literal 2px inset.
 - The joined lobby is a top-aligned, full-width workspace with two cards side
@@ -241,10 +252,14 @@ omits this decorative cycle and retains the original green background.
   on the right so their different roles are clear. Use 0.125rem vertical and
   0.625rem horizontal button padding with a 1.875rem minimum height.
   Open a centered native menu dialog
-  with a secondary `close` action at the bottom; Escape also returns to the battlefield.
-  Keep settings disabled. Enable the secondary `resign game` action while the
+  with a primary `close` action at the top; Escape also returns to the battlefield.
+  Enable `settings` to open the settings workspace described below. Enable the red danger `resign game` action while the
   game is active, including after submitting orders; show `resigning…` while its
-  request is pending. Resignation opens the existing game-over card for both
+  request is pending. Separate resignation from the other menu actions with extra spacing.
+  Both `resign game` and `home` require confirmation before resigning an active game.
+  Explain that the opponent wins and the action cannot be undone; focus the primary
+  `cancel` button first and use a red confirmation button. Cancel or Escape returns
+  to the menu. Resignation opens the existing game-over card for both
   players, naming the winner and explaining that the game ended by resignation.
   Add a secondary `home` action that resigns an active game before navigating
   home, waits for success, and stays in the game on failure. Disable it while
@@ -1167,3 +1182,18 @@ ready columns. Keep health and protection controls available. Selected-hit
 details show damage, remaining HP, and expandable factors. Refreshes clearly
 identify previous results and disable damage cells; failures retain settings
 and previous results beside a retry action.
+
+## Settings
+
+The game menu opens a wide native settings dialog with `dialogs` and `audio`
+side tabs. Tab buttons are flat: the selected tab has a muted yellow2 fill and
+yellow5 text across its full area, with no bevel or edge marker. Inactive tabs
+use the ordinary surface and brighten on hover. Preserve visible keyboard focus;
+Up/Down and Home/End navigate the tabs. Keep the side navigation on narrow screens.
+
+The dialogs tab exposes the existing skip preferences for turn introductions,
+unit loss dialogs, and the units-without-orders warning. The audio tab contains
+mute, master volume, combat, movement, ambience, and interface volume sliders.
+Disable the sliders while muted and retain their levels. Apply and remember
+changes immediately on this device. `done`, the title-bar close button, and
+Escape close settings and return focus to the game menu button.

@@ -375,8 +375,7 @@ pause model =
 rememberPlaybackPreference : PlaybackPresentation.Preference -> Bool -> Eff msg
 rememberPlaybackPreference preference enabled =
     PlaybackPresentation.encodePreference preference enabled
-        |> ToJs.SetLocalStorage
-        |> E.toJs
+        |> E.setLocalStorage
 
 
 startPlayback : Model -> ( Model, Eff Msg )

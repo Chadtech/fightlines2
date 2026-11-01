@@ -8,6 +8,8 @@ module Shared exposing
     , gotFromJsError
     , keyCommands
     , listeners
+    , setAudioMute
+    , setAudioVolumes
     , setSeed
     , superUpdate
     )
@@ -53,6 +55,7 @@ type alias Model fields =
         , devPanel : DevPanel.Model
         , devPanelOpen : Bool
         , audioMute : Audio.MuteState
+        , audioVolumes : Audio.Volumes
     }
 
 
@@ -89,6 +92,16 @@ devPanelMsg =
 gotFromJsError : FromJs.Error -> Msg
 gotFromJsError =
     GotFromJsError
+
+
+setAudioMute : Audio.MuteState -> Model fields -> Model fields
+setAudioMute audioMute model =
+    { model | audioMute = audioMute }
+
+
+setAudioVolumes : Audio.Volumes -> Model fields -> Model fields
+setAudioVolumes audioVolumes model =
+    { model | audioVolumes = audioVolumes }
 
 
 setSeed : Random.Seed -> Model fields -> Model fields
@@ -258,10 +271,10 @@ update msg model =
                 audioMute =
                     Audio.toggleMute model.audioMute
             in
-            ( { model | audioMute = audioMute }
+            ( setAudioMute audioMute model
             , E.batch
                 [ E.audio (Audio.SetMute audioMute)
-                , E.toJs (ToJs.SetLocalStorage (Audio.encodeMutePreference audioMute))
+                , E.setLocalStorage (Audio.encodeMutePreference audioMute)
                 ]
             )
 
@@ -295,17 +308,29 @@ update msg model =
                 ( audioMute, muteError ) =
                     Audio.loadMutePreference localStorage
 
-                effect : Eff Msg
-                effect =
+                ( audioVolumes, volumesError ) =
+                    Audio.loadVolumesPreference localStorage
+
+                muteEffect : Eff Msg
+                muteEffect =
                     if audioMute == model.audioMute then
                         E.none
 
                     else
                         E.audio (Audio.SetMute audioMute)
+
+                volumesEffect : Eff Msg
+                volumesEffect =
+                    if audioVolumes == model.audioVolumes then
+                        E.none
+
+                    else
+                        E.audio (Audio.SetVolumes audioVolumes)
             in
-            ( { model | localStorage = localStorage, audioMute = audioMute }
+            ( { model | localStorage = localStorage, audioMute = audioMute, audioVolumes = audioVolumes }
                 |> addError muteError
-            , effect
+                |> addError volumesError
+            , E.batch [ muteEffect, volumesEffect ]
             )
 
         GotFromJsError error ->

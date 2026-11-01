@@ -139,6 +139,36 @@ checks =
                 Ok _ ->
                     False
 
+        volumesRoundTrip : Bool
+        volumesRoundTrip =
+            let
+                volumes : Audio.Volumes
+                volumes =
+                    Audio.defaultVolumes |> Audio.setChannelVolume Audio.Combat 25 |> Audio.setChannelVolume Audio.Environment 0
+
+                entry : { key : String, value : Encode.Value }
+                entry =
+                    Audio.encodeVolumesPreference volumes
+            in
+            Encode.object [ ( entry.key, entry.value ) ]
+                |> JD.decodeValue LocalStorage.decoder
+                |> Result.map Audio.loadVolumesPreference
+                |> (==) (Ok ( volumes, Nothing ))
+
+        invalidVolumesRejected : Bool
+        invalidVolumesRejected =
+            case JD.decodeString LocalStorage.decoder "{\"audioVolumes\":{\"master\":101,\"combat\":100,\"movement\":100,\"ambience\":100,\"interface\":100}}" of
+                Ok storage ->
+                    case Audio.loadVolumesPreference storage of
+                        ( volumes, Just (LocalStorageDecodeFailed failure) ) ->
+                            volumes == Audio.defaultVolumes && failure.key == "audioVolumes"
+
+                        _ ->
+                            False
+
+                Err _ ->
+                    False
+
         invalidNamePreservesError : Bool
         invalidNamePreservesError =
             case JD.decodeString JD.string "42" of
@@ -149,7 +179,10 @@ checks =
                     False
     in
     List.concat
-        [ check "empty storage has no keys" (LocalStorage.get LocalStorage.test "missing" JD.string == Ok Nothing)
+        [ check "volume preferences round trip independently" volumesRoundTrip
+        , check "out of range saved volumes retain a diagnostic and use the current mix" invalidVolumesRejected
+        , check "missing volumes preserve the existing mix" (Audio.loadVolumesPreference LocalStorage.test == ( Audio.defaultVolumes, Nothing ))
+        , check "empty storage has no keys" (LocalStorage.get LocalStorage.test "missing" JD.string == Ok Nothing)
         , check "missing key is distinct from decoding failure" (read "missing" JD.int "{\"count\":2}" == Ok Nothing)
         , check "stored values decode with the caller's decoder" (read "count" JD.int "{\"count\":2}" == Ok (Just 2))
         , check "wrong value type retains decoding failure" (isError (read "count" JD.int "{\"count\":\"two\"}"))
