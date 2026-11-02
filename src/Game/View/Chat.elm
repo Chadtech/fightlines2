@@ -280,8 +280,8 @@ sendKeyDecoder =
     keyEventDecoder |> Decode.andThen matching
 
 
-{-| Form controls keep their native keyboard actions. Battlefield tile buttons
-are handled explicitly by the live page; modified Enter remains submit turn.
+{-| C opens chat outside text-entry controls. The owning page suspends this
+shortcut while another dialog is active.
 -}
 openKeyDecoder : Decode.Decoder Msg
 openKeyDecoder =
@@ -289,15 +289,15 @@ openKeyDecoder =
         decode : KeyEvent -> Decode.Decoder Msg
         decode event =
             let
-                nativeControl : Bool
-                nativeControl =
-                    List.member event.tag [ "INPUT", "TEXTAREA", "SELECT", "BUTTON", "A" ]
+                textControl : Bool
+                textControl =
+                    List.member event.tag [ "INPUT", "TEXTAREA", "SELECT" ]
 
                 chatShortcut : Bool
                 chatShortcut =
-                    (event.key == "Enter")
+                    (String.toLower event.key == "c")
                         && not
-                            (nativeControl
+                            (textControl
                                 || event.modified
                                 || event.composing
                                 || event.repeated

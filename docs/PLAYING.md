@@ -123,13 +123,15 @@ join and lobby headers.
 
 ## Chat
 
-Press Enter while the battlefield is active, or choose **chat** in the game
-menu. Game chat opens a centered dialog and focuses its message field. Enter or
+Press C while the battlefield is active, or choose **chat (c)** in the game
+menu. In the lobby, C focuses the chat field. Game chat opens a centered dialog
+and focuses its message field. Enter or
 **send** sends the message and immediately closes the dialog; Escape or the close
 button cancels. Failed sends retain the draft and show a floating HTTP error
 notification with retry and dismiss actions. Reopening chat restores a failed
 draft for editing. Gameplay shortcuts are suspended while chat is open; form controls and
-other dialogs keep their normal keyboard behavior. Cmd+Enter (Ctrl+Enter on
+other dialogs keep their normal keyboard behavior. C does not interrupt typing in
+text fields or native select controls. Cmd+Enter (Ctrl+Enter on
 other platforms) remains the submit-turn shortcut outside dialogs.
 
 Incoming messages appear briefly over the battlefield, with names colored by
@@ -157,8 +159,7 @@ the simulation and orders.
 ## Battlefield and movement
 
 Click a unit or depot to inspect it; units
-and depots can also be selected with Tab and Space. Enter opens chat while the
-battlefield is active. Drag the battlefield
+and depots can also be selected with Tab and Enter/Space. Drag the battlefield
 with the primary mouse button to pan; scroll to zoom around the cursor. The right-side
 panel has selection details and unit actions; the bottom-left control panel has
 pan arrows, zoom and reset controls. Games open at 100%, centered on the whole-map overview.
@@ -203,7 +204,9 @@ route from the unit is chosen when one exists. Saving stops hover previews and h
 Select the unit and choose the full-width **revoke order** button beneath its
 portrait to remove the saved plan and
 keep the unit selected with its order popup closed. Click the unit again to
-reopen orders, then choose **move** to trace a new route. Arrow keys or WASD extend or retrace the previewed route; click a destination or focus it and press Space to save. Enter opens chat and preserves the route preview. Reachable squares support Tab and Space.
+reopen orders, then choose **move** to trace a new route. Arrow keys or WASD extend
+or retrace the previewed route; Enter saves it without panning the map. Reachable
+squares support Tab and Enter/Space. C opens chat and preserves the route preview.
 Press Escape or click the selected unit to leave movement selection. Paths remain visible when
 switching units. Unsubmitted plans are local drafts and disappear on refresh.
 Routes can pass through allied units or enemy starting positions; enemies encountered
@@ -565,8 +568,9 @@ available to inspect, and no further turns can be submitted.
 
 Infantry and tanks can choose **attack move** and trace a route with the same
 pointer and keyboard controls as move. First choose the route by releasing a drag,
-clicking a destination, or focusing it and pressing Space. Then choose final facing around the
-destination: point to preview, and click or press an arrow/WASD key to save.
+clicking a destination, or pressing Enter. Then choose final facing around the
+destination: point to preview, and click, press Enter/Space on a focused square,
+or press an arrow/WASD key to save.
 The direction back along the final route segment is unavailable.
 Preview paths are solid red; saved paths are dashed red. The endpoint arrow shows
 the chosen final facing. Interrupted routes keep their last traveled facing.
@@ -683,7 +687,7 @@ readiness supplies and 20 firing supplies, including misses. Damage uses normal
 field-gun power, health, matchup, defender readiness/facing, and target cover;
 the gun's initial facing does not reduce aim. Surviving guns fire simultaneously.
 Saved targets remain marked and can be revoked. Target tiles support Tab and
-Space. Every fired shell shows a tile impact, including shots into fog;
+Enter/Space. Every fired shell shows a tile impact, including shots into fog;
 unseen enemy hits, casualties, and damage reports remain unconfirmed. Hidden
 hits and empty shots use the same playback timing. Landings without a confirmed
 target open a terrain-only combat theater labeled **indirect fire impact**, with

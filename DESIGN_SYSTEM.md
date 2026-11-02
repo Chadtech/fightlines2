@@ -469,13 +469,14 @@ omits this decorative cycle and retains the original green background.
   destination/cost and revoke order after saving in the right panel.
   Arrow keys or WASD extend or retrace the
   previewed route without panning; clicking a destination or focusing it and
-  pressing Space saves that route. Enter opens chat without changing the preview.
-  Reachable tiles support Tab and Space.
+  pressing Enter/Space saves that route. Enter also confirms a keyboard-traced
+  route. C opens chat without changing the preview.
+  Reachable tiles support Tab and Enter/Space.
   Units with saved orders render their board artwork at
   60% brightness until the order is revoked or the turn resolves. Keep facing
   markers and selection outlines bright and readable.
-- Units and depots support keyboard focus and Space activation in live games;
-  Enter opens chat. Illustrated
+- Units and depots support keyboard focus and Enter/Space activation in live games.
+  Illustrated
   unit sprites face right for east and mirror left for west, following stored direction
   during movement and ambush previews. North/south movement and ambush retain the last horizontal sprite facing,
   including after refresh. Profiles start right for player 1 and left for player 2;
@@ -523,7 +524,7 @@ omits this decorative cycle and retains the original green background.
   departure also revokes plans depending on its freed square.
 - Compatible loading squares appear with ordinary move destinations. Clicking
   an occupied loading square saves the selected unit's move, including keyboard
-  Space, and preserves that unit's selection. Show load/unload destination
+  Enter/Space, and preserves that unit's selection. Show load/unload destination
   labels and explain the receiving unit's hold requirement in the right panel.
   Show a gold notice naming the pickup or boarding target during route preview
   and beneath the saved order.
@@ -836,12 +837,12 @@ motion. The automatic-close option uses the same animation timing with reduced m
 
 Infantry and tanks reuse movement tracing for attack move. Render a solid red
 preview and a dashed red saved path. Choosing the destination by drag release,
-click, or Space on a focused square opens the cardinal direction picker centered on that destination.
+click, or Enter opens the cardinal direction picker centered on that destination.
 Three dotted squares highlight the allowed cardinal directions around the destination.
 Omit the direction pointing back along the route's final segment; pointer and
 keyboard input cannot select it.
 Pointing or focusing a square turns it red and previews final facing in the endpoint
-arrow; clicking, Space on a square, or an arrow/WASD key saves the attack move.
+arrow; clicking, Enter/Space on a square, or an arrow/WASD key saves the attack move.
 The chosen red square remains beside the saved destination. The inspector explains
 the direction step and offers cancel order. The saved arrow shows final facing independently of the
 last route segment. Keep orders revocable and preserve
@@ -903,7 +904,7 @@ Depot tiles show a thin stock bar along their bottom edge, above units and route
 artwork. Known stock uses green while healthy, yellow with a two-second blink at
 25% or below, and a steady red outline with a vector `ø` when empty. Keep its
 click target present throughout blinking; reduced motion shows a steady bar.
-Clicking the bar or activating it with Space opens the depot inspector,
+Clicking the bar or activating it with Enter/Space opens the depot inspector,
 even on occupied tiles. A selected on-board unit standing on a depot also shows
 the complete depot inspection beneath its own row. Unknown stock has no map bar
 or numeric value; the inspector row says `stock outside sight`.
@@ -1064,7 +1065,7 @@ and reflects horizontal facing.
 
 Field guns enable the existing indirect-fire order. Choosing it highlights all
 in-range tiles, including fog, with the existing quiet gold tile outlines. Tile
-buttons say `fire indirectly at (x, y)` and support Tab and Space. Saving
+buttons say `fire indirectly at (x, y)` and support Tab and Enter/Space. Saving
 keeps the gun selected, shows target coordinates and revoke, and leaves the
 illustrated targeting sight on the board.
 Hovering or focusing a legal tile previews the same open-center ivory and crimson
@@ -1122,10 +1123,13 @@ restores the ordinary infantry sprite, and leaves no terrain graphic behind.
 
 ## Chat
 
-Enter on the live battlefield or **chat** in the game menu opens a compact native
+C on the live battlefield or **chat (c)** in the game menu opens a compact native
 dialog in the center of the screen with a transparent backdrop. Focus its inset green text
 field, preserve planned orders, and suspend gameplay shortcuts while it is open.
-Enter sends; Escape or the title-bar close cancels. Keep the field full width,
+In the lobby, C focuses its always-visible chat field. Ignore the shortcut in text
+fields, native select controls, and other dialogs. Enter retains ordinary
+activation and movement-path confirmation outside chat. Enter sends; Escape or the
+title-bar close cancels. Keep the field full width,
 with regular-size **message history** and gold **send** buttons sharing the row
 below it. Omit recipient labels and keyboard hints. Disable browser autocomplete
 suggestions on the message input. Show sender names and

@@ -434,7 +434,9 @@ sequence and turn association; simulation replay ignores conversation events.
 
 `Game.Chat` owns pure transcript, composer, delivery, and notification operations.
 The lobby and game pages own request effects, seed advancement, modal coordination,
-and focus. They poll chat independently of turn changes, including after victory.
+and focus. C opens the game composer or focuses the lobby input, while text-entry
+controls and other dialogs retain their keyboard behavior. They poll chat
+independently of turn changes, including after victory.
 Game sends hide the composer while retaining its pending request in background
 state. Lobby sends keep the inline composer open and clear its field on success.
 Only poll responses advance the cursor, so a faster send response cannot skip
@@ -1082,9 +1084,10 @@ planning-lock check. Each app maps active-page messages and passes the shared
 operating system to `KeyCmd.subscriptions`. Command shortcuts use Meta on macOS/iOS and
 Control elsewhere. While choosing a move, `GamePage` routes arrow and WASD
 commands to extend or retrace the preview from its current tip. Clicking a
-destination or pressing Space on a focused square saves the preview through the
-same destination validation. Plain Enter on the battlefield opens chat without
-changing the preview. Other focused interface controls keep native Enter activation.
+destination or pressing Enter/Space on a focused square saves the preview through
+the same destination validation. Enter also confirms a keyboard-traced path. C
+opens chat without changing the preview; Enter retains ordinary focused-control
+activation.
 Outside order, movement, and ambush selection, arrow and WASD commands pan.
 Plus/minus commands zoom without battlefield focus, and Escape clears selection, reachable
 squares, and the live path preview while preserving saved move drafts. The page

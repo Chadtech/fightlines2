@@ -263,6 +263,7 @@ type Msg
     | CombatTheaterMsg CombatTheater.Msg
     | DirectionKeyPressed Direction
     | PathDirectionKeyPressed Direction
+    | PathEnterPressed
     | NextUnorderedUnitKeyPressed
     | ClearMoveClicked
     | CancelOrderClicked
@@ -1886,25 +1887,6 @@ pollChat lobbyId model =
             )
 
 
-battlefieldChatKey : Battlefield.Msg -> Bool
-battlefieldChatKey msg =
-    case msg of
-        Battlefield.PressedEnterOnUnit _ ->
-            True
-
-        Battlefield.PressedEnterOnDepot _ ->
-            True
-
-        Battlefield.PressedEnterOnDepotStock _ ->
-            True
-
-        Battlefield.PressedEnterOnTile _ ->
-            True
-
-        _ ->
-            False
-
-
 
 ----------------------------------------------------------------
 -- UPDATE --
@@ -2118,12 +2100,8 @@ update lobbyId msg model =
                         |> E.withOut
 
         BattlefieldMsg boardMsg ->
-            if battlefieldChatKey boardMsg then
-                openChat model
-
-            else
-                handleBattlefieldMsg boardMsg model
-                    |> E.withOut
+            handleBattlefieldMsg boardMsg model
+                |> E.withOut
 
         CameraReturnFinished ->
             (model
@@ -2368,6 +2346,11 @@ update lobbyId msg model =
         PathDirectionKeyPressed direction ->
             model
                 |> extendPath direction
+                |> E.withOut
+
+        PathEnterPressed ->
+            model
+                |> confirmPath
                 |> E.withOut
 
         CancelOrderClicked ->
@@ -2963,6 +2946,9 @@ playAudio msg model =
 
         PathDirectionKeyPressed _ ->
             Audio.affirm
+
+        PathEnterPressed ->
+            Audio.confirm
 
         NextUnorderedUnitKeyPressed ->
             Audio.affirm
@@ -5283,6 +5269,7 @@ keyCommands model =
                                 , KeyCmd.rightGamerKeys (PathDirectionKeyPressed DirectionEnum.East)
                                 , KeyCmd.upGamerKeys (PathDirectionKeyPressed DirectionEnum.North)
                                 , KeyCmd.downGamerKeys (PathDirectionKeyPressed DirectionEnum.South)
+                                , KeyCmd.enter PathEnterPressed
                                 ]
 
                             ChoosingIndirectFire _ ->

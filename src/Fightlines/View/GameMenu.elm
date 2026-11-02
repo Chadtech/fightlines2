@@ -177,7 +177,7 @@ dialog status =
         , Button.secondary "settings" SettingsClicked
             |> Button.fullWidth
             |> Button.toHtml
-        , Button.secondary "chat" ChatClicked
+        , Button.secondary "chat (c)" ChatClicked
             |> Button.fullWidth
             |> Button.toHtml
         , Button.secondary "about" AboutClicked

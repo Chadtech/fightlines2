@@ -5,11 +5,23 @@ import Audio
 import Game.Chat as Chat exposing (Delivery(..), Panel(..))
 import Game.View.Chat as ChatView
 import Json.Decode as Decode
+import Json.Encode as Encode
 import Platform
 import Random
 
 
 port results : List String -> Cmd msg
+
+
+type alias KeyEvent =
+    { key : String
+    , tag : String
+    , ctrl : Bool
+    , meta : Bool
+    , alt : Bool
+    , composing : Bool
+    , repeated : Bool
+    }
 
 
 main : Program () () Never
@@ -78,10 +90,56 @@ checks =
                 , ownNames = [ "player" ]
                 }
 
-        shortcut : String -> Result Decode.Error ChatView.Msg
-        shortcut tag =
-            Decode.decodeString ChatView.openKeyDecoder
-                ("{\"key\":\"Enter\",\"target\":{\"id\":\"\",\"tagName\":\"" ++ tag ++ "\"},\"ctrlKey\":false,\"metaKey\":false,\"altKey\":false,\"isComposing\":false,\"repeat\":false}")
+        chatKey : KeyEvent
+        chatKey =
+            { key = "c"
+            , tag = "DIV"
+            , ctrl = False
+            , meta = False
+            , alt = False
+            , composing = False
+            , repeated = False
+            }
+
+        shortcut : KeyEvent -> Result Decode.Error ChatView.Msg
+        shortcut event =
+            Encode.object
+                [ ( "key", Encode.string event.key )
+                , ( "target"
+                  , Encode.object
+                        [ ( "id", Encode.string "" )
+                        , ( "tagName", Encode.string event.tag )
+                        ]
+                  )
+                , ( "ctrlKey", Encode.bool event.ctrl )
+                , ( "metaKey", Encode.bool event.meta )
+                , ( "altKey", Encode.bool event.alt )
+                , ( "isComposing", Encode.bool event.composing )
+                , ( "repeat", Encode.bool event.repeated )
+                ]
+                |> Decode.decodeValue ChatView.openKeyDecoder
+
+        cOpensChat : String -> Bool
+        cOpensChat tag =
+            shortcut { chatKey | tag = tag } == Ok ChatView.OpenPressed
+
+        enterKeepsActivation : String -> Bool
+        enterKeepsActivation tag =
+            shortcut { chatKey | key = "Enter", tag = tag }
+                |> Result.toMaybe
+                |> (==) Nothing
+
+        cKeepsTextEntry : String -> Bool
+        cKeepsTextEntry tag =
+            shortcut { chatKey | tag = tag }
+                |> Result.toMaybe
+                |> (==) Nothing
+
+        ignoresEvent : KeyEvent -> Bool
+        ignoresEvent event =
+            shortcut event
+                |> Result.toMaybe
+                |> (==) Nothing
 
         assert : String -> Bool -> List String
         assert label passed =
@@ -227,6 +285,17 @@ checks =
                 , assert "late send response must preserve a new draft" draftPreserved
                 , assert "old notification expiry must preserve newer messages" (Chat.expire (polled.overlayVersion - 1) polled == polled)
                 , assert "current notification expiry hides only the overlay" (List.isEmpty (Chat.expire polled.overlayVersion polled).recent && ((Chat.expire polled.overlayVersion polled).messages == polled.messages))
-                , assert "Enter opens chat outside controls" (shortcut "DIV" == Ok ChatView.OpenPressed)
-                , assert "Enter must retain native input, select, and button actions" (List.all (\tag -> Result.toMaybe (shortcut tag) == Nothing) [ "INPUT", "TEXTAREA", "SELECT", "BUTTON", "A" ])
+                , assert "C opens chat on the battlefield and focused buttons" (List.all cOpensChat [ "DIV", "svg", "rect", "BUTTON", "A" ])
+                , assert "uppercase C also opens chat" (shortcut { chatKey | key = "C" } == Ok ChatView.OpenPressed)
+                , assert "Enter retains battlefield and native control activation" (List.all enterKeepsActivation [ "DIV", "rect", "INPUT", "TEXTAREA", "SELECT", "BUTTON", "A" ])
+                , assert "C retains typing and native select behavior" (List.all cKeepsTextEntry [ "INPUT", "TEXTAREA", "SELECT" ])
+                , assert "modified, repeated, and composing keys do not open chat"
+                    (List.all ignoresEvent
+                        [ { chatKey | ctrl = True }
+                        , { chatKey | meta = True }
+                        , { chatKey | alt = True }
+                        , { chatKey | repeated = True }
+                        , { chatKey | composing = True }
+                        ]
+                    )
                 ]
