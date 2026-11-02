@@ -39,6 +39,7 @@ check: combat-theater-calibrations
 	node tools/check-orders.cjs
 	node tools/check-lifecycle.cjs
 	node tools/check-replay.cjs
+	node tools/check-chat.cjs
 	node tools/check-combat-chart.cjs
 	node tools/check-planning.cjs
 	node tools/check-pointer.cjs

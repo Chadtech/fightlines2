@@ -82,6 +82,9 @@ checks =
                 ElementFocusFailed _ ->
                     "unexpected element focus error while reading local storage"
 
+                ElementScrollFailed _ ->
+                    "unexpected element scroll error while reading local storage"
+
                 BattlefieldMeasurementFailed _ ->
                     "unexpected battlefield measurement error while reading local storage"
 

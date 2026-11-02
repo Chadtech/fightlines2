@@ -1,0 +1,26 @@
+{
+  "file": "chat-received-radio-v1.ogg",
+  "title": "Single recorded radio beep and crackle",
+  "author": "SEF7",
+  "sourcePage": "https://freesound.org/people/SEF7/sounds/701326/",
+  "sourceAudio": "https://cdn.freesound.org/previews/701/701326_15203576-hq.mp3",
+  "license": "CC0 1.0 Universal",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "sourceSha256": "d372d54c43e25f45cc7b0e69a4271d55013162b1ef1d1be783e0f3db377a713b",
+  "masterSha256": "c4398889f153e6869af63126bdb0c9cc486069c433c34e645a2334de8b25438b",
+  "sourceIntervalsSeconds": [
+    [
+      0.0,
+      0.114
+    ],
+    [
+      0.319,
+      0.44
+    ]
+  ],
+  "joinCrossfadeSeconds": 0.0015,
+  "gainDb": -4.917906,
+  "durationSeconds": 0.2335,
+  "processing": "Mono 48kHz recording. Keep 0\u20130.114s and 0.319\u20130.440s; join with a 1.5ms linear crossfade. Retain approved C2 gain, pitch and speed. Vorbis quality 6 directly from approved WAV.",
+  "sha256": "2b948d178bc023acf996adc55fa361a89acc9beccedc9eabcae6d6cc2c9c2919"
+}

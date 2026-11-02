@@ -4,12 +4,13 @@
 
 ## doing now
 - About page
+- - Privacy Policy
 
 ## Bugs
 
 ## Immediately
 - Chat
-- Privacy Policy
+
 - Launch
 - get rid of all these annoying blue focus outlines
 - Version number in UI

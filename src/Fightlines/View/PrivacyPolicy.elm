@@ -1,7 +1,5 @@
 module Fightlines.View.PrivacyPolicy exposing
-    ( Section(..)
-    , all
-    , dialog
+    ( dialog
     , htmlId
     )
 
@@ -10,19 +8,7 @@ import Html.Styled.Attributes as A
 import Style as S
 import View.Button as Button
 import View.Dialog as Dialog exposing (Dialog)
-
-
-
-----------------------------------------------------------------
--- TYPES --
-----------------------------------------------------------------
-
-
-type Section
-    = Overview
-    | InformationCollected
-    | Storage
-    | Contact
+import View.Prose as Prose
 
 
 
@@ -31,52 +17,22 @@ type Section
 ----------------------------------------------------------------
 
 
-all : List Section
-all =
-    [ Overview
-    , InformationCollected
-    , Storage
-    , Contact
-    ]
+policy : String
+policy =
+    """I retain a log of every game, including the chat messages. I use this for debugging, when there are errors
+and also so that I can understand people's user experience better and improve the game. I don't record any
+other info right now"""
+
+
+
+----------------------------------------------------------------
+-- API --
+----------------------------------------------------------------
 
 
 htmlId : String
 htmlId =
     "privacy-policy-dialog"
-
-
-sectionTitle : Section -> String
-sectionTitle section =
-    case section of
-        Overview ->
-            "overview"
-
-        InformationCollected ->
-            "information collected"
-
-        Storage ->
-            "storage and retention"
-
-        Contact ->
-            "contact"
-
-
-{-| Fill in the policy here. Blank lines separate paragraphs.
--}
-sectionText : Section -> String
-sectionText section =
-    case section of
-        Overview ->
-            ""
-
-        InformationCollected ->
-            ""
-
-        Storage ->
-            ""
-
-        Contact ->
-            ""
 
 
 
@@ -96,7 +52,7 @@ dialog events =
                 , S.g4
                 ]
             ]
-            (List.map sectionView all)
+            [ sectionView ]
         , Button.secondary "close" events.onClose
             |> Button.toHtml
         ]
@@ -104,25 +60,12 @@ dialog events =
         |> Dialog.withCloseButton
 
 
-sectionView : Section -> Html msg
-sectionView section =
+sectionView : Html msg
+sectionView =
     H.section
         [ A.css
             [ S.col
             , S.g2
             ]
         ]
-        [ H.h2
-            [ A.css
-                [ S.textGray5
-                ]
-            ]
-            [ H.text (sectionTitle section) ]
-        , H.p
-            [ A.css
-                [ S.whitespacePreWrap
-                , S.wrapAnywhere
-                ]
-            ]
-            [ H.text (sectionText section) ]
-        ]
+        (Prose.paragraphs policy)

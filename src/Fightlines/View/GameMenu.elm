@@ -30,6 +30,7 @@ import View.Dialog as Dialog exposing (Dialog)
 
 type Msg
     = OpenClicked
+    | ChatClicked
     | SettingsClicked
     | AboutClicked
     | PrivacyPolicyClicked
@@ -174,6 +175,9 @@ dialog status =
             |> Button.fullWidth
             |> Button.toHtml
         , Button.secondary "settings" SettingsClicked
+            |> Button.fullWidth
+            |> Button.toHtml
+        , Button.secondary "chat" ChatClicked
             |> Button.fullWidth
             |> Button.toHtml
         , Button.secondary "about" AboutClicked

@@ -139,17 +139,16 @@ the development tools.
 
 The home and game menus share the **about** dialog in
 `src/Fightlines/View/About.elm`.
-The `Section` type defines `Intro` and `Pacifism`; `all` controls
+The `Section` type defines `Intro`, `Inspiration`, and `Pacifism`; `all` controls
 their display order. Edit `sectionTitle` and the multiline values in `sectionText`
-to fill in each section. Blank lines create paragraph spacing.
+to fill in each section. Single source newlines become spaces; blank lines create
+paragraph spacing. Both dialogs use `View.Prose.paragraphs` for this formatting.
 To include a portrait, add the photo to `public/assets/` and set
 `aboutPhotoSource` to `Just "/assets/your-photo.jpg"`. Its original proportions
 are preserved. `Nothing` hides the portrait. Rebuild the frontend after editing.
 
-The **privacy policy** dialog follows the same section-based structure in
-`src/Fightlines/View/PrivacyPolicy.elm`. Its `all` list orders overview,
-information collected, storage and retention, and contact. Fill in `sectionText`
-with the policy wording; the section bodies start empty.
+Edit the multiline `policy` string in
+`src/Fightlines/View/PrivacyPolicy.elm` to change the **privacy policy** dialog.
 
 ## Artwork and runtime assets
 
@@ -200,21 +199,25 @@ Missing values preserve the existing mix (50% master, 100% per channel); malform
 mixes use that default and retain a diagnostic. `Audio.SetVolumes` updates master
 and channel gain buses without restarting active voices or changing playback timing.
 
-Updates can request audio with `E.audio Audio.uiAffirm`, `Audio.uiCancel`, or
-`Audio.uiConfirm`; `Audio.none` produces no sound. Both apps share a JavaScript
+Updates can request audio with `E.audio Audio.affirm`, `Audio.cancel`, or
+`Audio.confirm`; `Audio.none` produces no sound. Both apps share a JavaScript
 manager that loads and caches clips, unlocks
 audio after player interaction, and stops playback when the page is hidden.
 The three UI cues use physical switch recordings: a desk-lamp switch press for
 affirm, its release for cancel, and the approved old-switch audition A for
 confirm. They last 230ms, 230ms, and 300ms respectively; source credit and
 extraction details are in `public/audio/README.md`.
+`Audio.chatReceived` plays the approved 233.5ms recorded radio beep and crackle
+on the interface channel. Live lobby/game polls emit it once for new messages
+from another sender; initial history, duplicate polls and your own messages
+remain silent.
 Live-game messages select their UI cue in `GamePage.playAudio`, including nested
 view and playback messages. Opening menus, selecting objects, adjusting discrete
-camera controls, and choosing orders play `uiAffirm`. Saving orders, confirming
-cargo choices, submitting, resigning, and continuing dialogs play `uiConfirm`.
-Closing, backing out, and declining cargo choices play `uiCancel`.
+camera controls, and choosing orders play `affirm`. Saving orders, confirming
+cargo choices, submitting, resigning, and continuing dialogs play `confirm`.
+Closing, backing out, and declining cargo choices play `cancel`.
 Keyboard actions use the same cue categories. Hover, focus, continuous pointer
-input, automatic playback controls, and server responses remain silent.
+input, automatic playback controls, and other server responses remain silent.
 Combat playback emits `Audio.tankFire` or `Audio.fieldGunFire` whenever its clock crosses
 a matching muzzle-flash time (after the field gun’s 320ms preparation), using the same stagger as the sprites. Live games and logged replays
 share this timing; pauses and camera holds do not repeat shots. The manager

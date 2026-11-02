@@ -108,7 +108,7 @@ checks shared =
 
                 initial : GameReplay.Model
                 initial =
-                    GameReplay.init shared game.id { game = game, turn = opening } |> Tuple.first
+                    GameReplay.init shared game.id { game = game, turn = opening, messages = [] } |> Tuple.first
 
                 step : GameReplay.Msg -> GameReplay.Model -> GameReplay.Model
                 step msg model =
@@ -136,7 +136,13 @@ checks shared =
 
                 framed : GameReplay.Model
                 framed =
-                    step (GameReplay.InspectorSizeReceived viewportElement (Ok inspectorElement)) playing
+                    playing
+                        |> step (GameReplay.InspectorSizeReceived viewportElement (Ok inspectorElement))
+                        |> step
+                            (GameReplay.ControlsSizeReceived
+                                { battlefield = viewportElement, inspector = inspectorElement }
+                                (Ok controlsElement)
+                            )
 
                 framedPause : GameReplay.Model
                 framedPause =
@@ -292,6 +298,8 @@ checks shared =
                 , expect "fog can be restored to the original player projection" (refogged.position == redTurn 1 && refogged.battlefield == playing.battlefield)
                 , expect "loading prevents a second fog request" ((step (GameReplay.FogOfWarChanged False) loading).request == loading.request)
                 , expect "viewport measurement initializes the playback camera" (framed.timeline /= playing.timeline)
+                , expect "floating controls reserve their measured height while retaining the full battlefield size"
+                    (framed.viewport == Just { size = { x = 800, y = 600 }, bottomInset = 100, rightInset = 200 })
                 , expect "sprite timers and hover events do not initialize the playback camera" ((step GameReplay.AnimationTimerElapsed unframed).timeline == unframed.timeline && (step (GameReplay.BattlefieldMsg (Battlefield.MouseOverTile { x = 1, y = 1 })) unframed).timeline == unframed.timeline)
                 , expect "completed playback returns to the saved camera" (BattlefieldNavigation.returning finishedFirst.navigation && not (BattlefieldNavigation.returning (step GameReplay.CameraReturnFinished finishedFirst).navigation))
                 , expect "starting board has no live turn introduction or loss dialog" (GameReplay.dialog initial == Nothing)
@@ -655,6 +663,11 @@ viewportElement =
     , viewport = { x = 0, y = 0, width = 800, height = 600 }
     , element = { x = 0, y = 0, width = 800, height = 600 }
     }
+
+
+controlsElement : Browser.Dom.Element
+controlsElement =
+    { viewportElement | element = { x = 0, y = 500, width = 600, height = 100 } }
 
 
 inspectorElement : Browser.Dom.Element

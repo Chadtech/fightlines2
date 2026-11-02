@@ -178,6 +178,12 @@ toDevPanelError error =
                 , details = domErrorDetails failure
                 }
 
+        Error.ElementScrollFailed failure ->
+            DevPanel.Error
+                { title = "element scroll failed"
+                , details = domErrorDetails failure
+                }
+
         Error.OrderPlanningInvariantViolated violation ->
             DevPanel.Error
                 { title = "order planning invariant violated"

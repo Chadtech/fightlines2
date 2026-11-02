@@ -209,7 +209,7 @@ The server records every normally started game in `game-logs/` by default.
 Set `FIGHTLINES_GAME_LOG_DIR` to an absolute directory on a persistent volume when
 hosting. Startup checks write access and rejects an archive directory inside
 `FIGHTLINES_FRONTEND_DIR`. Keep the directory outside all reverse-proxy static
-roots as well. Archives contain hidden positions, resources, player names, and
+roots as well. Archives contain hidden positions, resources, player names, chat messages, and
 both sides' orders; only the server operator should have access. Session cookies,
 credentials, and token-generation seeds are excluded. On Unix, per-game directories
 use mode `0700` and files `0600`.
@@ -230,11 +230,15 @@ server-session input recording and replay are not implemented yet.
 Each game has a directory named `<game-id>-<start-time-in-unix-nanoseconds>`:
 
 - `00000000.json` contains the exact starting scenario, roster and AI difficulty,
-  map selection, package version, and optional build revision.
+  map selection, lobby chat, package version, and optional build revision.
 - Following numbered files contain accepted submissions in processing order,
   timestamps in Unix milliseconds, the resulting authoritative board, pending
   players, terminal outcome, and the full resolution when a turn completes.
   AI and human orders are recorded together when they resolve as one request.
+- Chat messages publish separate numbered records; they are excluded from the
+  simulation inputs. Before a game starts, lobby messages are recorded in private
+  `chat-<lobby-id>-<timestamp>` journals, excluded from the replay list. Starting
+  the game copies that transcript into its initial archive record.
 - Invalid or unauthorized submissions and repeated submissions of locked orders
   create no records. The read-only `--dev-game` fixture is not archived.
 

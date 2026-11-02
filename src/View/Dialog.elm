@@ -1,11 +1,14 @@
 module View.Dialog exposing
     ( Dialog
     , announcement
+    , article
     , atBottom
+    , form
     , htmlId
     , make
     , map
     , onCancel
+    , onOpened
     , reference
     , toHtml
     , withCloseButton
@@ -35,6 +38,7 @@ type Dialog msg
         { htmlId : String
         , title : String
         , onCancel : msg
+        , onOpened : Maybe msg
         , body : List (Html msg)
         , placement : Placement
         , showCloseButton : Bool
@@ -47,7 +51,9 @@ type Placement
     | Bottom
     | Announcement
     | Reference
+    | Article
     | Workspace
+    | Form
 
 
 
@@ -78,6 +84,7 @@ make dialogHtmlId title canceled body =
         { htmlId = dialogHtmlId
         , title = title
         , onCancel = canceled
+        , onOpened = Nothing
         , body = body
         , placement = Centered
         , showCloseButton = False
@@ -89,7 +96,7 @@ make dialogHtmlId title canceled body =
 -}
 withOverlay : List (Html msg) -> Dialog msg -> Dialog msg
 withOverlay overlay (Dialog model) =
-    Dialog { model | overlay = overlay }
+    Dialog { model | overlay = model.overlay ++ overlay }
 
 
 withCloseButton : Dialog msg -> Dialog msg
@@ -102,6 +109,13 @@ onCancel canceled (Dialog model) =
     Dialog { model | onCancel = canceled }
 
 
+{-| Notify the page after the native dialog becomes visible.
+-}
+onOpened : msg -> Dialog msg -> Dialog msg
+onOpened opened (Dialog model) =
+    Dialog { model | onOpened = Just opened }
+
+
 announcement : Dialog msg -> Dialog msg
 announcement =
     setPlacement Announcement
@@ -110,6 +124,13 @@ announcement =
 reference : Dialog msg -> Dialog msg
 reference =
     setPlacement Reference
+
+
+{-| A wide reading surface for long-form text.
+-}
+article : Dialog msg -> Dialog msg
+article =
+    setPlacement Article
 
 
 {-| A dialog with room for navigation beside a working pane.
@@ -124,12 +145,18 @@ atBottom =
     setPlacement Bottom
 
 
+form : Dialog msg -> Dialog msg
+form =
+    setPlacement Form
+
+
 map : (a -> msg) -> Dialog a -> Dialog msg
 map toMsg (Dialog model) =
     Dialog
         { htmlId = model.htmlId
         , title = model.title
         , onCancel = toMsg model.onCancel
+        , onOpened = Maybe.map toMsg model.onOpened
         , body = List.map (H.map toMsg) model.body
         , placement = model.placement
         , showCloseButton = model.showCloseButton
@@ -143,14 +170,45 @@ Open after Elm renders through the OpenDialog port effect.
 toHtml : Dialog msg -> Html msg
 toHtml (Dialog model) =
     let
+        openedAttributes : List (H.Attribute msg)
+        openedAttributes =
+            case model.onOpened of
+                Just opened ->
+                    let
+                        whenOpen : String -> Decode.Decoder msg
+                        whenOpen state =
+                            if state == "open" then
+                                Decode.succeed opened
+
+                            else
+                                Decode.fail "dialog closed"
+                    in
+                    [ Ev.on "toggle" (Decode.field "newState" Decode.string |> Decode.andThen whenOpen) ]
+
+                Nothing ->
+                    []
+
         placementStyles : List Css.Style
         placementStyles =
             case model.placement of
+                Form ->
+                    [ S.w170
+                    , S.maxHViewportInset8
+                    , S.overflowAuto
+                    , S.backdrop [ S.bgTransparent ]
+                    ]
+
                 Centered ->
                     []
 
                 Reference ->
                     [ S.w152
+                    , S.maxHViewportInset8
+                    , S.overflowAuto
+                    ]
+
+                Article ->
+                    [ S.w256
                     , S.maxHViewportInset8
                     , S.overflowAuto
                     ]
@@ -197,6 +255,11 @@ toHtml (Dialog model) =
         titleFocusAttributes =
             case model.placement of
                 Reference ->
+                    [ A.tabindex -1
+                    , A.autofocus True
+                    ]
+
+                Article ->
                     [ A.tabindex -1
                     , A.autofocus True
                     ]
@@ -271,11 +334,16 @@ toHtml (Dialog model) =
                 model.body
             ]
                 ++ model.overlay
+
+        attributes : List (H.Attribute msg)
+        attributes =
+            [ A.id model.htmlId
+            , Aria.labelledBy (model.htmlId ++ "-title")
+            , Ev.preventDefaultOn "cancel" (Decode.succeed ( model.onCancel, True ))
+            , A.css dialogStyles
+            ]
+                ++ openedAttributes
     in
     H.node "dialog"
-        [ A.id model.htmlId
-        , Aria.labelledBy (model.htmlId ++ "-title")
-        , Ev.preventDefaultOn "cancel" (Decode.succeed ( model.onCancel, True ))
-        , A.css dialogStyles
-        ]
+        attributes
         content

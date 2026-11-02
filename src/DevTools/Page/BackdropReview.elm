@@ -470,11 +470,13 @@ update msg model =
         CopyClicked ->
             case model.copyScope of
                 Nothing ->
-                    E.withOut model
+                    model
+                        |> E.withOut
 
                 Just scope ->
                     if not (canCopy model) then
-                        E.withOut model
+                        model
+                            |> E.withOut
 
                     else
                         let

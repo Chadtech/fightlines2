@@ -122,6 +122,9 @@ movement, facing, and targeting from resolved display inputs; it has no requests
 or planning state. `Game.View.BattlefieldInspection` shares keyed unit/depot/freight/
 terrain rows and cargo inspection. `Game.View.BattlefieldWorkspace` shares the viewport
 and panel layout. `BattlefieldNavigation` shares pan/zoom and pointer gestures.
+Live and replay pages measure the full battlefield, inspector, and floating
+controls. The controls' rendered height becomes the playback camera's bottom
+inset, keeping subjects above the strip without changing the map's scaling.
 `PlaybackPresentation` shares camera framing, combat/loss views, preferences,
 and playback subscriptions, while `TurnPlayback` owns the recorded animation.
 Only live `CurrentTurn` subscribes to polling. `Game.Checks.Replay` covers replay
@@ -411,6 +414,54 @@ route, game query and page. Only this fixture has
 requiring or setting a session cookie. Normal games retain member authorization.
 The fixture resets on restart and does not consume the normal token seed.
 
+## Chat
+
+`chat.rs` owns the URL-accessible transcript and client message IDs. Lobbies and
+games keep this state under their existing entry lock; starting transfers the
+transcript and private retry receipts without changing sequence numbers. Sender
+names and player colors come from the session's roster entry. Nonmembers are
+labeled `visitor`; chat access does not authorize battlefield queries or actions.
+The `chat(id, after)` query returns messages after a sequence cursor, while
+`sendChat` validates a single-line message and deduplicates retries by browser
+session and client message ID. Credentials and retry receipts are never recorded.
+
+Lobby messages are published to private `chat-*` journals before acknowledgment.
+The initial game record includes that lobby transcript; later messages publish
+independent `Chat` records before updating memory. Archive version 3 adds these
+events, while readers retain versions 1 and 2. Archive reading validates chat
+sequence and turn association; simulation replay ignores conversation events.
+`loggedGame.chat` exposes the complete recorded transcript.
+
+`Game.Chat` owns pure transcript, composer, delivery, and notification operations.
+The lobby and game pages own request effects, seed advancement, modal coordination,
+and focus. They poll chat independently of turn changes, including after victory.
+Game sends hide the composer while retaining its pending request in background
+state. Lobby sends keep the inline composer open and clear its field on success.
+Only poll responses advance the cursor, so a faster send response cannot skip
+another player's earlier message. Correlated send responses preserve a new draft
+after cancellation; unchanged failed submissions retain their original ID.
+Poll handlers use `Chat.hasNewIncoming` to request one `Audio.chatReceived` cue
+for unseen messages from another sender. Initial history and duplicate polls
+stay silent. Roster names identify the player's own messages across lobby side
+changes; visitors remain distinct from a participant named `visitor`.
+`Game.View.Chat` provides the centered game dialog, dedicated lobby panel,
+complete history, and temporary battlefield messages. HTTP failures use the
+shared `View.RequestError` presentation outside the composer. A modal adds its
+toast to the native top layer so retry and dismiss remain usable. The replay
+page uses the history view without send controls.
+Transcripts render by ascending sequence, with newer turns below older ones.
+The lobby's transcript has a fixed-height green inset. Elm decodes its scroll
+position and `Game.Chat` remembers whether the reader is within four pixels of
+the bottom. The owning page requests `Effect.scrollToBottom` when new messages
+arrive while following; `Browser.Dom` measures and scrolls the rendered element.
+Opening history resets following. `Dialog.onOpened` handles the native dialog's
+open event so game and replay history scroll after becoming visible. No scroll
+observer or scrolling port is needed.
+`Chat.initGame` seeds the map display with the latest in-game messages from the
+initial response; initial messages otherwise only populated history. Their
+expiry starts after the turn introduction closes, so joining players do not
+lose messages sent during the lobby-to-game transition.
+
 ## Frontend
 
 Player page modules live under `src/Fightlines/Page/` with the
@@ -524,9 +575,9 @@ Both documents load `public/audio-manager.js` before the shared interop. Each
 sends it through `Ports.Js.To.Audio` in a
 `{ "tag": "audio", "event": ... }` envelope. Within that envelope,
 `Audio.none` encodes as `null`, and
-`Audio.uiAffirm`, `Audio.uiCancel`, and `Audio.uiConfirm` as
-`{ "play": "uiAffirm" }`, `{ "play": "uiCancel" }`, and
-`{ "play": "uiConfirm" }`. `Audio.tankFire` encodes as `{ "play": "tankFire" }`;
+`Audio.affirm`, `Audio.cancel`, and `Audio.confirm` as
+`{ "play": "affirm" }`, `{ "play": "cancel" }`, and
+`{ "play": "confirm" }`. `Audio.tankFire` encodes as `{ "play": "tankFire" }`;
 `Audio.fieldGunFire` uses `{ "play": "fieldGunFire" }`;
 `Audio.combatImpact` uses `{ "play": "combatImpact" }`.
 `Shared.Model.audioMute` owns the document-wide `Audio.MuteState`. Its click
@@ -544,7 +595,7 @@ Shared interop dispatches on `tag`, passing audio's `event` to the manager along
 clipboard, dialog, storage, and thumbnail messages. New audio event kinds do not
 change this routing. Elm updates remain the only source of playback requests; pointer and
 keyboard listeners only unlock the browser audio context and preload its clips.
-The manager caches decoded buffers, preloading all twenty-two clips on unlock. UI
+The manager caches decoded buffers, preloading all twenty-three clips on unlock. UI
 playback allows four voices and coalesces identical requests within 40ms. Combat
 playback allows eight independent voices, cycles five variants per weapon or impact cue, and
 never coalesces separate shots or hits. Requests delayed more than 250ms are dropped.
@@ -562,10 +613,13 @@ from CC0 physical switch recordings by Joseph Sardin credited in
 `public/audio/README.md`. Affirm uses a desk-lamp switch press (230ms), cancel
 its release (230ms), and confirm the approved old-switch audition A (300ms).
 The source recordings and audition masters remain ignored.
-Opening the game menu and revoking an order emit `uiAffirm`; closing the menu
-and cancelling the unplanned-unit warning emit `uiCancel`.
+`Audio.chatReceived` selects `/audio/chat-received-radio-v1.ogg`, the approved
+single-beep-and-crackle edit of SEF7's CC0 Cobra walkie-talkie recording. It shares
+the interface bus and UI voice/coalescing behavior.
+Opening the game menu and revoking an order emit `affirm`; closing the menu
+and cancelling the unplanned-unit warning emit `cancel`.
 Accepted submission requests and the unplanned-unit
-warning emit `uiConfirm`, including keyboard submission. Locked or
+warning emit `confirm`, including keyboard submission. Locked or
 invalid submission attempts emit no audio.
 
 `PlaybackPresentation.audioBetween` compares the old and new theater clocks
@@ -989,8 +1043,9 @@ The shared view accepts no parent-message mapping or page content. The page read
 its camera for order positioning and queries `active` and `suppressesClick`
 when handling previews and selection. `GamePage.keyCommands` retains keyboard
 priority across dialogs, order menus, movement, ambush and navigation.
-`BattlefieldWorkspace` overlays a centered game header on the navigation surface
-and reserves normal-flow space for bottom controls. Its full-height right inspector
+`BattlefieldWorkspace` overlays a centered game header and bottom-left controls on
+the full-viewport navigation surface. Notifications stack above the controls;
+uncovered map space remains interactive. Its full-height right inspector
 appears only with a selection and overlays the map without changing its horizontal
 coordinate system. `GamePage.turnPanel` supplies compact horizontal game controls
 at the bottom-left edge, with submit, player statuses, and camera controls side by side.
@@ -1026,10 +1081,10 @@ active. Locked phases expose inspection only, so key bindings need no separate
 planning-lock check. Each app maps active-page messages and passes the shared
 operating system to `KeyCmd.subscriptions`. Command shortcuts use Meta on macOS/iOS and
 Control elsewhere. While choosing a move, `GamePage` routes arrow and WASD
-commands to extend or retrace the preview from its current tip, and Enter saves
-the preview through the same destination validation as a click. Board Enter
-events confirm that preview when focus remains on the selected unit. Enter on
-another unit, depot, or reachable tile activates that focused destination.
+commands to extend or retrace the preview from its current tip. Clicking a
+destination or pressing Space on a focused square saves the preview through the
+same destination validation. Plain Enter on the battlefield opens chat without
+changing the preview. Other focused interface controls keep native Enter activation.
 Outside order, movement, and ambush selection, arrow and WASD commands pan.
 Plus/minus commands zoom without battlefield focus, and Escape clears selection, reachable
 squares, and the live path preview while preserving saved move drafts. The page
@@ -1764,8 +1819,8 @@ projected indirect impacts. Encounter-only portrait positions never contribute.
 the camera is absent until the viewport has been measured. `GamePage` retains the
 battlefield size and right inspector inset, measured on initial render, playback
 start, layout changes, and window resize through `Effect.measure`.
-The navigation surface excludes the rendered bottom controls, including responsive
-wrapping, while the header overlays it. `BattlefieldWorkspace.viewport` combines
+The navigation surface fills the viewport behind the header and bottom controls,
+including when the controls wrap. `BattlefieldWorkspace.viewport` combines
 its size with the inspector's rendered width (zero when hidden). `Camera.frame` preserves
 the full navigation surface for board scaling, but fits and centers subjects in
 the clear area beside the inspector. It tests
@@ -1789,7 +1844,7 @@ user navigates.
 
 Infantry and tanks can choose **attack move** and trace a route with the same
 pointer and keyboard controls as move. Dragging traces without panning; releasing,
-clicking a destination, or pressing Enter fixes the route and opens a direction
+clicking a destination, or pressing Space on a focused square fixes the route and opens a direction
 picker centered on its destination. Point to preview final facing, then click or
 press an arrow/WASD key to save. Unfinished direction selection blocks submission.
 The picker omits the direction back along the final route segment. Elm rejects

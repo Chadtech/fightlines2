@@ -366,7 +366,8 @@ update msg page =
                     ( Home nextModel, E.map HomeMsg eff )
 
                 _ ->
-                    E.withOut page
+                    page
+                        |> E.withOut
 
         LinkClicked request ->
             case request of
@@ -387,7 +388,8 @@ update msg page =
                     handleRoute shared route
 
                 Nothing ->
-                    page |> E.withOut
+                    page
+                        |> E.withOut
 
         NewLobbyMsg pageMsg ->
             case page of

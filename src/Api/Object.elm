@@ -37,6 +37,10 @@ type CarrierUnitLoss
     = CarrierUnitLoss
 
 
+type ChatMessage
+    = ChatMessage
+
+
 type CombatBackdrop
     = CombatBackdrop
 

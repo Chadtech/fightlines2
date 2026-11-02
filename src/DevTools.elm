@@ -425,7 +425,8 @@ update msg page =
             case page of
                 LoadingCombatChart shared currentId ->
                     if requestId /= currentId then
-                        E.withOut page
+                        page
+                            |> E.withOut
 
                     else
                         case result of
@@ -438,7 +439,8 @@ update msg page =
                                     |> E.withOut
 
                 _ ->
-                    E.withOut page
+                    page
+                        |> E.withOut
 
         CombatChartMsg chartMsg ->
             case page of
@@ -448,7 +450,8 @@ update msg page =
                         |> Tuple.mapSecond (E.map CombatChartMsg)
 
                 _ ->
-                    E.withOut page
+                    page
+                        |> E.withOut
 
         BackdropReviewResponseReceived requestId result ->
             case page of
@@ -488,13 +491,15 @@ update msg page =
                             ( LoggedGamesLoadFailed shared (ApiRequest.errorMessage error), E.none )
 
                 _ ->
-                    E.withOut page
+                    page
+                        |> E.withOut
 
         ReplayResponseReceived id result ->
             case page of
                 LoadingReplay shared currentId ->
                     if id /= currentId then
-                        E.withOut page
+                        page
+                            |> E.withOut
 
                     else
                         case result of
@@ -504,16 +509,19 @@ update msg page =
                                     |> Tuple.mapSecond (E.map (ReplayMsg id))
 
                             Err error ->
-                                E.withOut (ReplayLoadFailed shared id (ApiRequest.errorMessage error))
+                                ReplayLoadFailed shared id (ApiRequest.errorMessage error)
+                                    |> E.withOut
 
                 _ ->
-                    E.withOut page
+                    page
+                        |> E.withOut
 
         ReplayMsg id replayMsg ->
             case page of
                 Replay currentId model ->
                     if id /= currentId then
-                        E.withOut page
+                        page
+                            |> E.withOut
 
                     else
                         GameReplay.update replayMsg model
@@ -521,7 +529,8 @@ update msg page =
                             |> Tuple.mapSecond (E.map (ReplayMsg id))
 
                 _ ->
-                    E.withOut page
+                    page
+                        |> E.withOut
 
         MapEditorResponseReceived result ->
             case page of
@@ -567,7 +576,8 @@ update msg page =
                     handleRoute shared route
 
                 Nothing ->
-                    page |> E.withOut
+                    page
+                        |> E.withOut
 
         GotSharedMsg subMsg ->
             case getShared page of

@@ -34,16 +34,22 @@ import ApiRequest
     exposing
         ( Response
         )
+import Audio
+import Browser.Dom
+import Browser.Events
 import EditableMap exposing (NamedMap)
 import Effect as E
     exposing
         ( Eff
         )
+import Error exposing (Error(..))
 import Fightlines.Route as Route
 import Fightlines.Shared as Shared
 import Fightlines.View.MapChoice as MapChoice
+import Game.Chat as Chat
 import Game.MapId as MapId
 import Game.PlayerNumber as PlayerNumber
+import Game.View.Chat as ChatView
 import Game.View.MapPreview as MapPreview
 import Graphql.Http
 import Graphql.SelectionSet as SS exposing (SelectionSet)
@@ -65,6 +71,7 @@ import View.Aria as Aria
 import View.Button as Button
 import View.Card as Card
 import View.CardHeader as CardHeader
+import View.RequestError as RequestError
 import View.Select as Select
 import View.TextField as TextField
 
@@ -78,6 +85,7 @@ import View.TextField as TextField
 type alias Flags =
     { lobby : Snapshot
     , mapPreviews : List NamedMap
+    , messages : List Chat.Message
     }
 
 
@@ -103,6 +111,7 @@ type alias Player =
 
 type alias Model =
     { shared : Shared.Model
+    , chat : Chat.Model
     , id : LobbyId
     , name : String
     , mapType : MapId
@@ -169,6 +178,12 @@ type alias CopyResult =
 
 type Msg
     = SideInputChanged PlayerNumber
+    | ChatMsg ChatView.Msg
+    | ChatPollElapsed Time.Posix
+    | ChatPollReceived (Response (List Chat.Message))
+    | ChatSendReceived Chat.Submission (Response Chat.Message)
+    | ChatFocusReturned (Result Browser.Dom.Error ())
+    | ChatScrollCompleted (Result Browser.Dom.Error ())
     | ControllerInputChanged Controller
     | ChooseMapButtonClicked
     | BackToLobbyButtonClicked
@@ -252,6 +267,7 @@ init location shared flags =
         model : Model
         model =
             { shared = shared
+            , chat = Chat.init flags.messages |> Chat.open
             , id = lobby.id
             , name = lobby.name
             , mapType = lobby.mapType
@@ -277,6 +293,7 @@ init location shared flags =
             }
             lobby.id
         , routeCorrection
+        , scrollChatHistory model
         ]
     )
 
@@ -286,6 +303,7 @@ load id =
     SS.succeed Flags
         |> SS.with (Api.Query.lobby { id = LobbyId.toString id } snapshotSelection)
         |> SS.with (Api.Query.mapPreviews EditableMap.namedSelection)
+        |> SS.with (Chat.query id 0)
         |> ApiRequest.queryRequest
 
 
@@ -475,6 +493,113 @@ inviteUrl model =
     model.shared.origin ++ Route.toString (Route.Lobby model.id)
 
 
+applyChatUpdate : Chat.Model -> Model -> ( Model, Eff Msg )
+applyChatUpdate chat model =
+    let
+        next : Model
+        next =
+            { model | chat = chat }
+
+        scroll : Eff Msg
+        scroll =
+            if chat.overlayVersion /= model.chat.overlayVersion then
+                scrollChatHistory next
+
+            else
+                E.none
+    in
+    ( next, scroll )
+
+
+scrollChatHistory : Model -> Eff Msg
+scrollChatHistory model =
+    if (model.screen == Setup) && Chat.followsHistory model.chat then
+        E.scrollToBottom { htmlId = ChatView.messagesHtmlId } ChatScrollCompleted
+
+    else
+        E.none
+
+
+openChat : Model -> ( Model, Eff Msg )
+openChat model =
+    if (model.screen == Setup) && not model.shared.devPanelOpen then
+        ( model
+        , E.focus { htmlId = ChatView.inputHtmlId } ChatFocusReturned
+        )
+
+    else
+        model
+            |> E.withOut
+
+
+handleChatMsg : ChatView.Msg -> Model -> ( Model, Eff Msg )
+handleChatMsg msg model =
+    case msg of
+        ChatView.OpenPressed ->
+            openChat model
+
+        ChatView.CloseClicked ->
+            model
+                |> E.withOut
+
+        ChatView.TextChanged text ->
+            { model | chat = Chat.edit text model.chat }
+                |> E.withOut
+
+        ChatView.HistoryClicked ->
+            model
+                |> E.withOut
+
+        ChatView.DialogOpened ->
+            model
+                |> E.withOut
+
+        ChatView.HistoryScrolled position ->
+            { model | chat = Chat.scrollHistory position model.chat }
+                |> E.withOut
+
+        ChatView.SendPressed ->
+            sendChat model
+
+        ChatView.RetrySendPressed ->
+            sendChat model
+
+        ChatView.RetryUpdatesPressed ->
+            pollChat model
+
+        ChatView.DismissErrorClicked ->
+            openChat { model | chat = Chat.dismissErrors model.chat }
+
+
+sendChat : Model -> ( Model, Eff Msg )
+sendChat model =
+    case Chat.prepareSend model.shared.seed model.chat of
+        Just ( chat, seed, submission ) ->
+            ( { model | chat = chat }
+                |> setShared (Shared.setSeed seed model.shared)
+            , E.request (ChatSendReceived submission) (Chat.sendRequest model.id submission)
+            )
+
+        Nothing ->
+            model
+                |> E.withOut
+
+
+pollChat : Model -> ( Model, Eff Msg )
+pollChat model =
+    case Chat.beginPoll model.chat of
+        Nothing ->
+            model
+                |> E.withOut
+
+        Just chat ->
+            ( { model | chat = chat }
+            , Chat.query model.id chat.cursor
+                |> ApiRequest.queryRequest
+                |> E.request ChatPollReceived
+            )
+
+
 
 ----------------------------------------------------------------
 -- UPDATE --
@@ -484,6 +609,89 @@ inviteUrl model =
 update : Msg -> Model -> ( Model, Eff Msg )
 update msg model =
     case msg of
+        ChatMsg chatMsg ->
+            handleChatMsg chatMsg model
+
+        ChatPollElapsed _ ->
+            pollChat model
+
+        ChatPollReceived result ->
+            case result of
+                Ok messages ->
+                    let
+                        notification : Eff Msg
+                        notification =
+                            if
+                                Chat.hasNewIncoming
+                                    { known = model.chat.messages
+                                    , received = messages
+                                    , ownNames =
+                                        model.players
+                                            |> List.filter .isYou
+                                            |> List.map .name
+                                    }
+                            then
+                                E.audio Audio.chatReceived
+
+                            else
+                                E.none
+                    in
+                    model
+                        |> applyChatUpdate (Chat.receive messages model.chat)
+                        |> E.and notification
+
+                Err error ->
+                    { model | chat = Chat.pollFailed (ApiRequest.errorMessage error) model.chat }
+                        |> E.withOut
+
+        ChatSendReceived submission result ->
+            let
+                chat : Chat.Model
+                chat =
+                    Chat.sent
+                        submission
+                        (Result.mapError ApiRequest.errorMessage result)
+                        model.chat
+
+                focus : Eff Msg
+                focus =
+                    if (model.screen == Setup) && Chat.isOpen chat then
+                        E.focus { htmlId = ChatView.inputHtmlId } ChatFocusReturned
+
+                    else
+                        E.none
+            in
+            model
+                |> applyChatUpdate chat
+                |> E.and focus
+
+        ChatScrollCompleted result ->
+            case result of
+                Err error ->
+                    if model.screen == Setup then
+                        model
+                            |> setShared (Shared.addError (Just (ElementScrollFailed error)) model.shared)
+                            |> E.withOut
+
+                    else
+                        model
+                            |> E.withOut
+
+                Ok () ->
+                    model
+                        |> E.withOut
+
+        ChatFocusReturned result ->
+            case result of
+                Ok _ ->
+                    model
+                        |> E.withOut
+
+                Err error ->
+                    model
+                        |> setShared (Shared.addError (Just (ElementFocusFailed error)) model.shared)
+                        |> E.withOut
+
         SideInputChanged playerNumber ->
             let
                 canChooseSide : Bool
@@ -727,6 +935,19 @@ update msg model =
 
 view : Model -> List (Html Msg)
 view model =
+    let
+        notification : List (Html Msg)
+        notification =
+            ChatView.notification model.chat
+                |> Maybe.map (H.map ChatMsg >> RequestError.toast)
+                |> Maybe.map List.singleton
+                |> Maybe.withDefault []
+    in
+    pageView model ++ notification
+
+
+pageView : Model -> List (Html Msg)
+pageView model =
     case model.screen of
         Setup ->
             lobbyView model
@@ -1041,12 +1262,15 @@ lobbyView model =
             [ A.css
                 [ S.flex1
                 , S.minW0
+                , S.col
+                , S.g4
                 , S.belowWidth 720
                     [ S.wFull
                     ]
                 ]
             ]
             [ playersView model
+            , ChatView.lobbyPanel model.chat |> H.map ChatMsg
             ]
         ]
     ]
@@ -1542,8 +1766,17 @@ playerSlotView model playerNumber =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions _ =
-    Time.every 2000 PollTimerElapsed
+subscriptions model =
+    let
+        shortcut : Sub Msg
+        shortcut =
+            if (model.screen == Setup) && not model.shared.devPanelOpen then
+                Browser.Events.onKeyDown (Decode.map ChatMsg ChatView.openKeyDecoder)
+
+            else
+                Sub.none
+    in
+    Sub.batch [ Time.every 2000 PollTimerElapsed, Time.every 1000 ChatPollElapsed, shortcut ]
 
 
 listeners : FromJs.Listener Msg

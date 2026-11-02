@@ -62,9 +62,9 @@ on BigSoundBank:
 
 | Cue / file | Approved audition | Source excerpt | Duration |
 | --- | --- | --- | --- |
-| `uiAffirm` / `ui-affirm-switch-v1.ogg` | Desk-lamp press | 0036: 1.865–2.095s | 230ms |
-| `uiCancel` / `ui-cancel-switch-v1.ogg` | Desk-lamp release | 0036: 2.265–2.495s | 230ms |
-| `uiConfirm` / `ui-confirm-switch-v1.ogg` | A, old switch | 0540: 3.035–3.335s | 300ms |
+| `affirm` / `ui-affirm-switch-v1.ogg` | Desk-lamp press | 0036: 1.865–2.095s | 230ms |
+| `cancel` / `ui-cancel-switch-v1.ogg` | Desk-lamp release | 0036: 2.265–2.495s | 230ms |
+| `confirm` / `ui-confirm-switch-v1.ogg` | A, old switch | 0540: 3.035–3.335s | 300ms |
 
 The runtime Vorbis files are encoded at quality 6 directly from the approved
 WAV auditions. Affirm and cancel retain their original mono 44.1kHz recording
@@ -77,6 +77,30 @@ Source WAVs, page snapshots, audition WAVs, exact extraction intervals and sourc
 hashes are retained in the ignored `audio-experiments/command-console-switch-0036/`
 and `audio-experiments/command-console-confirm-v1/` directories. Normal builds
 need only the runtime Oggs.
+
+## Chat notification
+
+`chat-received-radio-v1.ogg` is the approved **C2** audition: the first beep
+followed by the original crackle from a real Cobra walkie-talkie, recorded with
+a Zoom H4n. It is mono, 48kHz, and 233.5ms long, encoded at Vorbis quality 6
+directly from the approved WAV master.
+
+- Source: [Walkie Talkie famous beep by SEF7](https://freesound.org/people/SEF7/sounds/701326/).
+- License: [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/),
+  listed on the source page and embedded with the author/source in the Ogg.
+- Public rendition: [high-quality MP3](https://cdn.freesound.org/previews/701/701326_15203576-hq.mp3).
+- Processing: retain 0–0.114s and 0.319–0.440s, removing the two middle tones;
+  join with a 1.5ms linear crossfade. Preserve the audition's mono downmix,
+  edge fades and −4.917906dB gain, with original pitch and speed.
+- [Source manifest](chat-received-radio-v1.json) records source/master/runtime
+  hashes and extraction details.
+
+The source, page snapshot, approved master and `simplify-c.py` remain under the
+ignored `audio-experiments/chat-notifications-recordings-v1/` directory.
+`chatReceived` uses the interface volume channel and the ordinary mute,
+gesture-unlock and hidden-page behavior. Live lobby/game polls request one cue
+for a batch containing new messages from another sender. Initial history,
+duplicate polls, send acknowledgments and the player's own poll echoes stay silent.
 
 ## Previous gamelan UI cues (inactive)
 
@@ -94,9 +118,9 @@ The previous UI set used these audition picks, with short, quickly fading tails:
 
 | Cue / file | Audition pick | Role | Source excerpt | Duration |
 | --- | --- | --- | --- | --- |
-| `uiAffirm` / `ui-affirm-gamelan-v4.ogg` | C06 | Open menu, revoke order | 01:35.484–01:35.664 | 180ms |
-| `uiCancel` / `ui-cancel-gamelan-v4.ogg` | C19 | Close menu, keep planning | 01:06.482–01:06.642 | 160ms |
-| `uiConfirm` / `ui-confirm-gamelan-v4.ogg` | C07 | Submit turn, submit anyway | 00:49.067–00:49.287 | 220ms |
+| `affirm` / `ui-affirm-gamelan-v4.ogg` | C06 | Open menu, revoke order | 01:35.484–01:35.664 | 180ms |
+| `cancel` / `ui-cancel-gamelan-v4.ogg` | C19 | Close menu, keep planning | 01:06.482–01:06.642 | 160ms |
+| `confirm` / `ui-confirm-gamelan-v4.ogg` | C07 | Submit turn, submit anyway | 00:49.067–00:49.287 | 220ms |
 
 Changes from the original: excerpts trimmed and downmixed to mono, high-pass
 filtered to reduce accompanying low instruments (80 Hz for affirm, 650 Hz for

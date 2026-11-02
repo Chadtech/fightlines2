@@ -1,6 +1,7 @@
 //! Read-only archive browsing, enabled explicitly with --game-logs.
 pub mod review;
 use crate::{
+    chat::ChatMessage,
     game::{ArchivedView, GameSnapshot},
     game_log::{Archive, RecordedPlayer},
     graphql::Context,
@@ -126,6 +127,7 @@ impl LoggedGameStatus {
 #[derive(GraphQLObject)]
 #[graphql(context = Context)]
 pub struct LoggedGame {
+    chat: Vec<ChatMessage>,
     id: String,
     name: String,
     map_type: MapId,
@@ -149,6 +151,7 @@ impl LoggedGame {
             None => LoggedGameStatus::Unfinished,
         };
         Self {
+            chat: archive.chat.clone(),
             id: id.0,
             name: archive.started.name.clone(),
             map_type: archive.started.map_type.clone(),
@@ -430,6 +433,7 @@ mod tests {
             ]
         }"#).fixture()?.scenario().fixture()?;
         let mut log = directory.start(GameStarted {
+            chat: Vec::new(),
             game_id: LobbyId::from_token("01".repeat(16)),
             name: "Archive fixture".into(),
             map_type: MapId::default(),

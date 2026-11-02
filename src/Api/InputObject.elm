@@ -323,6 +323,37 @@ encodePositionInput input____ =
         [ ( "x", Encode.int input____.x |> Just ), ( "y", Encode.int input____.y |> Just ) ]
 
 
+buildSendChatInput :
+    SendChatInputRequiredFields
+    -> SendChatInput
+buildSendChatInput required____ =
+    { id = required____.id, messageId = required____.messageId, text = required____.text }
+
+
+type alias SendChatInputRequiredFields =
+    { id : String
+    , messageId : String
+    , text : String
+    }
+
+
+{-| Type for the SendChatInput input object.
+-}
+type alias SendChatInput =
+    { id : String
+    , messageId : String
+    , text : String
+    }
+
+
+{-| Encode a SendChatInput into a value that can be used as an argument.
+-}
+encodeSendChatInput : SendChatInput -> Value
+encodeSendChatInput input____ =
+    Encode.maybeObject
+        [ ( "id", Encode.string input____.id |> Just ), ( "messageId", Encode.string input____.messageId |> Just ), ( "text", Encode.string input____.text |> Just ) ]
+
+
 buildTerrainPlacementInput :
     TerrainPlacementInputRequiredFields
     -> TerrainPlacementInput

@@ -89,6 +89,7 @@ module Style exposing
     , flexP4
     , flexP5
     , flexWrap
+    , focus
     , focusVisible
     , fontItalic
     , fontMonospace
@@ -134,6 +135,7 @@ module Style exposing
     , h3px
     , h4
     , h40
+    , h48
     , h5
     , h6
     , h64
@@ -193,6 +195,7 @@ module Style exposing
     , maxH18
     , maxH24
     , maxH32
+    , maxH35Viewport
     , maxH40Viewport
     , maxH64
     , maxHContainerInset4
@@ -203,6 +206,7 @@ module Style exposing
     , maxW128
     , maxW16
     , maxW160
+    , maxW168
     , maxW192
     , maxW240
     , maxW256
@@ -311,6 +315,7 @@ module Style exposing
     , pl4
     , placeContentCenter
     , pointerCursor
+    , pointerEventsAuto
     , pointerEventsNone
     , pr1
     , pr16
@@ -377,6 +382,7 @@ module Style exposing
     , textAlignCenter
     , textAlignRight
     , textBlue0
+    , textBlue0Light
     , textBlue1
     , textEllipsis
     , textGray0
@@ -389,6 +395,8 @@ module Style exposing
     , textNightwood1
     , textPrimary
     , textRed1
+    , textRed1Light
+    , textShadowBlack
     , textYellow4
     , textYellow5
     , textYellow6
@@ -425,6 +433,7 @@ module Style exposing
     , w152
     , w16
     , w16px
+    , w170
     , w196
     , w2
     , w20
@@ -492,6 +501,11 @@ accentYellow5 =
 animationNone : Css.Style
 animationNone =
     Css.property "animation" "none"
+
+
+pointerEventsAuto : Css.Style
+pointerEventsAuto =
+    Css.property "pointer-events" "auto"
 
 
 pointerEventsNone : Css.Style
@@ -1264,6 +1278,11 @@ w152 =
     Css.width (Css.rem 38)
 
 
+w170 : Css.Style
+w170 =
+    Css.width (Css.rem 42.5)
+
+
 w196 : Css.Style
 w196 =
     Css.width s192
@@ -1337,6 +1356,11 @@ maxW128 =
 maxW160 : Css.Style
 maxW160 =
     Css.maxWidth (Css.rem 40)
+
+
+maxW168 : Css.Style
+maxW168 =
+    Css.maxWidth (Css.rem 42)
 
 
 maxWFull : Css.Style
@@ -1464,6 +1488,11 @@ h16 =
 h32 : Css.Style
 h32 =
     Css.height s32
+
+
+h48 : Css.Style
+h48 =
+    Css.height (Css.rem 12)
 
 
 h64 : Css.Style
@@ -2105,6 +2134,11 @@ textBlue0 =
     Css.property "color" blue0Str
 
 
+textBlue0Light : Css.Style
+textBlue0Light =
+    Css.property "color" ("color-mix(in srgb, " ++ blue0Str ++ " 55%, " ++ gray5Str ++ ")")
+
+
 textBlue1 : Css.Style
 textBlue1 =
     Css.property "color" blue1Str
@@ -2133,6 +2167,16 @@ caretRed1 =
 textRed1 : Css.Style
 textRed1 =
     Css.property "color" red1Str
+
+
+textRed1Light : Css.Style
+textRed1Light =
+    Css.property "color" ("color-mix(in srgb, " ++ red1Str ++ " 60%, " ++ gray5Str ++ ")")
+
+
+textShadowBlack : Css.Style
+textShadowBlack =
+    Css.property "text-shadow" ("1px 1px 2px " ++ blackStr ++ ", 0 0 4px " ++ blackStr)
 
 
 setBgColorVar : String -> Css.Style
@@ -3283,6 +3327,11 @@ transform value =
     Css.property "transform" value
 
 
+focus : List Css.Style -> Css.Style
+focus =
+    Css.focus
+
+
 focusVisible : List Css.Style -> Css.Style
 focusVisible styles =
     Css.pseudoClass "focus-visible" styles
@@ -3398,6 +3447,11 @@ fitWithinContainer ratio =
 hViewportInsetRem : Float -> Css.Style
 hViewportInsetRem inset =
     Css.height (Css.calc (Css.vh 100) (Css.minus (Css.rem inset)))
+
+
+maxH35Viewport : Css.Style
+maxH35Viewport =
+    Css.maxHeight (Css.vh 35)
 
 
 maxH40Viewport : Css.Style

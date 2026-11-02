@@ -22,6 +22,18 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode exposing (Decoder)
 
 
+type alias SendChatRequiredArguments =
+    { input : Api.InputObject.SendChatInput }
+
+
+sendChat :
+    SendChatRequiredArguments
+    -> SelectionSet decodesTo Api.Object.ChatMessage
+    -> SelectionSet decodesTo RootMutation
+sendChat requiredArgs____ object____ =
+    Object.selectionForCompositeField "sendChat" [ Argument.required "input" requiredArgs____.input Api.InputObject.encodeSendChatInput ] object____ Basics.identity
+
+
 type alias CopyBackdropCalibrationsOptionalArguments =
     { unitKind : OptionalArgument Api.Enum.UnitKind.UnitKind }
 

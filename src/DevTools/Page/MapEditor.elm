@@ -1201,7 +1201,8 @@ update msg model =
         CanvasFocusReceived result ->
             case result of
                 Ok () ->
-                    E.withOut model
+                    model
+                        |> E.withOut
 
                 Err error ->
                     (model

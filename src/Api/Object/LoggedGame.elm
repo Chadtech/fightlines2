@@ -19,6 +19,13 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+chat :
+    SelectionSet decodesTo Api.Object.ChatMessage
+    -> SelectionSet (List decodesTo) Api.Object.LoggedGame
+chat object____ =
+    Object.selectionForCompositeField "chat" [] object____ (Basics.identity >> Decode.list)
+
+
 id : SelectionSet String Api.Object.LoggedGame
 id =
     Object.selectionForField "String" "id" [] Decode.string

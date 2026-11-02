@@ -123,7 +123,7 @@ closeDialog buttonHtmlId model =
     ( { model | activeDialog = NoDialog }
     , E.batch
         [ E.focus { htmlId = buttonHtmlId } DialogButtonFocusReturned
-        , E.audio Audio.uiCancel
+        , E.audio Audio.cancel
         ]
     )
 
@@ -209,7 +209,7 @@ update msg model =
             ( { model | activeDialog = AboutDialog }
             , E.batch
                 [ E.toJs (ToJs.OpenDialog { htmlId = About.htmlId })
-                , E.audio Audio.uiAffirm
+                , E.audio Audio.affirm
                 ]
             )
 
@@ -220,7 +220,7 @@ update msg model =
             ( { model | activeDialog = PrivacyPolicyDialog }
             , E.batch
                 [ E.toJs (ToJs.OpenDialog { htmlId = PrivacyPolicy.htmlId })
-                , E.audio Audio.uiAffirm
+                , E.audio Audio.affirm
                 ]
             )
 
@@ -230,7 +230,8 @@ update msg model =
         DialogButtonFocusReturned result ->
             case result of
                 Ok () ->
-                    E.withOut model
+                    model
+                        |> E.withOut
 
                 Err error ->
                     model

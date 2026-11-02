@@ -6,6 +6,7 @@ module View.Button exposing
     , compact
     , danger
     , disabled
+    , disclosure
     , fullWidth
     , highlighted
     , large
@@ -52,6 +53,13 @@ type alias Button msg =
     , feedback : Maybe String
     , fullWidth : Bool
     , emphasis : Emphasis
+    , disclosure : Maybe Disclosure
+    }
+
+
+type alias Disclosure =
+    { expanded : Bool
+    , controlsHtmlId : String
     }
 
 
@@ -90,6 +98,11 @@ setSize size model =
     { model | size = size }
 
 
+disclosure : Disclosure -> Button msg -> Button msg
+disclosure state button =
+    { button | disclosure = Just state }
+
+
 setEmphasis : Emphasis -> Button msg -> Button msg
 setEmphasis emphasis model =
     { model | emphasis = emphasis }
@@ -98,6 +111,7 @@ setEmphasis emphasis model =
 fromLabelAndVariant : String -> Variant -> Button msg
 fromLabelAndVariant label variant =
     { accessibleLabel = Nothing
+    , disclosure = Nothing
     , htmlId = Nothing
     , onClick = Nothing
     , label = label
@@ -234,6 +248,26 @@ fullWidth button =
 toHtml : Button msg -> Html msg
 toHtml button =
     let
+        disclosureAttributes : List (Attribute msg)
+        disclosureAttributes =
+            case button.disclosure of
+                Just state ->
+                    let
+                        expanded : String
+                        expanded =
+                            if state.expanded then
+                                "true"
+
+                            else
+                                "false"
+                    in
+                    [ A.attribute "aria-expanded" expanded
+                    , A.attribute "aria-controls" state.controlsHtmlId
+                    ]
+
+                Nothing ->
+                    []
+
         conditionalAttrs : List (Attribute msg)
         conditionalAttrs =
             [ Maybe.map Ev.onClick button.onClick
@@ -465,7 +499,7 @@ toHtml button =
             ]
     in
     H.button
-        (baseAttrs ++ conditionalAttrs ++ selectionAttrs)
+        (baseAttrs ++ conditionalAttrs ++ selectionAttrs ++ disclosureAttributes)
         content
 
 

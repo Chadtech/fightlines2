@@ -1,7 +1,8 @@
 //! Shared in-memory registry and coordinated lobby-to-game transitions.
 use crate::{
+    chat,
     game::Game,
-    game_log::Directory,
+    game_log::{Directory, GameLog},
     lobby::Lobby,
     lobby_id::LobbyId,
     lobby_name::LobbyName,
@@ -50,6 +51,14 @@ pub(crate) enum GameRegistry {
 }
 
 impl Store {
+    pub fn start_chat_log(&self, id: &LobbyId) -> FieldResult<GameLog> {
+        self.game_logs
+            .as_ref()
+            .ok_or("chat recording is unavailable.")?
+            .start_chat(id)
+            .map_err(chat::recording_error)
+    }
+
     pub fn new(seed: Seed) -> Self {
         Self {
             seed: Mutex::new(seed),

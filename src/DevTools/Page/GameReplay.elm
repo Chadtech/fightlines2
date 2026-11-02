@@ -20,6 +20,7 @@ import Api.Enum.PlayerNumber as PlayerNumber exposing (PlayerNumber)
 import Api.Enum.TurnEventKind as TurnEventKind
 import Api.Object
 import Api.Object.GameSnapshot as SnapshotApi
+import Api.Object.LoggedGame as LoggedGameApi
 import Api.Query
 import ApiRequest
 import Audio
@@ -34,6 +35,7 @@ import Game.AnimationFrame as AnimationFrame
 import Game.BattlefieldNavigation as BattlefieldNavigation
 import Game.BattlefieldSnapshot as BattlefieldSnapshot
 import Game.Camera as Camera
+import Game.Chat as Chat
 import Game.CombatTheaterCalibrations as CombatTheaterCalibrations
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Inspection as Inspection exposing (Inspection(..))
@@ -47,6 +49,7 @@ import Game.UnitId as UnitId exposing (UnitId)
 import Game.View.Battlefield as Battlefield
 import Game.View.BattlefieldInspection as BattlefieldInspection
 import Game.View.BattlefieldWorkspace as BattlefieldWorkspace
+import Game.View.Chat as ChatView
 import Game.View.CombatTheater as CombatTheater
 import Game.View.TurnControls as TurnControls
 import Game.View.UnitDeath as UnitDeath
@@ -92,6 +95,7 @@ type alias RecordedTurn =
 type alias Flags =
     { game : LoggedGames.Game
     , turn : RecordedTurn
+    , messages : List Chat.Message
     }
 
 
@@ -99,6 +103,8 @@ type alias Model =
     { shared : Shared.Model
     , id : GameLogId
     , game : LoggedGames.Game
+    , messages : List Chat.Message
+    , chatHistoryOpen : Bool
     , battlefield : BattlefieldSnapshot.Snapshot
     , frames : List TurnPlayback.Frame
     , resolution : Maybe Turn.Resolution
@@ -145,12 +151,17 @@ type PlaybackIntent
 
 type Msg
     = BattlefieldMsg Battlefield.Msg
+    | ChatHistoryClicked
+    | ChatHistoryClosed
+    | ChatHistoryOpened
+    | ChatScrollCompleted (Result Browser.Dom.Error ())
     | NavigationMsg BattlefieldNavigation.Msg
     | PlaybackMsg PlaybackPresentation.Msg
     | UnitDeathMsg UnitDeath.Msg
     | CombatTheaterMsg CombatTheater.Msg
     | BattlefieldSizeReceived (Result Browser.Dom.Error Browser.Dom.Element)
     | InspectorSizeReceived Browser.Dom.Element (Result Browser.Dom.Error Browser.Dom.Element)
+    | ControlsSizeReceived { battlefield : Browser.Dom.Element, inspector : Browser.Dom.Element } (Result Browser.Dom.Error Browser.Dom.Element)
     | WindowResized
     | CameraReturnFinished
     | AnimationTimerElapsed
@@ -189,6 +200,7 @@ load id =
     SS.succeed Flags
         |> SS.with (Api.Query.loggedGame { id = GameLogId.toString id } LoggedGames.selection)
         |> SS.with (turnSelection id { turn = 0, player = PlayerNumber.Player1, fogOfWar = True })
+        |> SS.with (Api.Query.loggedGame { id = GameLogId.toString id } (LoggedGameApi.chat Chat.selection))
         |> ApiRequest.queryRequest
 
 
@@ -206,6 +218,8 @@ init shared id flags =
             { shared = shared |> Shared.addError lossError |> Shared.addError combatError
             , id = id
             , game = flags.game
+            , messages = flags.messages
+            , chatHistoryOpen = False
             , battlefield = flags.turn.battlefield
             , frames = flags.turn.frames
             , resolution = flags.turn.resolution
@@ -588,7 +602,8 @@ withInspectionMeasurement previous next =
         )
 
     else
-        E.withOut next
+        next
+            |> E.withOut
 
 
 inspectClick : { detail : Int } -> (Model -> Model) -> Model -> Model
@@ -855,7 +870,8 @@ dismissUnitHelp model =
             )
 
         Nothing ->
-            E.withOut model
+            model
+                |> E.withOut
 
 
 activeDialogHtmlId : Model -> Maybe String
@@ -896,6 +912,45 @@ updateLossDialog previousHtmlId model =
 update : Msg -> Model -> ( Model, Eff Msg )
 update msg model =
     case msg of
+        ChatHistoryClicked ->
+            if activeDialogHtmlId model == Nothing then
+                ( pause { model | chatHistoryOpen = True }
+                , E.toJs (ToJs.OpenDialog { htmlId = replayChatDialogHtmlId })
+                )
+
+            else
+                model
+                    |> E.withOut
+
+        ChatHistoryOpened ->
+            if model.chatHistoryOpen then
+                ( model, E.scrollToBottom { htmlId = ChatView.messagesHtmlId } ChatScrollCompleted )
+
+            else
+                model
+                    |> E.withOut
+
+        ChatScrollCompleted result ->
+            case result of
+                Err error ->
+                    if model.chatHistoryOpen then
+                        model
+                            |> setShared (Shared.addError (Just (Error.ElementScrollFailed error)) model.shared)
+                            |> E.withOut
+
+                    else
+                        model
+                            |> E.withOut
+
+                Ok () ->
+                    model
+                        |> E.withOut
+
+        ChatHistoryClosed ->
+            ( { model | chatHistoryOpen = False }
+            , E.focus { htmlId = replayChatButtonHtmlId } UnitHelpFocusReturned
+            )
+
         BattlefieldMsg battlefieldMsg ->
             model
                 |> handleBattlefieldMsg battlefieldMsg
@@ -915,7 +970,8 @@ update msg model =
 
         UnitHelpClicked help ->
             if dialog model /= Nothing then
-                E.withOut model
+                model
+                    |> E.withOut
 
             else
                 ( pause { model | unitHelp = Just help }
@@ -928,7 +984,8 @@ update msg model =
         UnitHelpFocusReturned result ->
             case result of
                 Ok () ->
-                    E.withOut model
+                    model
+                        |> E.withOut
 
                 Err error ->
                     model
@@ -1004,12 +1061,27 @@ update msg model =
         InspectorSizeReceived battlefield result ->
             case result of
                 Ok inspector ->
+                    ( model
+                    , E.measure BattlefieldWorkspace.controlsHtmlId
+                        (ControlsSizeReceived { battlefield = battlefield, inspector = inspector })
+                    )
+
+                Err error ->
+                    (model
+                        |> setShared (Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared)
+                    )
+                        |> E.withOut
+
+        ControlsSizeReceived measured result ->
+            case result of
+                Ok measuredControls ->
                     (model
                         |> setViewport
                             (Just
                                 (BattlefieldWorkspace.viewport
-                                    { battlefield = battlefield
-                                    , inspector = inspector
+                                    { battlefield = measured.battlefield
+                                    , inspector = measured.inspector
+                                    , controls = measuredControls
                                     }
                                 )
                             )
@@ -1581,6 +1653,9 @@ controls model =
                     ]
                 ]
                 [ Button.toHtml previous
+                , Button.secondary "message history" ChatHistoryClicked
+                    |> Button.withHtmlId replayChatButtonHtmlId
+                    |> Button.toHtml
                 , Button.toHtml playButton
                 , Button.toHtml next
                 ]
@@ -1615,6 +1690,33 @@ controls model =
 
 dialog : Model -> Maybe (Dialog Msg)
 dialog model =
+    if model.chatHistoryOpen then
+        Just
+            (Dialog.make replayChatDialogHtmlId
+                "message history"
+                ChatHistoryClosed
+                [ ChatView.history { onScroll = Nothing } model.messages ]
+                |> Dialog.reference
+                |> Dialog.onOpened ChatHistoryOpened
+                |> Dialog.withCloseButton
+            )
+
+    else
+        battlefieldDialog model
+
+
+replayChatDialogHtmlId : String
+replayChatDialogHtmlId =
+    "replay-chat-history"
+
+
+replayChatButtonHtmlId : String
+replayChatButtonHtmlId =
+    "replay-chat-button"
+
+
+battlefieldDialog : Model -> Maybe (Dialog Msg)
+battlefieldDialog model =
     case model.unitHelp of
         Just help ->
             Just (UnitStatus.dialog UnitHelpDismissed help)

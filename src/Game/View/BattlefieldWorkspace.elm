@@ -1,5 +1,6 @@
 module Game.View.BattlefieldWorkspace exposing
-    ( inspectorHtmlId
+    ( controlsHtmlId
+    , inspectorHtmlId
     , toHtml
     , viewport
     )
@@ -35,6 +36,11 @@ type alias Contents msg =
     }
 
 
+controlsHtmlId : String
+controlsHtmlId =
+    "battlefield-controls"
+
+
 inspectorHtmlId : String
 inspectorHtmlId =
     "game-inspector"
@@ -45,12 +51,13 @@ inspectorWidth =
     "min(15.5rem, 45vw)"
 
 
-{-| The controls sit below the navigation surface. The header and inspector
-overlay it without changing the map's coordinate system.
+{-| The header, controls and inspector overlay the full navigation surface
+without changing the map's coordinate system.
 -}
 viewport :
     { battlefield : Browser.Dom.Element
     , inspector : Browser.Dom.Element
+    , controls : Browser.Dom.Element
     }
     -> Camera.Viewport
 viewport measured =
@@ -58,7 +65,7 @@ viewport measured =
         { x = measured.battlefield.element.width
         , y = measured.battlefield.element.height
         }
-    , bottomInset = 0
+    , bottomInset = measured.controls.element.height
     , rightInset = measured.inspector.element.width
     }
 
@@ -146,18 +153,12 @@ toHtml model =
             case model.notification of
                 Just content ->
                     H.div
-                        [ A.attribute "data-loss-dim" ""
-                        , A.css
-                            [ S.absolute
-                            , S.bottom0
-                            , S.left0
-                            , S.z2
-                            , S.p3
+                        [ A.css
+                            [ S.p3
                             , S.maxWFull
                             , S.maxH40Viewport
                             , S.overflowAuto
-                            , S.when model.hasSelection
-                                (Css.property "max-width" ("calc(100% - " ++ inspectorWidth ++ ")"))
+                            , S.pointerEventsAuto
                             ]
                         ]
                         [ content ]
@@ -177,21 +178,36 @@ toHtml model =
                 , S.row
                 ]
             ]
-            [ model.battlefield
-            , notification
-            ]
+            [ model.battlefield ]
         , H.div
             [ A.attribute "data-loss-dim" ""
             , A.css
-                [ S.shrink0
+                [ S.absolute
+                , S.bottom0
+                , S.left0
+                , S.z2
+                , S.col
+                , S.itemsStart
+                , S.wFitContent
                 , S.maxWFull
-                , Css.maxHeight (Css.vh 50)
-                , S.overflowAuto
+                , S.pointerEventsNone
                 , S.when model.hasSelection
                     (Css.property "max-width" ("calc(100% - " ++ inspectorWidth ++ ")"))
                 ]
             ]
-            [ model.controls ]
+            [ notification
+            , H.div
+                [ A.id controlsHtmlId
+                , A.css
+                    [ S.shrink0
+                    , S.maxWFull
+                    , Css.maxHeight (Css.vh 50)
+                    , S.overflowAuto
+                    , S.pointerEventsAuto
+                    ]
+                ]
+                [ model.controls ]
+            ]
         , H.aside
             [ A.id inspectorHtmlId
             , A.hidden (not model.hasSelection)

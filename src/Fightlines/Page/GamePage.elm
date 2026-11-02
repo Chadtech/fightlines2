@@ -56,6 +56,7 @@ import Game.AnimationFrame as AnimationFrame
 import Game.BattlefieldNavigation as BattlefieldNavigation
 import Game.BattlefieldSnapshot as BattlefieldSnapshot exposing (Player)
 import Game.Camera as Camera
+import Game.Chat as Chat
 import Game.CombatRules as CombatRules
 import Game.CombatTheaterCalibrations as CombatTheaterCalibrations
 import Game.Coordinate as Coordinate exposing (Coordinate)
@@ -110,6 +111,7 @@ import Game.View.Battlefield as Battlefield
 import Game.View.BattlefieldInspection as BattlefieldInspection
 import Game.View.BattlefieldWorkspace as BattlefieldWorkspace
 import Game.View.Cargo as Cargo
+import Game.View.Chat as ChatView
 import Game.View.CombatTheater as CombatTheater
 import Game.View.MovementRoute as MovementRoute
 import Game.View.RotationChoices as RotationChoices
@@ -146,6 +148,7 @@ import View.Card as Card
 import View.CardHeader as CardHeader
 import View.Checkbox as Checkbox
 import View.Dialog as Dialog exposing (Dialog)
+import View.RequestError as RequestError
 
 
 
@@ -156,6 +159,7 @@ import View.Dialog as Dialog exposing (Dialog)
 
 type alias Model =
     { currentTurn : CurrentTurn.Model
+    , chat : Chat.Model
     , shared : Shared.Model
     , skipTurnIntroduction : Bool
     , skipUnplannedUnitsWarning : Bool
@@ -228,7 +232,14 @@ type alias RequestErrorDetails =
 
 type Msg
     = BattlefieldSizeReceived (Result Browser.Dom.Error Browser.Dom.Element)
+    | ChatMsg ChatView.Msg
+    | ChatPollElapsed Time.Posix
+    | ChatPollReceived (ApiRequest.Response (List Chat.Message))
+    | ChatSendReceived Chat.Submission (ApiRequest.Response Chat.Message)
+    | ChatOverlayExpired Int
+    | ChatScrollCompleted (Result Browser.Dom.Error ())
     | InspectorSizeReceived Browser.Dom.Element (Result Browser.Dom.Error Browser.Dom.Element)
+    | ControlsSizeReceived { battlefield : Browser.Dom.Element, inspector : Browser.Dom.Element } (Result Browser.Dom.Error Browser.Dom.Element)
     | CameraReturnFinished
     | WindowResized
     | BattlefieldMsg Battlefield.Msg
@@ -252,7 +263,6 @@ type Msg
     | CombatTheaterMsg CombatTheater.Msg
     | DirectionKeyPressed Direction
     | PathDirectionKeyPressed Direction
-    | PathEnterPressed
     | NextUnorderedUnitKeyPressed
     | ClearMoveClicked
     | CancelOrderClicked
@@ -292,6 +302,7 @@ type Msg
 
 type alias Flags =
     { snapshot : Snapshot
+    , messages : List Chat.Message
     }
 
 
@@ -327,6 +338,7 @@ init shared flags =
         model : Model
         model =
             { currentTurn = CurrentTurn.init (turnObservation flags.snapshot)
+            , chat = Chat.initGame flags.messages
             , shared =
                 shared
                     |> Shared.addError maybeError
@@ -364,7 +376,7 @@ init shared flags =
                     )
 
             else
-                E.none
+                chatExpiration model
     in
     ( model
     , E.batch
@@ -378,6 +390,7 @@ load : LobbyId -> Graphql.Http.Request Flags
 load id =
     SS.succeed Flags
         |> SS.with (Api.Query.game { id = LobbyId.toString id } snapshotSelection)
+        |> SS.with (Chat.query id 0)
         |> ApiRequest.queryRequest
 
 
@@ -398,22 +411,18 @@ setShared shared model =
 ----------------------------------------------------------------
 
 
+setChat : Chat.Model -> Model -> Model
+setChat chat model =
+    { model | chat = chat }
+
+
 setCurrentTurn : CurrentTurn.Model -> Model -> Model
 setCurrentTurn currentTurn model =
     { model | currentTurn = currentTurn }
 
 
-setMenuOpen : Bool -> Model -> Model
-setMenuOpen menuOpen model =
-    let
-        menu : Menu
-        menu =
-            if menuOpen then
-                MainMenu
-
-            else
-                MenuClosed
-    in
+setMenu : Menu -> Model -> Model
+setMenu menu model =
     { model | menu = menu }
 
 
@@ -623,7 +632,7 @@ dismissDialog model =
 
     else if model.menu /= MenuClosed then
         model
-            |> setMenuOpen False
+            |> setMenu MenuClosed
 
     else if showTurnIntroduction model then
         model
@@ -646,7 +655,8 @@ dismissUnitHelp model =
             )
 
         Nothing ->
-            E.withOut model
+            model
+                |> E.withOut
 
 
 partialOrdersDialogHtmlId : String
@@ -951,7 +961,7 @@ reconcileTurnSnapshot snapshot currentTurn model =
             |> setSupplyCrates snapshot.battlefield.supplyCrates
             |> setUnits snapshot.battlefield.units
             |> setVisibleTiles snapshot.battlefield.visibleTiles
-            |> setMenuOpen False
+            |> setMenu MenuClosed
             |> setNavigation (BattlefieldNavigation.finishReturn model.navigation)
 
     else if currentTurn.number > model.currentTurn.number then
@@ -1593,14 +1603,16 @@ requestResignation destination model =
                 && (model.currentTurn.outcome == Nothing)
     in
     if canRequestResignation then
-        ( { model | menu = ConfirmingResignation destination }
+        ( model
+            |> setMenu (ConfirmingResignation destination)
         , E.focus
             { htmlId = GameMenu.resignationCancelButtonHtmlId }
             (GameMenu.FocusReturned >> GameMenuMsg)
         )
 
     else
-        E.withOut model
+        model
+            |> E.withOut
 
 
 resignGame : LobbyId -> ResignationDestination -> Model -> ( Model, Eff Msg )
@@ -1613,14 +1625,15 @@ resignGame lobbyId destination model =
     if canResign then
         ( model
             |> setResigning True
-            |> setMenuOpen True
+            |> setMenu MainMenu
         , Api.Mutation.resignGame { id = LobbyId.toString lobbyId } snapshotSelection
             |> ApiRequest.mutationRequest
             |> E.request (ResignResponseReceived destination)
         )
 
     else
-        E.withOut model
+        model
+            |> E.withOut
 
 
 recordFocusResult : Result Browser.Dom.Error () -> Model -> Model
@@ -1704,14 +1717,15 @@ withLayoutMeasurement previous next =
         remeasureWorkspace next
 
     else
-        E.withOut next
+        next
+            |> E.withOut
 
 
 closeMenuForTurnIntroduction : Model -> Model
 closeMenuForTurnIntroduction model =
     if showTurnIntroduction model then
         { model | unitHelp = Nothing }
-            |> setMenuOpen False
+            |> setMenu MenuClosed
 
     else
         model
@@ -1721,7 +1735,7 @@ startPlayback : Model -> ( Model, Eff Msg )
 startPlayback model =
     remeasureWorkspace
         ({ model | unitHelp = Nothing }
-            |> setMenuOpen False
+            |> setMenu MenuClosed
         )
 
 
@@ -1736,7 +1750,8 @@ finishPlayback previous next =
                 )
 
             else
-                E.withOut next
+                next
+                    |> E.withOut
     in
     returned
         |> closeMenuForTurnIntroduction
@@ -1783,6 +1798,113 @@ turnActivity model =
                 TurnControls.Planning
 
 
+applyChatUpdate : Chat.Model -> Model -> ( Model, Eff Msg )
+applyChatUpdate chat model =
+    let
+        next : Model
+        next =
+            setChat chat model
+
+        effects : Eff Msg
+        effects =
+            if chat.overlayVersion /= model.chat.overlayVersion then
+                E.batch [ chatExpiration next, scrollChatHistory next.chat next.shared ]
+
+            else
+                E.none
+    in
+    ( next, effects )
+
+
+scrollChatHistory : Chat.Model -> Shared.Model -> Eff Msg
+scrollChatHistory chat shared =
+    let
+        canFollow : Bool
+        canFollow =
+            Chat.historyVisible chat && Chat.followsHistory chat && not shared.devPanelOpen
+    in
+    if canFollow then
+        E.scrollToBottom { htmlId = ChatView.messagesHtmlId } ChatScrollCompleted
+
+    else
+        E.none
+
+
+chatExpiration : Model -> Eff Msg
+chatExpiration model =
+    if showTurnIntroduction model || List.isEmpty model.chat.recent then
+        E.none
+
+    else
+        E.after 8000 (ChatOverlayExpired model.chat.overlayVersion)
+
+
+openChat : Model -> ( Model, Eff Msg )
+openChat model =
+    if canOpenMenu model then
+        ( model
+            |> setChat (Chat.open model.chat)
+        , E.focus { htmlId = ChatView.inputHtmlId } FocusCompleted
+        )
+
+    else
+        model
+            |> E.withOut
+
+
+sendChat : LobbyId -> Model -> ( Model, Eff Msg )
+sendChat lobbyId model =
+    case Chat.prepareSend model.shared.seed model.chat of
+        Just ( chat, seed, submission ) ->
+            ( model
+                |> setChat (Chat.close chat)
+                |> setShared (Shared.setSeed seed model.shared)
+            , E.batch
+                [ E.request (ChatSendReceived submission) (Chat.sendRequest lobbyId submission)
+                , E.focus { htmlId = Battlefield.htmlId } FocusCompleted
+                ]
+            )
+
+        Nothing ->
+            model
+                |> E.withOut
+
+
+pollChat : LobbyId -> Model -> ( Model, Eff Msg )
+pollChat lobbyId model =
+    case Chat.beginPoll model.chat of
+        Nothing ->
+            model
+                |> E.withOut
+
+        Just chat ->
+            ( model
+                |> setChat chat
+            , Chat.query lobbyId chat.cursor
+                |> ApiRequest.queryRequest
+                |> E.request ChatPollReceived
+            )
+
+
+battlefieldChatKey : Battlefield.Msg -> Bool
+battlefieldChatKey msg =
+    case msg of
+        Battlefield.PressedEnterOnUnit _ ->
+            True
+
+        Battlefield.PressedEnterOnDepot _ ->
+            True
+
+        Battlefield.PressedEnterOnDepotStock _ ->
+            True
+
+        Battlefield.PressedEnterOnTile _ ->
+            True
+
+        _ ->
+            False
+
+
 
 ----------------------------------------------------------------
 -- UPDATE --
@@ -1800,24 +1922,127 @@ superUpdate lobbyId msg model =
                 |> update lobbyId msg
                 |> E.andThen (withLayoutMeasurement model)
                 |> E.and (E.audio (playAudio msg model))
+
+        readyEffect : Eff Msg
+        readyEffect =
+            if showTurnIntroduction model && not (showTurnIntroduction next) then
+                E.batch [ effect, chatExpiration next ]
+
+            else
+                effect
     in
     case activeDialogHtmlId next of
         Just htmlId ->
             if activeDialogHtmlId model /= Just htmlId then
                 ( recordLossDetailsErrorIfPresent next
-                , E.batch [ effect, E.toJs (ToJs.OpenDialog { htmlId = htmlId }) ]
+                , E.batch [ readyEffect, E.toJs (ToJs.OpenDialog { htmlId = htmlId }) ]
                 )
 
             else
-                ( next, effect )
+                ( next, readyEffect )
 
         Nothing ->
-            ( next, effect )
+            ( next, readyEffect )
 
 
 update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 update lobbyId msg model =
     case msg of
+        ChatMsg chatMsg ->
+            handleChatMsg lobbyId chatMsg model
+
+        ChatPollElapsed _ ->
+            pollChat lobbyId model
+
+        ChatPollReceived result ->
+            case result of
+                Ok messages ->
+                    let
+                        notification : Eff Msg
+                        notification =
+                            if
+                                Chat.hasNewIncoming
+                                    { known = model.chat.messages
+                                    , received = messages
+                                    , ownNames =
+                                        model.players
+                                            |> List.filter .isYou
+                                            |> List.map .name
+                                    }
+                            then
+                                E.audio Audio.chatReceived
+
+                            else
+                                E.none
+                    in
+                    model
+                        |> applyChatUpdate (Chat.receive messages model.chat)
+                        |> E.and notification
+
+                Err error ->
+                    model
+                        |> setChat (Chat.pollFailed (ApiRequest.errorMessage error) model.chat)
+                        |> E.withOut
+
+        ChatSendReceived submission result ->
+            let
+                chat : Chat.Model
+                chat =
+                    Chat.sent
+                        submission
+                        (Result.mapError ApiRequest.errorMessage result)
+                        model.chat
+
+                visibleSubmission : Bool
+                visibleSubmission =
+                    case model.chat.panel of
+                        Chat.Composing composer ->
+                            composer.delivery == Chat.Sending submission
+
+                        _ ->
+                            False
+
+                focus : Eff Msg
+                focus =
+                    if Chat.isOpen model.chat && not (Chat.isOpen chat) then
+                        E.focus { htmlId = Battlefield.htmlId } FocusCompleted
+
+                    else if visibleSubmission && Chat.isOpen chat then
+                        E.focus { htmlId = ChatView.inputHtmlId } FocusCompleted
+
+                    else
+                        E.none
+            in
+            model
+                |> applyChatUpdate chat
+                |> E.and focus
+
+        ChatScrollCompleted result ->
+            case result of
+                Err error ->
+                    if Chat.historyVisible model.chat && not model.shared.devPanelOpen then
+                        model
+                            |> setShared (Shared.addError (Just (Error.ElementScrollFailed error)) model.shared)
+                            |> E.withOut
+
+                    else
+                        model
+                            |> E.withOut
+
+                Ok () ->
+                    model
+                        |> E.withOut
+
+        ChatOverlayExpired version ->
+            if showTurnIntroduction model then
+                model
+                    |> E.withOut
+
+            else
+                model
+                    |> setChat (Chat.expire version model.chat)
+                    |> E.withOut
+
         GameMenuMsg menuMsg ->
             handleGameMenuMsg lobbyId menuMsg model
 
@@ -1827,7 +2052,8 @@ update lobbyId msg model =
                     handleSettingsMsg settingsMsg model
 
                 _ ->
-                    E.withOut model
+                    model
+                        |> E.withOut
 
         RequestRetryClicked ->
             case model.currentTurn.error of
@@ -1841,7 +2067,8 @@ update lobbyId msg model =
                     requestResignation RemainInGame model
 
                 _ ->
-                    E.withOut model
+                    model
+                        |> E.withOut
 
         RequestErrorDismissed ->
             ( model
@@ -1850,7 +2077,8 @@ update lobbyId msg model =
             )
 
         FocusCompleted result ->
-            E.withOut (recordFocusResult result model)
+            recordFocusResult result model
+                |> E.withOut
 
         ResignResponseReceived destination result ->
             case result of
@@ -1880,7 +2108,7 @@ update lobbyId msg model =
                     in
                     (model
                         |> setResigning False
-                        |> setMenuOpen False
+                        |> setMenu MenuClosed
                         |> setCurrentTurn
                             (currentTurn
                                 |> CurrentTurn.setError
@@ -1890,8 +2118,12 @@ update lobbyId msg model =
                         |> E.withOut
 
         BattlefieldMsg boardMsg ->
-            handleBattlefieldMsg boardMsg model
-                |> E.withOut
+            if battlefieldChatKey boardMsg then
+                openChat model
+
+            else
+                handleBattlefieldMsg boardMsg model
+                    |> E.withOut
 
         CameraReturnFinished ->
             (model
@@ -1914,24 +2146,41 @@ update lobbyId msg model =
         InspectorSizeReceived battlefield result ->
             case result of
                 Ok inspector ->
+                    ( model
+                    , E.measure BattlefieldWorkspace.controlsHtmlId
+                        (ControlsSizeReceived { battlefield = battlefield, inspector = inspector })
+                    )
+
+                Err error ->
+                    model
+                        |> setShared
+                            (Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared)
+                        |> E.withOut
+
+        ControlsSizeReceived measured result ->
+            case result of
+                Ok measuredControls ->
                     let
                         viewport : Camera.Viewport
                         viewport =
                             BattlefieldWorkspace.viewport
-                                { battlefield = battlefield
-                                , inspector = inspector
+                                { battlefield = measured.battlefield
+                                , inspector = measured.inspector
+                                , controls = measuredControls
                                 }
                     in
-                    (model
+                    model
                         |> setBattlefieldViewport (Just viewport)
-                    )
                         |> updatePlaybackCamera
                         |> E.withOut
 
                 Err error ->
-                    (model
-                        |> setShared (Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared)
-                    )
+                    model
+                        |> setShared
+                            (Shared.addError
+                                (Just (Error.BattlefieldMeasurementFailed error))
+                                model.shared
+                            )
                         |> E.withOut
 
         WindowResized ->
@@ -2047,7 +2296,8 @@ update lobbyId msg model =
             model
                 |> mapCheckedPlanning
                     (OrderPlanning.confirmGroundPickup
-                        >> IC.map (OrderPlanning.promptDismountedOrders model.map model.units)
+                        >> IC.map
+                            (OrderPlanning.promptDismountedOrders model.map model.units)
                     )
                 |> E.withOut
 
@@ -2107,7 +2357,8 @@ update lobbyId msg model =
             ( model, focusAdjacentOrder identity (focusedOrder model) model )
 
         OrderFocusCompleted result ->
-            recordFocusResult result model |> E.withOut
+            recordFocusResult result model
+                |> E.withOut
 
         DirectionKeyPressed direction ->
             model
@@ -2117,11 +2368,6 @@ update lobbyId msg model =
         PathDirectionKeyPressed direction ->
             model
                 |> extendPath direction
-                |> E.withOut
-
-        PathEnterPressed ->
-            model
-                |> confirmPath
                 |> E.withOut
 
         CancelOrderClicked ->
@@ -2146,14 +2392,16 @@ update lobbyId msg model =
 
         UnitHelpClicked help ->
             if hasDialog model then
-                E.withOut model
+                model
+                    |> E.withOut
 
             else
                 { model | unitHelp = Just help }
                     |> E.withOut
 
         UnitHelpFocusReturned result ->
-            recordFocusResult result model |> E.withOut
+            recordFocusResult result model
+                |> E.withOut
 
         EscapePressed ->
             if model.unitHelp /= Nothing then
@@ -2189,17 +2437,20 @@ update lobbyId msg model =
         SubmissionCancelled ->
             case model.currentTurn.phase of
                 TurnLifecycle.Planning (OrderPlanning.ConfirmingSubmission _) ->
-                    dismissDialog model |> E.withOut
+                    dismissDialog model
+                        |> E.withOut
 
                 _ ->
-                    E.withOut model
+                    model
+                        |> E.withOut
 
         SubmitKeyPressed ->
             if canSubmitWithKeyboard model then
                 requestSubmission lobbyId model
 
             else
-                model |> E.withOut
+                model
+                    |> E.withOut
 
         SubmissionConfirmed ->
             confirmSubmission lobbyId model
@@ -2295,14 +2546,14 @@ update lobbyId msg model =
                             )
 
                 Err error ->
-                    (model
+                    model
                         |> setCurrentTurn (CurrentTurn.pollFailed (ApiRequest.errorMessage error) model.currentTurn)
-                    )
                         |> E.withOut
 
         AnimationTimerElapsed _ ->
             if deathInFocus model || combatEncounter model /= Nothing then
-                model |> E.withOut
+                model
+                    |> E.withOut
 
             else
                 { model | frame = AnimationFrame.next model.frame }
@@ -2311,32 +2562,31 @@ update lobbyId msg model =
         TurnIntroductionMsg introMsg ->
             case introMsg of
                 TurnIntroduction.BeginClicked ->
-                    (model
+                    model
                         |> setCurrentTurn (CurrentTurn.acknowledgeIntroduction model.currentTurn)
-                    )
                         |> E.withOut
 
                 TurnIntroduction.ReplayClicked ->
                     if showTurnIntroduction model then
                         case CurrentTurn.replay model.currentTurn of
                             Just replay ->
-                                applyPlaybackFrame
-                                    { phase = replay.currentTurn.phase, frame = replay.frame }
-                                    (model
-                                        |> setCurrentTurn replay.currentTurn
-                                    )
+                                model
+                                    |> setCurrentTurn replay.currentTurn
+                                    |> applyPlaybackFrame
+                                        { phase = replay.currentTurn.phase, frame = replay.frame }
                                     |> startPlayback
 
                             Nothing ->
-                                model |> E.withOut
+                                model
+                                    |> E.withOut
 
                     else
-                        model |> E.withOut
+                        model
+                            |> E.withOut
 
                 TurnIntroduction.BattlefieldViewClicked ->
-                    (model
+                    model
                         |> setCurrentTurn (CurrentTurn.acknowledgeIntroduction model.currentTurn)
-                    )
                         |> E.withOut
 
                 TurnIntroduction.SkipDialogsChanged skip ->
@@ -2356,7 +2606,7 @@ update lobbyId msg model =
                         currentTurn =
                             model.currentTurn
                     in
-                    (model
+                    model
                         |> setCurrentTurn
                             (currentTurn
                                 |> CurrentTurn.setPhase
@@ -2365,7 +2615,6 @@ update lobbyId msg model =
                                         currentTurn.phase
                                     )
                             )
-                    )
                         |> presentPlaybackTransition model
 
                 UnitDeath.SkipDialogsChanged skip ->
@@ -2385,10 +2634,12 @@ update lobbyId msg model =
                         |> presentPlaybackTransition model
 
                 CombatTheater.SeeMapPressed ->
-                    setCombatMapView TurnPlayback.SeeingMap model |> E.withOut
+                    setCombatMapView TurnPlayback.SeeingMap model
+                        |> E.withOut
 
                 CombatTheater.SeeMapReleased ->
-                    setCombatMapView TurnPlayback.CardVisible model |> E.withOut
+                    setCombatMapView TurnPlayback.CardVisible model
+                        |> E.withOut
 
 
 {-| Classify message intent for UI feedback. Continuous input and background
@@ -2398,7 +2649,28 @@ Clicks ignored after panning also stay silent.
 playAudio : Msg -> Model -> Audio.Event
 playAudio msg model =
     case msg of
+        ChatMsg _ ->
+            Audio.none
+
+        ChatPollElapsed _ ->
+            Audio.none
+
+        ChatPollReceived _ ->
+            Audio.none
+
+        ChatSendReceived _ _ ->
+            Audio.none
+
+        ChatScrollCompleted _ ->
+            Audio.none
+
+        ChatOverlayExpired _ ->
+            Audio.none
+
         BattlefieldSizeReceived _ ->
+            Audio.none
+
+        ControlsSizeReceived _ _ ->
             Audio.none
 
         InspectorSizeReceived _ _ ->
@@ -2413,25 +2685,25 @@ playAudio msg model =
         BattlefieldMsg battlefieldMsg ->
             case battlefieldMsg of
                 Battlefield.PanLeftClicked ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 Battlefield.PanRightClicked ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 Battlefield.PanUpClicked ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 Battlefield.PanDownClicked ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 Battlefield.ZoomInClicked ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 Battlefield.ZoomOutClicked ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 Battlefield.ResetViewClicked ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 Battlefield.RotationChoicesMsg rotationMsg ->
                     case rotationMsg of
@@ -2446,19 +2718,19 @@ playAudio msg model =
                                 Audio.none
 
                             else
-                                Audio.uiConfirm
+                                Audio.confirm
 
                         RotationChoices.DirectionActivationKeyPressed _ ->
-                            Audio.uiConfirm
+                            Audio.confirm
 
                 Battlefield.ClickedUnit _ click ->
                     battlefieldClickAudio click model
 
                 Battlefield.PressedEnterOnUnit _ ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 Battlefield.PressedSpaceOnUnit _ ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 Battlefield.MouseOverUnit _ ->
                     Audio.none
@@ -2467,10 +2739,10 @@ playAudio msg model =
                     battlefieldClickAudio click model
 
                 Battlefield.PressedEnterOnDepot _ ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 Battlefield.PressedSpaceOnDepot _ ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 Battlefield.MouseOverDepot _ ->
                     Audio.none
@@ -2479,19 +2751,19 @@ playAudio msg model =
                     battlefieldClickAudio click model
 
                 Battlefield.PressedEnterOnDepotStock _ ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 Battlefield.PressedSpaceOnDepotStock _ ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 Battlefield.ClickedTile _ click ->
                     battlefieldClickAudio click model
 
                 Battlefield.PressedEnterOnTile _ ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 Battlefield.PressedSpaceOnTile _ ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 Battlefield.FocusedBoardUnit _ ->
                     Audio.none
@@ -2512,7 +2784,7 @@ playAudio msg model =
                     Audio.none
 
                 Battlefield.HomePressed ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
         BattlefieldNavigationMsg navigationMsg ->
             case navigationMsg of
@@ -2531,10 +2803,10 @@ playAudio msg model =
                     Audio.none
 
                 OrderMenu.InfoClicked ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 OrderMenu.CancelClicked ->
-                    Audio.uiCancel
+                    Audio.cancel
 
                 OrderMenu.OrderFocused _ ->
                     Audio.none
@@ -2542,34 +2814,34 @@ playAudio msg model =
                 OrderMenu.OrderPicked order ->
                     case order of
                         UnitOrder.StandGround ->
-                            Audio.uiAffirm
+                            Audio.affirm
 
                         UnitOrder.HoldPosition ->
-                            Audio.uiConfirm
+                            Audio.confirm
 
                         UnitOrder.Move ->
-                            Audio.uiAffirm
+                            Audio.affirm
 
                         UnitOrder.AttackMove ->
-                            Audio.uiAffirm
+                            Audio.affirm
 
                         UnitOrder.IndirectFire ->
-                            Audio.uiAffirm
+                            Audio.affirm
 
                         UnitOrder.Sabotage ->
-                            Audio.uiConfirm
+                            Audio.confirm
 
                         UnitOrder.DigIn ->
-                            Audio.uiConfirm
+                            Audio.confirm
 
                         UnitOrder.Ambush ->
-                            Audio.uiAffirm
+                            Audio.affirm
 
                 OrderMenu.ArrowedUpOrderMenu _ ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 OrderMenu.ArrowedDownOrderMenu _ ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
         SettingsMsg settingsMsg ->
             case settingsMsg of
@@ -2577,10 +2849,10 @@ playAudio msg model =
                     Audio.none
 
                 Settings.CloseClicked ->
-                    Audio.uiConfirm
+                    Audio.confirm
 
                 _ ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
         FocusCompleted _ ->
             Audio.none
@@ -2588,61 +2860,64 @@ playAudio msg model =
         GameMenuMsg menuMsg ->
             case menuMsg of
                 GameMenu.OpenClicked ->
-                    Audio.uiAffirm
+                    Audio.affirm
+
+                GameMenu.ChatClicked ->
+                    Audio.affirm
 
                 GameMenu.SettingsClicked ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 GameMenu.AboutClicked ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 GameMenu.PrivacyPolicyClicked ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 GameMenu.CloseClicked ->
-                    Audio.uiCancel
+                    Audio.cancel
 
                 GameMenu.FocusReturned _ ->
                     Audio.none
 
                 GameMenu.ResignationCanceled ->
-                    Audio.uiCancel
+                    Audio.cancel
 
                 GameMenu.ResignationConfirmed ->
-                    Audio.uiConfirm
+                    Audio.confirm
 
                 GameMenu.ResignClicked ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 GameMenu.HomeClicked ->
-                    Audio.uiConfirm
+                    Audio.confirm
 
         PreviousOrderPressed ->
-            Audio.uiAffirm
+            Audio.affirm
 
         NextOrderPressed ->
-            Audio.uiAffirm
+            Audio.affirm
 
         OrderFocusCompleted _ ->
             Audio.none
 
         PanLeftKeyPressed ->
-            Audio.uiAffirm
+            Audio.affirm
 
         PanRightKeyPressed ->
-            Audio.uiAffirm
+            Audio.affirm
 
         PanUpKeyPressed ->
-            Audio.uiAffirm
+            Audio.affirm
 
         PanDownKeyPressed ->
-            Audio.uiAffirm
+            Audio.affirm
 
         ZoomInKeyPressed ->
-            Audio.uiAffirm
+            Audio.affirm
 
         ZoomOutKeyPressed ->
-            Audio.uiAffirm
+            Audio.affirm
 
         AnimationTimerElapsed _ ->
             Audio.none
@@ -2650,133 +2925,130 @@ playAudio msg model =
         TurnIntroductionMsg introMsg ->
             case introMsg of
                 TurnIntroduction.BeginClicked ->
-                    Audio.uiConfirm
+                    Audio.confirm
 
                 TurnIntroduction.ReplayClicked ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 TurnIntroduction.BattlefieldViewClicked ->
-                    Audio.uiConfirm
+                    Audio.confirm
 
                 TurnIntroduction.SkipDialogsChanged _ ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
         UnitDeathMsg lossMsg ->
             case lossMsg of
                 UnitDeath.ContinueClicked _ ->
-                    Audio.uiConfirm
+                    Audio.confirm
 
                 UnitDeath.SkipDialogsChanged _ ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
         CombatTheaterMsg theaterMsg ->
             case theaterMsg of
                 CombatTheater.ContinueClicked ->
-                    Audio.uiConfirm
+                    Audio.confirm
 
                 CombatTheater.SeeMapPressed ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
                 CombatTheater.SeeMapReleased ->
                     Audio.none
 
                 CombatTheater.AutomaticallyCloseChanged _ ->
-                    Audio.uiAffirm
+                    Audio.affirm
 
         DirectionKeyPressed _ ->
-            Audio.uiConfirm
+            Audio.confirm
 
         PathDirectionKeyPressed _ ->
-            Audio.uiAffirm
-
-        PathEnterPressed ->
-            Audio.uiConfirm
+            Audio.affirm
 
         NextUnorderedUnitKeyPressed ->
-            Audio.uiAffirm
+            Audio.affirm
 
         ClearMoveClicked ->
-            Audio.uiAffirm
+            Audio.affirm
 
         CancelOrderClicked ->
-            Audio.uiCancel
+            Audio.cancel
 
         CargoUnitClicked _ ->
-            Audio.uiAffirm
+            Audio.affirm
 
         LoadCratesClicked _ count ->
             if count == 0 then
-                Audio.uiCancel
+                Audio.cancel
 
             else
-                Audio.uiConfirm
+                Audio.confirm
 
         GroundFreightPickupClicked ->
-            Audio.uiConfirm
+            Audio.confirm
 
         UnloadCrateToggled _ checked ->
             if checked then
-                Audio.uiAffirm
+                Audio.affirm
 
             else
-                Audio.uiCancel
+                Audio.cancel
 
         UnloadUnitToggled _ checked ->
             if checked then
-                Audio.uiAffirm
+                Audio.affirm
 
             else
-                Audio.uiCancel
+                Audio.cancel
 
         UnloadChoicesConfirmed ->
-            Audio.uiConfirm
+            Audio.confirm
 
         UnloadSkipped ->
-            Audio.uiCancel
+            Audio.cancel
 
         InspectClicked ->
-            Audio.uiCancel
+            Audio.cancel
 
         InspectorCloseClicked ->
-            Audio.uiCancel
+            Audio.cancel
 
         UnitHelpClicked _ ->
-            Audio.uiAffirm
+            Audio.affirm
 
         UnitHelpFocusReturned _ ->
             Audio.none
 
         EscapePressed ->
-            Audio.uiCancel
+            Audio.cancel
 
         DialogDismissed ->
-            Audio.uiCancel
+            Audio.cancel
 
         SubmissionCancelled ->
-            Audio.uiCancel
+            Audio.cancel
 
         SubmissionConfirmed ->
-            Audio.uiConfirm
+            Audio.confirm
 
         SubmitKeyPressed ->
-            Audio.uiConfirm
+            Audio.confirm
 
         SubmissionEnterPressed ->
-            Audio.uiConfirm
+            Audio.confirm
 
         SkipUnplannedUnitsWarningChanged _ ->
-            Audio.uiAffirm
+            Audio.affirm
 
         TurnControlsMsg turnControlsMsg ->
             case turnControlsMsg of
                 TurnControls.SubmitClicked ->
-                    Audio.uiConfirm
+                    Audio.confirm
 
         RequestRetryClicked ->
-            Audio.uiConfirm
+            Audio.confirm
 
         RequestErrorDismissed ->
-            Audio.uiCancel
+            Audio.cancel
 
         SubmitResponseReceived _ _ ->
             Audio.none
@@ -2792,7 +3064,7 @@ playAudio msg model =
                             Audio.none
 
                         PlaybackPresentation.CombatEnterReleased ->
-                            Audio.uiConfirm
+                            Audio.confirm
 
                         PlaybackPresentation.CombatSeeMapReleased ->
                             Audio.none
@@ -2813,56 +3085,144 @@ battlefieldClickAudio click model =
         Audio.none
 
     else
-        Audio.uiAffirm
+        Audio.affirm
+
+
+handleChatMsg : LobbyId -> ChatView.Msg -> Model -> ( Model, Eff Msg )
+handleChatMsg lobbyId msg model =
+    case msg of
+        ChatView.OpenPressed ->
+            openChat model
+
+        ChatView.CloseClicked ->
+            ( model
+                |> setChat (Chat.close model.chat)
+            , E.focus { htmlId = Battlefield.htmlId } FocusCompleted
+            )
+
+        ChatView.TextChanged text ->
+            model
+                |> setChat (Chat.edit text model.chat)
+                |> E.withOut
+
+        ChatView.HistoryScrolled position ->
+            model
+                |> setChat (Chat.scrollHistory position model.chat)
+                |> E.withOut
+
+        ChatView.DialogOpened ->
+            let
+                newChat : Chat.Model
+                newChat =
+                    Chat.historyOpened model.chat
+            in
+            ( model
+                |> setChat newChat
+            , scrollChatHistory newChat model.shared
+            )
+
+        ChatView.HistoryClicked ->
+            let
+                newChat : Chat.Model
+                newChat =
+                    Chat.toggleHistory model.chat
+            in
+            ( model
+                |> setChat newChat
+            , scrollChatHistory newChat model.shared
+            )
+
+        ChatView.SendPressed ->
+            sendChat lobbyId model
+
+        ChatView.RetrySendPressed ->
+            model
+                |> setChat (Chat.open model.chat)
+                |> sendChat lobbyId
+
+        ChatView.RetryUpdatesPressed ->
+            pollChat lobbyId model
+
+        ChatView.DismissErrorClicked ->
+            let
+                focusHtmlId : String
+                focusHtmlId =
+                    if Chat.isOpen model.chat then
+                        ChatView.inputHtmlId
+
+                    else
+                        Battlefield.htmlId
+            in
+            ( model
+                |> setChat (Chat.dismissErrors model.chat)
+            , E.focus { htmlId = focusHtmlId } FocusCompleted
+            )
 
 
 handleGameMenuMsg : LobbyId -> GameMenu.Msg -> Model -> ( Model, Eff Msg )
 handleGameMenuMsg lobbyId msg model =
     case msg of
+        GameMenu.ChatClicked ->
+            if model.menu == MainMenu then
+                model
+                    |> setMenu MenuClosed
+                    |> openChat
+
+            else
+                model
+                    |> E.withOut
+
         GameMenu.OpenClicked ->
             if canOpenMenu model then
                 ( model
-                    |> setMenuOpen True
+                    |> setMenu MainMenu
                 , E.none
                 )
 
             else
-                E.withOut model
+                model
+                    |> E.withOut
 
         GameMenu.AboutClicked ->
             if (model.menu == MainMenu) && not model.resigning then
-                ( { model | menu = AboutMenu }
+                ( model
+                    |> setMenu AboutMenu
                 , E.focus
                     { htmlId = About.htmlId ++ "-title" }
                     (GameMenu.FocusReturned >> GameMenuMsg)
                 )
 
             else
-                E.withOut model
+                model
+                    |> E.withOut
 
         GameMenu.PrivacyPolicyClicked ->
             if (model.menu == MainMenu) && not model.resigning then
-                ( { model | menu = PrivacyPolicyMenu }
+                ( model
+                    |> setMenu PrivacyPolicyMenu
                 , E.focus
                     { htmlId = PrivacyPolicy.htmlId ++ "-title" }
                     (GameMenu.FocusReturned >> GameMenuMsg)
                 )
 
             else
-                E.withOut model
+                model
+                    |> E.withOut
 
         GameMenu.SettingsClicked ->
             if (model.menu == MainMenu) && not model.resigning then
-                ( { model | menu = SettingsMenu Settings.Dialogs }
+                ( model
+                    |> setMenu (SettingsMenu Settings.Dialogs)
                 , E.focus { htmlId = Settings.dialogHtmlId ++ "-title" } FocusCompleted
                 )
 
             else
-                E.withOut model
+                model
+                    |> E.withOut
 
         GameMenu.CloseClicked ->
             ( model
-                |> setMenuOpen False
+                |> setMenu MenuClosed
             , E.focus
                 { htmlId = GameMenu.buttonHtmlId
                 }
@@ -2878,23 +3238,27 @@ handleGameMenuMsg lobbyId msg model =
                     resignGame lobbyId destination model
 
                 _ ->
-                    E.withOut model
+                    model
+                        |> E.withOut
 
         GameMenu.ResignationCanceled ->
             case model.menu of
                 ConfirmingResignation _ ->
-                    ( setMenuOpen True model
+                    ( model
+                        |> setMenu MainMenu
                     , E.focus
                         { htmlId = GameMenu.closeButtonHtmlId }
                         (GameMenu.FocusReturned >> GameMenuMsg)
                     )
 
                 _ ->
-                    E.withOut model
+                    model
+                        |> E.withOut
 
         GameMenu.HomeClicked ->
             if (model.menu /= MainMenu) || model.resigning then
-                E.withOut model
+                model
+                    |> E.withOut
 
             else if model.currentTurn.outcome /= Nothing then
                 ( model, Route.pushUrl Route.Home )
@@ -2903,22 +3267,28 @@ handleGameMenuMsg lobbyId msg model =
                 requestResignation GoHome model
 
         GameMenu.FocusReturned result ->
-            E.withOut (recordFocusResult result model)
+            recordFocusResult result model
+                |> E.withOut
 
 
 handleSettingsMsg : Settings.Msg -> Model -> ( Model, Eff Msg )
 handleSettingsMsg msg model =
     case msg of
         Settings.CloseClicked ->
-            ( setMenuOpen False model
+            ( model
+                |> setMenu MenuClosed
             , E.focus { htmlId = GameMenu.buttonHtmlId } FocusCompleted
             )
 
         Settings.TabClicked tab ->
-            ( { model | menu = SettingsMenu tab }, E.none )
+            ( model
+                |> setMenu (SettingsMenu tab)
+            , E.none
+            )
 
         Settings.TabNavigationPressed tab ->
-            ( { model | menu = SettingsMenu tab }
+            ( model
+                |> setMenu (SettingsMenu tab)
             , E.focus { htmlId = Settings.tabHtmlId tab } FocusCompleted
             )
 
@@ -3008,7 +3378,8 @@ confirmSubmission lobbyId model =
             submitTurn lobbyId model
 
         _ ->
-            model |> E.withOut
+            model
+                |> E.withOut
 
 
 requestSubmission : LobbyId -> Model -> ( Model, Eff Msg )
@@ -3034,7 +3405,8 @@ requestSubmission lobbyId model =
 refreshTurn : LobbyId -> Model -> ( Model, Eff Msg )
 refreshTurn lobbyId model =
     if model.currentTurn.outcome /= Nothing || model.currentTurn.refreshing then
-        E.withOut model
+        model
+            |> E.withOut
 
     else
         ( model
@@ -3106,7 +3478,8 @@ advanceCurrentPlayback delta model =
                     advancePlayback delta model
 
         _ ->
-            model |> E.withOut
+            model
+                |> E.withOut
 
 
 {-| Keep the action at its current frame while the camera settles.
@@ -3143,7 +3516,8 @@ advancePlayback delta model =
             )
 
         Nothing ->
-            model |> E.withOut
+            model
+                |> E.withOut
 
 
 automaticallyContinueCombat : Model -> Model
@@ -3215,11 +3589,13 @@ handleOrderMsg : OrderMenu.Msg -> Model -> ( Model, Eff Msg )
 handleOrderMsg orderMsg model =
     case orderMsg of
         OrderMenu.MenuPressed ->
-            model |> E.withOut
+            model
+                |> E.withOut
 
         OrderMenu.InfoClicked ->
             if hasDialog model then
-                model |> E.withOut
+                model
+                    |> E.withOut
 
             else
                 model
@@ -3431,31 +3807,32 @@ viewControls zoom =
 
 view : Model -> List (Html Msg)
 view model =
-    BattlefieldWorkspace.toHtml
-        { loss = unitLoss model /= Nothing
-        , combat = combatEncounter model /= Nothing
-        , dying = deathInFocus model
-        , battlefield = battlefieldView model
-        , header =
-            GameMenu.panel
-                { enabled = canOpenMenu model
-                , turnNumber = displayedTurnNumber model
-                }
-                |> H.map GameMenuMsg
-                |> Just
-        , controls = turnPanel model
-        , notification = requestErrorCard model
-        , inspection = selectionView model
-        , hasSelection = currentSelection model /= Nothing
-        , onCloseInspection = InspectorCloseClicked
-        , combatOverlay =
-            PlaybackPresentation.combatOverlay
-                CombatTheaterCalibrations.catalog
-                model.automaticallyCloseCombatTheater
-                model.map
-                (playback model)
-                |> H.map CombatTheaterMsg
-        }
+    ChatView.overlay model.chat.recent
+        :: BattlefieldWorkspace.toHtml
+            { loss = unitLoss model /= Nothing
+            , combat = combatEncounter model /= Nothing
+            , dying = deathInFocus model
+            , battlefield = battlefieldView model
+            , header =
+                GameMenu.panel
+                    { enabled = canOpenMenu model
+                    , turnNumber = displayedTurnNumber model
+                    }
+                    |> H.map GameMenuMsg
+                    |> Just
+            , controls = turnPanel model
+            , notification = requestErrorCard model
+            , inspection = selectionView model
+            , hasSelection = currentSelection model /= Nothing
+            , onCloseInspection = InspectorCloseClicked
+            , combatOverlay =
+                PlaybackPresentation.combatOverlay
+                    CombatTheaterCalibrations.catalog
+                    model.automaticallyCloseCombatTheater
+                    model.map
+                    (playback model)
+                    |> H.map CombatTheaterMsg
+            }
 
 
 orderMenu : Model -> Html Msg
@@ -4454,12 +4831,23 @@ depotLoadingDialog model id source =
         content
 
 
-{-| Dialogs derive from inspector help, the game menu, order guide, turn introduction, playback loss, or the active planning workflow.
+chatDialog : Model -> () -> Maybe (Dialog Msg)
+chatDialog model _ =
+    case model.chat.panel of
+        Chat.Composing composer ->
+            Just (ChatView.dialog model.chat composer |> Dialog.map ChatMsg)
+
+        _ ->
+            Nothing
+
+
+{-| Dialogs derive from chat, inspector help, the game menu, order guide, turn introduction, playback loss, or the active planning workflow.
 -}
 dialog : Model -> Maybe (Dialog Msg)
 dialog model =
     MaybeUtil.lazyFirst
-        [ unitHelpDialog model
+        [ chatDialog model
+        , unitHelpDialog model
         , gameMenuDialog model
         , orderGuideDialog model
         , introductionDialog model
@@ -4834,50 +5222,25 @@ requestErrorCard model =
 
         card : RequestErrorDetails -> Html Msg
         card failure =
-            let
-                retryButton : Button.Button Msg
-                retryButton =
-                    if failure.retryEnabled then
-                        Button.secondary "try again" RequestRetryClicked
-
-                    else
-                        Button.disabled "try again"
-            in
-            H.div
-                [ Aria.role Aria.Alert
-                , Aria.label failure.title
-                , A.css
-                    [ S.maxW96
-                    , S.wrapAnywhere
-                    ]
-                ]
-                [ [ H.p
-                        []
-                        [ H.text failure.message ]
-                  , H.p
-                        []
-                        [ H.text failure.guidance ]
-                  , H.div
-                        [ A.css
-                            [ S.row
-                            , S.g2
-                            , S.flexWrap
-                            ]
-                        ]
-                        [ retryButton
-                            |> Button.toHtml
-                        , Button.secondary "dismiss" RequestErrorDismissed
-                            |> Button.toHtml
-                        ]
-                  ]
-                    |> Card.toHtml
-                        (Card.simple
-                            |> Card.danger
-                            |> Card.withHeader (CardHeader.simple failure.title)
-                        )
-                ]
+            RequestError.toHtml
+                { title = failure.title
+                , message = failure.message
+                , guidance = failure.guidance
+                , retryEnabled = failure.retryEnabled
+                , onRetry = RequestRetryClicked
+                , onDismiss = RequestErrorDismissed
+                }
     in
-    Maybe.map card details
+    case Maybe.map card details of
+        Just notification ->
+            Just notification
+
+        Nothing ->
+            if Chat.isOpen model.chat then
+                Nothing
+
+            else
+                ChatView.notification model.chat |> Maybe.map (H.map ChatMsg)
 
 
 
@@ -4920,7 +5283,6 @@ keyCommands model =
                                 , KeyCmd.rightGamerKeys (PathDirectionKeyPressed DirectionEnum.East)
                                 , KeyCmd.upGamerKeys (PathDirectionKeyPressed DirectionEnum.North)
                                 , KeyCmd.downGamerKeys (PathDirectionKeyPressed DirectionEnum.South)
-                                , KeyCmd.enter PathEnterPressed
                                 ]
 
                             ChoosingIndirectFire _ ->
@@ -4983,10 +5345,21 @@ panNavigation _ =
     ]
 
 
+chatShortcut : Model -> Sub Msg
+chatShortcut model =
+    if canOpenMenu model && not model.shared.devPanelOpen then
+        Browser.Events.onKeyDown (Decode.map ChatMsg ChatView.openKeyDecoder)
+
+    else
+        Sub.none
+
+
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ Browser.Events.onResize (\_ _ -> WindowResized)
+        [ chatShortcut model
+        , Time.every 1000 ChatPollElapsed
+        , Browser.Events.onResize (\_ _ -> WindowResized)
         , Time.every 400 AnimationTimerElapsed
         , CurrentTurn.subscriptions model.currentTurn
             |> Sub.map CurrentTurnMsg

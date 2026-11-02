@@ -15,5 +15,6 @@ type Error
     | FromJsFailed FromJs.Error
     | AudioFailed { operation : String, details : String }
     | ElementFocusFailed Browser.Dom.Error
+    | ElementScrollFailed Browser.Dom.Error
     | BattlefieldMeasurementFailed Browser.Dom.Error
     | OrderPlanningInvariantViolated OrderPlanning.InvariantViolation

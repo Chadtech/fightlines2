@@ -1,5 +1,6 @@
 use crate::{
     backdrop_calibration,
+    chat::{self, ChatMessage, SendChatInput},
     combat::chart,
     environment::Environment,
     game::{self, GameSnapshot},
@@ -83,6 +84,14 @@ pub struct Query;
 
 #[graphql_object(context = Context)]
 impl Query {
+    fn chat(
+        context: &Context,
+        id: String,
+        #[graphql(default = 0)] after: i32,
+    ) -> FieldResult<Vec<ChatMessage>> {
+        chat::messages(context, LobbyId::from_token(id), after)
+    }
+
     fn combat_chart(input: chart::CombatChartInput) -> FieldResult<Vec<chart::CombatChartHit>> {
         chart::hits(input)
     }
@@ -166,6 +175,10 @@ pub struct Mutation;
 
 #[graphql_object(context = Context)]
 impl Mutation {
+    fn send_chat(context: &Context, input: SendChatInput) -> FieldResult<ChatMessage> {
+        chat::send(context, input)
+    }
+
     fn copy_backdrop_calibrations(
         context: &Context,
         source_backdrop: String,

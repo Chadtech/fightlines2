@@ -1,9 +1,10 @@
 // Elm chooses when to emit audio. This manager owns browser playback only.
 function createAudioManager(reportError = () => {}) {
   const sounds = Object.freeze({
-    uiAffirm: ["/audio/ui-affirm-switch-v1.ogg"],
-    uiCancel: ["/audio/ui-cancel-switch-v1.ogg"],
-    uiConfirm: ["/audio/ui-confirm-switch-v1.ogg"],
+    affirm: ["/audio/ui-affirm-switch-v1.ogg"],
+    cancel: ["/audio/ui-cancel-switch-v1.ogg"],
+    confirm: ["/audio/ui-confirm-switch-v1.ogg"],
+    chatReceived: ["/audio/chat-received-radio-v1.ogg"],
     fieldGunFire: [
       "/audio/combat/field-gun-fire-01.ogg",
       "/audio/combat/field-gun-fire-02.ogg",

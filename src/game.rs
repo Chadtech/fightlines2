@@ -1,6 +1,7 @@
 //! Running games, durable turn transitions, and live/replay projections.
 use crate::{
     ai,
+    chat::{self, ChatMessage, Draft, Sender, Submission as ChatSubmission, Transcript},
     game_archive::review::RecordedOrder,
     game_log::{Directory, GameLog, GameStarted, RecordedPlayer, Submission, SubmissionResult},
     graphql::Context,
@@ -30,6 +31,7 @@ const FINISHED_GAME_RETENTION: Duration = Duration::from_secs(16 * 60);
 /// Starting consumes the lobby. The source ID keeps existing invite URLs
 /// resolvable for polling players and repeated start requests.
 pub(crate) struct Game {
+    chat: Transcript,
     log: Option<GameLog>,
     turns: Turns,
     finished_at: Option<Instant>,
@@ -92,6 +94,7 @@ impl Game {
         scenario: Scenario,
     ) -> Self {
         Self {
+            chat: Transcript::default(),
             log: None,
             observations: PlayerNumber::ALL
                 .map(|player| visibility::PlayerObservation::new(&scenario, player)),
@@ -112,6 +115,31 @@ impl Game {
         self
     }
 
+    pub fn with_chat(mut self, chat: Transcript) -> Self {
+        self.chat = chat;
+        self
+    }
+
+    pub fn chat_messages(&self, after: i32) -> Vec<ChatMessage> {
+        self.chat.messages(after)
+    }
+
+    pub fn send_chat(&mut self, session: SessionToken, draft: Draft) -> FieldResult<ChatMessage> {
+        let submission = ChatSubmission {
+            sender: Sender::for_session(&self.players, &session),
+            session,
+            turn_number: self.turns.number,
+            draft,
+        };
+        self.chat.send(submission, |message| {
+            self.log
+                .as_mut()
+                .ok_or("chat is unavailable in this preview.")?
+                .chat(message)
+                .map_err(chat::recording_error)
+        })
+    }
+
     /// Reads and repeated resignations never extend the final-results window.
     pub fn is_expired(&self, now: Instant) -> bool {
         self.finished_at.is_some_and(|finished_at| {
@@ -124,6 +152,7 @@ impl Game {
         self.log = Some(
             directory
                 .start(GameStarted {
+                    chat: self.chat.messages(0),
                     game_id: self.source_lobby.clone(),
                     name: self.name.to_string(),
                     map_type: self.map_type.clone(),

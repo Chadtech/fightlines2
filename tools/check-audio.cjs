@@ -119,12 +119,18 @@ async function main() {
   }
   assert.equal(ambienceManifest.clips.find(clip => clip.environment === 'plains').sourcePage,
     'https://freesound.org/people/felix.blume/sounds/215414/', 'plains uses approved Oklahoma choice C');
+  const chatManifest = JSON.parse(readFileSync('public/audio/chat-received-radio-v1.json', 'utf8'));
+  const chatBytes = readFileSync(`public/audio/${chatManifest.file}`);
+  assert.equal(chatBytes.subarray(0, 4).toString(), 'OggS', 'approved chat recording is packaged as Ogg');
+  assert.equal(createHash('sha256').update(chatBytes).digest('hex'), chatManifest.sha256);
+  assert.equal(chatManifest.license, 'CC0 1.0 Universal');
+
   const mixer = boot();
   const mix = { master: 40, combat: 70, movement: 30, ambience: 20, interface: 60 };
   await mixer.audio.handleEvent({ volumes: mix });
   await mixer.gesture();
   assert.equal(mixer.contexts[0].master.gain.value, 0.4, 'saved master volume applies before unlocking');
-  await mixer.audio.handleEvent({ play: 'uiAffirm' });
+  await mixer.audio.handleEvent({ play: 'affirm' });
   await mixer.audio.handleEvent({ play: 'tankFire' });
   await mixer.audio.handleEvent({ movement: [{ unitId: 'mixer-truck', sound: 'truck' }] });
   await mixer.audio.handleEvent({ ambience: [{ environment: 'plains', pan: 0 }] });
@@ -151,10 +157,14 @@ async function main() {
   await mixer.audio.handleEvent({ volumes: { ...mix, combat: 101 } });
   assert.equal(combatBus.gain.value, 0.7, 'invalid mixes cannot partially change a channel');
   assert.equal(mixer.errors[0].operation, 'invalid volumes');
+  await mixer.audio.handleEvent({ play: 'chatReceived' });
+  assert.equal(mixer.voices.at(-1).destination, uiBus, 'incoming chat uses the interface volume bus');
+  await mixer.audio.handleEvent({ volumes: { ...mix, interface: 0 } });
+  assert.equal(uiBus.gain.value, 0, 'zero interface volume silences chat notifications too');
 
   const app = boot();
   await app.audio.handleEvent(null);
-  await app.audio.handleEvent({ play: 'uiAffirm' });
+  await app.audio.handleEvent({ play: 'affirm' });
   app.events.pointerdown({ isTrusted: false });
   assert.equal(app.contexts.length, 0, 'no audio context or queued playback before a gesture');
   app.audio.setVolume(0.2);
@@ -162,13 +172,14 @@ async function main() {
   assert.equal(app.contexts.length, 1);
   assert.equal(app.contexts[0].master.gain.value, 0.2);
   assert.equal(app.voices.length, 0, 'unlocking must not play a click');
-  await app.audio.handleEvent({ play: 'uiAffirm' });
+  await app.audio.handleEvent({ play: 'affirm' });
   assert.equal(app.voices.length, 1);
   assert.equal(app.voices[0].started, true);
   assert.deepEqual(app.requests, [
     '/audio/ui-affirm-switch-v1.ogg',
     '/audio/ui-cancel-switch-v1.ogg',
     '/audio/ui-confirm-switch-v1.ogg',
+    '/audio/chat-received-radio-v1.ogg',
     '/audio/combat/field-gun-fire-01.ogg',
     '/audio/combat/field-gun-fire-02.ogg',
     '/audio/combat/field-gun-fire-03.ogg',
@@ -189,16 +200,16 @@ async function main() {
     '/audio/movement/infantry-stib-2x.ogg',
     '/audio/combat/infantry-fire-heavy-v1.ogg',
   ]);
-  assert.equal(app.contexts[0].decodes, 22);
-  await app.audio.handleEvent({ play: 'uiAffirm' });
+  assert.equal(app.contexts[0].decodes, 23);
+  await app.audio.handleEvent({ play: 'affirm' });
   assert.equal(app.voices.length, 1, 'rapid duplicate requests are coalesced');
   for (let index = 0; index < 4; index++) {
     app.advance(50);
-    await app.audio.handleEvent({ play: 'uiAffirm' });
+    await app.audio.handleEvent({ play: 'affirm' });
   }
   assert.equal(app.voices.length, 5);
   assert.equal(app.voices[0].stopped, true, 'voice limit replaces the oldest voice');
-  assert.equal(app.contexts[0].decodes, 22, 'decoded buffers are reused');
+  assert.equal(app.contexts[0].decodes, 23, 'decoded buffers are reused');
   app.voices[1].finish();
   assert.equal(app.voices[1].disconnected, true);
   app.audio.setVolume(0);
@@ -208,11 +219,11 @@ async function main() {
   app.documentEvents.visibilitychange();
   assert.equal(app.voices.at(-1).stopped, true);
   app.advance(50);
-  await app.audio.handleEvent({ play: 'uiAffirm' });
+  await app.audio.handleEvent({ play: 'affirm' });
   assert.equal(app.voices.length, 5);
   app.document.hidden = false;
   app.advance(50);
-  await app.audio.handleEvent({ play: 'uiAffirm' });
+  await app.audio.handleEvent({ play: 'affirm' });
   app.events.pagehide();
   assert.equal(app.voices.at(-1).stopped, true);
   await app.gesture('keydown');
@@ -220,18 +231,19 @@ async function main() {
 
   const cues = boot();
   await cues.gesture();
-  for (const name of ['uiAffirm', 'uiCancel', 'uiConfirm']) {
+  for (const name of ['affirm', 'cancel', 'confirm', 'chatReceived']) {
     await cues.audio.handleEvent({ play: name });
   }
-  assert.equal(cues.voices.length, 3, 'distinct cues do not suppress one another');
-  assert.equal(new Set(cues.voices.map(voice => voice.buffer)).size, 3, 'each cue uses its own recording');
+  assert.equal(cues.voices.length, 4, 'distinct cues do not suppress one another');
+  assert.equal(new Set(cues.voices.map(voice => voice.buffer)).size, 4, 'each cue uses its own recording');
   assert.equal(cues.warnings.length, 0);
 
   const muted = boot();
   await muted.audio.handleEvent({ muted: true });
   await muted.gesture();
   assert.equal(muted.contexts[0].master.gain.value, 0, 'muting before the first gesture starts silent');
-  await muted.audio.handleEvent({ play: 'uiConfirm' });
+  await muted.audio.handleEvent({ play: 'confirm' });
+  await muted.audio.handleEvent({ play: 'chatReceived' });
   await muted.audio.handleEvent({ movement: [{ unitId: 'tank', sound: 'tank' }] });
   await muted.audio.handleEvent({ ambience: [{ environment: 'forest', pan: 0 }] });
   assert.equal(muted.voices.length, 0, 'muted pages discard all sound categories');
@@ -239,12 +251,12 @@ async function main() {
   assert.equal(muted.contexts[0].master.gain.value, 0, 'volume changes cannot bypass mute');
   await muted.audio.handleEvent({ muted: false });
   assert.equal(muted.contexts[0].master.gain.value, 0.3, 'unmuting restores the previous volume');
-  for (const play of ['uiConfirm', 'tankFire', 'fieldGunFire', 'combatImpact']) {
+  for (const play of ['confirm', 'chatReceived', 'tankFire', 'fieldGunFire', 'combatImpact']) {
     await muted.audio.handleEvent({ play });
   }
   await muted.audio.handleEvent({ movement: [{ unitId: 'tank', sound: 'tank' }] });
   await muted.audio.handleEvent({ ambience: [{ environment: 'forest', pan: 0 }] });
-  assert.equal(muted.voices.length, 6);
+  assert.equal(muted.voices.length, 7);
   await muted.audio.handleEvent({ muted: true });
   assert.equal(muted.contexts[0].master.gain.value, 0);
   assert.ok(muted.voices.every(voice => voice.stopped), 'mute stops UI, weapons, impacts, movement and ambience immediately');
@@ -252,15 +264,15 @@ async function main() {
   muted.documentEvents.visibilitychange();
   muted.document.hidden = false;
   await muted.gesture('keydown');
-  await muted.audio.handleEvent({ play: 'uiAffirm' });
+  await muted.audio.handleEvent({ play: 'affirm' });
   await muted.audio.handleEvent({ movement: [{ unitId: 'tank', sound: 'tank' }] });
   await muted.audio.handleEvent({ ambience: [{ environment: 'forest', pan: 0 }] });
-  assert.equal(muted.voices.length, 6, 'returning to the page cannot bypass mute');
+  assert.equal(muted.voices.length, 7, 'returning to the page cannot bypass mute');
   await muted.audio.handleEvent({ muted: false });
-  assert.equal(muted.voices.length, 6, 'unmuting does not replay discarded sounds');
+  assert.equal(muted.voices.length, 7, 'unmuting does not replay discarded sounds');
   await muted.audio.handleEvent({ movement: [{ unitId: 'tank', sound: 'tank' }] });
   await muted.audio.handleEvent({ ambience: [{ environment: 'forest', pan: 0 }] });
-  assert.equal(muted.voices.length, 8, 'fresh snapshots restore current loops after unmuting');
+  assert.equal(muted.voices.length, 9, 'fresh snapshots restore current loops after unmuting');
   assert.equal(muted.warnings.length, 0);
 
   const guns = boot();
@@ -279,7 +291,7 @@ async function main() {
   assert.equal(impacts.voices.length, 8, 'simultaneous impacts are not coalesced');
   assert.equal(new Set(impacts.voices.map(voice => voice.buffer)).size, 5);
   assert.equal(impacts.voices[0].buffer, impacts.voices[5].buffer);
-  await impacts.audio.handleEvent({ play: 'uiConfirm' });
+  await impacts.audio.handleEvent({ play: 'confirm' });
   await impacts.audio.handleEvent({ play: 'tankFire' });
   assert.equal(impacts.voices[0].stopped, true, 'impacts share the combat voice limit with firing');
   assert.equal(impacts.voices[8].stopped, false, 'impacts do not replace UI feedback');
@@ -294,7 +306,7 @@ async function main() {
   assert.ok(combat.voices.every(voice => voice.started && !voice.stopped));
   assert.equal(new Set(combat.voices.map(voice => voice.buffer)).size, 5, 'all five firing variants are used');
   assert.equal(combat.voices[0].buffer, combat.voices[5].buffer, 'variants cycle deterministically');
-  await combat.audio.handleEvent({ play: 'uiConfirm' });
+  await combat.audio.handleEvent({ play: 'confirm' });
   assert.equal(combat.voices.length, 9);
   assert.ok(combat.voices.every(voice => !voice.stopped), 'UI and combat have independent voice limits');
   await combat.audio.handleEvent({ play: 'tankFire' });
@@ -311,7 +323,7 @@ async function main() {
   await ambience.audio.handleEvent({ ambience: [plains] });
   assert.equal(ambience.contexts.length, 0, 'ambience cannot unlock the context');
   await ambience.gesture();
-  assert.equal(ambience.requests.length, 22, 'ambience loads only when the theater needs it');
+  assert.equal(ambience.requests.length, 23, 'ambience loads only when the theater needs it');
   await ambience.audio.handleEvent({ ambience: [plains, forest] });
   assert.equal(ambience.voices.length, 2);
   assert.ok(ambience.voices.every(voice => voice.loop && voice.started));
@@ -571,7 +583,7 @@ async function main() {
     }
   }
 
-  for (const bad of [undefined, [], {}, { muted: 'true' }, { muted: true, extra: true }, { play: 3 }, { play: 'unknown' }, { play: 'toString' }, { play: 'uiAffirm', extra: true }]) {
+  for (const bad of [undefined, [], {}, { muted: 'true' }, { muted: true, extra: true }, { play: 3 }, { play: 'unknown' }, { play: 'toString' }, { play: 'affirm', extra: true }]) {
     await app.audio.handleEvent(bad);
   }
   assert.equal(app.warnings.length, 1, 'malformed events report once without throwing');
@@ -592,7 +604,7 @@ async function main() {
   for (const options of [{ loadFails: true }, { decodeFails: true }, { resumeFails: true }]) {
     const broken = boot(options);
     await broken.gesture();
-    await broken.audio.handleEvent({ play: 'uiAffirm' });
+    await broken.audio.handleEvent({ play: 'affirm' });
     assert.equal(broken.voices.length, 0);
     assert.ok(broken.warnings.length > 0, 'audio failures are reported');
     assert.equal(broken.errors.length, broken.warnings.length, 'warnings also reach the error callback');
@@ -606,13 +618,13 @@ async function main() {
     console: { warn(...args) { unavailableWarnings.push(args); } } };
   vm.createContext(unavailable);
   vm.runInContext(source + '\nthis.audio = createAudioManager();', unavailable);
-  await unavailable.audio.handleEvent({ play: 'uiAffirm' });
+  await unavailable.audio.handleEvent({ play: 'affirm' });
   unavailableEvents.pointerdown({ isTrusted: true });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(unavailableWarnings.length, 1, 'unsupported browsers keep working and report the missing API');
 
   for (const cancel of ['hidden', 'pagehide', 'expired', 'muted']) {
-    for (const cue of ['uiAffirm', 'tankFire', 'fieldGunFire', 'combatImpact']) {
+    for (const cue of ['affirm', 'tankFire', 'fieldGunFire', 'combatImpact']) {
       const pending = boot({ deferredLoad: true });
       await pending.gesture();
       const play = pending.audio.handleEvent({ play: cue });

@@ -1,6 +1,8 @@
 //! Pregame setup and lobby membership.
 use crate::{
+    chat::{self, ChatMessage, Draft, Sender, Submission, Transcript},
     game::Game,
+    game_log::GameLog,
     graphql::Context,
     lobby_id::LobbyId,
     lobby_name::LobbyName,
@@ -16,6 +18,8 @@ use crate::{
 use juniper::{FieldError, FieldResult};
 
 pub(crate) struct Lobby {
+    chat: Transcript,
+    chat_log: Option<GameLog>,
     id: LobbyId,
     name: LobbyName,
     map_type: MapId,
@@ -24,6 +28,34 @@ pub(crate) struct Lobby {
 }
 
 impl Lobby {
+    pub fn chat_messages(&self, after: i32) -> Vec<ChatMessage> {
+        self.chat.messages(after)
+    }
+
+    pub fn send_chat(
+        &mut self,
+        context: &Context,
+        session: SessionToken,
+        draft: Draft,
+    ) -> FieldResult<ChatMessage> {
+        if self.chat_log.is_none() {
+            self.chat_log = Some(context.store.start_chat_log(&self.id)?);
+        }
+        let submission = Submission {
+            sender: Sender::for_session(&self.players, &session),
+            session,
+            turn_number: 0,
+            draft,
+        };
+        self.chat.send(submission, |message| {
+            self.chat_log
+                .as_mut()
+                .ok_or("chat recording is unavailable.")?
+                .chat(message)
+                .map_err(chat::recording_error)
+        })
+    }
+
     pub fn id(&self) -> &LobbyId {
         &self.id
     }
@@ -168,7 +200,8 @@ impl Lobby {
             self.host.clone(),
             self.players.clone(),
             scenario,
-        ))
+        )
+        .with_chat(self.chat.clone()))
     }
 }
 
@@ -193,6 +226,8 @@ pub fn create(context: &Context, input: &str, lobby_input: &str) -> FieldResult<
     };
     let id = LobbyId::from_token(context.store.next_token()?);
     let lobby = Lobby {
+        chat: Transcript::default(),
+        chat_log: None,
         id,
         name: lobby_name,
         map_type,

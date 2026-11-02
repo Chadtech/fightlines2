@@ -1,5 +1,6 @@
 //! Private authoritative archives, independent of HTTP and viewer projections.
 use crate::{
+    chat::ChatMessage,
     lobby_id::LobbyId,
     map_id::MapId,
     player::Controller,
@@ -18,7 +19,7 @@ use std::{
 
 mod legacy;
 
-const FORMAT_VERSION: u32 = 2;
+const FORMAT_VERSION: u32 = 3;
 
 pub struct Directory(PathBuf);
 
@@ -38,6 +39,8 @@ pub struct RecordedPlayer {
 
 #[derive(Serialize, Deserialize)]
 pub struct GameStarted {
+    #[serde(default)]
+    pub chat: Vec<ChatMessage>,
     pub game_id: LobbyId,
     pub name: String,
     pub map_type: MapId,
@@ -71,6 +74,7 @@ pub struct SubmissionResult {
 enum Event {
     Started(GameStarted),
     Submitted(SubmissionResult),
+    Chat(ChatMessage),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -97,6 +101,25 @@ fn now() -> io::Result<std::time::Duration> {
 }
 
 impl Directory {
+    /// Pregame messages need durable storage before there is a game archive.
+    /// The non-archive directory name keeps these journals out of replay lists.
+    pub fn start_chat(&self, id: &LobbyId) -> io::Result<GameLog> {
+        let id = directory_id(id)?;
+        let directory = self.0.join(format!("chat-{id}-{}", now()?.as_nanos()));
+        let mut builder = fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        builder.create(&directory)?;
+        sync_directory(&self.0)?;
+        Ok(GameLog {
+            directory,
+            next_record: 0,
+        })
+    }
+
     pub fn open(path: PathBuf) -> io::Result<Self> {
         fs::create_dir_all(&path)?;
         // Check actual write access before accepting players, even if it exists.
@@ -146,13 +169,7 @@ impl Directory {
 
     pub fn start(&self, started: GameStarted) -> io::Result<GameLog> {
         // A fresh directory prevents overwrites even when a seed/ID is reused.
-        let id = started.game_id.to_string();
-        if id.len() != 32 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "invalid game log ID",
-            ));
-        }
+        let id = directory_id(&started.game_id)?;
         let directory = self.0.join(format!("{id}-{}", now()?.as_nanos()));
         let mut builder = fs::DirBuilder::new();
         #[cfg(unix)]
@@ -176,6 +193,17 @@ impl Directory {
     }
 }
 
+fn directory_id(id: &LobbyId) -> io::Result<String> {
+    let id = id.to_string();
+    if id.len() != 32 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid game log ID",
+        ));
+    }
+    Ok(id)
+}
+
 fn private_file(path: &Path) -> io::Result<File> {
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
@@ -194,6 +222,10 @@ fn sync_directory(directory: &Path) -> io::Result<()> {
 }
 
 impl GameLog {
+    pub fn chat(&mut self, message: &ChatMessage) -> io::Result<()> {
+        self.record(Event::Chat(message.clone()))
+    }
+
     pub fn submitted(&mut self, result: SubmissionResult) -> io::Result<()> {
         self.record(Event::Submitted(result))
     }
@@ -289,7 +321,7 @@ fn records(directory: &Path) -> io::Result<Vec<Record>> {
         }
         let mut record: Record = serde_json::from_reader(BufReader::new(File::open(path)?))
             .map_err(|error| io::Error::other(format!("{expected}: {error}")))?;
-        if record.format_version != 1 && record.format_version != FORMAT_VERSION {
+        if !(1..=FORMAT_VERSION).contains(&record.format_version) {
             return Err(io::Error::other(format!(
                 "unsupported game log version {}",
                 record.format_version
@@ -310,6 +342,7 @@ pub struct Archive {
     pub started: GameStarted,
     pub recorded_at_unix_ms: u128,
     pub submissions: Vec<SubmissionResult>,
+    pub chat: Vec<ChatMessage>,
 }
 
 impl Archive {
@@ -321,11 +354,27 @@ impl Archive {
         let Event::Started(started) = first.event else {
             return Err(io::Error::other("game log must begin with Started"));
         };
+        let mut chat = started.chat.clone();
+        for (index, message) in chat.iter().enumerate() {
+            if message.sequence as usize != index + 1 || message.turn_number != 0 {
+                return Err(io::Error::other("invalid lobby chat sequence"));
+            }
+        }
         let mut submissions = Vec::new();
         let mut next_turn = 1;
         for record in records {
-            let Event::Submitted(submitted) = record.event else {
-                return Err(io::Error::other("unexpected Started record"));
+            let submitted = match record.event {
+                Event::Chat(message) => {
+                    if message.sequence as usize != chat.len() + 1
+                        || message.turn_number != next_turn
+                    {
+                        return Err(io::Error::other("invalid chat sequence"));
+                    }
+                    chat.push(message);
+                    continue;
+                }
+                Event::Submitted(submitted) => submitted,
+                Event::Started(_) => return Err(io::Error::other("unexpected Started record")),
             };
             if (submitted.submissions.is_empty() && submitted.resigned_player.is_none())
                 || submitted.turn_number != next_turn
@@ -348,6 +397,7 @@ impl Archive {
             started,
             recorded_at_unix_ms: first.recorded_at_unix_ms,
             submissions,
+            chat,
         })
     }
 
@@ -431,6 +481,8 @@ pub fn replay(directory: &Path) -> io::Result<String> {
                 count += 1;
             }
             Event::Started(_) => return Err(io::Error::other("unexpected Started record")),
+            // Conversation events are not simulation inputs.
+            Event::Chat(_) => {}
         }
     }
     if scenario.is_none() {
@@ -552,6 +604,7 @@ mod tests {
             .fixture()?
             .set_exhaustion_for_test(1);
         let mut log = directory.start(GameStarted {
+            chat: Vec::new(),
             game_id: LobbyId::from_token("01".repeat(16)),
             name: "Combat fixture".into(),
             map_type: MapId::default(),

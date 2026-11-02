@@ -12,6 +12,7 @@ module Effect exposing
     , none
     , pushUrl
     , request
+    , scrollToBottom
     , setLocalStorage
     , toCmd
     , toJs
@@ -46,6 +47,7 @@ type Eff msg
     | After Float msg
     | Focus { htmlId : String } (Result Browser.Dom.Error () -> msg)
     | Measure String (Result Browser.Dom.Error Browser.Dom.Element -> msg)
+    | ScrollToBottom { htmlId : String } (Result Browser.Dom.Error () -> msg)
     | PushUrl String
     | Load String
     | ToJsMsg ToJs.Msg
@@ -127,6 +129,13 @@ focus =
     Focus
 
 
+{-| Scroll a rendered element to its newest content, preserving horizontal position.
+-}
+scrollToBottom : { htmlId : String } -> (Result Browser.Dom.Error () -> msg) -> Eff msg
+scrollToBottom =
+    ScrollToBottom
+
+
 {-| Navigate within the current app using an absolute or relative URL.
 Typed route modules provide their own `pushUrl` helpers.
 -}
@@ -163,6 +172,9 @@ map toMsg effect =
         Measure htmlId received ->
             Measure htmlId (received >> toMsg)
 
+        ScrollToBottom element received ->
+            ScrollToBottom element (received >> toMsg)
+
         PushUrl url ->
             PushUrl url
 
@@ -195,6 +207,16 @@ toCmd key effect =
 
         Measure htmlId received ->
             Browser.Dom.getElement htmlId
+                |> Task.attempt received
+
+        ScrollToBottom element received ->
+            let
+                scroll : Browser.Dom.Viewport -> Task.Task Browser.Dom.Error ()
+                scroll viewport =
+                    Browser.Dom.setViewportOf element.htmlId viewport.viewport.x viewport.scene.height
+            in
+            Browser.Dom.getViewportOf element.htmlId
+                |> Task.andThen scroll
                 |> Task.attempt received
 
         PushUrl url ->

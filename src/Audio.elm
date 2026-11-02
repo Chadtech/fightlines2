@@ -9,8 +9,12 @@ module Audio exposing
     , MovingUnit
     , MuteState(..)
     , Volumes
+    , affirm
+    , cancel
     , channelVolume
+    , chatReceived
     , combatImpact
+    , confirm
     , defaultVolumes
     , encodeEvent
     , encodeMutePreference
@@ -25,9 +29,6 @@ module Audio exposing
     , syncMovement
     , tankFire
     , toggleMute
-    , uiAffirm
-    , uiCancel
-    , uiConfirm
     )
 
 import Error exposing (Error)
@@ -275,9 +276,10 @@ syncMovement units =
 
 
 type Audio
-    = UiAffirm
-    | UiCancel
-    | UiConfirm
+    = Affirm
+    | Cancel
+    | Confirm
+    | ChatReceived
     | TankFire
     | FieldGunFire
     | CombatImpact
@@ -288,19 +290,24 @@ none =
     None
 
 
-uiAffirm : Event
-uiAffirm =
-    e UiAffirm
+affirm : Event
+affirm =
+    e Affirm
 
 
-uiCancel : Event
-uiCancel =
-    e UiCancel
+cancel : Event
+cancel =
+    e Cancel
 
 
-uiConfirm : Event
-uiConfirm =
-    e UiConfirm
+confirm : Event
+confirm =
+    e Confirm
+
+
+chatReceived : Event
+chatReceived =
+    e ChatReceived
 
 
 tankFire : Event
@@ -326,14 +333,17 @@ e audio =
 audioToName : Audio -> String
 audioToName audio =
     case audio of
-        UiAffirm ->
-            "uiAffirm"
+        Affirm ->
+            "affirm"
 
-        UiCancel ->
-            "uiCancel"
+        Cancel ->
+            "cancel"
 
-        UiConfirm ->
-            "uiConfirm"
+        Confirm ->
+            "confirm"
+
+        ChatReceived ->
+            "chatReceived"
 
         TankFire ->
             "tankFire"

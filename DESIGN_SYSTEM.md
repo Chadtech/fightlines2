@@ -32,6 +32,11 @@ substantial old-switch audition A. Preserve their recorded texture and original
 pitch, with short edge fades. Runtime files and source credits are documented in
 `public/audio/README.md`.
 
+Incoming lobby/game chat uses the approved recorded radio cue: one beep followed
+by a short crackle (233.5ms). Play once per newly received batch from another
+sender, using the interface volume channel. Initial history and the player's
+own messages stay silent.
+
 ## Typography and copy
 
 - Call unit instructions **orders** throughout the UI, guide, and gameplay code.
@@ -122,11 +127,15 @@ slightly above the viewport midpoint with the menu beneath it. Its image
 supplies the accessible heading. The ordinary beveled card has no title bar
 and contains a full-width primary `play` button followed by a secondary `about`
 button, then a secondary `privacy policy` button. Keep it at most 24rem wide with viewport gutters. Play opens the existing
-lobby creation form at `/new`. About opens a standard reference dialog with
-titled intro and pacifism sections and an optional creator portrait.
-Preserve paragraph breaks, wrap long text, and scroll within the viewport. The close controls and Escape dismiss
-it and restore focus to the About button. Privacy policy uses the same reference
-dialog layout with titled sections, and is also available from the game menu.
+lobby creation form at `/new`. About opens a wide reading dialog (64rem, capped
+by the viewport gutters) with titled intro, inspiration, and pacifism sections
+and an optional creator portrait.
+Put the content in a bounded scrolling panel with the inset `indentStrong` bevel,
+`bgNightwood3` green background, and `p3` padding. Preserve paragraph breaks and
+wrap long text. Keep the title bar and bottom close button outside the scrolling
+panel and visible within the viewport. The close controls and Escape dismiss
+it and restore focus to the About button. Privacy policy uses the standard reference
+dialog with paragraph text, and is also available from the game menu.
 Closing it returns focus to its home button or the game menu button.
 On entry, fade the logo in while lowering it from 2rem above its resting position
 over 900ms with an ease-out curve. Reduced motion shows it immediately in place.
@@ -269,9 +278,11 @@ omits this decorative cycle and retains the original green background.
   Disable the menu
   during playback and other dialogs, and close it when new playback starts.
 - The game is a full-viewport workspace. Render the board directly on the page
-  background, without a containing card or border. Reserve the bottom
-  controls' natural height, then center the board at 92% of the remaining width
-  or 98% of the remaining height, whichever is smaller. Allow it to pan freely.
+  background, without a containing card or border. Center the board at 92% of
+  the viewport width or 98% of its height, whichever is smaller. Overlay the
+  controls without reserving a row beneath the map. Allow it to pan freely.
+  Use the controls' measured height as the playback camera's bottom inset so
+  automatic framing keeps action above the floating strip.
 - Use a full-height right panel for selection details and unit-specific actions,
   with a warm gray body and an outset bevel only
   on its left edge. Place selection at the top. The panel is 15.5rem wide, capped
@@ -291,7 +302,7 @@ omits this decorative cycle and retains the original green background.
   the unit portrait, spanning the available panel content width, before resource
   gauges. Show the action appropriate to the current planning state.
 - The bottom-left control panel is flush with the screen's bottom and left edges,
-  reserving its actual height below the battlefield. Use a short horizontal strip
+  floating over the battlefield. Use a short horizontal strip
   sized to its content, capped by the available width, with a bevel on its top
   and right edges, 0.5rem vertical padding and 0.75rem horizontal padding.
   Keep the large submit button on the left, list every player's name and status
@@ -457,11 +468,14 @@ omits this decorative cycle and retains the original green background.
   Keep the selected unit active while choosing a destination. Show the chosen
   destination/cost and revoke order after saving in the right panel.
   Arrow keys or WASD extend or retrace the
-  previewed route without panning; Enter saves that route. Reachable tiles support Tab and Enter/Space.
+  previewed route without panning; clicking a destination or focusing it and
+  pressing Space saves that route. Enter opens chat without changing the preview.
+  Reachable tiles support Tab and Space.
   Units with saved orders render their board artwork at
   60% brightness until the order is revoked or the turn resolves. Keep facing
   markers and selection outlines bright and readable.
-- Units and depots support keyboard focus and Enter/Space activation. Illustrated
+- Units and depots support keyboard focus and Space activation in live games;
+  Enter opens chat. Illustrated
   unit sprites face right for east and mirror left for west, following stored direction
   during movement and ambush previews. North/south movement and ambush retain the last horizontal sprite facing,
   including after refresh. Profiles start right for player 1 and left for player 2;
@@ -509,7 +523,7 @@ omits this decorative cycle and retains the original green background.
   departure also revokes plans depending on its freed square.
 - Compatible loading squares appear with ordinary move destinations. Clicking
   an occupied loading square saves the selected unit's move, including keyboard
-  Enter/Space, and preserves that unit's selection. Show load/unload destination
+  Space, and preserves that unit's selection. Show load/unload destination
   labels and explain the receiving unit's hold requirement in the right panel.
   Show a gold notice naming the pickup or boarding target during route preview
   and beneath the saved order.
@@ -822,12 +836,12 @@ motion. The automatic-close option uses the same animation timing with reduced m
 
 Infantry and tanks reuse movement tracing for attack move. Render a solid red
 preview and a dashed red saved path. Choosing the destination by drag release,
-click, or Enter opens the cardinal direction picker centered on that destination.
+click, or Space on a focused square opens the cardinal direction picker centered on that destination.
 Three dotted squares highlight the allowed cardinal directions around the destination.
 Omit the direction pointing back along the route's final segment; pointer and
 keyboard input cannot select it.
 Pointing or focusing a square turns it red and previews final facing in the endpoint
-arrow; clicking, Enter/Space on a square, or an arrow/WASD key saves the attack move.
+arrow; clicking, Space on a square, or an arrow/WASD key saves the attack move.
 The chosen red square remains beside the saved destination. The inspector explains
 the direction step and offers cancel order. The saved arrow shows final facing independently of the
 last route segment. Keep orders revocable and preserve
@@ -889,7 +903,7 @@ Depot tiles show a thin stock bar along their bottom edge, above units and route
 artwork. Known stock uses green while healthy, yellow with a two-second blink at
 25% or below, and a steady red outline with a vector `ø` when empty. Keep its
 click target present throughout blinking; reduced motion shows a steady bar.
-Clicking the bar or activating it with Enter/Space opens the depot inspector,
+Clicking the bar or activating it with Space opens the depot inspector,
 even on occupied tiles. A selected on-board unit standing on a depot also shows
 the complete depot inspection beneath its own row. Unknown stock has no map bar
 or numeric value; the inspector row says `stock outside sight`.
@@ -1050,7 +1064,7 @@ and reflects horizontal facing.
 
 Field guns enable the existing indirect-fire order. Choosing it highlights all
 in-range tiles, including fog, with the existing quiet gold tile outlines. Tile
-buttons say `fire indirectly at (x, y)` and support Tab and Enter/Space. Saving
+buttons say `fire indirectly at (x, y)` and support Tab and Space. Saving
 keeps the gun selected, shows target coordinates and revoke, and leaves the
 illustrated targeting sight on the board.
 Hovering or focusing a legal tile previews the same open-center ivory and crimson
@@ -1105,6 +1119,40 @@ Name the selected unit `entrenched infantry` and include this status in its
 accessible label. Changing facing preserves the sprite; successful movement
 restores the ordinary infantry sprite, and leaves no terrain graphic behind.
 
+
+## Chat
+
+Enter on the live battlefield or **chat** in the game menu opens a compact native
+dialog in the center of the screen with a transparent backdrop. Focus its inset green text
+field, preserve planned orders, and suspend gameplay shortcuts while it is open.
+Enter sends; Escape or the title-bar close cancels. Keep the field full width,
+with regular-size **message history** and gold **send** buttons sharing the row
+below it. Omit recipient labels and keyboard hints. Disable browser autocomplete
+suggestions on the message input. Show sender names and
+message text without timestamps in lobby chat, game history, and replay history.
+Disable repeat submissions
+while sending. Sending immediately closes the game dialog; failures retain the
+draft and appear in the same floating error card as other HTTP failures, with
+retry and dismiss actions. Errors stay outside the chat box, including when the
+dialog is open.
+
+Show up to three recent messages briefly over the upper-left battlefield. Use
+readable red/blue player names with ordinary ivory message text and a dark text
+shadow. Messages do not intercept map input. History expands above the input,
+with a bounded scroll area in a beveled green depression, showing the complete
+conversation in chronological order, newest at the bottom, grouped by turn and
+lobby. Opening history starts at
+the bottom. New messages stay in view while the reader is at the bottom; scrolling
+up preserves the reader's position.
+Closing game chat leaves no persistent conversation panel. The lobby instead
+has a dedicated chat card below the players, with a fixed-height, scrollable
+message list in an inset green depression and an always-visible input. Lobby
+messages stay inside that card; sending clears its
+field while retaining the panel. Recorded replays have a read-only
+**message history** dialog containing the entire recorded conversation.
+When a player enters a running game, show the latest in-game messages on the map
+after its turn introduction. Keep those messages available throughout the intro
+before starting their display timeout.
 
 ## Logged games and replay
 

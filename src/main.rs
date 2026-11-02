@@ -2,6 +2,7 @@
 
 mod ai;
 mod backdrop_calibration;
+mod chat;
 mod combat;
 mod environment;
 mod game;

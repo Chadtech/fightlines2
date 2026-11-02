@@ -20,6 +20,20 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode exposing (Decoder)
 
 
+type alias ChatRequiredArguments =
+    { id : String
+    , after : Int
+    }
+
+
+chat :
+    ChatRequiredArguments
+    -> SelectionSet decodesTo Api.Object.ChatMessage
+    -> SelectionSet (List decodesTo) RootQuery
+chat requiredArgs____ object____ =
+    Object.selectionForCompositeField "chat" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "after" requiredArgs____.after Encode.int ] object____ (Basics.identity >> Decode.list)
+
+
 type alias CombatChartRequiredArguments =
     { input : Api.InputObject.CombatChartInput }
 

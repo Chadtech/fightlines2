@@ -73,12 +73,12 @@ async function checkInterop() {
   assert.equal(JSON.stringify(boot(undefined, { readFails: true }).flags.localStorage), '{}');
   const app = boot('{"existing":{"enabled":true},"count":1}');
   await app.send({ tag: 'audio', event: null });
-  await app.send({ tag: 'audio', event: { play: 'uiAffirm' } });
+  await app.send({ tag: 'audio', event: { play: 'affirm' } });
   assert.equal(app.warnings.length, 0);
   assert.equal(app.messages.length, 0);
   for (const entryPoint of ['Fightlines', 'DevTools']) {
     const audioApp = boot(undefined, { entryPoint });
-    for (const event of [null, { play: 'uiAffirm' }, { muted: true }, { ambience: [] }, { movement: [] }, { infantryFire: [] }]) {
+    for (const event of [null, { play: 'affirm' }, { muted: true }, { ambience: [] }, { movement: [] }, { infantryFire: [] }]) {
       await audioApp.send({ tag: 'audio', event });
     }
     assert.equal(audioApp.warnings.length, 0);
