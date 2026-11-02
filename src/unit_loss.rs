@@ -1,7 +1,8 @@
 //! Authoritative loss events, emitted where combat and resource settlement kill units.
 use crate::{
     combat::{CombatKind, Shot},
-    scenario::{PlayerNumber, Unit},
+    player_number::PlayerNumber,
+    scenario::Unit,
 };
 use juniper::{GraphQLObject, GraphQLUnion};
 use serde::{Deserialize, Serialize};

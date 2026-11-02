@@ -2,8 +2,10 @@ module Game.CurrentTurn exposing
     ( Model
     , Msg(..)
     , Observation
+    , RequestError(..)
     , acknowledgeIntroduction
     , canReplay
+    , dismissError
     , init
     , introductionPending
     , mapPlanning
@@ -44,9 +46,16 @@ type alias Model =
     , resolution : Maybe Turn.Resolution
     , phase : Phase
     , refreshing : Bool
-    , error : Maybe String
+    , error : Maybe RequestError
     , introduction : Introduction
     }
+
+
+type RequestError
+    = SubmissionError String
+    | PollError String
+    | DismissedPollError
+    | ResignationError String
 
 
 type Introduction
@@ -215,7 +224,7 @@ submissionFailed originatingTurn error model =
             if originatingTurn == model.number then
                 model
                     |> setPhase (TurnLifecycle.finishSubmission originatingTurn model.phase)
-                    |> setError (Just error)
+                    |> setError (Just (SubmissionError error))
 
             else
                 model
@@ -227,26 +236,74 @@ submissionFailed originatingTurn error model =
 pollSucceeded : Observation -> Model -> Model
 pollSucceeded observation model =
     let
+        recovered : Model
+        recovered =
+            case model.error of
+                Just (PollError _) ->
+                    model |> setError Nothing
+
+                Just DismissedPollError ->
+                    model |> setError Nothing
+
+                Just (SubmissionError _) ->
+                    if observation.turn.submitted && (observation.turn.number >= model.number) then
+                        model |> setError Nothing
+
+                    else
+                        model
+
+                _ ->
+                    model
+
         preservePlayback : Bool
         preservePlayback =
             (TurnLifecycle.playback model.phase /= Nothing) && not (GameOutcome.isResignation observation.turn.outcome)
     in
     if preservePlayback then
-        model
+        recovered
             |> setRefreshing False
 
     else
         receive observation
-            (model
+            (recovered
                 |> setRefreshing False
             )
 
 
 pollFailed : String -> Model -> Model
 pollFailed error model =
-    model
-        |> setRefreshing False
-        |> setError (Just error)
+    case model.error of
+        Just (SubmissionError _) ->
+            model
+                |> setRefreshing False
+
+        Just (ResignationError _) ->
+            model
+                |> setRefreshing False
+
+        Just DismissedPollError ->
+            model
+                |> setRefreshing False
+
+        _ ->
+            model
+                |> setRefreshing False
+                |> setError (Just (PollError error))
+
+
+{-| Dismissing a connection error stays quiet until polling recovers.
+-}
+dismissError : Model -> Model
+dismissError model =
+    case model.error of
+        Just (PollError _) ->
+            model |> setError (Just DismissedPollError)
+
+        Just DismissedPollError ->
+            model
+
+        _ ->
+            model |> setError Nothing
 
 
 
@@ -265,7 +322,7 @@ setPhase phase model =
     { model | phase = phase }
 
 
-setError : Maybe String -> Model -> Model
+setError : Maybe RequestError -> Model -> Model
 setError error model =
     { model | error = error }
 

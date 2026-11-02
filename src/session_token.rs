@@ -1,3 +1,4 @@
+use crate::environment::Environment;
 use actix_web::{
     HttpRequest,
     cookie::{Cookie, SameSite},
@@ -19,10 +20,11 @@ impl SessionToken {
             .map(|cookie| Self(cookie.value().to_owned()))
     }
 
-    pub fn cookie(&self) -> Cookie<'static> {
+    pub fn cookie(&self, environment: Environment) -> Cookie<'static> {
         Cookie::build("fightlines_session", self.0.clone())
             .path("/")
             .http_only(true)
+            .secure(environment == Environment::Production)
             .same_site(SameSite::Lax)
             .max_age(actix_web::cookie::time::Duration::days(30))
             .finish()

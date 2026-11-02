@@ -1,21 +1,48 @@
 use crate::{
     backdrop_calibration,
     combat::chart,
-    game_archive,
-    lobby::{self, GameSnapshot, Snapshot, Store},
+    environment::Environment,
+    game::{self, GameSnapshot},
+    game_archive, lobby,
     lobby_id::LobbyId,
+    lobby_snapshot::Snapshot,
     map_definition::NamedMap,
     map_editor,
     map_id::{self, MapId},
-    scenario::{PlayerNumber, UnitKind},
+    player::Controller,
+    player_number::PlayerNumber,
+    scenario::UnitKind,
+    server_log::{self, RequestId},
     session_token::SessionToken,
+    store::Store,
 };
-use actix_web::{HttpRequest, HttpResponse, web};
-use juniper::{EmptySubscription, FieldResult, RootNode, graphql_object, http::GraphQLRequest};
+use actix_web::{HttpRequest, HttpResponse, error::BlockingError, web};
+use juniper::{
+    EmptySubscription, FieldResult, RootNode, graphql_object,
+    http::{GraphQLRequest, GraphQLResponse},
+};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicBool, Ordering},
 };
+use tracing::{Dispatch, Span};
+
+mod limits;
+
+/// Shared by every HTTP worker; schema export remains independent of admission.
+pub struct Endpoint {
+    environment: Environment,
+    schema: Schema,
+    requests: Arc<limits::Requests>,
+}
+
+pub fn endpoint(environment: Environment) -> Endpoint {
+    Endpoint {
+        environment,
+        schema: schema(),
+        requests: Arc::new(limits::Requests::default()),
+    }
+}
 
 //----------------------------------------------------------------
 // CONTEXT
@@ -61,11 +88,25 @@ impl Query {
     }
 
     fn combat_backdrops() -> FieldResult<backdrop_calibration::CombatBackdropCatalog> {
-        backdrop_calibration::available()
+        backdrop_calibration::available().map_err(|error| {
+            tracing::error!(
+                event = "combat_backdrops_load_failed",
+                error = error.message(),
+                "could not load combat backdrops"
+            );
+            server_log::internal_error(error.message())
+        })
     }
 
     fn backdrop_calibrations() -> FieldResult<Vec<backdrop_calibration::CalibratedBackdrop>> {
-        backdrop_calibration::list()
+        backdrop_calibration::list().map_err(|error| {
+            tracing::error!(
+                event = "backdrop_calibrations_load_failed",
+                error = error.message(),
+                "could not load backdrop calibrations"
+            );
+            server_log::internal_error(error.message())
+        })
     }
 
     fn logged_games(context: &Context) -> FieldResult<Vec<game_archive::LoggedGameEntry>> {
@@ -90,12 +131,18 @@ impl Query {
 
     /// Playable maps in the order offered by the server. Available without editor access.
     fn map_options() -> FieldResult<Vec<MapId>> {
-        map_id::options().map_err(|error| format!("could not load maps: {error}").into())
+        map_id::options().map_err(|error| {
+            tracing::error!(event = "map_options_load_failed", error = %error, "could not load maps");
+            server_log::internal_error(format!("could not load maps: {error}"))
+        })
     }
 
     /// Public authored layouts, shared by map previews and game creation.
     fn map_previews() -> FieldResult<Vec<NamedMap>> {
-        map_id::catalog().map_err(|error| format!("could not load maps: {error}").into())
+        map_id::catalog().map_err(|error| {
+            tracing::error!(event = "map_previews_load_failed", error = %error, "could not load map previews");
+            server_log::internal_error(format!("could not load maps: {error}"))
+        })
     }
 
     fn health() -> bool {
@@ -107,7 +154,7 @@ impl Query {
     }
 
     fn game(context: &Context, id: String) -> FieldResult<GameSnapshot> {
-        lobby::game(context, LobbyId::from_token(id))
+        game::get(context, LobbyId::from_token(id))
     }
 }
 
@@ -170,7 +217,7 @@ impl Mutation {
     fn set_lobby_controller(
         context: &Context,
         id: String,
-        controller: lobby::Controller,
+        controller: Controller,
     ) -> FieldResult<Snapshot> {
         lobby::set_controller(context, LobbyId::from_token(id), controller)
     }
@@ -189,15 +236,17 @@ impl Mutation {
         turn_number: i32,
         orders: Vec<crate::turns::MoveOrderInput>,
     ) -> FieldResult<GameSnapshot> {
-        lobby::submit_turn(context, LobbyId::from_token(id), turn_number, orders)
+        game::submit_turn(context, LobbyId::from_token(id), turn_number, orders)
     }
 
     fn resign_game(context: &Context, id: String) -> FieldResult<GameSnapshot> {
-        lobby::resign_game(context, LobbyId::from_token(id))
+        game::resign(context, LobbyId::from_token(id))
     }
 
     fn start_game(context: &Context, id: String) -> FieldResult<Snapshot> {
-        lobby::start(context, LobbyId::from_token(id))
+        context
+            .store
+            .start(LobbyId::from_token(id), context.identity().as_ref())
     }
 }
 
@@ -215,14 +264,85 @@ pub fn schema() -> Schema {
 // HTTP
 //----------------------------------------------------------------
 
+enum ExecutedRequest {
+    Completed {
+        body: String,
+        identity: Option<SessionToken>,
+    },
+    Rejected(limits::Rejection),
+}
+
+enum RequestFailure {
+    Worker(BlockingError),
+    Serialization(serde_json::Error),
+}
+
+impl RequestFailure {
+    fn log(&self) {
+        match self {
+            Self::Worker(error) => {
+                tracing::error!(event = "graphql_worker_failed", error = %error, "GraphQL worker failed");
+            }
+            Self::Serialization(error) => {
+                tracing::error!(event = "graphql_serialization_failed", error = %error, "could not serialize GraphQL response");
+            }
+        }
+    }
+}
+
+/// Execute and serialize on the blocking pool, translating both failure layers
+/// into the request boundary's error type. HTTP state stays on its Actix worker.
+async fn execute_request(
+    input: GraphQLRequest,
+    endpoint: web::Data<Endpoint>,
+    context: Context,
+    dispatch: Dispatch,
+    span: Span,
+    permit: limits::Permit,
+) -> Result<ExecutedRequest, RequestFailure> {
+    let executed = web::block(move || -> Result<ExecutedRequest, serde_json::Error> {
+        // The worker owns admission until it finishes, even if the client leaves.
+        let _permit = permit;
+        tracing::dispatcher::with_default(&dispatch, || {
+            span.in_scope(|| {
+                if let Err(rejection) = limits::document(&input.query, &endpoint.schema) {
+                    return Ok(ExecutedRequest::Rejected(rejection));
+                }
+                let result = input.execute_sync(&endpoint.schema, &context).into_result();
+                server_log::graphql_errors(&result);
+                Ok(ExecutedRequest::Completed {
+                    body: serde_json::to_string(&GraphQLResponse::from_result(result))?,
+                    identity: context
+                        .identity()
+                        .filter(|_| context.persist_identity.load(Ordering::Relaxed)),
+                })
+            })
+        })
+    })
+    .await
+    .map_err(RequestFailure::Worker)?;
+    executed.map_err(RequestFailure::Serialization)
+}
+
 pub async fn handle(
     request: HttpRequest,
     input: web::Json<GraphQLRequest>,
     store: web::Data<Store>,
     editor: Option<web::Data<map_editor::Editor>>,
-    schema: web::Data<Schema>,
+    endpoint: web::Data<Endpoint>,
     archives: Option<web::Data<game_archive::Browser>>,
 ) -> HttpResponse {
+    let environment = endpoint.environment;
+    let request_id = RequestId::from_request(&request);
+    let dispatch = server_log::dispatch(&request);
+    let span = tracing::dispatcher::with_default(
+        &dispatch,
+        || tracing::info_span!("graphql", request_id = %request_id),
+    );
+    let permit = match endpoint.requests.acquire() {
+        Ok(permit) => permit,
+        Err(rejection) => return span.in_scope(|| rejected_request(rejection, request_id)),
+    };
     // Mutations in one document share the newly created browser identity.
     let original = SessionToken::from_request(&request);
     let context = Context {
@@ -232,16 +352,58 @@ pub async fn handle(
         identity: Mutex::new(original),
         persist_identity: AtomicBool::new(false),
     };
-    let result = input.execute_sync(&schema, &context);
+    let executed = execute_request(
+        input.into_inner(),
+        endpoint,
+        context,
+        dispatch,
+        span.clone(),
+        permit,
+    )
+    .await;
+    let executed = match executed {
+        Ok(executed) => executed,
+        Err(error) => {
+            span.in_scope(|| error.log());
+            return HttpResponse::InternalServerError()
+                .insert_header(("Cache-Control", "no-store"))
+                .insert_header(("X-Request-Id", request_id.to_string()))
+                .finish();
+        }
+    };
+    let (body, identity) = match executed {
+        ExecutedRequest::Completed { body, identity } => (body, identity),
+        ExecutedRequest::Rejected(rejection) => {
+            return span.in_scope(|| rejected_request(rejection, request_id));
+        }
+    };
     let mut response = HttpResponse::Ok();
     response.insert_header(("Cache-Control", "no-store"));
-    if let Some(identity) = context
-        .identity()
-        .filter(|_| context.persist_identity.load(Ordering::Relaxed))
-    {
-        response.cookie(identity.cookie());
+    response.insert_header(("X-Request-Id", request_id.to_string()));
+    if let Some(identity) = identity {
+        response.cookie(identity.cookie(environment));
     }
-    response.json(result)
+    response.content_type("application/json").body(body)
+}
+
+fn rejected_request(rejection: limits::Rejection, request_id: RequestId) -> HttpResponse {
+    tracing::warn!(
+        event = "graphql_admission_rejected",
+        reason = rejection.message(),
+        "GraphQL request rejected"
+    );
+    let mut response = match rejection {
+        limits::Rejection::Busy => {
+            let mut response = HttpResponse::ServiceUnavailable();
+            response.insert_header(("Retry-After", "1"));
+            response
+        }
+        _ => HttpResponse::BadRequest(),
+    };
+    response
+        .insert_header(("Cache-Control", "no-store"))
+        .insert_header(("X-Request-Id", request_id.to_string()))
+        .json(serde_json::json!({ "errors": [{ "message": rejection.message() }] }))
 }
 
 //----------------------------------------------------------------
@@ -277,7 +439,7 @@ mod tests {
     use crate::{
         map::MapTheme,
         map_definition::MapDefinition,
-        scenario::PlayerNumber,
+        player_number::PlayerNumber,
         test_support::{FixtureValue, TestResult},
         visibility,
     };
@@ -287,11 +449,62 @@ mod tests {
     const FIELDS: &str = "id name mapType players { name isHost } isHost isMember gameUrl";
 
     #[actix_web::test]
+    async fn hosting_environment_controls_host_and_guest_cookie_security() -> TestResult<()> {
+        use actix_web::cookie::SameSite;
+
+        for environment in [Environment::Development, Environment::Production] {
+            let app = test::init_service(
+                App::new()
+                    .app_data(web::Data::new(Store::new(crate::seed::Seed::new([29; 32]))))
+                    .app_data(web::Data::new(endpoint(environment)))
+                    .route("/graphql", web::post().to(handle)),
+            )
+            .await;
+            // The proxy-to-application connection is HTTP in production. Cookie
+            // security follows trusted configuration, independent of proxy headers.
+            let request = test::TestRequest::post()
+                .uri("http://localhost/graphql")
+                .insert_header(("X-Forwarded-Proto", "https"))
+                .set_json(json!({"query": "mutation { createLobby(name: \"Host\", lobbyName: \"Cookie test\") { id } }"}))
+                .to_request();
+            let response = test::call_service(&app, request).await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let host_cookie = response.response().cookies().next().fixture()?.into_owned();
+            let body: Value = test::read_body_json(response).await;
+            assert!(body.get("errors").is_none(), "{body}");
+            let id = body["data"]["createLobby"]["id"].as_str().fixture()?;
+            let request = test::TestRequest::post()
+                .uri("http://localhost/graphql")
+                .set_json(json!({"query": format!("mutation {{ joinLobby(id: \"{id}\", name: \"Guest\") {{ id }} }}")}))
+                .to_request();
+            let response = test::call_service(&app, request).await;
+            assert_eq!(response.status(), StatusCode::OK);
+            let guest_cookie = response.response().cookies().next().fixture()?.into_owned();
+            let body: Value = test::read_body_json(response).await;
+            assert!(body.get("errors").is_none(), "{body}");
+            for cookie in [host_cookie, guest_cookie] {
+                assert_eq!(
+                    cookie.secure() == Some(true),
+                    environment == Environment::Production
+                );
+                assert_eq!(cookie.http_only(), Some(true));
+                assert_eq!(cookie.same_site(), Some(SameSite::Lax));
+                assert_eq!(cookie.path(), Some("/"));
+                assert_eq!(
+                    cookie.max_age(),
+                    Some(actix_web::cookie::time::Duration::days(30))
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[actix_web::test]
     async fn combat_chart_is_read_only_and_rejects_invalid_health() -> TestResult<()> {
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(Store::new(crate::seed::Seed::new([0; 32]))))
-                .app_data(web::Data::new(schema()))
+                .app_data(web::Data::new(endpoint(Environment::Development)))
                 .route("/graphql", web::post().to(handle)),
         )
         .await;
@@ -328,7 +541,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(Store::new(crate::seed::Seed::new([0; 32]))))
-                .app_data(web::Data::new(schema()))
+                .app_data(web::Data::new(endpoint(Environment::Development)))
                 .route("/graphql", web::post().to(handle)),
         )
         .await;
@@ -357,7 +570,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(Store::new(crate::seed::Seed::new([0; 32]))))
-                .app_data(web::Data::new(schema()))
+                .app_data(web::Data::new(endpoint(Environment::Development)))
                 .route("/graphql", web::post().to(handle)),
         )
         .await;
@@ -416,7 +629,7 @@ mod tests {
             let app = test::init_service(
                 App::new()
                     .app_data(web::Data::new(store))
-                    .app_data(web::Data::new(schema()))
+                    .app_data(web::Data::new(endpoint(Environment::Development)))
                     .route("/graphql", web::post().to(handle)),
             )
             .await;
@@ -587,7 +800,7 @@ mod tests {
                                 Store::new(Seed::new([47; 32]))
                                     .with_game_logs(game_log::Directory::open(directory.clone())?),
                             ))
-                            .app_data(web::Data::new(schema()))
+                            .app_data(web::Data::new(endpoint(Environment::Development)))
                             .route("/graphql", web::post().to(handle)),
                     )
                     .await;
@@ -631,7 +844,10 @@ mod tests {
                     let query = format!("{{ game(id: \"{id}\") {{ {fields} }} }}");
                     for identity in [
                         None,
-                        Some(SessionToken::from_token("outsider".into()).cookie()),
+                        Some(
+                            SessionToken::from_token("outsider".into())
+                                .cookie(Environment::Development),
+                        ),
                     ] {
                         let (denied, _) = execute!(&resign, identity);
                         assert!(denied["errors"].is_array(), "{denied}");
@@ -743,7 +959,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(Store::new(crate::seed::Seed::new([19; 32]))))
-                .app_data(web::Data::new(schema()))
+                .app_data(web::Data::new(endpoint(Environment::Development)))
                 .route("/graphql", web::post().to(handle)),
         )
         .await;
@@ -901,7 +1117,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(Store::new(crate::seed::Seed::new([23; 32]))))
-                .app_data(web::Data::new(schema()))
+                .app_data(web::Data::new(endpoint(Environment::Development)))
                 .route("/graphql", web::post().to(handle)),
         )
         .await;
@@ -1115,10 +1331,7 @@ mod tests {
                         .collect::<TestResult<Vec<_>>>()
                         .map(|orders| orders.join(","))
                 };
-                let opponent_side = match host_side {
-                    PlayerNumber::Player1 => PlayerNumber::Player2,
-                    PlayerNumber::Player2 => PlayerNumber::Player1,
-                };
+                let opponent_side = host_side.opponent();
                 let submit = |orders: &str| {
                     format!(
                         "mutation {{ submitTurn(id: \"{id}\", turnNumber: 1, orders: [{orders}]) {{ turnNumber submitted opponentSubmitted }} }}"
@@ -1173,7 +1386,7 @@ mod tests {
             let app = test::init_service(
                 App::new()
                     .app_data(web::Data::new(store))
-                    .app_data(web::Data::new(schema()))
+                    .app_data(web::Data::new(endpoint(Environment::Development)))
                     .route("/graphql", web::post().to(handle)),
             )
             .await;
@@ -1185,7 +1398,7 @@ mod tests {
                     .uri("/graphql")
                     .set_json(json!({ "query": query }));
                 if let Some(identity) = identity {
-                    request = request.cookie(identity.cookie());
+                    request = request.cookie(identity.cookie(Environment::Development));
                 }
                 let response = test::call_service(&app, request.to_request()).await;
                 assert!(response.response().cookies().next().is_none());
@@ -1224,7 +1437,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(Store::new(crate::seed::Seed::new([7; 32]))))
-                .app_data(web::Data::new(schema()))
+                .app_data(web::Data::new(endpoint(Environment::Development)))
                 .route("/graphql", web::post().to(handle)),
         )
         .await;
@@ -1307,7 +1520,7 @@ mod tests {
             solo["errors"][0]["message"]
                 .as_str()
                 .fixture()?
-                .contains("requires two players")
+                .contains("requires 2 players")
         );
         let (duplicate, _) = execute!(
             format!("mutation {{ joinLobby(id: \"{id}\", name: \"chad\") {{ {FIELDS} }} }}"),

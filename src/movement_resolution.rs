@@ -4,7 +4,8 @@ use crate::{
     combat::Combat,
     map::Coordinate,
     movement,
-    scenario::{PlayerNumber, Scenario, Unit, UnitId},
+    player_number::PlayerNumber,
+    scenario::{Scenario, Unit, UnitId},
     turns::{self, FacingOrder, MoveOrder, PlannedLoad, TurnFrame},
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -18,7 +19,6 @@ pub enum ResolutionError {
     MissingPath,
     EmptyPath,
     DuplicateOrder,
-    MissingFrame,
     InvalidAllowance,
 }
 
@@ -40,13 +40,14 @@ impl ResolutionError {
             Self::MissingPath => "the unit has no resolved movement path.",
             Self::EmptyPath => "movement requires a starting position.",
             Self::DuplicateOrder => "each unit must have exactly one order.",
-            Self::MissingFrame => "movement produced no board frame.",
             Self::InvalidAllowance => "movement allowances must be positive.",
         }
     }
 }
 
 pub struct MovementResolution {
+    /// Authoritative state after this phase, including movement and combat costs.
+    pub board: Scenario,
     pub combat: Combat,
     pub paths: BTreeMap<UnitId, Vec<Coordinate>>,
     pub stopped: BTreeSet<UnitId>,
@@ -109,7 +110,7 @@ fn arrival_time(
     })
 }
 
-/// Resolve encounters before applying resources. A passing ally must not finish
+/// Resolve movement costs and encounters. A passing ally must not finish
 /// on an occupied allied tile: shorten its outcome to the preceding free square,
 /// then recheck arrivals so that newly blocked departures propagate consistently.
 pub fn resolve(
@@ -144,12 +145,7 @@ fn resolve_prepared(
         let mut result = resolve_arrivals(scenario, &routes, turn, combat)?;
         result.stopped.extend(&stopped);
         let mut occupied: BTreeMap<Coordinate, Vec<_>> = BTreeMap::new();
-        for unit in &result
-            .frames
-            .last()
-            .ok_or(ResolutionError::MissingFrame)?
-            .units
-        {
+        for unit in &result.board.units {
             if unit.is_alive()
                 && let Some(position) = unit.board_position()
             {
@@ -284,23 +280,19 @@ fn resolve_arrivals(
             .ok_or(ResolutionError::MissingTerrain)?;
     }
     let initial_frame = frame(&board, 0);
-    let combat = match combat {
+    let mut combat = match combat {
         Some(combat) => combat.clone(),
         None => Combat::prepare(&mut board, orders),
     };
-    let mut result = MovementResolution {
-        combat,
-        paths,
-        stopped: BTreeSet::new(),
-        frames: vec![initial_frame],
-    };
+    let mut stopped = BTreeSet::new();
+    let mut frames = vec![initial_frame];
     if orders.iter().any(|order| {
         order.facing.is_digging_in()
             || order.facing.is_ambush()
             || order.facing.is_standing_ground()
             || order.facing.indirect_target().is_some()
     }) {
-        result.frames.push(frame(&board, 180));
+        frames.push(frame(&board, 180));
     }
     let priority = if turn % 2 == 1 {
         PlayerNumber::Player1
@@ -312,7 +304,7 @@ fn resolve_arrivals(
         let intents: BTreeMap<_, _> = scheduled
             .into_iter()
             .filter(|(id, _)| {
-                !result.stopped.contains(id)
+                !stopped.contains(id)
                     && board
                         .units
                         .iter()
@@ -358,7 +350,7 @@ fn resolve_arrivals(
                     let departure = intents.get(&resident.unit_id());
                     if resident.player_number() == unit.player_number() {
                         let halted_ally = blocked.contains(&resident.unit_id())
-                            || result.stopped.contains(&resident.unit_id())
+                            || stopped.contains(&resident.unit_id())
                             || (stop_after_arrival.contains(&resident.unit_id())
                                 && departure.is_none());
                         if halted_ally {
@@ -380,7 +372,7 @@ fn resolve_arrivals(
             // A caught enemy must stop even if it had a departure at this boundary.
             for id in &stop_after_arrival {
                 if !intents.contains_key(id) {
-                    result.stopped.insert(*id);
+                    stopped.insert(*id);
                 }
             }
             if blocked.len() == before {
@@ -437,17 +429,14 @@ fn resolve_arrivals(
                     .iter_mut()
                     .find(|unit| unit.unit_id() == id)
                     .ok_or(ResolutionError::MissingUnit)?;
-                let path = result
-                    .paths
-                    .get_mut(&id)
-                    .ok_or(ResolutionError::MissingPath)?;
+                let path = paths.get_mut(&id).ok_or(ResolutionError::MissingPath)?;
                 let origin = *path.last().ok_or(ResolutionError::EmptyPath)?;
                 unit.follow_terrain_path(&board.map, &[origin, destination], passenger_count);
                 path.push(destination);
             }
         }
-        result.stopped.extend(blocked);
-        result.stopped.extend(stop_after_arrival);
+        stopped.extend(blocked);
+        stopped.extend(stop_after_arrival);
         // Check the final facing after every simultaneous arrival has been applied.
         // Adjacent contact is physical, just like attempting to enter an enemy tile.
         for (id, facing) in completing_attack_moves {
@@ -476,7 +465,7 @@ fn resolve_arrivals(
                 .min_by_key(|unit| unit.unit_id());
             if let Some(target) = target {
                 contacts.push((id, target.unit_id()));
-                result.stopped.extend([id, target.unit_id()]);
+                stopped.extend([id, target.unit_id()]);
             }
         }
         // Retreat from settled allies before combat. A passing ally may still
@@ -494,13 +483,13 @@ fn resolve_arrivals(
                 .ok_or(ResolutionError::MissingUnit)?;
             let shared_with_settled_unit = board.units.iter().any(|other| {
                 let departing_ally = other.player_number() == unit.player_number()
-                    && !result.stopped.contains(&other.unit_id())
+                    && !stopped.contains(&other.unit_id())
                     && orders.iter().any(|order| {
                         order.unit_id == other.unit_id()
                             && order.path.last() != other.board_position().as_ref()
                     });
                 let halted_ally = other.player_number() == unit.player_number()
-                    && result.stopped.contains(&other.unit_id());
+                    && stopped.contains(&other.unit_id());
                 other.is_alive()
                     && other.unit_id() != id
                     && other.board_position() == unit.board_position()
@@ -510,10 +499,7 @@ fn resolve_arrivals(
             if !shared_with_settled_unit {
                 continue;
             }
-            let path = result
-                .paths
-                .get_mut(&id)
-                .ok_or(ResolutionError::MissingPath)?;
+            let path = paths.get_mut(&id).ok_or(ResolutionError::MissingPath)?;
             let free = path
                 .iter()
                 .enumerate()
@@ -544,19 +530,20 @@ fn resolve_arrivals(
             }
         }
         // Retain waiting time even after a route ends; timing is independent of its length.
-        result.frames.push(frame(
+        frames.push(frame(
             &board,
             (tick - previous_tick) * MOVEMENT_DURATION_MS / ticks,
         ));
-        result.combat.engage_contacts(
-            &mut board,
-            &mut result.stopped,
-            &mut result.frames,
-            &contacts,
-        );
+        combat.engage_contacts(&mut board, &mut stopped, &mut frames, &contacts);
         previous_tick = tick;
     }
-    Ok(result)
+    Ok(MovementResolution {
+        board,
+        combat,
+        paths,
+        stopped,
+        frames,
+    })
 }
 
 #[cfg(test)]
@@ -566,9 +553,10 @@ mod tests {
         combat::CombatKind,
         map::{Map, Terrain},
         map_definition::MapDefinition,
-        scenario::UnitKind,
+        scenario::{Direction, Entrenchment, ResourceKind, UnitKind},
+        supplies::CargoStock,
         test_support::{FixtureValue, TestResult},
-        turns::MoveOrder,
+        turns::{MoveOrder, MoveOrderInput},
     };
 
     fn setup(
@@ -615,6 +603,110 @@ mod tests {
     }
 
     #[test]
+    fn completed_board_preserves_loaded_truck_costs_and_passenger_location() -> TestResult<()> {
+        let mut scenario = MapDefinition::parse(
+            r#"{
+                "width": 6, "height": 1, "theme": "GreenForest",
+                "features": [{"position": {"x": 1, "y": 0}, "terrain": "RoadEastWest"}],
+                "depots": [],
+                "units": [
+                    {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "Player1", "kind": "Truck", "direction": null},
+                    {"id": 2, "position": {"x": 3, "y": 0}, "playerNumber": "Player1", "kind": "FieldGun", "direction": "East"},
+                    {"id": 3, "position": {"x": 5, "y": 0}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
+                ]
+            }"#,
+        )
+        .fixture()?
+        .scenario()
+        .fixture()?;
+        let truck_id = UnitId::parse("1").fixture()?;
+        scenario
+            .units
+            .iter_mut()
+            .find(|unit| unit.id() == "2")
+            .fixture()?
+            .board(truck_id);
+        scenario
+            .units
+            .iter_mut()
+            .find(|unit| unit.id() == "1")
+            .fixture()?
+            .supply_cargo
+            .push(CargoStock::new(ResourceKind::Fuel, 96));
+        let inputs: Vec<MoveOrderInput> = serde_json::from_value(serde_json::json!([
+            {"unit_id": "1", "path": [{"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 2, "y": 0}]},
+            {"unit_id": "2", "path": [{"x": 0, "y": 0}]}
+        ]))?;
+        let orders = turns::validate(&scenario, PlayerNumber::Player1, inputs).fixture()?;
+        let result = resolve(&scenario, &orders, 1)?;
+        let truck = result
+            .board
+            .units
+            .iter()
+            .find(|unit| unit.id() == "1")
+            .fixture()?;
+        assert_eq!(truck.board_position(), Some(Coordinate::new(2, 0)));
+        // Two occupied berths cost 3 fuel on the road and 6 on plain terrain.
+        assert_eq!(truck.fuel().fixture()?.current, 119);
+        assert_eq!(truck.supplies().current(), 96);
+        assert_eq!(
+            truck.supply_cargo,
+            vec![CargoStock::new(ResourceKind::Fuel, 96)]
+        );
+        let passenger = result
+            .board
+            .units
+            .iter()
+            .find(|unit| unit.id() == "2")
+            .fixture()?;
+        assert_eq!(passenger.carrier_id(), Some(truck_id));
+        assert_eq!(passenger.supplies().current(), 196);
+        assert_eq!(result.board.units, result.frames.last().fixture()?.units);
+        Ok(())
+    }
+
+    #[test]
+    fn completed_board_includes_stationary_preparation_before_settlement() -> TestResult<()> {
+        let scenario = MapDefinition::parse(
+            r#"{
+                "width": 6, "height": 2, "theme": "GreenForest", "features": [], "depots": [],
+                "units": [
+                    {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "Player1", "kind": "FieldGun", "direction": "East"},
+                    {"id": 2, "position": {"x": 0, "y": 1}, "playerNumber": "Player1", "kind": "Infantry", "direction": "East"},
+                    {"id": 3, "position": {"x": 5, "y": 0}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
+                ]
+            }"#,
+        )
+        .fixture()?
+        .scenario()
+        .fixture()?;
+        let inputs: Vec<MoveOrderInput> = serde_json::from_value(serde_json::json!([
+            {"unit_id": "1", "path": [{"x": 0, "y": 0}], "ambush": true, "direction": "West"},
+            {"unit_id": "2", "path": [{"x": 0, "y": 1}], "dig_in": true}
+        ]))?;
+        let orders = turns::validate(&scenario, PlayerNumber::Player1, inputs).fixture()?;
+        let result = resolve(&scenario, &orders, 1)?;
+        let gun = result
+            .board
+            .units
+            .iter()
+            .find(|unit| unit.id() == "1")
+            .fixture()?;
+        assert_eq!(gun.direction(), Some(Direction::West));
+        assert_eq!(gun.supplies().current(), 188);
+        let digger = result
+            .board
+            .units
+            .iter()
+            .find(|unit| unit.id() == "2")
+            .fixture()?;
+        assert_eq!(digger.supplies().current(), 176);
+        assert_eq!(digger.entrenchment(), Entrenchment::Exposed);
+        assert_eq!(result.board.units, result.frames.last().fixture()?.units);
+        Ok(())
+    }
+
+    #[test]
     fn jammed_attack_moves_cannot_fire_across_allied_units()
     -> Result<(), Box<dyn std::error::Error>> {
         for destination in [1, 2, 3] {
@@ -631,7 +723,7 @@ mod tests {
                 let result = resolve(&scenario, &orders, turn)?;
                 assert_eq!(path(&result, "11")?, vec![Coordinate::new(0, 0)]);
                 assert!(result.frames.iter().all(|frame| frame.shots.is_empty()));
-                let final_units = &result.frames.last().ok_or("missing final frame")?.units;
+                let final_units = &result.board.units;
                 for unit in final_units {
                     let initial = scenario
                         .units
@@ -811,7 +903,14 @@ mod tests {
         assert_eq!(path(&result, "1")?, vec![Coordinate::new(0, 0)]);
         assert_eq!(path(&result, "2")?, vec![Coordinate::new(1, 0)]);
         assert_eq!(path(&result, "14")?.last(), Some(&Coordinate::new(2, 0)));
-        let final_units = &result.frames.last().ok_or("missing frame")?.units;
+        let final_units = &result.board.units;
+        let infantry = final_units.iter().find(|unit| unit.id() == "1").fixture()?;
+        assert_eq!(infantry.supplies().current(), 192);
+        let tank = final_units
+            .iter()
+            .find(|unit| unit.id() == "14")
+            .fixture()?;
+        assert_eq!(tank.fuel().fixture()?.current, 114);
         let occupied: BTreeSet<_> = final_units
             .iter()
             .filter_map(|unit| unit.board_position())
@@ -869,7 +968,7 @@ mod tests {
         assert_eq!(shots[0].kind, CombatKind::AttackMove);
         assert_eq!(shots[0].destination, Coordinate::new(2, 0));
         assert_eq!(shots[0].target_health.after.current(), 2);
-        let units = &result.frames.last().ok_or("missing frame")?.units;
+        let units = &result.board.units;
         assert_eq!(
             units
                 .iter()
@@ -879,15 +978,9 @@ mod tests {
                 .current(),
             175
         );
-        assert_eq!(
-            units
-                .iter()
-                .find(|unit| unit.id() == "6")
-                .ok_or("missing target")?
-                .supplies()
-                .current(),
-            192
-        );
+        let target = units.iter().find(|unit| unit.id() == "6").fixture()?;
+        assert_eq!(target.supplies().current(), 192);
+        assert_eq!(target.hit_points().current(), 2);
         Ok(())
     }
 

@@ -170,6 +170,8 @@ omits this decorative cycle and retains the original green background.
 - Headers sit 2px from the card edges. `CardHeader`'s local `headerPadding` aligns their text
   with the body's `p3` inset while keeping vertical padding at `p1`.
 - Card bodies use `p3` padding and `g3` gaps. Headerless cards retain that layout.
+- Use `Card.danger` for an error card's muted `red0` body and `gray5` text.
+  Keep the standard gray title bar, ordinary bevel, and secondary action buttons.
 - Cards own their surface, body spacing, and optional header. Page containers
   own width and placement; use `S.wFull` and `S.maxW96` on a surrounding element
   for a 24rem card. `Card.panel` additionally fills a bounded layout slot, with
@@ -309,6 +311,15 @@ omits this decorative cycle and retains the original green background.
   limited; use natural
   height rather than reserving empty space. Longer feedback scrolls within the
   control strip, which is capped at half the viewport height.
+  Request failures appear in a persistent `Card.danger` above this strip, with
+  a header naming the failed action, the server or connection message, and
+  regular-size `try again` / `dismiss` buttons. Use a 24rem maximum width and 0.75rem gutters;
+  wrap long messages and scroll within 40% of viewport height. The card overlays
+  the battlefield without resizing it and stays clear of an open inspector.
+  Submission errors reassure that orders remain. Poll errors say they retry
+  automatically and clear on recovery; dismissing suppresses repeated notices
+  during the same outage. Keep the card quiet: no warning icon, bright red
+  border, animation, or automatic dismissal of action failures.
   Submit becomes gold with a gentle brightness pulse and sweeping highlight when every
   on-board unit has an explicit order. Keep it enabled while planning and disable
   it while orders are locked. Submitted turns retain gold text. Always show a

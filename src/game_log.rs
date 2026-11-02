@@ -1,11 +1,12 @@
 //! Private authoritative archives, independent of HTTP and viewer projections.
 use crate::{
-    lobby::Controller,
     lobby_id::LobbyId,
     map_id::MapId,
-    scenario::{PlayerNumber, Scenario},
+    player::Controller,
+    player_number::PlayerNumber,
+    scenario::Scenario,
     seed::Seed,
-    turns::{self, GameOutcome, MoveOrderInput, TurnResolution, Turns},
+    turns::{GameOutcome, MoveOrderInput, TurnResolution, Turns},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -136,7 +137,7 @@ impl Directory {
         drop(file);
         if let Err(error) = result {
             if let Err(cleanup) = fs::remove_file(&path) {
-                eprintln!("Server-start record cleanup failed: {cleanup}");
+                tracing::error!(event = "server_start_cleanup_failed", error = %cleanup, "could not clean up server-start record");
             }
             return Err(error);
         }
@@ -167,7 +168,7 @@ impl Directory {
         };
         if let Err(error) = log.record(Event::Started(started)) {
             if let Err(cleanup) = fs::remove_dir(&log.directory) {
-                eprintln!("Game log directory cleanup failed: {cleanup}");
+                tracing::error!(event = "game_archive_cleanup_failed", error = %cleanup, "could not clean up game archive directory");
             }
             return Err(error);
         }
@@ -219,7 +220,7 @@ impl GameLog {
             if let Err(error) = sync_directory(&self.directory) {
                 // Do not leave a published transition after reporting failure.
                 if let Err(cleanup) = fs::remove_file(&destination) {
-                    eprintln!("Game log rollback failed: {cleanup}");
+                    tracing::error!(event = "game_archive_rollback_failed", error = %cleanup, "could not roll back game archive publication");
                 }
                 return Err(error);
             }
@@ -229,7 +230,7 @@ impl GameLog {
         if let Err(error) = fs::remove_file(&temporary)
             && error.kind() != io::ErrorKind::NotFound
         {
-            eprintln!("Game log temporary-file cleanup failed: {error}");
+            tracing::error!(event = "game_archive_temporary_cleanup_failed", error = %error, "could not clean up temporary game archive file");
         }
         result?;
         self.next_record += 1;
@@ -262,9 +263,9 @@ impl SubmissionResult {
 }
 
 fn submitted_players(turns: &Turns) -> Vec<PlayerNumber> {
-    [PlayerNumber::Player1, PlayerNumber::Player2]
+    PlayerNumber::ALL
         .into_iter()
-        .filter(|player| turns.orders[turns::player_index(*player)].is_some())
+        .filter(|player| turns.orders[player.index()].is_some())
         .collect()
 }
 

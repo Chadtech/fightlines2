@@ -5,12 +5,14 @@ use crate::{
     map_definition::{DepotPlacement, MapDefinition, NamedMap, TerrainPlacement, UnitPlacement},
     map_id::{self, MapId},
     map_thumbnail,
-    scenario::{BuildingKind, Direction, PlayerNumber, UnitKind},
+    player_number::PlayerNumber,
+    scenario::{BuildingKind, Direction, UnitKind},
+    server_log,
 };
 use actix_web::{HttpRequest, web};
 use juniper::{FieldResult, GraphQLInputObject, GraphQLObject};
 use std::{
-    fs,
+    fs, io,
     path::PathBuf,
     sync::{Arc, Mutex},
 };
@@ -157,7 +159,10 @@ impl MapDefinitionInput {
 pub fn maps(context: &Context) -> FieldResult<MapCatalog> {
     let editor = context.editor.read()?;
     let mut maps = map_id::catalog_in(&editor.directory)
-        .map_err(|error| error.to_string())?
+        .map_err(|error| {
+            tracing::error!(event = "editable_maps_load_failed", error = %error, "could not load editable maps");
+            server_log::internal_error(error)
+        })?
         .into_iter();
     let first = maps.next().ok_or("no editable maps were returned")?;
     Ok(MapCatalog {
@@ -202,8 +207,17 @@ fn write_map(
     definition
         .scenario()
         .map_err(|error| format!("invalid map: {error}"))?;
-    let json = serde_json::to_string_pretty(&definition)? + "\n";
-    let _guard = editor.writes.lock().map_err(|error| error.to_string())?;
+    let json = serde_json::to_string_pretty(&definition).map_err(|error| {
+        tracing::error!(event = "map_serialization_failed", map_id = map_type.as_str(), error = %error, "could not serialize map");
+        server_log::internal_error(error)
+    })? + "\n";
+    let _guard = editor.writes.lock().map_err(|_| {
+        tracing::error!(
+            event = "map_save_lock_unavailable",
+            "map save lock is poisoned"
+        );
+        server_log::internal_error("map save lock is unavailable")
+    })?;
     let destination = editor.directory.join(format!("{name}.json"));
     match mode {
         WriteMode::Create if destination.exists() => {
@@ -213,11 +227,24 @@ fn write_map(
         WriteMode::Create | WriteMode::Update => {}
     }
     if let Some(thumbnail) = thumbnail {
-        map_thumbnail::save(&editor.frontend, &definition, &thumbnail)?;
+        map_thumbnail::save(&editor.frontend, &definition, &thumbnail).map_err(|error| {
+            if error.kind() == io::ErrorKind::InvalidInput {
+                error.to_string().into()
+            } else {
+                tracing::error!(event = "map_thumbnail_save_failed", map_id = map_type.as_str(), error = %error, "could not save map thumbnail");
+                server_log::internal_error(error)
+            }
+        })?;
     }
     let temporary = destination.with_extension("json.tmp");
-    fs::write(&temporary, json)?;
-    fs::rename(&temporary, &destination)?;
+    fs::write(&temporary, json).map_err(|error| {
+        tracing::error!(event = "map_write_failed", map_id = map_type.as_str(), error = %error, "could not write map");
+        server_log::internal_error(error)
+    })?;
+    fs::rename(&temporary, &destination).map_err(|error| {
+        tracing::error!(event = "map_replace_failed", map_id = map_type.as_str(), error = %error, "could not replace map");
+        server_log::internal_error(error)
+    })?;
     Ok(NamedMap {
         map_type,
         definition,
@@ -246,7 +273,7 @@ fn same_origin(request: &HttpRequest) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::TestResult;
+    use crate::{environment::Environment, seed::Seed, store::Store, test_support::TestResult};
     use actix_web::{App, http::StatusCode, test};
     use serde_json::{Value, json};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -254,8 +281,8 @@ mod tests {
     const SAVE: &str = "mutation Save($definition: MapDefinitionInput!, $kind: MapId!) { saveMap(mapType: $kind, definition: $definition) { mapType definition { description theme width depots { kind } } } }";
     const CREATE: &str = "mutation Create($definition: MapDefinitionInput!, $kind: MapId!) { createMap(mapType: $kind, definition: $definition) { mapType } }";
 
-    fn store() -> web::Data<crate::lobby::Store> {
-        web::Data::new(crate::lobby::Store::new(crate::seed::Seed::new([0; 32])))
+    fn store() -> web::Data<Store> {
+        web::Data::new(Store::new(Seed::new([0; 32])))
     }
     fn editor(directory: PathBuf) -> web::Data<Editor> {
         web::Data::new(Editor {
@@ -315,7 +342,9 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(store())
-                .app_data(web::Data::new(crate::graphql::schema()))
+                .app_data(web::Data::new(crate::graphql::endpoint(
+                    Environment::Development,
+                )))
                 .route("/graphql", web::post().to(crate::graphql::handle)),
         )
         .await;
@@ -364,7 +393,9 @@ mod tests {
                 .app_data(editor(
                     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("maps"),
                 ))
-                .app_data(web::Data::new(crate::graphql::schema()))
+                .app_data(web::Data::new(crate::graphql::endpoint(
+                    Environment::Development,
+                )))
                 .route("/graphql", web::post().to(crate::graphql::handle)),
         )
         .await;
@@ -432,7 +463,9 @@ mod tests {
             App::new()
                 .app_data(store())
                 .app_data(editor(directory.clone()))
-                .app_data(web::Data::new(crate::graphql::schema()))
+                .app_data(web::Data::new(crate::graphql::endpoint(
+                    Environment::Development,
+                )))
                 .route("/graphql", web::post().to(crate::graphql::handle)),
         )
         .await;
@@ -535,7 +568,9 @@ mod tests {
             App::new()
                 .app_data(store())
                 .app_data(editor(directory.clone()))
-                .app_data(web::Data::new(crate::graphql::schema()))
+                .app_data(web::Data::new(crate::graphql::endpoint(
+                    Environment::Development,
+                )))
                 .route("/graphql", web::post().to(crate::graphql::handle)),
         )
         .await;
@@ -641,7 +676,9 @@ mod tests {
                     frontend: frontend.clone(),
                     writes: Mutex::new(()),
                 }))
-                .app_data(web::Data::new(crate::graphql::schema()))
+                .app_data(web::Data::new(crate::graphql::endpoint(
+                    Environment::Development,
+                )))
                 .route("/graphql", web::post().to(crate::graphql::handle)),
         )
         .await;

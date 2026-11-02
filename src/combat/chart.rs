@@ -3,7 +3,8 @@ use super::{AttackAspect, Combat, CombatKind, DamageCalculation};
 use crate::{
     map::{Coordinate, MapTheme, Terrain},
     map_definition::{DepotPlacement, MapDefinition, TerrainPlacement, UnitPlacement},
-    scenario::{BuildingKind, Direction, PlayerNumber, UnitKind},
+    player_number::PlayerNumber,
+    scenario::{BuildingKind, Direction, UnitKind},
     supplies::SupplyOrder,
     turns::{FacingOrder, MoveOrder, TravelMode},
 };

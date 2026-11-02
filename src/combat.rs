@@ -3,9 +3,9 @@ pub mod chart;
 
 use crate::{
     map::{Coordinate, Terrain},
+    player_number::PlayerNumber,
     scenario::{
-        BuildingKind, DepotHp, Direction, Entrenchment, HitPoints, PlayerNumber, Scenario, Unit,
-        UnitId, UnitKind,
+        BuildingKind, DepotHp, Direction, Entrenchment, HitPoints, Scenario, Unit, UnitId, UnitKind,
     },
     turns::{FacingOrder, MoveOrder, TravelMode, TurnFrame, UnitOrderKind},
     unit_loss, visibility,
@@ -1092,7 +1092,8 @@ mod tests {
     use crate::{
         map::{Map, Terrain},
         movement_resolution,
-        scenario::{Depot, PlayerNumber},
+        player_number::PlayerNumber,
+        scenario::Depot,
         test_support::{FixtureValue, TestResult},
     };
 
@@ -1148,11 +1149,9 @@ mod tests {
         turn: i32,
     ) -> TestResult<movement_resolution::MovementResolution> {
         let mut result = movement_resolution::resolve(scenario, orders, turn)?;
-        let mut board = scenario.clone();
-        board.units = result.frames.last().fixture()?.units.clone();
         result
             .combat
-            .finish(&mut board, &mut result.stopped, &mut result.frames);
+            .finish(&mut result.board, &mut result.stopped, &mut result.frames);
         Ok(result)
     }
 

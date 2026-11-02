@@ -1,7 +1,8 @@
 //! Finite stock, explicit crate cargo, and automatic end-of-turn replenishment.
 use crate::{
     map::Coordinate,
-    scenario::{PlayerNumber, ResourceKind, Scenario, Unit, UnitId, UnitKind},
+    player_number::PlayerNumber,
+    scenario::{ResourceKind, Scenario, Unit, UnitId, UnitKind},
 };
 use juniper::GraphQLObject;
 use serde::{Deserialize, Serialize};

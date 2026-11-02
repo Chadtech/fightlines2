@@ -142,6 +142,8 @@ import Util.List as ListUtil
 import Util.Maybe as MaybeUtil
 import View.Aria as Aria
 import View.Button as Button
+import View.Card as Card
+import View.CardHeader as CardHeader
 import View.Checkbox as Checkbox
 import View.Dialog as Dialog exposing (Dialog)
 
@@ -216,6 +218,14 @@ type alias RotationSelection =
     }
 
 
+type alias RequestErrorDetails =
+    { title : String
+    , message : String
+    , guidance : String
+    , retryEnabled : Bool
+    }
+
+
 type Msg
     = BattlefieldSizeReceived (Result Browser.Dom.Error Browser.Dom.Element)
     | InspectorSizeReceived Browser.Dom.Element (Result Browser.Dom.Error Browser.Dom.Element)
@@ -265,6 +275,8 @@ type Msg
     | SubmissionEnterPressed
     | SkipUnplannedUnitsWarningChanged Bool
     | TurnControlsMsg TurnControls.Msg
+    | RequestRetryClicked
+    | RequestErrorDismissed
     | SubmitResponseReceived Int (ApiRequest.Response Snapshot)
     | CurrentTurnMsg CurrentTurn.Msg
     | ResignResponseReceived ResignationDestination (ApiRequest.Response Snapshot)
@@ -761,15 +773,12 @@ submitTurn : LobbyId -> Model -> ( Model, Eff Msg )
 submitTurn lobbyId model =
     case CurrentTurn.startSubmission model.currentTurn of
         Just currentTurn ->
-            (model
+            ( model
                 |> setCurrentTurn currentTurn
+            , E.request
+                (SubmitResponseReceived model.currentTurn.number)
+                (submitRequest lobbyId model)
             )
-                |> E.withOut
-                |> E.and
-                    (E.request
-                        (SubmitResponseReceived model.currentTurn.number)
-                        (submitRequest lobbyId model)
-                    )
 
         Nothing ->
             ( model, E.none )
@@ -1674,7 +1683,7 @@ remeasureWorkspace model =
     )
 
 
-{-| Selection changes the inspector inset; turn controls and errors can change
+{-| Selection changes the inspector inset; turn controls can change
 the height available to the battlefield. Playback start requests its own fresh
 measurement, so this check does not request a second one for that transition.
 -}
@@ -1689,7 +1698,6 @@ withLayoutMeasurement previous next =
         layoutChanged =
             ((currentSelection previous == Nothing) /= (currentSelection next == Nothing))
                 || (turnActivity previous /= turnActivity next)
-                || (previous.currentTurn.error /= next.currentTurn.error)
                 || (previous.currentTurn.outcome /= next.currentTurn.outcome)
     in
     if layoutChanged && not playbackStarted then
@@ -1821,6 +1829,26 @@ update lobbyId msg model =
                 _ ->
                     E.withOut model
 
+        RequestRetryClicked ->
+            case model.currentTurn.error of
+                Just (CurrentTurn.SubmissionError _) ->
+                    requestSubmission lobbyId model
+
+                Just (CurrentTurn.PollError _) ->
+                    refreshTurn lobbyId model
+
+                Just (CurrentTurn.ResignationError _) ->
+                    requestResignation RemainInGame model
+
+                _ ->
+                    E.withOut model
+
+        RequestErrorDismissed ->
+            ( model
+                |> setCurrentTurn (CurrentTurn.dismissError model.currentTurn)
+            , E.focus { htmlId = Battlefield.htmlId } FocusCompleted
+            )
+
         FocusCompleted result ->
             E.withOut (recordFocusResult result model)
 
@@ -1856,7 +1884,7 @@ update lobbyId msg model =
                         |> setCurrentTurn
                             (currentTurn
                                 |> CurrentTurn.setError
-                                    (Just (ApiRequest.errorMessage error))
+                                    (Just (CurrentTurn.ResignationError (ApiRequest.errorMessage error)))
                             )
                     )
                         |> E.withOut
@@ -2201,7 +2229,12 @@ update lobbyId msg model =
 
                 Err error ->
                     (model
-                        |> setCurrentTurn (CurrentTurn.submissionFailed turnNumber (ApiRequest.errorMessage error) model.currentTurn)
+                        |> setCurrentTurn
+                            (CurrentTurn.submissionFailed
+                                turnNumber
+                                (ApiRequest.errorMessage error)
+                                model.currentTurn
+                            )
                     )
                         |> E.withOut
 
@@ -2739,6 +2772,12 @@ playAudio msg model =
                 TurnControls.SubmitClicked ->
                     Audio.uiConfirm
 
+        RequestRetryClicked ->
+            Audio.uiConfirm
+
+        RequestErrorDismissed ->
+            Audio.uiCancel
+
         SubmitResponseReceived _ _ ->
             Audio.none
 
@@ -2979,7 +3018,8 @@ requestSubmission lobbyId model =
             || isChoosingUnload model
             || (unloadChoice model.currentTurn.phase /= Nothing)
     then
-        model |> E.withOut
+        model
+            |> E.withOut
 
     else if model.skipUnplannedUnitsWarning || List.isEmpty (unitsWithoutOrders model) then
         model
@@ -2991,6 +3031,18 @@ requestSubmission lobbyId model =
             |> E.withOut
 
 
+refreshTurn : LobbyId -> Model -> ( Model, Eff Msg )
+refreshTurn lobbyId model =
+    if model.currentTurn.outcome /= Nothing || model.currentTurn.refreshing then
+        E.withOut model
+
+    else
+        ( model
+            |> setCurrentTurn (CurrentTurn.setRefreshing True model.currentTurn)
+        , E.request PollStatusResponseReceived (pollRequest lobbyId)
+        )
+
+
 handleCurrentTurnMsg : LobbyId -> CurrentTurn.Msg -> Model -> ( Model, Eff Msg )
 handleCurrentTurnMsg lobbyId msg model =
     let
@@ -3000,18 +3052,7 @@ handleCurrentTurnMsg lobbyId msg model =
     in
     case msg of
         CurrentTurn.PollTimerElapsed ->
-            if currentTurn.outcome /= Nothing || currentTurn.refreshing then
-                model |> E.withOut
-
-            else
-                ( model
-                    |> setCurrentTurn
-                        (currentTurn
-                            |> CurrentTurn.setRefreshing
-                                True
-                        )
-                , E.request PollStatusResponseReceived (pollRequest lobbyId)
-                )
+            refreshTurn lobbyId model
 
         CurrentTurn.GotPlaybackPresentationMsg playbackMsg ->
             case playbackMsg of
@@ -3403,6 +3444,7 @@ view model =
                 |> H.map GameMenuMsg
                 |> Just
         , controls = turnPanel model
+        , notification = requestErrorCard model
         , inspection = selectionView model
         , hasSelection = currentSelection model /= Nothing
         , onCloseInspection = InspectorCloseClicked
@@ -4669,7 +4711,12 @@ turnPanel model =
     in
     TurnControls.panel
         [ Lazy.lazy2 turnSubmit (turnActivity model) submitLabel
-        , Lazy.lazy5 turnFeedback model.players ownStatus opponentStatus model.currentTurn.outcome model.currentTurn.error
+        , Lazy.lazy4
+            turnFeedback
+            model.players
+            ownStatus
+            opponentStatus
+            model.currentTurn.outcome
         , Lazy.lazy viewControls zoomPercent
         ]
 
@@ -4694,9 +4741,8 @@ turnFeedback :
     -> String
     -> String
     -> Maybe GameOutcome
-    -> Maybe String
     -> Html Msg
-turnFeedback players ownStatus opponentStatus outcome error =
+turnFeedback players ownStatus opponentStatus outcome =
     let
         playerRow : Player -> Html Msg
         playerRow player =
@@ -4734,15 +4780,6 @@ turnFeedback players ownStatus opponentStatus outcome error =
                 , status = status
                 }
 
-        errorDetails : List (Html Msg)
-        errorDetails =
-            case error of
-                Nothing ->
-                    []
-
-                Just message ->
-                    [ H.p [ Aria.role Aria.Alert ] [ H.text message ] ]
-
         content : List (Html Msg)
         content =
             [ H.div
@@ -4758,12 +4795,89 @@ turnFeedback players ownStatus opponentStatus outcome error =
                     (List.map playerRow players)
                 ]
             ]
-
-        feedbackContent : List (Html Msg)
-        feedbackContent =
-            content ++ errorDetails
     in
-    TurnControls.feedback feedbackContent
+    TurnControls.feedback content
+
+
+requestErrorCard : Model -> Maybe (Html Msg)
+requestErrorCard model =
+    let
+        details : Maybe RequestErrorDetails
+        details =
+            case model.currentTurn.error of
+                Just (CurrentTurn.SubmissionError message) ->
+                    Just
+                        { title = "couldn’t submit turn"
+                        , message = message
+                        , guidance = "your orders are still here."
+                        , retryEnabled = not (hasDialog model || planningLocked model)
+                        }
+
+                Just (CurrentTurn.PollError message) ->
+                    Just
+                        { title = "couldn’t update game"
+                        , message = message
+                        , guidance = "retrying automatically…"
+                        , retryEnabled = not model.currentTurn.refreshing && (model.currentTurn.outcome == Nothing)
+                        }
+
+                Just (CurrentTurn.ResignationError message) ->
+                    Just
+                        { title = "couldn’t resign"
+                        , message = message
+                        , guidance = "your resignation has not been confirmed."
+                        , retryEnabled = canOpenMenu model && not model.resigning && (model.currentTurn.outcome == Nothing)
+                        }
+
+                _ ->
+                    Nothing
+
+        card : RequestErrorDetails -> Html Msg
+        card failure =
+            let
+                retryButton : Button.Button Msg
+                retryButton =
+                    if failure.retryEnabled then
+                        Button.secondary "try again" RequestRetryClicked
+
+                    else
+                        Button.disabled "try again"
+            in
+            H.div
+                [ Aria.role Aria.Alert
+                , Aria.label failure.title
+                , A.css
+                    [ S.maxW96
+                    , S.wrapAnywhere
+                    ]
+                ]
+                [ [ H.p
+                        []
+                        [ H.text failure.message ]
+                  , H.p
+                        []
+                        [ H.text failure.guidance ]
+                  , H.div
+                        [ A.css
+                            [ S.row
+                            , S.g2
+                            , S.flexWrap
+                            ]
+                        ]
+                        [ retryButton
+                            |> Button.toHtml
+                        , Button.secondary "dismiss" RequestErrorDismissed
+                            |> Button.toHtml
+                        ]
+                  ]
+                    |> Card.toHtml
+                        (Card.simple
+                            |> Card.danger
+                            |> Card.withHeader (CardHeader.simple failure.title)
+                        )
+                ]
+    in
+    Maybe.map card details
 
 
 

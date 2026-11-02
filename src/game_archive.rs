@@ -1,11 +1,13 @@
 //! Read-only archive browsing, enabled explicitly with --game-logs.
 pub mod review;
 use crate::{
+    game::{ArchivedView, GameSnapshot},
     game_log::{Archive, RecordedPlayer},
     graphql::Context,
-    lobby::{ArchivedView, Controller, GameSnapshot},
     map_id::MapId,
-    scenario::PlayerNumber,
+    player::Controller,
+    player_number::PlayerNumber,
+    server_log,
     turns::GameOutcome,
     visibility::PlayerObservation,
 };
@@ -196,9 +198,22 @@ impl LoggedGameEntry {
 pub fn games(context: &Context) -> FieldResult<Vec<LoggedGameEntry>> {
     let browser = context.archives.browser()?;
     let mut games = Vec::new();
-    for entry in fs::read_dir(&browser.directory)? {
-        let entry = entry?;
-        if !entry.file_type()?.is_dir() {
+    for entry in fs::read_dir(&browser.directory).map_err(|error| {
+        tracing::error!(event = "game_archive_list_failed", error = %error, "could not list recorded games");
+        server_log::internal_error(error)
+    })? {
+        let entry = entry.map_err(|error| {
+            tracing::error!(event = "game_archive_entry_failed", error = %error, "could not read recorded game directory entry");
+            server_log::internal_error(error)
+        })?;
+        if !entry
+            .file_type()
+            .map_err(|error| {
+                tracing::error!(event = "game_archive_metadata_failed", error = %error, "could not inspect recorded game directory entry");
+                server_log::internal_error(error)
+            })?
+            .is_dir()
+        {
             continue;
         }
         let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
@@ -211,10 +226,13 @@ pub fn games(context: &Context) -> FieldResult<Vec<LoggedGameEntry>> {
             Ok(archive) => games.push(LoggedGameEntry::Game(LoggedGame::from_archive(
                 id, &archive,
             ))),
-            Err(error) => games.push(LoggedGameEntry::Unreadable(ArchiveReadError {
-                id: id.0,
-                message: error.to_string(),
-            })),
+            Err(error) => {
+                tracing::error!(event = "game_archive_unreadable", archive_id = %id.0, error = %error, "could not read recorded game");
+                games.push(LoggedGameEntry::Unreadable(ArchiveReadError {
+                    id: id.0,
+                    message: error.to_string(),
+                }));
+            }
         }
     }
     games.sort_by(|left, right| {
@@ -302,12 +320,13 @@ pub fn turn(
 mod tests {
     use super::*;
     use crate::{
+        environment::Environment,
         game_log::{Directory, GameStarted, Submission, SubmissionResult},
         graphql,
-        lobby::Store,
         lobby_id::LobbyId,
         map_definition::MapDefinition,
         seed::Seed,
+        store::Store,
         test_support::{FixtureValue, TestResult},
         turns::Turns,
     };
@@ -363,7 +382,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(Store::new(Seed::new([0; 32]))))
-                .app_data(web::Data::new(graphql::schema()))
+                .app_data(web::Data::new(graphql::endpoint(Environment::Development)))
                 .route("/graphql", web::post().to(graphql::handle)),
         )
         .await;
@@ -475,7 +494,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(Store::new(Seed::new([0; 32]))))
-                .app_data(web::Data::new(graphql::schema()))
+                .app_data(web::Data::new(graphql::endpoint(Environment::Development)))
                 .app_data(web::Data::new(Browser {
                     directory: root.clone(),
                 }))

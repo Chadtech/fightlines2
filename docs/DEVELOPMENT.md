@@ -104,6 +104,13 @@ callers to check that their selections still match the contract.
 
 ## Production and development bundles
 
+`make build` compiles the Rust server with `--release` to
+`target/release/fightlines-server`. Set `FIGHTLINES_ENV=production` when running
+that server behind HTTPS; this enables secure cookies and rejects development
+server flags. Ordinary local runs default to `development`. Runtime hosting policy
+is separate from the frontend build flag below. See
+[deployment](../DEPLOYMENT.md#digitalocean-droplet-with-https) for Caddy and systemd examples.
+
 `make build` defaults to `PRODUCTION=true` for hosting. `make dev`, `make editor`,
 and `make logs` use `PRODUCTION=false`; standalone `make frontend` and `make run`
 also default to non-production. Override a command explicitly with

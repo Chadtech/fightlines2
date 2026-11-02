@@ -120,3 +120,6 @@
 
 # Private authoritative game archives.
 /game-logs/
+
+# Private operational diagnostics.
+/server-logs/

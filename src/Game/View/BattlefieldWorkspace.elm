@@ -27,6 +27,7 @@ type alias Contents msg =
     , header : Maybe (Html msg)
     , battlefield : Html msg
     , controls : Html msg
+    , notification : Maybe (Html msg)
     , inspection : Html msg
     , hasSelection : Bool
     , onCloseInspection : msg
@@ -139,6 +140,30 @@ toHtml model =
                 , S.col
                 ]
             ]
+
+        notification : Html msg
+        notification =
+            case model.notification of
+                Just content ->
+                    H.div
+                        [ A.attribute "data-loss-dim" ""
+                        , A.css
+                            [ S.absolute
+                            , S.bottom0
+                            , S.left0
+                            , S.z2
+                            , S.p3
+                            , S.maxWFull
+                            , S.maxH40Viewport
+                            , S.overflowAuto
+                            , S.when model.hasSelection
+                                (Css.property "max-width" ("calc(100% - " ++ inspectorWidth ++ ")"))
+                            ]
+                        ]
+                        [ content ]
+
+                Nothing ->
+                    H.text ""
     in
     [ H.div
         (workspaceAttributes ++ combatAttributes)
@@ -152,7 +177,9 @@ toHtml model =
                 , S.row
                 ]
             ]
-            [ model.battlefield ]
+            [ model.battlefield
+            , notification
+            ]
         , H.div
             [ A.attribute "data-loss-dim" ""
             , A.css

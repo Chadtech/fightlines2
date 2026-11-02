@@ -4,7 +4,8 @@ use crate::{
     map::{Coordinate, Map, MapError, MapTheme, Terrain, TerrainValue},
     map_id::MapId,
     map_thumbnail,
-    scenario::{BuildingKind, Direction, PlayerNumber, Scenario, UnitKind},
+    player_number::PlayerNumber,
+    scenario::{BuildingKind, Direction, Scenario, UnitKind},
 };
 use juniper::{FieldResult, graphql_object};
 use serde::{Deserialize, Serialize};
@@ -186,7 +187,7 @@ impl MapDefinition {
                 (_, None) => return Err(invalid("combat units require a facing")),
             }
         }
-        for player_number in [PlayerNumber::Player1, PlayerNumber::Player2] {
+        for player_number in PlayerNumber::ALL {
             if !self
                 .units
                 .iter()

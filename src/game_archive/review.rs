@@ -3,7 +3,8 @@ use crate::{
     combat,
     game_log::Archive,
     map::Coordinate,
-    scenario::{Direction, PlayerNumber, Unit, UnitId},
+    player_number::PlayerNumber,
+    scenario::{Direction, Unit, UnitId},
     turns::{CoordinateInput, MoveOrderInput, TurnEventKind, TurnResolution, UnitOrderKind},
 };
 use juniper::{GraphQLObject, graphql_object};

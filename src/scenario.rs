@@ -3,19 +3,13 @@ use crate::{
     map::{Coordinate, Map, MapError, Terrain},
     map_definition::MapDefinition,
     movement,
+    player_number::PlayerNumber,
     supplies::{self, CargoStock, GroundSupplyCrate, ResourceStock, SupplyRules},
     unit_loss::{self, UnitLoss},
 };
 use juniper::{GraphQLEnum, GraphQLObject, GraphQLUnion, graphql_object};
 use serde::{Deserialize, Serialize};
 use std::fmt;
-
-/// Player ownership, independent of starting position on a map.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
-pub enum PlayerNumber {
-    Player1,
-    Player2,
-}
 
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, GraphQLEnum, Serialize, Deserialize,
@@ -607,14 +601,6 @@ impl Unit {
         self.supplies.current = (self.supplies.current - cost).max(0);
     }
 
-    pub fn apply_combat_outcome(&mut self, outcome: &Unit) {
-        self.entrenchment = outcome.entrenchment;
-        self.hit_points = outcome.hit_points;
-        self.supplies = outcome.supplies;
-        self.direction = outcome.direction;
-        self.sprite_facing = outcome.sprite_facing;
-    }
-
     pub fn rotate(&mut self, direction: Direction) {
         if self.direction.is_some() {
             self.direction = Some(direction);
@@ -814,7 +800,7 @@ impl Scenario {
     /// Return the last resource snapshot for death presentation and actual upkeep spending.
     pub fn finish_turn_resources(&mut self, turn_number: i32) -> ResourceSettlement {
         supplies::replenish(self, turn_number);
-        let upkeep = [PlayerNumber::Player1, PlayerNumber::Player2]
+        let upkeep = PlayerNumber::ALL
             .into_iter()
             .map(|player_number| SupplyConsumption {
                 player_number,

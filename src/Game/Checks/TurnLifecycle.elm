@@ -694,6 +694,18 @@ currentTurnChecks =
         recovered =
             CurrentTurn.submissionFailed 1 "request failed" submitting
 
+        unsubmittedObservation : CurrentTurn.Observation
+        unsubmittedObservation =
+            { observation | turn = setTurnSubmitted False turn }
+
+        failedPoll : CurrentTurn.Model
+        failedPoll =
+            CurrentTurn.pollFailed "poll failed" pendingPoll
+
+        dismissedPoll : CurrentTurn.Model
+        dismissedPoll =
+            CurrentTurn.dismissError failedPoll
+
         monotonic : CurrentTurn.Model
         monotonic =
             CurrentTurn.pollSucceeded
@@ -899,9 +911,47 @@ currentTurnChecks =
         , expect "late success from an older turn cannot alter playback"
             (CurrentTurn.submissionSucceeded 1 observation advanced == advanced)
         , expect "matching submission failure restores planning and exposes the error"
-            (not (TurnLifecycle.planningLocked recovered.phase) && recovered.error == Just "request failed" && recovered.refreshing)
+            (not (TurnLifecycle.planningLocked recovered.phase) && recovered.error == Just (CurrentTurn.SubmissionError "request failed") && recovered.refreshing)
         , expect "poll failure clears in-flight status so polling can retry"
-            (not (CurrentTurn.pollFailed "poll failed" pendingPoll).refreshing)
+            (not failedPoll.refreshing && failedPoll.error == Just (CurrentTurn.PollError "poll failed"))
+        , expect "same-turn polling recovery clears its connection error"
+            ((CurrentTurn.pollSucceeded unsubmittedObservation failedPoll).error == Nothing)
+        , expect "successful polling does not hide a failed submission that remains unsubmitted"
+            ((CurrentTurn.pollSucceeded unsubmittedObservation recovered).error == recovered.error)
+        , expect "a polling outage and recovery preserve an unconfirmed submission failure"
+            ((recovered
+                |> CurrentTurn.pollFailed "poll failed"
+                |> CurrentTurn.pollSucceeded unsubmittedObservation
+             ).error
+                == recovered.error
+            )
+        , expect "poll confirmation clears a submission error once the server reports acceptance"
+            ((CurrentTurn.pollSucceeded observation recovered).error == Nothing)
+        , expect "retrying submission clears the previous error"
+            (Maybe.map .error (CurrentTurn.startSubmission recovered) == Just Nothing)
+        , expect "dismissing a submission error preserves recovered orders and phase"
+            (CurrentTurn.dismissError recovered == CurrentTurn.setError Nothing recovered)
+        , expect "dismissing an outage suppresses repeated failures until recovery"
+            (dismissedPoll.error
+                == Just CurrentTurn.DismissedPollError
+                && (CurrentTurn.pollFailed "another connection failure" dismissedPoll).error
+                == dismissedPoll.error
+            )
+        , expect "a new outage is shown after a dismissed outage recovers"
+            ((dismissedPoll
+                |> CurrentTurn.pollSucceeded unsubmittedObservation
+                |> CurrentTurn.pollFailed "new outage"
+             ).error
+                == Just (CurrentTurn.PollError "new outage")
+            )
+        , expect "successful polling preserves an unsuccessful resignation"
+            ((initial
+                |> CurrentTurn.setError (Just (CurrentTurn.ResignationError "request failed"))
+                |> CurrentTurn.pollFailed "poll failed"
+                |> CurrentTurn.pollSucceeded unsubmittedObservation
+             ).error
+                == Just (CurrentTurn.ResignationError "request failed")
+            )
         , expect "initialization never replays prior resolution"
             (TurnLifecycle.playback (CurrentTurn.init observation).phase == Nothing)
         ]

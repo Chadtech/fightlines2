@@ -1,11 +1,13 @@
 module View.Card exposing
     ( Card
+    , danger
     , panel
     , simple
     , toHtml
     , withHeader
     )
 
+import Css
 import Html.Styled as H
     exposing
         ( Html
@@ -21,7 +23,13 @@ import View.CardHeader as CardHeader
 type alias Card =
     { variant : Variant
     , header : Maybe CardHeader
+    , tone : Tone
     }
+
+
+type Tone
+    = Neutral
+    | Danger
 
 
 type Variant
@@ -35,6 +43,7 @@ simple : Card
 simple =
     { variant = Simple
     , header = Nothing
+    , tone = Neutral
     }
 
 
@@ -45,7 +54,15 @@ panel : Card
 panel =
     { variant = Panel
     , header = Nothing
+    , tone = Neutral
     }
+
+
+{-| A muted red surface with the ordinary card bevel and title bar.
+-}
+danger : Card -> Card
+danger card =
+    { card | tone = Danger }
 
 
 withHeader : CardHeader -> Card -> Card
@@ -56,6 +73,18 @@ withHeader header card =
 toHtml : Card -> List (Html msg) -> Html msg
 toHtml card content =
     let
+        toneStyles : List Css.Style
+        toneStyles =
+            case card.tone of
+                Neutral ->
+                    [ S.bgGray1
+                    ]
+
+                Danger ->
+                    [ S.bgRed0
+                    , S.textGray5
+                    ]
+
         body : List (Html msg)
         body =
             case card.header of
@@ -90,7 +119,7 @@ toHtml card content =
     in
     H.article
         [ A.css
-            [ S.bgGray1
+            [ S.batch toneStyles
             , S.col
             , S.outdent
             , S.when (card.variant == Panel)

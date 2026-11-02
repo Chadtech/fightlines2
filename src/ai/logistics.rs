@@ -4,7 +4,8 @@ use super::{affordable_path, coordinate_input, distance, hold, transport};
 use crate::{
     map::Coordinate,
     movement,
-    scenario::{PlayerNumber, ResourceKind, Scenario, Unit, UnitId, UnitKind},
+    player_number::PlayerNumber,
+    scenario::{ResourceKind, Scenario, Unit, UnitId, UnitKind},
     supplies,
     turns::MoveOrderInput,
 };
@@ -661,10 +662,7 @@ mod tests {
         }"#).fixture()?;
         if player == PlayerNumber::Player2 {
             for unit in &mut definition.units {
-                unit.player_number = match unit.player_number {
-                    PlayerNumber::Player1 => PlayerNumber::Player2,
-                    PlayerNumber::Player2 => PlayerNumber::Player1,
-                };
+                unit.player_number = unit.player_number.opponent();
                 unit.position =
                     Coordinate::new(41 - unit.position.x() as u16, unit.position.y() as u16);
             }
@@ -683,11 +681,7 @@ mod tests {
     ) -> TestResult {
         let number = turns.number;
         let orders = ai::plan(scenario, player).fixture()?;
-        let enemy = if player == PlayerNumber::Player1 {
-            PlayerNumber::Player2
-        } else {
-            PlayerNumber::Player1
-        };
+        let enemy = player.opponent();
         let holds = scenario
             .units
             .iter()

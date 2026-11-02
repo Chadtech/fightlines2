@@ -1359,6 +1359,7 @@ view model =
         , battlefield = battlefieldView model
         , header = Nothing
         , controls = controls model
+        , notification = Nothing
         , inspection = selectionView model
         , hasSelection = model.inspection /= Nothing
         , onCloseInspection = InspectorCloseClicked

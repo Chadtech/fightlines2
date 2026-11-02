@@ -477,7 +477,7 @@ mod tests {
     use crate::{
         ai,
         map_definition::MapDefinition,
-        scenario::PlayerNumber,
+        player_number::PlayerNumber,
         supplies::CargoStock,
         test_support::{FixtureValue, TestResult},
         turns::Turns,
@@ -496,10 +496,7 @@ mod tests {
         definition.units.first_mut().fixture()?.kind = kind;
         if player == PlayerNumber::Player2 {
             for unit in &mut definition.units {
-                unit.player_number = match unit.player_number {
-                    PlayerNumber::Player1 => PlayerNumber::Player2,
-                    PlayerNumber::Player2 => PlayerNumber::Player1,
-                };
+                unit.player_number = unit.player_number.opponent();
                 unit.position =
                     Coordinate::new(39 - unit.position.x() as u16, unit.position.y() as u16);
             }
@@ -517,10 +514,7 @@ mod tests {
         player: PlayerNumber,
         orders: Vec<MoveOrderInput>,
     ) -> TestResult {
-        let enemy = match player {
-            PlayerNumber::Player1 => PlayerNumber::Player2,
-            PlayerNumber::Player2 => PlayerNumber::Player1,
-        };
+        let enemy = player.opponent();
         let holds = scenario
             .units
             .iter()

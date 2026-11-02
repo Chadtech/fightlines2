@@ -1,9 +1,10 @@
 use crate::{
     combat::CombatKind,
     map::{Coordinate, Map, Terrain},
-    scenario::{Depot, Direction, PlayerNumber, Scenario, Unit, UnitKind},
+    player_number::PlayerNumber,
+    scenario::{Depot, Direction, Scenario, Unit, UnitKind},
     supplies::GroundSupplyCrate,
-    turns::{TurnEventKind, TurnFrame, TurnResolution, UnitDeparture},
+    turns::{TurnFrame, TurnResolution, UnitDeparture},
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -252,7 +253,10 @@ pub fn observed_resolution(
     visible: &BTreeSet<Coordinate>,
     resolution: &TurnResolution,
 ) -> TurnResolution {
-    let before = initial_scenario(scenario, resolution);
+    let mut before = scenario.clone();
+    if let Some(first) = resolution.frames.first() {
+        before.units = first.units.clone();
+    }
     let initial_visible = visible_tiles(&before, player_number);
     let mut observed = resolution.clone();
     observed.frames = observed_frames(scenario, player_number, resolution);
@@ -319,268 +323,180 @@ pub fn observed_resolution(
     observed
 }
 
-fn initial_scenario(scenario: &Scenario, resolution: &TurnResolution) -> Scenario {
-    let mut board = scenario.clone();
-    if let Some(first) = resolution.frames.first() {
-        board.units = first.units.clone();
-        return board;
-    }
-    for unit in &mut board.units {
-        if let Some(event) = resolution
-            .events
-            .iter()
-            .find(|event| event.unit_id == unit.unit_id())
-        {
-            match event.initial_carrier {
-                Some(carrier) => unit.board(carrier),
-                None => {
-                    if let Some(origin) = event.path.first() {
-                        unit.move_to(*origin);
-                    }
-                }
-            }
-            if let Some(direction) = event.initial_direction {
-                unit.rotate(direction);
-            }
-            unit.restore_sprite_facing(event.initial_sprite_facing);
-        }
-    }
-    board
-}
-
 /// Project authoritative shared frames independently, withholding hidden units.
-/// Event-only fixtures retain the legacy reconstruction fallback.
 fn observed_frames(
     scenario: &Scenario,
     player_number: PlayerNumber,
     resolution: &TurnResolution,
 ) -> Vec<TurnFrame> {
-    if !resolution.frames.is_empty() {
-        let mut previous_visible = BTreeSet::new();
-        let mut previous_shots = false;
-        let mut casualties = BTreeSet::new();
-        let mut concealed_casualties = BTreeSet::new();
-        let mut frames: Vec<TurnFrame> = resolution
-            .frames
-            .iter()
-            .map(|frame| {
-                let mut board = scenario.clone();
-                board.units = frame.units.clone();
-                board.depots = frame.depots.clone();
-                board.supply_crates = frame.supply_crates.clone();
-                let mut visible = visible_tiles(&board, player_number);
-                // Keep the observed exchange visible when the volley kills an observer.
-                if !frame.shots.is_empty() || previous_shots {
-                    visible.extend(&previous_visible);
+    let mut previous_visible = BTreeSet::new();
+    let mut previous_shots = false;
+    let mut casualties = BTreeSet::new();
+    let mut concealed_casualties = BTreeSet::new();
+    let mut frames: Vec<TurnFrame> = resolution
+        .frames
+        .iter()
+        .map(|frame| {
+            let mut board = scenario.clone();
+            board.units = frame.units.clone();
+            board.depots = frame.depots.clone();
+            board.supply_crates = frame.supply_crates.clone();
+            let mut visible = visible_tiles(&board, player_number);
+            // Keep the observed exchange visible when the volley kills an observer.
+            if !frame.shots.is_empty() || previous_shots {
+                visible.extend(&previous_visible);
+            }
+            previous_visible = visible.clone();
+            previous_shots = !frame.shots.is_empty();
+            let known_endpoint = |position| {
+                observable(&board.map, &visible, position)
+                    || board.units.iter().any(|unit| {
+                        unit.board_position() == Some(position)
+                            && (unit.player_number() == player_number
+                                || unit_observable(&board.map, &visible, unit))
+                    })
+            };
+            let mut observed = observed_scenario(&board, player_number, &visible);
+            // Corpses persist until cleanup. Later sight or a firing reveal
+            // must not disclose a casualty that was hidden when it happened.
+            for loss in &frame.losses {
+                let unit = loss.unit();
+                if unit.player_number() != player_number
+                    && casualties.insert(unit.unit_id())
+                    && !observed
+                        .units
+                        .iter()
+                        .any(|seen| seen.unit_id() == unit.unit_id())
+                {
+                    concealed_casualties.insert(unit.unit_id());
                 }
-                previous_visible = visible.clone();
-                previous_shots = !frame.shots.is_empty();
-                let known_endpoint = |position| {
-                    observable(&board.map, &visible, position)
-                        || board.units.iter().any(|unit| {
-                            unit.board_position() == Some(position)
-                                && (unit.player_number() == player_number
-                                    || unit_observable(&board.map, &visible, unit))
-                        })
-                };
-                let mut observed = observed_scenario(&board, player_number, &visible);
-                // Corpses persist until cleanup. Later sight or a firing reveal
-                // must not disclose a casualty that was hidden when it happened.
-                for loss in &frame.losses {
-                    let unit = loss.unit();
-                    if unit.player_number() != player_number
-                        && casualties.insert(unit.unit_id())
-                        && !observed
+            }
+            observed
+                .units
+                .retain(|unit| !concealed_casualties.contains(&unit.unit_id()));
+            TurnFrame {
+                losses: frame
+                    .losses
+                    .iter()
+                    .filter_map(|loss| loss.projected(&observed.units, player_number))
+                    .collect(),
+                sabotages: frame
+                    .sabotages
+                    .iter()
+                    .filter(|position| visible.contains(position))
+                    .copied()
+                    .collect(),
+                departures: Vec::new(),
+                indirect_impacts: frame
+                    .indirect_impacts
+                    .iter()
+                    .filter(|impact| {
+                        impact.player_number == player_number || known_endpoint(impact.destination)
+                    })
+                    .map(|impact| {
+                        let mut projected = impact.clone();
+                        if !visible.contains(&impact.destination) {
+                            projected.depot = None;
+                        }
+                        // Known target health survives concealed-gun filtering.
+                        // Hidden occupants, their health, and hidden casualties do not.
+                        projected.target = impact
+                            .target
+                            .as_ref()
+                            .filter(|target| {
+                                observed
+                                    .units
+                                    .iter()
+                                    .any(|unit| unit.unit_id() == target.unit.unit_id())
+                            })
+                            .cloned();
+                        projected.attacker = impact
+                            .attacker
+                            .as_ref()
+                            .filter(|attacker| {
+                                observed
+                                    .units
+                                    .iter()
+                                    .any(|unit| unit.unit_id() == attacker.unit.unit_id())
+                            })
+                            .cloned();
+                        projected
+                    })
+                    .collect(),
+                depots: observed.depots,
+                supply_crates: observed.supply_crates,
+                shots: frame
+                    .shots
+                    .iter()
+                    .filter(|shot| {
+                        let unconfirmed_bombardment = shot.kind == CombatKind::IndirectFire
+                            && shot.target.player_number() != player_number
+                            && !known_endpoint(shot.destination);
+                        // A confirmed hit must not disclose a concealed gun's origin.
+                        // Its landing remains available through indirect_impacts.
+                        let concealed_bombardment = shot.kind == CombatKind::IndirectFire
+                            && shot.attacker.player_number() != player_number
+                            && !observed
+                                .units
+                                .iter()
+                                .any(|unit| unit.unit_id() == shot.attacker.unit_id());
+                        !unconfirmed_bombardment
+                            && !concealed_bombardment
+                            && (shot.attacker.player_number() == player_number
+                                || shot.target.player_number() == player_number
+                                || (known_endpoint(shot.origin)
+                                    && known_endpoint(shot.destination)))
+                    })
+                    .cloned()
+                    .collect(),
+                duration_ms: frame.duration_ms,
+                units: observed.units,
+                visible_tiles: visible.into_iter().collect(),
+            }
+        })
+        .collect();
+    let departures: Vec<Vec<UnitDeparture>> = resolution
+        .frames
+        .iter()
+        .skip(1)
+        .zip(frames.iter().zip(frames.iter().skip(1)))
+        .map(|(after, (before, next))| {
+            // An exit is disclosed only from a current sighting and one adjacent
+            // movement edge. Losing an observer, boarding, and death are not exits.
+            before
+                .units
+                .iter()
+                .filter_map(|unit| {
+                    if unit.player_number() == player_number
+                        || !unit.is_alive()
+                        || next
                             .units
                             .iter()
                             .any(|seen| seen.unit_id() == unit.unit_id())
                     {
-                        concealed_casualties.insert(unit.unit_id());
+                        return None;
                     }
-                }
-                observed
-                    .units
-                    .retain(|unit| !concealed_casualties.contains(&unit.unit_id()));
-                TurnFrame {
-                    losses: frame
-                        .losses
+                    let target = after
+                        .units
                         .iter()
-                        .filter_map(|loss| loss.projected(&observed.units, player_number))
-                        .collect(),
-                    sabotages: frame
-                        .sabotages
-                        .iter()
-                        .filter(|position| visible.contains(position))
-                        .copied()
-                        .collect(),
-                    departures: Vec::new(),
-                    indirect_impacts: frame
-                        .indirect_impacts
-                        .iter()
-                        .filter(|impact| {
-                            impact.player_number == player_number
-                                || known_endpoint(impact.destination)
-                        })
-                        .map(|impact| {
-                            let mut projected = impact.clone();
-                            if !visible.contains(&impact.destination) {
-                                projected.depot = None;
-                            }
-                            // Known target health survives concealed-gun filtering.
-                            // Hidden occupants, their health, and hidden casualties do not.
-                            projected.target = impact
-                                .target
-                                .as_ref()
-                                .filter(|target| {
-                                    observed
-                                        .units
-                                        .iter()
-                                        .any(|unit| unit.unit_id() == target.unit.unit_id())
-                                })
-                                .cloned();
-                            projected.attacker = impact
-                                .attacker
-                                .as_ref()
-                                .filter(|attacker| {
-                                    observed
-                                        .units
-                                        .iter()
-                                        .any(|unit| unit.unit_id() == attacker.unit.unit_id())
-                                })
-                                .cloned();
-                            projected
-                        })
-                        .collect(),
-                    depots: observed.depots,
-                    supply_crates: observed.supply_crates,
-                    shots: frame
-                        .shots
-                        .iter()
-                        .filter(|shot| {
-                            let unconfirmed_bombardment = shot.kind == CombatKind::IndirectFire
-                                && shot.target.player_number() != player_number
-                                && !known_endpoint(shot.destination);
-                            // A confirmed hit must not disclose a concealed gun's origin.
-                            // Its landing remains available through indirect_impacts.
-                            let concealed_bombardment = shot.kind == CombatKind::IndirectFire
-                                && shot.attacker.player_number() != player_number
-                                && !observed
-                                    .units
-                                    .iter()
-                                    .any(|unit| unit.unit_id() == shot.attacker.unit_id());
-                            !unconfirmed_bombardment
-                                && !concealed_bombardment
-                                && (shot.attacker.player_number() == player_number
-                                    || shot.target.player_number() == player_number
-                                    || (known_endpoint(shot.origin)
-                                        && known_endpoint(shot.destination)))
-                        })
-                        .cloned()
-                        .collect(),
-                    duration_ms: frame.duration_ms,
-                    units: observed.units,
-                    visible_tiles: visible.into_iter().collect(),
-                }
-            })
-            .collect();
-        let departures: Vec<Vec<UnitDeparture>> = resolution
-            .frames
-            .iter()
-            .skip(1)
-            .zip(frames.iter().zip(frames.iter().skip(1)))
-            .map(|(after, (before, next))| {
-                // An exit is disclosed only from a current sighting and one adjacent
-                // movement edge. Losing an observer, boarding, and death are not exits.
-                before
-                    .units
-                    .iter()
-                    .filter_map(|unit| {
-                        if unit.player_number() == player_number
-                            || !unit.is_alive()
-                            || next
-                                .units
-                                .iter()
-                                .any(|seen| seen.unit_id() == unit.unit_id())
-                        {
-                            return None;
-                        }
-                        let target = after.units.iter().find(|target| {
-                            target.unit_id() == unit.unit_id() && target.is_alive()
-                        })?;
-                        let origin = unit.board_position()?;
-                        let destination = target.board_position()?;
-                        if (origin.x() - destination.x()).abs()
-                            + (origin.y() - destination.y()).abs()
-                            != 1
-                        {
-                            return None;
-                        }
-                        Some(UnitDeparture {
-                            unit_id: unit.unit_id(),
-                            direction: Direction::between(origin, destination)?,
-                        })
+                        .find(|target| target.unit_id() == unit.unit_id() && target.is_alive())?;
+                    let origin = unit.board_position()?;
+                    let destination = target.board_position()?;
+                    if (origin.x() - destination.x()).abs() + (origin.y() - destination.y()).abs()
+                        != 1
+                    {
+                        return None;
+                    }
+                    Some(UnitDeparture {
+                        unit_id: unit.unit_id(),
+                        direction: Direction::between(origin, destination)?,
                     })
-                    .collect()
-            })
-            .collect();
-        for (frame, exits) in frames.iter_mut().zip(departures) {
-            frame.departures = exits;
-        }
-        return frames;
-    }
-    let mut board = initial_scenario(scenario, resolution);
-    let project = |board: &Scenario| {
-        let visible = visible_tiles(board, player_number);
-        let observed = observed_scenario(board, player_number, &visible);
-        TurnFrame {
-            losses: Vec::new(),
-            sabotages: Vec::new(),
-            departures: Vec::new(),
-            indirect_impacts: Vec::new(),
-            depots: observed.depots,
-            supply_crates: observed.supply_crates,
-            shots: Vec::new(),
-            duration_ms: 180,
-            units: observed.units,
-            visible_tiles: visible.into_iter().collect(),
-        }
-    };
-    let mut frames = vec![project(&board)];
-    for event in &resolution.events {
-        if event.kind == TurnEventKind::Hold {
-            continue;
-        }
-        let steps = event.path.len().saturating_sub(1).max(1);
-        for step in 1..=steps {
-            if let Some(unit) = board
-                .units
-                .iter_mut()
-                .find(|unit| unit.unit_id() == event.unit_id)
-            {
-                if let Some(destination) = event.path.get(step) {
-                    if let Some(direction) = Direction::between(event.path[step - 1], *destination)
-                    {
-                        unit.rotate(direction);
-                    }
-                    unit.move_to(*destination);
-                }
-                if step == steps {
-                    if let Some(direction) = event.rotation_direction {
-                        unit.rotate(direction);
-                    }
-                    if event.kind == TurnEventKind::Load
-                        && let Some(carrier) = event.carrier_id
-                    {
-                        unit.board(carrier);
-                    }
-                }
-            }
-            frames.push(project(&board));
-        }
-    }
-    // Use the authoritative final snapshot, including resources and transport.
-    if let Some(last) = frames.last_mut() {
-        *last = project(scenario);
+                })
+                .collect()
+        })
+        .collect();
+    for (frame, exits) in frames.iter_mut().zip(departures) {
+        frame.departures = exits;
     }
     frames
 }
@@ -605,6 +521,21 @@ mod tests {
             scenario.units[0].move_to(Coordinate::new(0, 0));
             scenario
         })
+    }
+
+    fn recorded_frame(board: &Scenario) -> TurnFrame {
+        TurnFrame {
+            losses: Vec::new(),
+            sabotages: Vec::new(),
+            departures: Vec::new(),
+            indirect_impacts: Vec::new(),
+            shots: Vec::new(),
+            depots: board.depots.clone(),
+            supply_crates: board.supply_crates.clone(),
+            units: board.units.clone(),
+            visible_tiles: Vec::new(),
+            duration_ms: 180,
+        }
     }
 
     #[test]
@@ -1486,10 +1417,19 @@ mod tests {
         enemy.move_to(Coordinate::new(5, 0));
         let enemy_id = enemy.unit_id();
         board.units.push(enemy);
+        let mut frames = Vec::new();
+        for x in [5, 4, 3, 4, 5] {
+            board
+                .units
+                .get_mut(1)
+                .fixture()?
+                .move_to(Coordinate::new(x, 0));
+            frames.push(recorded_frame(&board));
+        }
         let resolution = TurnResolution {
             reports: Vec::new(),
             turn_number: 1,
-            frames: Vec::new(),
+            frames,
             events: vec![TurnEvent {
                 rotation_direction: None,
                 initial_direction: None,
@@ -1528,87 +1468,6 @@ mod tests {
     }
 
     #[test]
-    fn timeline_completes_one_route_before_the_next_and_refreshes_sight_each_step() -> TestResult<()>
-    {
-        let mut board = scenario(UnitKind::Infantry, "...........")?;
-        let own_id = board.units[0].unit_id();
-        board.units[0].move_to(Coordinate::new(2, 0));
-        let mut enemy = Scenario::supply_point()
-            .fixture()?
-            .units
-            .into_iter()
-            .find(|unit| unit.player_number() == PlayerNumber::Player2)
-            .fixture()?;
-        enemy.move_to(Coordinate::new(5, 0));
-        let enemy_id = enemy.unit_id();
-        board.units.push(enemy);
-        let event = |unit_id, path: Vec<Coordinate>| TurnEvent {
-            rotation_direction: None,
-            initial_direction: None,
-            initial_sprite_facing: crate::scenario::SpriteFacing::Right,
-            initial_carrier: None,
-            carrier_id: None,
-            kind: TurnEventKind::Move,
-            unit_id,
-            path,
-        };
-        let resolution = TurnResolution {
-            reports: Vec::new(),
-            turn_number: 1,
-            frames: Vec::new(),
-            events: vec![
-                event(own_id, [0, 1, 2].map(|x| Coordinate::new(x, 0)).to_vec()),
-                event(enemy_id, [7, 6, 5].map(|x| Coordinate::new(x, 0)).to_vec()),
-            ],
-        };
-        let frames = observed_frames(&board, PlayerNumber::Player1, &resolution);
-        assert_eq!(frames.len(), 5);
-        assert!(!frames[0].visible_tiles.contains(&Coordinate::new(5, 0)));
-        assert!(frames[1].visible_tiles.contains(&Coordinate::new(4, 0)));
-        assert!(
-            !frames[1]
-                .units
-                .iter()
-                .any(|unit| unit.unit_id() == enemy_id)
-        );
-        assert_eq!(
-            frames[4]
-                .units
-                .iter()
-                .find(|unit| unit.unit_id() == enemy_id)
-                .and_then(Unit::board_position),
-            Some(Coordinate::new(5, 0))
-        );
-        let opposing = observed_frames(&board, PlayerNumber::Player2, &resolution);
-        assert_eq!(opposing.len(), frames.len());
-        assert_eq!(
-            opposing[1]
-                .units
-                .iter()
-                .find(|unit| unit.unit_id() == enemy_id)
-                .and_then(Unit::board_position),
-            Some(Coordinate::new(7, 0))
-        );
-        // Both viewers share the schedule, including concealed movement steps.
-        for frame in &frames[..=2] {
-            assert!(!frame.units.iter().any(|unit| unit.unit_id() == enemy_id));
-        }
-        for (index, frame) in opposing.iter().enumerate() {
-            let expected_x = [7, 7, 7, 6, 5][index];
-            assert_eq!(
-                frame
-                    .units
-                    .iter()
-                    .find(|unit| unit.unit_id() == enemy_id)
-                    .and_then(Unit::board_position),
-                Some(Coordinate::new(expected_x, 0))
-            );
-        }
-
-        Ok(())
-    }
-
-    #[test]
     fn summary_does_not_reveal_enemies_hidden_only_mid_turn() -> TestResult<()> {
         let mut board = scenario(UnitKind::Infantry, ".......")?;
         board.units[0].move_to(Coordinate::new(3, 0));
@@ -1622,6 +1481,15 @@ mod tests {
         enemy.move_to(Coordinate::new(0, 0));
         let enemy_id = enemy.unit_id();
         board.units.push(enemy);
+        let mut frames = Vec::new();
+        for x in [3, 4, 3] {
+            board
+                .units
+                .first_mut()
+                .fixture()?
+                .move_to(Coordinate::new(x, 0));
+            frames.push(recorded_frame(&board));
+        }
         let event = |unit_id, kind, path| TurnEvent {
             unit_id,
             kind,
@@ -1635,7 +1503,7 @@ mod tests {
         let resolution = TurnResolution {
             reports: Vec::new(),
             turn_number: 1,
-            frames: Vec::new(),
+            frames,
             events: vec![
                 event(
                     own_id,
@@ -1691,10 +1559,19 @@ mod tests {
         enemy.move_to(Coordinate::new(2, 0));
         let enemy_id = enemy.unit_id();
         board.units.push(enemy);
+        let mut frames = Vec::new();
+        for x in [4, 3, 2] {
+            board
+                .units
+                .get_mut(1)
+                .fixture()?
+                .move_to(Coordinate::new(x, 0));
+            frames.push(recorded_frame(&board));
+        }
         let resolution = TurnResolution {
             reports: Vec::new(),
             turn_number: 1,
-            frames: Vec::new(),
+            frames,
             events: vec![TurnEvent {
                 rotation_direction: None,
                 initial_direction: None,
@@ -1718,6 +1595,7 @@ mod tests {
         );
         let mut observable = resolution;
         observable.events[0].path.remove(0);
+        observable.frames.remove(0);
         assert_eq!(
             observed_resolution(&board, PlayerNumber::Player1, &visible, &observable)
                 .events

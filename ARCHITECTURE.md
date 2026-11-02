@@ -11,11 +11,55 @@ repository root, and frontend assets live in `public/`. The earlier prototype in
 
 ## State and identity
 
+`environment.rs` owns the runtime hosting policy. `FIGHTLINES_ENV=production`
+requires secure session cookies and rejects development-server flags at startup.
+The GraphQL endpoint retains this typed environment for cookie creation. It is
+independent of the frontend build flag and Rust release profile; public TLS is
+terminated by the same-machine reverse proxy, while Actix listens over HTTP.
+
+`server_log.rs` owns operational diagnostics separately from authoritative game
+archives. Normal startup installs a JSON `tracing` subscriber with stderr and a
+daily rotating background file writer; its guard lives until shutdown. HTTP
+middleware supplies server-generated request IDs, logs rejected/failed responses,
+and sets `X-Request-Id`. GraphQL carries the tracing dispatcher and request span
+into its blocking worker. Expected resolver rejections use `WARN` at the GraphQL
+boundary. Operational failures log `ERROR` at their source with diagnostic
+context; `INTERNAL_ERROR` extensions classify the client response and tell the
+boundary to skip duplicate logging. Raw documents, variables, aliases, session
+credentials, and game state stay out of diagnostics. See
+[deployment](DEPLOYMENT.md#server-diagnostics) for storage, retention, and privacy
+behavior.
+
+`lobby.rs` owns pregame state, membership, and configuration.
+`lobby_snapshot.rs` owns invite-link responses, their source metadata, and
+session-specific player views. Both lobbies and started games construct these
+responses without exposing their private state.
+`game.rs` owns running-game state, turn submission, resignation, recording, and
+player-visible game snapshots, including the shared archive projection. These
+types keep their state private and implement their own operations. Request
+functions acquire the stored entry's lock before calling those operations.
+`player.rs` holds shared roster values and controller/session behavior.
+`player_number.rs` owns `PlayerNumber` and its ordered `ALL` list of map sides.
+`store.rs` owns the registry, token generation, and the lobby-to-game transition.
+
 Starting a game consumes its lobby and moves the host and players into a game.
 The old lobby URL resolves the game for polling players but accepts no new
 players. Lobbies and games are held in memory and disappear on server restart.
-There is no account system, host transfer, player removal, or expiry cleanup
-yet.
+Finished games leave the registry 16 minutes after victory, draw, or resignation.
+A server-wide task sweeps once per minute on the blocking pool, skipping busy
+entries and preserving their private replay archives. Reads and repeated requests
+do not extend retention. There is no account system, host transfer, player
+removal, or expiry of unstarted lobbies or unfinished games yet.
+
+The store's registry maps each lobby ID to one shared, individually locked
+`GameRegistry`.
+`Store::start` asks the lobby to prepare a game and the game to record its initial
+state. It replaces the entry's `Lobby` with `Game` only after recording succeeds;
+the ID and lock stay stable. The registry lock covers lookup and insertion only,
+and is released before acquiring an entry lock. Membership checks, settings,
+starting, submissions, resignation, and snapshots use the owning entry's lock.
+Token generation has its own short-lived seed lock. No entry operation holds the
+registry lock during map reads, AI planning, resolution, or archive writes.
 
 `game_log.rs` writes private, versioned JSON archives outside the frontend directory.
 The store records an initial authoritative scenario and roster (without credentials),
@@ -25,7 +69,9 @@ state on copies and publish a synced record before committing to memory. Failed
 writes preserve the lobby, board, and pending orders; retries of already locked
 orders create no additional records. Each game gets a fresh directory even when its
 ID is reused after a restart. Atomic publication excludes incomplete temporary files
-and never overwrites a record. Writes are synchronous under the store lock.
+and never overwrites a record. Writes are synchronous under the owning entry's lock.
+HTTP GraphQL execution and response serialization run on Actix's blocking pool,
+so waiting for an entry or storage does not block a request worker's event loop.
 `--replay-game-log` re-runs captured inputs through `Turns::submit` and compares
 all recorded results using the current engine; it does not regenerate AI orders or
 restore browser sessions. These archives are for operator debugging and never go
@@ -52,7 +98,7 @@ and error message. An unreadable archive has no game metadata or outcome.
 Browser replay reads captured results without using today's engine
 to regenerate orders. A selected turn advances `PlayerObservation` from the start
 through each recorded resolution, preserving fog and freight memory. Live games
-and archives share terminal reveal projection in `lobby::observed_board`.
+and archives share terminal reveal projection in `game::observed_board`.
 
 `DevTools` owns initial loading/failure states for `LoggedGames` and `GameReplay`.
 Replay responses correlate with their archive ID and requested turn/player.
@@ -92,7 +138,7 @@ playback. Unrelated messages do not run a presentation pass after `update`.
 Live `GamePage.superUpdate` checks layout changes after every update, adds the
 message's UI audio cue, synchronizes newly active native dialogs, and records
 their loss diagnostics. The layout check requests measurement only when selection
-visibility, submission readiness, turn activity, errors, or outcomes change.
+visibility, submission readiness, turn activity, or outcomes change.
 `GamePage.playAudio` explicitly handles every message and nested message type;
 continuous input and background work select `Audio.none`.
 Playback start closes the menu and explicitly remeasures the workspace; the
@@ -336,8 +382,11 @@ When the human submits, the store prepares both submissions on copies using the
 normal `Turns::submit` validation and resolution path, then commits them together.
 An invalid human or AI submission leaves both the board and pending orders intact.
 Existing observation projection, playback, outcome, and reconnect behavior remain
-shared with human matches. AI processing is synchronous under the store lock;
-there is no background worker or external model service.
+shared with human matches. Human submissions are validated on prepared copies
+before AI planning; the AI still receives only the original pre-turn board.
+AI processing is synchronous under that game's entry lock on a blocking worker.
+Other games and lobbies can proceed independently; there is no autonomous AI
+worker or external model service.
 
 The member-only `game` query returns `GameSnapshot`, including the scenario and
 players with `playerNumber` and `isYou`. Lobby snapshots stay small and never include the
@@ -397,7 +446,13 @@ shows retry actions on failure.
 Gameplay and replays use the generated combat calibration catalog; the backdrop
 reviewer loads editable calibrations as page initialization data.
 `Fightlines.Route` parses player routes; `DevTools.Route` parses tool routes
-under `/dev`. Each app handles its own routes and page dispatch, converting effects to
+under `/dev`. The server handles `/graphql` and `/dev` explicitly, then serves
+existing frontend files. Unmatched page navigations that accept HTML receive
+the player entry document; Elm selects the page or displays its not-found view.
+File-like URLs and the `/assets`, `/audio`, and `/map-thumbnails` namespaces
+retain 404 responses for missing files, including requests that accept HTML.
+Requests without an explicit HTML media type do not use the page fallback.
+Each app handles its own routes and page dispatch, converting effects to
 commands at its application boundary. Links outside an app's routes load a new
 document so the server can select the correct bundle. Each app owns its browser
 state through `Fightlines.Shared` for the player app and `DevTools.Shared` for
@@ -744,8 +799,9 @@ validation, missing lobbies, and authorization failures. The Elm boundary
 displays these messages and keeps transport failures separate. Responses disable
 caching.
 
-Rust objects and resolver signatures in `src/graphql.rs` and `src/lobby.rs` are
-the source of the schema. `make generate-api` exports introspection to
+Rust resolver signatures in `src/graphql.rs` and the domain GraphQL types
+(including `src/lobby_snapshot.rs`, `src/game.rs`, and `src/player.rs`) are the source of
+the schema. `make generate-api` exports introspection to
 `schema.json` and runs the pinned `@dillonkearns/elm-graphql` generator to
 produce `src/Api/`. The schema and generated files are checked in; do not edit
 them manually. `make frontend`, `make build`, `make run`, and `make check` all regenerate them before compiling Elm. Rust schema export needs no
@@ -761,7 +817,17 @@ owning page data. Pages and `Fightlines` pass request values and response callba
 `Effect.request`; `Effect.toCmd` sends the stored GraphQL requests. Generated
 functions fix the operation's argument and result scopes; Elm compilation
 catches callers incompatible with a regenerated schema. The current server uses
-synchronous resolvers for its in-memory operations.
+synchronous resolvers, executed with JSON response serialization on Actix's
+blocking pool. Request-derived identity and tool access are resolved on the HTTP
+worker before dispatch; serial mutations in a document still share one context
+and return the resulting identity cookie with the response.
+
+`graphql::Endpoint` shares the schema and request admission counter across HTTP
+workers. `graphql::limits` bounds document nesting before parsing, counts expanded
+selections and top-level fields before execution, and limits concurrent blocking
+jobs. Rejected documents run no resolvers. The admission permit belongs to the
+blocking job so disconnects cannot free capacity while work continues. See
+[deployment](DEPLOYMENT.md) for limits and HTTP responses.
 
 `UnitOrder` owns the order vocabulary and per-unit availability.
 `Game.OrderPlanning` owns editable unit/tile selection and saved drafts;
@@ -1056,11 +1122,13 @@ record path. Randomness or persistence failure stops startup. This records the
 seed, not the complete input history needed for full server-session replay.
 
 `seed::token(seed)` returns a token and a successor seed without consulting the
-clock or operating system randomness. The store retains the successor under the
-same lock as lobby mutations. The same seed and request/cookie sequence
-reproduce the same credentials and IDs. Concurrent requests consume tokens in
-lock order. The generator uses explicitly seeded `StdRng`; Cargo's lockfile pins
-its version. Updating the RNG dependency may change generated sequences.
+clock or operating system randomness. The store retains the successor under a
+dedicated seed lock, released before taking the registry lock. Sequential requests
+with the same seed and request/cookie sequence reproduce the same credentials and
+IDs. Concurrent requests consume tokens in seed-lock order; this no longer
+serializes their complete lobby operations. The generator uses explicitly seeded
+`StdRng`; Cargo's lockfile pins its version. Updating the RNG dependency may change
+generated sequences.
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for seed configuration and hosting
 requirements.
@@ -1121,8 +1189,9 @@ locked submissions and deterministic resolution, independently of HTTP. Each
 submission includes the expected turn number and exactly one move/hold order per
 owned unit. The frontend warns before submitting incomplete drafts; confirmation
 adds hold orders for unassigned units at the submission boundary. Validation checks ownership, unique orders/destinations, origin,
-bounds, adjacency, terrain costs, budgets and starting occupancy. The store locks
-membership checks, submission and resolution together. Repeated submission for
+bounds, adjacency, terrain costs, budgets and starting occupancy. The game's entry
+lock protects membership checks, submission, resolution, recording and commit
+together. Repeated submission for
 an already locked player is idempotent; stale turn numbers are rejected.
 
 Both submitted players resolve together. `movement_resolution.rs` schedules arrivals
@@ -1142,9 +1211,13 @@ allows allied starting squares with planned departures and rejects shared final
 destinations; concealed enemies are resolved
 without exposing their positions through validation errors.
 
-The resolver returns actual traveled paths, stopped unit IDs, and full-board
-frames before authoritative resources are changed. `turns.rs` spends movement
-resources along those paths and charges upkeep once. `MovementStopped` events
+The resolver returns the completed movement-phase board with movement and combat
+costs applied, actual traveled paths, stopped unit IDs, and full-board playback
+frames. Collision retries inspect the returned board directly. `turns.rs` builds
+summary events from the starting board, adopts the resolved board, and continues
+with transport and resource settlement; it does not reapply movement or recover
+state from playback frames. Dismounted movement uses the same board handoff.
+Upkeep is charged once during settlement. `MovementStopped` events
 retain the actual path rather than resetting the unit to its origin. Summary
 events retain stable interleaving independently of submission order; the frame
 timeline determines presentation. Loading and truck-planned unloading follow
@@ -1166,13 +1239,21 @@ preserved and editing closed; request messages carry their originating turn numb
 responses cannot reopen an advanced turn. A poll confirming submission transitions
 to waiting even before the submission response arrives, and a later error cannot
 unlock it. `Game.CurrentTurn` owns the turn number, opponent submission status, resolution,
-errors, in-flight polling and the lifecycle phase. It reconciles snapshots, ignores
+typed request errors, in-flight polling and the lifecycle phase. It reconciles snapshots, ignores
 stale responses, and owns polling and playback subscriptions. Its snapshot
 functions return only the updated current-turn model; the page initializes the
 displayed board from the snapshot when the turn number advances.
 `GamePage.handleCurrentTurnMsg` handles polling requests and playback frames
 directly, applying board changes and performing GraphQL requests. Views and view
 messages remain in the page.
+`GamePage` renders request failures with the existing `Card`, `CardHeader`, and
+`Button` components in `BattlefieldWorkspace`'s optional notification slot above
+the controls. `Card.danger` changes the body surface while retaining the ordinary
+header and bevel. The notification overlays the battlefield without changing its
+measurements. Poll recovery clears connection errors independently of failed
+actions; dismissed connection errors stay quiet until polling recovers. Retrying
+submission uses the ordinary submission guards and retained drafts; retrying
+resignation reopens confirmation.
 Poll request state remains separate from the phase because a request can already be
 in flight when submission begins. Playback remembers whether its completed
 snapshot's turn is already submitted and finishes in planning or waiting accordingly.

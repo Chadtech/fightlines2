@@ -12,7 +12,8 @@ at `/game/00000000000000000000000000000000`. Use `make run` for ordinary play
 and omit `--dev-game` and `--map-editor` on hosted servers. The fixture is absent
 by default; the flag does not alter authorization for normal games.
 
-Run `make build` before hosting to build the server and generate
+Run `make build` before hosting to compile the optimized server with
+`cargo build --locked --release` at `target/release/fightlines-server` and generate
 the frontend's production flag. This builds only the player app, removing the
 DevTools bundle, copied HTML, and startup script from earlier development builds. The map
 editor, logged-game list, archive replay, and backdrop preview pages are
@@ -23,13 +24,43 @@ its entry point for `/dev` and all `/dev/…` paths; Elm handles individual tool
 routes. `/dev` lists links to the tools.
 Command-line assignments such as `make build PRODUCTION=false` override these
 defaults. The flag controls frontend availability; continue to omit `--map-editor` and `--game-logs` on public
-servers to disable their GraphQL operations. Serve behind an
-HTTPS reverse proxy for internet hosting.
+servers to disable their GraphQL operations.
+
+Set `FIGHTLINES_ENV=production` when running the hosted server. This runtime
+setting adds `Secure` to session cookies and rejects `--dev-game`, `--map-editor`,
+and `--game-logs` before binding a listener or creating game archives. Cookies
+retain `HttpOnly`, `SameSite=Lax`, their root path, and 30-day lifetime. Local
+development defaults to `FIGHTLINES_ENV=development` and allows HTTP cookies.
+An unset setting defaults to development; empty, misspelled, or other values stop
+startup. Schema export and offline replay ignore this hosting setting.
+
+The runtime environment, frontend `PRODUCTION` build flag, and Rust release
+profile are separate: set the runtime environment even when using `make build`.
+The application uses HTTP on its listening socket in both environments. Caddy
+handles public HTTPS as described below; the application does not infer cookie
+security from client-supplied forwarding headers.
 
 Frontend pages and assets use `Cache-Control: no-cache` so browsers revalidate
 them after a rebuild. Preserve this header in the reverse proxy. GraphQL
 responses use `no-store`.
 
+GraphQL accepts at most 16 concurrent requests across all HTTP workers. When
+full, the server rejects additional requests immediately with HTTP `503` and
+`Retry-After: 1`; clients can retry. A slot stays occupied until its blocking
+worker finishes, even if the client disconnects.
+
+Each document permits at most 8 top-level fields, 1,024 selections after fragment
+expansion, and 32 levels of nesting. Aliases count separately, and unused
+definitions and conditional selections also count. Excess documents receive
+HTTP `400` before any resolver runs, so rejected mutations change no game state.
+Nesting is checked before parsing and includes inline input objects and lists;
+input fields and list items do not consume the selection budget.
+The existing 2 MiB JSON body limit still applies, allowing map-editor thumbnails
+and large turn inputs. These fixed limits bound document work and concurrency;
+they do not impose a per-client request rate or a simulation time limit.
+
+- `FIGHTLINES_ENV`: `development` (default) or `production`; controls cookie
+  security and development-server flag availability, independently of the build.
 - `FIGHTLINES_ADDR`: listen address; defaults to `127.0.0.1:8080`.
 - `FIGHTLINES_FRONTEND_DIR`: frontend asset directory; defaults to this
   checkout's `public/`. Set it explicitly when moving the executable
@@ -53,6 +84,123 @@ responses use `no-store`.
 For other devices on your network, bind `FIGHTLINES_ADDR=0.0.0.0:8080` and share
 your machine's reachable address rather than `127.0.0.1`. Internet play requires
 deploying the server at a reachable URL.
+
+## DigitalOcean Droplet with HTTPS
+
+Use a Linux Droplet with a domain or subdomain pointing to its public IP. Run
+Caddy and FightLines on that same Droplet: browsers connect to Caddy over HTTPS,
+and Caddy forwards requests over local HTTP to `127.0.0.1:8080`. Keep port 8080
+private. Allow public TCP ports 80 and 443 in the Droplet and cloud firewalls,
+and retain SSH access for administration. If using an IPv6 DNS record, it must
+also point to the Droplet and permit those connections.
+
+Install Caddy using its [official Ubuntu/Debian package instructions](https://caddyserver.com/docs/install#debian-ubuntu-raspbian).
+The package supplies the `caddy` systemd service. Caddy obtains and renews public
+certificates and redirects HTTP to HTTPS when configured with your domain; see
+[automatic HTTPS](https://caddyserver.com/docs/automatic-https). Keep Caddy's data
+directory persistent across replacements so its certificates and account survive.
+
+Build from the repository on Linux with the prerequisites in
+[README.md](README.md#run-locally), or use a Linux build machine matching the
+Droplet's architecture. A macOS executable cannot run on the Droplet:
+
+```sh
+npm ci
+make build
+```
+
+The following first-install commands run from that Linux checkout, after the
+build. They install the release binary, the entire frontend directory (including
+audio and backdrop assets), maps, and the supplied service examples. The
+dedicated service user owns runtime storage; the deployed executable and assets
+remain owned by root.
+
+```sh
+sudo useradd --system --user-group --home-dir /var/lib/fightlines --shell /usr/sbin/nologin fightlines
+sudo install -d -m 755 /opt/fightlines
+sudo install -d -m 700 /etc/fightlines
+sudo install -m 755 target/release/fightlines-server /opt/fightlines/fightlines-server
+sudo cp -R public maps /opt/fightlines/
+sudo install -m 600 deploy/fightlines.env.example /etc/fightlines/fightlines.env
+sudo install -m 644 deploy/fightlines.service /etc/systemd/system/fightlines.service
+sudo install -m 644 deploy/Caddyfile.example /etc/caddy/Caddyfile
+```
+
+Edit `/etc/caddy/Caddyfile`, replacing `play.example.com` with your domain.
+The supplied configuration proxies all paths, preserving application cache
+headers. The environment example already sets production mode and absolute paths;
+edit `/etc/fightlines/fightlines.env` if your installation uses different paths.
+The service creates private `/var/lib/fightlines` and `/var/log/fightlines`
+directories and restarts the process after a failure. Use persistent storage and
+backups for those paths. Start the services and check the local backend:
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now fightlines
+curl --fail-with-body http://127.0.0.1:8080/graphql -H 'Content-Type: application/json' --data '{"query":"{ health }"}'
+sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo systemctl enable --now caddy
+sudo systemctl reload caddy
+```
+
+Visit your domain over HTTPS and create a lobby. In browser developer tools,
+verify that `fightlines_session` has both `Secure` and `HttpOnly`. Visiting the
+HTTP URL should redirect to HTTPS. Inspect failures with
+`sudo journalctl -u fightlines -u caddy`. Direct local HTTP health checks work in
+production; browser play requires HTTPS for the session cookie.
+
+This example runs one game-server process. Restarts still lose live games and
+lobbies; the archive files do not restore player sessions. Before replacing the
+binary on a later deployment, stop the service, install the new binary and
+production assets, and start it again. Keep runtime storage in place.
+
+## Server diagnostics
+
+Normal server startup enables structured diagnostics using `tracing`. Events are
+written as JSON lines to stderr and `server-logs/fightlines.YYYY-MM-DD.jsonl`.
+`FIGHTLINES_SERVER_LOG_DIR` changes the directory. For hosting, set an absolute
+path on a persistent volume, outside every public static directory, for example
+`FIGHTLINES_SERVER_LOG_DIR=/var/log/fightlines`. The server rejects paths inside
+`FIGHTLINES_FRONTEND_DIR` and fails startup if the log directory cannot be opened.
+New diagnostic directories use Unix mode `0700`; restrict access to any existing
+directory yourself. These logs are independent of the private game archives.
+
+Files rotate daily in UTC, append across restarts on the same day, and retain the
+latest 30 matching files. Use a dedicated directory: older files matching the
+`fightlines.*.jsonl` naming pattern are removed by retention. A background writer
+handles file writes and flushes on normal shutdown; a full queue applies
+backpressure instead of dropping events. Configure the hosting platform to retain
+stderr as well, especially for failures that prevent the file logger from opening.
+Persistent volumes are necessary for file logs to survive container replacement.
+
+`error()` in lobby code returns a GraphQL error to the client. Expected validation
+and authorization rejections use `WARN` at the GraphQL boundary, including those
+delivered with HTTP 200. Operational failures log `ERROR` at their source with
+diagnostic context and return a client-facing error marked `INTERNAL_ERROR`.
+The boundary skips these errors so it does not log the same failure again.
+Archive write/cleanup failures, HTTP 5xx responses, worker failures, and startup
+failures use `ERROR`. Panics
+record their code location and a backtrace without their potentially sensitive
+payload. Ordinary successful requests do not produce access-log entries.
+
+Application HTTP responses carry a server-generated `X-Request-Id`; diagnostics
+for that request retain the same ID through the blocking worker. IDs combine process
+ID and a per-process sequence; use the timestamp too when comparing restarts.
+The logger retains client-facing resolver error messages and relevant operator
+failure details, but omits raw GraphQL documents, variables, aliases, operation
+names, cookies, headers, IP addresses, URL query strings, player names, board
+snapshots, and seed values. Invalid GraphQL documents log only their error kind.
+Only application diagnostic events are enabled, so third-party request debug
+logging cannot bypass that boundary. Future resolver messages must remain safe
+for both clients and these logs.
+
+For example, inspect stored errors with:
+
+```sh
+jq 'select(.level == "ERROR")' /var/log/fightlines/fightlines.*.jsonl
+```
+
+Schema export and offline archive replay do not initialize the server logger.
 
 
 ## Game archives
@@ -93,8 +241,9 @@ Each game has a directory named `<game-id>-<start-time-in-unix-nanoseconds>`:
 Files are synced and published atomically before the corresponding state change.
 On Unix the containing directories are synced too. If storage fails, the request
 returns an error and leaves game state unchanged; the server prints the storage
-error. Restore storage and retry. Recording is synchronous, so use reliable local
-storage. A filesystem supporting hard links is required.
+error. Restore storage and retry. Recording is synchronous within each game's
+operation on Actix's blocking pool; unrelated games have separate locks. Use
+reliable local storage. A filesystem supporting hard links is required.
 
 To browse saved games, run `make logs`, or add `--game-logs` to the
 server command, then open `/dev/logged-games` at the server's deployment address
@@ -130,8 +279,14 @@ game rules can cause an older archive to differ. The JSON files remain available
 for inspection. For build attribution, set `FIGHTLINES_BUILD_REVISION` to the Git
 commit when compiling the server; it is embedded in new archives.
 
+Finished games remain accessible for 16 minutes after victory, draw, or resignation.
+An automatic sweep removes them from memory once per minute; busy games are retried
+on a later sweep. Polling and repeated requests do not extend this window. After
+removal, their live game and lobby URLs report that the game no longer exists.
+Replay archives remain on disk. Unstarted lobbies and unfinished games do not expire yet.
+
 Archives survive server restarts, but active games and lobbies still do not resume
-after restart. There is no automatic retention or deletion yet: monitor disk
+after restart. There is no automatic archive retention or deletion yet: monitor disk
 space, back up archives, and remove old game directories according to your storage
 budget. Preserve the executable or source revision alongside archives when you
 need to reproduce historical behavior exactly.

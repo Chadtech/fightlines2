@@ -2,9 +2,10 @@ use crate::{
     combat::{self, IndirectImpact, Shot},
     map::{Coordinate, Terrain},
     movement, movement_resolution,
+    player_number::PlayerNumber,
     scenario::{
-        Depot, Direction, Entrenchment, PlayerNumber, ResourceKind, ResourceSettlement, Scenario,
-        SpriteFacing, Unit, UnitId, UnitKind,
+        Depot, Direction, Entrenchment, ResourceKind, ResourceSettlement, Scenario, SpriteFacing,
+        Unit, UnitId, UnitKind,
     },
     supplies::{self, CrateUnload, GroundSupplyCrate, SupplyOrder},
     unit_loss::UnitLoss,
@@ -424,13 +425,6 @@ impl Default for Turns {
             orders: [None, None],
             last_resolution: None,
         }
-    }
-}
-
-pub fn player_index(player_number: PlayerNumber) -> usize {
-    match player_number {
-        PlayerNumber::Player1 => 0,
-        PlayerNumber::Player2 => 1,
     }
 }
 
@@ -1160,7 +1154,7 @@ fn playback_order(
     let player_indices: BTreeMap<_, _> = scenario
         .units
         .iter()
-        .map(|unit| (unit.unit_id(), player_index(unit.player_number())))
+        .map(|unit| (unit.unit_id(), unit.player_number().index()))
         .collect();
     let events: Vec<_> = events
         .into_iter()
@@ -1236,11 +1230,7 @@ impl Turns {
         if self.outcome.is_some() {
             return;
         }
-        let winner = match player {
-            PlayerNumber::Player1 => PlayerNumber::Player2,
-            PlayerNumber::Player2 => PlayerNumber::Player1,
-        };
-        self.outcome = Some(GameOutcome::Resignation(winner));
+        self.outcome = Some(GameOutcome::Resignation(player.opponent()));
         self.orders = [None, None];
     }
 
@@ -1272,7 +1262,7 @@ impl Turns {
         if number != self.number {
             return Err("the turn has changed. refresh before submitting.");
         }
-        let index = player_index(player_number);
+        let index = player_number.index();
         // A retry after a lost response cannot alter or duplicate locked orders.
         if self.orders[index].is_some() {
             return Ok(());
@@ -1310,18 +1300,13 @@ impl Turns {
             }
             let movement = movement_resolution::resolve(scenario, &transport_orders, self.number)
                 .map_err(|error| error.message())?;
-            let combat_units = movement
-                .frames
-                .last()
-                .ok_or("missing movement frame")?
-                .units
-                .clone();
             let conflicts = &movement.stopped;
             let mut frames = movement.frames;
             let mut combat = movement.combat;
             let mut combat_stopped = BTreeSet::new();
             let mut events = Vec::new();
             let loads = planned_loads(scenario, &transport_orders);
+            // Capture event origins and facing before adopting the resolved board.
             for order in &transport_orders {
                 let unit = scenario
                     .units
@@ -1360,30 +1345,13 @@ impl Turns {
                     path,
                 });
             }
-            for event in &events {
-                let passenger_count = scenario.passenger_count(event.unit_id);
-                let unit = scenario
-                    .units
-                    .iter_mut()
-                    .find(|unit| unit.unit_id() == event.unit_id)
-                    .ok_or("the order references a missing unit.")?;
-                unit.follow_terrain_path(&scenario.map, &event.path, passenger_count);
-                let combat_unit = combat_units
-                    .iter()
-                    .find(|other| other.unit_id() == unit.unit_id())
-                    .ok_or("the unit has no resolved combat outcome.")?;
-                unit.apply_combat_outcome(combat_unit);
-                if let Some(direction) = event.rotation_direction {
-                    unit.rotate(direction);
-                }
-            }
-            // Attach after movement, so stable event order cannot move cargo back
-            // to its old hold position. The explicit event makes playback reversible.
+            *scenario = movement.board;
+            // Board at resolved rendezvous positions after all movement has completed.
+            // Explicit events preserve the transport transitions for playback.
             for PlannedLoad { truck, passenger } in loads {
-                let carrier_alive = scenario
-                    .units
-                    .iter()
-                    .any(|unit| unit.unit_id() == truck && unit.is_alive());
+                let carrier = scenario.units.iter().find(|unit| unit.unit_id() == truck);
+                let carrier_alive = carrier.is_some_and(Unit::is_alive);
+                let carrier_position = carrier.and_then(Unit::board_position);
                 let unit = scenario
                     .units
                     .iter_mut()
@@ -1393,10 +1361,6 @@ impl Turns {
                     .iter()
                     .find(|order| order.unit_id == passenger)
                     .and_then(|order| order.path.last());
-                let carrier_position = combat_units
-                    .iter()
-                    .find(|unit| unit.unit_id() == truck)
-                    .and_then(Unit::board_position);
                 if !unit.is_alive()
                     || !carrier_alive
                     || conflicts.contains(&truck)
@@ -1576,12 +1540,7 @@ impl Turns {
                             .clone(),
                     });
                 }
-                scenario.units = action
-                    .frames
-                    .last()
-                    .ok_or("missing movement frame")?
-                    .units
-                    .clone();
+                *scenario = action.board;
                 combat = action.combat;
                 frames.extend(action.frames);
             }
@@ -1646,7 +1605,7 @@ impl Turns {
                 }
             }
             supplies::resolve_orders(scenario, &supply_orders, self.number);
-            let mut reports: Vec<_> = [PlayerNumber::Player1, PlayerNumber::Player2]
+            let mut reports: Vec<_> = PlayerNumber::ALL
                 .into_iter()
                 .map(|player_number| {
                     TurnReport::before_replenishment(player_number, &initial_units, &scenario.units)
@@ -1929,7 +1888,7 @@ mod tests {
                         .units
                         .iter()
                         .filter(move |unit| unit.player_number() == player_number)
-                        .take(counts[player_index(player_number)])
+                        .take(counts[player_number.index()])
                 })
                 .map(|unit| TurnEvent {
                     unit_id: unit.unit_id(),
@@ -1993,7 +1952,7 @@ mod tests {
                         .iter()
                         .find(|unit| unit.unit_id() == event.unit_id)
                         .fixture()?;
-                    seen[player_index(unit.player_number())] += 1;
+                    seen[unit.player_number().index()] += 1;
                     let total = seen.iter().sum::<usize>();
                     let expected =
                         total as f64 * counts[0] as f64 / counts.iter().sum::<usize>() as f64;
@@ -2509,11 +2468,7 @@ mod tests {
     fn attack_moves_reveal_firing_units_in_forests_for_one_turn() -> TestResult<()> {
         for kind in [UnitKind::Infantry, UnitKind::Tank] {
             for player in [PlayerNumber::Player1, PlayerNumber::Player2] {
-                let enemy = if player == PlayerNumber::Player1 {
-                    PlayerNumber::Player2
-                } else {
-                    PlayerNumber::Player1
-                };
+                let enemy = player.opponent();
                 let mut scenario = Scenario::supply_point().fixture()?;
                 scenario.map = Map::from_ascii("####").fixture()?;
                 scenario.depots.clear();
@@ -2646,11 +2601,7 @@ mod tests {
     fn firing_field_guns_are_revealed_for_the_following_turn_only() -> TestResult<()> {
         for gun_player_number in [PlayerNumber::Player1, PlayerNumber::Player2] {
             for terrain in ["............", "..#........."] {
-                let enemy_player_number = if gun_player_number == PlayerNumber::Player1 {
-                    PlayerNumber::Player2
-                } else {
-                    PlayerNumber::Player1
-                };
+                let enemy_player_number = gun_player_number.opponent();
                 let mut scenario = Scenario::supply_point().fixture()?;
                 scenario.map = Map::from_ascii(terrain).fixture()?;
                 let mut gun = scenario
@@ -2790,14 +2741,7 @@ mod tests {
             scenario.units[0].move_to(Coordinate::new(7, 8));
             scenario.units[1].move_to(Coordinate::new(8, 8));
             let mut turns = Turns::default();
-            for player_number in [
-                first,
-                if first == PlayerNumber::Player1 {
-                    PlayerNumber::Player2
-                } else {
-                    PlayerNumber::Player1
-                },
-            ] {
+            for player_number in [first, first.opponent()] {
                 let mut inputs = holds(&scenario, player_number)?;
                 if player_number == PlayerNumber::Player1 {
                     inputs[0].ambush = Some(true);
@@ -2881,11 +2825,7 @@ mod tests {
                     .fixture()?
                     .take_damage(7);
                 let mut turns = Turns::default();
-                let second = if first == PlayerNumber::Player1 {
-                    PlayerNumber::Player2
-                } else {
-                    PlayerNumber::Player1
-                };
+                let second = first.opponent();
                 for player_number in [first, second] {
                     let mut inputs = holds(&scenario, player_number)?;
                     let order = inputs.first_mut().fixture()?;
@@ -4094,11 +4034,7 @@ mod tests {
             } else {
                 ("6", "9", "1")
             };
-            let opponent = if player_number == PlayerNumber::Player1 {
-                PlayerNumber::Player2
-            } else {
-                PlayerNumber::Player1
-            };
+            let opponent = player_number.opponent();
             for first in [player_number, opponent] {
                 for moving_truck in [false, true] {
                     for direct_unload in [false, true] {
@@ -6301,11 +6237,7 @@ mod tests {
     #[test]
     fn indirect_fire_keeps_guns_concealed_and_does_not_renew_reveals() -> TestResult<()> {
         for gun_player in [PlayerNumber::Player1, PlayerNumber::Player2] {
-            let enemy_player = if gun_player == PlayerNumber::Player1 {
-                PlayerNumber::Player2
-            } else {
-                PlayerNumber::Player1
-            };
+            let enemy_player = gun_player.opponent();
             for terrain in [Terrain::Plain, Terrain::Forest] {
                 for hit in [false, true] {
                     for previously_revealed in [false, true] {

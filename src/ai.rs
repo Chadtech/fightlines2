@@ -4,7 +4,8 @@ use crate::{
     combat,
     map::Coordinate,
     movement,
-    scenario::{Direction, PlayerNumber, ResourceKind, Scenario, Unit, UnitKind},
+    player_number::PlayerNumber,
+    scenario::{Direction, ResourceKind, Scenario, Unit, UnitKind},
     turns::{CoordinateInput, MoveOrderInput},
     visibility,
 };

@@ -5,7 +5,8 @@ use crate::{
     combat,
     map::{Coordinate, Terrain},
     movement,
-    scenario::{Direction, Entrenchment, PlayerNumber, Scenario, Unit, UnitId, UnitKind},
+    player_number::PlayerNumber,
+    scenario::{Direction, Entrenchment, Scenario, Unit, UnitId, UnitKind},
     supplies::ResourceStock,
     turns::{MoveOrderInput, Turns},
     visibility,
@@ -149,7 +150,7 @@ pub(super) fn plan(
     if counterplay {
         // Model an advancing opponent from the fog-limited board.
         // This board has already discarded hidden units and private resources.
-        responses.push(super::advancing_orders(&observed, opponent(player))?);
+        responses.push(super::advancing_orders(&observed, player.opponent())?);
     }
     // Reuse terrain searches across every candidate simulation in this plan.
     let goals = own
@@ -388,13 +389,6 @@ fn candidates(
     Ok(candidates)
 }
 
-fn opponent(player: PlayerNumber) -> PlayerNumber {
-    match player {
-        PlayerNumber::Player1 => PlayerNumber::Player2,
-        PlayerNumber::Player2 => PlayerNumber::Player1,
-    }
-}
-
 /// Weight the worst response twice as heavily as the mean response. Scaling by
 /// response count avoids rounding.
 fn counterplay_score(
@@ -460,7 +454,7 @@ fn forecast(
     let mut board = scenario.clone();
     let mut turns = Turns::default();
     turns.submit(&mut board, player, 1, own_orders.to_vec())?;
-    turns.submit(&mut board, opponent(player), 1, enemy_orders.to_vec())?;
+    turns.submit(&mut board, player.opponent(), 1, enemy_orders.to_vec())?;
     let mut score = 0_i64;
     for before in &scenario.units {
         let after = board

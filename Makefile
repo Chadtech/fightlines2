@@ -5,7 +5,7 @@ RUST_TEST_ARGS ?=
 
 build: PRODUCTION = true
 build: frontend
-	cargo build --locked
+	cargo build --locked --release
 
 generate-api:
 	cargo run --locked -p fightlines-server -- --export-schema > schema.json.tmp

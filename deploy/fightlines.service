@@ -1,0 +1,22 @@
+[Unit]
+Description=FightLines game server
+After=network.target
+
+[Service]
+Type=simple
+User=fightlines
+Group=fightlines
+WorkingDirectory=/opt/fightlines
+EnvironmentFile=/etc/fightlines/fightlines.env
+ExecStart=/opt/fightlines/fightlines-server
+Restart=on-failure
+RestartSec=5
+StateDirectory=fightlines
+StateDirectoryMode=0700
+LogsDirectory=fightlines
+LogsDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
