@@ -357,7 +357,7 @@ mod tests {
             assert!(
                 orders
                     .iter()
-                    .all(|order| order.path == [Coordinate::new(0, 0)]),
+                    .all(|order| order.path() == [Coordinate::new(0, 0)]),
                 "{kind:?} crossed water"
             );
         }
@@ -466,7 +466,7 @@ mod tests {
             plan(&scenario, PlayerNumber::Player2).fixture()?,
         )
         .fixture()?;
-        assert!(orders.iter().all(|order| order.path.len() == 1));
+        assert!(orders.iter().all(|order| order.path().len() == 1));
         Ok(())
     }
 }

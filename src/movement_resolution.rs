@@ -5,8 +5,9 @@ use crate::{
     map::Coordinate,
     movement,
     player_number::PlayerNumber,
-    scenario::{Scenario, Unit, UnitId},
-    turns::{self, FacingOrder, PlannedLoad, TurnFrame, UnitOrder},
+    scenario::{Direction, Scenario, Unit, UnitId},
+    turns::{self, PlannedLoad, TurnFrame},
+    unit_order::{UnitOrder, UnitOrderKind},
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -113,13 +114,29 @@ fn arrival_time(
 /// Resolve movement costs and encounters. A passing ally must not finish
 /// on an occupied allied tile: shorten its outcome to the preceding free square,
 /// then recheck arrivals so that newly blocked departures propagate consistently.
+#[cfg(test)]
 pub fn resolve(
     scenario: &Scenario,
     orders: &[UnitOrder],
     turn: i32,
 ) -> Result<MovementResolution, ResolutionError> {
-    let loads = turns::planned_loads(scenario, orders);
-    resolve_prepared(scenario, orders, turn, None, &loads)
+    resolve_transport(scenario, orders, turn, &BTreeSet::new())
+}
+
+/// Dependent infantry remain aboard during transport; their accepted actions stay intact.
+pub fn resolve_transport(
+    scenario: &Scenario,
+    orders: &[UnitOrder],
+    turn: i32,
+    waiting: &BTreeSet<UnitId>,
+) -> Result<MovementResolution, ResolutionError> {
+    let active: Vec<_> = orders
+        .iter()
+        .filter(|order| !waiting.contains(&order.unit_id))
+        .cloned()
+        .collect();
+    let loads = turns::planned_loads(scenario, &active);
+    resolve_prepared(scenario, orders, turn, None, &loads, waiting)
 }
 
 /// Transport has finished; dismounted infantry cannot start another boarding.
@@ -129,7 +146,15 @@ pub fn resolve_dismounts(
     turn: i32,
     combat: &Combat,
 ) -> Result<MovementResolution, ResolutionError> {
-    resolve_prepared(scenario, orders, turn, Some(combat), &[])
+    resolve_prepared(scenario, orders, turn, Some(combat), &[], &BTreeSet::new())
+}
+
+/// A collision retry may shorten an attempted route without changing the accepted action.
+struct MovementPlan {
+    unit_id: UnitId,
+    path: Vec<Coordinate>,
+    kind: UnitOrderKind,
+    arrival_direction: Option<Direction>,
 }
 
 fn resolve_prepared(
@@ -138,11 +163,46 @@ fn resolve_prepared(
     turn: i32,
     combat: Option<&Combat>,
     loads: &[PlannedLoad],
+    waiting: &BTreeSet<UnitId>,
 ) -> Result<MovementResolution, ResolutionError> {
-    let mut routes = orders.to_vec();
+    let combat_orders: Vec<_> = orders
+        .iter()
+        .filter(|order| !waiting.contains(&order.unit_id))
+        .cloned()
+        .collect();
+    let mut routes = orders
+        .iter()
+        .map(|order| {
+            let waiting = waiting.contains(&order.unit_id);
+            let path = if waiting {
+                let unit = scenario
+                    .units
+                    .iter()
+                    .find(|unit| unit.unit_id() == order.unit_id)
+                    .ok_or(ResolutionError::MissingUnit)?;
+                vec![
+                    scenario
+                        .physical_position(unit)
+                        .ok_or(ResolutionError::MissingUnit)?,
+                ]
+            } else {
+                order.path().to_vec()
+            };
+            Ok(MovementPlan {
+                unit_id: order.unit_id,
+                path,
+                kind: if waiting {
+                    UnitOrderKind::Hold
+                } else {
+                    order.kind()
+                },
+                arrival_direction: order.arrival_direction(),
+            })
+        })
+        .collect::<Result<Vec<_>, ResolutionError>>()?;
     let mut stopped = BTreeSet::new();
     loop {
-        let mut result = resolve_arrivals(scenario, &routes, turn, combat)?;
+        let mut result = resolve_arrivals(scenario, &routes, turn, combat, &combat_orders)?;
         result.stopped.extend(&stopped);
         let mut occupied: BTreeMap<Coordinate, Vec<_>> = BTreeMap::new();
         for unit in &result.board.units {
@@ -157,7 +217,7 @@ fn resolve_prepared(
             let ready_to_board = |unit: &Unit| {
                 let reached_destination = orders.iter().any(|order| {
                     order.unit_id == unit.unit_id()
-                        && order.path.last() == unit.board_position().as_ref()
+                        && order.path().last() == unit.board_position().as_ref()
                 });
                 reached_destination && !result.stopped.contains(&unit.unit_id())
             };
@@ -224,9 +284,10 @@ fn resolve_prepared(
 
 fn resolve_arrivals(
     scenario: &Scenario,
-    orders: &[UnitOrder],
+    orders: &[MovementPlan],
     turn: i32,
     combat: Option<&Combat>,
+    combat_orders: &[UnitOrder],
 ) -> Result<MovementResolution, ResolutionError> {
     let rules = movement::rules();
     fn gcd(a: i32, b: i32) -> i32 {
@@ -282,15 +343,15 @@ fn resolve_arrivals(
     let initial_frame = frame(&board, 0);
     let mut combat = match combat {
         Some(combat) => combat.clone(),
-        None => Combat::prepare(&mut board, orders),
+        None => Combat::prepare(&mut board, combat_orders),
     };
     let mut stopped = BTreeSet::new();
     let mut frames = vec![initial_frame];
     if orders.iter().any(|order| {
-        order.facing.is_digging_in()
-            || order.facing.is_ambush()
-            || order.facing.is_standing_ground()
-            || order.facing.indirect_target().is_some()
+        order.kind == UnitOrderKind::DigIn
+            || order.kind == UnitOrderKind::Ambush
+            || order.kind == UnitOrderKind::StandGround
+            || order.kind == UnitOrderKind::IndirectFire
     }) {
         frames.push(frame(&board, 180));
     }
@@ -381,9 +442,10 @@ fn resolve_arrivals(
         }
         let mut contacts = Vec::new();
         for (id, destination) in &intents {
-            if !orders.iter().any(|order| {
-                order.unit_id == *id && order.travel == crate::turns::TravelMode::AttackMove
-            }) {
+            if !orders
+                .iter()
+                .any(|order| order.unit_id == *id && order.kind == UnitOrderKind::AttackMove)
+            {
                 continue;
             }
             let mover = board
@@ -414,12 +476,12 @@ fn resolve_arrivals(
         let completing_attack_moves: Vec<_> = orders
             .iter()
             .filter(|order| {
-                order.travel == crate::turns::TravelMode::AttackMove
+                order.kind == UnitOrderKind::AttackMove
                     && intents.get(&order.unit_id) == order.path.last()
                     && !blocked.contains(&order.unit_id)
                     && !stop_after_arrival.contains(&order.unit_id)
             })
-            .map(|order| (order.unit_id, order.facing))
+            .map(|order| (order.unit_id, order.arrival_direction))
             .collect();
         for (id, destination) in intents {
             if !blocked.contains(&id) {
@@ -445,7 +507,7 @@ fn resolve_arrivals(
                 .iter_mut()
                 .find(|unit| unit.unit_id() == id)
                 .ok_or(ResolutionError::MissingUnit)?;
-            if let FacingOrder::AfterMove(direction) = facing {
+            if let Some(direction) = facing {
                 mover.rotate(direction);
             }
             let origin = mover.board_position().ok_or(ResolutionError::MissingUnit)?;
@@ -556,8 +618,17 @@ mod tests {
         scenario::{Direction, Entrenchment, ResourceKind, UnitKind},
         supplies::CargoStock,
         test_support::{FixtureValue, TestResult},
-        turns::{UnitOrder, UnitOrderInput},
+        turns::UnitOrderInput,
+        unit_order::{ArrivalFacing, OrderAction, Route},
     };
+
+    fn attack_move(order: &mut UnitOrder, facing: ArrivalFacing) -> TestResult<()> {
+        order.action = OrderAction::AttackMove {
+            route: Route::new(order.path().to_vec())?,
+            facing,
+        };
+        Ok(())
+    }
 
     fn setup(
         paths: &[(&str, &[(u16, u16)])],
@@ -578,14 +649,7 @@ mod tests {
                     .ok_or("missing fixture unit")?;
                 let path: Vec<_> = path.iter().map(|(x, y)| Coordinate::new(*x, *y)).collect();
                 moving.move_to(*path.first().ok_or("empty fixture path")?);
-                Ok(UnitOrder {
-                    supply: crate::supplies::SupplyOrder::default(),
-                    travel: crate::turns::TravelMode::Normal,
-                    facing: crate::turns::FacingOrder::Unchanged,
-                    unit_id: moving.unit_id(),
-                    path,
-                    unloads: Vec::new(),
-                })
+                UnitOrder::movement(moving.unit_id(), path)
             })
             .collect::<Result<Vec<_>, &str>>()?;
         Ok((scenario, orders))
@@ -717,8 +781,10 @@ mod tests {
                 ("2", &[(2, 0)]),
                 ("6", &[(3, 0)]),
             ])?;
-            orders.first_mut().ok_or("missing attack order")?.travel =
-                crate::turns::TravelMode::AttackMove;
+            attack_move(
+                orders.first_mut().ok_or("missing attack order")?,
+                ArrivalFacing::AlongRoute,
+            )?;
             for turn in [1, 2] {
                 let result = resolve(&scenario, &orders, turn)?;
                 assert_eq!(path(&result, "11")?, vec![Coordinate::new(0, 0)]);
@@ -781,8 +847,8 @@ mod tests {
         ])?;
         let result = resolve(&scenario, &orders, 1)?;
         assert!(result.stopped.is_empty());
-        assert_eq!(path(&result, "11")?, orders[0].path);
-        assert_eq!(path(&result, "6")?, orders[1].path);
+        assert_eq!(path(&result, "11")?, orders[0].path());
+        assert_eq!(path(&result, "6")?, orders[1].path());
         let (scenario, mut orders) = setup(&[
             ("1", &[(0, 1), (1, 1), (2, 1)]),
             ("6", &[(1, 0), (1, 1), (1, 2)]),
@@ -812,7 +878,7 @@ mod tests {
         let result = resolve(&scenario, &orders, 1)?;
         assert_eq!(result.stopped.len(), 3);
         for order in orders {
-            assert_eq!(result.paths[&order.unit_id], vec![order.path[0]]);
+            assert_eq!(result.paths[&order.unit_id], vec![order.path()[0]]);
         }
         Ok(())
     }
@@ -822,10 +888,10 @@ mod tests {
     -> Result<(), Box<dyn std::error::Error>> {
         let (mut scenario, orders) = setup(&[("1", &[(0, 0), (1, 0)])])?;
         scenario.map = Map::from_ascii(".^.").map_err(|error| format!("{error:?}"))?;
-        let arrival = arrival_time(&scenario, orders[0].unit_id, &orders[0].path)?;
+        let arrival = arrival_time(&scenario, orders[0].unit_id, orders[0].path())?;
         assert_eq!(arrival.cost, arrival.allowance);
         let result = resolve(&scenario, &orders, 1)?;
-        assert_eq!(path(&result, "1")?, orders[0].path);
+        assert_eq!(path(&result, "1")?, orders[0].path());
         assert_eq!(result.frames[1].duration_ms, MOVEMENT_DURATION_MS);
         Ok(())
     }
@@ -885,7 +951,7 @@ mod tests {
         scenario.map = Map::from_ascii(".%.").map_err(|error| format!("{error:?}"))?;
         let result = resolve(&scenario, &orders, 1)?;
         assert!(result.stopped.is_empty());
-        assert_eq!(path(&result, "11")?, orders[0].path);
+        assert_eq!(path(&result, "11")?, orders[0].path());
         assert_eq!(result.frames[1].duration_ms, 840);
         assert_eq!(result.frames[2].duration_ms, 420);
         Ok(())
@@ -953,7 +1019,7 @@ mod tests {
     fn attack_move_stops_at_first_enemy_and_charges_only_traveled_edges()
     -> Result<(), Box<dyn std::error::Error>> {
         let (scenario, mut orders) = setup(&[("1", &[(0, 0), (1, 0), (2, 0)]), ("6", &[(2, 0)])])?;
-        orders[0].travel = crate::turns::TravelMode::AttackMove;
+        attack_move(&mut orders[0], ArrivalFacing::AlongRoute)?;
         let result = resolve(&scenario, &orders, 1)?;
         assert_eq!(
             path(&result, "1")?,
@@ -1009,13 +1075,9 @@ mod tests {
                 truck_path.push(Coordinate::new(2, 0));
             }
             let mut orders = Vec::new();
-            for (id, path, travel) in [
-                (
-                    "1",
-                    (1..=7).map(|x| Coordinate::new(x, 1)).collect(),
-                    turns::TravelMode::AttackMove,
-                ),
-                ("2", truck_path.clone(), turns::TravelMode::Normal),
+            for (id, path, attacking) in [
+                ("1", (1..=7).map(|x| Coordinate::new(x, 1)).collect(), true),
+                ("2", truck_path.clone(), false),
                 (
                     "3",
                     vec![
@@ -1024,17 +1086,14 @@ mod tests {
                         Coordinate::new(3, 1),
                         Coordinate::new(2, 1),
                     ],
-                    turns::TravelMode::Normal,
+                    false,
                 ),
             ] {
-                orders.push(UnitOrder {
-                    supply: crate::supplies::SupplyOrder::default(),
-                    travel,
-                    facing: FacingOrder::Unchanged,
-                    unit_id: UnitId::parse(id).fixture()?,
-                    path,
-                    unloads: Vec::new(),
-                });
+                let mut order = UnitOrder::movement(UnitId::parse(id).fixture()?, path)?;
+                if attacking {
+                    attack_move(&mut order, ArrivalFacing::AlongRoute)?;
+                }
+                orders.push(order);
             }
             for turn in [1, 2] {
                 let result = resolve(&scenario, &orders, turn)?;
@@ -1097,7 +1156,7 @@ mod tests {
 
     #[test]
     fn tank_column_preserves_its_leaders_contact() -> TestResult<()> {
-        use crate::{scenario::Direction, supplies::SupplyOrder, turns::TravelMode};
+        use crate::scenario::Direction;
 
         let scenario = MapDefinition::parse(
             r#"{
@@ -1123,34 +1182,28 @@ mod tests {
         .fixture()?;
         for scenario in [&scenario, &hill_scenario] {
             for advancing_enemy in [false, true] {
-                for leader_travel in [TravelMode::Normal, TravelMode::AttackMove] {
+                for leader_attacks in [false, true] {
                     let mut orders = Vec::new();
-                    for (id, start, travel) in [
-                        ("4", 2, leader_travel),
-                        ("6", 1, TravelMode::AttackMove),
-                        ("5", 0, TravelMode::Normal),
-                    ] {
-                        orders.push(UnitOrder {
-                            supply: SupplyOrder::default(),
-                            travel,
-                            facing: FacingOrder::AfterMove(Direction::East),
-                            unit_id: UnitId::parse(id).fixture()?,
-                            path: (start..=start + 5).map(|x| Coordinate::new(x, 0)).collect(),
-                            unloads: Vec::new(),
-                        });
+                    for (id, start, attacking) in
+                        [("4", 2, leader_attacks), ("6", 1, true), ("5", 0, false)]
+                    {
+                        let mut order = UnitOrder::movement(
+                            UnitId::parse(id).fixture()?,
+                            (start..=start + 5).map(|x| Coordinate::new(x, 0)).collect(),
+                        )?;
+                        if attacking {
+                            attack_move(&mut order, ArrivalFacing::Face(Direction::East))?;
+                        }
+                        orders.push(order);
                     }
-                    orders.push(UnitOrder {
-                        supply: SupplyOrder::default(),
-                        travel: TravelMode::Normal,
-                        facing: FacingOrder::Unchanged,
-                        unit_id: UnitId::parse("20").fixture()?,
-                        path: if advancing_enemy {
+                    orders.push(UnitOrder::movement(
+                        UnitId::parse("20").fixture()?,
+                        if advancing_enemy {
                             (1..=6).rev().map(|x| Coordinate::new(x, 0)).collect()
                         } else {
                             vec![Coordinate::new(6, 0)]
                         },
-                        unloads: Vec::new(),
-                    });
+                    )?);
                     for turn in [1, 2] {
                         let result = resolve(scenario, &orders, turn)?;
                         let leader_x = if advancing_enemy {
@@ -1169,11 +1222,8 @@ mod tests {
                             .iter()
                             .flat_map(|frame| &frame.shots)
                             .collect();
-                        assert_eq!(
-                            shots.len(),
-                            usize::from(leader_travel == TravelMode::AttackMove)
-                        );
-                        if leader_travel == TravelMode::AttackMove {
+                        assert_eq!(shots.len(), usize::from(leader_attacks));
+                        if leader_attacks {
                             let shot = shots.first().fixture()?;
                             assert_eq!(shot.attacker.id(), "4");
                             assert_eq!(shot.target.id(), "20");
@@ -1217,7 +1267,7 @@ mod tests {
             ("1", &[(1, 0)]),
             ("6", &[(2, 0)]),
         ])?;
-        orders[0].travel = crate::turns::TravelMode::AttackMove;
+        attack_move(&mut orders[0], ArrivalFacing::AlongRoute)?;
         let result = resolve(&scenario, &orders, 1)?;
         assert_eq!(path(&result, "11")?, vec![Coordinate::new(0, 0)]);
         let shots: Vec<_> = result
@@ -1267,9 +1317,9 @@ mod tests {
                 let route = [(3, 3), destination];
                 let defender = [enemy];
                 let (scenario, mut orders) = setup(&[(attacker, &route), ("6", &defender)])?;
-                orders[0].travel = crate::turns::TravelMode::AttackMove;
+                attack_move(&mut orders[0], ArrivalFacing::AlongRoute)?;
                 let result = resolve(&scenario, &orders, 1)?;
-                assert_eq!(path(&result, attacker)?, orders[0].path);
+                assert_eq!(path(&result, attacker)?, orders[0].path());
                 let shots: Vec<_> = result
                     .frames
                     .iter()
@@ -1310,8 +1360,7 @@ mod tests {
             ] {
                 let (scenario, mut orders) =
                     setup(&[(attacker, &[(3, 3), (4, 3)]), ("6", &[enemy])])?;
-                orders[0].travel = turns::TravelMode::AttackMove;
-                orders[0].facing = FacingOrder::AfterMove(direction);
+                attack_move(&mut orders[0], ArrivalFacing::Face(direction))?;
                 let result = resolve(&scenario, &orders, 1)?;
                 let shots: Vec<_> = result
                     .frames
@@ -1335,7 +1384,7 @@ mod tests {
                     .find(|unit| unit.id() == attacker)
                     .ok_or("missing attacker")?;
                 assert_eq!(arrived.direction(), Some(direction));
-                assert_eq!(path(&result, attacker)?, orders[0].path);
+                assert_eq!(path(&result, attacker)?, orders[0].path());
             }
         }
         Ok(())
@@ -1348,8 +1397,7 @@ mod tests {
         for (enemy, interrupted) in [((8, 8), false), ((5, 3), false), ((4, 3), true)] {
             let (scenario, mut orders) =
                 setup(&[("1", &[(2, 3), (3, 3), (4, 3)]), ("6", &[enemy])])?;
-            orders[0].travel = turns::TravelMode::AttackMove;
-            orders[0].facing = FacingOrder::AfterMove(Direction::North);
+            attack_move(&mut orders[0], ArrivalFacing::Face(Direction::North))?;
             let result = resolve(&scenario, &orders, 1)?;
             let arrived = result
                 .frames
@@ -1393,7 +1441,7 @@ mod tests {
             let defender = [enemy];
             let (scenario, mut orders) = setup(&[("1", &[(2, 3), (3, 3)]), (target, &defender)])?;
             if attack {
-                orders[0].travel = crate::turns::TravelMode::AttackMove;
+                attack_move(&mut orders[0], ArrivalFacing::AlongRoute)?;
             }
             let result = resolve(&scenario, &orders, 1)?;
             assert!(result.frames.iter().all(|frame| frame.shots.is_empty()));
@@ -1410,7 +1458,7 @@ mod tests {
             if concealed {
                 scenario.map = Map::from_ascii("..#.").map_err(|error| format!("{error:?}"))?;
             }
-            orders[0].travel = crate::turns::TravelMode::AttackMove;
+            attack_move(&mut orders[0], ArrivalFacing::AlongRoute)?;
             let result = resolve(&scenario, &orders, 1)?;
             assert_eq!(path(&result, "6")?, vec![Coordinate::new(2, 0)]);
             assert_eq!(
@@ -1426,7 +1474,7 @@ mod tests {
     -> Result<(), Box<dyn std::error::Error>> {
         let (scenario, mut orders) = setup(&[("1", &[(0, 0), (1, 0)]), ("6", &[(3, 0), (2, 0)])])?;
         for order in &mut orders {
-            order.travel = crate::turns::TravelMode::AttackMove;
+            attack_move(order, ArrivalFacing::AlongRoute)?;
         }
         for turn in [1, 2] {
             let result = resolve(&scenario, &orders, turn)?;
@@ -1471,12 +1519,12 @@ mod tests {
             ],
         ] {
             let (scenario, mut orders) = setup(&paths)?;
-            orders[0].travel = crate::turns::TravelMode::AttackMove;
+            attack_move(&mut orders[0], ArrivalFacing::AlongRoute)?;
             let result = resolve(&scenario, &orders, 1)?;
             assert!(result.frames.iter().all(|frame| frame.shots.is_empty()));
             assert_eq!(
                 result.paths.get(&orders[0].unit_id).ok_or("missing path")?,
-                &orders[0].path
+                orders[0].path()
             );
         }
         Ok(())
@@ -1494,7 +1542,7 @@ mod tests {
         ] {
             let (scenario, mut orders) = setup(&paths)?;
             for order in &mut orders {
-                order.travel = crate::turns::TravelMode::AttackMove;
+                attack_move(order, ArrivalFacing::AlongRoute)?;
             }
             for turn in [1, 2] {
                 let result = resolve(&scenario, &orders, turn)?;
@@ -1543,7 +1591,7 @@ mod tests {
         let (mut scenario, mut orders) =
             setup(&[("1", &[(0, 0), (1, 0), (2, 0)]), ("6", &[(1, 0)])])?;
         scenario.map = Map::from_ascii(".#.").map_err(|error| format!("{error:?}"))?;
-        orders[0].travel = crate::turns::TravelMode::AttackMove;
+        attack_move(&mut orders[0], ArrivalFacing::AlongRoute)?;
         let result = resolve(&scenario, &orders, 1)?;
         assert_eq!(path(&result, "1")?.len(), 1);
         let resolution = crate::turns::TurnResolution {
@@ -1580,12 +1628,10 @@ mod tests {
             Some(ResolutionError::MissingUnit)
         );
         let mut invalid = orders.clone();
-        invalid[0].path.clear();
-        assert_eq!(
-            resolve(&scenario, &invalid, 1).err(),
-            Some(ResolutionError::EmptyPath)
-        );
-        invalid[0].path = vec![Coordinate::new(0, 0), Coordinate::new(17, 0)];
+        invalid[0] = UnitOrder::movement(
+            invalid[0].unit_id,
+            vec![Coordinate::new(0, 0), Coordinate::new(17, 0)],
+        )?;
         assert_eq!(
             resolve(&scenario, &invalid, 1).err(),
             Some(ResolutionError::MissingTerrain)

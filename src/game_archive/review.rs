@@ -5,7 +5,8 @@ use crate::{
     map::Coordinate,
     player_number::PlayerNumber,
     scenario::{Direction, Unit, UnitId},
-    turns::{CoordinateInput, TurnEventKind, TurnResolution, UnitOrderInput, UnitOrderKind},
+    turns::{CoordinateInput, TurnEventKind, TurnResolution, UnitOrderInput},
+    unit_order::UnitOrderKind,
 };
 use juniper::{GraphQLObject, graphql_object};
 use std::collections::{BTreeMap, BTreeSet};

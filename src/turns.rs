@@ -9,6 +9,10 @@ use crate::{
     },
     supplies::{self, CrateUnload, GroundSupplyCrate, SupplyOrder},
     unit_loss::UnitLoss,
+    unit_order::{
+        ArrivalFacing, Journey, OrderAction, Route, TransportPlan, UnitOrder, UnitOrderKind,
+        UnloadOrder,
+    },
 };
 use juniper::{GraphQLEnum, GraphQLInputObject, GraphQLObject, graphql_object};
 use serde::{Deserialize, Serialize};
@@ -47,120 +51,6 @@ pub struct UnitOrderInput {
     pub(crate) crate_unloads: Option<Vec<CrateUnloadInput>>,
 }
 
-#[derive(Clone, Debug)]
-pub struct UnitOrder {
-    pub travel: TravelMode,
-    pub facing: FacingOrder,
-    pub unit_id: UnitId,
-    pub path: Vec<Coordinate>,
-    pub unloads: Vec<UnloadOrder>,
-    pub supply: SupplyOrder,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TravelMode {
-    Normal,
-    AttackMove,
-}
-
-/// Read-only description of an accepted order, shared by replay and combat inspection.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
-pub enum UnitOrderKind {
-    Hold,
-    Move,
-    Rotate,
-    AttackMove,
-    Ambush,
-    StandGround,
-    DigIn,
-    Sabotage,
-    IndirectFire,
-}
-
-/// Validated facing/action. Arrival facing applies only after a completed route.
-#[derive(Clone, Copy, Debug)]
-pub enum FacingOrder {
-    Unchanged,
-    DigIn,
-    Sabotage,
-    AfterMove(Direction),
-    Ambush(Direction),
-    StandGround(Direction),
-    IndirectFire(Coordinate),
-}
-
-impl FacingOrder {
-    pub fn is_sabotaging(self) -> bool {
-        match self {
-            Self::Sabotage => true,
-            Self::DigIn
-            | Self::Unchanged
-            | Self::AfterMove(_)
-            | Self::Ambush(_)
-            | Self::StandGround(_)
-            | Self::IndirectFire(_) => false,
-        }
-    }
-    pub fn is_digging_in(self) -> bool {
-        match self {
-            Self::DigIn => true,
-            Self::Sabotage
-            | Self::Unchanged
-            | Self::AfterMove(_)
-            | Self::Ambush(_)
-            | Self::StandGround(_)
-            | Self::IndirectFire(_) => false,
-        }
-    }
-
-    pub fn indirect_target(self) -> Option<Coordinate> {
-        match self {
-            Self::IndirectFire(target) => Some(target),
-            Self::Sabotage
-            | Self::DigIn
-            | Self::Unchanged
-            | Self::AfterMove(_)
-            | Self::Ambush(_)
-            | Self::StandGround(_) => None,
-        }
-    }
-
-    pub fn direction(self) -> Option<Direction> {
-        match self {
-            Self::Sabotage
-            | Self::DigIn
-            | Self::Unchanged
-            | Self::AfterMove(_)
-            | Self::IndirectFire(_) => None,
-            Self::Ambush(direction) | Self::StandGround(direction) => Some(direction),
-        }
-    }
-
-    pub fn is_standing_ground(self) -> bool {
-        match self {
-            Self::StandGround(_) => true,
-            Self::Sabotage
-            | Self::DigIn
-            | Self::Unchanged
-            | Self::AfterMove(_)
-            | Self::Ambush(_)
-            | Self::IndirectFire(_) => false,
-        }
-    }
-
-    pub fn is_ambush(self) -> bool {
-        match self {
-            Self::Ambush(_) => true,
-            Self::Sabotage
-            | Self::DigIn
-            | Self::Unchanged
-            | Self::AfterMove(_)
-            | Self::StandGround(_)
-            | Self::IndirectFire(_) => false,
-        }
-    }
-}
-
 #[derive(Clone, GraphQLInputObject, Serialize, Deserialize)]
 pub struct UnloadOrderInput {
     unit_id: String,
@@ -189,12 +79,6 @@ impl UnloadOrderInput {
 pub struct CrateUnloadInput {
     cargo_index: i32,
     pub(crate) destination: CoordinateInput,
-}
-
-#[derive(Clone, Debug)]
-pub struct UnloadOrder {
-    pub unit_id: UnitId,
-    pub destination: Coordinate,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
@@ -437,21 +321,9 @@ pub(crate) struct PlannedLoad {
 /// Boarding intent is determined by final destinations, independently of submission order.
 /// Capacity is checked for the whole group during validation, before any unloading.
 pub(crate) fn planned_loads(scenario: &Scenario, orders: &[UnitOrder]) -> Vec<PlannedLoad> {
-    let permits_boarding = |order: &UnitOrder| {
-        order.travel == TravelMode::Normal
-            && match order.facing {
-                FacingOrder::Unchanged => true,
-                FacingOrder::Sabotage
-                | FacingOrder::DigIn
-                | FacingOrder::AfterMove(_)
-                | FacingOrder::Ambush(_)
-                | FacingOrder::StandGround(_)
-                | FacingOrder::IndirectFire(_) => false,
-            }
-    };
     let mut loads = Vec::new();
     for truck_order in orders {
-        if !permits_boarding(truck_order) {
+        if !truck_order.permits_boarding() {
             continue;
         }
         let Some(truck) = scenario.units.iter().find(|unit| {
@@ -462,9 +334,9 @@ pub(crate) fn planned_loads(scenario: &Scenario, orders: &[UnitOrder]) -> Vec<Pl
             continue;
         };
         for passenger_order in orders {
-            if !permits_boarding(passenger_order)
-                || truck_order.path.last() != passenger_order.path.last()
-                || (truck_order.path.len() == 1 && passenger_order.path.len() == 1)
+            if !passenger_order.permits_boarding()
+                || truck_order.path().last() != passenger_order.path().last()
+                || (truck_order.path().len() == 1 && passenger_order.path().len() == 1)
             {
                 continue;
             }
@@ -492,9 +364,9 @@ fn dismount_orders(scenario: &Scenario, orders: &[UnitOrder]) -> Vec<UnitOrder> 
                     && unit.carrier_id().is_some_and(|carrier| {
                         orders.iter().any(|truck| {
                             truck.unit_id == carrier
-                                && truck.unloads.iter().any(|exit| {
+                                && truck.unloads().iter().any(|exit| {
                                     exit.unit_id == order.unit_id
-                                        && order.path.first() == Some(&exit.destination)
+                                        && order.path().first() == Some(&exit.destination)
                                 })
                         })
                     })
@@ -972,70 +844,78 @@ pub fn validate(
                 destination: exit,
             });
         }
-        orders.push(UnitOrder {
-            supply: if let Some(kind) = input.pickup_ground_freight {
-                SupplyOrder::PickUpGroundFreight {
-                    position: destination,
-                    kind,
-                }
-            } else if load_crates > 0 {
-                SupplyOrder::LoadCrates(load_crates)
-            } else if !crate_unloads.is_empty() {
-                SupplyOrder::UnloadCrates(crate_unloads)
-            } else {
-                SupplyOrder::None
-            },
-            travel: if attack_move {
-                TravelMode::AttackMove
-            } else {
-                TravelMode::Normal
-            },
-            facing: if sabotage {
-                FacingOrder::Sabotage
-            } else if dig_in {
-                FacingOrder::DigIn
-            } else if let Some(target) = indirect_fire {
-                FacingOrder::IndirectFire(target)
-            } else if stand_ground {
-                FacingOrder::StandGround(
-                    input
-                        .direction
-                        .ok_or("stand ground requires a facing direction.")?,
-                )
-            } else if attack_move {
-                // Older clients omit direction and retain the route's final facing.
-                match input.direction {
-                    Some(direction) => {
-                        if let [.., previous, destination] = path.as_slice()
-                            && Direction::between(*destination, *previous) == Some(direction)
-                        {
-                            return Err(
-                                "attack move cannot face back along its final route segment.",
-                            );
-                        }
-                        FacingOrder::AfterMove(direction)
+        let supply = if let Some(kind) = input.pickup_ground_freight {
+            SupplyOrder::PickUpGroundFreight {
+                position: destination,
+                kind,
+            }
+        } else if load_crates > 0 {
+            SupplyOrder::LoadCrates(load_crates)
+        } else if !crate_unloads.is_empty() {
+            SupplyOrder::UnloadCrates(crate_unloads)
+        } else {
+            SupplyOrder::None
+        };
+        let position = *path
+            .first()
+            .ok_or("an order requires a starting position.")?;
+        let action = if sabotage {
+            OrderAction::Sabotage(position)
+        } else if dig_in {
+            OrderAction::DigIn(position)
+        } else if let Some(target) = indirect_fire {
+            OrderAction::IndirectFire { position, target }
+        } else if stand_ground {
+            OrderAction::StandGround {
+                position,
+                direction: input
+                    .direction
+                    .ok_or("stand ground requires a facing direction.")?,
+            }
+        } else if attack_move {
+            let facing = match input.direction {
+                Some(direction) => {
+                    if let [.., previous, destination] = path.as_slice()
+                        && Direction::between(*destination, *previous) == Some(direction)
+                    {
+                        return Err("attack move cannot face back along its final route segment.");
                     }
-                    None => FacingOrder::Unchanged,
+                    ArrivalFacing::Face(direction)
                 }
-            } else {
-                match (ambush, input.direction) {
-                    (true, Some(direction)) => FacingOrder::Ambush(direction),
-                    (false, Some(_)) => return Err("a facing direction requires an ambush order."),
-                    (false, None) => FacingOrder::Unchanged,
-                    (true, None) => return Err("ambush requires a facing direction."),
-                }
-            },
-            unit_id,
-            path,
-            unloads,
-        });
+                // Older clients retain the route's final facing.
+                None => ArrivalFacing::AlongRoute,
+            };
+            OrderAction::AttackMove {
+                route: Route::new(path)?,
+                facing,
+            }
+        } else if ambush {
+            OrderAction::Ambush {
+                position,
+                direction: input
+                    .direction
+                    .ok_or("ambush requires a facing direction.")?,
+            }
+        } else if !unloads.is_empty() || supply_action {
+            OrderAction::Transport(TransportPlan {
+                journey: Journey::from_path(path)?,
+                unloads,
+                supply,
+            })
+        } else {
+            match Journey::from_path(path)? {
+                Journey::Stationary(position) => OrderAction::Hold(position),
+                Journey::Moving(route) => OrderAction::Move(route),
+            }
+        };
+        orders.push(UnitOrder { unit_id, action });
     }
     let dismounts = dismount_orders(scenario, &orders);
     for order in &orders {
-        for unload in &order.unloads {
+        for unload in order.unloads() {
             if !orders.iter().any(|other| {
                 other.unit_id == unload.unit_id
-                    && (other.path.len() == 1
+                    && (other.path().len() == 1
                         || dismounts.iter().any(|plan| plan.unit_id == other.unit_id))
             }) {
                 return Err("passengers unloading with a truck must have hold orders.");
@@ -1044,15 +924,15 @@ pub fn validate(
     }
     for order in &dismounts {
         let destination = *order
-            .path
+            .path()
             .last()
             .ok_or("movement requires a starting position.")?;
-        if order.path.first() != Some(&destination) && !destinations.insert(destination) {
+        if order.path().first() != Some(&destination) && !destinations.insert(destination) {
             return Err("units must have different destinations.");
         }
         if orders.iter().any(|other| {
             other.unit_id != order.unit_id
-                && other.path.last() == Some(&destination)
+                && other.path().last() == Some(&destination)
                 && !dismounts.iter().any(|plan| plan.unit_id == other.unit_id)
                 && scenario
                     .units
@@ -1074,10 +954,10 @@ pub fn validate(
             if dismounts.iter().any(|plan| plan.unit_id == order.unit_id) {
                 continue;
             }
-            if order.path.len() > 1 {
+            if order.path().len() > 1 {
                 if orders
                     .iter()
-                    .any(|other| other.unit_id == carrier && other.path.len() > 1)
+                    .any(|other| other.unit_id == carrier && other.path().len() > 1)
                 {
                     return Err("the truck must hold while unloading.");
                 }
@@ -1086,12 +966,12 @@ pub fn validate(
             }
         }
         let destination = *order
-            .path
+            .path()
             .last()
             .ok_or("movement requires a starting position.")?;
         arrivals.entry(destination).or_default().push(order.unit_id);
     }
-    for unload in orders.iter().flat_map(|order| &order.unloads) {
+    for unload in orders.iter().flat_map(|order| order.unloads()) {
         if arrivals.contains_key(&unload.destination) {
             return Err("units must have different destinations.");
         }
@@ -1099,7 +979,7 @@ pub fn validate(
     for ids in arrivals.values().filter(|ids| ids.len() > 1) {
         let conflict_error = if orders
             .iter()
-            .any(|order| ids.contains(&order.unit_id) && order.path.len() == 1)
+            .any(|order| ids.contains(&order.unit_id) && order.path().len() == 1)
         {
             "occupied squares cannot be destinations."
         } else {
@@ -1131,8 +1011,8 @@ pub fn validate(
             .count();
         // Boarding happens before unloading; freight loads after passenger exits.
         let occupied_before_unloading = supplies::occupied_berths(scenario, truck) + incoming;
-        let occupied_after_loading =
-            occupied_before_unloading - order.unloads.len() + order.supply.loading_count();
+        let occupied_after_loading = occupied_before_unloading - order.unloads().len()
+            + order.supply().map_or(0, SupplyOrder::loading_count);
         if incoming > 0
             && (occupied_before_unloading > truck.cargo_capacity() as usize
                 || occupied_after_loading > truck.cargo_capacity() as usize)
@@ -1281,48 +1161,35 @@ impl Turns {
             orders.sort_by_key(|order| order.unit_id);
             let initial_units = scenario.units.clone();
             let dismounts = dismount_orders(scenario, &orders);
-            let mut transport_orders = orders.clone();
-            for order in &mut transport_orders {
-                if dismounts.iter().any(|plan| plan.unit_id == order.unit_id) {
-                    let unit = scenario
-                        .units
-                        .iter()
-                        .find(|unit| unit.unit_id() == order.unit_id)
-                        .ok_or("the order references a missing unit.")?;
-                    order.path = vec![
-                        scenario
-                            .physical_position(unit)
-                            .ok_or("the passenger has no physical position.")?,
-                    ];
-                    order.travel = TravelMode::Normal;
-                    order.facing = FacingOrder::Unchanged;
-                }
-            }
-            let movement = movement_resolution::resolve(scenario, &transport_orders, self.number)
-                .map_err(|error| error.message())?;
+            let waiting: BTreeSet<_> = dismounts.iter().map(|order| order.unit_id).collect();
+            let movement =
+                movement_resolution::resolve_transport(scenario, &orders, self.number, &waiting)
+                    .map_err(|error| error.message())?;
             let conflicts = &movement.stopped;
             let mut frames = movement.frames;
             let mut combat = movement.combat;
             let mut combat_stopped = BTreeSet::new();
             let mut events = Vec::new();
-            let loads = planned_loads(scenario, &transport_orders);
+            let loads = planned_loads(scenario, &orders);
             // Capture event origins and facing before adopting the resolved board.
-            for order in &transport_orders {
+            for order in &orders {
                 let unit = scenario
                     .units
                     .iter()
                     .find(|unit| unit.unit_id() == order.unit_id)
                     .ok_or("the order references a missing unit.")?;
                 let conflict = conflicts.contains(&order.unit_id);
-                let kind = if conflict {
+                let kind = if waiting.contains(&order.unit_id) {
+                    TurnEventKind::Hold
+                } else if conflict {
                     TurnEventKind::MovementStopped
-                } else if order.facing.is_sabotaging() {
+                } else if order.kind() == UnitOrderKind::Sabotage {
                     TurnEventKind::Sabotage
-                } else if order.facing.is_standing_ground() {
+                } else if order.kind() == UnitOrderKind::StandGround {
                     TurnEventKind::StandGround
-                } else if order.facing.is_ambush() {
+                } else if order.kind() == UnitOrderKind::Ambush {
                     TurnEventKind::Ambush
-                } else if order.path.len() == 1 {
+                } else if order.path().len() == 1 {
                     TurnEventKind::Hold
                 } else if unit.carrier_id().is_some() {
                     TurnEventKind::Unload
@@ -1335,7 +1202,11 @@ impl Turns {
                     .ok_or("the unit has no resolved movement path.")?
                     .clone();
                 events.push(TurnEvent {
-                    rotation_direction: order.facing.direction(),
+                    rotation_direction: if waiting.contains(&order.unit_id) {
+                        None
+                    } else {
+                        order.direction()
+                    },
                     initial_direction: unit.direction(),
                     initial_sprite_facing: unit.sprite_facing(),
                     initial_carrier: unit.carrier_id(),
@@ -1360,7 +1231,7 @@ impl Turns {
                 let reached = orders
                     .iter()
                     .find(|order| order.unit_id == passenger)
-                    .and_then(|order| order.path.last());
+                    .and_then(|order| order.path().last());
                 if !unit.is_alive()
                     || !carrier_alive
                     || conflicts.contains(&truck)
@@ -1408,7 +1279,7 @@ impl Turns {
                 if !truck_arrived {
                     continue;
                 }
-                for unload in &order.unloads {
+                for unload in order.unloads() {
                     let passenger = scenario
                         .units
                         .iter()
@@ -1472,7 +1343,7 @@ impl Turns {
                     scenario.units.iter().any(|unit| {
                         unit.unit_id() == order.unit_id
                             && unit.is_alive()
-                            && unit.board_position().as_ref() == order.path.first()
+                            && unit.board_position().as_ref() == order.path().first()
                             && !combat_stopped.contains(&unit.unit_id())
                     })
                 })
@@ -1486,18 +1357,12 @@ impl Turns {
                         .iter()
                         .any(|order| order.unit_id == unit.unit_id())
                     {
-                        action_orders.push(UnitOrder {
-                            unit_id: unit.unit_id(),
-                            path: vec![
-                                scenario
-                                    .physical_position(unit)
-                                    .ok_or("the unit has no physical position.")?,
-                            ],
-                            travel: TravelMode::Normal,
-                            facing: FacingOrder::Unchanged,
-                            unloads: Vec::new(),
-                            supply: SupplyOrder::None,
-                        });
+                        action_orders.push(UnitOrder::hold(
+                            unit.unit_id(),
+                            scenario
+                                .physical_position(unit)
+                                .ok_or("the unit has no physical position.")?,
+                        ));
                     }
                 }
                 let action = movement_resolution::resolve_dismounts(
@@ -1514,20 +1379,20 @@ impl Turns {
                         .find(|unit| unit.unit_id() == order.unit_id)
                         .ok_or("the order references a missing unit.")?;
                     dismount_events.push(TurnEvent {
-                        rotation_direction: order.facing.direction(),
+                        rotation_direction: order.direction(),
                         initial_direction: unit.direction(),
                         initial_sprite_facing: unit.sprite_facing(),
                         initial_carrier: None,
                         carrier_id: None,
                         kind: if action.stopped.contains(&order.unit_id) {
                             TurnEventKind::MovementStopped
-                        } else if order.facing.is_ambush() {
+                        } else if order.kind() == UnitOrderKind::Ambush {
                             TurnEventKind::Ambush
-                        } else if order.facing.is_sabotaging() {
+                        } else if order.kind() == UnitOrderKind::Sabotage {
                             TurnEventKind::Sabotage
-                        } else if order.facing.is_standing_ground() {
+                        } else if order.kind() == UnitOrderKind::StandGround {
                             TurnEventKind::StandGround
-                        } else if order.path.len() > 1 {
+                        } else if order.path().len() > 1 {
                             TurnEventKind::Move
                         } else {
                             TurnEventKind::Hold
@@ -1546,7 +1411,10 @@ impl Turns {
             }
             combat.finish(scenario, &mut combat_stopped, &mut frames);
             let mut sabotages = Vec::new();
-            for order in orders.iter().filter(|order| order.facing.is_sabotaging()) {
+            for order in orders
+                .iter()
+                .filter(|order| order.kind() == UnitOrderKind::Sabotage)
+            {
                 let position = scenario
                     .units
                     .iter()
@@ -1592,10 +1460,13 @@ impl Turns {
                             && event.kind != TurnEventKind::MovementStopped
                     })
                 })
-                .map(|order| (order.unit_id, order.supply.clone()))
+                .filter_map(|order| order.supply().map(|supply| (order.unit_id, supply.clone())))
                 .collect();
             // Surviving diggers gain protection after indirect fire and before settlement.
-            for order in orders.iter().filter(|order| order.facing.is_digging_in()) {
+            for order in orders
+                .iter()
+                .filter(|order| order.kind() == UnitOrderKind::DigIn)
+            {
                 if let Some(unit) = scenario
                     .units
                     .iter_mut()
@@ -2139,7 +2010,7 @@ mod tests {
             let result = validate(&scenario, PlayerNumber::Player1, inputs);
             if kind == UnitKind::Infantry {
                 let orders = result.fixture()?;
-                assert_eq!(orders[0].path.last(), Some(&Coordinate::new(1, 0)));
+                assert_eq!(orders[0].path().last(), Some(&Coordinate::new(1, 0)));
                 let mut inputs = holds(&scenario, PlayerNumber::Player1)?;
                 set_path(&mut inputs, &id, &[(0, 0), (1, 0), (2, 0)])?;
                 assert_eq!(
@@ -2363,14 +2234,14 @@ mod tests {
             Ok(inputs)
         };
         assert_eq!(
-            validate(&scenario, PlayerNumber::Player1, attack(&scenario)?)?[0].travel,
-            TravelMode::AttackMove
+            validate(&scenario, PlayerNumber::Player1, attack(&scenario)?)?[0].kind(),
+            UnitOrderKind::AttackMove
         );
         let mut invalid = attack(&scenario)?;
         invalid[0].direction = Some(Direction::North);
         let directed = validate(&scenario, PlayerNumber::Player1, invalid)?;
-        match directed.first().fixture()?.facing {
-            FacingOrder::AfterMove(direction) => assert_eq!(direction, Direction::North),
+        match directed.first().fixture()?.arrival_direction() {
+            Some(direction) => assert_eq!(direction, Direction::North),
             _ => return Err("attack move lost its final facing".into()),
         }
         let mut invalid = attack(&scenario)?;
@@ -5534,13 +5405,13 @@ mod tests {
         // Simulate inconsistent stored orders to exercise a resolution error,
         // rather than a draft validation failure.
         let first_orders = turns.orders[0].as_mut().fixture()?;
-        first_orders.first_mut().fixture()?.path.clear();
+        first_orders.first_mut().fixture()?.unit_id = UnitId::parse("65535").fixture()?;
         let pending_ids: Vec<_> = first_orders.iter().map(|order| order.unit_id).collect();
         let before = scenario.clone();
         let second = holds(&scenario, PlayerNumber::Player2)?;
         assert_eq!(
             turns.submit(&mut scenario, PlayerNumber::Player2, 1, second),
-            Err("movement requires a starting position.")
+            Err("movement references a missing unit.")
         );
         assert_eq!(scenario, before);
         assert_eq!(turns.number, 1);
@@ -5554,7 +5425,10 @@ mod tests {
                 .collect::<Vec<_>>(),
             pending_ids
         );
-        assert!(retained.first().fixture()?.path.is_empty());
+        assert_eq!(
+            retained.first().fixture()?.unit_id,
+            UnitId::parse("65535").fixture()?
+        );
         Ok(())
     }
     #[test]

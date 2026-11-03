@@ -1,12 +1,10 @@
 //! Read-only, synthetic matchups using the same calculation as live combat.
-use super::{AttackAspect, Combat, CombatKind, DamageCalculation};
+use super::{AttackAspect, Combat, CombatAction, CombatKind, CombatPlan, DamageCalculation};
 use crate::{
     map::{Coordinate, MapTheme, Terrain},
     map_definition::{DepotPlacement, MapDefinition, TerrainPlacement, UnitPlacement},
     player_number::PlayerNumber,
     scenario::{BuildingKind, Direction, UnitKind},
-    supplies::SupplyOrder,
-    turns::{FacingOrder, TravelMode, UnitOrder},
 };
 use juniper::{FieldResult, GraphQLEnum, GraphQLInputObject, GraphQLObject};
 
@@ -166,22 +164,22 @@ fn hit(
         target.dig_in();
     }
     let target_id = target.unit_id();
-    let mut order = UnitOrder {
-        unit_id: target_id,
-        path: vec![destination],
-        travel: TravelMode::Normal,
-        facing: FacingOrder::Unchanged,
-        supply: SupplyOrder::default(),
-        unloads: Vec::new(),
-    };
-    if defense != CombatChartDefense::Unready {
+    let action = if defense == CombatChartDefense::Unready {
+        CombatAction::Unprepared
+    } else {
         match input.ready_order {
-            CombatReadyOrder::StandGround => order.facing = FacingOrder::StandGround(facing),
-            CombatReadyOrder::Ambush => order.facing = FacingOrder::Ambush(facing),
-            CombatReadyOrder::AttackMove => order.travel = TravelMode::AttackMove,
+            CombatReadyOrder::StandGround => CombatAction::StandGround(facing),
+            CombatReadyOrder::Ambush => CombatAction::Ambush(facing),
+            CombatReadyOrder::AttackMove => CombatAction::AttackMove,
         }
-    }
-    let combat = Combat::prepare(&mut board, &[order]);
+    };
+    let combat = Combat::prepare_plans(
+        &mut board,
+        &[CombatPlan {
+            unit_id: target_id,
+            action,
+        }],
+    );
     let calculation = combat.damage_calculation(
         &board,
         board.units.first().ok_or("chart attacker is missing")?,

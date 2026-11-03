@@ -20,6 +20,7 @@
 - Tutorial missions
 - Manufacturing and cities
 - Air planes and boats
+- Day Night Cycle
 
 
 ### Future units

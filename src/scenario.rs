@@ -868,7 +868,7 @@ mod tests {
     use crate::{
         map::RoadShape,
         test_support::{FixtureValue, TestResult},
-        turns::UnitOrderKind,
+        unit_order::UnitOrderKind,
     };
 
     #[test]

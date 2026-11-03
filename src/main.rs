@@ -33,6 +33,7 @@ mod store;
 mod supplies;
 mod turns;
 mod unit_loss;
+mod unit_order;
 mod visibility;
 
 use actix_files::{Files, NamedFile};

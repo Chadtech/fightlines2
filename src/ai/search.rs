@@ -740,7 +740,7 @@ mod tests {
             plan(&changed, PlayerNumber::Player1).fixture()?,
         )
         .fixture()?;
-        assert!(orders.iter().all(|order| order.path.len() == 1));
+        assert!(orders.iter().all(|order| order.path().len() == 1));
         Ok(())
     }
 

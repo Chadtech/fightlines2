@@ -265,6 +265,21 @@ Saves validate before atomically writing a map file in the configured
 catalog directory. `MapId::scenario` reads its latest definition at game creation
 in every mode. Existing games own independent scenarios.
 
+`unit_order.rs` owns accepted `UnitOrder` intentions. Each order has one
+`OrderAction`; stationary actions carry a position, moving actions carry a `Route`
+whose private construction requires an origin and at least one step, and transport
+plans combine a stationary or moving `Journey` with passenger exits and freight
+handling. Attack-move arrival facing belongs to that action. `UnitOrderInput`
+remains the broad GraphQL/archive format in `turns.rs`; validation rejects
+contradictory fields and checks the action against the board, resources, and other
+orders before locking it.
+
+Movement resolution owns private `MovementPlan` attempts separately from accepted
+orders. Collision retries shorten only those attempts. Dependent infantry wait
+aboard during transport, then activate their accepted action after a successful
+exit. `Combat` derives preparation from accepted actions; synthetic combat-chart
+matchups supply combat preparation directly without inventing movement routes.
+
 Hit points, supplies and vehicle fuel are authoritative. Fuel, provisions, freight stocks,
 and their consumption costs use integer quantities at four times the original scale
 for finer balance adjustments. HP, damage, tile ranges, movement points, and cargo
@@ -1878,7 +1893,7 @@ opposing swaps, and simultaneous destination claims. The unit stops at the first
 encounter and fires once using its normal damage and shot cost. A resident enemy
 keeps its square; the attacker stops on the preceding square. Completing an
 attack-move route also triggers an attack against an enemy on the adjacent square
-directly ahead, using `FacingOrder::AfterMove` to apply the chosen final facing
+directly ahead, using `ArrivalFacing::Face` to apply the chosen final facing
 before checking contact. Interrupted routes keep their last traveled facing.
 Older clients omitting direction retain the final-segment behavior. This contact is
 checked after simultaneous arrivals, includes concealed enemies, and interrupts
@@ -1907,7 +1922,7 @@ with an `attack move` heading and the usual fog-safe encounter portraits.
 for supply depots, or 8 HP for fortresses. `DepotHp` exports current and maximum HP through `Depot.hp`,
 separately from unit HP. `Combat::bombard` applies one hit per fired shell
 independently of unit engagements and records `IndirectImpact.depot` transitions. Ground freight
-is unaffected. `FacingOrder::Sabotage` is validated as a whole-turn action for
+is unaffected. `OrderAction::Sabotage` is validated as a whole-turn action for
 infantry already on a surviving depot; surviving saboteurs destroy it after combat,
 before freight handling and replenishment. Sabotage costs only upkeep, grants no
 readiness, and cannot combine with dismounting, boarding, movement, or firing.
@@ -2095,7 +2110,7 @@ each other. Supply crate validation and loading dialogs accept only supply
 depots. Depot kind and location remain public; stock follows the existing fog
 projection gate in snapshots and playback frames.
 
-`FacingOrder::StandGround(Direction)` sets the chosen facing and grants defensive
+`OrderAction::StandGround` sets the chosen facing and grants defensive
 readiness only.
 Validation requires an on-map combat unit, an in-place route, no other actions,
 and enough supplies for readiness plus upkeep. `Combat.standing_ground` is separate
@@ -2163,7 +2178,7 @@ rendering a map leaves authored orientation intact.
 ## Indirect fire
 
 `UnitOrderInput.indirectFire` carries a tile coordinate. Validation converts it
-to `FacingOrder::IndirectFire`, requires a stationary on-board field gun with no
+to `OrderAction::IndirectFire`, requires a stationary on-board field gun with no
 other actions, checks map bounds and the server-exported circular `indirectRange`
 of 9 tiles, and reserves upkeep, readiness, and one shot. Target validation never
 consults visibility or occupancy. Ammunition continues to use supplies.
@@ -2218,13 +2233,14 @@ restores the card without triggering the global Enter-to-continue shortcut.
 
 ## Infantry orders after dismounting
 
-A truck's passenger exits remain in `UnitOrder.unloads`. An infantry order whose
+A truck's passenger exits live in `OrderAction::Transport`. An infantry order whose
 path starts at its assigned exit is a dependent order after dismounting; the
 wire contract reuses the existing move/action fields. Validation projects that
 infantry onto its exit and reserves unloading supplies before checking the order.
 Legacy passenger holds at the carrier remain plain unloading orders.
 
-Resolution substitutes aboard holds during the initial movement phase. Successful
+Resolution keeps dependent infantry aboard through a waiting set during the initial
+movement phase; accepted actions are not rewritten. Successful
 unloading activates the infantry's readiness in the existing `Combat`, then a
 second shared movement phase resolves surviving infantry orders before indirect
 fire. `movement_resolution::resolve_dismounts` preserves spent shots, readiness,
@@ -2250,7 +2266,7 @@ hold fallback at the exit.
 
 `Unit` owns typed `Entrenchment`, initialized as `Exposed` and exported with each
 observable unit. No map state or terrain object represents a trench. The
-exclusive `FacingOrder::DigIn` action is validated for exposed infantry already
+exclusive `OrderAction::DigIn` action is validated for exposed infantry already
 on the board and costs the Rust-exported `CombatRules.digInCost` (16) plus
 ordinary upkeep. Roads and all depot/fortress squares, including wreckage,
 exclude digging in server validation, AI candidates, and Elm order availability.

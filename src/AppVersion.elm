@@ -5,4 +5,4 @@ module AppVersion exposing (current)
 
 current : String
 current =
-    "2"
+    "3"
