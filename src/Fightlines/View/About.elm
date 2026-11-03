@@ -5,6 +5,7 @@ module Fightlines.View.About exposing
     , htmlId
     )
 
+import Css.Global
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
@@ -22,7 +23,8 @@ import View.Prose as Prose
 
 type Section
     = Intro
-    | Inspiration
+    | Contact
+    | Code
     | Pacifism
 
 
@@ -35,7 +37,8 @@ type Section
 all : List Section
 all =
     [ Intro
-    , Inspiration
+    , Contact
+    , Code
     , Pacifism
     ]
 
@@ -51,60 +54,24 @@ sectionTitle section =
         Intro ->
             "intro"
 
-        Inspiration ->
-            "inspiration"
-
         Pacifism ->
             "pacifism"
 
+        Contact ->
+            "contact"
 
-{-| Fill in each section here. Blank lines separate paragraphs.
--}
-sectionText : Section -> List String
-sectionText section =
-    case section of
-        Intro ->
-            [ """Hi. Thanks for playing my game. My name is Chad ("Chadtech" online). I am a programmer and father of three. I made this game for free
-and I don't have a patreon or any way for you to give me money.""" ]
-
-        Inspiration ->
-            [ """Growing up, I played a lot of war video games. While they were a lot of fun, only as I got older and became
-more well read in history, did I notice discrepancies between the way wars are depicted in video games and the reality of war.
-It really got my gears turning on what a video game would be like if it was realistic."""
-            , """In actual wars, cities typically are not captured, they get destroyed. It's not like the enemy flag
-goes down and yours goes up. If your enemy had a city, and was extracting food and supplies and production from it, you
-can't just take the city and then you are the person extracting food and supplies and production from it. Capturing the
-city generally means destroying it. The things that made the city productive, the peace that made people comfortable and
-capable to do useful productivity things, the physical stuff that made life and work possible; those are all destroyed
-when capturing a city. So in a realistic game, it should only be capable of destroying enemy capacity, not obtaining it.
-Foes should gradually cripple each other, as they gradually destroy each other's cities.
-"""
-            , """In actual wars, most of the personelle are not on the frontlines. Quite a lot of them are just locating
-equipment, people, and supplies, to where they need to be. If all you did was deliver troops to the frontlines, they would
-lose catastrophically without a continuous pipeline of food and ammunition. I felt a realistic game should require
-attention to that pipeline, and a loss of that pipeline to the enemy should be catastrophic and as dangerous as the
-fighting forces themselves being destroyed. It should be a risky ordeal to get forces to where they need to be."""
-            ]
-
-        Pacifism ->
-            [ """This is a war game, I don't feel any issues with enjoying war games, but it is interesting how much war and violence is embraced
-in the abstract and in entertainment, despite the fact that it's really really bad. Isn't that weird? I find this an
-interesting fact about society, and I also find the morality of war and violence interesting, so I am just going to take
-this opportunity here, on this obscure part of this website, to share my thoughts.
-
-War is really bad. I don't mean just regrettably bad, as if it was just a difficult struggle, or it was bad but also unfortunately necessary.
-I mean it's just bad. A very large majority of all the decisions to take part in a war, even in defense, have been really dumb. In some extreme
-circumstances, violence can be justified, like in self defense or the defense of others, or maybe to protect your home or business.
-Do wars resemble those cases of self defense? Not at all. Most wars were easily avoidable. Most of the time the horrors of war were
-not justified by the cause or the aims of the war. Most of the time, it would be better of either side just gave up and surrendered immediately.""" ]
+        Code ->
+            "code"
 
 
-{-| Add your photo under public/assets/ and set this to Just "/assets/your-photo.jpg".
-Nothing keeps the portrait hidden until a photo is ready.
--}
-aboutPhotoSource : Maybe String
+aboutPhotoSource : String
 aboutPhotoSource =
-    Nothing
+    "/assets/creator-portrait.jpg"
+
+
+aboutPhotoCaption : String
+aboutPhotoCaption =
+    "me standing next to a statue of George Washington, the general who oversaw the glorious retreat from long island during the American Revolutionary war. Running away is one of my favorite military tactics"
 
 
 
@@ -118,23 +85,42 @@ dialog events =
     let
         photo : Html msg
         photo =
-            case aboutPhotoSource of
-                Nothing ->
-                    H.text ""
-
-                Just source ->
-                    H.img
-                        [ A.src source
-                        , A.alt "the creator of fightlines"
-                        , A.css
-                            [ S.block
-                            , S.wFull
-                            , S.maxW64
-                            , S.hAuto
-                            , S.outdent
-                            ]
+            H.figure
+                [ A.css
+                    [ S.block
+                    , S.floatLeft
+                    , S.wFull
+                    , S.maxW64
+                    , S.mr4
+                    , S.mb4
+                    , S.belowWidth 600
+                        [ S.floatNone
+                        , S.m0
+                        , S.mb4
                         ]
-                        []
+                    ]
+                ]
+                [ H.img
+                    [ A.src aboutPhotoSource
+                    , A.alt "the creator of fightlines"
+                    , A.css
+                        [ S.block
+                        , S.wFull
+                        , S.hAuto
+                        , S.outdent
+                        ]
+                    ]
+                    []
+                , H.figcaption
+                    [ A.css
+                        [ S.mt2
+                        , S.fontSizeRem 0.875
+                        , S.textGray4
+                        , S.wrapAnywhere
+                        ]
+                    ]
+                    [ H.text aboutPhotoCaption ]
+                ]
     in
     Dialog.make htmlId
         "about fightlines"
@@ -143,14 +129,12 @@ dialog events =
             [ Aria.label "about fightlines text"
             , A.tabindex 0
             , A.css
-                [ S.col
-                , S.g4
+                [ S.block
                 , S.p3
                 , S.bgNightwood3
                 , S.indentStrong
                 , S.maxHViewportInsetRem 11
                 , S.overflowAuto
-                , S.focusVisible [ S.outlineYellow5 ]
                 ]
             ]
             (photo :: List.map sectionView all)
@@ -159,6 +143,97 @@ dialog events =
         ]
         |> Dialog.article
         |> Dialog.withCloseButton
+
+
+{-| Fill in each section here. Blank lines separate paragraphs.
+-}
+sectionBody : Section -> List (Html msg)
+sectionBody section =
+    case section of
+        Intro ->
+            [ H.p
+                [ A.css
+                    [ S.wrapAnywhere
+                    ]
+                ]
+                [ H.text """Hi. Thanks for playing my game. My name is Chad ("Chadtech" online). I am a programmer and father of three.
+I made this game for free and I don't have a patreon or any way for you to give me money."""
+                ]
+            , H.p
+                [ A.css
+                    [ S.wrapAnywhere
+                    ]
+                ]
+                [ H.text """I'm an arizonan. i got my degree in economics. my favorite philosopher is wittgenstein.
+i practice brazilian jiu jitsu. I pretty much believe everything economists """
+                , externalLink
+                    { label = "bryan caplan"
+                    , href = "https://www.betonit.ai/"
+                    }
+                , H.text " and "
+                , externalLink
+                    { label = "robin hanson"
+                    , href = "https://www.overcomingbias.com/"
+                    }
+                , H.text " have to say on their blogs."
+                ]
+            ]
+
+        Contact ->
+            [ H.p
+                [ A.css
+                    [ S.wrapAnywhere
+                    ]
+                ]
+                [ H.text "email me at "
+                , externalLink
+                    { label = "chadtech0@gmail.com"
+                    , href = "mailto:chadtech0@gmail.com"
+                    }
+                , H.text ". follow me on x dot come at "
+                , externalLink
+                    { label = "@TheRealChadtech"
+                    , href = "https://x.com/TheRealChadtech"
+                    }
+                , H.text ". my github username is "
+                , externalLink
+                    { label = "chadtech"
+                    , href = "https://github.com/chadtech"
+                    }
+                ]
+            ]
+
+        Code ->
+            [ """I made this game using the Elm programming language. I love Elm and have been using it for over a decade. The
+backend is written in Rust, another great programming language I really like"""
+            ]
+                |> List.concatMap Prose.paragraphs
+
+        Pacifism ->
+            [ """This is a war game. isn't it interesting how much violence is in media and entertainment despite the fact that
+war and violence are really really bad? i mean it's fine to have fun. i don't want to spoil people enjoying violent media, but
+it's still striking to me the gap between how exciting violence in the abstract can be with how clearly morally wrong it is.
+So i am just going to take this opportunity here, in this obscure part of this website, to share my thoughts.
+
+War is really bad. I don't mean just regrettably bad, as if it was just a difficult struggle, or it was bad but also unfortunately necessary.
+I mean it's just bad. A very large majority of all the decisions to take part in a war, even in defense, have been really dumb. In some extreme
+circumstances, violence can be justified, like in self defense or the defense of others, or maybe to protect your home or business.
+Do wars resemble those cases of self defense? Not at all. Most wars were easily avoidable. Most of the time the horrors of war were
+not justified by the cause or the aims of the war. Most of the time, it would be better of either side just gave up and surrendered immediately.""" ]
+                |> List.concatMap Prose.paragraphs
+
+
+externalLink : { label : String, href : String } -> Html msg
+externalLink link =
+    H.a
+        [ A.href link.href
+        , A.target "_blank"
+        , A.rel "noopener noreferrer"
+        , A.css
+            [ S.link
+            ]
+        ]
+        [ H.text link.label ]
 
 
 sectionView : Section -> Html msg
@@ -175,8 +250,13 @@ sectionView section =
     in
     H.section
         [ A.css
-            [ S.col
-            , S.g2
+            [ S.block
+            , S.mb4
+            , Css.Global.children
+                [ Css.Global.selector "p"
+                    [ S.mt2
+                    ]
+                ]
             ]
         ]
-        (header :: List.concatMap Prose.paragraphs (sectionText section))
+        (header :: sectionBody section)

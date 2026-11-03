@@ -10,6 +10,8 @@ directory is available. A fresh clone does not include that directory.
   with built-in imagegen. Tall italic ivory lettering sits over a thick yellow
   underline, with a flush g descender and a small explosion at the right.
   Local approved variations and prompts are retained in `output/imagegen/`.
+- `creator-portrait.jpg`: user-supplied 828 x 949 creator portrait, moved unchanged
+  from `IMG_1544.jpg`. The shared About dialog preserves its original proportions.
 - `omar-bradley-cutout-v1.png`: transparent monochrome portrait extracted from
   the supplied Omar Bradley photograph with built-in imagegen. The home page
   displays it as subdued decoration after the logo enters. The source photograph,

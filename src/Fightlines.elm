@@ -46,6 +46,7 @@ import Url
         )
 import View.AppInitError as AppInitError
 import View.AppShell as AppShell
+import View.AppVersion as AppVersionView
 import View.Aria as Aria
 import View.AudioMute as AudioMute
 import View.Button as Button
@@ -563,6 +564,10 @@ update msg page =
 view : Page -> Browser.Document Msg
 view page =
     let
+        overlayContent : List (Html Msg)
+        overlayContent =
+            AppVersionView.toHtml :: audioContent
+
         audioContent : List (Html Msg)
         audioContent =
             case getShared page of
@@ -581,12 +586,12 @@ view page =
             case dialog page of
                 Just activeDialog ->
                     [ activeDialog
-                        |> Dialog.withOverlay audioContent
+                        |> Dialog.withOverlay overlayContent
                         |> Dialog.toHtml
                     ]
 
                 Nothing ->
-                    audioContent
+                    overlayContent
 
         content : List (Html Msg)
         content =

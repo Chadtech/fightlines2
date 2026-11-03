@@ -3,18 +3,12 @@
 ## Done
 
 ## doing now
-- About page
-- - Privacy Policy
 
 ## Bugs
 
 ## Immediately
-- Chat
 
 - Launch
-- get rid of all these annoying blue focus outlines
-- Version number in UI
-- Error toasts
 - Review combat balance in dev view
 - Review turn.rs and movement_resolution.rs
 

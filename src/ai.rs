@@ -6,7 +6,7 @@ use crate::{
     movement,
     player_number::PlayerNumber,
     scenario::{Direction, ResourceKind, Scenario, Unit, UnitKind},
-    turns::{CoordinateInput, MoveOrderInput},
+    turns::{CoordinateInput, UnitOrderInput},
     visibility,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -18,7 +18,7 @@ mod transport;
 pub fn plan(
     scenario: &Scenario,
     player: PlayerNumber,
-) -> Result<Vec<MoveOrderInput>, &'static str> {
+) -> Result<Vec<UnitOrderInput>, &'static str> {
     search::plan(scenario, player)
 }
 
@@ -26,7 +26,7 @@ pub fn plan(
 fn advancing_orders(
     scenario: &Scenario,
     player: PlayerNumber,
-) -> Result<Vec<MoveOrderInput>, &'static str> {
+) -> Result<Vec<UnitOrderInput>, &'static str> {
     let visible = visibility::visible_tiles(scenario, player);
     let observed = visibility::observed_scenario(scenario, player, &visible);
     let mut reserved = BTreeSet::new();
@@ -92,8 +92,8 @@ fn advancing_orders(
     Ok(orders)
 }
 
-fn hold(unit: &Unit, origin: Coordinate) -> MoveOrderInput {
-    MoveOrderInput {
+fn hold(unit: &Unit, origin: Coordinate) -> UnitOrderInput {
+    UnitOrderInput {
         unit_id: unit.id(),
         path: vec![coordinate_input(origin)],
         direction: None,

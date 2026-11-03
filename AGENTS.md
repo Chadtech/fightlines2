@@ -43,7 +43,12 @@ setting up or discussing the workflow does not invoke it.
 2. Verify the current branch and its upstream. Prepare the changes for `main`
    without discarding work or rewriting published history. Report any branch or
    remote conflict that prevents a normal push.
-3. Run `make check-all` and `git diff --check`. Fix failures before proceeding.
+3. Run `make bump-version` once for this check-in before checks and review. It
+   increments the integer in `VERSION` and regenerates `src/AppVersion.elm`.
+   If the working tree already contains a version bump relative to `HEAD`,
+   reuse it; do not bump again for retries, review fixes, or a failed push.
+   Include the version in the approval summary.
+   Run `make check-all` and `git diff --check`. Fix failures before proceeding.
    Inspect generated changes from the checks as part of the final diff.
 4. Present a high-level summary grouped by added, modified, renamed, and deleted
    files. List every affected path, grouping related paths with a brief purpose.

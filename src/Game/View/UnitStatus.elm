@@ -272,8 +272,6 @@ infoButton events label help =
             , S.bgTransparent
             , S.textGray5
             , S.pointerCursor
-            , S.focusVisible
-                [ S.outlineCurrent ]
             ]
         ]
         [ InfoMarker.toHtml ]

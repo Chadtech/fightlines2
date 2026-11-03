@@ -22,6 +22,17 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode exposing (Decoder)
 
 
+type alias SubmitFeedbackRequiredArguments =
+    { text : String }
+
+
+submitFeedback :
+    SubmitFeedbackRequiredArguments
+    -> SelectionSet Bool RootMutation
+submitFeedback requiredArgs____ =
+    Object.selectionForField "Bool" "submitFeedback" [ Argument.required "text" requiredArgs____.text Encode.string ] Decode.bool
+
+
 type alias SendChatRequiredArguments =
     { input : Api.InputObject.SendChatInput }
 
@@ -203,7 +214,7 @@ setLobbySide requiredArgs____ object____ =
 type alias SubmitTurnRequiredArguments =
     { id : String
     , turnNumber : Int
-    , orders : List Api.InputObject.MoveOrderInput
+    , orders : List Api.InputObject.UnitOrderInput
     }
 
 
@@ -212,7 +223,7 @@ submitTurn :
     -> SelectionSet decodesTo Api.Object.GameSnapshot
     -> SelectionSet decodesTo RootMutation
 submitTurn requiredArgs____ object____ =
-    Object.selectionForCompositeField "submitTurn" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "turnNumber" requiredArgs____.turnNumber Encode.int, Argument.required "orders" requiredArgs____.orders (Api.InputObject.encodeMoveOrderInput |> Encode.list) ] object____ Basics.identity
+    Object.selectionForCompositeField "submitTurn" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "turnNumber" requiredArgs____.turnNumber Encode.int, Argument.required "orders" requiredArgs____.orders (Api.InputObject.encodeUnitOrderInput |> Encode.list) ] object____ Basics.identity
 
 
 type alias ResignGameRequiredArguments =

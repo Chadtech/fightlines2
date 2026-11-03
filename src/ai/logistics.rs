@@ -7,7 +7,7 @@ use crate::{
     player_number::PlayerNumber,
     scenario::{ResourceKind, Scenario, Unit, UnitId, UnitKind},
     supplies,
-    turns::MoveOrderInput,
+    turns::UnitOrderInput,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -31,14 +31,14 @@ pub(super) enum TruckMission {
 pub(super) struct TruckPlan {
     pub(super) mission: TruckMission,
     pub(super) score: i32,
-    pub(super) order: MoveOrderInput,
-    pub(super) dependent_orders: Vec<MoveOrderInput>,
+    pub(super) order: UnitOrderInput,
+    pub(super) dependent_orders: Vec<UnitOrderInput>,
 }
 
 pub(super) fn support(
     scenario: &Scenario,
     player: PlayerNumber,
-    orders: &mut [MoveOrderInput],
+    orders: &mut [UnitOrderInput],
 ) -> Result<(), &'static str> {
     let mut assigned = Vec::new();
     for truck in scenario.units.iter().filter(|unit| {
@@ -104,7 +104,7 @@ pub(super) fn support(
 }
 
 pub(super) fn planned_destination(
-    orders: &[MoveOrderInput],
+    orders: &[UnitOrderInput],
     unit: &Unit,
 ) -> Result<Coordinate, &'static str> {
     let end = orders
@@ -116,9 +116,9 @@ pub(super) fn planned_destination(
 }
 
 pub(super) fn replace_order(
-    orders: &mut [MoveOrderInput],
+    orders: &mut [UnitOrderInput],
     unit: &Unit,
-    replacement: MoveOrderInput,
+    replacement: UnitOrderInput,
 ) -> Result<(), &'static str> {
     let order = orders
         .iter_mut()
@@ -131,7 +131,7 @@ pub(super) fn replace_order(
 pub(super) fn blocked_tiles(
     scenario: &Scenario,
     unit: &Unit,
-    orders: &[MoveOrderInput],
+    orders: &[UnitOrderInput],
 ) -> Result<BTreeSet<Coordinate>, &'static str> {
     let mut blocked: BTreeSet<_> = scenario
         .units
@@ -253,7 +253,7 @@ fn pickup_targets(scenario: &Scenario, kind: ResourceKind) -> Vec<Destination> {
 fn freight_plans(
     scenario: &Scenario,
     truck: &Unit,
-    orders: &[MoveOrderInput],
+    orders: &[UnitOrderInput],
     assigned: &[TruckMission],
 ) -> Result<Vec<TruckPlan>, &'static str> {
     let mut plans = Vec::new();
@@ -320,7 +320,7 @@ fn freight_plans(
 fn freight_plan(
     scenario: &Scenario,
     truck: &Unit,
-    orders: &[MoveOrderInput],
+    orders: &[UnitOrderInput],
     resource: ResourceKind,
     recipient: &Unit,
     score: i32,
@@ -441,7 +441,7 @@ fn freight_plan(
 fn provisions_plan(
     scenario: &Scenario,
     truck: &Unit,
-    orders: &[MoveOrderInput],
+    orders: &[UnitOrderInput],
 ) -> Result<Option<TruckPlan>, &'static str> {
     if truck.supplies().current() >= truck.supplies().maximum() / 2
         || truck
@@ -482,7 +482,7 @@ fn provisions_plan(
 fn fuel_sources(
     scenario: &Scenario,
     vehicle: &Unit,
-    orders: &[MoveOrderInput],
+    orders: &[UnitOrderInput],
 ) -> Result<Vec<Destination>, &'static str> {
     let mut sources = pickup_targets(scenario, ResourceKind::Fuel);
     for source in &mut sources {
@@ -530,7 +530,7 @@ fn fuel_sources(
 fn protect_reserve(
     scenario: &Scenario,
     vehicle: &Unit,
-    orders: &mut [MoveOrderInput],
+    orders: &mut [UnitOrderInput],
 ) -> Result<bool, &'static str> {
     let fuel = vehicle.fuel().ok_or("the AI vehicle has no fuel.")?;
     let origin = vehicle

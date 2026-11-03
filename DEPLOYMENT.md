@@ -158,6 +158,8 @@ production assets, and start it again. Keep runtime storage in place.
 
 Normal server startup enables structured diagnostics using `tracing`. Events are
 written as JSON lines to stderr and `server-logs/fightlines.YYYY-MM-DD.jsonl`.
+Every event includes a top-level `version` from the compiled integer in `VERSION`;
+compare it with the frontend version in the screen corner or dev panel.
 `FIGHTLINES_SERVER_LOG_DIR` changes the directory. For hosting, set an absolute
 path on a persistent volume, outside every public static directory, for example
 `FIGHTLINES_SERVER_LOG_DIR=/var/log/fightlines`. The server rejects paths inside
@@ -203,6 +205,23 @@ jq 'select(.level == "ERROR")' /var/log/fightlines/fightlines.*.jsonl
 Schema export and offline archive replay do not initialize the server logger.
 
 
+## Player feedback
+
+The home and game menus accept feedback without requiring a lobby or account.
+Each successful `submitFeedback` mutation saves a private `feedback-*.json` file
+in `feedback/`, with the text, Unix-millisecond timestamp, and server version.
+Blank feedback and entries over 5,000 characters are rejected. The server
+acknowledges submissions only after syncing and atomically publishing the file.
+Feedback text is excluded from operational diagnostics and has no public read API.
+
+Set `FIGHTLINES_FEEDBACK_DIR` to an absolute path on persistent storage when
+hosting, outside `FIGHTLINES_FRONTEND_DIR` and any reverse-proxy static roots.
+For example, use `/var/lib/fightlines/feedback`. Startup rejects paths under the
+frontend and checks write access. New directories use Unix mode `0700` and files
+`0600`. Existing directory permissions are the operator's responsibility.
+Storage must support hard links. Keep or remove submissions as needed; feedback
+has no automatic retention policy.
+
 ## Game archives
 
 The server records every normally started game in `game-logs/` by default.
@@ -217,7 +236,7 @@ use mode `0700` and files `0600`.
 Every server startup separately saves
 `server-start-<unix-nanoseconds>-<process-id>.json` in this same directory. It
 contains the exact initial seed, UTC start timestamp in Unix milliseconds,
-package version, and optional build revision. These private files use mode
+application version, and optional build revision. These private files use mode
 `0600` on Unix and are excluded from archive queries and replay pages. Console
 output prints only the record path, never the seed. Failure to obtain randomness
 or persist the seed stops startup before serving requests.
@@ -230,7 +249,7 @@ server-session input recording and replay are not implemented yet.
 Each game has a directory named `<game-id>-<start-time-in-unix-nanoseconds>`:
 
 - `00000000.json` contains the exact starting scenario, roster and AI difficulty,
-  map selection, lobby chat, package version, and optional build revision.
+  map selection, lobby chat, application version, and optional build revision.
 - Following numbered files contain accepted submissions in processing order,
   timestamps in Unix milliseconds, the resulting authoritative board, pending
   players, terminal outcome, and the full resolution when a turn completes.

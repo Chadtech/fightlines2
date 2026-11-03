@@ -121,7 +121,7 @@ orderChecks unitId passengerId =
                     }
             }
 
-        pickupInput : Api.InputObject.MoveOrderInput
+        pickupInput : Api.InputObject.UnitOrderInput
         pickupInput =
             PlannedOrder.toInput
                 { unitId = unitId
@@ -134,7 +134,7 @@ orderChecks unitId passengerId =
                         }
                 }
 
-        indirectInput : Api.InputObject.MoveOrderInput
+        indirectInput : Api.InputObject.UnitOrderInput
         indirectInput =
             PlannedOrder.toInput
                 { unitId = unitId

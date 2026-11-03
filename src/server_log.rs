@@ -1,4 +1,5 @@
 //! Private operational diagnostics, separate from authoritative game archives.
+use crate::app_version;
 use actix_web::{
     Error, HttpMessage, HttpRequest,
     body::MessageBody,
@@ -17,18 +18,50 @@ use std::{
     process,
     sync::atomic::{AtomicU64, Ordering},
 };
-use tracing::{Instrument, Level};
+use tracing::{Event, Instrument, Level, Subscriber};
 use tracing_appender::{
     non_blocking::{NonBlockingBuilder, WorkerGuard},
     rolling::{RollingFileAppender, Rotation},
 };
-use tracing_subscriber::{filter, fmt::writer::MakeWriterExt, prelude::*};
+use tracing_subscriber::{
+    filter,
+    fmt::{
+        FmtContext,
+        format::{Format, FormatEvent, FormatFields, Json, Writer},
+        writer::MakeWriterExt,
+    },
+    prelude::*,
+    registry::LookupSpan,
+};
 
 const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
 const RETAINED_FILES: usize = 30;
 static NEXT_REQUEST: AtomicU64 = AtomicU64::new(1);
 
 struct RequestTracing(tracing::Dispatch);
+
+/// Add build identity to every event, including events outside request spans.
+struct VersionedJson(Format<Json>);
+
+impl<S, N> FormatEvent<S, N> for VersionedJson
+where
+    S: Subscriber + for<'lookup> LookupSpan<'lookup>,
+    N: for<'writer> FormatFields<'writer> + 'static,
+{
+    fn format_event(
+        &self,
+        context: &FmtContext<'_, S, N>,
+        mut writer: Writer<'_>,
+        event: &Event<'_>,
+    ) -> fmt::Result {
+        let mut json = String::new();
+        self.0
+            .format_event(context, Writer::new(&mut json), event)?;
+        let fields = json.strip_prefix('{').ok_or(fmt::Error)?;
+        let version = serde_json::to_string(app_version::current()).map_err(|_| fmt::Error)?;
+        write!(writer, "{{\"version\":{version},{fields}")
+    }
+}
 
 pub fn dispatch(request: &HttpRequest) -> tracing::Dispatch {
     request
@@ -77,7 +110,11 @@ fn init_in(directory: &Path, frontend: &Path) -> io::Result<WorkerGuard> {
     let output = tracing_subscriber::fmt::layer()
         .json()
         .with_ansi(false)
-        .with_span_list(false)
+        .event_format(VersionedJson(
+            tracing_subscriber::fmt::format()
+                .json()
+                .with_span_list(false),
+        ))
         .with_writer(writer.and(io::stderr))
         // Keep third-party diagnostics from echoing request data behind our
         // explicit redaction boundary. HTTP failures are recorded by middleware.
@@ -545,6 +582,10 @@ mod tests {
             .lines()
             .map(serde_json::from_str::<JsonValue>)
             .collect::<Result<Vec<_>, _>>()?;
+        assert!(!records.is_empty());
+        for record in &records {
+            assert_eq!(record["version"], app_version::current());
+        }
         for (event, level, id) in [
             ("graphql_rejected", "WARN", rejected_id),
             ("graphql_invalid", "WARN", invalid_id),

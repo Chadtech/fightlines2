@@ -3,6 +3,7 @@ use crate::{
     chat::{self, ChatMessage, SendChatInput},
     combat::chart,
     environment::Environment,
+    feedback,
     game::{self, GameSnapshot},
     game_archive, lobby,
     lobby_id::LobbyId,
@@ -51,6 +52,7 @@ pub fn endpoint(environment: Environment) -> Endpoint {
 
 pub struct Context {
     pub store: Arc<Store>,
+    pub feedback: Option<Arc<feedback::Directory>>,
     pub editor: map_editor::Access,
     pub archives: game_archive::Access,
     identity: Mutex<Option<SessionToken>>,
@@ -175,6 +177,10 @@ pub struct Mutation;
 
 #[graphql_object(context = Context)]
 impl Mutation {
+    fn submit_feedback(context: &Context, text: String) -> FieldResult<bool> {
+        feedback::submit(context, &text)
+    }
+
     fn send_chat(context: &Context, input: SendChatInput) -> FieldResult<ChatMessage> {
         chat::send(context, input)
     }
@@ -247,7 +253,7 @@ impl Mutation {
         context: &Context,
         id: String,
         turn_number: i32,
-        orders: Vec<crate::turns::MoveOrderInput>,
+        orders: Vec<crate::turns::UnitOrderInput>,
     ) -> FieldResult<GameSnapshot> {
         game::submit_turn(context, LobbyId::from_token(id), turn_number, orders)
     }
@@ -344,6 +350,7 @@ pub async fn handle(
     editor: Option<web::Data<map_editor::Editor>>,
     endpoint: web::Data<Endpoint>,
     archives: Option<web::Data<game_archive::Browser>>,
+    feedback: Option<web::Data<feedback::Directory>>,
 ) -> HttpResponse {
     let environment = endpoint.environment;
     let request_id = RequestId::from_request(&request);
@@ -360,6 +367,7 @@ pub async fn handle(
     let original = SessionToken::from_request(&request);
     let context = Context {
         store: store.into_inner(),
+        feedback: feedback.map(web::Data::into_inner),
         editor: map_editor::Access::from_request(editor, &request),
         archives: game_archive::Access::from_browser(archives),
         identity: Mutex::new(original),
@@ -427,6 +435,7 @@ fn rejected_request(rejection: limits::Rejection, request_id: RequestId) -> Http
 pub fn export_schema() -> std::io::Result<()> {
     let context = Context {
         store: Arc::new(Store::new(crate::seed::Seed::new([0; 32]))),
+        feedback: None,
         editor: map_editor::Access::Disabled,
         archives: game_archive::Access::Disabled,
         identity: Mutex::new(None),
@@ -460,6 +469,69 @@ mod tests {
     use serde_json::{Value, json};
 
     const FIELDS: &str = "id name mapType players { name isHost } isHost isMember gameUrl";
+
+    #[actix_web::test]
+    async fn feedback_validates_and_only_acknowledges_persisted_submissions() -> TestResult<()> {
+        use std::{
+            fs,
+            time::{SystemTime, UNIX_EPOCH},
+        };
+        let root = std::env::temp_dir().join(format!(
+            "fightlines-feedback-api-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        let frontend = root.join("public");
+        fs::create_dir_all(&frontend)?;
+        let directory = root.join("feedback");
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(Store::new(crate::seed::Seed::new([29; 32]))))
+                .app_data(web::Data::new(endpoint(Environment::Production)))
+                .app_data(web::Data::new(feedback::Directory::open(
+                    directory.clone(),
+                    &frontend,
+                )?))
+                .route("/graphql", web::post().to(handle)),
+        )
+        .await;
+        let query = "mutation($text: String!) { submitFeedback(text: $text) }";
+        for text in ["   ".to_owned(), "x".repeat(5001)] {
+            let request = test::TestRequest::post()
+                .uri("/graphql")
+                .set_json(json!({"query": query, "variables": {"text": text}}))
+                .to_request();
+            let response = test::call_service(&app, request).await;
+            let body: Value = test::read_body_json(response).await;
+            assert!(body.get("errors").is_some(), "{body}");
+            assert_eq!(fs::read_dir(&directory)?.count(), 0);
+        }
+        // Feedback works before a player has a lobby or a session cookie.
+        let request = test::TestRequest::post()
+            .uri("/graphql")
+            .set_json(json!({"query": query, "variables": {"text": "  feedback\n世界  "}}))
+            .to_request();
+        let response = test::call_service(&app, request).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = test::read_body_json(response).await;
+        assert!(body.get("errors").is_none(), "{body}");
+        assert_eq!(body["data"]["submitFeedback"], true);
+        let file = fs::read_dir(&directory)?.next().fixture()??;
+        let record: Value = serde_json::from_slice(&fs::read(file.path())?)?;
+        assert_eq!(record["text"], "feedback\n世界");
+        assert!(record.get("session").is_none());
+        fs::remove_dir_all(&directory)?;
+        let request = test::TestRequest::post()
+            .uri("/graphql")
+            .set_json(json!({"query": query, "variables": {"text": "unsaved feedback"}}))
+            .to_request();
+        let response = test::call_service(&app, request).await;
+        let body: Value = test::read_body_json(response).await;
+        assert_eq!(body["errors"][0]["extensions"]["code"], "INTERNAL_ERROR");
+        assert!(!body.to_string().contains("unsaved feedback"));
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
 
     #[actix_web::test]
     async fn hosting_environment_controls_host_and_guest_cookie_security() -> TestResult<()> {

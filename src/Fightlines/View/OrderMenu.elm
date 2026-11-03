@@ -238,8 +238,6 @@ headerButtonStyles =
     , S.p0
     , S.borderTransparent
     , S.pointerCursor
-    , S.focusVisible
-        [ S.outlineCurrent ]
     ]
 
 
@@ -399,8 +397,6 @@ orderRowStyles =
     , S.focusVisible
         [ S.outdent
         , S.textYellow5
-        , S.outlineYellow5
-        , S.outlineOffsetNeg3
         ]
     , S.active
         [ S.indent

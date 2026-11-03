@@ -7,7 +7,7 @@ use crate::{
     scenario::{
         BuildingKind, DepotHp, Direction, Entrenchment, HitPoints, Scenario, Unit, UnitId, UnitKind,
     },
-    turns::{FacingOrder, MoveOrder, TravelMode, TurnFrame, UnitOrderKind},
+    turns::{FacingOrder, TravelMode, TurnFrame, UnitOrder, UnitOrderKind},
     unit_loss, visibility,
 };
 use juniper::{GraphQLEnum, GraphQLObject, graphql_object};
@@ -377,7 +377,7 @@ pub struct Combat {
 }
 
 impl Combat {
-    pub fn prepare(board: &mut Scenario, orders: &[MoveOrder]) -> Self {
+    pub fn prepare(board: &mut Scenario, orders: &[UnitOrder]) -> Self {
         // Pay before combat; protection is completed only after all fighting.
         for order in orders.iter().filter(|order| order.facing.is_digging_in()) {
             if let Some(unit) = board
@@ -448,7 +448,7 @@ impl Combat {
     }
 
     /// Activate a dismounted unit without resetting anyone's spent shots or targets.
-    pub fn activate(&mut self, board: &mut Scenario, orders: &[MoveOrder]) {
+    pub fn activate(&mut self, board: &mut Scenario, orders: &[UnitOrder]) {
         let additional = Self::prepare(board, orders);
         self.ambushers.extend(additional.ambushers);
         self.standing_ground.extend(additional.standing_ground);
@@ -1101,7 +1101,7 @@ mod tests {
         kind: UnitKind,
         enemy_kind: UnitKind,
         enemy: Coordinate,
-    ) -> TestResult<(Scenario, Vec<MoveOrder>)> {
+    ) -> TestResult<(Scenario, Vec<UnitOrder>)> {
         let mut scenario = Scenario::el_alamein().fixture()?;
         let shooter = scenario
             .units
@@ -1123,7 +1123,7 @@ mod tests {
             .units
             .iter()
             .enumerate()
-            .map(|(index, unit)| MoveOrder {
+            .map(|(index, unit)| UnitOrder {
                 supply: crate::supplies::SupplyOrder::default(),
                 travel: crate::turns::TravelMode::Normal,
                 unit_id: unit.unit_id(),
@@ -1145,7 +1145,7 @@ mod tests {
 
     fn resolve_completed_movement(
         scenario: &Scenario,
-        orders: &[MoveOrder],
+        orders: &[UnitOrder],
         turn: i32,
     ) -> TestResult<movement_resolution::MovementResolution> {
         let mut result = movement_resolution::resolve(scenario, orders, turn)?;
@@ -2637,7 +2637,7 @@ mod tests {
             })
             .fixture()?;
         newcomer.move_to(Coordinate::new(5, 1));
-        orders.push(MoveOrder {
+        orders.push(UnitOrder {
             supply: crate::supplies::SupplyOrder::default(),
             travel: crate::turns::TravelMode::Normal,
             unit_id: newcomer.unit_id(),
@@ -3005,7 +3005,7 @@ mod tests {
             .cloned()
             .fixture()?;
         second_shooter.move_to(Coordinate::new(5, 3));
-        orders.push(MoveOrder {
+        orders.push(UnitOrder {
             supply: crate::supplies::SupplyOrder::default(),
             travel: crate::turns::TravelMode::Normal,
             unit_id: second_shooter.unit_id(),
@@ -3082,7 +3082,7 @@ mod tests {
         let defender_id = defender.unit_id();
         let attacker_id = scenario.units.get(1).fixture()?.unit_id();
         orders.get_mut(1).fixture()?.travel = TravelMode::AttackMove;
-        orders.push(MoveOrder {
+        orders.push(UnitOrder {
             unit_id: defender_id,
             path: vec![Coordinate::new(5, 3)],
             travel: TravelMode::Normal,

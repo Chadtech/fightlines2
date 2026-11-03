@@ -198,10 +198,6 @@ tabButton (Tabs config) option =
                         ]
                     ]
                 )
-            , S.focusVisible
-                [ S.outlineYellow5
-                , S.outlineOffset3
-                ]
             ]
         ]
         [ H.text option.label

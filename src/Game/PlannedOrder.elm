@@ -261,7 +261,7 @@ isMoving order =
 Moving and stationary trucks can carry unloads; ambush and stand ground have a
 required facing.
 -}
-toInput : PlannedOrder -> Api.InputObject.MoveOrderInput
+toInput : PlannedOrder -> Api.InputObject.UnitOrderInput
 toInput order =
     let
         unloadInput : UnloadOrder -> Api.InputObject.UnloadOrderInput
@@ -312,7 +312,7 @@ toInput order =
                 Unload _ ->
                     OptionalArgument.Absent
     in
-    Api.InputObject.buildMoveOrderInput
+    Api.InputObject.buildUnitOrderInput
         { unitId = UnitId.toString order.unitId
         , path = List.map Api.InputObject.buildCoordinateInput (path order)
         }

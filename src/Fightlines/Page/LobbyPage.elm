@@ -948,12 +948,43 @@ view model =
 
 pageView : Model -> List (Html Msg)
 pageView model =
-    case model.screen of
-        Setup ->
-            lobbyView model
+    let
+        content : List (Html Msg)
+        content =
+            case model.screen of
+                Setup ->
+                    lobbyView model
 
-        Library library ->
-            [ libraryView model library ]
+                Library library ->
+                    [ H.div
+                        [ A.css
+                            [ S.pt12
+                            , S.flex1
+                            , S.minH0
+                            , S.col
+                            , S.belowWidth 400
+                                [ S.pt16
+                                ]
+                            ]
+                        ]
+                        [ libraryView model library
+                        ]
+                    ]
+    in
+    [ H.div
+        [ A.css
+            [ S.fixed
+            , S.inset0
+            , S.p4
+            , S.col
+            , S.g4
+            , S.wFull
+            , S.minH0
+            , S.overflowHidden
+            ]
+        ]
+        content
+    ]
 
 
 libraryView : Model -> LibraryState -> Html Msg
@@ -1053,7 +1084,7 @@ libraryView model library =
                     H.text ""
     in
     Card.toHtml
-        (Card.simple
+        (Card.panel
             |> Card.withHeader
                 (CardHeader.simple "choose map"
                     |> CardHeader.withCaption model.name
@@ -1062,10 +1093,12 @@ libraryView model library =
         [ H.div
             [ A.css
                 [ S.row
-                , S.itemsStart
                 , S.g4
+                , S.flex1
+                , S.minH0
                 , S.belowWidth 720
                     [ S.col
+                    , S.overflowAuto
                     ]
                 ]
             ]
@@ -1076,14 +1109,17 @@ libraryView model library =
                     , S.shrink0
                     , S.col
                     , S.g3
+                    , S.minH0
                     , S.belowWidth 720
                         [ S.wFull
+                        , S.h48
                         ]
                     ]
                 ]
                 [ H.label
                     [ A.css
                         [ S.col
+                        , S.shrink0
                         , S.g1
                         ]
                     ]
@@ -1097,7 +1133,8 @@ libraryView model library =
                         , S.bgNightwood3
                         , S.indentStrong
                         , S.p2px
-                        , S.maxHViewportInsetRem 16
+                        , S.flex1
+                        , S.minH0
                         , S.overflowAuto
                         ]
                     ]
@@ -1108,6 +1145,12 @@ libraryView model library =
                     [ S.flex1
                     , S.minW0
                     , S.wFull
+                    , S.minH0
+                    , S.col
+                    , S.belowWidth 720
+                        [ S.minH76
+                        , S.shrink0
+                        ]
                     ]
                 ]
                 [ preview
@@ -1122,6 +1165,7 @@ libraryView model library =
                 , S.flexWrap
                 , S.g3
                 , S.pt3
+                , S.shrink0
                 ]
             ]
             [ H.fieldset
@@ -1147,38 +1191,23 @@ mapDetailsView map =
         , A.css
             [ S.grid
             , S.gridColumns "minmax(0, 1.2fr) minmax(0, 1fr)"
-            , S.itemsStart
             , S.g4
+            , S.flex1
+            , S.minH0
             , S.belowWidth 1100
                 [ S.gridCols1
+                , S.gridRows "minmax(0, 1.2fr) minmax(0, 1fr)"
                 ]
             ]
         ]
-        [ H.div
-            [ A.css
-                [ S.wFull
-                , S.bgNightwood2
-                , S.indentStrong
-                , S.p3
-                ]
-            ]
-            [ H.div
-                [ A.css
-                    [ S.wFull
-                    , S.aspectRatio
-                        { width = map.definition.width
-                        , height = map.definition.height
-                        }
-                    ]
-                ]
-                [ MapPreview.toHtml map
-                ]
-            ]
+        [ fittedMapView map
         , H.div
             [ A.css
                 [ S.col
                 , S.g3
                 , S.minW0
+                , S.minH0
+                , S.overflowAuto
                 ]
             ]
             [ H.h2
@@ -1236,48 +1265,120 @@ mapDetailsView map =
 
 lobbyView : Model -> List (Html Msg)
 lobbyView model =
-    [ H.div
+    [ lobbyHeaderView model.name
+    , H.div
         [ A.css
-            [ S.row
-            , S.itemsStart
+            [ S.grid
+            , S.gridCols2
             , S.g4
             , S.wFull
+            , S.flex1
+            , S.minH0
             , S.belowWidth 720
                 [ S.col
+                , S.overflowAuto
                 ]
             ]
         ]
         [ H.div
             [ A.css
-                [ S.widthPct 44
+                [ S.col
                 , S.minW0
+                , S.minH0
                 , S.belowWidth 720
-                    [ S.wFull
+                    [ S.h80
+                    , S.shrink0
                     ]
                 ]
             ]
-            [ settingsView model
+            [ mapView model
             ]
         , H.div
             [ A.css
-                [ S.flex1
-                , S.minW0
-                , S.col
+                [ S.minW0
+                , S.minH0
+                , S.grid
+                , S.gridRows "minmax(0, auto) minmax(9rem, 1fr)"
                 , S.g4
                 , S.belowWidth 720
-                    [ S.wFull
+                    [ S.gridRows "auto 16rem"
+                    , S.shrink0
                     ]
                 ]
             ]
-            [ playersView model
+            [ H.div
+                [ A.css
+                    [ S.minH0
+                    , S.overflowAuto
+                    ]
+                ]
+                [ playersView model
+                ]
             , ChatView.lobbyPanel model.chat |> H.map ChatMsg
             ]
+        ]
+    , H.div
+        [ A.css
+            [ S.shrink0
+            ]
+        ]
+        [ lobbyActionsView model
         ]
     ]
 
 
-settingsView : Model -> Html Msg
-settingsView model =
+lobbyHeaderView : String -> Html Msg
+lobbyHeaderView name =
+    H.div
+        [ A.css
+            [ S.row
+            , S.justifyCenter
+            , S.itemsStart
+            , S.mtNeg4
+            , S.minH14
+            , S.shrink0
+            , S.belowWidth 400
+                [ S.minH16
+                ]
+            ]
+        ]
+        [ H.header
+            [ A.css
+                [ S.bgGray1
+                , S.outdent
+                , S.row
+                , S.itemsCenter
+                , S.g3
+                , S.px3
+                , S.py2
+                , S.maxWViewportInsetRem 7
+                ]
+            ]
+            [ H.img
+                [ A.src "/assets/fightlines-logo-v1.png"
+                , A.alt "fightlines"
+                , A.css
+                    [ S.w16
+                    , S.hAuto
+                    , S.shrink0
+                    ]
+                ]
+                []
+            , H.h1
+                [ A.css
+                    [ S.textGray5
+                    , S.wrapAnywhere
+                    , S.minW0
+                    ]
+                ]
+                [ H.text name
+                ]
+            ]
+        ]
+
+
+lobbyActionsView : Model -> Html Msg
+lobbyActionsView model =
     let
         notice : String
         notice =
@@ -1317,19 +1418,11 @@ settingsView model =
                 Nothing ->
                     H.text ""
     in
-    [ mapView model
-    , inviteView model
-    , startControlsView model
+    [ startControlsView model
     , errorNotice
     , retryControl
     ]
-        |> Card.toHtml
-            (Card.simple
-                |> Card.withHeader
-                    (CardHeader.simple model.name
-                        |> CardHeader.withCaption "game lobby"
-                    )
-            )
+        |> Card.toHtml Card.simple
 
 
 inviteView : Model -> Html Msg
@@ -1344,14 +1437,36 @@ inviteView model =
                 _ ->
                     Nothing
 
-        copyError : Html Msg
-        copyError =
+        copyFallback : Html Msg
+        copyFallback =
             case model.copyStatus of
                 CopyFailed ->
-                    H.p
-                        [ Aria.role Aria.Alert
+                    H.div
+                        [ A.css
+                            [ S.col
+                            , S.g2
+                            ]
                         ]
-                        [ H.text "could not copy. select the link and copy it manually."
+                        [ H.p
+                            [ Aria.role Aria.Alert
+                            ]
+                            [ H.text "could not copy. select the link and copy it manually."
+                            ]
+                        , H.input
+                            [ A.type_ "text"
+                            , A.value (inviteUrl model)
+                            , A.readonly True
+                            , Aria.label "invite link"
+                            , A.css
+                                [ S.wFull
+                                , S.minW0
+                                , S.p2
+                                , S.indentStrong
+                                , S.bgNightwood3
+                                , S.textGray5
+                                ]
+                            ]
+                            []
                         ]
 
                 _ ->
@@ -1360,51 +1475,23 @@ inviteView model =
     H.div
         [ A.css
             [ S.col
-            , S.g1
+            , S.g2
+            , S.borderT
+            , S.borderGray2
+            , S.pt3
             ]
         ]
-        [ H.label
-            [ A.for "invite-link"
-            ]
-            [ H.text "invite players"
-            ]
-        , H.div
-            [ A.css
-                [ S.row
-                , S.g2
-                , S.flexWrap
+        [ H.fieldset
+            [ A.disabled (model.copyStatus == Copying || model.copyStatus == Copied)
+            , A.css
+                [ S.border0
                 ]
             ]
-            [ H.input
-                [ A.id "invite-link"
-                , A.type_ "text"
-                , A.value (inviteUrl model)
-                , A.readonly True
-                , A.css
-                    [ S.flex1
-                    , S.minW0
-                    , S.minW40
-                    , S.maxWFull
-                    , S.p2
-                    , S.indentStrong
-                    , S.bgNightwood3
-                    , S.textGray5
-                    ]
-                ]
-                []
-            , H.fieldset
-                [ A.disabled (model.copyStatus == Copying || model.copyStatus == Copied)
-                , A.css
-                    [ S.border0
-                    , S.shrink0
-                    ]
-                ]
-                [ Button.secondary "copy link" CopyLinkButtonClicked
-                    |> Button.withFeedback copyFeedback
-                    |> Button.toHtml
-                ]
+            [ Button.secondary "copy invite link" CopyLinkButtonClicked
+                |> Button.withFeedback copyFeedback
+                |> Button.toHtml
             ]
-        , copyError
+        , copyFallback
         ]
 
 
@@ -1426,38 +1513,84 @@ mapView model =
 
             else
                 H.text ""
-
-        preview : Html Msg
-        preview =
-            case List.filter (isMap model.mapType) model.mapPreviews |> List.head of
-                Just map ->
-                    H.div
+    in
+    case List.filter (isMap model.mapType) model.mapPreviews |> List.head of
+        Just map ->
+            [ fittedMapView map
+            , H.div
+                [ A.css
+                    [ S.row
+                    , S.justifySpaceBetween
+                    , S.itemsCenter
+                    , S.flexWrap
+                    , S.g3
+                    , S.shrink0
+                    ]
+                ]
+                [ H.div
+                    [ A.css
+                        [ S.col
+                        , S.g1
+                        , S.minW0
+                        , S.wrapAnywhere
+                        ]
+                    ]
+                    [ H.h2
                         [ A.css
-                            [ S.h64
-                            , S.wFull
-                            , S.bgNightwood2
-                            , S.indentStrong
-                            , S.p2
+                            [ S.textGray5
                             ]
                         ]
-                        [ MapPreview.toHtml map
+                        [ H.text (MapId.label model.mapType)
                         ]
+                    , H.p
+                        []
+                        [ H.text (mapDimensions map)
+                        ]
+                    ]
+                , chooseButton
+                ]
+            ]
+                |> Card.toHtml
+                    (Card.panel
+                        |> Card.withHeader (CardHeader.simple "battlefield")
+                    )
 
-                Nothing ->
-                    H.text ""
-    in
+        Nothing ->
+            H.p
+                []
+                [ H.text "map preview unavailable."
+                ]
+
+
+fittedMapView : NamedMap -> Html Msg
+fittedMapView map =
     H.div
         [ A.css
-            [ S.col
-            , S.g3
+            [ S.flex1
+            , S.minW0
+            , S.minH0
+            , S.containerSize
+            , S.row
+            , S.itemsCenter
+            , S.justifyCenter
             ]
         ]
-        [ H.p
-            []
-            [ H.text ("map: " ++ MapId.label model.mapType)
+        [ H.div
+            [ A.css
+                [ S.fitWithinContainer
+                    { width = map.definition.width
+                    , height = map.definition.height
+                    }
+                , S.aspectRatio
+                    { width = map.definition.width
+                    , height = map.definition.height
+                    }
+                , S.bgNightwood2
+                , S.indentStrong
+                ]
             ]
-        , preview
-        , chooseButton
+            [ MapPreview.toHtml map
+            ]
         ]
 
 
@@ -1524,23 +1657,23 @@ startControlsView model =
 
 playersView : Model -> Html Msg
 playersView model =
-    [ sideView model
-    , H.p
-        []
-        [ H.text (String.fromInt (List.length model.players) ++ " / 2 players")
-        ]
-    , H.ul
+    [ H.ul
         [ A.css
             [ S.col
-            , S.g3
+            , S.g2
             , S.listNone
             ]
         ]
         (List.map (playerSlotView model) Api.Enum.PlayerNumber.list)
+    , sideView model
+    , inviteView model
     ]
         |> Card.toHtml
             (Card.simple
-                |> Card.withHeader (CardHeader.simple "players")
+                |> Card.withHeader
+                    (CardHeader.simple "players"
+                        |> CardHeader.withCaption (String.fromInt (List.length model.players) ++ " / 2")
+                    )
             )
 
 
@@ -1562,6 +1695,10 @@ sideLabel playerNumber =
 sideView : Model -> Html Msg
 sideView model =
     let
+        sideHtmlId : String
+        sideHtmlId =
+            "your-side"
+
         ownPlayer : Maybe Player
         ownPlayer =
             List.filter .isYou model.players |> List.head
@@ -1589,19 +1726,36 @@ sideView model =
                     , S.g1
                     ]
                 ]
-                [ H.label
-                    [ A.for "your-side"
+                [ H.div
+                    [ A.css
+                        [ S.row
+                        , S.itemsCenter
+                        , S.justifySpaceBetween
+                        , S.flexWrap
+                        , S.g2
+                        ]
                     ]
-                    [ H.text "your side"
+                    [ H.label
+                        [ A.for sideHtmlId
+                        ]
+                        [ H.text "your side"
+                        ]
+                    , H.div
+                        [ A.css
+                            [ S.w48
+                            , S.maxWFull
+                            ]
+                        ]
+                        [ Select.new
+                            { selected = selectedSide player
+                            , options = List.map option Api.Enum.PlayerNumber.list
+                            , onChange = SideInputChanged
+                            }
+                            |> Select.withHtmlId sideHtmlId
+                            |> Select.disabled (isBusy model || (model.gameUrl /= Nothing))
+                            |> Select.toHtml
+                        ]
                     ]
-                , Select.new
-                    { selected = selectedSide player
-                    , options = List.map option Api.Enum.PlayerNumber.list
-                    , onChange = SideInputChanged
-                    }
-                    |> Select.withHtmlId "your-side"
-                    |> Select.disabled (isBusy model || (model.gameUrl /= Nothing))
-                    |> Select.toHtml
                 , H.p
                     []
                     [ H.text "switching sides also moves the other player."
@@ -1719,12 +1873,12 @@ playerSlotView model playerNumber =
             [ S.row
             , S.itemsCenter
             , S.g3
-            , S.py2
+            , S.py1
             , S.when (playerNumber /= Player1)
                 (S.batch
                     [ S.borderT
                     , S.borderGray2
-                    , S.pt4
+                    , S.pt3
                     ]
                 )
             ]
@@ -1736,6 +1890,8 @@ playerSlotView model playerNumber =
                 , S.flex1
                 , S.minW0
                 , S.wrapAnywhere
+                , S.when (playerNumber == Player1) S.textRed1Light
+                , S.when (playerNumber == Player2) S.textBlue0Light
                 ]
             ]
             [ label

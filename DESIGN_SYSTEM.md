@@ -39,6 +39,11 @@ own messages stay silent.
 
 ## Typography and copy
 
+Both apps show a quiet `v<integer>` label in the upper-right viewport corner,
+including while a native dialog is open. Keep it passive so it does not intercept
+pointer input. On narrow screens, offset it below the battlefield header. The
+dev panel also identifies the compiled frontend version.
+
 - Call unit instructions **orders** throughout the UI, guide, and gameplay code.
   Use **orders** for the menu, **cancel order** while planning, and **revoke order**
   for a saved order.
@@ -50,7 +55,8 @@ own messages stay silent.
   destinations to implement the visual rule.
 - Interface text stays at 1rem and normal weight (400), including headers and
   controls.
-  The home-page quotation is larger, as described below.
+  The home-page quotation is larger, as described below. The About portrait's
+  caption uses 0.875rem text.
   Use placement, spacing, grouping, and color to distinguish roles.
 - Use Ubuntu Mono Regular at weight 400. The unmodified TrueType font is
   embedded as a data URL in `public/index.html` and `dev-tools/index.html`; its
@@ -90,7 +96,7 @@ Disabled buttons retain their gray1 face and gray3 text.
 Use `Button.danger` for cancellation actions that need red emphasis. It uses a
 red0 face with gray5 text and a red bevel: red1 light edges and dark red
 (`#300C10`) shadow edges through `redOutdent` and `redIndent`. It brightens on hover and press,
-reverses its bevel when pressed, and shows an outline for keyboard focus.
+reverses its bevel when pressed.
 Regular buttons use 1rem horizontal and 0.75rem vertical padding.
 Use `Button.small` for compact controls:
 0.25rem padding on every side with the normal text size and color variant.
@@ -111,7 +117,11 @@ size and color variant.
 The primary button uses the original yellow palette shifted up one step in all
 states. Yellow3 interpolates yellow2 and yellow4; yellow6 interpolates yellow5
 and white. Retain the other palette tokens for reuse.
-Keep keyboard focus visible, and communicate errors with text as well as color.
+Suppress focus outlines throughout both apps, including text-entry controls,
+buttons, links, tabs, and battlefield targets. Focusing a control must not add
+a yellow ring or another enclosing outline. Keep existing text, surface, bevel,
+and underline focus treatments. Selection and gameplay highlights remain
+independent of focus. Communicate errors with text as well as color.
 Text fields use `indentStrong`: dark gray0 top/left edges and lighter gray3
 bottom/right edges, retaining the shared 1px border width.
 Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion point visible.
@@ -125,11 +135,16 @@ lettering, thick yellow underline, flush g descender, and small explosion.
 The logo scales proportionally up to 40rem wide with viewport gutters, centered
 slightly above the viewport midpoint with the menu beneath it. Its image
 supplies the accessible heading. The ordinary beveled card has no title bar
-and contains a full-width primary `play` button followed by a secondary `about`
+and contains a full-width primary `play` button followed by secondary `feedback` and `about`
 button, then a secondary `privacy policy` button. Keep it at most 24rem wide with viewport gutters. Play opens the existing
 lobby creation form at `/new`. About opens a wide reading dialog (64rem, capped
-by the viewport gutters) with titled intro, inspiration, and pacifism sections
-and an optional creator portrait.
+by the viewport gutters) with titled intro, contact, code, and pacifism sections
+and the creator portrait. Contact addresses and account names are real
+links using the shared link style; web links open a new tab or window and email
+opens the configured mail handler. Group the portrait and its small caption in
+one figure, with the caption beneath the image. Float the figure to the left so
+text wraps beside it and continues across the full width below it. At widths of
+600px and below, place the figure above the text to keep the reading column usable.
 Put the content in a bounded scrolling panel with the inset `indentStrong` bevel,
 `bgNightwood3` green background, and `p3` padding. Preserve paragraph breaks and
 wrap long text. Keep the title bar and bottom close button outside the scrolling
@@ -201,13 +216,29 @@ omits this decorative cycle and retains the original green background.
   selection, keyboard focus effects, content spacing, and the surrounding layout.
 - The spacing unit is 0.25rem: `p1`/`g1` are 0.25rem, `p2`/`g2` are 0.5rem,
   and `p3`/`g3` are 0.75rem. `p2px` is a literal 2px inset.
-- The joined lobby is a top-aligned, full-width workspace with two cards side
-  by side. The left card takes 44% of the row and has the lobby name at the left
-  of its title bar and `game lobby` at the right. Its body contains the selected
-  map's name and thumbnail, a host-only `choose map` button, the invite link with
-  `copy link`, and the left-aligned `start game` action.
-  The right card is headed `players`. Stack the cards below 720px and allow the
-  page to scroll. Keep creation and joining as centered compact forms.
+- The joined lobby is a full-width workspace bounded by the viewport, without
+  page scrolling. Center a compact
+  raised gray panel flush with the top of the screen, containing the existing
+  FightLines logo at 4rem wide and the lobby name. Keep the panel clear of the
+  corner mute and version controls; long names wrap and push the content down.
+  Omit the `game lobby` label and any floating lobby title. Keep the map library's
+  existing clear strip for the corner controls, including the version's
+  narrow-screen offset.
+  Use two equal-width columns in the space between the header and action bar.
+  The left card retains its `battlefield` title bar and fits the complete map
+  to its available width and height while
+  preserving the authored proportions. Put the map name, dimensions, and
+  host-only `choose map` button in a gray footer below the preview, with no
+  overlays on the map. The right column stacks compact `players` and `chat`
+  cards; let player settings scroll within their area on short screens. Put a
+  separate action card below
+  both columns, with `start game` at the left and its blocking reason immediately
+  beside it.
+  Below 720px, stack battlefield, players, and chat inside a scrolling workspace
+  while keeping the header and action bar visible. Keep creation and joining as
+  centered compact forms.
+  The players card contains `copy invite link`; show a selectable URL and useful
+  error text there if clipboard copying fails.
 - `choose map` opens a separate full-width library screen at `/lobby/:id/maps`,
   using one card headed `choose map` with the lobby name as its caption. Put
   all thumbnail choices in one scrollable left column, and the selected map's
@@ -220,6 +251,9 @@ omits this decorative cycle and retains the original green background.
   previewed row has a brighter gray background, gold outline, and checkmark. The
   footer contains the gold `use this map` action followed by `back to lobby`, both
   aligned left, with no explanatory text or back arrow.
+  Bound the library to the viewport, with its title and footer actions visible.
+  Fit the selected preview into the available space and scroll the map list and
+  details internally. Bound the map list's height when stacked on narrow screens.
   Omit the preview hint and theme label. Browsing does not save; applying
   returns to the lobby, while back navigation discards the preview. Disable
   duplicate saves and show failures on the library screen without losing the
@@ -239,8 +273,9 @@ omits this decorative cycle and retains the original green background.
   `human` or `ai` for the other side. The AI evaluates tactics using one-turn
   simulations, tests advancing enemy responses, and revisits allied choices.
   Keep these choices in the existing controller selector. Disable that selector once a human joins.
-  Guests see controller types as read-only text. Above the occupied count, show
-  each member a `your side` select using the shared inset control. Explain that
+  Guests see controller types as read-only text. Put the occupied count in the
+  players title bar. Below the slots, show each member a compact `your side`
+  select using the shared inset control. Explain that
   switching sides also moves the opponent. Keep host and own-player labels on
   their occupants when assignments change. Side changes lock at game start.
 - Use `Card.simple` for the centered creation form, inside a page-owned container
@@ -263,10 +298,11 @@ omits this decorative cycle and retains the original green background.
   on the right so their different roles are clear. Use 0.125rem vertical and
   0.625rem horizontal button padding with a 1.875rem minimum height.
   Open a centered native menu dialog
-  with a primary `close` action at the top; Escape also returns to the battlefield.
+  with `resign game` at the top and a primary `close` action at the bottom;
+  Escape also returns to the battlefield.
   Enable `settings` to open the settings workspace described below. Enable the red danger `resign game` action while the
   game is active, including after submitting orders; show `resigning…` while its
-  request is pending. Separate resignation from the other menu actions with extra spacing.
+  request is pending. Use the same spacing between all menu actions, including resignation.
   Both `resign game` and `home` require confirmation before resigning an active game.
   Explain that the opponent wins and the action cannot be undone; focus the primary
   `cancel` button first and use a red confirmation button. Cancel or Escape returns
@@ -379,8 +415,7 @@ omits this decorative cycle and retains the original green background.
   inside the battlefield edges, and scroll its contents when the viewport is
   shorter than the menu. The title bar reads `orders`, with a dark circular info
   icon on a transparent button followed by a gray beveled close (×) button at the
-  right. Info has subtle text-color hover feedback and a visible keyboard focus
-  outline. Close clears selection
+  right. Info has subtle text-color hover feedback. Close clears selection
   while preserving saved orders. Order available rows as move, attack move,
   ambush, hold position, indirect fire, stand ground, dig in, then sabotage.
   Keep dig in and sabotage together at the bottom as specialized actions.
@@ -1149,8 +1184,10 @@ lobby. Opening history starts at
 the bottom. New messages stay in view while the reader is at the bottom; scrolling
 up preserves the reader's position.
 Closing game chat leaves no persistent conversation panel. The lobby instead
-has a dedicated chat card below the players, with a fixed-height, scrollable
-message list in an inset green depression and an always-visible input. Lobby
+has a dedicated chat card below the players, with a bounded, scrollable
+message list in an inset green depression and an always-visible input beside
+the send button. The transcript fills the available space and scrolls internally;
+keep the composer visible when vertical space is limited. Lobby
 messages stay inside that card; sending clears its
 field while retaining the panel. Recorded replays have a read-only
 **message history** dialog containing the entire recorded conversation.
@@ -1260,3 +1297,14 @@ mute, master volume, combat, movement, ambience, and interface volume sliders.
 Disable the sliders while muted and retain their levels. Apply and remember
 changes immediately on this device. `done`, the title-bar close button, and
 Escape close settings and return focus to the game menu button.
+
+
+## Feedback
+
+The home and game menus offer `feedback`. Open a native form dialog with a
+labelled inset textarea, `submit feedback`, and `close`. Focus the textarea when
+opening; Escape and the title-bar close button dismiss and restore menu focus.
+Keep drafts when dismissed. Block blank or oversized submissions and disable
+repeat submits while saving. Keep the submitted text read-only during the
+request. Failures retain the draft and show an error beside the action; success
+clears the field and confirms that feedback was saved.

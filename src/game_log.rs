@@ -1,5 +1,6 @@
 //! Private authoritative archives, independent of HTTP and viewer projections.
 use crate::{
+    app_version,
     chat::ChatMessage,
     lobby_id::LobbyId,
     map_id::MapId,
@@ -7,7 +8,7 @@ use crate::{
     player_number::PlayerNumber,
     scenario::Scenario,
     seed::Seed,
-    turns::{GameOutcome, MoveOrderInput, TurnResolution, Turns},
+    turns::{GameOutcome, TurnResolution, Turns, UnitOrderInput},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -53,7 +54,7 @@ pub struct GameStarted {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Submission {
     pub player_number: PlayerNumber,
-    pub orders: Vec<MoveOrderInput>,
+    pub orders: Vec<UnitOrderInput>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -145,7 +146,7 @@ impl Directory {
             format_version: FORMAT_VERSION,
             started_at_unix_ms: started_at.as_millis(),
             initial_seed: seed.to_hex(),
-            server_version: env!("CARGO_PKG_VERSION"),
+            server_version: app_version::current(),
             build_revision: option_env!("FIGHTLINES_BUILD_REVISION"),
         };
         let mut bytes = serde_json::to_vec_pretty(&record)?;
@@ -554,7 +555,7 @@ mod tests {
         assert_eq!(record["format_version"], FORMAT_VERSION);
         assert_eq!(record["initial_seed"], "13".repeat(32));
         assert!(record["started_at_unix_ms"].as_u64().fixture()? > 0);
-        assert_eq!(record["server_version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(record["server_version"], app_version::current());
         assert_eq!(
             record["build_revision"],
             serde_json::to_value(option_env!("FIGHTLINES_BUILD_REVISION"))?
@@ -639,7 +640,7 @@ mod tests {
                 json!({"unit_id":"2", "path":[{"x":2,"y":1}]}),
             ),
         ] {
-            let orders: Vec<MoveOrderInput> = vec![serde_json::from_value(order)?];
+            let orders: Vec<UnitOrderInput> = vec![serde_json::from_value(order)?];
             turns
                 .submit(&mut scenario, player_number, 1, orders.clone())
                 .fixture()?;

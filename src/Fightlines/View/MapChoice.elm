@@ -69,10 +69,6 @@ toHtml args =
                     , S.outlineOffsetNeg1
                     ]
                 )
-            , S.focusVisible
-                [ S.outlineYellow5
-                , S.outlineOffsetNeg3
-                ]
             ]
         ]
         [ H.span

@@ -9,13 +9,16 @@ module Fightlines.Page.Home exposing
     , view
     )
 
+import ApiRequest
 import Audio
 import Browser.Dom
 import Effect as E exposing (Eff)
 import Error
+import Fightlines.Feedback as Feedback
 import Fightlines.Route as Route
 import Fightlines.Shared as Shared
 import Fightlines.View.About as About
+import Fightlines.View.Feedback as FeedbackView
 import Fightlines.View.PrivacyPolicy as PrivacyPolicy
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
@@ -27,7 +30,7 @@ import Style as S
 import View.Aria as Aria
 import View.Button as Button
 import View.Card as Card
-import View.Dialog exposing (Dialog)
+import View.Dialog as Dialog exposing (Dialog)
 
 
 
@@ -38,6 +41,9 @@ import View.Dialog exposing (Dialog)
 
 type Msg
     = PlayButtonClicked
+    | FeedbackButtonClicked
+    | FeedbackMsg FeedbackView.Msg
+    | FeedbackResponseReceived Feedback.RequestId (ApiRequest.Response Bool)
     | AboutButtonClicked
     | AboutDialogClosed
     | PrivacyPolicyButtonClicked
@@ -48,6 +54,7 @@ type Msg
 
 type alias Model =
     { shared : Shared.Model
+    , feedback : Feedback.Draft
     , activeDialog : ActiveDialog
     , snow : ScenePosition
     , desert : ScenePosition
@@ -57,6 +64,7 @@ type alias Model =
 
 type ActiveDialog
     = NoDialog
+    | FeedbackDialog
     | AboutDialog
     | PrivacyPolicyDialog
 
@@ -100,6 +108,7 @@ init shared =
             Random.step scenePositionGenerator desertSeed
     in
     { shared = Shared.setSeed nextSeed shared
+    , feedback = Feedback.init
     , activeDialog = NoDialog
     , snow = snow
     , desert = desert
@@ -116,6 +125,11 @@ init shared =
 setShared : Shared.Model -> Model -> Model
 setShared shared model =
     { model | shared = shared }
+
+
+setFeedback : Feedback.Draft -> Model -> Model
+setFeedback feedback model =
+    { model | feedback = feedback }
 
 
 closeDialog : String -> Model -> ( Model, Eff Msg )
@@ -205,6 +219,45 @@ update msg model =
         PlayButtonClicked ->
             ( model, Route.pushUrl Route.NewLobby )
 
+        FeedbackButtonClicked ->
+            ( { model | activeDialog = FeedbackDialog }
+            , E.batch
+                [ E.toJs (ToJs.OpenDialog { htmlId = FeedbackView.htmlId })
+                , E.audio Audio.affirm
+                ]
+            )
+
+        FeedbackMsg feedbackMsg ->
+            case feedbackMsg of
+                FeedbackView.TextChanged text ->
+                    model
+                        |> setFeedback (Feedback.edit text model.feedback)
+                        |> E.withOut
+
+                FeedbackView.CloseClicked ->
+                    closeDialog feedbackButtonHtmlId model
+
+                FeedbackView.SubmitClicked ->
+                    let
+                        ( id, seed ) =
+                            Random.step Feedback.requestId model.shared.seed
+                    in
+                    case Feedback.beginSubmission id model.feedback of
+                        Just pending ->
+                            ( model
+                                |> setShared (Shared.setSeed seed model.shared)
+                                |> setFeedback pending
+                            , E.request (FeedbackResponseReceived id) (Feedback.request pending)
+                            )
+
+                        Nothing ->
+                            ( model, E.none )
+
+        FeedbackResponseReceived id response ->
+            model
+                |> setFeedback (Feedback.receive id response model.feedback)
+                |> E.withOut
+
         AboutButtonClicked ->
             ( { model | activeDialog = AboutDialog }
             , E.batch
@@ -252,6 +305,9 @@ update msg model =
 dialog : Model -> Maybe (Dialog Msg)
 dialog model =
     case model.activeDialog of
+        FeedbackDialog ->
+            Just (FeedbackView.dialog model.feedback |> Dialog.map FeedbackMsg)
+
         AboutDialog ->
             Just (About.dialog { onClose = AboutDialogClosed })
 
@@ -329,6 +385,10 @@ view model =
             [ [ Button.primary "play" PlayButtonClicked
                     |> Button.fullWidth
                     |> Button.toHtml
+              , Button.secondary "feedback" FeedbackButtonClicked
+                    |> Button.fullWidth
+                    |> Button.withHtmlId feedbackButtonHtmlId
+                    |> Button.toHtml
               , Button.secondary "about" AboutButtonClicked
                     |> Button.fullWidth
                     |> Button.withHtmlId aboutButtonHtmlId
@@ -343,6 +403,11 @@ view model =
         , quotation
         ]
     ]
+
+
+feedbackButtonHtmlId : String
+feedbackButtonHtmlId =
+    "home-feedback-button"
 
 
 aboutButtonHtmlId : String

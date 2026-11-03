@@ -5,7 +5,7 @@ use crate::{
     map::Coordinate,
     player_number::PlayerNumber,
     scenario::{Direction, Unit, UnitId},
-    turns::{CoordinateInput, MoveOrderInput, TurnEventKind, TurnResolution, UnitOrderKind},
+    turns::{CoordinateInput, TurnEventKind, TurnResolution, UnitOrderInput, UnitOrderKind},
 };
 use juniper::{GraphQLObject, graphql_object};
 use std::collections::{BTreeMap, BTreeSet};
@@ -65,7 +65,7 @@ fn coordinate(input: &CoordinateInput) -> Result<Coordinate, &'static str> {
 impl RecordedOrder {
     fn from_input(
         player_number: PlayerNumber,
-        input: &MoveOrderInput,
+        input: &UnitOrderInput,
     ) -> Result<Self, &'static str> {
         let unit_id = UnitId::parse(&input.unit_id).ok_or("invalid recorded unit id")?;
         let path = input
@@ -312,7 +312,7 @@ mod tests {
             (PlayerNumber::Player1, "1", 1, "East"),
             (PlayerNumber::Player2, "2", 2, "West"),
         ] {
-            let input: MoveOrderInput = serde_json::from_value(json!({
+            let input: UnitOrderInput = serde_json::from_value(json!({
                 "unit_id":id, "path":[{"x":x,"y":1}], "ambush":true, "direction":facing
             }))?;
             orders.push(RecordedOrder::from_input(player, &input)?);

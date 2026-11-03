@@ -8,6 +8,7 @@ module DevPanel exposing
     , init
     )
 
+import AppVersion
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
@@ -84,7 +85,10 @@ dialog errors model =
     Dialog.make htmlId
         "dev panel"
         Canceled
-        [ H.div
+        [ H.p
+            []
+            [ H.text ("frontend version " ++ AppVersion.current) ]
+        , H.div
             [ A.css
                 [ S.grid
                 , S.gridColumns "7rem minmax(0, 1fr)"

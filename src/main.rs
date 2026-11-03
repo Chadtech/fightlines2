@@ -1,10 +1,12 @@
 #![deny(clippy::unwrap_used, clippy::expect_used)]
 
 mod ai;
+mod app_version;
 mod backdrop_calibration;
 mod chat;
 mod combat;
 mod environment;
+mod feedback;
 mod game;
 mod game_archive;
 mod game_log;
@@ -121,10 +123,14 @@ async fn run(frontend: PathBuf) -> io::Result<()> {
         ));
     }
     tracing::info!(directory = %log_path.canonicalize()?.display(), "game archives enabled");
+    let feedback_path = env::var_os("FIGHTLINES_FEEDBACK_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("feedback"));
+    let feedback = web::Data::new(feedback::Directory::open(feedback_path, &frontend)?);
     let listener = TcpListener::bind(&address)?;
     let server_start = logs.record_server_start(seed)?;
     tracing::info!(record = %server_start.display(), "private server-start record saved");
-    tracing::info!(address = %listener.local_addr()?, version = env!("CARGO_PKG_VERSION"), "FightLines listening");
+    tracing::info!(address = %listener.local_addr()?, version = app_version::current(), "FightLines listening");
 
     let store = if env::args().any(|argument| argument == "--dev-game") {
         tracing::info!("development game enabled at /game/00000000000000000000000000000000");
@@ -156,6 +162,7 @@ async fn run(frontend: PathBuf) -> io::Result<()> {
             .wrap(middleware::from_fn(server_log::request))
             .app_data(store.clone())
             .app_data(endpoint.clone())
+            .app_data(feedback.clone())
             .route("/graphql", web::post().to(graphql::handle))
             .service(dev_tools(&frontend));
         if archives_enabled {

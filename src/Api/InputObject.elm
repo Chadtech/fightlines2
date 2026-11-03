@@ -233,67 +233,6 @@ encodeMapDefinitionInput input____ =
         [ ( "description", Encode.string input____.description |> Just ), ( "width", Encode.int input____.width |> Just ), ( "height", Encode.int input____.height |> Just ), ( "theme", Encode.enum Api.Enum.MapTheme.toString input____.theme |> Just ), ( "features", (encodeTerrainPlacementInput |> Encode.list) input____.features |> Just ), ( "depots", (encodeDepotPlacementInput |> Encode.list) input____.depots |> Just ), ( "units", (encodeUnitPlacementInput |> Encode.list) input____.units |> Just ) ]
 
 
-buildMoveOrderInput :
-    MoveOrderInputRequiredFields
-    -> (MoveOrderInputOptionalFields -> MoveOrderInputOptionalFields)
-    -> MoveOrderInput
-buildMoveOrderInput required____ fillOptionals____ =
-    let
-        optionals____ =
-            fillOptionals____
-                { direction = Absent, ambush = Absent, standGround = Absent, digIn = Absent, sabotage = Absent, indirectFire = Absent, attackMove = Absent, unloads = Absent, loadCrates = Absent, pickupGroundFreight = Absent, crateUnloads = Absent }
-    in
-    { unitId = required____.unitId, path = required____.path, direction = optionals____.direction, ambush = optionals____.ambush, standGround = optionals____.standGround, digIn = optionals____.digIn, sabotage = optionals____.sabotage, indirectFire = optionals____.indirectFire, attackMove = optionals____.attackMove, unloads = optionals____.unloads, loadCrates = optionals____.loadCrates, pickupGroundFreight = optionals____.pickupGroundFreight, crateUnloads = optionals____.crateUnloads }
-
-
-type alias MoveOrderInputRequiredFields =
-    { unitId : String
-    , path : List CoordinateInput
-    }
-
-
-type alias MoveOrderInputOptionalFields =
-    { direction : OptionalArgument Api.Enum.Direction.Direction
-    , ambush : OptionalArgument Bool
-    , standGround : OptionalArgument Bool
-    , digIn : OptionalArgument Bool
-    , sabotage : OptionalArgument Bool
-    , indirectFire : OptionalArgument CoordinateInput
-    , attackMove : OptionalArgument Bool
-    , unloads : OptionalArgument (List UnloadOrderInput)
-    , loadCrates : OptionalArgument Int
-    , pickupGroundFreight : OptionalArgument Api.Enum.ResourceKind.ResourceKind
-    , crateUnloads : OptionalArgument (List CrateUnloadInput)
-    }
-
-
-{-| Type for the MoveOrderInput input object.
--}
-type alias MoveOrderInput =
-    { unitId : String
-    , path : List CoordinateInput
-    , direction : OptionalArgument Api.Enum.Direction.Direction
-    , ambush : OptionalArgument Bool
-    , standGround : OptionalArgument Bool
-    , digIn : OptionalArgument Bool
-    , sabotage : OptionalArgument Bool
-    , indirectFire : OptionalArgument CoordinateInput
-    , attackMove : OptionalArgument Bool
-    , unloads : OptionalArgument (List UnloadOrderInput)
-    , loadCrates : OptionalArgument Int
-    , pickupGroundFreight : OptionalArgument Api.Enum.ResourceKind.ResourceKind
-    , crateUnloads : OptionalArgument (List CrateUnloadInput)
-    }
-
-
-{-| Encode a MoveOrderInput into a value that can be used as an argument.
--}
-encodeMoveOrderInput : MoveOrderInput -> Value
-encodeMoveOrderInput input____ =
-    Encode.maybeObject
-        [ ( "unitId", Encode.string input____.unitId |> Just ), ( "path", (encodeCoordinateInput |> Encode.list) input____.path |> Just ), ( "direction", Encode.enum Api.Enum.Direction.toString |> Encode.optional input____.direction ), ( "ambush", Encode.bool |> Encode.optional input____.ambush ), ( "standGround", Encode.bool |> Encode.optional input____.standGround ), ( "digIn", Encode.bool |> Encode.optional input____.digIn ), ( "sabotage", Encode.bool |> Encode.optional input____.sabotage ), ( "indirectFire", encodeCoordinateInput |> Encode.optional input____.indirectFire ), ( "attackMove", Encode.bool |> Encode.optional input____.attackMove ), ( "unloads", (encodeUnloadOrderInput |> Encode.list) |> Encode.optional input____.unloads ), ( "loadCrates", Encode.int |> Encode.optional input____.loadCrates ), ( "pickupGroundFreight", Encode.enum Api.Enum.ResourceKind.toString |> Encode.optional input____.pickupGroundFreight ), ( "crateUnloads", (encodeCrateUnloadInput |> Encode.list) |> Encode.optional input____.crateUnloads ) ]
-
-
 buildPositionInput :
     PositionInputRequiredFields
     -> PositionInput
@@ -381,6 +320,67 @@ encodeTerrainPlacementInput : TerrainPlacementInput -> Value
 encodeTerrainPlacementInput input____ =
     Encode.maybeObject
         [ ( "position", encodePositionInput input____.position |> Just ), ( "terrain", Encode.enum Api.Enum.Terrain.toString input____.terrain |> Just ) ]
+
+
+buildUnitOrderInput :
+    UnitOrderInputRequiredFields
+    -> (UnitOrderInputOptionalFields -> UnitOrderInputOptionalFields)
+    -> UnitOrderInput
+buildUnitOrderInput required____ fillOptionals____ =
+    let
+        optionals____ =
+            fillOptionals____
+                { direction = Absent, ambush = Absent, standGround = Absent, digIn = Absent, sabotage = Absent, indirectFire = Absent, attackMove = Absent, unloads = Absent, loadCrates = Absent, pickupGroundFreight = Absent, crateUnloads = Absent }
+    in
+    { unitId = required____.unitId, path = required____.path, direction = optionals____.direction, ambush = optionals____.ambush, standGround = optionals____.standGround, digIn = optionals____.digIn, sabotage = optionals____.sabotage, indirectFire = optionals____.indirectFire, attackMove = optionals____.attackMove, unloads = optionals____.unloads, loadCrates = optionals____.loadCrates, pickupGroundFreight = optionals____.pickupGroundFreight, crateUnloads = optionals____.crateUnloads }
+
+
+type alias UnitOrderInputRequiredFields =
+    { unitId : String
+    , path : List CoordinateInput
+    }
+
+
+type alias UnitOrderInputOptionalFields =
+    { direction : OptionalArgument Api.Enum.Direction.Direction
+    , ambush : OptionalArgument Bool
+    , standGround : OptionalArgument Bool
+    , digIn : OptionalArgument Bool
+    , sabotage : OptionalArgument Bool
+    , indirectFire : OptionalArgument CoordinateInput
+    , attackMove : OptionalArgument Bool
+    , unloads : OptionalArgument (List UnloadOrderInput)
+    , loadCrates : OptionalArgument Int
+    , pickupGroundFreight : OptionalArgument Api.Enum.ResourceKind.ResourceKind
+    , crateUnloads : OptionalArgument (List CrateUnloadInput)
+    }
+
+
+{-| Type for the UnitOrderInput input object.
+-}
+type alias UnitOrderInput =
+    { unitId : String
+    , path : List CoordinateInput
+    , direction : OptionalArgument Api.Enum.Direction.Direction
+    , ambush : OptionalArgument Bool
+    , standGround : OptionalArgument Bool
+    , digIn : OptionalArgument Bool
+    , sabotage : OptionalArgument Bool
+    , indirectFire : OptionalArgument CoordinateInput
+    , attackMove : OptionalArgument Bool
+    , unloads : OptionalArgument (List UnloadOrderInput)
+    , loadCrates : OptionalArgument Int
+    , pickupGroundFreight : OptionalArgument Api.Enum.ResourceKind.ResourceKind
+    , crateUnloads : OptionalArgument (List CrateUnloadInput)
+    }
+
+
+{-| Encode a UnitOrderInput into a value that can be used as an argument.
+-}
+encodeUnitOrderInput : UnitOrderInput -> Value
+encodeUnitOrderInput input____ =
+    Encode.maybeObject
+        [ ( "unitId", Encode.string input____.unitId |> Just ), ( "path", (encodeCoordinateInput |> Encode.list) input____.path |> Just ), ( "direction", Encode.enum Api.Enum.Direction.toString |> Encode.optional input____.direction ), ( "ambush", Encode.bool |> Encode.optional input____.ambush ), ( "standGround", Encode.bool |> Encode.optional input____.standGround ), ( "digIn", Encode.bool |> Encode.optional input____.digIn ), ( "sabotage", Encode.bool |> Encode.optional input____.sabotage ), ( "indirectFire", encodeCoordinateInput |> Encode.optional input____.indirectFire ), ( "attackMove", Encode.bool |> Encode.optional input____.attackMove ), ( "unloads", (encodeUnloadOrderInput |> Encode.list) |> Encode.optional input____.unloads ), ( "loadCrates", Encode.int |> Encode.optional input____.loadCrates ), ( "pickupGroundFreight", Encode.enum Api.Enum.ResourceKind.toString |> Encode.optional input____.pickupGroundFreight ), ( "crateUnloads", (encodeCrateUnloadInput |> Encode.list) |> Encode.optional input____.crateUnloads ) ]
 
 
 buildUnitPlacementInput :

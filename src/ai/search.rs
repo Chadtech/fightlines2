@@ -8,7 +8,7 @@ use crate::{
     player_number::PlayerNumber,
     scenario::{Direction, Entrenchment, Scenario, Unit, UnitId, UnitKind},
     supplies::ResourceStock,
-    turns::{MoveOrderInput, Turns},
+    turns::{Turns, UnitOrderInput},
     visibility,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -113,7 +113,7 @@ fn neighbors(position: Coordinate) -> impl Iterator<Item = Coordinate> {
 pub(super) fn plan(
     scenario: &Scenario,
     player: PlayerNumber,
-) -> Result<Vec<MoveOrderInput>, &'static str> {
+) -> Result<Vec<UnitOrderInput>, &'static str> {
     let visible = visibility::visible_tiles(scenario, player);
     let mut observed = visibility::observed_scenario(scenario, player, &visible);
     // Projection hides gauges in GraphQL but retains their underlying values.
@@ -215,7 +215,7 @@ pub(super) fn plan(
 fn defensive_orders(
     scenario: &Scenario,
     player: PlayerNumber,
-) -> Result<Vec<MoveOrderInput>, &'static str> {
+) -> Result<Vec<UnitOrderInput>, &'static str> {
     scenario
         .units
         .iter()
@@ -248,7 +248,7 @@ fn candidates(
     unit: &Unit,
     reserved: &BTreeSet<Coordinate>,
     goal: &StrategicGoal,
-) -> Result<Vec<MoveOrderInput>, &'static str> {
+) -> Result<Vec<UnitOrderInput>, &'static str> {
     let origin = unit
         .board_position()
         .ok_or("the AI mover is not on the map.")?;
@@ -394,8 +394,8 @@ fn candidates(
 fn counterplay_score(
     scenario: &Scenario,
     player: PlayerNumber,
-    own_orders: &[MoveOrderInput],
-    responses: &[Vec<MoveOrderInput>],
+    own_orders: &[UnitOrderInput],
+    responses: &[Vec<UnitOrderInput>],
     goals: &BTreeMap<UnitId, StrategicGoal>,
 ) -> Result<i64, &'static str> {
     let scores = responses
@@ -447,8 +447,8 @@ pub(super) fn strategic_target(scenario: &Scenario, unit: &Unit, origin: Coordin
 fn forecast(
     scenario: &Scenario,
     player: PlayerNumber,
-    own_orders: &[MoveOrderInput],
-    enemy_orders: &[MoveOrderInput],
+    own_orders: &[UnitOrderInput],
+    enemy_orders: &[UnitOrderInput],
     goals: &BTreeMap<UnitId, StrategicGoal>,
 ) -> Result<i64, &'static str> {
     let mut board = scenario.clone();

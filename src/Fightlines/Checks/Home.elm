@@ -1,11 +1,33 @@
 port module Fightlines.Checks.Home exposing (main)
 
 import Browser
+import Fightlines.Feedback as Feedback
 import Fightlines.Page.Home as Home
 import Fightlines.Shared as Shared
+import Graphql.Http
 import LocalStorage
 import OperatingSystem
 import Random
+
+
+type Error
+    = StartupPositionsNotReproduced
+    | StartupSeedSuccessorNotReproduced
+    | InitializationSeedNotAdvanced
+    | ReturnVisitPositionsRepeated
+    | ReturnVisitSeedNotAdvanced
+    | RestoredPositionsNotReproduced
+    | RestoredSeedSuccessorNotReproduced
+    | BlankFeedbackAccepted
+    | OversizedFeedbackAccepted
+    | EmojiCharacterLimitIncorrect
+    | DuplicateFeedbackSubmissionAllowed
+    | PendingFeedbackTextChanged
+    | FailedFeedbackTextLost
+    | FeedbackRetryBlocked
+    | FeedbackSuccessNotConfirmed
+    | RejectedFeedbackTextLost
+    | StaleFeedbackResponseAccepted
 
 
 port results : List String -> Cmd msg
@@ -19,6 +41,7 @@ main =
                 ( ()
                 , Shared.init (Random.initialSeed 42) OperatingSystem.Unknown LocalStorage.test url key
                     |> checks
+                    |> List.map errorToString
                     |> results
                 )
         , update = \_ model -> ( model, Cmd.none )
@@ -29,7 +52,7 @@ main =
         }
 
 
-checks : Shared.Model -> List String
+checks : Shared.Model -> List Error
 checks shared =
     let
         first : Home.Model
@@ -50,14 +73,6 @@ checks shared =
                 |> Shared.setSeed shared.seed
                 |> Home.init
 
-        check : String -> Bool -> List String
-        check label passed =
-            if passed then
-                []
-
-            else
-                [ label ]
-
         samePositions : Home.Model -> Home.Model -> Bool
         samePositions left right =
             (left.snow == right.snow)
@@ -70,11 +85,128 @@ checks shared =
                 |> Tuple.first
     in
     List.concat
-        [ check "the same startup seed reproduces all home positions" (samePositions first repeated)
-        , check "the same startup seed reproduces its successor" (seedValues first.shared == seedValues repeated.shared)
-        , check "initialization advances the shared seed" (seedValues shared /= seedValues first.shared)
-        , check "a return visit continues the shared random stream" (not (samePositions first nextVisit))
-        , check "a return visit advances the shared seed again" (seedValues first.shared /= seedValues nextVisit.shared)
-        , check "restoring a seed reproduces its positions" (samePositions first restored)
-        , check "restoring a seed reproduces its successor" (seedValues first.shared == seedValues restored.shared)
+        [ feedbackChecks
+        , check StartupPositionsNotReproduced (samePositions first repeated)
+        , check StartupSeedSuccessorNotReproduced (seedValues first.shared == seedValues repeated.shared)
+        , check InitializationSeedNotAdvanced (seedValues shared /= seedValues first.shared)
+        , check ReturnVisitPositionsRepeated (not (samePositions first nextVisit))
+        , check ReturnVisitSeedNotAdvanced (seedValues first.shared /= seedValues nextVisit.shared)
+        , check RestoredPositionsNotReproduced (samePositions first restored)
+        , check RestoredSeedSuccessorNotReproduced (seedValues first.shared == seedValues restored.shared)
         ]
+
+
+feedbackChecks : List Error
+feedbackChecks =
+    let
+        ( id, nextSeed ) =
+            Random.step Feedback.requestId (Random.initialSeed 42)
+
+        staleId : Feedback.RequestId
+        staleId =
+            Random.step Feedback.requestId nextSeed |> Tuple.first
+
+        draft : Feedback.Draft
+        draft =
+            Feedback.edit "a suggestion\nwith details" Feedback.init
+
+        pending : Maybe Feedback.Draft
+        pending =
+            Feedback.beginSubmission id draft
+
+        failed : Maybe Feedback.Draft
+        failed =
+            Maybe.map (Feedback.receive id (Err (Graphql.Http.HttpError Graphql.Http.NetworkError))) pending
+
+        accepted : Maybe Feedback.Draft
+        accepted =
+            Maybe.map (Feedback.receive id (Ok True)) pending
+    in
+    List.concat
+        [ check BlankFeedbackAccepted
+            (Feedback.beginSubmission id (Feedback.edit "  \n" Feedback.init) == Nothing)
+        , check OversizedFeedbackAccepted
+            (Feedback.beginSubmission id (Feedback.edit (String.repeat 5001 "x") Feedback.init) == Nothing)
+        , check EmojiCharacterLimitIncorrect
+            (Feedback.canSubmit (Feedback.edit (String.repeat 5000 "😀") Feedback.init))
+        , check DuplicateFeedbackSubmissionAllowed
+            (Maybe.andThen (Feedback.beginSubmission id) pending == Nothing)
+        , check PendingFeedbackTextChanged
+            (Maybe.map (Feedback.edit "changed" >> .text) pending == Just draft.text)
+        , check FailedFeedbackTextLost
+            (Maybe.map .text failed == Just draft.text)
+        , check FeedbackRetryBlocked
+            (Maybe.andThen (Feedback.beginSubmission id) failed /= Nothing)
+        , check FeedbackSuccessNotConfirmed
+            (accepted == Just { text = "", status = Feedback.Submitted })
+        , check RejectedFeedbackTextLost
+            (Maybe.map (Feedback.receive id (Ok False) >> .text) pending == Just draft.text)
+        , check StaleFeedbackResponseAccepted
+            ((Maybe.map (Feedback.receive staleId (Ok True)) pending == pending)
+                && (Maybe.map (Feedback.receive staleId (Err (Graphql.Http.HttpError Graphql.Http.NetworkError))) pending == pending)
+            )
+        ]
+
+
+check : Error -> Bool -> List Error
+check error passed =
+    if passed then
+        []
+
+    else
+        [ error ]
+
+
+errorToString : Error -> String
+errorToString error =
+    case error of
+        StartupPositionsNotReproduced ->
+            "the same startup seed reproduces all home positions"
+
+        StartupSeedSuccessorNotReproduced ->
+            "the same startup seed reproduces its successor"
+
+        InitializationSeedNotAdvanced ->
+            "initialization advances the shared seed"
+
+        ReturnVisitPositionsRepeated ->
+            "a return visit continues the shared random stream"
+
+        ReturnVisitSeedNotAdvanced ->
+            "a return visit advances the shared seed again"
+
+        RestoredPositionsNotReproduced ->
+            "restoring a seed reproduces its positions"
+
+        RestoredSeedSuccessorNotReproduced ->
+            "restoring a seed reproduces its successor"
+
+        BlankFeedbackAccepted ->
+            "blank feedback cannot be submitted"
+
+        OversizedFeedbackAccepted ->
+            "oversized feedback cannot be submitted"
+
+        EmojiCharacterLimitIncorrect ->
+            "the character limit counts emoji consistently with the server"
+
+        DuplicateFeedbackSubmissionAllowed ->
+            "a pending submission blocks duplicate sends"
+
+        PendingFeedbackTextChanged ->
+            "a pending submission preserves the submitted text"
+
+        FailedFeedbackTextLost ->
+            "failed submissions retain text for retry"
+
+        FeedbackRetryBlocked ->
+            "failed submissions can be retried"
+
+        FeedbackSuccessNotConfirmed ->
+            "accepted submissions clear the draft and confirm success"
+
+        RejectedFeedbackTextLost ->
+            "an unsuccessful server response keeps the draft"
+
+        StaleFeedbackResponseAccepted ->
+            "responses from an earlier submission cannot complete the current submission"

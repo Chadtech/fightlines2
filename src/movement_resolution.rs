@@ -6,7 +6,7 @@ use crate::{
     movement,
     player_number::PlayerNumber,
     scenario::{Scenario, Unit, UnitId},
-    turns::{self, FacingOrder, MoveOrder, PlannedLoad, TurnFrame},
+    turns::{self, FacingOrder, PlannedLoad, TurnFrame, UnitOrder},
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -115,7 +115,7 @@ fn arrival_time(
 /// then recheck arrivals so that newly blocked departures propagate consistently.
 pub fn resolve(
     scenario: &Scenario,
-    orders: &[MoveOrder],
+    orders: &[UnitOrder],
     turn: i32,
 ) -> Result<MovementResolution, ResolutionError> {
     let loads = turns::planned_loads(scenario, orders);
@@ -125,7 +125,7 @@ pub fn resolve(
 /// Transport has finished; dismounted infantry cannot start another boarding.
 pub fn resolve_dismounts(
     scenario: &Scenario,
-    orders: &[MoveOrder],
+    orders: &[UnitOrder],
     turn: i32,
     combat: &Combat,
 ) -> Result<MovementResolution, ResolutionError> {
@@ -134,7 +134,7 @@ pub fn resolve_dismounts(
 
 fn resolve_prepared(
     scenario: &Scenario,
-    orders: &[MoveOrder],
+    orders: &[UnitOrder],
     turn: i32,
     combat: Option<&Combat>,
     loads: &[PlannedLoad],
@@ -224,7 +224,7 @@ fn resolve_prepared(
 
 fn resolve_arrivals(
     scenario: &Scenario,
-    orders: &[MoveOrder],
+    orders: &[UnitOrder],
     turn: i32,
     combat: Option<&Combat>,
 ) -> Result<MovementResolution, ResolutionError> {
@@ -556,12 +556,12 @@ mod tests {
         scenario::{Direction, Entrenchment, ResourceKind, UnitKind},
         supplies::CargoStock,
         test_support::{FixtureValue, TestResult},
-        turns::{MoveOrder, MoveOrderInput},
+        turns::{UnitOrder, UnitOrderInput},
     };
 
     fn setup(
         paths: &[(&str, &[(u16, u16)])],
-    ) -> Result<(Scenario, Vec<MoveOrder>), Box<dyn std::error::Error>> {
+    ) -> Result<(Scenario, Vec<UnitOrder>), Box<dyn std::error::Error>> {
         let mut scenario = Scenario::supply_point().map_err(|error| format!("{error:?}"))?;
         scenario.map = Map::new(17, 17, Terrain::Plain, BTreeMap::new())
             .map_err(|error| format!("{error:?}"))?;
@@ -578,7 +578,7 @@ mod tests {
                     .ok_or("missing fixture unit")?;
                 let path: Vec<_> = path.iter().map(|(x, y)| Coordinate::new(*x, *y)).collect();
                 moving.move_to(*path.first().ok_or("empty fixture path")?);
-                Ok(MoveOrder {
+                Ok(UnitOrder {
                     supply: crate::supplies::SupplyOrder::default(),
                     travel: crate::turns::TravelMode::Normal,
                     facing: crate::turns::FacingOrder::Unchanged,
@@ -633,7 +633,7 @@ mod tests {
             .fixture()?
             .supply_cargo
             .push(CargoStock::new(ResourceKind::Fuel, 96));
-        let inputs: Vec<MoveOrderInput> = serde_json::from_value(serde_json::json!([
+        let inputs: Vec<UnitOrderInput> = serde_json::from_value(serde_json::json!([
             {"unit_id": "1", "path": [{"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 2, "y": 0}]},
             {"unit_id": "2", "path": [{"x": 0, "y": 0}]}
         ]))?;
@@ -680,7 +680,7 @@ mod tests {
         .fixture()?
         .scenario()
         .fixture()?;
-        let inputs: Vec<MoveOrderInput> = serde_json::from_value(serde_json::json!([
+        let inputs: Vec<UnitOrderInput> = serde_json::from_value(serde_json::json!([
             {"unit_id": "1", "path": [{"x": 0, "y": 0}], "ambush": true, "direction": "West"},
             {"unit_id": "2", "path": [{"x": 0, "y": 1}], "dig_in": true}
         ]))?;
@@ -1027,7 +1027,7 @@ mod tests {
                     turns::TravelMode::Normal,
                 ),
             ] {
-                orders.push(MoveOrder {
+                orders.push(UnitOrder {
                     supply: crate::supplies::SupplyOrder::default(),
                     travel,
                     facing: FacingOrder::Unchanged,
@@ -1130,7 +1130,7 @@ mod tests {
                         ("6", 1, TravelMode::AttackMove),
                         ("5", 0, TravelMode::Normal),
                     ] {
-                        orders.push(MoveOrder {
+                        orders.push(UnitOrder {
                             supply: SupplyOrder::default(),
                             travel,
                             facing: FacingOrder::AfterMove(Direction::East),
@@ -1139,7 +1139,7 @@ mod tests {
                             unloads: Vec::new(),
                         });
                     }
-                    orders.push(MoveOrder {
+                    orders.push(UnitOrder {
                         supply: SupplyOrder::default(),
                         travel: TravelMode::Normal,
                         facing: FacingOrder::Unchanged,

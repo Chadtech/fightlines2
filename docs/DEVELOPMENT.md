@@ -102,6 +102,23 @@ contract, run `make generate-api` to export `schema.json` and regenerate the Elm
 modules under `src/Api/`. Never edit those generated files manually. Compile the
 callers to check that their selections still match the contract.
 
+### Application version
+
+`VERSION` contains the shared application version: a single positive integer.
+Rust embeds it at compile time; `make app-version` generates the committed
+`src/AppVersion.elm` constant for both frontend apps. Frontend builds and checks
+regenerate it. The upper-right corner and dev panel show the frontend's compiled
+version. Every structured server diagnostic includes the backend's compiled `version` field,
+so an old browser tab can be compared with the deployed server.
+
+The check-in workflow runs `make bump-version` once before checks and approval:
+`1` becomes `2`, then `3`, and so on. This updates `VERSION` and regenerates
+the Elm constant. Cargo's package version is separate and does not change.
+Reuse a pending version bump when repeating checks or retrying a push. Ordinary
+builds and `git push` do not change source files or increment the version.
+When checking in outside the agent workflow, run `make bump-version` before
+the release commit. Deploy the backend and frontend built from that commit.
+
 ## Production and development bundles
 
 `make build` compiles the Rust server with `--release` to
@@ -139,13 +156,14 @@ the development tools.
 
 The home and game menus share the **about** dialog in
 `src/Fightlines/View/About.elm`.
-The `Section` type defines `Intro`, `Inspiration`, and `Pacifism`; `all` controls
-their display order. Edit `sectionTitle` and the multiline values in `sectionText`
-to fill in each section. Single source newlines become spaces; blank lines create
-paragraph spacing. Both dialogs use `View.Prose.paragraphs` for this formatting.
-To include a portrait, add the photo to `public/assets/` and set
-`aboutPhotoSource` to `Just "/assets/your-photo.jpg"`. Its original proportions
-are preserved. `Nothing` hides the portrait. Rebuild the frontend after editing.
+The `Section` type defines the available sections; `all` controls which appear
+and their display order. Edit `sectionTitle` and `sectionBody` to fill in each
+section. Contact uses real email, X, and GitHub links, requesting a new tab or
+window with `target="_blank"`; email opens the visitor's configured mail handler.
+Plain text sections use `View.Prose.paragraphs`: single source newlines become spaces
+and blank lines create paragraph spacing. The privacy dialog shares that formatter.
+The creator portrait source is `aboutPhotoSource`; its original proportions are
+preserved. Rebuild the frontend after editing.
 
 Edit the multiline `policy` string in
 `src/Fightlines/View/PrivacyPolicy.elm` to change the **privacy policy** dialog.

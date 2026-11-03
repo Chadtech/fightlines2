@@ -1,6 +1,6 @@
 //! Running games, durable turn transitions, and live/replay projections.
 use crate::{
-    ai,
+    ai, app_version,
     chat::{self, ChatMessage, Draft, Sender, Submission as ChatSubmission, Transcript},
     game_archive::review::RecordedOrder,
     game_log::{Directory, GameLog, GameStarted, RecordedPlayer, Submission, SubmissionResult},
@@ -17,7 +17,7 @@ use crate::{
     server_log,
     session_token::SessionToken,
     store::GameRegistry,
-    turns::{GameOutcome, MoveOrderInput, TurnFrame, TurnResolution, Turns},
+    turns::{GameOutcome, TurnFrame, TurnResolution, Turns, UnitOrderInput},
     visibility,
 };
 use juniper::{FieldError, FieldResult, GraphQLObject};
@@ -166,7 +166,7 @@ impl Game {
                         })
                         .collect(),
                     scenario: self.scenario.clone(),
-                    server_version: env!("CARGO_PKG_VERSION").into(),
+                    server_version: app_version::current().into(),
                     build_revision: option_env!("FIGHTLINES_BUILD_REVISION").map(String::from),
                 })
                 .map_err(|error| log_error(&self.source_lobby, error))?,
@@ -298,7 +298,7 @@ impl Game {
         &mut self,
         session: Option<&SessionToken>,
         turn_number: i32,
-        orders: Vec<MoveOrderInput>,
+        orders: Vec<UnitOrderInput>,
     ) -> FieldResult<GameSnapshot> {
         if let GameAccess::DevelopmentPreview = self.access {
             return error(
@@ -598,7 +598,7 @@ pub fn submit_turn(
     context: &Context,
     id: LobbyId,
     turn_number: i32,
-    orders: Vec<MoveOrderInput>,
+    orders: Vec<UnitOrderInput>,
 ) -> FieldResult<GameSnapshot> {
     let entry = context
         .store
@@ -788,7 +788,7 @@ mod tests {
                     .filter(|unit| unit.player_number() == player)
                     .map(|unit| {
                         let position = unit.board_position().fixture()?;
-                        Ok(MoveOrderInput {
+                        Ok(UnitOrderInput {
                             unit_id: unit.id(),
                             path: vec![CoordinateInput {
                                 x: position.x(),

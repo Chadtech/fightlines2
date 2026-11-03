@@ -42,9 +42,11 @@ import Effect as E
         ( Eff
         )
 import Error exposing (Error)
+import Fightlines.Feedback as Feedback
 import Fightlines.Route as Route
 import Fightlines.Shared as Shared
 import Fightlines.View.About as About
+import Fightlines.View.Feedback as FeedbackView
 import Fightlines.View.GameMenu as GameMenu
 import Fightlines.View.OrderGuide as OrderGuide
 import Fightlines.View.OrderMenu as OrderMenu
@@ -137,6 +139,7 @@ import LobbyId
         )
 import Ports.Js.To as ToJs
 import Preference
+import Random
 import Style as S
 import Time
 import Util.Html.Event as HtmlEvent
@@ -159,6 +162,7 @@ import View.RequestError as RequestError
 
 type alias Model =
     { currentTurn : CurrentTurn.Model
+    , feedback : Feedback.Draft
     , chat : Chat.Model
     , shared : Shared.Model
     , skipTurnIntroduction : Bool
@@ -210,6 +214,7 @@ type Menu
     = MenuClosed
     | MainMenu
     | ConfirmingResignation ResignationDestination
+    | FeedbackMenu
     | AboutMenu
     | PrivacyPolicyMenu
     | SettingsMenu Settings.Tab
@@ -232,6 +237,8 @@ type alias RequestErrorDetails =
 
 type Msg
     = BattlefieldSizeReceived (Result Browser.Dom.Error Browser.Dom.Element)
+    | FeedbackMsg FeedbackView.Msg
+    | FeedbackResponseReceived Feedback.RequestId (ApiRequest.Response Bool)
     | ChatMsg ChatView.Msg
     | ChatPollElapsed Time.Posix
     | ChatPollReceived (ApiRequest.Response (List Chat.Message))
@@ -364,6 +371,7 @@ init shared flags =
             , battlefieldViewport = Nothing
             , frame = AnimationFrame.first
             , resigning = False
+            , feedback = Feedback.init
             , menu = MenuClosed
             , unitHelp = Nothing
             }
@@ -415,6 +423,11 @@ setShared shared model =
 setChat : Chat.Model -> Model -> Model
 setChat chat model =
     { model | chat = chat }
+
+
+setFeedback : Feedback.Draft -> Model -> Model
+setFeedback feedback model =
+    { model | feedback = feedback }
 
 
 setCurrentTurn : CurrentTurn.Model -> Model -> Model
@@ -2025,6 +2038,39 @@ update lobbyId msg model =
                     |> setChat (Chat.expire version model.chat)
                     |> E.withOut
 
+        FeedbackMsg feedbackMsg ->
+            case feedbackMsg of
+                FeedbackView.TextChanged text ->
+                    model
+                        |> setFeedback (Feedback.edit text model.feedback)
+                        |> E.withOut
+
+                FeedbackView.CloseClicked ->
+                    ( model |> setMenu MenuClosed
+                    , E.focus { htmlId = GameMenu.buttonHtmlId } FocusCompleted
+                    )
+
+                FeedbackView.SubmitClicked ->
+                    let
+                        ( id, seed ) =
+                            Random.step Feedback.requestId model.shared.seed
+                    in
+                    case Feedback.beginSubmission id model.feedback of
+                        Just pending ->
+                            ( model
+                                |> setShared (Shared.setSeed seed model.shared)
+                                |> setFeedback pending
+                            , E.request (FeedbackResponseReceived id) (Feedback.request pending)
+                            )
+
+                        Nothing ->
+                            ( model, E.none )
+
+        FeedbackResponseReceived id response ->
+            model
+                |> setFeedback (Feedback.receive id response model.feedback)
+                |> E.withOut
+
         GameMenuMsg menuMsg ->
             handleGameMenuMsg lobbyId menuMsg model
 
@@ -2840,6 +2886,20 @@ playAudio msg model =
         FocusCompleted _ ->
             Audio.none
 
+        FeedbackMsg feedbackMsg ->
+            case feedbackMsg of
+                FeedbackView.TextChanged _ ->
+                    Audio.none
+
+                FeedbackView.SubmitClicked ->
+                    Audio.confirm
+
+                FeedbackView.CloseClicked ->
+                    Audio.cancel
+
+        FeedbackResponseReceived _ _ ->
+            Audio.none
+
         GameMenuMsg menuMsg ->
             case menuMsg of
                 GameMenu.OpenClicked ->
@@ -2849,6 +2909,9 @@ playAudio msg model =
                     Audio.affirm
 
                 GameMenu.SettingsClicked ->
+                    Audio.affirm
+
+                GameMenu.FeedbackClicked ->
                     Audio.affirm
 
                 GameMenu.AboutClicked ->
@@ -3168,6 +3231,15 @@ handleGameMenuMsg lobbyId msg model =
             else
                 model
                     |> E.withOut
+
+        GameMenu.FeedbackClicked ->
+            if (model.menu == MainMenu) && not model.resigning then
+                ( model |> setMenu FeedbackMenu
+                , E.focus { htmlId = FeedbackView.inputHtmlId } FocusCompleted
+                )
+
+            else
+                ( model, E.none )
 
         GameMenu.AboutClicked ->
             if (model.menu == MainMenu) && not model.resigning then
@@ -4870,6 +4942,9 @@ gameMenuDialog model _ =
                 (GameMenu.resignationDialog { goingHome = destination == GoHome }
                     |> Dialog.map GameMenuMsg
                 )
+
+        FeedbackMenu ->
+            Just (FeedbackView.dialog model.feedback |> Dialog.map FeedbackMsg)
 
         AboutMenu ->
             Just (About.dialog { onClose = GameMenuMsg GameMenu.CloseClicked })

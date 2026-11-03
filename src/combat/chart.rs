@@ -6,7 +6,7 @@ use crate::{
     player_number::PlayerNumber,
     scenario::{BuildingKind, Direction, UnitKind},
     supplies::SupplyOrder,
-    turns::{FacingOrder, MoveOrder, TravelMode},
+    turns::{FacingOrder, TravelMode, UnitOrder},
 };
 use juniper::{FieldResult, GraphQLEnum, GraphQLInputObject, GraphQLObject};
 
@@ -166,7 +166,7 @@ fn hit(
         target.dig_in();
     }
     let target_id = target.unit_id();
-    let mut order = MoveOrder {
+    let mut order = UnitOrder {
         unit_id: target_id,
         path: vec![destination],
         travel: TravelMode::Normal,

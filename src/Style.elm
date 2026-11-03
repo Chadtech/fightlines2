@@ -89,6 +89,8 @@ module Style exposing
     , flexP4
     , flexP5
     , flexWrap
+    , floatLeft
+    , floatNone
     , focus
     , focusVisible
     , fontItalic
@@ -115,6 +117,7 @@ module Style exposing
     , gridCols2
     , gridColumns
     , gridColumnsRem
+    , gridRows
     , gridRowsRem
     , grow
     , h0
@@ -225,6 +228,7 @@ module Style exposing
     , minH0
     , minH11
     , minH14
+    , minH16
     , minH24
     , minH32
     , minH36
@@ -266,6 +270,7 @@ module Style exposing
     , mt2
     , mt3
     , mt4
+    , mtNeg4
     , mx4
     , mx64
     , mx96
@@ -283,15 +288,9 @@ module Style exposing
     , outdentLeft
     , outdentStrong
     , outdentTopRight
-    , outlineCurrent
-    , outlineCurrentThick
     , outlineNone
-    , outlineOffset3
     , outlineOffsetNeg1
-    , outlineOffsetNeg3
     , outlineYellow5
-    , outlineYellow5HalfPixel
-    , outlineYellow5Thick
     , overflowAuto
     , overflowHidden
     , p0
@@ -324,6 +323,7 @@ module Style exposing
     , pr4
     , pre
     , pt1
+    , pt12
     , pt16
     , pt20
     , pt24
@@ -523,6 +523,11 @@ gridRowsRem count size =
     Css.property "grid-template-rows" ("repeat(" ++ String.fromInt count ++ ", " ++ String.fromFloat size ++ "rem)")
 
 
+gridRows : String -> Css.Style
+gridRows rows =
+    Css.property "grid-template-rows" rows
+
+
 gridColumns : String -> Css.Style
 gridColumns columns =
     Css.property "grid-template-columns" columns
@@ -598,6 +603,7 @@ global =
         , Css.property "font-family" "inherit"
         , Css.fontWeight Css.normal
         , Css.property "text-transform" "lowercase"
+        , outlineNone
         ]
     , Css.Global.selector "html"
         [ Css.fontSize (Css.rem 1)
@@ -616,10 +622,8 @@ link =
         , underline
         , Css.property "text-underline-offset" "0.2em"
         , Css.hover [ Css.property "color" "#C4E3FF" ]
-        , Css.focus
+        , focusVisible
             [ Css.property "color" "#C4E3FF"
-            , Css.property "outline" "1px solid currentColor"
-            , Css.property "outline-offset" "2px"
             ]
         ]
 
@@ -1560,6 +1564,11 @@ minH14 =
     Css.minHeight (Css.rem 3.5)
 
 
+minH16 : Css.Style
+minH16 =
+    Css.minHeight s16
+
+
 minH32 : Css.Style
 minH32 =
     Css.minHeight s32
@@ -1831,6 +1840,11 @@ pt1 =
 pt4 : Css.Style
 pt4 =
     Css.paddingTop s4
+
+
+pt12 : Css.Style
+pt12 =
+    Css.paddingTop s12
 
 
 pt16 : Css.Style
@@ -2406,6 +2420,11 @@ mt3 =
     Css.marginBottom s3
 
 
+mtNeg4 : Css.Style
+mtNeg4 =
+    Css.marginTop (Css.rem -1)
+
+
 mt4 : Css.Style
 mt4 =
     Css.marginTop s4
@@ -2867,6 +2886,16 @@ block =
     Css.display Css.block
 
 
+floatLeft : Css.Style
+floatLeft =
+    Css.float Css.left_
+
+
+floatNone : Css.Style
+floatNone =
+    Css.float Css.none
+
+
 listNone : Css.Style
 listNone =
     listStyleNone
@@ -3077,44 +3106,14 @@ borderTransparent =
     Css.border3 (Css.px 1) Css.solid (Css.rgba 0 0 0 0)
 
 
-outlineCurrent : Css.Style
-outlineCurrent =
-    Css.outline3 (Css.px 1) Css.solid Css.currentcolor
-
-
 outlineYellow5 : Css.Style
 outlineYellow5 =
     Css.outline3 (Css.px 1) Css.solid (Css.hex yellow5Str)
 
 
-outlineYellow5Thick : Css.Style
-outlineYellow5Thick =
-    Css.property "outline" ("2px solid " ++ yellow5Str)
-
-
-outlineYellow5HalfPixel : Css.Style
-outlineYellow5HalfPixel =
-    Css.property "outline" ("0.5px solid " ++ yellow5Str)
-
-
-outlineCurrentThick : Css.Style
-outlineCurrentThick =
-    Css.property "outline" "2px solid currentColor"
-
-
-outlineOffset3 : Css.Style
-outlineOffset3 =
-    Css.property "outline-offset" "3px"
-
-
 outlineOffsetNeg1 : Css.Style
 outlineOffsetNeg1 =
     Css.property "outline-offset" "-1px"
-
-
-outlineOffsetNeg3 : Css.Style
-outlineOffsetNeg3 =
-    Css.outlineOffset (Css.px -3)
 
 
 rounded0 : Css.Style

@@ -24,7 +24,6 @@ import Api.Enum.Direction exposing (Direction)
 import Api.Enum.SpriteFacing exposing (SpriteFacing)
 import Api.Enum.UnitKind as UnitKind
 import Css
-import Css.Global
 import Game.AnimationFrame as AnimationFrame
 import Game.Camera as Camera exposing (Camera)
 import Game.CombatRules exposing (CombatRules)
@@ -432,16 +431,6 @@ camera view =
             , S.transform (Camera.transform view.camera)
             , cameraTransition
             , S.reducedMotion [ S.transformTransition 0 ]
-            , Css.Global.descendants
-                [ Css.Global.selector "rect"
-                    [ S.outlineNone
-                    , S.focusVisible
-                        [ S.outlineYellow5HalfPixel
-                        , S.outlineOffsetNeg1
-                        , S.rounded0
-                        ]
-                    ]
-                ]
             ]
         ]
 
@@ -749,7 +738,6 @@ toSvg args =
                             , SA.height "3.4"
                             , SA.fill "transparent"
                             , SA.class "fightlines-depot-stock-target"
-                            , HA.style "--depot-focus-color" S.yellow5Str
                             , HA.attribute "tabindex" "0"
                             , Aria.svgRole Aria.Button
                             , Aria.svgLabel (DepotStock.label depot stock)

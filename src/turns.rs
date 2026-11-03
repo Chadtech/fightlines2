@@ -21,7 +21,7 @@ pub struct CoordinateInput {
 }
 
 #[derive(Clone, GraphQLInputObject, Serialize, Deserialize)]
-pub struct MoveOrderInput {
+pub struct UnitOrderInput {
     pub(crate) unit_id: String,
     /// Includes the starting square. A single square is an explicit hold order.
     pub(crate) path: Vec<CoordinateInput>,
@@ -48,7 +48,7 @@ pub struct MoveOrderInput {
 }
 
 #[derive(Clone, Debug)]
-pub struct MoveOrder {
+pub struct UnitOrder {
     pub travel: TravelMode,
     pub facing: FacingOrder,
     pub unit_id: UnitId,
@@ -413,7 +413,7 @@ impl GameOutcome {
 pub struct Turns {
     pub number: i32,
     pub outcome: Option<GameOutcome>,
-    pub orders: [Option<Vec<MoveOrder>>; 2],
+    pub orders: [Option<Vec<UnitOrder>>; 2],
     pub last_resolution: Option<TurnResolution>,
 }
 
@@ -436,8 +436,8 @@ pub(crate) struct PlannedLoad {
 
 /// Boarding intent is determined by final destinations, independently of submission order.
 /// Capacity is checked for the whole group during validation, before any unloading.
-pub(crate) fn planned_loads(scenario: &Scenario, orders: &[MoveOrder]) -> Vec<PlannedLoad> {
-    let permits_boarding = |order: &MoveOrder| {
+pub(crate) fn planned_loads(scenario: &Scenario, orders: &[UnitOrder]) -> Vec<PlannedLoad> {
+    let permits_boarding = |order: &UnitOrder| {
         order.travel == TravelMode::Normal
             && match order.facing {
                 FacingOrder::Unchanged => true,
@@ -482,7 +482,7 @@ pub(crate) fn planned_loads(scenario: &Scenario, orders: &[MoveOrder]) -> Vec<Pl
 }
 
 /// Infantry orders starting at a truck-planned exit run only after dismounting.
-fn dismount_orders(scenario: &Scenario, orders: &[MoveOrder]) -> Vec<MoveOrder> {
+fn dismount_orders(scenario: &Scenario, orders: &[UnitOrder]) -> Vec<UnitOrder> {
     orders
         .iter()
         .filter(|order| {
@@ -507,8 +507,8 @@ fn dismount_orders(scenario: &Scenario, orders: &[MoveOrder]) -> Vec<MoveOrder> 
 pub fn validate(
     scenario: &Scenario,
     player_number: PlayerNumber,
-    inputs: Vec<MoveOrderInput>,
-) -> Result<Vec<MoveOrder>, &'static str> {
+    inputs: Vec<UnitOrderInput>,
+) -> Result<Vec<UnitOrder>, &'static str> {
     // Read dependencies before validating individual orders so submission order
     // cannot decide whether an infantry order starts aboard or at its exit.
     let mut infantry_exits = BTreeMap::new();
@@ -972,7 +972,7 @@ pub fn validate(
                 destination: exit,
             });
         }
-        orders.push(MoveOrder {
+        orders.push(UnitOrder {
             supply: if let Some(kind) = input.pickup_ground_freight {
                 SupplyOrder::PickUpGroundFreight {
                     position: destination,
@@ -1239,7 +1239,7 @@ impl Turns {
         scenario: &mut Scenario,
         player_number: PlayerNumber,
         number: i32,
-        inputs: Vec<MoveOrderInput>,
+        inputs: Vec<UnitOrderInput>,
     ) -> Result<(), &'static str> {
         let mut next_turns = self.clone();
         let mut next_scenario = scenario.clone();
@@ -1254,7 +1254,7 @@ impl Turns {
         scenario: &mut Scenario,
         player_number: PlayerNumber,
         number: i32,
-        inputs: Vec<MoveOrderInput>,
+        inputs: Vec<UnitOrderInput>,
     ) -> Result<(), &'static str> {
         if self.outcome.is_some() {
             return Err("the game has ended.");
@@ -1486,7 +1486,7 @@ impl Turns {
                         .iter()
                         .any(|order| order.unit_id == unit.unit_id())
                     {
-                        action_orders.push(MoveOrder {
+                        action_orders.push(UnitOrder {
                             unit_id: unit.unit_id(),
                             path: vec![
                                 scenario
@@ -1986,7 +1986,7 @@ mod tests {
         Ok(())
     }
 
-    fn holds(scenario: &Scenario, player_number: PlayerNumber) -> TestResult<Vec<MoveOrderInput>> {
+    fn holds(scenario: &Scenario, player_number: PlayerNumber) -> TestResult<Vec<UnitOrderInput>> {
         Ok({
             scenario
                 .units
@@ -1994,7 +1994,7 @@ mod tests {
                 .filter(|unit| unit.player_number() == player_number)
                 .map(|unit| {
                     let position = scenario.physical_position(unit).fixture()?;
-                    Ok(MoveOrderInput {
+                    Ok(UnitOrderInput {
                         ambush: None,
                         stand_ground: None,
                         dig_in: None,
@@ -2353,7 +2353,7 @@ mod tests {
                 0,
             ));
         }
-        let attack = |board: &Scenario| -> TestResult<Vec<MoveOrderInput>> {
+        let attack = |board: &Scenario| -> TestResult<Vec<UnitOrderInput>> {
             let mut inputs = holds(board, PlayerNumber::Player1)?;
             inputs[0].attack_move = Some(true);
             inputs[0].path.extend([
@@ -3397,7 +3397,7 @@ mod tests {
         Ok(())
     }
 
-    fn set_path(orders: &mut [MoveOrderInput], id: &str, path: &[(i32, i32)]) -> TestResult<()> {
+    fn set_path(orders: &mut [UnitOrderInput], id: &str, path: &[(i32, i32)]) -> TestResult<()> {
         orders
             .iter_mut()
             .find(|order| order.unit_id == id)
@@ -3437,7 +3437,7 @@ mod tests {
     fn resolve_orders(
         scenario: &mut Scenario,
         turns: &mut Turns,
-        player1: Vec<MoveOrderInput>,
+        player1: Vec<UnitOrderInput>,
     ) -> TestResult<()> {
         let player2 = holds(scenario, PlayerNumber::Player2)?;
         let number = turns.number;
@@ -3641,7 +3641,7 @@ mod tests {
         Ok(scenario)
     }
 
-    fn infantry_dismount_inputs(scenario: &Scenario) -> TestResult<Vec<MoveOrderInput>> {
+    fn infantry_dismount_inputs(scenario: &Scenario) -> TestResult<Vec<UnitOrderInput>> {
         let mut orders = holds(scenario, PlayerNumber::Player1)?;
         set_path(&mut orders, "4", &[(2, 7), (2, 8), (1, 8)])?;
         orders

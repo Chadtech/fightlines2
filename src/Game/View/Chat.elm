@@ -144,7 +144,7 @@ lobbyPanel model =
     , input
     ]
         |> Card.toHtml
-            (Card.simple
+            (Card.panel
                 |> Card.withHeader (CardHeader.simple "chat")
             )
 
@@ -199,38 +199,63 @@ editor placement composer =
 
         historyAction : Html Msg
         historyAction =
+            Button.secondary historyLabel HistoryClicked
+                |> Button.disclosure
+                    { expanded = composer.history
+                    , controlsHtmlId = historyHtmlId
+                    }
+                |> Button.toHtml
+
+        content : List (Html Msg)
+        content =
             case placement of
                 DialogComposer ->
-                    Button.secondary historyLabel HistoryClicked
-                        |> Button.disclosure
-                            { expanded = composer.history
-                            , controlsHtmlId = historyHtmlId
-                            }
-                        |> Button.toHtml
+                    [ TextField.toHtml focusedField
+                    , H.div
+                        [ A.css
+                            [ S.row
+                            , S.justifySpaceBetween
+                            , S.g3
+                            , S.flexWrap
+                            ]
+                        ]
+                        [ historyAction
+                        , Button.toHtml send
+                        ]
+                    ]
 
                 LobbyComposer ->
-                    H.text ""
+                    [ H.div
+                        [ A.css
+                            [ S.flex1
+                            , S.minW0
+                            ]
+                        ]
+                        [ TextField.toHtml focusedField
+                        ]
+                    , Button.toHtml send
+                    ]
+
+        layout : List Css.Style
+        layout =
+            case placement of
+                DialogComposer ->
+                    [ S.col
+                    , S.g3
+                    ]
+
+                LobbyComposer ->
+                    [ S.row
+                    , S.itemsCenter
+                    , S.g2
+                    , S.shrink0
+                    ]
     in
     H.div
         [ Ev.preventDefaultOn "keydown" sendKeyDecoder
-        , A.css
-            [ S.col
-            , S.g3
-            ]
+        , A.css layout
         ]
-        [ TextField.toHtml focusedField
-        , H.div
-            [ A.css
-                [ S.row
-                , S.justifySpaceBetween
-                , S.g3
-                , S.flexWrap
-                ]
-            ]
-            [ historyAction
-            , Button.toHtml send
-            ]
-        ]
+        content
 
 
 notification : Chat.Model -> Maybe (Html Msg)
@@ -432,8 +457,8 @@ transcript placement events messages =
         placementStyles =
             case placement of
                 LobbyTranscript ->
-                    [ S.h48
-                    , S.shrink0
+                    [ S.flex1
+                    , S.minH0
                     ]
 
                 HistoryTranscript ->
@@ -453,7 +478,6 @@ transcript placement events messages =
                 , S.p3
                 , S.overflowAuto
                 , S.batch placementStyles
-                , S.focus [ S.outlineYellow5 ]
                 ]
             ]
                 ++ scrollAttributes

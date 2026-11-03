@@ -133,15 +133,11 @@ dialog config =
                 [ S.row
                 , S.flexWrap
                 , S.itemsCenter
-                , S.justifySpaceBetween
                 , S.g3
                 , S.pt3
                 ]
             ]
-            [ H.span
-                []
-                [ H.text "saved on this device" ]
-            , Button.primary "done" CloseClicked
+            [ Button.primary "done" CloseClicked
                 |> Button.toHtml
             ]
         ]

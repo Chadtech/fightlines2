@@ -320,7 +320,7 @@ revision at request time; changing the map or controller advances that revision 
 invalidates in-flight polls. Older successes and failures cannot overwrite the
 saved settings or interfere with a newer poll.
 
-`ai.rs` builds deterministic ordinary `MoveOrderInput` values from its assigned
+`ai.rs` builds deterministic ordinary `UnitOrderInput` values from its assigned
 side's fog-projected pre-turn scenario. It receives neither human orders nor
 hidden enemy positions as planning inputs. Its advancing enemy model moves toward central supply
 points, engages visible enemies with attack moves or field-gun indirect fire,
@@ -414,6 +414,22 @@ route, game query and page. Only this fixture has
 requiring or setting a session cookie. Normal games retain member authorization.
 The fixture resets on restart and does not consume the normal token seed.
 
+## Player feedback
+
+`feedback.rs` validates player feedback and atomically saves one private JSON
+record per accepted submission, independently of games and diagnostic logs.
+Startup opens its directory outside the frontend and shares it through the
+GraphQL context. `submitFeedback` runs on the existing blocking request worker;
+it returns success only after storage succeeds and exposes no read operation.
+See [deployment](DEPLOYMENT.md#player-feedback) for configuration.
+
+`Fightlines.Feedback` owns draft and delivery transitions. Home and GamePage
+retain their own draft across dialog dismissal and handle requests through
+`ApiRequest` and `Effect.request`. Request IDs from the shared random stream
+prevent responses from an earlier page visit from completing a new submission.
+`Fightlines.View.Feedback` shares the native
+form and its event vocabulary; each page owns menu visibility and focus return.
+
 ## Chat
 
 `chat.rs` owns the URL-accessible transcript and client message IDs. Lobbies and
@@ -452,7 +468,7 @@ shared `View.RequestError` presentation outside the composer. A modal adds its
 toast to the native top layer so retry and dismiss remain usable. The replay
 page uses the history view without send controls.
 Transcripts render by ascending sequence, with newer turns below older ones.
-The lobby's transcript has a fixed-height green inset. Elm decodes its scroll
+The lobby's transcript has a bounded green inset. Elm decodes its scroll
 position and `Game.Chat` remembers whether the reader is within four pixels of
 the bottom. The owning page requests `Effect.scrollToBottom` when new messages
 arrive while following; `Browser.Dom` measures and scrolls the rendered element.
@@ -1591,7 +1607,7 @@ combat portraits. The server fills final-reveal units from their last recorded
 readiness so inspection survives terminal playback.
 
 `PlannedOrder.Ambush` owns stationary position and facing. The `ChoosingDirection` interaction owns the preview direction. The input boundary emits
-`MoveOrderInput.ambush` with `direction` and a single-coordinate path. Validation
+`UnitOrderInput.ambush` with `direction` and a single-coordinate path. Validation
 rejects absent facing, trucks, passengers, movement, unloading, receiving a load,
 and insufficient readiness supplies. `Unit.combatRules` provides authoritative
 range, ambush shape, damage, readiness cost, and shot cost for planning and status copy.
@@ -1940,7 +1956,7 @@ rows from the selected physical tile. `Game.View.StockGauge` shares depot and fr
 stock presentation. Identity-keyed rows reset native disclosures when the inspected
 object changes; freight uses only projected current or remembered stock.
 
-`MoveOrderInput.loadCrates` requests a count, `pickupGroundFreight` requests a
+`UnitOrderInput.loadCrates` requests a count, `pickupGroundFreight` requests a
 visible ground load by resource kind at the route destination, and `crateUnloads`
 identifies original cargo slots and destinations. An absent pickup request leaves
 ground freight in place. Pickup reserves one shared berth and cannot combine
@@ -2146,7 +2162,7 @@ rendering a map leaves authored orientation intact.
 
 ## Indirect fire
 
-`MoveOrderInput.indirectFire` carries a tile coordinate. Validation converts it
+`UnitOrderInput.indirectFire` carries a tile coordinate. Validation converts it
 to `FacingOrder::IndirectFire`, requires a stationary on-board field gun with no
 other actions, checks map bounds and the server-exported circular `indirectRange`
 of 9 tiles, and reserves upkeep, readiness, and one shot. Target validation never
@@ -2202,7 +2218,7 @@ restores the card without triggering the global Enter-to-continue shortcut.
 
 ## Infantry orders after dismounting
 
-A truck's passenger exits remain in `MoveOrder.unloads`. An infantry order whose
+A truck's passenger exits remain in `UnitOrder.unloads`. An infantry order whose
 path starts at its assigned exit is a dependent order after dismounting; the
 wire contract reuses the existing move/action fields. Validation projects that
 infantry onto its exit and reserves unloading supplies before checking the order.

@@ -100,7 +100,6 @@ toHtml textField =
                 , S.caretRed1
                 , Css.focus
                     [ S.textGray5
-                    , S.outlineYellow5
                     ]
                 , S.outlineNone
                 , S.p2

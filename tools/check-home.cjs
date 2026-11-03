@@ -23,7 +23,7 @@ try {
       console.error(failures.join('\n'));
       process.exitCode = 1;
     } else {
-      console.log('Home initialization, deterministic positions, and shared seed continuity passed.');
+      console.log('Home initialization, shared seed continuity, and feedback submission checks passed.');
     }
   });
 } finally {

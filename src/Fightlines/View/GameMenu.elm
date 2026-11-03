@@ -32,6 +32,7 @@ type Msg
     = OpenClicked
     | ChatClicked
     | SettingsClicked
+    | FeedbackClicked
     | AboutClicked
     | PrivacyPolicyClicked
     | CloseClicked
@@ -170,14 +171,16 @@ dialog status =
     Dialog.make dialogHtmlId
         "menu"
         CloseClicked
-        [ Button.primary "close" CloseClicked
-            |> Button.withHtmlId closeButtonHtmlId
+        [ resignButton
             |> Button.fullWidth
             |> Button.toHtml
         , Button.secondary "settings" SettingsClicked
             |> Button.fullWidth
             |> Button.toHtml
         , Button.secondary "chat (c)" ChatClicked
+            |> Button.fullWidth
+            |> Button.toHtml
+        , Button.secondary "feedback" FeedbackClicked
             |> Button.fullWidth
             |> Button.toHtml
         , Button.secondary "about" AboutClicked
@@ -189,15 +192,10 @@ dialog status =
         , homeButton
             |> Button.fullWidth
             |> Button.toHtml
-        , H.div
-            [ A.css
-                [ S.mt4
-                ]
-            ]
-            [ resignButton
-                |> Button.fullWidth
-                |> Button.toHtml
-            ]
+        , Button.primary "close" CloseClicked
+            |> Button.withHtmlId closeButtonHtmlId
+            |> Button.fullWidth
+            |> Button.toHtml
         ]
 
 

@@ -378,9 +378,6 @@ hitCell config key =
                             , S.pointerCursor
                             , S.when lethal S.bgRed0
                             , S.when selected S.borderYellow5
-                            , S.focusVisible
-                                [ S.outlineYellow5Thick
-                                ]
                             , S.hover
                                 [ S.importantIndent
                                 ]

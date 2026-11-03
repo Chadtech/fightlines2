@@ -1749,10 +1749,6 @@ workspace model =
                 , S.userSelectNone
                 , S.bgNightwood3
                 , S.indentStrong
-                , S.focusVisible
-                    [ S.outlineYellow5
-                    , S.outlineOffsetNeg3
-                    ]
                 , S.when (usesHand model) S.grabCursor
                 , S.when panning S.grabbingCursor
                 ]

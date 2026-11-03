@@ -95,10 +95,6 @@ toHtml content (Checkbox config) =
                             [ Css.property "content" "'\\2713'"
                             ]
                         ]
-                    , Css.pseudoClass "focus-visible"
-                        [ Css.outline3 (Css.px 1) Css.solid (Css.hex S.yellow5Str)
-                        , Css.outlineOffset (Css.px 3)
-                        ]
                     ]
                 ]
                 []

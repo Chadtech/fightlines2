@@ -42,10 +42,6 @@ toHtml config unit =
                 [ S.textGray5
                 , S.bgNightwood2
                 ]
-            , Css.pseudoClass "focus-visible"
-                [ Css.outline3 (Css.px 1) Css.solid (Css.hex S.yellow5Str)
-                , Css.outlineOffset (Css.px 1)
-                ]
             ]
         ]
         (contents unit)

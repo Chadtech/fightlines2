@@ -376,10 +376,6 @@ toHtml button =
                                 [ S.filter "brightness(1.15)"
                                 , S.redIndent
                                 ]
-                            , S.focusVisible
-                                [ S.outlineCurrentThick
-                                , S.outlineOffset3
-                                ]
                             ]
 
                         Choice selected ->
@@ -509,10 +505,6 @@ attentionStyles =
         [ S.relative
         , S.overflowHidden
         , S.animation "fightlines-button-attention 1.8s ease-in-out infinite"
-        , S.focusVisible
-            [ S.outlineCurrentThick
-            , S.outlineOffset3
-            ]
         , S.after
             [ S.contentEmpty
             , S.absolute

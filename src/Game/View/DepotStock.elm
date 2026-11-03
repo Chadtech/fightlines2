@@ -25,10 +25,6 @@ styles =
                 50% { opacity: 0; }
             }
             .fightlines-depot-stock-target { cursor: pointer; outline: none; }
-            .fightlines-depot-stock-target:focus-visible {
-                outline: 0.5px solid var(--depot-focus-color);
-                outline-offset: -0.5px;
-            }
         """
         ]
 

@@ -82,8 +82,7 @@ toHtml options =
                 , S.opacity 1
                 ]
             , S.focusVisible
-                [ S.outlineCurrent
-                , S.textGray5
+                [ S.textGray5
                 , S.opacity 1
                 ]
             , Css.Media.withMediaQuery [ "(pointer: coarse)" ]

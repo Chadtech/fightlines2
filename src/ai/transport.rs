@@ -10,7 +10,7 @@ use crate::{
     movement,
     scenario::{Entrenchment, ResourceKind, Scenario, Unit, UnitKind},
     supplies,
-    turns::{self, MoveOrderInput, UnloadOrderInput},
+    turns::{self, UnitOrderInput, UnloadOrderInput},
 };
 use std::collections::BTreeSet;
 
@@ -63,7 +63,7 @@ fn threatened(scenario: &Scenario, passenger: &Unit, position: Coordinate) -> bo
 fn safe_route_tiles(
     scenario: &Scenario,
     truck: &Unit,
-    orders: &[MoveOrderInput],
+    orders: &[UnitOrderInput],
 ) -> Result<BTreeSet<Coordinate>, &'static str> {
     let mut blocked = logistics::blocked_tiles(scenario, truck, orders)?;
     for enemy in scenario.units.iter().filter(|unit| {
@@ -122,7 +122,7 @@ fn travel_turns(
 pub(super) fn pickups(
     scenario: &Scenario,
     truck: &Unit,
-    orders: &[MoveOrderInput],
+    orders: &[UnitOrderInput],
     assigned: &[TruckMission],
 ) -> Result<Vec<TruckPlan>, &'static str> {
     if supplies::occupied_berths(scenario, truck) >= truck.cargo_capacity() as usize {
@@ -343,7 +343,7 @@ pub(super) fn pickups(
 pub(super) fn deployment(
     scenario: &Scenario,
     truck: &Unit,
-    orders: &[MoveOrderInput],
+    orders: &[UnitOrderInput],
 ) -> Result<TruckPlan, &'static str> {
     let origin = truck
         .board_position()
@@ -512,7 +512,7 @@ mod tests {
         scenario: &mut Scenario,
         turns: &mut Turns,
         player: PlayerNumber,
-        orders: Vec<MoveOrderInput>,
+        orders: Vec<UnitOrderInput>,
     ) -> TestResult {
         let enemy = player.opponent();
         let holds = scenario
