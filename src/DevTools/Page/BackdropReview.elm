@@ -39,7 +39,7 @@ import NonEmptyList exposing (NonEmpty)
 import Random
 import Style as S
 import View.Button as Button
-import View.Card as Card
+import View.Card as Card exposing (Card)
 import View.CardHeader as CardHeader
 import View.Checkbox as Checkbox
 import View.Range as Range
@@ -703,7 +703,7 @@ view model =
 scenePanel : Model -> Html Msg
 scenePanel model =
     let
-        card : Card.Card
+        card : Card Msg
         card =
             Card.simple
                 |> Card.withHeader (CardHeader.simple "scene")
@@ -1202,7 +1202,7 @@ copyControls model =
                 CopyFailed error ->
                     error
 
-        card : Card.Card
+        card : Card Msg
         card =
             Card.simple
                 |> Card.withHeader (CardHeader.simple "copy calibrations")

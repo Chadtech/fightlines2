@@ -51,6 +51,7 @@ import Game.View.BattlefieldInspection as BattlefieldInspection
 import Game.View.BattlefieldWorkspace as BattlefieldWorkspace
 import Game.View.Chat as ChatView
 import Game.View.CombatTheater as CombatTheater
+import Game.View.InspectionHelp as InspectionHelp
 import Game.View.TurnControls as TurnControls
 import Game.View.UnitDeath as UnitDeath
 import Game.View.UnitStatus as UnitStatus
@@ -112,7 +113,7 @@ type alias Model =
     , showOrders : Bool
     , timeline : Timeline
     , inspection : Maybe Inspection
-    , unitHelp : Maybe UnitStatus.Help
+    , inspectionHelp : Maybe InspectionHelp.Help
     , navigation : BattlefieldNavigation.Model
     , viewport : Maybe Camera.Viewport
     , frame : AnimationFrame.Frame
@@ -168,9 +169,9 @@ type Msg
     | CargoUnitClicked UnitId
     | EscapePressed
     | InspectorCloseClicked
-    | UnitHelpClicked UnitStatus.Help
-    | UnitHelpDismissed
-    | UnitHelpFocusReturned (Result Browser.Dom.Error ())
+    | InspectionHelpClicked InspectionHelp.Help
+    | InspectionHelpDismissed
+    | InspectionHelpFocusReturned (Result Browser.Dom.Error ())
     | PanLeftKeyPressed
     | PanRightKeyPressed
     | PanUpKeyPressed
@@ -227,7 +228,7 @@ init shared id flags =
             , showOrders = False
             , timeline = Ready
             , inspection = Nothing
-            , unitHelp = Nothing
+            , inspectionHelp = Nothing
             , navigation = BattlefieldNavigation.init
             , viewport = Nothing
             , frame = AnimationFrame.first
@@ -861,12 +862,12 @@ unitLoss model =
     PlaybackPresentation.loss model.skipUnitLossDialogs (playback model)
 
 
-dismissUnitHelp : Model -> ( Model, Eff Msg )
-dismissUnitHelp model =
-    case model.unitHelp of
+dismissInspectionHelp : Model -> ( Model, Eff Msg )
+dismissInspectionHelp model =
+    case model.inspectionHelp of
         Just help ->
-            ( { model | unitHelp = Nothing }
-            , E.focus { htmlId = UnitStatus.buttonHtmlId help } UnitHelpFocusReturned
+            ( { model | inspectionHelp = Nothing }
+            , E.focus { htmlId = InspectionHelp.buttonHtmlId help } InspectionHelpFocusReturned
             )
 
         Nothing ->
@@ -948,7 +949,7 @@ update msg model =
 
         ChatHistoryClosed ->
             ( { model | chatHistoryOpen = False }
-            , E.focus { htmlId = replayChatButtonHtmlId } UnitHelpFocusReturned
+            , E.focus { htmlId = replayChatButtonHtmlId } InspectionHelpFocusReturned
             )
 
         BattlefieldMsg battlefieldMsg ->
@@ -968,20 +969,20 @@ update msg model =
                 |> selectUnit id
                 |> withInspectionMeasurement model
 
-        UnitHelpClicked help ->
+        InspectionHelpClicked help ->
             if dialog model /= Nothing then
                 model
                     |> E.withOut
 
             else
-                ( pause { model | unitHelp = Just help }
-                , E.toJs (ToJs.OpenDialog { htmlId = UnitStatus.dialogHtmlId })
+                ( pause { model | inspectionHelp = Just help }
+                , E.toJs (ToJs.OpenDialog { htmlId = InspectionHelp.dialogHtmlId })
                 )
 
-        UnitHelpDismissed ->
-            dismissUnitHelp model
+        InspectionHelpDismissed ->
+            dismissInspectionHelp model
 
-        UnitHelpFocusReturned result ->
+        InspectionHelpFocusReturned result ->
             case result of
                 Ok () ->
                     model
@@ -993,8 +994,8 @@ update msg model =
                         |> E.withOut
 
         EscapePressed ->
-            if model.unitHelp /= Nothing then
-                dismissUnitHelp model
+            if model.inspectionHelp /= Nothing then
+                dismissInspectionHelp model
 
             else
                 (model
@@ -1289,7 +1290,7 @@ update msg model =
                             , resolution = recorded.resolution
                             , orders = recorded.orders
                             , position = position
-                            , unitHelp = Nothing
+                            , inspectionHelp = Nothing
                         }
                             |> setBattlefield recorded.battlefield
                             |> setNavigation (BattlefieldNavigation.finishReturn model.navigation)
@@ -1463,7 +1464,7 @@ selectionView model =
             { unit = unit
             , content =
                 [ UnitStatus.toHtml
-                    { onHelp = UnitHelpClicked }
+                    { onHelp = InspectionHelpClicked }
                     (PlaybackPresentation.ownerName model.battlefield.players unit |> Maybe.withDefault "")
                     unit
                     Nothing
@@ -1477,7 +1478,8 @@ selectionView model =
             }
     in
     BattlefieldInspection.toHtml
-        { map = model.battlefield.map
+        { onHelp = InspectionHelpClicked
+        , map = model.battlefield.map
         , depots = model.battlefield.depots
         , supplyCrates = model.battlefield.supplyCrates
         , visibleTiles = model.battlefield.visibleTiles
@@ -1717,9 +1719,9 @@ replayChatButtonHtmlId =
 
 battlefieldDialog : Model -> Maybe (Dialog Msg)
 battlefieldDialog model =
-    case model.unitHelp of
+    case model.inspectionHelp of
         Just help ->
-            Just (UnitStatus.dialog UnitHelpDismissed help)
+            Just (InspectionHelp.dialog model.battlefield.unitStats InspectionHelpDismissed help)
 
         Nothing ->
             PlaybackPresentation.lossDialog

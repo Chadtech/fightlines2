@@ -14,6 +14,7 @@ import Game.Unit as Unit exposing (Unit)
 import Game.UnitId as UnitId exposing (UnitId)
 import Game.View.Cargo as CargoView
 import Game.View.DepotStatus as DepotStatus
+import Game.View.InspectionHelp as InspectionHelp
 import Game.View.SupplyCrate as SupplyCrate
 import Game.View.TerrainInfo as TerrainInfo
 import Html.Styled as H exposing (Html)
@@ -30,7 +31,8 @@ import View.Aria as Aria
 
 
 type alias Contents msg =
-    { map : Map
+    { onHelp : InspectionHelp.Help -> msg
+    , map : Map
     , depots : List Depot
     , supplyCrates : List Supply.GroundCrate
     , visibleTiles : List Coordinate
@@ -168,7 +170,7 @@ terrainView model =
             Keyed.node "div"
                 []
                 [ ( String.fromInt coordinate.x ++ "," ++ String.fromInt coordinate.y
-                  , TerrainInfo.toHtml model.map coordinate
+                  , TerrainInfo.toHtml { onHelp = model.onHelp } model.map coordinate
                   )
                 ]
 

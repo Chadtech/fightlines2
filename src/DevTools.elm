@@ -40,9 +40,9 @@ import Url
     exposing
         ( Url
         )
+import View.AppControls as AppControls
 import View.AppInitError as AppInitError
 import View.AppShell as AppShell
-import View.AppVersion as AppVersionView
 import View.Aria as Aria
 import View.AudioMute as AudioMute
 import View.Card as Card
@@ -605,7 +605,7 @@ view page =
     let
         overlayContent : List (Html Msg)
         overlayContent =
-            AppVersionView.toHtml :: audioContent
+            [ AppControls.toHtml audioContent ]
 
         audioContent : List (Html Msg)
         audioContent =

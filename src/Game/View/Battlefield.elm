@@ -497,19 +497,17 @@ navigationControls zoomPercent =
                     ]
                 ]
                 [ Button.secondary "−" ZoomOutClicked
-                    |> Button.accessibleLabel "zoom out"
-                    |> Button.square
+                    |> Button.iconOnly "zoom out"
                     |> Button.toHtml
                 , H.span
                     []
                     [ H.text (String.fromInt zoomPercent ++ "%") ]
                 , Button.secondary "+" ZoomInClicked
-                    |> Button.accessibleLabel "zoom in"
-                    |> Button.square
+                    |> Button.iconOnly "zoom in"
                     |> Button.toHtml
                 ]
             , Button.secondary "reset view" ResetViewClicked
-                |> Button.compact
+                |> Button.small
                 |> Button.fullWidth
                 |> Button.toHtml
             ]
@@ -519,8 +517,7 @@ navigationControls zoomPercent =
 panButton : String -> String -> Msg -> Html Msg
 panButton arrow label msg =
     Button.secondary arrow msg
-        |> Button.accessibleLabel label
-        |> Button.square
+        |> Button.iconOnly label
         |> Button.toHtml
 
 

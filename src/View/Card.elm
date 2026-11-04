@@ -20,9 +20,9 @@ import View.CardHeader as CardHeader
         )
 
 
-type alias Card =
+type alias Card msg =
     { variant : Variant
-    , header : Maybe CardHeader
+    , header : Maybe (CardHeader msg)
     , tone : Tone
     }
 
@@ -39,7 +39,7 @@ type Variant
 
 {-| An ordinary card surface. Its caller owns width and placement.
 -}
-simple : Card
+simple : Card msg
 simple =
     { variant = Simple
     , header = Nothing
@@ -50,7 +50,7 @@ simple =
 {-| A card that fills a bounded layout slot. Headered panels have a fixed header
 and a scrolling body.
 -}
-panel : Card
+panel : Card msg
 panel =
     { variant = Panel
     , header = Nothing
@@ -60,17 +60,17 @@ panel =
 
 {-| A muted red surface with the ordinary card bevel and title bar.
 -}
-danger : Card -> Card
+danger : Card msg -> Card msg
 danger card =
     { card | tone = Danger }
 
 
-withHeader : CardHeader -> Card -> Card
+withHeader : CardHeader msg -> Card msg -> Card msg
 withHeader header card =
     { card | header = Just header }
 
 
-toHtml : Card -> List (Html msg) -> Html msg
+toHtml : Card msg -> List (Html msg) -> Html msg
 toHtml card content =
     let
         toneStyles : List Css.Style

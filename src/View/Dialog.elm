@@ -24,7 +24,7 @@ import Json.Decode as Decode
 import Style as S
 import View.Aria as Aria
 import View.Button as Button
-import View.CardHeader as CardHeader
+import View.CardHeader as CardHeader exposing (CardHeader)
 
 
 
@@ -251,71 +251,43 @@ toHtml (Dialog model) =
             , S.outdent
             ]
 
-        titleFocusAttributes : List (H.Attribute msg)
-        titleFocusAttributes =
+        header : CardHeader msg
+        header =
+            CardHeader.simple model.title
+                |> CardHeader.withHtmlId (model.htmlId ++ "-title")
+
+        focusedHeader : CardHeader msg
+        focusedHeader =
             case model.placement of
                 Reference ->
-                    [ A.tabindex -1
-                    , A.autofocus True
-                    ]
+                    header
+                        |> CardHeader.focusOnOpen
 
                 Article ->
-                    [ A.tabindex -1
-                    , A.autofocus True
-                    ]
+                    header
+                        |> CardHeader.focusOnOpen
 
                 Workspace ->
-                    [ A.tabindex -1
-                    , A.autofocus True
-                    ]
+                    header
+                        |> CardHeader.focusOnOpen
 
                 _ ->
-                    []
-
-        titleAttributes : List (H.Attribute msg)
-        titleAttributes =
-            [ A.id (model.htmlId ++ "-title")
-            , A.css
-                [ S.p2px
-                , S.when (model.placement == Workspace) S.outlineNone
-                ]
-            ]
-                ++ titleFocusAttributes
-
-        titleContent : Html msg
-        titleContent =
-            H.div
-                titleAttributes
-                [ CardHeader.simple model.title
-                    |> CardHeader.toHtml
-                ]
+                    header
 
         headerContent : Html msg
         headerContent =
             if model.showCloseButton then
-                H.div
-                    [ A.css
-                        [ S.row
-                        , S.itemsCenter
-                        , S.bgGray3
-                        , S.p2px
+                focusedHeader
+                    |> CardHeader.withActions
+                        [ Button.secondary "×" model.onCancel
+                            |> Button.iconOnly ("close " ++ model.title)
+                            |> Button.toHtml
                         ]
-                    ]
-                    [ H.div
-                        [ A.css
-                            [ S.flex1
-                            , S.minW0
-                            ]
-                        ]
-                        [ titleContent ]
-                    , Button.secondary "×" model.onCancel
-                        |> Button.titleBar
-                        |> Button.accessibleLabel ("close " ++ model.title)
-                        |> Button.toHtml
-                    ]
+                    |> CardHeader.toHtml
 
             else
-                titleContent
+                focusedHeader
+                    |> CardHeader.toHtml
 
         dialogStyles : List Css.Style
         dialogStyles =
@@ -323,7 +295,11 @@ toHtml (Dialog model) =
 
         content : List (Html msg)
         content =
-            [ headerContent
+            [ H.div
+                [ A.css
+                    [ S.p2px ]
+                ]
+                [ headerContent ]
             , H.div
                 [ A.css
                     [ S.col

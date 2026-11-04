@@ -247,3 +247,7 @@ type UnitPlacement
 
 type UnitResources
     = UnitResources
+
+
+type UnitStats
+    = UnitStats

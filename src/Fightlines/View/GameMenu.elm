@@ -12,8 +12,6 @@ module Fightlines.View.GameMenu exposing
     )
 
 import Browser.Dom
-import Css
-import Css.Global
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
@@ -95,22 +93,23 @@ panel config =
         , A.css
             [ S.bgGray1
             , S.outdent
-            , Css.borderTop Css.zero
+            , S.borderT0
             , S.grid
-            , Css.property "grid-template-columns" "4.5rem 6rem 4.5rem"
+            , S.gridColumns "4.5rem 6rem 4.5rem"
             , S.itemsCenter
             , S.g2
-            , Css.padding2 (Css.rem 0.25) (Css.rem 0.375)
+            , S.py1
+            , S.px1p5
             , S.maxWFull
-            , Css.Global.children
-                [ Css.Global.button
-                    [ Css.padding2 (Css.rem 0.125) (Css.rem 0.625)
-                    , Css.minHeight (Css.rem 1.875)
+            , S.childButtons
+                [ S.disabled
+                    [ S.outdentStrong
                     ]
                 ]
             ]
         ]
         [ button
+            |> Button.small
             |> Button.fullWidth
             |> Button.withHtmlId buttonHtmlId
             |> Button.toHtml
@@ -121,7 +120,7 @@ panel config =
                 [ S.block
                 , S.w16
                 , S.hAuto
-                , Css.property "justify-self" "center"
+                , S.justifySelfCenter
                 ]
             ]
             []
@@ -135,8 +134,9 @@ panel config =
                 , S.tabularNums
                 , S.textAlignCenter
                 , S.textEllipsis
-                , Css.padding2 (Css.rem 0.125) (Css.rem 0.25)
-                , Css.minHeight (Css.rem 1.875)
+                , S.py0p5
+                , S.px1
+                , S.minH7p5
                 ]
             ]
             [ H.text turnLabel

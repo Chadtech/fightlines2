@@ -21,6 +21,43 @@ pub enum UnitKind {
     Truck,
 }
 
+impl UnitKind {
+    fn cargo_capacity(self) -> i32 {
+        match self {
+            Self::Truck => 2,
+            Self::Infantry | Self::Tank | Self::FieldGun => 0,
+        }
+    }
+}
+
+/// Public type reference, independent of any unit's private resource levels.
+#[derive(Clone, Debug, GraphQLObject)]
+pub struct UnitStats {
+    movement: movement::MovementRule,
+    supplies: Supplies,
+    fuel: Option<Fuel>,
+    combat: combat::CombatRules,
+    maximum_hit_points: i32,
+    cargo_capacity: i32,
+}
+
+fn unit_stats() -> Vec<UnitStats> {
+    movement::rules()
+        .into_iter()
+        .map(|movement| {
+            let kind = movement.kind;
+            UnitStats {
+                movement,
+                supplies: Supplies::for_kind(kind),
+                fuel: Fuel::for_kind(kind),
+                combat: combat::rules(kind),
+                maximum_hit_points: HitPoints::full().maximum(),
+                cargo_capacity: kind.cargo_capacity(),
+            }
+        })
+        .collect()
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
 pub enum Direction {
     North,
@@ -373,10 +410,7 @@ impl Unit {
     }
 
     pub fn cargo_capacity(&self) -> i32 {
-        match self.kind {
-            UnitKind::Truck => 2,
-            _ => 0,
-        }
+        self.kind.cargo_capacity()
     }
 
     pub fn location(&self) -> UnitLocation {
@@ -1256,6 +1290,62 @@ mod tests {
     }
 
     #[test]
+    fn public_type_stats_do_not_reveal_current_resources() -> TestResult<()> {
+        let mut scenario = exhaustion_fixture()?;
+        for unit in &mut scenario.units {
+            unit.set_supplies_for_test(1);
+            unit.set_fuel_for_test(2);
+            unit.conceal_resources();
+        }
+        let schema = juniper::RootNode::new(
+            scenario,
+            juniper::EmptyMutation::<()>::new(),
+            juniper::EmptySubscription::<()>::new(),
+        );
+        let (value, errors) = juniper::execute_sync(
+            "{ unitStats { movement { kind budget } supplies { maximum current upkeepPerTurn movementPerTile roughTerrainSurcharge } fuel { maximum current movementPerTile movementPerCargoSlot } combat { range shotCost readinessCost indirectRange } maximumHitPoints cargoCapacity } units { resources { supplies { current } } } }",
+            None,
+            &schema,
+            &juniper::Variables::new(),
+            &(),
+        )?;
+        assert!(errors.is_empty(), "{errors:?}");
+        let result = serde_json::to_value(value)?;
+        for unit in result["units"].as_array().fixture()? {
+            assert!(unit["resources"].is_null());
+        }
+        let stats = result["unitStats"].as_array().fixture()?;
+        assert_eq!(stats.len(), 4);
+        for entry in stats {
+            let kind = match entry["movement"]["kind"].as_str().fixture()? {
+                "INFANTRY" => UnitKind::Infantry,
+                "TANK" => UnitKind::Tank,
+                "FIELD_GUN" => UnitKind::FieldGun,
+                "TRUCK" => UnitKind::Truck,
+                _ => return Err("unknown unit stats kind".into()),
+            };
+            let supplies = Supplies::for_kind(kind);
+            assert_eq!(entry["supplies"]["maximum"], supplies.maximum());
+            assert_eq!(entry["supplies"]["current"], supplies.maximum());
+            assert_eq!(
+                entry["supplies"]["movementPerTile"],
+                supplies.movement_per_tile()
+            );
+            assert_eq!(entry["combat"]["shotCost"], combat::rules(kind).shot_cost);
+            assert_eq!(entry["maximumHitPoints"], HitPoints::full().maximum());
+            assert_eq!(entry["cargoCapacity"], kind.cargo_capacity());
+            match Fuel::for_kind(kind) {
+                Some(fuel) => {
+                    assert_eq!(entry["fuel"]["current"], fuel.maximum);
+                    assert_eq!(entry["fuel"]["movementPerTile"], fuel.movement_per_tile);
+                }
+                None => assert!(entry["fuel"].is_null()),
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn units_start_with_full_health_and_resources() -> TestResult<()> {
         let mut scenario = Scenario::supply_point().fixture()?;
         for unit in &scenario.units {
@@ -1452,6 +1542,10 @@ impl Scenario {
     }
     fn supply_rules(&self) -> SupplyRules {
         supplies::rules()
+    }
+
+    fn unit_stats(&self) -> Vec<UnitStats> {
+        unit_stats()
     }
 }
 

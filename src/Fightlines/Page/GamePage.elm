@@ -25,9 +25,7 @@ import Api.Enum.UnitKind as UnitKind
 import Api.Mutation
 import Api.Object
 import Api.Object.GameSnapshot as SnapshotApi
-import Api.Object.MovementRule as MovementRuleApi
 import Api.Object.Scenario as Scenario
-import Api.Object.TerrainMovementCost as MovementCostApi
 import Api.Query
 import Api.Scalar
     exposing
@@ -92,13 +90,13 @@ import Game.Selection
         , UnitInteraction(..)
         )
 import Game.Supply as Supply
-import Game.Terrain as Terrain
 import Game.Turn as Turn
 import Game.TurnLifecycle as TurnLifecycle exposing (Phase)
 import Game.TurnPlayback as TurnPlayback
 import Game.Unit as Unit exposing (Unit)
 import Game.UnitId as UnitId exposing (UnitId)
 import Game.UnitOrder as UnitOrder
+import Game.UnitStats exposing (UnitStats)
 import Game.UnloadCargo as UnloadCargo exposing (UnloadCargo)
 import Game.UnloadPlanning
     exposing
@@ -115,6 +113,7 @@ import Game.View.BattlefieldWorkspace as BattlefieldWorkspace
 import Game.View.Cargo as Cargo
 import Game.View.Chat as ChatView
 import Game.View.CombatTheater as CombatTheater
+import Game.View.InspectionHelp as InspectionHelp
 import Game.View.MovementRoute as MovementRoute
 import Game.View.RotationChoices as RotationChoices
 import Game.View.TurnControls as TurnControls
@@ -184,7 +183,8 @@ type alias Model =
     , frame : AnimationFrame.Frame
     , resigning : Bool
     , menu : Menu
-    , unitHelp : Maybe UnitStatus.Help
+    , inspectionHelp : Maybe InspectionHelp.Help
+    , unitStats : List UnitStats
     }
 
 
@@ -283,8 +283,8 @@ type Msg
     | UnloadSkipped
     | InspectClicked
     | InspectorCloseClicked
-    | UnitHelpClicked UnitStatus.Help
-    | UnitHelpFocusReturned (Result Browser.Dom.Error ())
+    | InspectionHelpClicked InspectionHelp.Help
+    | InspectionHelpFocusReturned (Result Browser.Dom.Error ())
     | EscapePressed
     | DialogDismissed
     | SubmissionCancelled
@@ -367,13 +367,14 @@ init shared flags =
             , supplyRules = flags.snapshot.supplyRules
             , visibleTiles = flags.snapshot.battlefield.visibleTiles
             , movementRules = flags.snapshot.movementRules
+            , unitStats = flags.snapshot.battlefield.unitStats
             , navigation = BattlefieldNavigation.init
             , battlefieldViewport = Nothing
             , frame = AnimationFrame.first
             , resigning = False
             , feedback = Feedback.init
             , menu = MenuClosed
-            , unitHelp = Nothing
+            , inspectionHelp = Nothing
             }
 
         eff : Eff Msg
@@ -641,8 +642,8 @@ isChoosingUnload model =
 
 dismissDialog : Model -> Model
 dismissDialog model =
-    if model.unitHelp /= Nothing then
-        { model | unitHelp = Nothing }
+    if model.inspectionHelp /= Nothing then
+        { model | inspectionHelp = Nothing }
 
     else if model.menu /= MenuClosed then
         model
@@ -660,12 +661,12 @@ dismissDialog model =
                 )
 
 
-dismissUnitHelp : Model -> ( Model, Eff Msg )
-dismissUnitHelp model =
-    case model.unitHelp of
+dismissInspectionHelp : Model -> ( Model, Eff Msg )
+dismissInspectionHelp model =
+    case model.inspectionHelp of
         Just help ->
-            ( { model | unitHelp = Nothing }
-            , E.focus { htmlId = UnitStatus.buttonHtmlId help } UnitHelpFocusReturned
+            ( { model | inspectionHelp = Nothing }
+            , E.focus { htmlId = InspectionHelp.buttonHtmlId help } InspectionHelpFocusReturned
             )
 
         Nothing ->
@@ -1140,26 +1141,10 @@ pollRequest id =
 
 snapshotSelection : SelectionSet Snapshot Api.Object.GameSnapshot
 snapshotSelection =
-    let
-        terrainCostSelection : SelectionSet Movement.TerrainCost Api.Object.TerrainMovementCost
-        terrainCostSelection =
-            SS.succeed Movement.TerrainCost
-                |> SS.with (SS.map Terrain.fromApi MovementCostApi.terrain)
-                |> SS.with MovementCostApi.cost
-
-        movementRuleSelection : SelectionSet Movement.Rule Api.Object.MovementRule
-        movementRuleSelection =
-            SS.succeed Movement.Rule
-                |> SS.with MovementRuleApi.kind
-                |> SS.with MovementRuleApi.budget
-                |> SS.with (MovementRuleApi.terrainCosts terrainCostSelection)
-                |> SS.with MovementRuleApi.roadFuelPerTile
-                |> SS.with MovementRuleApi.roadFuelPerCargoSlot
-    in
     SS.succeed Snapshot
         |> SS.with BattlefieldSnapshot.selection
         |> SS.with (SnapshotApi.scenario (Scenario.supplyRules Supply.rulesSelection))
-        |> SS.with (SnapshotApi.movementRules movementRuleSelection)
+        |> SS.with (SnapshotApi.movementRules Movement.ruleSelection)
         |> SS.with Turn.selection
         |> SS.with (TurnPlayback.selection Unit.selection Coordinate.selection)
 
@@ -1738,7 +1723,7 @@ withLayoutMeasurement previous next =
 closeMenuForTurnIntroduction : Model -> Model
 closeMenuForTurnIntroduction model =
     if showTurnIntroduction model then
-        { model | unitHelp = Nothing }
+        { model | inspectionHelp = Nothing }
             |> setMenu MenuClosed
 
     else
@@ -1748,7 +1733,7 @@ closeMenuForTurnIntroduction model =
 startPlayback : Model -> ( Model, Eff Msg )
 startPlayback model =
     remeasureWorkspace
-        ({ model | unitHelp = Nothing }
+        ({ model | inspectionHelp = Nothing }
             |> setMenu MenuClosed
         )
 
@@ -2419,22 +2404,22 @@ update lobbyId msg model =
                 |> clearSelection
                 |> E.withOut
 
-        UnitHelpClicked help ->
+        InspectionHelpClicked help ->
             if hasDialog model then
                 model
                     |> E.withOut
 
             else
-                { model | unitHelp = Just help }
+                { model | inspectionHelp = Just help }
                     |> E.withOut
 
-        UnitHelpFocusReturned result ->
+        InspectionHelpFocusReturned result ->
             recordFocusResult result model
                 |> E.withOut
 
         EscapePressed ->
-            if model.unitHelp /= Nothing then
-                dismissUnitHelp model
+            if model.inspectionHelp /= Nothing then
+                dismissInspectionHelp model
 
             else if (model.menu /= MenuClosed) || showTurnIntroduction model then
                 model
@@ -2455,8 +2440,8 @@ update lobbyId msg model =
             handleTurnControlsMsg lobbyId turnControlsMsg model
 
         DialogDismissed ->
-            if model.unitHelp /= Nothing then
-                dismissUnitHelp model
+            if model.inspectionHelp /= Nothing then
+                dismissInspectionHelp model
 
             else
                 model
@@ -3061,10 +3046,10 @@ playAudio msg model =
         InspectorCloseClicked ->
             Audio.cancel
 
-        UnitHelpClicked _ ->
+        InspectionHelpClicked _ ->
             Audio.affirm
 
-        UnitHelpFocusReturned _ ->
+        InspectionHelpFocusReturned _ ->
             Audio.none
 
         EscapePressed ->
@@ -3994,7 +3979,7 @@ battlefieldSelectionView model =
                 content : List (Html Msg)
                 content =
                     [ UnitStatus.toHtml
-                        { onHelp = UnitHelpClicked }
+                        { onHelp = InspectionHelpClicked }
                         (ownerName model unit |> Maybe.withDefault "")
                         authoritativeUnit
                         portraitAction
@@ -4019,7 +4004,8 @@ battlefieldSelectionView model =
                     inspectionPosition model
     in
     BattlefieldInspection.toHtml
-        { map = model.map
+        { onHelp = InspectionHelpClicked
+        , map = model.map
         , depots = model.depots
         , supplyCrates = model.supplyCrates
         , visibleTiles = model.visibleTiles
@@ -4905,7 +4891,7 @@ dialog : Model -> Maybe (Dialog Msg)
 dialog model =
     MaybeUtil.lazyFirst
         [ chatDialog model
-        , unitHelpDialog model
+        , inspectionHelpDialog model
         , gameMenuDialog model
         , orderGuideDialog model
         , introductionDialog model
@@ -4914,9 +4900,9 @@ dialog model =
         ]
 
 
-unitHelpDialog : Model -> () -> Maybe (Dialog Msg)
-unitHelpDialog model _ =
-    Maybe.map (UnitStatus.dialog DialogDismissed) model.unitHelp
+inspectionHelpDialog : Model -> () -> Maybe (Dialog Msg)
+inspectionHelpDialog model _ =
+    Maybe.map (InspectionHelp.dialog model.unitStats DialogDismissed) model.inspectionHelp
 
 
 gameMenuDialog : Model -> () -> Maybe (Dialog Msg)

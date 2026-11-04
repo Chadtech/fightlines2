@@ -695,6 +695,7 @@ recordedTurn : List TurnPlayback.Frame -> RecordedTurn
 recordedTurn frames =
     { battlefield =
         { name = "replay fixture"
+        , unitStats = []
         , mapType = MapId "supply-point"
         , players = []
         , map = Map.fromFeatures { width = 3, height = 3, baseTile = Terrain.Plain, theme = MapTheme.GreenForest, features = [] }

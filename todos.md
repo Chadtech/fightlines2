@@ -9,10 +9,9 @@
 ## Immediately
 
 - Launch
-- Review combat balance in dev view
-- Review turn.rs and movement_resolution.rs
 
 ## Soon
+- Horse logistics unit
 
 ## Later
 
@@ -24,6 +23,7 @@
 
 
 ### Future units
+- Horses, carry 1 cargo
 - Semi truck, truck that can carry more and travel faster than a truck but can only travel on roads
 - Oil truck, truck that can carry a ton of oil and travel faster than a truck but can only travel on roads
 - Artillery, huge range gun that cannot move itself

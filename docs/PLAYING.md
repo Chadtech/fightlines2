@@ -490,7 +490,7 @@ all three squares straight ahead, plus the two squares beside the middle square,
 forming a five-square plus sign that rotates with the chosen direction.
 
 Ambush readiness costs 4 supplies for infantry and 8 for tanks and field guns,
-in addition to normal turn upkeep. Firing costs 4 supplies for infantry, 20 for
+in addition to normal turn upkeep. Firing costs 4 supplies for infantry, 16 for
 field guns, and 24 for tanks; infantry deal 4 damage, tanks 8, and field guns 12.
 These are initial balance values. Readiness is charged even without a target, and upkeep
 is reserved before firing. Units without enough supplies for readiness cannot
@@ -683,7 +683,7 @@ When the firing gun is hidden, the opponent sees the observable landing without
 the gun's portrait or firing position, including when it hits their own unit.
 
 This uses the existing supply-based ammunition model: normal upkeep plus 8
-readiness supplies and 20 firing supplies, including misses. Damage uses normal
+readiness supplies and 16 firing supplies, including misses. Damage uses normal
 field-gun power, health, matchup, defender readiness/facing, and target cover;
 the gun's initial facing does not reduce aim. Surviving guns fire simultaneously.
 Saved targets remain marked and can be revoked. Target tiles support Tab and

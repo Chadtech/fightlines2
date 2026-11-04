@@ -174,6 +174,9 @@ emblemStyles previousTurn =
     , S.minH76
     , S.batch [ S.py8, S.px4 ]
     , S.textYellow5
+    , S.animation "fightlines-turn-pop 320ms cubic-bezier(.2,.8,.2,1) both"
+    , S.reducedMotion
+        [ S.animationNone ]
     , reportLayout
     , S.after
         [ S.contentEmpty
@@ -345,6 +348,10 @@ styles =
                 72% { transform: translateY(-3px) scale(1.025); opacity: 1; }
                 100% { transform: translateY(0) scale(1); opacity: 1; }
             }
+            @keyframes fightlines-turn-appear {
+                from { opacity: 0; }
+                to { opacity: 1; }
+            }
             @keyframes fightlines-turn-introduction-shine {
                 0%, 12% { transform: translateX(-240%) skewX(-22deg); opacity: 0; }
                 20% { opacity: .7; }
@@ -352,7 +359,8 @@ styles =
                 80%, 100% { transform: translateX(600%) skewX(-22deg); opacity: 0; }
             }
             #turn-introduction[open] {
-                animation: fightlines-turn-pop 320ms cubic-bezier(.2,.8,.2,1) both;
+                /* Transforms here would anchor fixed viewport controls to the dialog. */
+                animation: fightlines-turn-appear 320ms ease-out both;
                 box-shadow: 0 24px 90px SHADOW, 0 0 48px GOLDGLOW;
             }
             @media (prefers-reduced-motion: reduce) {

@@ -3,21 +3,18 @@ module View.Button exposing
     , accessibleLabel
     , attention
     , choice
-    , compact
     , danger
     , disabled
     , disclosure
     , fullWidth
     , highlighted
+    , iconOnly
     , large
     , onClick
     , primary
     , secondary
     , small
-    , square
     , styles
-    , tall
-    , titleBar
     , toHtml
     , withFeedback
     , withHtmlId
@@ -49,6 +46,7 @@ type alias Button msg =
     , label : String
     , variant : Variant
     , size : Size
+    , shape : Shape
     , icon : Maybe (Html msg)
     , feedback : Maybe String
     , fullWidth : Bool
@@ -73,12 +71,13 @@ type Variant
 
 type Size
     = Small
-    | Compact
-    | Square
-    | TitleBar
     | Regular
     | Large
-    | Tall
+
+
+type Shape
+    = Text
+    | IconOnly
 
 
 type Emphasis
@@ -117,6 +116,7 @@ fromLabelAndVariant label variant =
     , label = label
     , variant = variant
     , size = Regular
+    , shape = Text
     , icon = Nothing
     , feedback = Nothing
     , fullWidth = False
@@ -196,30 +196,15 @@ small button =
         |> setSize Small
 
 
-compact : Button msg -> Button msg
-compact button =
-    button
-        |> setSize Compact
-
-
-square : Button msg -> Button msg
-square button =
-    button
-        |> setSize Square
-
-
-{-| Fill a window title bar vertically without fixing the button's height.
+{-| Use a compact icon footprint with an accessible name. Height remains automatic
+so the containing layout can stretch the button.
 -}
-titleBar : Button msg -> Button msg
-titleBar button =
-    button
-        |> setSize TitleBar
-
-
-tall : Button msg -> Button msg
-tall button =
-    button
-        |> setSize Tall
+iconOnly : String -> Button msg -> Button msg
+iconOnly label button =
+    { button
+        | shape = IconOnly
+        , accessibleLabel = Just label
+    }
 
 
 highlighted : Button msg -> Button msg
@@ -420,29 +405,7 @@ toHtml button =
                     case button.size of
                         Small ->
                             [ S.p1
-                            ]
-
-                        Compact ->
-                            [ S.h6p5
-                            , S.minW6p5
-                            , S.p0
-                            , S.lineHeight1
-                            ]
-
-                        Square ->
-                            [ S.w6p5
-                            , S.h6p5
-                            , S.minW6p5
-                            , S.p0
-                            , S.lineHeight1
-                            ]
-
-                        TitleBar ->
-                            [ S.w8
-                            , S.minW6p5
-                            , S.selfStretch
-                            , S.shrink0
-                            , S.p0
+                            , Css.minHeight (Css.rem 1.625)
                             , S.lineHeight1
                             ]
 
@@ -458,15 +421,29 @@ toHtml button =
                                     ]
 
                         Large ->
-                            [ S.px6
+                            [ S.px4
                             , S.py4
                             , S.minH14
                             ]
 
-                        Tall ->
-                            [ S.px2
-                            , S.py3
-                            , S.minH14
+                shapeStyles : List Css.Style
+                shapeStyles =
+                    case button.shape of
+                        Text ->
+                            [ Css.alignSelf Css.flexStart
+                            , S.batch sizeStyles
+                            ]
+
+                        IconOnly ->
+                            [ S.w6p5
+                            , S.minW6p5
+                            , Css.minHeight (Css.rem 1.625)
+                            , S.shrink0
+                            , S.p0
+                            , S.lineHeight1
+                            , S.row
+                            , S.itemsCenter
+                            , S.justifyCenter
                             ]
 
                 emphasisStyles : Css.Style
@@ -483,8 +460,7 @@ toHtml button =
             in
             [ A.disabled (button.variant == Disabled)
             , A.css
-                [ Css.alignSelf Css.flexStart
-                , S.batch sizeStyles
+                [ S.batch shapeStyles
                 , S.batch iconStyles
                 , S.when button.fullWidth S.wFull
                 , Css.maxWidth (Css.pct 100)

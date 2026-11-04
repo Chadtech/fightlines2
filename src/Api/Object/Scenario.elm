@@ -52,3 +52,10 @@ supplyRules :
     -> SelectionSet decodesTo Api.Object.Scenario
 supplyRules object____ =
     Object.selectionForCompositeField "supplyRules" [] object____ Basics.identity
+
+
+unitStats :
+    SelectionSet decodesTo Api.Object.UnitStats
+    -> SelectionSet (List decodesTo) Api.Object.Scenario
+unitStats object____ =
+    Object.selectionForCompositeField "unitStats" [] object____ (Basics.identity >> Decode.list)

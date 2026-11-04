@@ -39,10 +39,13 @@ own messages stay silent.
 
 ## Typography and copy
 
-Both apps show a quiet `v<integer>` label in the upper-right viewport corner,
-including while a native dialog is open. Keep it passive so it does not intercept
-pointer input. On narrow screens, offset it below the battlefield header. The
-dev panel also identifies the compiled frontend version.
+Both apps show a quiet `v<integer>` label beside the speaker in the upper-left
+viewport corner, including while a native dialog is open. Use a shared row with
+a small gap and center the label vertically against the speaker's click target,
+including its larger touch target. Keep the label and gap passive so they do not
+intercept pointer input. On screens up to 400px wide, place the row below the
+battlefield header and recent chat messages below the row. The dev panel also
+identifies the compiled frontend version.
 
 - Call unit instructions **orders** throughout the UI, guide, and gameplay code.
   Use **orders** for the menu, **cancel order** while planning, and **revoke order**
@@ -98,22 +101,20 @@ red0 face with gray5 text and a red bevel: red1 light edges and dark red
 (`#300C10`) shadow edges through `redOutdent` and `redIndent`. It brightens on hover and press,
 reverses its bevel when pressed.
 Regular buttons use 1rem horizontal and 0.75rem vertical padding.
-Use `Button.small` for compact controls:
-0.25rem padding on every side with the normal text size and color variant.
-Use `Button.compact` for 1.625rem-high controls with no padding, and
-`Button.square` for matching 1.625rem-square icon controls. Camera group grids
-and spacing belong directly on their containing elements.
-Use `Button.titleBar` for window-header close controls that fill the height
-available inside the header padding.
-Use `Button.tall` for a prominent action in a narrow column: 0.5rem horizontal
-and 0.75rem vertical padding with a 3.5rem minimum height. The turn submit button
-uses this size at full width. `Button.attention` adds the ready pulse and shine;
+Use `Button.small` for compact text controls: 0.25rem padding on every side,
+line-height 1, and a 1.625rem minimum height.
+Use `Button.large` for prominent actions: 1rem horizontal and vertical padding
+with a 3.5rem minimum height. The turn submit button uses this size at full width.
+All three sizes retain the normal text size and color variant.
+Use `Button.iconOnly accessibleName` for icon controls. It requires an accessible
+name and replaces text-button sizing with a 1.625rem-wide footprint, a matching
+minimum height, and no padding. Height remains automatic: camera controls stay
+square, while header close buttons stretch to fill their action area. Containers
+own action alignment, camera group grids, and spacing.
+`Button.attention` adds the ready pulse and shine;
 `Button.highlighted` retains gold text while waiting. `Fightlines` mounts `Button.styles`
 once for the animation keyframes. Apply these through the button API rather than
 parent or descendant selectors.
-Use `Button.large` for roomy prominent actions: 1.5rem horizontal
-and 1rem vertical padding with a 3.5rem minimum height, retaining the normal text
-size and color variant.
 The primary button uses the original yellow palette shifted up one step in all
 states. Yellow3 interpolates yellow2 and yellow4; yellow6 interpolates yellow5
 and white. Retain the other palette tokens for reuse.
@@ -193,6 +194,12 @@ omits this decorative cycle and retains the original green background.
   keep the header out of the body content list. `Card` owns their positioning.
 - Headers sit 2px from the card edges. `CardHeader`'s local `headerPadding` aligns their text
   with the body's `p3` inset while keeping vertical padding at `p1`.
+  Dialogs and the order menu use the same inset and title padding. Keep header
+  actions inside the title bar; a close button does not change its outer spacing.
+  Use `CardHeader.withActions` for title-bar controls and `Button.iconOnly` for
+  close buttons. The header stretches its actions vertically within the padding.
+  `CardHeader.withHtmlId` labels dialog titles; `focusOnOpen`
+  focuses reading and workspace titles without including their actions.
 - Card bodies use `p3` padding and `g3` gaps. Headerless cards retain that layout.
 - Use `Card.danger` for an error card's muted `red0` body and `gray5` text.
   Keep the standard gray title bar, ordinary bevel, and secondary action buttons.
@@ -222,8 +229,7 @@ omits this decorative cycle and retains the original green background.
   FightLines logo at 4rem wide and the lobby name. Keep the panel clear of the
   corner mute and version controls; long names wrap and push the content down.
   Omit the `game lobby` label and any floating lobby title. Keep the map library's
-  existing clear strip for the corner controls, including the version's
-  narrow-screen offset.
+  existing clear strip for the corner controls.
   Use two equal-width columns in the space between the header and action bar.
   The left card retains its `battlefield` title bar and fits the complete map
   to its available width and height while
@@ -295,8 +301,9 @@ omits this decorative cycle and retains the original green background.
   Place the existing FightLines logo at 4rem wide in its center, with equal
   4.5rem columns on either side.
   Put a raised gray `menu` button on the left and a passive inset turn number
-  on the right so their different roles are clear. Use 0.125rem vertical and
-  0.625rem horizontal button padding with a 1.875rem minimum height.
+  on the right so their different roles are clear. Use `Button.small` for the
+  menu button; keep the turn label at a 1.875rem minimum height.
+  Keep the menu button raised when disabled, including while the menu is open.
   Open a centered native menu dialog
   with `resign game` at the top and a primary `close` action at the bottom;
   Escape also returns to the battlefield.
@@ -394,21 +401,27 @@ omits this decorative cycle and retains the original green background.
   full-height panel scroll without compressing portraits or gauges. Freight shows
   its illustration, resource gauge, inline explanation, and `last seen` when remembered.
   Terrain uses a muted `terrain: forest [i]` row with a themed tile portrait below it.
-  Selecting an empty tile shows the terrain inspection. The outlined info marker and row expand inline help with
-  terrain visibility descriptions, with no per-unit movement-cost list. Mouse
-  focus has no enclosing outline; keyboard focus underlines the terrain row. Keep it tied to
+  Selecting an empty tile shows the terrain inspection. The outlined info marker
+  and row open a reference dialog with terrain visibility descriptions, with no
+  per-unit movement-cost list. In the dialog, place the themed tile portrait on
+  the left with its terrain name underneath, and the description on the right.
+  Stack the portrait above the text on very narrow screens. Mouse focus has no
+  enclosing outline; keyboard focus underlines the terrain row. Keep it tied to
   the selected object (or a passenger's carrier), and clear it with selection.
-- Unit, supply, and fuel info markers open centered native reference dialogs
+- Unit, supply, fuel, and terrain info markers open centered native reference dialogs
   with the existing explanations, a title-bar close button, and a secondary
   `close` action. Escape dismisses help while preserving selection and order
   planning. Keep the inspector layout stable when help opens. Use the shared
   `View.InfoMarker`: a centered `i` inside a circular outline, also used in
-  the order menu, terrain, and depot details. Terrain help remains an inline
-  disclosure with a padded yellow2 background and gray5 text. Hit points have
-  no info marker or help. Resource gauges show the server-provided current
+  the order menu, terrain, and depot details. Hit points have no info marker or help. Resource gauges show the server-provided current
   and maximum values. Enemy resources are withheld from the selection panel
   and have no gauges there. Live games and replays use the same inspector help;
   opening help during a replay pauses playback.
+  Below each unit description, show a compact inset table of supply costs per
+  turn, tile moved, attack, and readiness. Include fuel costs only for units that
+  use fuel, plus applicable indirect-fire, digging, and cargo details. Keep costs
+  concise, omit redundant gauges and movement/readiness explanations, and keep
+  current enemy resources private.
 - While planning, selecting your own unit shows illustrated order rows in a
   popup beside it on the battlefield. Anchor passenger orders beside their
   truck. Keep the popup at a fixed display size as the board zooms, constrain it
@@ -958,7 +971,9 @@ battlefield. A plain `bgNightwood3` panel with `indentStrong`, matching text fie
 portraits, carries a large gold two-digit turn numeral. Keep its background free
 of scanlines, gradients, and decorative nested borders; retain the drifting shine. This decorative numeral is an exception
 to the usual 1rem typography; its accessible equivalent is the ordinary title.
-The card pops in over 320ms with a small overshoot, and a diagonal shine drifts
+The card fades in over 320ms while its central panel pops in with a small
+overshoot. Keep transforms off the dialog itself so fixed viewport controls stay
+anchored to the screen. A diagonal shine drifts
 across the panel every 4.8 seconds. Place `begin turn` first, beside the remembered
 `skip this dialog` checkbox. Checking skips and dismisses; Escape also begins.
 Offer a secondary `replay turn` button beside `begin turn` when the previous
@@ -966,7 +981,7 @@ turn has playback frames. Replay returns to this same card; beginning the turn
 or skipping the dialog removes access. Omit replay on the first turn and game
 conclusions.
 The native modal traps focus and blocks battlefield input. Use viewport gutters
-and a compact layout at short heights; reduced motion removes pop and shine.
+and a compact layout at short heights; reduced motion removes fade, pop, and shine.
 
 For turns after the first, replace the waiting caption with an inset previous-turn
 report: `your units lost`, `confirmed enemy losses`, `known damage inflicted` in HP,

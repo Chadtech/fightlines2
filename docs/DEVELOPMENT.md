@@ -107,8 +107,8 @@ callers to check that their selections still match the contract.
 `VERSION` contains the shared application version: a single positive integer.
 Rust embeds it at compile time; `make app-version` generates the committed
 `src/AppVersion.elm` constant for both frontend apps. Frontend builds and checks
-regenerate it. The upper-right corner and dev panel show the frontend's compiled
-version. Every structured server diagnostic includes the backend's compiled `version` field,
+regenerate it. The label beside the upper-left speaker and the dev panel show the
+frontend's compiled version. Every structured server diagnostic includes the backend's compiled `version` field,
 so an old browser tab can be compared with the deployed server.
 
 The check-in workflow runs `make bump-version` once before checks and approval:

@@ -48,6 +48,7 @@ module Style exposing
     , borderNone
     , borderR
     , borderT
+    , borderT0
     , borderTransparent
     , borderX
     , borderYellow5
@@ -63,6 +64,7 @@ module Style exposing
     , breakSpaces
     , capitalize
     , caretRed1
+    , childButtons
     , col
     , colReverse
     , colorTransition2
@@ -74,6 +76,7 @@ module Style exposing
     , cursorPointer
     , d1
     , defaultCursor
+    , disabled
     , displayNone
     , evenChildren
     , filter
@@ -171,9 +174,11 @@ module Style exposing
     , itemsCenter
     , itemsEnd
     , itemsStart
+    , itemsStretch
     , justifyCenter
     , justifyEnd
     , justifyItemsCenter
+    , justifySelfCenter
     , justifySpaceAround
     , justifySpaceBetween
     , left0
@@ -234,6 +239,7 @@ module Style exposing
     , minH36
     , minH6
     , minH76
+    , minH7p5
     , minH88
     , minH96
     , minHFullViewport
@@ -329,11 +335,14 @@ module Style exposing
     , pt24
     , pt3
     , pt4
+    , px1
+    , px1p5
     , px2
     , px3
     , px36
     , px4
     , px6
+    , py0p5
     , py1
     , py16
     , py2
@@ -405,6 +414,7 @@ module Style exposing
     , top12
     , top16
     , top2
+    , top24
     , top32
     , top4
     , top8
@@ -421,6 +431,7 @@ module Style exposing
     , underline
     , uppercase
     , userSelectNone
+    , verticalAlignTop
     , w0
     , w1
     , w104
@@ -511,6 +522,11 @@ pointerEventsAuto =
 pointerEventsNone : Css.Style
 pointerEventsNone =
     Css.property "pointer-events" "none"
+
+
+justifySelfCenter : Css.Style
+justifySelfCenter =
+    Css.property "justify-self" "center"
 
 
 justifyItemsCenter : Css.Style
@@ -1057,6 +1073,11 @@ tableFixed =
     Css.property "table-layout" "fixed"
 
 
+borderT0 : Css.Style
+borderT0 =
+    Css.borderTop Css.zero
+
+
 borderT : Css.Style
 borderT =
     Css.borderTop2 borderWidth Css.solid
@@ -1549,6 +1570,11 @@ minH0 =
     Css.minHeight Css.zero
 
 
+minH7p5 : Css.Style
+minH7p5 =
+    Css.minHeight (Css.rem 1.875)
+
+
 minH6 : Css.Style
 minH6 =
     Css.minHeight (Css.rem 1.5)
@@ -1749,6 +1775,11 @@ itemsStart =
     Css.alignItems Css.flexStart
 
 
+itemsStretch : Css.Style
+itemsStretch =
+    Css.alignItems Css.stretch
+
+
 itemsCenter : Css.Style
 itemsCenter =
     Css.alignItems Css.center
@@ -1887,6 +1918,22 @@ pl16 =
     Css.paddingLeft s16
 
 
+px1 : Css.Style
+px1 =
+    Css.batch
+        [ Css.paddingLeft s1
+        , Css.paddingRight s1
+        ]
+
+
+px1p5 : Css.Style
+px1p5 =
+    Css.batch
+        [ Css.paddingLeft (Css.rem 0.375)
+        , Css.paddingRight (Css.rem 0.375)
+        ]
+
+
 px2 : Css.Style
 px2 =
     Css.batch
@@ -1924,6 +1971,14 @@ px36 =
     Css.batch
         [ Css.paddingLeft s36
         , Css.paddingRight s36
+        ]
+
+
+py0p5 : Css.Style
+py0p5 =
+    Css.batch
+        [ Css.paddingTop (Css.rem 0.125)
+        , Css.paddingBottom (Css.rem 0.125)
         ]
 
 
@@ -2741,6 +2796,11 @@ top16 =
     Css.top s16
 
 
+top24 : Css.Style
+top24 =
+    Css.top s24
+
+
 top32 : Css.Style
 top32 =
     Css.top s32
@@ -2874,6 +2934,11 @@ outlineNone =
 textLeft : Css.Style
 textLeft =
     Css.textAlign Css.left_
+
+
+verticalAlignTop : Css.Style
+verticalAlignTop =
+    Css.verticalAlign Css.top_
 
 
 displayNone : Css.Style
@@ -3461,3 +3526,15 @@ maxH40Viewport =
 transformTransition : Float -> Css.Style
 transformTransition milliseconds =
     Css.property "transition" ("transform " ++ String.fromFloat milliseconds ++ "ms ease-in-out")
+
+
+childButtons : List Css.Style -> Css.Style
+childButtons styles =
+    Css.Global.children
+        [ Css.Global.button styles
+        ]
+
+
+disabled : List Css.Style -> Css.Style
+disabled =
+    Css.disabled

@@ -11,6 +11,7 @@ import Game.Depot as Depot exposing (Depot)
 import Game.Map as Map exposing (Map)
 import Game.Supply as Supply
 import Game.Unit as Unit exposing (Unit)
+import Game.UnitStats as UnitStats exposing (UnitStats)
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 
 
@@ -31,6 +32,7 @@ type alias Snapshot =
     , depots : List Depot
     , supplyCrates : List Supply.GroundCrate
     , visibleTiles : List Coordinate
+    , unitStats : List UnitStats
     }
 
 
@@ -66,3 +68,4 @@ selection =
         |> SS.with (SnapshotApi.scenario (Scenario.depots Depot.selection))
         |> SS.with (SnapshotApi.scenario (Scenario.supplyCrates Supply.crateSelection))
         |> SS.with (SnapshotApi.visibleTiles Coordinate.selection)
+        |> SS.with (SnapshotApi.scenario (Scenario.unitStats UnitStats.selection))

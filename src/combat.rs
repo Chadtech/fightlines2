@@ -57,7 +57,7 @@ pub fn rules(kind: UnitKind) -> CombatRules {
         },
         shot_cost: match kind {
             UnitKind::Infantry => 4,
-            UnitKind::FieldGun => 20,
+            UnitKind::FieldGun => 16,
             UnitKind::Tank => 24,
             UnitKind::Truck => 8,
         },
@@ -3321,6 +3321,7 @@ mod tests {
         for (kind, cases) in [
             (UnitKind::Infantry, [(11, 0, 7), (12, 1, 4), (192, 1, 184)]),
             (UnitKind::Tank, [(35, 0, 27), (36, 1, 4), (128, 1, 96)]),
+            (UnitKind::FieldGun, [(27, 0, 19), (28, 1, 4), (196, 1, 172)]),
         ] {
             for (supplies, expected_shots, remaining) in cases {
                 let (mut scenario, orders) = fixture(kind, UnitKind::Tank, Coordinate::new(4, 3))?;
@@ -3370,7 +3371,7 @@ mod tests {
         combat.finish(&mut scenario, &mut stopped, &mut frames);
         combat.engage(&mut scenario, &mut stopped, &mut frames);
         assert_eq!(frames.iter().flat_map(|frame| &frame.shots).count(), 1);
-        assert_eq!(scenario.units[0].supplies().current(), 168);
+        assert_eq!(scenario.units[0].supplies().current(), 172);
         Ok(())
     }
 

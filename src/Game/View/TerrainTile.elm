@@ -2,6 +2,7 @@ module Game.View.TerrainTile exposing
     ( clockClass
     , definitions
     , onMap
+    , portrait
     , stillOnMap
     , styles
     , toSvg
@@ -294,6 +295,41 @@ onMap =
 stillOnMap : Map -> Coordinate -> Svg msg
 stillOnMap =
     onMapWithMotion StillWater
+
+
+{-| The shared inset terrain portrait for inspection and reference dialogs.
+-}
+portrait : Map -> Coordinate -> Html msg
+portrait map position =
+    let
+        terrain : Terrain
+        terrain =
+            Map.terrainAt map position
+    in
+    H.div
+        [ A.css
+            [ S.bgNightwood3
+            , S.indentStrong
+            , S.p3
+            , S.row
+            , S.justifyCenter
+            ]
+        ]
+        [ Svg.svg
+            [ SA.viewBox "0 0 16 16"
+            , Aria.role Aria.Image
+            , Aria.label (Terrain.label terrain)
+            , A.css
+                [ S.block
+                , S.w128px
+                , S.h128px
+                , S.maxWFull
+                ]
+            ]
+            [ onMap map position ]
+            |> Svg.toUnstyled
+            |> H.fromUnstyled
+        ]
 
 
 onMapWithMotion : WaterMotion -> Map -> Coordinate -> Svg msg

@@ -111,7 +111,7 @@ submit activity label =
             ]
         ]
         [ button
-            |> Button.tall
+            |> Button.large
             |> Button.fullWidth
             |> Button.toHtml
         , LoadingBar.toHtml (activity == Waiting)

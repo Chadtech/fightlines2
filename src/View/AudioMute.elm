@@ -62,10 +62,7 @@ toHtml options =
         , Ev.onClick options.onClick
         , Ev.custom "keydown" (activationKey options.onClick)
         , A.css
-            [ S.fixed
-            , S.top1
-            , S.left1
-            , S.z4
+            [ S.pointerEventsAuto
             , S.w9
             , S.h9
             , S.p0

@@ -2812,7 +2812,7 @@ mod tests {
             .find(|unit| unit.id() == "12")
             .fixture()?;
         assert_eq!(gun.hit_points().current(), 10);
-        assert_eq!(gun.supplies().current(), 164);
+        assert_eq!(gun.supplies().current(), 168);
         let resolution = turns.last_resolution.fixture()?;
         let unload_frame = resolution
             .frames
@@ -6247,7 +6247,7 @@ mod tests {
             }
             assert_eq!(
                 scenario.units.first().fixture()?.supplies().current(),
-                initial.current() - initial.upkeep_per_turn() - 8 - 20
+                initial.current() - initial.upkeep_per_turn() - 8 - 16
             );
         }
         Ok(())
@@ -6433,15 +6433,20 @@ mod tests {
             }
             assert!(validate(&scenario, PlayerNumber::Player1, first).is_err());
         }
-        let mut depleted = scenario.clone();
-        depleted
-            .units
-            .first_mut()
-            .fixture()?
-            .set_supplies_for_test(31);
-        let mut first = holds(&depleted, PlayerNumber::Player1)?;
-        first.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 9, y: 1 });
-        assert!(validate(&depleted, PlayerNumber::Player1, first).is_err());
+        for (supplies, valid) in [(27, false), (28, true)] {
+            let mut depleted = scenario.clone();
+            depleted
+                .units
+                .first_mut()
+                .fixture()?
+                .set_supplies_for_test(supplies);
+            let mut first = holds(&depleted, PlayerNumber::Player1)?;
+            first.first_mut().fixture()?.indirect_fire = Some(CoordinateInput { x: 9, y: 1 });
+            assert_eq!(
+                validate(&depleted, PlayerNumber::Player1, first).is_ok(),
+                valid
+            );
+        }
         Ok(())
     }
 

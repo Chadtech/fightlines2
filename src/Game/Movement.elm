@@ -7,6 +7,7 @@ module Game.Movement exposing
     , optionsAvoiding
     , pointsLabel
     , preview
+    , ruleSelection
     , start
     , supplyCost
     , tileLimit
@@ -14,6 +15,9 @@ module Game.Movement exposing
     )
 
 import Api.Enum.UnitKind exposing (UnitKind)
+import Api.Object
+import Api.Object.MovementRule as MovementRuleApi
+import Api.Object.TerrainMovementCost as MovementCostApi
 import Dict exposing (Dict)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Map as Map exposing (Map)
@@ -22,6 +26,7 @@ import Game.Unit as Unit exposing (Unit)
 import Game.Unit.Fuel as Fuel exposing (Fuel)
 import Game.Unit.Supplies as Supplies exposing (Supplies)
 import Game.UnitResources as UnitResources exposing (UnitResources)
+import Graphql.SelectionSet as SS exposing (SelectionSet)
 import Util.List as ListUtil
 
 
@@ -73,6 +78,23 @@ type alias Option =
 type SearchGoal
     = AllDestinations
     | ToDestination Coordinate
+
+
+ruleSelection : SelectionSet Rule Api.Object.MovementRule
+ruleSelection =
+    let
+        terrainCostSelection : SelectionSet TerrainCost Api.Object.TerrainMovementCost
+        terrainCostSelection =
+            SS.succeed TerrainCost
+                |> SS.with (SS.map Terrain.fromApi MovementCostApi.terrain)
+                |> SS.with MovementCostApi.cost
+    in
+    SS.succeed Rule
+        |> SS.with MovementRuleApi.kind
+        |> SS.with MovementRuleApi.budget
+        |> SS.with (MovementRuleApi.terrainCosts terrainCostSelection)
+        |> SS.with MovementRuleApi.roadFuelPerTile
+        |> SS.with MovementRuleApi.roadFuelPerCargoSlot
 
 
 pointsLabel : Int -> String

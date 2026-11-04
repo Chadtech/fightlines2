@@ -366,6 +366,8 @@ overlay messages =
         , A.css
             [ S.fixed
             , S.top16
+            , S.belowWidth 400
+                [ S.top24 ]
             , S.left4
             , S.right4
             , S.z4

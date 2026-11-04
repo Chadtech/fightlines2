@@ -58,7 +58,7 @@ import Util.Html.Event as HtmlEvent
 import Util.List as ListUtil
 import View.Aria as Aria
 import View.Button as Button
-import View.Card as Card
+import View.Card as Card exposing (Card)
 import View.CardHeader as CardHeader
 import View.Checkbox as Checkbox
 
@@ -882,7 +882,7 @@ theaterView calibrations automaticallyClose visibleTiles depots map panel =
                 _ ->
                     Css.property "grid-template-columns" "repeat(3, minmax(0, 1fr))"
 
-        card : Card.Card
+        card : Card Msg
         card =
             Card.simple
                 |> Card.withHeader (CardHeader.simple title)

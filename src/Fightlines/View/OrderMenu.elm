@@ -21,6 +21,8 @@ import KeyCmd exposing (KeyCmd)
 import Point exposing (Point)
 import Style as S
 import View.Aria as Aria
+import View.Button as Button
+import View.CardHeader as CardHeader
 import View.InfoMarker as InfoMarker
 
 
@@ -136,39 +138,18 @@ ordersView depots map offset zoom position unit =
             , S.textGray4
             , S.outdent
             , S.shadowMenu
-            , S.p1
+            , S.p2px
             , S.defaultCursor
             , S.col
             , S.g1
             ]
         ]
-        [ H.div
-            [ A.css
-                [ S.row
-                , S.itemsCenter
-                , S.justifySpaceBetween
-                , S.bgGray3
-                , S.shrink0
-                , S.textGray0
-                , S.p2
-                ]
-            ]
-            [ H.h3
-                [ A.css
-                    [ S.textGray0 ]
-                ]
-                [ H.text "orders" ]
-            , H.div
-                [ A.css
-                    [ S.row
-                    , S.itemsCenter
-                    , S.g1
-                    ]
-                ]
+        [ CardHeader.simple "orders"
+            |> CardHeader.withActions
                 [ infoButton
                 , closeButton
                 ]
-            ]
+            |> CardHeader.toHtml
         , H.div
             [ Aria.role Aria.Group
             , Aria.label "choose an order"
@@ -203,28 +184,9 @@ infoButton =
 
 closeButton : Html Msg
 closeButton =
-    H.button
-        [ A.type_ "button"
-        , Aria.label "close order menu"
-        , A.title "close order menu"
-        , Ev.onClick CancelClicked
-        , A.css
-            [ S.batch headerButtonStyles
-            , S.bgGray1
-            , S.textGray4
-            , S.outdentStrong
-            , S.hover
-                [ S.bgGray2
-                , S.textGray5
-                ]
-            , S.active
-                [ S.indentStrong ]
-            ]
-        ]
-        [ H.span
-            [ Aria.hidden True ]
-            [ H.text "×" ]
-        ]
+    Button.secondary "×" CancelClicked
+        |> Button.iconOnly "close order menu"
+        |> Button.toHtml
 
 
 headerButtonStyles : List Css.Style
@@ -234,7 +196,6 @@ headerButtonStyles =
     , S.justifyCenter
     , S.shrink0
     , S.w6
-    , S.h6
     , S.p0
     , S.borderTransparent
     , S.pointerCursor

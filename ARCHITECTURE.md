@@ -934,11 +934,11 @@ move, other units' orders and stage-specific passenger data. The submission
 warning and unload checklist are rendered directly from these alternatives;
 `GamePage.Model` has no separate planning-dialog state. Only one planning
 workflow can be active. Inspector reference help is independent of planning:
-`Game.View.UnitStatus.Help` carries the unit kind or fuel values needed for its
-explanation, and the live-game and replay pages own the optional open help.
-`UnitStatus` renders the shared native dialog; dismissal preserves selection
-and drafts. Starting live playback or opening a turn introduction clears help;
-opening replay help pauses playback.
+`Game.View.InspectionHelp.Help` identifies unit, supply, or fuel help, or carries
+the map tile location needed for its explanation and themed terrain portrait. The live-game
+and replay pages own the optional open help. `InspectionHelp` renders the shared
+native dialog; dismissal preserves selection and drafts. Starting live playback
+or opening a turn introduction clears help; opening replay help pauses playback.
 `TurnLifecycle` owns the outer phases and delegates editable planning through
 `mapPlanning`; the planning module operates only on `OrderPlanning.Model`, without
 knowing about submission, waiting or playback. Planning functions accept only
@@ -1403,6 +1403,11 @@ detours. Equal-movement-cost routes favor lower fuel spending, then fewer tiles.
 snapshot fuel values; it does not calculate resource outcomes.
 
 ## Unit supplies
+
+`Scenario.unitStats` exports public reference statistics for every unit kind,
+derived from the authoritative movement, combat, and default resource rules.
+`BattlefieldSnapshot` selects these for live and replay inspection help; they
+remain independent of private current resource levels.
 
 Every Rust unit carries `Supplies` with current and maximum quantities plus
 `upkeepPerTurn`, `movementPerTile`, and `roughTerrainSurcharge` rates. Infantry start at
