@@ -110,6 +110,15 @@ Each map has a thumbnail; selecting one shows a larger preview, dimensions,
 and description. Choose **use this map** to save the selection and return to the
 lobby, where the other player sees the updated map. **back to lobby** and browser
 back discard the preview. The host then chooses **Start game**.
+Before starting, the host can choose **close lobby** in the bottom action bar.
+Confirming closes it for everyone, disables the invite link, and returns the host
+home. **cancel** or Escape keeps the lobby open. Guests can use **home** to leave
+the page without closing the lobby.
+
+Unstarted lobbies are automatically removed after 30 minutes without a successful
+join, setup change, or chat message. Automatic polling does not count as activity;
+cleanup runs once per minute. Started games are unaffected by lobby cleanup.
+
 Joined browsers navigate to the game page within about two seconds. The initial
 scenario requires exactly two players; a third player cannot join.
 
@@ -145,7 +154,10 @@ keeps a fixed-height, scrollable inset green message list and its input visible.
 History opens at the newest messages and follows new arrivals while you are at
 the bottom; scroll up to read older messages without being moved. Sending clears the input; lobby
 messages stay in that panel rather than overlaying the page. Messages are limited
-to 500 characters on one line.
+to 500 characters on one line, with up to 1,000 messages per conversation. Rapid
+sends can temporarily hit a rate limit; the error gives a retry delay. If the
+server's chat storage budget fills, existing history stays available and new
+messages are rejected without interrupting the game.
 
 Entering a running game shows its latest in-game messages after the turn intro,
 including messages sent before your browser reached the game page.
@@ -352,8 +364,8 @@ A dead truck also loses its passengers, but an exhausted truck keeps them until
 it actually dies. Exhaustion deaths use the existing skull-and-crossbones theater.
 
 The low-supplies badge remains at 25% or less. At zero supplies it changes to a
-boxed `!`; selecting the unit shows how many turns remain to resupply. Enemy
-resource warnings and countdowns remain concealed.
+burgundy badge with an ivory skull; selecting the unit shows how many turns remain
+to resupply. Enemy resource warnings and countdowns remain concealed.
 
 Depots start with 1024 finite supplies. Ground supply crates hold up to 256.
 At the end of each turn, after movement, transport, and combat, depots and ground
@@ -404,6 +416,12 @@ remain darkened in fog, showing last-seen stock until the tile is visible again;
 enemy truck cargo stays concealed. Supplies do not restore hit points.
 
 ## Orders and turn submission
+
+Your first active game opens a short illustrated welcome briefing about
+logistics and resupply before the turn introduction. Close it with
+**got it — let's play**, the title-bar close button, or Escape. Dismissal is
+remembered in this browser across games and reloads, independently of the
+turn-introduction preference.
 
 The right panel opens when a unit, depot, or tile is selected and closes when
 selection clears. Selected units show their name and player, inset portrait,

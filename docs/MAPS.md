@@ -16,7 +16,12 @@ starting. The game retains that selection.
 The lobby and editor load their map catalogs from the backend. Maps are runtime
 JSON files discovered in `FIGHTLINES_MAP_DIR` (default: this checkout's `maps/`),
 identified by their filename stems. Add a valid `lowercase-hyphenated-id.json`
-file to make a map available without rebuilding the server or frontend.
+file to add a map without rebuilding the server or frontend.
+Each definition has `"releaseStatus": "Draft"` or `"Released"`; an omitted status
+defaults to `Draft`. Public map lists and new games accept only released maps.
+Crossroads and Winter Front are drafts. Localhost requests with `--map-editor`
+can list, select, and playtest all maps. Remote requests remain limited to released
+maps even when the editor is enabled.
 The catalog places `supply-point` first when present, then sorts the other IDs
 alphabetically. New lobbies default to the first available map. Saved edits affect
 new games; active games and archived boards retain their own layouts.
@@ -87,7 +92,10 @@ naval movement and landings are not implemented yet.
 New games read the current runtime files; existing games keep their initial
 board. Choose **play in new tab** to create a normal lobby and test the saved map.
 Ship the map directory with production deployments; map changes require no rebuild.
-The editor edits every map in the server catalog.
+The editor edits every map in the server catalog. Use **release status** to
+choose **draft** or **released**, then **save map** to apply it. New maps start
+as drafts. Unreleasing a map also prevents waiting public lobbies from starting
+it; active games and archived layouts are unaffected.
 
 The `maps`, `createMap`, and `saveMap` operations on `/graphql` are
 disabled unless the server starts with `--map-editor`. Editor requests require
@@ -114,10 +122,11 @@ Depots and units are placed separately.
 These descriptions and force counts describe authored scenarios and can change
 when a map is edited. The files in [`maps/`](../maps/) are the source of truth.
 
-The lobby host can choose **supply point**, **el alamein**, **blood gulch**,
-**sidewinder**, **black forest**, **crossroads**, **ridgeway**,
+The released catalog includes **supply point**, **el alamein**, **blood gulch**,
+**sidewinder**, **black forest**, **ridgeway**,
 **three crossings**, **lake of pennsylvania**, **convoy country**, **bastion pass**,
-**tobruk**, or **winter front**. Each map has its own starting
+or **tobruk**. Crossroads and Winter Front remain available for local authoring
+and playtesting. Each map has its own starting
 force, with full starting resources.
 Each `maps/*.json` definition includes a `description` shown with its preview in
 the map library. The editor API preserves this text when saving battlefield edits.

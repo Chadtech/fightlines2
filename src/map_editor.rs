@@ -2,8 +2,10 @@
 use crate::{
     graphql::Context,
     map::{Coordinate, MapTheme, TerrainValue},
-    map_definition::{DepotPlacement, MapDefinition, NamedMap, TerrainPlacement, UnitPlacement},
-    map_id::{self, MapId},
+    map_definition::{
+        DepotPlacement, MapDefinition, MapReleaseStatus, NamedMap, TerrainPlacement, UnitPlacement,
+    },
+    map_id::{self, CatalogAccess, MapId},
     map_thumbnail,
     player_number::PlayerNumber,
     scenario::{BuildingKind, Direction, UnitKind},
@@ -31,6 +33,13 @@ pub enum Access {
 }
 
 impl Access {
+    pub fn catalog_access(&self) -> CatalogAccess {
+        match self {
+            Self::ReadOnly(_) | Self::Writable(_) => CatalogAccess::Editor,
+            Self::Disabled | Self::Denied => CatalogAccess::Public,
+        }
+    }
+
     pub fn from_request(editor: Option<web::Data<Editor>>, request: &HttpRequest) -> Self {
         match editor {
             None => Self::Disabled,
@@ -92,6 +101,7 @@ struct UnitPlacementInput {
 #[derive(GraphQLInputObject)]
 pub struct MapDefinitionInput {
     description: String,
+    release_status: MapReleaseStatus,
     width: i32,
     height: i32,
     theme: MapTheme,
@@ -116,6 +126,7 @@ impl MapDefinitionInput {
     fn definition(self) -> FieldResult<MapDefinition> {
         Ok(MapDefinition {
             description: self.description,
+            release_status: self.release_status,
             width: unsigned(self.width, "width")?,
             height: unsigned(self.height, "height")?,
             theme: self.theme,
@@ -278,7 +289,7 @@ mod tests {
     use serde_json::{Value, json};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-    const SAVE: &str = "mutation Save($definition: MapDefinitionInput!, $kind: MapId!) { saveMap(mapType: $kind, definition: $definition) { mapType definition { description theme width depots { kind } } } }";
+    const SAVE: &str = "mutation Save($definition: MapDefinitionInput!, $kind: MapId!) { saveMap(mapType: $kind, definition: $definition) { mapType definition { description releaseStatus theme width depots { kind } } } }";
     const CREATE: &str = "mutation Create($definition: MapDefinitionInput!, $kind: MapId!) { createMap(mapType: $kind, definition: $definition) { mapType } }";
 
     fn store() -> web::Data<Store> {
@@ -302,6 +313,7 @@ mod tests {
         };
         let input = MapDefinitionInput {
             description: definition.description,
+            release_status: definition.release_status,
             width: i32::from(definition.width),
             height: i32::from(definition.height),
             theme: definition.theme,
@@ -430,7 +442,12 @@ mod tests {
             if peer == Ipv4Addr::LOCALHOST {
                 assert_eq!(
                     body["data"]["maps"]["rest"].as_array().map(Vec::len),
-                    Some(map_id::options().map_err(|error| error.to_string())?.len() - 1)
+                    Some(
+                        map_id::catalog_in(&map_id::directory())
+                            .map_err(|error| error.to_string())?
+                            .len()
+                            - 1
+                    )
                 );
                 assert_eq!(body["data"]["health"], json!(true));
                 let maps = &body["data"]["maps"];
@@ -520,6 +537,7 @@ mod tests {
         definition["depots"] = json!([{"position": {"x": 0, "y": 0}, "kind": "FORTRESS"}]);
         definition["description"] = json!("a custom battlefield description");
         definition["theme"] = json!("SNOW");
+        definition["releaseStatus"] = json!("DRAFT");
         let request = test::TestRequest::post()
             .uri("/graphql")
             .peer_addr(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 1234))
@@ -533,6 +551,11 @@ mod tests {
         assert!(body.get("errors").is_none(), "{body}");
         let saved: Value = serde_json::from_str(&fs::read_to_string(&destination)?)?;
         assert_eq!(saved["theme"], json!("Snow"));
+        assert_eq!(saved["releaseStatus"], json!("Draft"));
+        assert_eq!(
+            body["data"]["saveMap"]["definition"]["releaseStatus"],
+            "DRAFT"
+        );
         assert_eq!(
             body["data"]["saveMap"]["definition"]["depots"],
             json!([{ "kind": "FORTRESS" }])
@@ -575,7 +598,7 @@ mod tests {
         )
         .await;
         let valid = json!({
-            "description": "creation fixture", "width": 2, "height": 2,
+            "description": "creation fixture", "releaseStatus": "DRAFT", "width": 2, "height": 2,
             "theme": "GREEN_FOREST", "features": [], "depots": [],
             "units": [
                 {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "PLAYER1", "kind": "INFANTRY", "direction": "EAST"},
@@ -683,7 +706,7 @@ mod tests {
         )
         .await;
         let mut definition = json!({
-            "description": "thumbnail fixture", "width": 2, "height": 2,
+            "description": "thumbnail fixture", "releaseStatus": "DRAFT", "width": 2, "height": 2,
             "theme": "GREEN_FOREST", "features": [], "depots": [],
             "units": [
                 {"id": 1, "position": {"x": 0, "y": 0}, "playerNumber": "PLAYER1", "kind": "INFANTRY", "direction": "EAST"},

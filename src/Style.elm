@@ -134,6 +134,7 @@ module Style exposing
     , h16px
     , h1px
     , h2
+    , h24
     , h2px
     , h3
     , h32
@@ -234,6 +235,7 @@ module Style exposing
     , minH11
     , minH14
     , minH16
+    , minH20
     , minH24
     , minH32
     , minH36
@@ -350,6 +352,7 @@ module Style exposing
     , py4
     , py6
     , py8
+    , red0Str
     , red1Str
     , redIndent
     , redOutdent
@@ -448,6 +451,7 @@ module Style exposing
     , w196
     , w2
     , w20
+    , w24
     , w256
     , w2x
     , w3
@@ -1268,6 +1272,11 @@ w20 =
     Css.width s20
 
 
+w24 : Css.Style
+w24 =
+    Css.width s24
+
+
 w32 : Css.Style
 w32 =
     Css.width s32
@@ -1510,6 +1519,11 @@ h16 =
     Css.height s16
 
 
+h24 : Css.Style
+h24 =
+    Css.height s24
+
+
 h32 : Css.Style
 h32 =
     Css.height s32
@@ -1593,6 +1607,11 @@ minH14 =
 minH16 : Css.Style
 minH16 =
     Css.minHeight s16
+
+
+minH20 : Css.Style
+minH20 =
+    Css.minHeight s20
 
 
 minH32 : Css.Style

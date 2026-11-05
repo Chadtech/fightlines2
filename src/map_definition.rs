@@ -7,9 +7,16 @@ use crate::{
     player_number::PlayerNumber,
     scenario::{BuildingKind, Direction, Scenario, UnitKind},
 };
-use juniper::{FieldResult, graphql_object};
+use juniper::{FieldResult, GraphQLEnum, graphql_object};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, GraphQLEnum)]
+pub enum MapReleaseStatus {
+    #[default]
+    Draft,
+    Released,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -17,6 +24,8 @@ pub struct MapDefinition {
     /// Selection copy; older definitions without metadata remain loadable.
     #[serde(default)]
     pub description: String,
+    #[serde(default, rename = "releaseStatus")]
+    pub release_status: MapReleaseStatus,
     pub width: u16,
     pub height: u16,
     pub theme: MapTheme,
@@ -70,6 +79,9 @@ impl NamedMap {
 
 #[graphql_object(context = Context)]
 impl MapDefinition {
+    fn release_status(&self) -> MapReleaseStatus {
+        self.release_status
+    }
     fn description(&self) -> &str {
         &self.description
     }

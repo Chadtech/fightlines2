@@ -52,6 +52,7 @@ import Fightlines.View.PrivacyPolicy as PrivacyPolicy
 import Fightlines.View.Settings as Settings
 import Fightlines.View.TurnIntroduction as TurnIntroduction
 import Fightlines.View.UnloadPassenger as UnloadPassenger
+import Fightlines.View.WelcomeBriefing as WelcomeBriefing
 import Game.AnimationFrame as AnimationFrame
 import Game.Assets as Assets
 import Game.BattlefieldNavigation as BattlefieldNavigation
@@ -115,6 +116,7 @@ import Game.View.Cargo as Cargo
 import Game.View.Chat as ChatView
 import Game.View.CombatTheater as CombatTheater
 import Game.View.InspectionHelp as InspectionHelp
+import Game.View.LoadingNotice as LoadingNotice
 import Game.View.MovementRoute as MovementRoute
 import Game.View.RotationChoices as RotationChoices
 import Game.View.TurnControls as TurnControls
@@ -165,6 +167,7 @@ type alias Model =
     , feedback : Feedback.Draft
     , chat : Chat.Model
     , shared : Shared.Model
+    , welcomeBriefingPending : Bool
     , skipTurnIntroduction : Bool
     , skipUnplannedUnitsWarning : Bool
     , skipUnitLossDialogs : Bool
@@ -287,6 +290,7 @@ type Msg
     | InspectionHelpClicked InspectionHelp.Help
     | InspectionHelpFocusReturned (Result Browser.Dom.Error ())
     | EscapePressed
+    | WelcomeBriefingDismissed
     | DialogDismissed
     | SubmissionCancelled
     | SubmissionConfirmed
@@ -323,6 +327,14 @@ init shared flags =
                 PlaybackPresentation.AutomaticallyCloseCombat
                 shared.localStorage
 
+        ( welcomeBriefingDismissed, welcomePreferenceError ) =
+            Preference.load
+                { key = welcomeBriefingPreferenceKey
+                , decoder = Decode.bool
+                , defaultValue = False
+                }
+                shared.localStorage
+
         ( skipTurnIntroduction, introductionPreferenceError ) =
             Preference.load
                 { key = turnIntroductionPreferenceKey
@@ -352,8 +364,10 @@ init shared flags =
                 shared
                     |> Shared.addError maybeError
                     |> Shared.addError lossPreferenceError
+                    |> Shared.addError welcomePreferenceError
                     |> Shared.addError introductionPreferenceError
                     |> Shared.addError submissionPreferenceError
+            , welcomeBriefingPending = not welcomeBriefingDismissed && (flags.snapshot.turn.outcome == Nothing)
             , skipTurnIntroduction = skipTurnIntroduction
             , skipUnplannedUnitsWarning = skipUnplannedUnitsWarning
             , skipUnitLossDialogs = skipLossDialogs
@@ -380,14 +394,12 @@ init shared flags =
 
         eff : Eff Msg
         eff =
-            if showTurnIntroduction model then
-                E.toJs
-                    (ToJs.OpenDialog
-                        { htmlId = TurnIntroduction.dialogHtmlId }
-                    )
+            case activeDialogHtmlId model of
+                Just htmlId ->
+                    E.toJs (ToJs.OpenDialog { htmlId = htmlId })
 
-            else
-                chatExpiration model
+                Nothing ->
+                    chatExpiration model
     in
     ( model
     , E.batch
@@ -481,6 +493,11 @@ setResigning resigning model =
 setBattlefieldViewport : Maybe Camera.Viewport -> Model -> Model
 setBattlefieldViewport battlefieldViewport model =
     { model | battlefieldViewport = battlefieldViewport }
+
+
+welcomeBriefingPreferenceKey : String
+welcomeBriefingPreferenceKey =
+    "welcomeBriefingDismissed"
 
 
 turnIntroductionPreferenceKey : String
@@ -1837,7 +1854,7 @@ scrollChatHistory chat shared =
 
 chatExpiration : Model -> Eff Msg
 chatExpiration model =
-    if showTurnIntroduction model || List.isEmpty model.chat.recent then
+    if model.welcomeBriefingPending || showTurnIntroduction model || List.isEmpty model.chat.recent then
         E.none
 
     else
@@ -1866,6 +1883,7 @@ sendChat lobbyId model =
                 |> setShared (Shared.setSeed seed model.shared)
             , E.batch
                 [ E.request (ChatSendReceived submission) (Chat.sendRequest lobbyId submission)
+                , E.audio Audio.chatSent
                 , E.focus { htmlId = Battlefield.htmlId } FocusCompleted
                 ]
             )
@@ -1909,9 +1927,17 @@ superUpdate lobbyId msg model =
                 |> E.andThen (withLayoutMeasurement model)
                 |> E.and (E.audio (playAudio msg model))
 
+        briefingClosed : Bool
+        briefingClosed =
+            model.welcomeBriefingPending && not next.welcomeBriefingPending
+
+        introductionClosed : Bool
+        introductionClosed =
+            showTurnIntroduction model && not (showTurnIntroduction next)
+
         readyEffect : Eff Msg
         readyEffect =
-            if showTurnIntroduction model && not (showTurnIntroduction next) then
+            if briefingClosed || introductionClosed then
                 E.batch [ effect, chatExpiration next ]
 
             else
@@ -2453,6 +2479,14 @@ update lobbyId msg model =
 
         TurnControlsMsg turnControlsMsg ->
             handleTurnControlsMsg lobbyId turnControlsMsg model
+
+        WelcomeBriefingDismissed ->
+            ( { model | welcomeBriefingPending = False }
+            , E.setLocalStorage
+                { key = welcomeBriefingPreferenceKey
+                , value = Encode.bool True
+                }
+            )
 
         DialogDismissed ->
             if model.inspectionHelp /= Nothing then
@@ -3089,6 +3123,9 @@ playAudio msg model =
 
         EscapePressed ->
             Audio.cancel
+
+        WelcomeBriefingDismissed ->
+            Audio.confirm
 
         DialogDismissed ->
             Audio.cancel
@@ -4077,19 +4114,7 @@ movementView model =
                         []
 
                     else if Unit.carrierId unit /= Nothing then
-                        transportDetails model unit
-
-                    else if receivingLoad unit model then
-                        let
-                            orderDetails : List (Html Msg)
-                            orderDetails =
-                                unitOrderView model unit
-
-                            cargoDetails : List (Html Msg)
-                            cargoDetails =
-                                transportDetails model unit
-                        in
-                        orderDetails ++ cargoDetails
+                        transportDetails unit
 
                     else if choosingIndirectFire model then
                         indirectFireDetails unit
@@ -4221,6 +4246,21 @@ unitOrderView model unit =
                 orderDetails : List (Html Msg)
                 orderDetails =
                     let
+                        showSummary : Bool
+                        showSummary =
+                            case plan.action of
+                                PlannedOrder.Move _ ->
+                                    List.isEmpty loadingDetails
+
+                                PlannedOrder.Hold _ ->
+                                    List.isEmpty loadingDetails
+
+                                PlannedOrder.Unload _ ->
+                                    List.isEmpty loadingDetails
+
+                                _ ->
+                                    True
+
                         chosenOrderText : String
                         chosenOrderText =
                             case plan.action of
@@ -4278,8 +4318,14 @@ unitOrderView model unit =
                                         ]
                                             |> String.concat
                     in
-                    [ H.h3 [] [ H.text chosenOrderText ]
-                    ]
+                    if showSummary then
+                        [ H.h3
+                            []
+                            [ H.text chosenOrderText ]
+                        ]
+
+                    else
+                        []
 
                 loadingDetails : List (Html Msg)
                 loadingDetails =
@@ -4288,7 +4334,11 @@ unitOrderView model unit =
                             loadingNotice model unit movePlan.move.destination
 
                         _ ->
-                            []
+                            if receivingLoad unit model then
+                                loadingNotice model unit (PlannedOrder.destination plan)
+
+                            else
+                                []
             in
             orderDetails ++ loadingDetails ++ unloadDetails ++ ambushCosts unit plan
 
@@ -4422,38 +4472,26 @@ loadingNotice model unit destination =
     case PlannedTransport.loadingTarget model.units unit destination (plannedOrders model) of
         Just target ->
             let
-                notice : String
-                notice =
+                loading : { passenger : Unit, truck : Unit }
+                loading =
                     if unit.kind == UnitKind.Truck then
-                        "this move will pick up " ++ Unit.label target ++ " into this truck when both units reach the destination."
+                        { passenger = target, truck = unit }
 
                     else
-                        "this move will board " ++ Unit.label target ++ " when both units reach the destination."
+                        { passenger = unit, truck = target }
             in
-            [ H.p
-                [ Aria.role Aria.Status
-                , A.css
-                    [ S.bgYellow2
-                    , S.textGray5
-                    , S.p2
-                    ]
-                ]
-                [ H.text notice ]
-            ]
+            [ LoadingNotice.toHtml loading ]
 
         Nothing ->
             []
 
 
-transportDetails : Model -> Unit -> List (Html Msg)
-transportDetails model unit =
+transportDetails : Unit -> List (Html Msg)
+transportDetails unit =
     let
         description : String
         description =
-            if receivingLoad unit model then
-                "receiving cargo at the planned destination. revoking this order also clears dependent boarding moves."
-
-            else if Unit.carrierId unit /= Nothing then
+            if Unit.carrierId unit /= Nothing then
                 "aboard a truck. select the truck and choose its move destination to unload passengers."
 
             else if unit.kind == UnitKind.Truck then
@@ -4924,12 +4962,13 @@ chatDialog model _ =
             Nothing
 
 
-{-| Dialogs derive from chat, inspector help, the game menu, order guide, turn introduction, playback loss, or the active planning workflow.
+{-| Dialogs derive from the welcome briefing, chat, inspector help, the game menu, order guide, turn introduction, playback loss, or the active planning workflow.
 -}
 dialog : Model -> Maybe (Dialog Msg)
 dialog model =
     MaybeUtil.lazyFirst
-        [ chatDialog model
+        [ welcomeBriefingDialog model
+        , chatDialog model
         , inspectionHelpDialog model
         , gameMenuDialog model
         , orderGuideDialog model
@@ -4937,6 +4976,15 @@ dialog model =
         , lossDialog model
         , planningDialog model
         ]
+
+
+welcomeBriefingDialog : Model -> () -> Maybe (Dialog Msg)
+welcomeBriefingDialog model _ =
+    if model.welcomeBriefingPending then
+        Just (WelcomeBriefing.dialog { onClose = WelcomeBriefingDismissed })
+
+    else
+        Nothing
 
 
 inspectionHelpDialog : Model -> () -> Maybe (Dialog Msg)

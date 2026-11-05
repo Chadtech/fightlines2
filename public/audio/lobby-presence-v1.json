@@ -1,0 +1,51 @@
+{
+  "clips": [
+    {
+      "file": "lobby-player-joined-pager-v1.ogg",
+      "approvedAudition": "lobby-enter-pager-v2",
+      "title": "Two recorded fire-pager beeps",
+      "author": "jason",
+      "sourcePage": "https://soundbible.com/1766-Fire-Pager.html",
+      "sourceAudio": "https://soundbible.com/grab.php?id=1766&type=wav",
+      "license": "Public Domain",
+      "durationSeconds": 0.21002267573696146,
+      "sourceIntervalsSeconds": [
+        [
+          0.345,
+          0.555
+        ]
+      ],
+      "gainDb": -6.852407018549352,
+      "fadeInSeconds": 0.001,
+      "fadeOutSeconds": 0.005,
+      "processing": "Two consecutive recorded beeps with original spacing; linear edge fades; constant gain to -9 dBFS peak. Original pitch, speed, sample rate, and stereo layout retained. No added effects.",
+      "masterSha256": "3f1d2137a901240d08763aeab637fadf619df2b7e388b3821485455a1c6d9514",
+      "sourceSha256": "9cc57caa858429e4f7c06481daa8a5a96a670a7a9416d37c0404998d3a786e36",
+      "sha256": "0f85aea6d379eccc45b24aebce19f9ab43ae9b278c41894a503291cfee5b3f9f"
+    },
+    {
+      "file": "lobby-player-left-scanner-v1.ogg",
+      "approvedAudition": "lobby-exit-scanner-v1",
+      "title": "Recorded store-scanner beep",
+      "author": "zerolagtime; original recording by bsumusictech",
+      "sourcePage": "https://freesound.org/people/zerolagtime/sounds/144418/",
+      "sourceAudio": "https://cdn.freesound.org/previews/144/144418_62484-hq.mp3",
+      "license": "CC0",
+      "durationSeconds": 0.3,
+      "sourceIntervalsSeconds": [
+        [
+          0,
+          0.3
+        ]
+      ],
+      "gainDb": -8.748552685887171,
+      "fadeInSeconds": 0.001,
+      "fadeOutSeconds": 0.02,
+      "processing": "Trim; linear edge fades; constant gain to -9 dBFS peak. Original pitch, speed, sample rate, and stereo layout retained. No added effects.",
+      "masterSha256": "f874bec8e6985bb793ffc2d8728ebdfe5404137473e8e35337cc9d726b812b6d",
+      "sourceSha256": "4dd877c6fa5e82e81ff593c466ea9dad33c08b46dfa2730af3e30d1383058a60",
+      "sha256": "e909bc76e67600e1c984ff60be5779c9118cc7a6025979fa5568ecd6df5550f0",
+      "downloadSha256": "4d6d39e238da2461ddd20f2b11af90f4e70bf218b16bd629cf711473f6d43881"
+    }
+  ]
+}

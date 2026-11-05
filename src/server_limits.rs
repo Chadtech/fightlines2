@@ -19,6 +19,8 @@ const CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
 pub enum Operation {
     CreateLobby,
     SubmitTurn,
+    SendChat,
+    SubmitFeedback,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -77,6 +79,22 @@ impl RateKey {
             (Client::Address(_), Operation::CreateLobby) => Budget {
                 burst: 10,
                 refill_every: Duration::from_secs(15),
+            },
+            (Client::Session(_), Operation::SendChat) => Budget {
+                burst: 8,
+                refill_every: Duration::from_secs(2),
+            },
+            (Client::Address(_), Operation::SendChat) => Budget {
+                burst: 24,
+                refill_every: Duration::from_millis(500),
+            },
+            (Client::Session(_), Operation::SubmitFeedback) => Budget {
+                burst: 2,
+                refill_every: Duration::from_secs(300),
+            },
+            (Client::Address(_), Operation::SubmitFeedback) => Budget {
+                burst: 5,
+                refill_every: Duration::from_secs(60),
             },
             (Client::Session(_), Operation::SubmitTurn) => Budget {
                 burst: 6,
@@ -398,6 +416,82 @@ mod tests {
             address,
             None,
             now + Duration::from_millis(500),
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn chat_and_feedback_limits_survive_rotating_sessions_and_refill_independently()
+    -> TestResult<()> {
+        let limits = Limits::default();
+        let now = Instant::now();
+        let address = ClientAddress::Ip("192.0.2.1".parse()?);
+        let session = SessionToken::from_token("chat player".into());
+        for _ in 0..8 {
+            limits.admit_at(Operation::SendChat, address, Some(session.clone()), now)?;
+        }
+        assert_eq!(
+            limits.admit_at(
+                Operation::SendChat,
+                ClientAddress::Unavailable,
+                Some(session.clone()),
+                now
+            ),
+            Err(Rejection::RateLimited {
+                retry_after: Duration::from_secs(2)
+            })
+        );
+        limits.admit_at(
+            Operation::SendChat,
+            address,
+            Some(session.clone()),
+            now + Duration::from_secs(2),
+        )?;
+        for index in 0..5 {
+            limits.admit_at(
+                Operation::SubmitFeedback,
+                address,
+                Some(SessionToken::from_token(index.to_string())),
+                now,
+            )?;
+        }
+        assert_eq!(
+            limits.admit_at(Operation::SubmitFeedback, address, None, now),
+            Err(Rejection::RateLimited {
+                retry_after: Duration::from_secs(60)
+            })
+        );
+        limits.admit_at(
+            Operation::SubmitFeedback,
+            address,
+            None,
+            now + Duration::from_secs(60),
+        )?;
+        // A shared session remains limited even when the address changes.
+        for _ in 0..2 {
+            limits.admit_at(
+                Operation::SubmitFeedback,
+                ClientAddress::Unavailable,
+                Some(session.clone()),
+                now,
+            )?;
+        }
+        assert_eq!(
+            limits.admit_at(
+                Operation::SubmitFeedback,
+                address,
+                Some(session.clone()),
+                now
+            ),
+            Err(Rejection::RateLimited {
+                retry_after: Duration::from_secs(300)
+            })
+        );
+        limits.admit_at(
+            Operation::SubmitFeedback,
+            address,
+            Some(session),
+            now + Duration::from_secs(300),
         )?;
         Ok(())
     }

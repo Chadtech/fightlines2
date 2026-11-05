@@ -53,7 +53,7 @@ beachCornerSteps =
 
 {-| Shared definitions are mounted once in the shell, including for inspector SVGs.
 The invisible water timeline has no changing or inherited values. The browser
-adapter aligns newly created direct transforms to it before their first paint.
+adapter aligns newly created frame animations to it before their first paint.
 -}
 definitions : Html msg
 definitions =
@@ -152,6 +152,10 @@ clockClass =
     "fightlines-water-clock"
 
 
+{-| Animate SVG geometry rather than CSS transforms: promoting a full atlas per
+water cell can exhaust compositor surfaces at large viewport sizes and zooms.
+Keep the existing stepped clock so frame selection and pause behavior stay shared.
+-}
 styles : Html msg
 styles =
     let
@@ -163,11 +167,11 @@ styles =
                     modBy 32 index
             in
             String.fromFloat (toFloat index * 100 / 32)
-                ++ "% { transform: translate("
+                ++ "% { x: "
                 ++ String.fromInt (-16 * modBy 8 frame)
-                ++ "px, "
+                ++ "px; y: "
                 ++ String.fromInt (-16 * (frame // 8))
-                ++ "px); }"
+                ++ "px; }"
 
         keyframes : String
         keyframes =

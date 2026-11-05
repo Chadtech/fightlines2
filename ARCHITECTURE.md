@@ -48,14 +48,19 @@ players. Lobbies and games are held in memory and disappear on server restart.
 Finished games leave the registry 16 minutes after victory, draw, or resignation.
 A server-wide task sweeps once per minute on the blocking pool, skipping busy
 entries and preserving their private replay archives. Reads and repeated requests
-do not extend retention. There is no account system, host transfer, player
-removal, or expiry of unstarted lobbies or unfinished games yet.
+do not extend finished-game retention. Unstarted lobbies expire after 30 minutes
+without a successful join, setup change, or chat send; polling does not renew
+that timer. The host can also close an unstarted lobby with `closeLobby`.
+Removal clears the entry to `Closed` before releasing its lock, so requests
+already holding a detached handle cannot start or mutate it. Chat journals stay
+on disk. There is no account system, host transfer, player removal, or expiry of
+unfinished games yet.
 
 The store's registry maps each lobby ID to one shared, individually locked
 `GameRegistry`.
 `Store::start` asks the lobby to prepare a game and the game to record its initial
 state. It replaces the entry's `Lobby` with `Game` only after recording succeeds;
-the ID and lock stay stable. The registry lock covers lookup and insertion only,
+the ID and lock stay stable. The registry lock covers lookup, insertion, and removal only,
 and is released before acquiring an entry lock. Membership checks, settings,
 starting, submissions, resignation, and snapshots use the owning entry's lock.
 Token generation has its own short-lived seed lock. No entry operation holds the
@@ -173,7 +178,13 @@ the checkout) for the public `mapOptions` and `mapPreviews` queries, editor
 catalog, and game creation. Catalog order places `supply-point` first when
 present, followed by the remaining IDs alphabetically. New lobbies use the first
 available map. Only the host can change it through `setLobbyMap`; selecting an
-unknown or invalid layout fails before changing the lobby.
+unknown, draft, or invalid layout fails before changing the lobby.
+`MapDefinition.release_status` is a typed `MapReleaseStatus` (`Draft` or
+`Released`), stored as `releaseStatus` in JSON and defaulting to `Draft`.
+`CatalogAccess::Public` filters catalogs and validates map selection and game
+creation against the current release status. Request-derived local editor access
+uses `CatalogAccess::Editor` for draft playtesting; remote clients retain public
+access. The editor lists all maps and saves release status with each definition.
 `mapPreviews` returns authored `NamedMap` definitions, including descriptions and
 starting placements, without editor access. Definitions are read at runtime in
 both production and editor mode, so new files and saved edits need no Rust rebuild.
@@ -196,7 +207,8 @@ host is previewing. Starting uses the saved map directly.
 placement artwork. Water previews hold their first frame. Library rows use saved
 PNG thumbnails from `public/map-thumbnails/`; the selected large preview remains
 SVG. `NamedMap.thumbnailUrl` fingerprints the definition with a stable FNV-1a
-cache key and an explicit artwork version (`map_thumbnail.rs`).
+cache key and an explicit artwork version (`map_thumbnail.rs`). Release status
+is excluded from the fingerprint to preserve thumbnails when publishing a map.
 
 The editor captures its pending save definition in a separate hidden map preview.
 A correlated Elm port asks `public/map-thumbnail.js` to embed shared SVG definitions,
@@ -440,7 +452,12 @@ record per accepted submission, independently of games and diagnostic logs.
 Startup opens its directory outside the frontend and shares it through the
 GraphQL context. `submitFeedback` runs on the existing blocking request worker;
 it returns success only after storage succeeds and exposes no read operation.
-See [deployment](DEPLOYMENT.md#player-feedback) for configuration.
+The GraphQL boundary applies independent IP/session mutation budgets before
+validation. Its shared directory owns feedback's byte/entry storage budget.
+`storage_budget.rs` serializes storage admission and publication, releases cleanly
+failed reservations, and reconstructs usage from disk at startup. Capacity errors
+use `STORAGE_FULL`; accepted records are never evicted automatically.
+See [deployment](DEPLOYMENT.md#player-feedback) for limits and configuration.
 
 `Fightlines.Feedback` owns draft and delivery transitions. Home and GamePage
 retain their own draft across dialog dismissal and handle requests through
@@ -459,6 +476,13 @@ labeled `visitor`; chat access does not authorize battlefield queries or actions
 The `chat(id, after)` query returns messages after a sequence cursor, while
 `sendChat` validates a single-line message and deduplicates retries by browser
 session and client message ID. Credentials and retry receipts are never recorded.
+The GraphQL boundary rate limits each send, including aliases and retries. A
+transcript accepts 1,000 messages; retries of accepted IDs remain idempotent at
+capacity. `game_log::Directory` and its journals/game logs share one chat storage
+budget, independent of turn recording. Each chat write prepays its possible lobby
+transcript copy. Startup conservatively counts persisted chat, copied transcripts,
+and incomplete files without charging ordinary turn snapshots. This bounds chat
+storage across games and restarts without preventing gameplay when chat is full.
 
 Lobby messages are published to private `chat-*` journals before acknowledgment.
 The initial game record includes that lobby transcript; later messages publish
@@ -479,7 +503,10 @@ another player's earlier message. Correlated send responses preserve a new draft
 after cancellation; unchanged failed submissions retain their original ID.
 Poll handlers use `Chat.hasNewIncoming` to request one `Audio.chatReceived` cue
 for unseen messages from another sender. Initial history and duplicate polls
-stay silent. Roster names identify the player's own messages across lobby side
+stay silent. Both pages request `Audio.chatSent` only after `Chat.prepareSend`
+accepts a submission, so button, Enter and retry sends share immediate feedback;
+blocked attempts and send responses do not produce another cue.
+Roster names identify the player's own messages across lobby side
 changes; visitors remain distinct from a participant named `visitor`.
 `Game.View.Chat` provides the centered game dialog, dedicated lobby panel,
 complete history, and temporary battlefield messages. HTTP failures use the
@@ -632,7 +659,7 @@ Shared interop dispatches on `tag`, passing audio's `event` to the manager along
 clipboard, dialog, storage, and thumbnail messages. New audio event kinds do not
 change this routing. Elm updates remain the only source of playback requests; pointer and
 keyboard listeners only unlock the browser audio context and preload its clips.
-The manager caches decoded buffers, preloading all twenty-three clips on unlock. UI
+The manager caches decoded buffers, preloading all twenty-six clips on unlock. UI
 playback allows four voices and coalesces identical requests within 40ms. Combat
 playback allows eight independent voices, cycles five variants per weapon or impact cue, and
 never coalesces separate shots or hits. Requests delayed more than 250ms are dropped.
@@ -672,7 +699,15 @@ its release (230ms), and confirm the approved old-switch audition A (300ms).
 The source recordings and audition masters remain ignored.
 `Audio.chatReceived` selects `/audio/chat-received-radio-v1.ogg`, the approved
 single-beep-and-crackle edit of SEF7's CC0 Cobra walkie-talkie recording. It shares
-the interface bus and UI voice/coalescing behavior.
+the interface bus and UI voice/coalescing behavior. `Audio.chatSent` selects
+`/audio/chat-sent-radio-v1.ogg`, the higher third beep and the same cutoff
+crackle from that recording, retaining its original pitch and speed.
+`LobbyPage.receive` compares old and new roster sizes before replacing its
+snapshot. Additions emit `Audio.lobbyPlayerJoined`; removals emit
+`Audio.lobbyPlayerLeft`. Initial loading, unchanged polls, and side swaps emit
+no presence cue, and started-game snapshots suppress both cues. Human and AI
+roster changes share this path. The pager/scanner recordings use the interface
+bus and are credited in `public/audio/lobby-presence-v1.json`.
 Opening the game menu and revoking an order emit `affirm`; closing the menu
 and cancelling the unplanned-unit warning emit `cancel`.
 Accepted submission requests and the unplanned-unit
@@ -884,7 +919,7 @@ application.
 
 Queries include `health`, `lobby(id)`, `game(id)`, `mapOptions`, and `maps`.
 `mapOptions` returns discovered map IDs without editor access. Mutations are
-`createLobby(name, lobbyName)`, `joinLobby(id, name)`,
+`createLobby(name, lobbyName)`, `joinLobby(id, name)`, `closeLobby(id)`,
 `setLobbyMap(id, mapType)`, `setLobbyController(id, controller)`, `startGame(id)`, and
 `submitTurn(id, turnNumber, orders)`, and `saveMap(mapType, definition)`.
 The map authoring operations require `--map-editor`. Lobby
@@ -942,7 +977,8 @@ blocking job so disconnects cannot free capacity while work continues. See
 
 `graphql::Endpoint` also owns the shared `server_limits::Limits` used by every
 request context. The HTTP boundary resolves a client address using the socket peer
-and same-machine proxy policy. Each `createLobby` and `submitTurn` resolver checks
+and same-machine proxy policy. Each `createLobby`, `submitTurn`, `sendChat`, and
+`submitFeedback` resolver checks
 independent IP and session budgets before entering domain operations; aliases
 cannot bypass them. The bounded budget table drops fully refilled entries during
 periodic cleanup and never evicts an active budget to admit a new client. Retry

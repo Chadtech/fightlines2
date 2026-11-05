@@ -72,6 +72,7 @@ import View.Aria as Aria
 import View.Button as Button
 import View.Card as Card
 import View.CardHeader as CardHeader
+import View.Dialog as Dialog
 import View.RequestError as RequestError
 import View.Select as Select
 import View.TextField as TextField
@@ -163,6 +164,8 @@ type RequestStatus
     | SavingSettings
     | SavingMap
     | ChoosingSide PlayerNumber
+    | ConfirmingClose
+    | ClosingLobby
 
 
 type CopyStatus
@@ -193,6 +196,13 @@ type Msg
     | MapSearchInputChanged String
     | UseMapButtonClicked
     | MapResponseReceived (Response Snapshot)
+    | CloseLobbyButtonClicked
+    | CloseLobbyCanceled
+    | CloseLobbyConfirmed
+    | CloseLobbyResponseReceived (Response Bool)
+    | CloseDialogOpened
+    | CloseFocusReturned (Result Browser.Dom.Error ())
+    | HomeButtonClicked
     | StartButtonClicked
     | RetryButtonClicked
     | CopyLinkButtonClicked
@@ -400,8 +410,8 @@ hasJoinedHuman model =
     List.any isJoinedHuman model.players
 
 
-canChooseMap : Model -> Bool
-canChooseMap model =
+canManageLobby : Model -> Bool
+canManageLobby model =
     not (isBusy model) && model.isHost && (model.gameUrl == Nothing)
 
 
@@ -527,6 +537,20 @@ preloadMapImages mapType previews =
 receive : Snapshot -> Model -> ( Model, Eff Msg )
 receive snapshot model =
     let
+        rosterAudio : Audio.Event
+        rosterAudio =
+            if (model.gameUrl /= Nothing) || (snapshot.gameUrl /= Nothing) then
+                Audio.none
+
+            else if List.length snapshot.players > List.length model.players then
+                Audio.lobbyPlayerJoined
+
+            else if List.length snapshot.players < List.length model.players then
+                Audio.lobbyPlayerLeft
+
+            else
+                Audio.none
+
         preload : Eff Msg
         preload =
             if snapshot.mapType /= model.mapType then
@@ -544,6 +568,7 @@ receive snapshot model =
             }
             snapshot.id
         , preload
+        , E.audio rosterAudio
         ]
     )
 
@@ -651,7 +676,10 @@ sendChat model =
         Just ( chat, seed, submission ) ->
             ( { model | chat = chat }
                 |> setShared (Shared.setSeed seed model.shared)
-            , E.request (ChatSendReceived submission) (Chat.sendRequest model.id submission)
+            , E.batch
+                [ E.request (ChatSendReceived submission) (Chat.sendRequest model.id submission)
+                , E.audio Audio.chatSent
+                ]
             )
 
         Nothing ->
@@ -729,7 +757,7 @@ update msg model =
 
                 focus : Eff Msg
                 focus =
-                    if (model.screen == Setup) && Chat.isOpen chat then
+                    if (model.screen == Setup) && Chat.isOpen chat && not (isBusy model) then
                         E.focus { htmlId = ChatView.inputHtmlId } ChatFocusReturned
 
                     else
@@ -827,7 +855,7 @@ update msg model =
                 )
 
         ChooseMapButtonClicked ->
-            if not (canChooseMap model) then
+            if not (canManageLobby model) then
                 ( model, E.none )
 
             else
@@ -869,7 +897,7 @@ update msg model =
         UseMapButtonClicked ->
             case model.screen of
                 Library library ->
-                    if not (canChooseMap model) then
+                    if not (canManageLobby model) then
                         ( model, E.none )
 
                     else
@@ -912,6 +940,73 @@ update msg model =
                     Err error ->
                         ( model
                             |> setRequestStatus Idle
+                            |> setActionError (Just (ApiRequest.errorMessage error))
+                        , E.none
+                        )
+
+        HomeButtonClicked ->
+            ( model, Route.pushUrl Route.Home )
+
+        CloseLobbyButtonClicked ->
+            if not (canManageLobby model) then
+                ( model, E.none )
+
+            else
+                ( beginSettingsChange model
+                    |> setRequestStatus ConfirmingClose
+                , E.toJs (ToJs.OpenDialog { htmlId = closeDialogHtmlId })
+                )
+
+        CloseDialogOpened ->
+            ( model, E.focus { htmlId = closeCancelButtonHtmlId } CloseFocusReturned )
+
+        CloseLobbyCanceled ->
+            if model.requestStatus /= ConfirmingClose then
+                ( model, E.none )
+
+            else
+                ( model
+                    |> setRequestStatus Idle
+                    |> setActionError Nothing
+                , E.focus { htmlId = closeButtonHtmlId } CloseFocusReturned
+                )
+
+        CloseFocusReturned result ->
+            case result of
+                Ok () ->
+                    ( model, E.none )
+
+                Err error ->
+                    ( model
+                        |> setShared (Shared.addError (Just (ElementFocusFailed error)) model.shared)
+                    , E.none
+                    )
+
+        CloseLobbyConfirmed ->
+            if model.requestStatus /= ConfirmingClose then
+                ( model, E.none )
+
+            else
+                ( model
+                    |> setRequestStatus ClosingLobby
+                    |> setActionError Nothing
+                , Api.Mutation.closeLobby { id = LobbyId.toString model.id }
+                    |> ApiRequest.mutationRequest
+                    |> E.request CloseLobbyResponseReceived
+                )
+
+        CloseLobbyResponseReceived result ->
+            if model.requestStatus /= ClosingLobby then
+                ( model, E.none )
+
+            else
+                case result of
+                    Ok _ ->
+                        ( model, Route.pushUrl Route.Home )
+
+                    Err error ->
+                        ( model
+                            |> setRequestStatus ConfirmingClose
                             |> setActionError (Just (ApiRequest.errorMessage error))
                         , E.none
                         )
@@ -1005,8 +1100,12 @@ view model =
                 |> Maybe.map (H.map ChatMsg >> RequestError.toast)
                 |> Maybe.map List.singleton
                 |> Maybe.withDefault []
+
+        dialog : List (Html Msg)
+        dialog =
+            [ closeDialogView model ]
     in
-    pageView model ++ notification
+    pageView model ++ notification ++ dialog
 
 
 pageView : Model -> List (Html Msg)
@@ -1481,11 +1580,124 @@ lobbyActionsView model =
                 Nothing ->
                     H.text ""
     in
-    [ startControlsView model
+    [ H.div
+        [ A.css
+            [ S.row
+            , S.itemsCenter
+            , S.justifySpaceBetween
+            , S.flexWrap
+            , S.g3
+            ]
+        ]
+        [ startControlsView model
+        , closeLobbyControlView model
+        ]
     , errorNotice
     , retryControl
     ]
         |> Card.toHtml Card.simple
+
+
+closeButtonHtmlId : String
+closeButtonHtmlId =
+    "close-lobby"
+
+
+closeCancelButtonHtmlId : String
+closeCancelButtonHtmlId =
+    "cancel-close-lobby"
+
+
+closeDialogHtmlId : String
+closeDialogHtmlId =
+    "close-lobby-dialog"
+
+
+closeLobbyControlView : Model -> Html Msg
+closeLobbyControlView model =
+    let
+        closeControl : Html Msg
+        closeControl =
+            if model.isHost && (model.gameUrl == Nothing) then
+                H.fieldset
+                    [ A.disabled (isBusy model)
+                    , A.css
+                        [ S.border0
+                        ]
+                    ]
+                    [ Button.danger "close lobby" CloseLobbyButtonClicked
+                        |> Button.withHtmlId closeButtonHtmlId
+                        |> Button.toHtml
+                    ]
+
+            else
+                H.text ""
+    in
+    H.div
+        [ A.css
+            [ S.row
+            , S.itemsCenter
+            , S.flexWrap
+            , S.g3
+            ]
+        ]
+        [ Button.secondary "home" HomeButtonClicked
+            |> Button.toHtml
+        , closeControl
+        ]
+
+
+closeDialogView : Model -> Html Msg
+closeDialogView model =
+    let
+        isOpen : Bool
+        isOpen =
+            (model.requestStatus == ConfirmingClose) || (model.requestStatus == ClosingLobby)
+
+        errorNotice : Html Msg
+        errorNotice =
+            case model.actionError of
+                Just error ->
+                    H.p
+                        [ Aria.role Aria.Alert
+                        ]
+                        [ H.text error
+                        ]
+
+                Nothing ->
+                    H.text ""
+    in
+    if isOpen then
+        Dialog.make closeDialogHtmlId
+            "close lobby?"
+            CloseLobbyCanceled
+            [ H.p
+                []
+                [ H.text "this closes the lobby for everyone. the invite link will stop working."
+                ]
+            , errorNotice
+            , H.fieldset
+                [ A.disabled (model.requestStatus == ClosingLobby)
+                , A.css
+                    [ S.border0
+                    , S.row
+                    , S.flexWrap
+                    , S.g3
+                    ]
+                ]
+                [ Button.secondary "cancel" CloseLobbyCanceled
+                    |> Button.withHtmlId closeCancelButtonHtmlId
+                    |> Button.toHtml
+                , Button.danger "close lobby" CloseLobbyConfirmed
+                    |> Button.toHtml
+                ]
+            ]
+            |> Dialog.withCloseButton
+            |> Dialog.onOpened CloseDialogOpened
+            |> Dialog.toHtml
+
+    else
+        H.text ""
 
 
 inviteView : Model -> Html Msg

@@ -1,0 +1,23 @@
+{
+  "file": "chat-sent-radio-v1.ogg",
+  "title": "Recorded higher radio beep and crackle",
+  "author": "SEF7",
+  "sourcePage": "https://freesound.org/people/SEF7/sounds/701326/",
+  "sourceAudio": "https://cdn.freesound.org/previews/701/701326_15203576-hq.mp3",
+  "license": "CC0 1.0 Universal",
+  "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+  "sourceSha256": "d372d54c43e25f45cc7b0e69a4271d55013162b1ef1d1be783e0f3db377a713b",
+  "parentMasterSha256": "20fb37b154a0074b0f8a7e885b3521858696ba6d3382dfc01b86cebcce43320c",
+  "masterSha256": "1cc8763642793c51c5f6928cfaf1973240a986f3199085aaf36df5fe5055a286",
+  "sourceIntervalsSeconds": [
+    [
+      0.22,
+      0.44
+    ]
+  ],
+  "fadeInSeconds": 0.001,
+  "gainDb": -4.917906,
+  "durationSeconds": 0.22,
+  "processing": "Retain the original third (approximately 2kHz) beep and following cutoff crackle from the receive cue source recording, at original pitch and speed. Extract 0.220–0.440s from the original C audition master, apply a 1ms fade-in, and preserve its mono downmix, 4ms ending fade and −4.917906dB gain. Encode directly from WAV as Vorbis quality 6.",
+  "sha256": "85e19b03a097df55e78c8314af234844864d6f6af070065fa1d315347e6f9b93"
+}

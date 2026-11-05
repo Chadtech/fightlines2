@@ -4,6 +4,7 @@
 
 module Api.Object.MapDefinition exposing (..)
 
+import Api.Enum.MapReleaseStatus
 import Api.Enum.MapTheme
 import Api.InputObject
 import Api.Interface
@@ -18,6 +19,11 @@ import Graphql.Operation exposing (RootMutation, RootQuery, RootSubscription)
 import Graphql.OptionalArgument exposing (OptionalArgument(..))
 import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
+
+
+releaseStatus : SelectionSet Api.Enum.MapReleaseStatus.MapReleaseStatus Api.Object.MapDefinition
+releaseStatus =
+    Object.selectionForField "Enum.MapReleaseStatus.MapReleaseStatus" "releaseStatus" [] Api.Enum.MapReleaseStatus.decoder
 
 
 description : SelectionSet String Api.Object.MapDefinition

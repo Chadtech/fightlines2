@@ -1,27 +1,31 @@
 # Todo
 
-## Done
-
 ## doing now
+- Ability to tear down lobby (what happens to lobbies that time out? Is there a timeout?)
+- Prune list of maps
+- Better UI for notifying players they will be loading into trucks
+- movement sounds a pretty dang loud
+- Sound for when player joins or leaves lobby
+- sound when you send a message
+- Notice for new players describing the basics
 
 ## Bugs
 
 
 ## Immediately
-- Ability to tear down lobby (what happens to lobbies that time out? Is there a timeout?)
-- Prune list of maps
+
 
 ## Soon
-
-
-## Later
-
-## After prod launch
 - Tutorial missions
 - Manufacturing and cities
 - Air planes and boats
 - Day Night Cycle
+
+
+## Later
 - Horse logistics unit
+- Spectators
+- Name units
 
 
 ### Future units

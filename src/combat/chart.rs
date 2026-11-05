@@ -116,6 +116,7 @@ fn hit(
     };
     let definition = MapDefinition {
         description: String::new(),
+        release_status: Default::default(),
         width: 4,
         height: 3,
         theme: MapTheme::GreenForest,

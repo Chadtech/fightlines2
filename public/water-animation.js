@@ -1,4 +1,4 @@
-// Align direct CSS transforms when Elm creates tiles or inspection portraits.
+// Align CSS frame animations when Elm creates tiles or inspection portraits.
 // The invisible CSS timeline also pauses for combat and respects reduced motion.
 // No JavaScript runs on animation frames after a sprite has been aligned.
 (() => {

@@ -66,19 +66,22 @@ locked game returns `GAME_BUSY` rather than waiting on its lock. Busy rejections
 leave the authoritative turn unchanged; the UI preserves orders for a retry.
 This bounds simultaneous AI work; there is no per-calculation time limit.
 
-Lobby creation and turn submission also use separate, shared token budgets:
+Public write mutations also use separate, shared token budgets:
 
 | Mutation | Session burst / refill | IP burst / refill |
 | --- | --- | --- |
 | `createLobby` | 3 / one every 60 seconds | 10 / one every 15 seconds |
 | `submitTurn` | 6 / one every 2 seconds | 24 / one every 500 milliseconds |
+| `sendChat` | 8 / one every 2 seconds | 24 / one every 500 milliseconds |
+| `submitFeedback` | 2 / one every 5 minutes | 5 / one every minute |
 
 Both applicable budgets must allow the operation. Anonymous requests use the IP
 budget; once a session exists, its budget also applies. Each resolver invocation
 counts, including aliases, invalid inputs, and busy attempts. A rate rejection
 does not consume tokens or extend the wait. Rejections are ordinary GraphQL errors
 with `RATE_LIMITED` and `retryAfterSeconds`, so the UI shows the retry message.
-Polling, chat, and other operations do not consume these mutation budgets.
+Polling and other operations do not consume these mutation budgets. Dropping or
+rotating cookies does not bypass the shared IP budget.
 
 For the same-Droplet Caddy setup below, the server trusts the rightmost
 `X-Forwarded-For` address only when the socket peer is loopback. Other connections
@@ -247,7 +250,9 @@ The numbered output follows these steps:
    compiler. Local prerequisites are Node.js 22+, npm, Rust/Cargo, Elm 0.19.3,
    `elm-format`, Make, Git, FFmpeg with Vorbis support, tar, and `shasum`.
 4. The checked source, maps, runtime assets, generated frontend, and `RELEASE.json`
-   are packaged together. The script prints the temporary directory, release ID,
+   are packaged together. Packaging disables macOS metadata and excludes `._*`
+   files so Linux does not discover AppleDouble sidecars as maps.
+   The script prints the temporary directory, release ID,
    archive path, and SHA-256. Preparation files remain available there for inspection;
    remove the printed temporary directory when no longer needed.
 5. SSH/SCP verify the public host key recorded in `deploy/known_hosts`. The private
@@ -348,6 +353,32 @@ frontend and checks write access. New directories use Unix mode `0700` and files
 Storage must support hard links. Keep or remove submissions as needed; feedback
 has no automatic retention policy.
 
+Feedback has a server-wide storage budget of **32 MiB and 4,096 entries**.
+Chat has a separate budget of **128 MiB and 32,768 entries**, shared by all lobby
+journals and game chat records. Each conversation also accepts at most **1,000
+messages**, including its lobby history. Existing messages and idempotent chat
+retries remain readable/usable at capacity; new writes return `STORAGE_FULL`.
+These limits do not delete records or charge turn snapshots against chat capacity,
+so a full chat budget does not prevent game starts or turn recording.
+
+Budgets account for serialized UTF-8/JSON size, round files to 4 KiB, and charge
+another 4 KiB per file for metadata. Journal directories also consume an entry
+and 4 KiB. Chat prepays a second file charge per message to cover the transcript
+copy embedded when its game starts. Startup scans existing storage, including
+interrupted/malformed files and embedded transcript copies, before serving writes;
+restarting cannot reset usage. Reconstruction is conservative and can reduce the
+remaining capacity further. Existing storage above a limit remains intact and
+blocks new submissions of that kind.
+
+Admission and file publication share a process-wide budget lock. Failed writes
+release their reservation when cleanup succeeds; leftover files keep it. These
+are application accounting limits for the single-server-process deployment, not
+filesystem quotas. Do not have multiple server processes or external writers
+share these directories. To reclaim capacity, stop the service, back up/remove
+old records, and restart so usage is rescanned. Chat journals may also have copies
+in the corresponding initial game archive; retaining either copy retains its
+charge. The budgets do not cap ordinary game archives or diagnostic logs.
+
 ## Game archives
 
 The server records every normally started game in `game-logs/` by default.
@@ -432,7 +463,11 @@ Finished games remain accessible for 16 minutes after victory, draw, or resignat
 An automatic sweep removes them from memory once per minute; busy games are retried
 on a later sweep. Polling and repeated requests do not extend this window. After
 removal, their live game and lobby URLs report that the game no longer exists.
-Replay archives remain on disk. Unstarted lobbies and unfinished games do not expire yet.
+Replay archives remain on disk. The same sweep removes unstarted lobbies after
+30 minutes without a successful join, setup change, or chat send. Lobby and chat
+polling do not extend this timer. Hosts can close unstarted lobbies immediately;
+closing or expiring a lobby preserves its on-disk chat journal. The timeout is
+`INACTIVITY_TIMEOUT` in `src/lobby.rs`. Unfinished games do not expire.
 
 Archives survive server restarts, but active games and lobbies still do not resume
 after restart. There is no automatic archive retention or deletion yet: monitor disk

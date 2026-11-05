@@ -577,6 +577,7 @@ pub fn get(context: &Context, id: LobbyId) -> FieldResult<GameSnapshot> {
         server_log::internal_error("The server state is unavailable.")
     })?;
     let game = match &*entry {
+        GameRegistry::Closed => return error("this game no longer exists."),
         GameRegistry::Lobby(_) => return error("The host has not started the game yet."),
         GameRegistry::Game(game) => game,
     };
@@ -597,6 +598,7 @@ pub fn resign(context: &Context, id: LobbyId) -> FieldResult<GameSnapshot> {
         server_log::internal_error("the server state is unavailable.")
     })?;
     let game = match &mut *entry {
+        GameRegistry::Closed => return error("this game no longer exists."),
         GameRegistry::Lobby(_) => return error("this game no longer exists."),
         GameRegistry::Game(game) => game,
     };
@@ -628,6 +630,7 @@ pub fn submit_turn(
         server_log::internal_error("the server state is unavailable.")
     })?;
     let game = match &mut *entry {
+        GameRegistry::Closed => return error("this game no longer exists."),
         GameRegistry::Lobby(_) => return error("this game no longer exists."),
         GameRegistry::Game(game) => game,
     };

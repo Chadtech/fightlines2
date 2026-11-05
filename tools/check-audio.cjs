@@ -124,11 +124,19 @@ async function main() {
   }
   assert.equal(ambienceManifest.clips.find(clip => clip.environment === 'plains').sourcePage,
     'https://freesound.org/people/felix.blume/sounds/215414/', 'plains uses approved Oklahoma choice C');
-  const chatManifest = JSON.parse(readFileSync('public/audio/chat-received-radio-v1.json', 'utf8'));
-  const chatBytes = readFileSync(`public/audio/${chatManifest.file}`);
-  assert.equal(chatBytes.subarray(0, 4).toString(), 'OggS', 'approved chat recording is packaged as Ogg');
-  assert.equal(createHash('sha256').update(chatBytes).digest('hex'), chatManifest.sha256);
-  assert.equal(chatManifest.license, 'CC0 1.0 Universal');
+  for (const name of ['received', 'sent']) {
+    const chatManifest = JSON.parse(readFileSync(`public/audio/chat-${name}-radio-v1.json`, 'utf8'));
+    const chatBytes = readFileSync(`public/audio/${chatManifest.file}`);
+    assert.equal(chatBytes.subarray(0, 4).toString(), 'OggS', 'chat recording is packaged as Ogg');
+    assert.equal(createHash('sha256').update(chatBytes).digest('hex'), chatManifest.sha256);
+    assert.equal(chatManifest.license, 'CC0 1.0 Universal');
+  }
+  const lobbyManifest = JSON.parse(readFileSync('public/audio/lobby-presence-v1.json', 'utf8'));
+  for (const clip of lobbyManifest.clips) {
+    const bytes = readFileSync(`public/audio/${clip.file}`);
+    assert.equal(bytes.subarray(0, 4).toString(), 'OggS', 'lobby recording is packaged as Ogg');
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), clip.sha256);
+  }
 
   const mixer = boot();
   const mix = { master: 40, combat: 70, movement: 30, ambience: 20, interface: 60 };
@@ -164,6 +172,18 @@ async function main() {
   assert.equal(mixer.errors[0].operation, 'invalid volumes');
   await mixer.audio.handleEvent({ play: 'chatReceived' });
   assert.equal(mixer.voices.at(-1).destination, uiBus, 'incoming chat uses the interface volume bus');
+  const receivedBuffer = mixer.voices.at(-1).buffer;
+  const beforeSend = mixer.voices.length;
+  await mixer.audio.handleEvent({ play: 'chatSent' });
+  assert.equal(mixer.voices.length, beforeSend + 1, 'sending and receiving do not suppress one another');
+  assert.equal(mixer.voices.at(-1).destination, uiBus, 'outgoing chat uses the interface volume bus');
+  assert.notEqual(mixer.voices.at(-1).buffer, receivedBuffer, 'sending uses a distinct recording');
+  await mixer.audio.handleEvent({ play: 'chatSent' });
+  assert.equal(mixer.voices.length, beforeSend + 1, 'rapid duplicate send cues are coalesced');
+  for (const play of ['lobbyPlayerJoined', 'lobbyPlayerLeft']) {
+    await mixer.audio.handleEvent({ play });
+    assert.equal(mixer.voices.at(-1).destination, uiBus, 'lobby presence uses the interface volume bus');
+  }
   await mixer.audio.handleEvent({ volumes: { ...mix, interface: 0 } });
   assert.equal(uiBus.gain.value, 0, 'zero interface volume silences chat notifications too');
 
@@ -185,6 +205,9 @@ async function main() {
     '/audio/ui-cancel-switch-v1.ogg',
     '/audio/ui-confirm-switch-v1.ogg',
     '/audio/chat-received-radio-v1.ogg',
+    '/audio/chat-sent-radio-v1.ogg',
+    '/audio/lobby-player-joined-pager-v1.ogg',
+    '/audio/lobby-player-left-scanner-v1.ogg',
     '/audio/combat/field-gun-fire-01.ogg',
     '/audio/combat/field-gun-fire-02.ogg',
     '/audio/combat/field-gun-fire-03.ogg',
@@ -205,7 +228,7 @@ async function main() {
     '/audio/movement/infantry-stib-2x.ogg',
     '/audio/combat/infantry-fire-heavy-v1.ogg',
   ]);
-  assert.equal(app.contexts[0].decodes, 23);
+  assert.equal(app.contexts[0].decodes, 26);
 
   const stalledAudio = boot({ firstLoadHangs: true });
   await stalledAudio.gesture();
@@ -221,7 +244,7 @@ async function main() {
   }
   assert.equal(app.voices.length, 5);
   assert.equal(app.voices[0].stopped, true, 'voice limit replaces the oldest voice');
-  assert.equal(app.contexts[0].decodes, 23, 'decoded buffers are reused');
+  assert.equal(app.contexts[0].decodes, 26, 'decoded buffers are reused');
   app.voices[1].finish();
   assert.equal(app.voices[1].disconnected, true);
   app.audio.setVolume(0);
@@ -256,6 +279,9 @@ async function main() {
   assert.equal(muted.contexts[0].master.gain.value, 0, 'muting before the first gesture starts silent');
   await muted.audio.handleEvent({ play: 'confirm' });
   await muted.audio.handleEvent({ play: 'chatReceived' });
+  await muted.audio.handleEvent({ play: 'chatSent' });
+  await muted.audio.handleEvent({ play: 'lobbyPlayerJoined' });
+  await muted.audio.handleEvent({ play: 'lobbyPlayerLeft' });
   await muted.audio.handleEvent({ movement: [{ unitId: 'tank', sound: 'tank' }] });
   await muted.audio.handleEvent({ ambience: [{ environment: 'forest', pan: 0 }] });
   assert.equal(muted.voices.length, 0, 'muted pages discard all sound categories');
@@ -335,7 +361,7 @@ async function main() {
   await ambience.audio.handleEvent({ ambience: [plains] });
   assert.equal(ambience.contexts.length, 0, 'ambience cannot unlock the context');
   await ambience.gesture();
-  assert.equal(ambience.requests.length, 23, 'ambience loads only when the theater needs it');
+  assert.equal(ambience.requests.length, 26, 'ambience loads only when the theater needs it');
   await ambience.audio.handleEvent({ ambience: [plains, forest] });
   assert.equal(ambience.voices.length, 2);
   assert.ok(ambience.voices.every(voice => voice.loop && voice.started));

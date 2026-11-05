@@ -1,11 +1,13 @@
 //! URL-accessible conversation state, independent of battlefield authorization.
 use crate::{
     graphql::Context, lobby_id::LobbyId, player::Player, player_number::PlayerNumber, server_log,
-    session_token::SessionToken, store::GameRegistry,
+    session_token::SessionToken, storage_budget, store::GameRegistry,
 };
 use juniper::{FieldResult, GraphQLInputObject, GraphQLObject};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+const MAX_MESSAGES: usize = 1000;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, GraphQLObject)]
 pub struct ChatMessage {
@@ -123,6 +125,11 @@ impl Transcript {
             }
             return Ok(previous.message.clone());
         }
+        if self.accepted.len() >= MAX_MESSAGES {
+            return Err(storage_budget::full(
+                "this conversation has reached its 1000-message limit.",
+            ));
+        }
         let sequence = i32::try_from(self.accepted.len())
             .ok()
             .and_then(|count| count.checked_add(1))
@@ -177,6 +184,7 @@ pub fn messages(context: &Context, id: LobbyId, after: i32) -> FieldResult<Vec<C
         .ok_or("this conversation no longer exists.")?;
     let entry = entry.lock().map_err(|_| unavailable())?;
     Ok(match &*entry {
+        GameRegistry::Closed => return Err("this conversation no longer exists.".into()),
         GameRegistry::Lobby(lobby) => lobby.chat_messages(after),
         GameRegistry::Game(game) => game.chat_messages(after),
     })
@@ -201,12 +209,16 @@ pub fn send(context: &Context, input: SendChatInput) -> FieldResult<ChatMessage>
     };
     let mut entry = entry.lock().map_err(|_| unavailable())?;
     match &mut *entry {
+        GameRegistry::Closed => Err("this conversation no longer exists.".into()),
         GameRegistry::Lobby(lobby) => lobby.send_chat(context, session, draft),
         GameRegistry::Game(game) => game.send_chat(session, draft),
     }
 }
 
 pub fn recording_error(error: std::io::Error) -> juniper::FieldError {
+    if error.kind() == std::io::ErrorKind::StorageFull {
+        return storage_budget::full("chat storage is full. new messages cannot be saved.");
+    }
     tracing::error!(event = "chat_record_failed", error = %error, "could not record chat");
     server_log::internal_error("message not sent. please try again.")
 }
@@ -476,6 +488,34 @@ mod tests {
             .fixture()?;
         assert_eq!(transcript.messages(1), vec![second]);
         assert!(!serde_json::to_string(&first)?.contains("private-cookie"));
+        Ok(())
+    }
+
+    #[test]
+    fn full_conversation_rejects_new_messages_but_accepts_retries() -> TestResult<()> {
+        let mut transcript = Transcript::default();
+        for index in 0..MAX_MESSAGES {
+            transcript
+                .send(
+                    submission(&format!("message-{index}"), "hello").fixture()?,
+                    |_| Ok(()),
+                )
+                .fixture()?;
+        }
+        assert!(
+            transcript
+                .send(submission("overflow", "hello").fixture()?, |_| Err(
+                    "must not write".into()
+                ))
+                .is_err()
+        );
+        let retry = transcript
+            .send(submission("message-0", "hello").fixture()?, |_| {
+                Err("must not write".into())
+            })
+            .fixture()?;
+        assert_eq!(retry.sequence, 1);
+        assert_eq!(transcript.messages(0).len(), MAX_MESSAGES);
         Ok(())
     }
 }

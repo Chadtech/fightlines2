@@ -34,8 +34,17 @@ pitch, with short edge fades. Runtime files and source credits are documented in
 
 Incoming lobby/game chat uses the approved recorded radio cue: one beep followed
 by a short crackle (233.5ms). Play once per newly received batch from another
-sender, using the interface volume channel. Initial history and the player's
-own messages stay silent.
+sender, using the interface volume channel. Sending a valid message plays the
+higher third beep from the same Cobra recording, followed by the identical
+cutoff crackle (220ms). Play it immediately when a send or retry begins, for both
+Enter and the send button. Blank or blocked submissions, send responses, initial
+history, and the player's own poll echoes stay silent.
+
+Lobby roster additions play the approved two-beep fire-pager recording (210ms);
+removals play the store-scanner beep with its decay (300ms). Both use the
+interface volume channel. Initial loading, unchanged polls, side swaps, and
+the transition into a game stay silent. Adding or removing an AI also changes
+the roster and plays the corresponding cue.
 
 ## Typography and copy
 
@@ -240,7 +249,12 @@ omits this decorative cycle and retains the original green background.
   cards; let player settings scroll within their area on short screens. Put a
   separate action card below
   both columns, with `start game` at the left and its blocking reason immediately
-  beside it.
+  beside it. Put secondary `home` and host-only red `close lobby` controls on the
+  right, wrapping on narrow screens. Closing opens a native confirmation dialog
+  explaining that everyone loses access and the invite link stops working.
+  Focus `cancel` initially; Escape, cancel, and the title-bar close return focus
+  to `close lobby`. Disable duplicate requests while closing, retain errors in
+  the dialog for retry, and return home on success.
   Below 720px, stack battlefield, players, and chat inside a scrolling workspace
   while keeping the header and action bar visible. Keep creation and joining as
   centered compact forms.
@@ -577,10 +591,13 @@ omits this decorative cycle and retains the original green background.
   departure also revokes plans depending on its freed square.
 - Compatible loading squares appear with ordinary move destinations. Clicking
   an occupied loading square saves the selected unit's move, including keyboard
-  Enter/Space, and preserves that unit's selection. Show load/unload destination
-  labels and explain the receiving unit's hold requirement in the right panel.
-  Show a gold notice naming the pickup or boarding target during route preview
-  and beneath the saved order.
+  Enter/Space, and preserves that unit's selection. During route preview and on
+  saved loading orders, show a large passenger → truck diagram using the units'
+  existing team-colored portraits over nightwood3. Its caption reads `boards truck`
+  and `when both arrive`, at the ordinary interface text size. Use one muted
+  yellow2 block around the artwork and behind the caption, without a contrasting
+  border or bevel. Omit the loading order's coordinate/movement summary and the
+  receiving-cargo explanation. Keep unload summaries and other order details.
 - Truck status shows `cargo: current / capacity` above a nightwood inset passenger
   list. Each selectable row reuses the unload dialog's small portrait, kind name,
   and compact health and supply meters. Rows stay flat, with visible hover and
@@ -671,7 +688,8 @@ Use a red (`red1`) heart on light gray (`gray5`), a dark brown (`yellow1`)
 `ø` on gold (`yellow5`) with an opaque near-black (`gray0`) border, and a red
 (`red1`) `E` on near-black (`gray0`). Draw symbols as vector
 shapes so they remain clear and the fuel symbol stays uppercase.
-At zero supplies, replace the `ø` with a boxed `!` using the same gold badge.
+At zero supplies, replace the gold `ø` badge with an ivory (`gray5`) outline skull
+on a burgundy (`red0`) square with an opaque ivory border.
 Keep the living unit visible, and use `exhausted` in its accessible warning label.
 The shared inspector shows `exhausted · resupply within 2 turns`, decreasing to
 `1 turn` on the final rescue turn. Keep the countdown private with resource gauges.
@@ -972,6 +990,24 @@ After every unloading infantry has an order, Escape only clears selection and
 keeps the completed plan. Trucks unloading only field guns or freight complete
 the sequence when their final cargo choice is saved.
 
+## First-game briefing
+
+Before a player's first active game, show a wide native reading dialog titled
+`before your first turn`, ahead of the ordinary turn introduction. Use a
+normal-size gold `welcome to fightlines!` greeting on an inset nightwood3 strip
+with a gentle diagonal glare every 4.8 seconds; reduced motion keeps it still.
+Explain that resupply is a core game mechanic and units can be lost without it,
+including supply consumption while holding position. Illustrate the depot →
+truck → front-line delivery loop with the existing game artwork and three short
+steps. Show a small cross-shaped example of resupply reach, the separate role of
+fuel, and the two-turn deadline for exhausted units. Keep the close and play
+actions outside the scrolling content so they stay visible on short screens.
+
+The title-bar close, Escape, and `got it — let's play` all remember dismissal in
+browser storage across games and reloads. Keep this preference separate from
+turn-introduction skipping; closing the briefing continues to the normal turn
+introduction, when enabled. Omit any “only appears once” caption.
+
 ## Turn introduction
 
 Introduce each planning turn with a centered, wide beveled modal over a dimmed
@@ -1095,7 +1131,9 @@ editor previews, and terrain inspection share the same artwork and fog styling.
 
 Contain all editor content in beveled cards within the viewport; the page itself
 does not scroll. The top editor card contains map selection, undo/redo, the gold
-save action, play navigation, theme, dimensions, resize, and live save feedback.
+save action, play navigation, release status, theme, dimensions, resize, and live
+save feedback. The release status select offers **draft** and **released**; changes
+apply when saving, and new maps start as drafts.
 Place a secondary **new map** button beside the map actions. It reveals an inline
 map-name field with **create draft** and **cancel**, with validation beside the
 field. A new draft starts with a blank 17 × 17 board and uses the existing theme,

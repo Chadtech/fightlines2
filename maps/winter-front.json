@@ -1,4 +1,5 @@
 {
+  "releaseStatus": "Draft",
   "description": "a vast 64 \u00d7 64 snow battlefield with 256 units split into four combined-arms groups per side. fight across four broad river causeways, alpine lakes, sandy coves, rocky cliffs, snowy plains, forests, hills, and mountain passes. a connected highway and service-road network includes every road shape. each side commands 64 infantry, 24 tanks, 16 field guns, and 24 trucks; 32 supply depots, 16 fuel depots, and 16 fortresses support a long winter offensive. mirrored deployments and supply lines give both armies equal approaches, with infantry garrisoning the forward bastions.",
   "width": 64,
   "height": 64,

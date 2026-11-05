@@ -1,6 +1,7 @@
 port module Game.Checks.Roads exposing (main)
 
 import Api.Enum.Direction as Direction exposing (Direction)
+import Api.Enum.MapReleaseStatus as MapReleaseStatus
 import Api.Enum.MapTheme as MapTheme
 import Api.Enum.Terrain as TerrainApi
 import EditableMap exposing (Definition)
@@ -36,6 +37,7 @@ expect label passed =
 definition : List Coordinate -> Definition
 definition positions =
     { description = "road authoring fixture"
+    , releaseStatus = MapReleaseStatus.Draft
     , width = 3
     , height = 3
     , theme = MapTheme.GreenForest

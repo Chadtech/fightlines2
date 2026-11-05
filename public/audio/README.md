@@ -4,7 +4,7 @@
 
 `movement/infantry-stib-2x.ogg` is the approved 12.909-second stereo, 48kHz
 marching loop, encoded at Vorbis quality 6 from its WAV master without changing
-gain, pitch, or channel layout.
+pitch or channel layout, with a baked-in −6dB gain reduction.
 
 - Source: [marching-loop.aif by stib](https://freesound.org/people/stib/sounds/240724/).
 - License: **CC0**, as listed on the source page.
@@ -21,8 +21,8 @@ logged replays.
 
 ## Vehicle movement
 
-The approved six-second mono, 48kHz loops are copied unchanged from the local
-auditions:
+The approved six-second mono, 48kHz loops are encoded at Vorbis quality 6 from
+the local audition WAV masters, with a baked-in −6dB gain reduction:
 
 | Runtime file | Recording | Source excerpt |
 | --- | --- | --- |
@@ -30,10 +30,18 @@ auditions:
 | `movement/truck-volvo-6s.ogg` | [Volvo Semi Truck OB Highway Drive Med 03 M2 by Richard King / Pro Sound Effects](https://www.prosoundeffects.com/sound-effects/PSE_KCVV4/GnTXs/volvo-semi-truck-ob-highway-drive-med-03-m2) | 32.0–38.6s |
 
 Both excerpts use a 600ms equal-power overlap, a 35Hz high-pass filter and gentle
-short-term level smoothing limited to ±2dB. Overall RMS is −22dBFS. The approved
-Vorbis files, WAV masters, extraction metadata and source hashes are retained in
+short-term level smoothing limited to ±2dB. The audition masters have an overall
+RMS of −22dBFS; the quieter runtime files measure approximately −28dBFS. The approved
+audition Vorbis files, WAV masters, extraction metadata and source hashes are retained in
 the ignored `audio-experiments/vehicle-movement-recordings-v1/` directory under
 `tank-revision-v2/` and `truck-revision-v2/`.
+
+All three movement recordings apply the same reduction directly in the runtime
+files, including the marching loop shared by infantry and field guns. Re-export
+from the retained WAV masters with FFmpeg's `-af volume=-6dB -c:a libvorbis -q:a 6`,
+preserving the existing attribution metadata. Keep the audition masters at their
+original gain; apply this reduction once when encoding runtime assets. Duration,
+loop timing, sample rate, channel layout and browser playback gain are unchanged.
 
 The tank source is **CC0**, extracted from its public high-quality MP3 rendition.
 The Volvo source is **paid**, and this development asset derives from its public
@@ -78,7 +86,7 @@ hashes are retained in the ignored `audio-experiments/command-console-switch-003
 and `audio-experiments/command-console-confirm-v1/` directories. Normal builds
 need only the runtime Oggs.
 
-## Chat notification
+## Chat notifications
 
 `chat-received-radio-v1.ogg` is the approved **C2** audition: the first beep
 followed by the original crackle from a real Cobra walkie-talkie, recorded with
@@ -97,10 +105,50 @@ directly from the approved WAV master.
 
 The source, page snapshot, approved master and `simplify-c.py` remain under the
 ignored `audio-experiments/chat-notifications-recordings-v1/` directory.
-`chatReceived` uses the interface volume channel and the ordinary mute,
-gesture-unlock and hidden-page behavior. Live lobby/game polls request one cue
+`chat-sent-radio-v1.ogg` uses the third, higher beep (approximately 2kHz) from
+the same Cobra recording, immediately followed by its original cutoff crackle.
+It is mono, 48kHz and 220ms long. Extract 0.220–0.440s from the original C
+audition master, add a 1ms fade-in, and preserve its gain, 4ms ending fade, pitch
+and speed. The final 119.5ms of the WAV master is sample-identical to the
+receive cue's cutoff. Encode as Vorbis quality 6. Its
+[source manifest](chat-sent-radio-v1.json) records provenance and hashes; the
+WAV master remains in the same ignored auditions directory.
+
+`chatReceived` and `chatSent` use the interface volume channel and the ordinary
+mute, gesture-unlock and hidden-page behavior. Live lobby/game polls request one cue
 for a batch containing new messages from another sender. Initial history,
 duplicate polls, send acknowledgments and the player's own poll echoes stay silent.
+Lobby/game send helpers request `chatSent` immediately after accepting a valid
+submission, including Enter, the send button and retry. Blank messages and
+attempts blocked by a pending submission stay silent.
+
+## Lobby presence
+
+The approved lobby cues retain their recorded pitch, speed, stereo layout and
+44.1kHz sample rate. Runtime Oggs are encoded at Vorbis quality 6 directly from
+the approved WAV auditions, without further gain changes or effects.
+
+| Cue / file | Source | Edit | Duration |
+| --- | --- | --- | --- |
+| `lobbyPlayerJoined` / `lobby-player-joined-pager-v1.ogg` | [Fire Pager by jason](https://soundbible.com/1766-Fire-Pager.html), public domain | Two consecutive beeps from 0.345–0.555s, with their original spacing | 210ms |
+| `lobbyPlayerLeft` / `lobby-player-left-scanner-v1.ogg` | [Store Scanner Beep by zerolagtime](https://freesound.org/people/zerolagtime/sounds/144418/), CC0 | 0–0.300s, preserving the beep and short decay | 300ms |
+
+The pager uses the source WAV. The scanner uses the public high-quality MP3
+rendition; its creator credits the original recording to bsumusictech and had
+already removed background noise and added light reverb. The approved edits
+add only linear edge fades (pager: 1ms in/5ms out; scanner: 1ms in/20ms out) and
+constant gain to −9dBFS peak. No pitch shifting, time stretching, EQ or additional
+reverb was added.
+
+[Source manifest](lobby-presence-v1.json) records exact intervals, gain, licenses
+and source/master/runtime hashes. Source files, page snapshots and approved WAV
+auditions remain in the ignored `audio-experiments/lobby-presence-v1/` directory.
+
+Both cues use the interface channel and existing mute, gesture-unlock and
+hidden-page behavior. Lobby snapshot updates play once when the roster grows
+or shrinks, including adding/removing AI. Initial loading, repeated polls,
+side swaps and started-game snapshots stay silent. Closing a human player's
+tab currently retains their membership, so it does not produce a departure cue.
 
 ## Previous gamelan UI cues (inactive)
 

@@ -244,8 +244,16 @@ confirm. They last 230ms, 230ms, and 300ms respectively; source credit and
 extraction details are in `public/audio/README.md`.
 `Audio.chatReceived` plays the approved 233.5ms recorded radio beep and crackle
 on the interface channel. Live lobby/game polls emit it once for new messages
-from another sender; initial history, duplicate polls and your own messages
-remain silent.
+from another sender. `Audio.chatSent` plays a higher recorded beep with the same
+cutoff crackle (220ms) immediately when a valid send or retry begins. Both use
+the interface channel. Initial history, duplicate polls, send responses and
+your own poll echoes remain silent.
+`LobbyPage.receive` compares roster sizes for `Audio.lobbyPlayerJoined` (the
+approved two-beep pager) and `Audio.lobbyPlayerLeft` (the scanner beep). Both
+use the interface channel, including AI additions/removals. Initial loading,
+unchanged rosters, side swaps, and started-game snapshots stay silent. Human
+membership currently persists when a browser tab closes; audio follows roster
+changes rather than browser connectivity.
 Live-game messages select their UI cue in `GamePage.playAudio`, including nested
 view and playback messages. Opening menus, selecting objects, adjusting discrete
 camera controls, and choosing orders play `affirm`. Saving orders, confirming

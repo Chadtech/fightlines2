@@ -137,7 +137,7 @@ badge index warning =
                     S.yellow1Str
 
                 Exhausted ->
-                    S.yellow1Str
+                    S.gray5Str
 
                 LowFuel ->
                     S.red1Str
@@ -152,7 +152,7 @@ badge index warning =
                     S.yellow5Str
 
                 Exhausted ->
-                    S.yellow5Str
+                    S.red0Str
 
                 LowFuel ->
                     S.gray0Str
@@ -166,7 +166,7 @@ badge index warning =
                     }
 
                 Exhausted ->
-                    { color = S.gray0Str
+                    { color = S.gray5Str
                     , opacity = "1"
                     }
 
@@ -204,11 +204,31 @@ badge index warning =
                         ]
 
                 Exhausted ->
-                    Svg.path
-                        [ SA.d "M10.5 4H13.5V14H10.5ZM10.5 17H13.5V20H10.5Z"
-                        , SA.fill foreground
+                    Svg.g
+                        [ SA.transform "translate(2.4 2.4) scale(0.8)"
+                        , SA.fill "none"
+                        , SA.stroke foreground
+                        , SA.strokeWidth "2.4"
+                        , SA.strokeLinecap "round"
+                        , SA.strokeLinejoin "round"
                         ]
-                        []
+                        [ Svg.path
+                            [ SA.d "M15 22v-4a4 4 0 0 0 3-4 2 2 0 0 0 1-1 8 8 0 1 0-14 0 2 2 0 0 0 1 1 4 4 0 0 0 3 4v4ZM12.5 17l-.5-1-.5 1Z"
+                            ]
+                            []
+                        , Svg.circle
+                            [ SA.cx "9"
+                            , SA.cy "12"
+                            , SA.r "1"
+                            ]
+                            []
+                        , Svg.circle
+                            [ SA.cx "15"
+                            , SA.cy "12"
+                            , SA.r "1"
+                            ]
+                            []
+                        ]
 
                 LowFuel ->
                     Svg.path

@@ -169,6 +169,17 @@ joinLobby requiredArgs____ object____ =
     Object.selectionForCompositeField "joinLobby" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "name" requiredArgs____.name Encode.string ] object____ Basics.identity
 
 
+type alias CloseLobbyRequiredArguments =
+    { id : String }
+
+
+closeLobby :
+    CloseLobbyRequiredArguments
+    -> SelectionSet Bool RootMutation
+closeLobby requiredArgs____ =
+    Object.selectionForField "Bool" "closeLobby" [ Argument.required "id" requiredArgs____.id Encode.string ] Decode.bool
+
+
 type alias SetLobbyMapRequiredArguments =
     { id : String
     , mapType : Api.ScalarCodecs.MapId

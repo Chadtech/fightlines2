@@ -1,5 +1,10 @@
 //! Private, durable player feedback, independent of games and operational logs.
-use crate::{app_version, graphql::Context, server_log};
+use crate::{
+    app_version,
+    graphql::Context,
+    server_log,
+    storage_budget::{self, Budget, Capacity, Usage},
+};
 use juniper::FieldResult;
 use serde::Serialize;
 use std::{
@@ -11,9 +16,14 @@ use std::{
 };
 
 const MAX_CHARACTERS: usize = 5000;
+const MAX_STORAGE_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_STORAGE_ENTRIES: u64 = 4096;
 static NEXT_FILE: AtomicU64 = AtomicU64::new(0);
 
-pub struct Directory(PathBuf);
+pub struct Directory {
+    path: PathBuf,
+    budget: Budget,
+}
 
 struct FeedbackText(String);
 
@@ -77,7 +87,17 @@ impl Directory {
         let probe = path.join(format!(".probe-{}", file_id()?));
         private_file(&probe)?.sync_all()?;
         fs::remove_file(probe)?;
-        Ok(Self(path))
+        let used = storage_usage(&path)?;
+        Ok(Self {
+            path,
+            budget: Budget::new(
+                Capacity {
+                    bytes: MAX_STORAGE_BYTES,
+                    entries: MAX_STORAGE_ENTRIES,
+                },
+                used,
+            ),
+        })
     }
 
     fn save(&self, text: FeedbackText) -> io::Result<()> {
@@ -85,8 +105,8 @@ impl Directory {
             .duration_since(UNIX_EPOCH)
             .map_err(io::Error::other)?;
         let id = file_id()?;
-        let pending = self.0.join(format!(".{id}.pending"));
-        let published = self.0.join(format!("feedback-{id}.json"));
+        let pending = self.path.join(format!(".{id}.pending"));
+        let published = self.path.join(format!("feedback-{id}.json"));
         let record = Record {
             submitted_at_unix_ms: submitted_at.as_millis(),
             server_version: app_version::current(),
@@ -94,6 +114,7 @@ impl Directory {
         };
         let mut bytes = serde_json::to_vec_pretty(&record)?;
         bytes.push(b'\n');
+        let reservation = self.budget.reserve(Usage::file(bytes.len() as u64))?;
         let mut file = private_file(&pending)?;
         let result = (|| -> io::Result<()> {
             file.write_all(&bytes)?;
@@ -101,7 +122,7 @@ impl Directory {
             // Publish a complete record without overwriting an existing submission.
             fs::hard_link(&pending, &published)?;
             #[cfg(unix)]
-            if let Err(error) = File::open(&self.0).and_then(|directory| directory.sync_all()) {
+            if let Err(error) = File::open(&self.path).and_then(|directory| directory.sync_all()) {
                 if let Err(cleanup) = fs::remove_file(&published) {
                     tracing::error!(event = "feedback_rollback_failed", error = %cleanup, "could not roll back feedback publication");
                 }
@@ -113,8 +134,21 @@ impl Directory {
         if let Err(error) = fs::remove_file(&pending) {
             tracing::error!(event = "feedback_cleanup_failed", error = %error, "could not clean up temporary feedback file");
         }
+        if published.exists() || pending.exists() {
+            reservation.retain();
+        }
         result
     }
+}
+
+fn storage_usage(path: &Path) -> io::Result<Usage> {
+    storage_budget::scan(path, &|_, metadata| {
+        Ok(if metadata.is_dir() {
+            Usage::directory()
+        } else {
+            Usage::file(metadata.len())
+        })
+    })
 }
 
 fn file_id() -> io::Result<String> {
@@ -146,6 +180,9 @@ pub fn submit(context: &Context, text: &str) -> FieldResult<bool> {
         server_log::internal_error("feedback is unavailable. please try again later.")
     })?;
     directory.save(text).map_err(|error| {
+        if error.kind() == io::ErrorKind::StorageFull {
+            return storage_budget::full("feedback storage is full. new feedback cannot be saved.");
+        }
         tracing::error!(event = "feedback_save_failed", error = %error, "could not save feedback");
         server_log::internal_error("could not save your feedback. please try again.")
     })?;
@@ -156,6 +193,86 @@ pub fn submit(context: &Context, text: &str) -> FieldResult<bool> {
 mod tests {
     use super::*;
     use crate::test_support::{FixtureValue, TestResult};
+
+    #[test]
+    fn storage_limit_survives_reopening_and_failed_writes_release_capacity() -> TestResult<()> {
+        let root = std::env::temp_dir().join(format!("fightlines-feedback-budget-{}", file_id()?));
+        let frontend = root.join("public");
+        fs::create_dir_all(&frontend)?;
+        let path = root.join("feedback");
+        let mut directory = Directory::open(path.clone(), &frontend)?;
+        directory.budget = Budget::new(
+            Capacity {
+                bytes: 8192,
+                entries: 1,
+            },
+            Usage::default(),
+        );
+        let offline = root.join("offline");
+        fs::rename(&path, &offline)?;
+        assert!(
+            directory
+                .save(FeedbackText::parse("retry me").fixture()?)
+                .is_err()
+        );
+        fs::rename(&offline, &path)?;
+        directory.save(FeedbackText::parse("saved").fixture()?)?;
+        let error = directory
+            .save(FeedbackText::parse("full").fixture()?)
+            .err()
+            .fixture()?;
+        assert_eq!(error.kind(), io::ErrorKind::StorageFull);
+        assert_eq!(fs::read_dir(&path)?.count(), 1);
+        let mut reopened = Directory::open(path.clone(), &frontend)?;
+        reopened.budget = Budget::new(
+            Capacity {
+                bytes: 8192,
+                entries: 1,
+            },
+            storage_usage(&path)?,
+        );
+        assert_eq!(
+            reopened
+                .save(FeedbackText::parse("still full").fixture()?)
+                .err()
+                .fixture()?
+                .kind(),
+            io::ErrorKind::StorageFull
+        );
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
+    fn storage_charges_serialized_unicode_and_json_escapes() -> TestResult<()> {
+        let root = std::env::temp_dir().join(format!("fightlines-feedback-bytes-{}", file_id()?));
+        let frontend = root.join("public");
+        fs::create_dir_all(&frontend)?;
+        let path = root.join("feedback");
+        let mut directory = Directory::open(path.clone(), &frontend)?;
+        directory.budget = Budget::new(
+            Capacity {
+                bytes: 16384,
+                entries: 10,
+            },
+            Usage::default(),
+        );
+        for text in ["😀".repeat(5000), format!("x{}x", "\0".repeat(4998))] {
+            assert_eq!(
+                directory
+                    .save(FeedbackText::parse(&text).fixture()?)
+                    .err()
+                    .fixture()?
+                    .kind(),
+                io::ErrorKind::StorageFull
+            );
+        }
+        assert_eq!(fs::read_dir(&path)?.count(), 0);
+        directory.save(FeedbackText::parse(&"x".repeat(5000)).fixture()?)?;
+        assert_eq!(fs::read_dir(&path)?.count(), 1);
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
 
     #[test]
     fn validates_text_and_preserves_unicode_and_paragraphs() -> TestResult<()> {
@@ -215,9 +332,10 @@ mod tests {
         texts.sort();
         assert_eq!(texts, vec!["hello\n世界", "second"]);
         // Missing storage reports failure rather than accepting and dropping text.
+        let directory = Directory::open(path.clone(), &frontend)?;
         fs::remove_dir_all(&path)?;
         assert!(
-            Directory(path)
+            directory
                 .save(FeedbackText::parse("unsaved").fixture()?)
                 .is_err()
         );

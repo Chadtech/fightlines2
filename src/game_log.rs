@@ -8,6 +8,7 @@ use crate::{
     player_number::PlayerNumber,
     scenario::Scenario,
     seed::Seed,
+    storage_budget::{self, Budget, Capacity, Usage},
     turns::{GameOutcome, TurnResolution, Turns, UnitOrderInput},
 };
 use serde::{Deserialize, Serialize};
@@ -15,17 +16,24 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, BufReader, Write},
     path::{Path, PathBuf},
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 mod legacy;
 
 const FORMAT_VERSION: u32 = 3;
+const MAX_CHAT_STORAGE_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_CHAT_STORAGE_ENTRIES: u64 = 32768;
 
-pub struct Directory(PathBuf);
+pub struct Directory {
+    path: PathBuf,
+    chat_budget: Arc<Budget>,
+}
 
 pub struct GameLog {
     directory: PathBuf,
+    chat_budget: Arc<Budget>,
     next_record: u64,
 }
 
@@ -106,17 +114,20 @@ impl Directory {
     /// The non-archive directory name keeps these journals out of replay lists.
     pub fn start_chat(&self, id: &LobbyId) -> io::Result<GameLog> {
         let id = directory_id(id)?;
-        let directory = self.0.join(format!("chat-{id}-{}", now()?.as_nanos()));
+        let directory = self.path.join(format!("chat-{id}-{}", now()?.as_nanos()));
         let mut builder = fs::DirBuilder::new();
         #[cfg(unix)]
         {
             use std::os::unix::fs::DirBuilderExt;
             builder.mode(0o700);
         }
+        let reservation = self.chat_budget.reserve(Usage::directory())?;
         builder.create(&directory)?;
-        sync_directory(&self.0)?;
+        reservation.retain();
+        sync_directory(&self.path)?;
         Ok(GameLog {
             directory,
+            chat_budget: self.chat_budget.clone(),
             next_record: 0,
         })
     }
@@ -131,13 +142,23 @@ impl Directory {
         ));
         private_file(&probe)?.sync_all()?;
         fs::remove_file(probe)?;
-        Ok(Self(path))
+        let used = chat_storage_usage(&path)?;
+        Ok(Self {
+            path,
+            chat_budget: Arc::new(Budget::new(
+                Capacity {
+                    bytes: MAX_CHAT_STORAGE_BYTES,
+                    entries: MAX_CHAT_STORAGE_ENTRIES,
+                },
+                used,
+            )),
+        })
     }
 
     pub fn record_server_start(&self, seed: Seed) -> io::Result<PathBuf> {
         let started_at = now()?;
         // Root-level files are not game directories and are never browsed.
-        let path = self.0.join(format!(
+        let path = self.path.join(format!(
             "server-start-{}-{}.json",
             started_at.as_nanos(),
             std::process::id()
@@ -155,7 +176,7 @@ impl Directory {
         let mut write = || -> io::Result<()> {
             file.write_all(&bytes)?;
             file.sync_all()?;
-            sync_directory(&self.0)
+            sync_directory(&self.path)
         };
         let result = write();
         drop(file);
@@ -171,7 +192,7 @@ impl Directory {
     pub fn start(&self, started: GameStarted) -> io::Result<GameLog> {
         // A fresh directory prevents overwrites even when a seed/ID is reused.
         let id = directory_id(&started.game_id)?;
-        let directory = self.0.join(format!("{id}-{}", now()?.as_nanos()));
+        let directory = self.path.join(format!("{id}-{}", now()?.as_nanos()));
         let mut builder = fs::DirBuilder::new();
         #[cfg(unix)]
         {
@@ -179,9 +200,10 @@ impl Directory {
             builder.mode(0o700);
         }
         builder.create(&directory)?;
-        sync_directory(&self.0)?;
+        sync_directory(&self.path)?;
         let mut log = GameLog {
             directory,
+            chat_budget: self.chat_budget.clone(),
             next_record: 0,
         };
         if let Err(error) = log.record(Event::Started(started)) {
@@ -192,6 +214,85 @@ impl Directory {
         }
         Ok(log)
     }
+}
+
+// Prepay a second copy for the lobby transcript embedded when its game starts.
+// Original chat journals remain on disk, so startup can reconstruct this budget
+// without charging turn snapshots or changing the archive format.
+fn chat_record_charge(bytes: u64) -> Usage {
+    let mut charge = Usage::file(bytes);
+    charge.add(Usage::file(bytes));
+    charge
+}
+
+#[derive(Deserialize)]
+struct StoredRecordKind {
+    event: StoredEventKind,
+}
+
+#[derive(Deserialize)]
+struct StoredEventKind {
+    kind: StoredKind,
+    data: StoredChatCopy,
+}
+
+#[derive(Deserialize)]
+enum StoredKind {
+    Started,
+    Submitted,
+    Chat,
+}
+
+#[derive(Deserialize)]
+struct StoredChatCopy {
+    #[serde(default)]
+    chat: Vec<ChatMessage>,
+}
+
+fn chat_storage_usage(path: &Path) -> io::Result<Usage> {
+    storage_budget::scan(path, &|path, metadata| {
+        if metadata.is_dir() {
+            return Ok(
+                if path
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with("chat-"))
+                {
+                    Usage::directory()
+                } else {
+                    Usage::default()
+                },
+            );
+        }
+        if path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().starts_with("server-start-"))
+        {
+            return Ok(Usage::default());
+        }
+        // Ignore the large snapshot fields while reading only the event kind.
+        // Count malformed/interrupted files conservatively rather than disabling
+        // gameplay or allowing an unaccounted file to reset the chat budget.
+        let record =
+            serde_json::from_reader::<_, StoredRecordKind>(BufReader::new(File::open(path)?));
+        let charge = match record {
+            Ok(record) => match record.event.kind {
+                StoredKind::Started => {
+                    let mut copies = Usage::default();
+                    for message in record.event.data.chat {
+                        // Include copies even if an operator removed the original journal.
+                        copies.add(Usage::file(
+                            serde_json::to_vec_pretty(&message)?.len() as u64 + 256,
+                        ));
+                    }
+                    copies
+                }
+                StoredKind::Submitted => Usage::default(),
+                StoredKind::Chat => chat_record_charge(metadata.len()),
+            },
+            Err(_) => chat_record_charge(metadata.len()),
+        };
+        Ok(charge)
+    })
 }
 
 fn directory_id(id: &LobbyId) -> io::Result<String> {
@@ -232,6 +333,10 @@ impl GameLog {
     }
 
     fn record(&mut self, event: Event) -> io::Result<()> {
+        let is_chat = match &event {
+            Event::Chat(_) => true,
+            Event::Started(_) | Event::Submitted(_) => false,
+        };
         let record = Record {
             format_version: FORMAT_VERSION,
             recorded_at_unix_ms: now()?.as_millis(),
@@ -240,6 +345,14 @@ impl GameLog {
         // Serialize before touching disk. Incomplete writes never become records.
         let mut bytes = serde_json::to_vec_pretty(&record)?;
         bytes.push(b'\n');
+        let reservation = if is_chat {
+            Some(
+                self.chat_budget
+                    .reserve(chat_record_charge(bytes.len() as u64))?,
+            )
+        } else {
+            None
+        };
         let destination = self.directory.join(format!("{:08}.json", self.next_record));
         let temporary = self
             .directory
@@ -264,6 +377,11 @@ impl GameLog {
             && error.kind() != io::ErrorKind::NotFound
         {
             tracing::error!(event = "game_archive_temporary_cleanup_failed", error = %error, "could not clean up temporary game archive file");
+        }
+        if let Some(reservation) = reservation
+            && (destination.exists() || temporary.exists())
+        {
+            reservation.retain();
         }
         result?;
         self.next_record += 1;
@@ -503,6 +621,95 @@ mod tests {
         test_support::{FixtureValue, TestResult},
     };
     use serde_json::json;
+
+    #[test]
+    fn chat_budget_is_durable_and_does_not_block_game_records() -> TestResult<()> {
+        let root = std::env::temp_dir().join(format!(
+            "fightlines-chat-budget-{}-{}",
+            std::process::id(),
+            now()?.as_nanos()
+        ));
+        let mut directory = Directory::open(root.clone())?;
+        directory.chat_budget = Arc::new(Budget::new(
+            Capacity {
+                bytes: 20480,
+                entries: 3,
+            },
+            Usage::default(),
+        ));
+        let id = LobbyId::from_token("1".repeat(32));
+        let message = ChatMessage {
+            sequence: 1,
+            sent_at: "1".into(),
+            turn_number: 0,
+            sender: "visitor".into(),
+            player_number: None,
+            text: "hello".into(),
+        };
+        let mut log = directory.start_chat(&id)?;
+        // A failed write does not consume the reserved message capacity.
+        let offline = root.join("offline");
+        fs::rename(&log.directory, &offline)?;
+        assert!(log.chat(&message).is_err());
+        fs::rename(&offline, &log.directory)?;
+        log.chat(&message)?;
+        assert_eq!(
+            log.chat(&message).err().fixture()?.kind(),
+            io::ErrorKind::StorageFull
+        );
+        assert_eq!(log.next_record, 1);
+        assert_eq!(fs::read_dir(&log.directory)?.count(), 1);
+
+        let mut reopened = Directory::open(root.clone())?;
+        reopened.chat_budget = Arc::new(Budget::new(
+            Capacity {
+                bytes: 20480,
+                entries: 3,
+            },
+            chat_storage_usage(&root)?,
+        ));
+        assert_eq!(
+            reopened
+                .start_chat(&LobbyId::from_token("2".repeat(32)))
+                .err()
+                .fixture()?
+                .kind(),
+            io::ErrorKind::StorageFull
+        );
+        let scenario = MapDefinition::parse(include_str!("../maps/supply-point.json"))
+            .fixture()?
+            .scenario()
+            .fixture()?;
+        let mut game_log = reopened.start(GameStarted {
+            chat: vec![message],
+            game_id: id,
+            name: "budget test".into(),
+            map_type: MapId::parse("supply-point".into()).fixture()?,
+            players: Vec::new(),
+            scenario: scenario.clone(),
+            server_version: app_version::current().into(),
+            build_revision: None,
+        })?;
+        game_log.record(Event::Submitted(SubmissionResult::new(
+            1,
+            Vec::new(),
+            &scenario,
+            &Turns::default(),
+        )))?;
+        assert_eq!(game_log.next_record, 2);
+        // Embedded transcripts still count if the original journal is removed.
+        fs::remove_dir_all(&log.directory)?;
+        let copied = Budget::new(
+            Capacity {
+                bytes: 8192,
+                entries: 1,
+            },
+            chat_storage_usage(&root)?,
+        );
+        assert!(copied.reserve(Usage::file(1)).is_err());
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
 
     #[test]
     fn legacy_ai_difficulties_decode_as_ai() -> TestResult<()> {

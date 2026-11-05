@@ -26,6 +26,7 @@ import Fightlines.Route as Route
         )
 import Fightlines.Shared as Shared
 import Fightlines.View.TurnIntroduction as TurnIntroduction
+import Fightlines.View.WelcomeBriefing as WelcomeBriefing
 import Html.Styled as H
     exposing
         ( Html
@@ -696,7 +697,7 @@ shell page =
                         |> Card.toHtml Card.simple
                     ]
     in
-    AppShell.toHtml (Home.styles :: TurnIntroduction.styles :: content)
+    AppShell.toHtml (Home.styles :: TurnIntroduction.styles :: WelcomeBriefing.styles :: content)
 
 
 

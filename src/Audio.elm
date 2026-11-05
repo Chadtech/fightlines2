@@ -13,6 +13,7 @@ module Audio exposing
     , cancel
     , channelVolume
     , chatReceived
+    , chatSent
     , combatImpact
     , confirm
     , defaultVolumes
@@ -22,6 +23,8 @@ module Audio exposing
     , fieldGunFire
     , loadMutePreference
     , loadVolumesPreference
+    , lobbyPlayerJoined
+    , lobbyPlayerLeft
     , none
     , setChannelVolume
     , syncAmbience
@@ -280,6 +283,9 @@ type Audio
     | Cancel
     | Confirm
     | ChatReceived
+    | ChatSent
+    | LobbyPlayerJoined
+    | LobbyPlayerLeft
     | TankFire
     | FieldGunFire
     | CombatImpact
@@ -308,6 +314,21 @@ confirm =
 chatReceived : Event
 chatReceived =
     e ChatReceived
+
+
+chatSent : Event
+chatSent =
+    e ChatSent
+
+
+lobbyPlayerJoined : Event
+lobbyPlayerJoined =
+    e LobbyPlayerJoined
+
+
+lobbyPlayerLeft : Event
+lobbyPlayerLeft =
+    e LobbyPlayerLeft
 
 
 tankFire : Event
@@ -344,6 +365,15 @@ audioToName audio =
 
         ChatReceived ->
             "chatReceived"
+
+        ChatSent ->
+            "chatSent"
+
+        LobbyPlayerJoined ->
+            "lobbyPlayerJoined"
+
+        LobbyPlayerLeft ->
+            "lobbyPlayerLeft"
 
         TankFire ->
             "tankFire"

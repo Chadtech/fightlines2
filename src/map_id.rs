@@ -1,7 +1,7 @@
 //! File-backed map identity and catalog discovery, shared by play and authoring.
 use crate::{
     map::MapError,
-    map_definition::{MapDefinition, NamedMap},
+    map_definition::{MapDefinition, MapReleaseStatus, NamedMap},
     scenario::Scenario,
 };
 use juniper::{GraphQLScalar, Scalar, ScalarValue};
@@ -149,12 +149,55 @@ pub fn catalog_in(directory: &Path) -> Result<Vec<NamedMap>, MapError> {
         .collect()
 }
 
-pub fn catalog() -> Result<Vec<NamedMap>, MapError> {
-    catalog_in(&directory())
+/// Draft playtesting is restricted to requests with local editor access.
+#[derive(Clone, Copy)]
+pub enum CatalogAccess {
+    Public,
+    Editor,
+}
+
+impl CatalogAccess {
+    fn includes(self, definition: &MapDefinition) -> bool {
+        match self {
+            Self::Public => definition.release_status == MapReleaseStatus::Released,
+            Self::Editor => true,
+        }
+    }
+
+    pub fn catalog_in(self, directory: &Path) -> Result<Vec<NamedMap>, MapError> {
+        Ok(catalog_in(directory)?
+            .into_iter()
+            .filter(|map| self.includes(&map.definition))
+            .collect())
+    }
+
+    pub fn catalog(self) -> Result<Vec<NamedMap>, MapError> {
+        self.catalog_in(&directory())
+    }
+
+    pub fn options(self) -> Result<Vec<MapId>, MapError> {
+        Ok(self
+            .catalog()?
+            .into_iter()
+            .map(|map| map.map_type)
+            .collect())
+    }
+
+    pub fn definition(self, id: &MapId) -> Result<MapDefinition, MapError> {
+        self.definition_in(id, &directory())
+    }
+
+    fn definition_in(self, id: &MapId, directory: &Path) -> Result<MapDefinition, MapError> {
+        let definition = id.definition_in(directory)?;
+        if !self.includes(&definition) {
+            return Err(MapError::InvalidDefinition("map is not released".into()));
+        }
+        Ok(definition)
+    }
 }
 
 pub fn options() -> Result<Vec<MapId>, MapError> {
-    Ok(catalog()?.into_iter().map(|map| map.map_type).collect())
+    CatalogAccess::Public.options()
 }
 
 #[cfg(test)]
@@ -204,6 +247,69 @@ mod tests {
         );
         fs::write(directory.join("invalid.json"), "malformed")?;
         assert!(catalog_in(&directory).is_err());
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
+
+    #[test]
+    fn drafts_require_local_editor_access_and_releases_apply_without_restart() -> TestResult {
+        let directory = std::env::temp_dir().join(format!(
+            "fightlines-releases-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        fs::create_dir_all(&directory)?;
+        let draft = MapId::parse("supply-point".into())?;
+        let released = MapId::parse("released".into())?;
+        let mut definition = MapDefinition::parse(FIXTURE).map_err(|error| error.to_string())?;
+        assert_eq!(definition.release_status, MapReleaseStatus::Draft);
+        fs::write(directory.join("supply-point.json"), FIXTURE)?;
+        assert!(
+            CatalogAccess::Public
+                .catalog_in(&directory)
+                .map_err(|error| error.to_string())?
+                .is_empty()
+        );
+        definition.release_status = MapReleaseStatus::Released;
+        fs::write(
+            directory.join("released.json"),
+            serde_json::to_string(&definition)?,
+        )?;
+        for (access, expected) in [
+            (CatalogAccess::Public, vec![released.clone()]),
+            (CatalogAccess::Editor, vec![draft.clone(), released.clone()]),
+        ] {
+            let ids: Vec<_> = access
+                .catalog_in(&directory)
+                .map_err(|error| error.to_string())?
+                .into_iter()
+                .map(|map| map.map_type)
+                .collect();
+            assert_eq!(ids, expected);
+        }
+        assert!(
+            CatalogAccess::Public
+                .definition_in(&draft, &directory)
+                .is_err()
+        );
+        CatalogAccess::Editor
+            .definition_in(&draft, &directory)
+            .map_err(|error| error.to_string())?;
+        // Publishing the preferred map changes the public default immediately.
+        fs::write(
+            directory.join("supply-point.json"),
+            serde_json::to_string(&definition)?,
+        )?;
+        let maps = CatalogAccess::Public
+            .catalog_in(&directory)
+            .map_err(|error| error.to_string())?;
+        assert_eq!(
+            maps.first().ok_or("missing released default")?.map_type,
+            draft
+        );
+        CatalogAccess::Public
+            .definition_in(&draft, &directory)
+            .map_err(|error| error.to_string())?;
         fs::remove_dir_all(directory)?;
         Ok(())
     }

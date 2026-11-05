@@ -10,7 +10,7 @@ use crate::{
     lobby_snapshot::Snapshot,
     map_definition::NamedMap,
     map_editor,
-    map_id::{self, MapId},
+    map_id::MapId,
     player::Controller,
     player_number::PlayerNumber,
     scenario::UnitKind,
@@ -152,16 +152,16 @@ impl Query {
     }
 
     /// Playable maps in the order offered by the server. Available without editor access.
-    fn map_options() -> FieldResult<Vec<MapId>> {
-        map_id::options().map_err(|error| {
+    fn map_options(context: &Context) -> FieldResult<Vec<MapId>> {
+        context.editor.catalog_access().options().map_err(|error| {
             tracing::error!(event = "map_options_load_failed", error = %error, "could not load maps");
             server_log::internal_error(format!("could not load maps: {error}"))
         })
     }
 
     /// Public authored layouts, shared by map previews and game creation.
-    fn map_previews() -> FieldResult<Vec<NamedMap>> {
-        map_id::catalog().map_err(|error| {
+    fn map_previews(context: &Context) -> FieldResult<Vec<NamedMap>> {
+        context.editor.catalog_access().catalog().map_err(|error| {
             tracing::error!(event = "map_previews_load_failed", error = %error, "could not load map previews");
             server_log::internal_error(format!("could not load maps: {error}"))
         })
@@ -189,10 +189,12 @@ pub struct Mutation;
 #[graphql_object(context = Context)]
 impl Mutation {
     fn submit_feedback(context: &Context, text: String) -> FieldResult<bool> {
+        context.admit(Operation::SubmitFeedback)?;
         feedback::submit(context, &text)
     }
 
     fn send_chat(context: &Context, input: SendChatInput) -> FieldResult<ChatMessage> {
+        context.admit(Operation::SendChat)?;
         chat::send(context, input)
     }
 
@@ -241,6 +243,12 @@ impl Mutation {
         lobby::join(context, LobbyId::from_token(id), &name)
     }
 
+    fn close_lobby(context: &Context, id: String) -> FieldResult<bool> {
+        context
+            .store
+            .close_lobby(LobbyId::from_token(id), context.identity().as_ref())
+    }
+
     fn set_lobby_map(context: &Context, id: String, map_type: MapId) -> FieldResult<Snapshot> {
         lobby::set_map_type(context, LobbyId::from_token(id), map_type)
     }
@@ -276,9 +284,11 @@ impl Mutation {
     }
 
     fn start_game(context: &Context, id: String) -> FieldResult<Snapshot> {
-        context
-            .store
-            .start(LobbyId::from_token(id), context.identity().as_ref())
+        context.store.start(
+            LobbyId::from_token(id),
+            context.identity().as_ref(),
+            context.editor.catalog_access(),
+        )
     }
 }
 
@@ -477,7 +487,8 @@ mod tests {
     use super::*;
     use crate::{
         map::MapTheme,
-        map_definition::MapDefinition,
+        map_definition::{MapDefinition, MapReleaseStatus},
+        map_id,
         player_number::PlayerNumber,
         test_support::{FixtureValue, TestResult},
         visibility,
@@ -486,6 +497,147 @@ mod tests {
     use serde_json::{Value, json};
 
     const FIELDS: &str = "id name mapType players { name isHost } isHost isMember gameUrl";
+
+    #[actix_web::test]
+    async fn public_write_limits_count_aliases_and_requests_without_cookies() -> TestResult<()> {
+        use std::{
+            fs,
+            time::{SystemTime, UNIX_EPOCH},
+        };
+        let root = std::env::temp_dir().join(format!(
+            "fightlines-public-budgets-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        let frontend = root.join("public");
+        fs::create_dir_all(&frontend)?;
+        let feedback_path = root.join("feedback");
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(
+                    Store::new(crate::seed::Seed::new([71; 32]))
+                        .with_game_logs(crate::game_log::Directory::open(root.join("logs"))?),
+                ))
+                .app_data(web::Data::new(endpoint(Environment::Production)))
+                .app_data(web::Data::new(feedback::Directory::open(
+                    feedback_path.clone(),
+                    &frontend,
+                )?))
+                .route("/graphql", web::post().to(handle)),
+        )
+        .await;
+        let created: Value = test::call_and_read_body_json(&app, test::TestRequest::post().uri("/graphql").set_json(json!({"query":"mutation { createLobby(name: \"Host\", lobbyName: \"Limits\") { id } }"})).to_request()).await;
+        let id = created["data"]["createLobby"]["id"].as_str().fixture()?;
+        for batch in 0..3 {
+            let fields: String = (0..8).map(|index| format!("m{index}: sendChat(input: {{id: {id:?}, messageId: \"{batch}-{index}\", text: \"hello\"}}) {{ sequence }} ")).collect();
+            let body: Value = test::call_and_read_body_json(
+                &app,
+                test::TestRequest::post()
+                    .uri("/graphql")
+                    .set_json(json!({"query":format!("mutation {{ {fields} }}")}))
+                    .to_request(),
+            )
+            .await;
+            assert!(body.get("errors").is_none(), "{body}");
+        }
+        let rejected: Value = test::call_and_read_body_json(&app, test::TestRequest::post().uri("/graphql").set_json(json!({"query":format!("mutation {{ sendChat(input: {{id: {id:?}, messageId: \"overflow\", text: \"hello\"}}) {{ sequence }} }}")})).to_request()).await;
+        assert_eq!(rejected["errors"][0]["extensions"]["code"], "RATE_LIMITED");
+        let history: Value = test::call_and_read_body_json(
+            &app,
+            test::TestRequest::post()
+                .uri("/graphql")
+                .set_json(json!({"query":format!("{{ chat(id: {id:?}) {{ sequence }} }}")}))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(history["data"]["chat"].as_array().fixture()?.len(), 24);
+        let fields: String = (0..6)
+            .map(|index| format!("f{index}: submitFeedback(text: \"hello\") "))
+            .collect();
+        let body: Value = test::call_and_read_body_json(
+            &app,
+            test::TestRequest::post()
+                .uri("/graphql")
+                .set_json(json!({"query":format!("mutation {{ {fields} }}")}))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(body["errors"][0]["extensions"]["code"], "RATE_LIMITED");
+        assert_eq!(fs::read_dir(feedback_path)?.count(), 5);
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[actix_web::test]
+    async fn existing_storage_over_budget_rejects_public_writes_without_removing_records()
+    -> TestResult<()> {
+        use std::{
+            fs,
+            time::{SystemTime, UNIX_EPOCH},
+        };
+        let root = std::env::temp_dir().join(format!(
+            "fightlines-full-storage-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        let frontend = root.join("public");
+        let feedback_path = root.join("feedback");
+        let logs = root.join("logs");
+        for directory in [&frontend, &feedback_path, &logs] {
+            fs::create_dir_all(directory)?;
+        }
+        // Sparse files exercise real startup accounting without allocating these bytes.
+        fs::File::create(feedback_path.join("existing.json"))?.set_len(32 * 1024 * 1024)?;
+        fs::File::create(logs.join("interrupted.pending"))?.set_len(128 * 1024 * 1024)?;
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(
+                    Store::new(crate::seed::Seed::new([72; 32]))
+                        .with_game_logs(crate::game_log::Directory::open(logs.clone())?),
+                ))
+                .app_data(web::Data::new(endpoint(Environment::Production)))
+                .app_data(web::Data::new(feedback::Directory::open(
+                    feedback_path.clone(),
+                    &frontend,
+                )?))
+                .route("/graphql", web::post().to(handle)),
+        )
+        .await;
+        let created: Value = test::call_and_read_body_json(&app, test::TestRequest::post().uri("/graphql").set_json(json!({"query":"mutation { createLobby(name: \"Host\", lobbyName: \"Full storage\") { id } }"})).to_request()).await;
+        let id = created["data"]["createLobby"]["id"].as_str().fixture()?;
+        for query in [
+            "mutation { submitFeedback(text: \"hello\") }".into(),
+            format!(
+                "mutation {{ sendChat(input: {{id: {id:?}, messageId: \"first\", text: \"hello\"}}) {{ sequence }} }}"
+            ),
+        ] {
+            let body: Value = test::call_and_read_body_json(
+                &app,
+                test::TestRequest::post()
+                    .uri("/graphql")
+                    .set_json(json!({"query":query}))
+                    .to_request(),
+            )
+            .await;
+            assert_eq!(
+                body["errors"][0]["extensions"]["code"], "STORAGE_FULL",
+                "{body}"
+            );
+        }
+        assert_eq!(fs::read_dir(feedback_path)?.count(), 1);
+        assert_eq!(fs::read_dir(logs)?.count(), 1);
+        let history: Value = test::call_and_read_body_json(
+            &app,
+            test::TestRequest::post()
+                .uri("/graphql")
+                .set_json(json!({"query":format!("{{ chat(id: {id:?}) {{ sequence }} }}")}))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(history["data"]["chat"], json!([]));
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
 
     #[actix_web::test]
     async fn mutation_budgets_count_aliases_and_cookie_rotation_without_limiting_reads()
@@ -732,6 +884,113 @@ mod tests {
         assert_eq!(body["data"]["__type"]["kind"], "SCALAR");
         for value in values {
             assert_eq!(values.iter().filter(|option| *option == value).count(), 1);
+        }
+        Ok(())
+    }
+
+    #[actix_web::test]
+    async fn draft_catalogs_and_playtesting_require_local_editor_access() -> TestResult<()> {
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(Store::new(crate::seed::Seed::new([93; 32]))))
+                .app_data(web::Data::new(endpoint(Environment::Development)))
+                .app_data(web::Data::new(map_editor::Editor {
+                    directory: map_id::directory(),
+                    frontend: std::path::PathBuf::new(),
+                    writes: Mutex::new(()),
+                }))
+                .route("/graphql", web::post().to(handle)),
+        )
+        .await;
+        let maps = map_id::catalog_in(&map_id::directory()).fixture()?;
+        for (peer, access) in [
+            ("127.0.0.1:1234", map_id::CatalogAccess::Editor),
+            ("192.0.2.1:1234", map_id::CatalogAccess::Public),
+        ] {
+            let request = test::TestRequest::post().uri("/graphql")
+                .peer_addr(peer.parse()?)
+                .set_json(json!({"query": "{ mapOptions mapPreviews { mapType definition { releaseStatus } } }"}))
+                .to_request();
+            let body: Value = test::call_and_read_body_json(&app, request).await;
+            assert!(body.get("errors").is_none(), "{body}");
+            let expected: juniper::InputValue =
+                juniper::ToInputValue::to_input_value(&access.options().fixture()?);
+            assert_eq!(body["data"]["mapOptions"], serde_json::to_value(expected)?);
+            let previews = body["data"]["mapPreviews"].as_array().fixture()?;
+            assert_eq!(previews.len(), access.options().fixture()?.len());
+            if peer != "127.0.0.1:1234" {
+                for preview in previews {
+                    assert_eq!(preview["definition"]["releaseStatus"], "RELEASED");
+                }
+            }
+        }
+        // Authored layouts remain freely editable; exercise draft playtesting
+        // for whichever draft is currently in the catalog.
+        if let Some(draft) = maps
+            .iter()
+            .find(|map| map.definition.release_status == MapReleaseStatus::Draft)
+        {
+            let request = test::TestRequest::post().uri("/graphql")
+                .peer_addr("127.0.0.1:1234".parse()?)
+                .set_json(json!({"query": "mutation { createLobby(name: \"Host\", lobbyName: \"Draft test\") { id mapType } }"}))
+                .to_request();
+            let response = test::call_service(&app, request).await;
+            let host = response.response().cookies().next().fixture()?.into_owned();
+            let body: Value = test::read_body_json(response).await;
+            assert!(body.get("errors").is_none(), "{body}");
+            let id = body["data"]["createLobby"]["id"].as_str().fixture()?;
+            let map = draft.map_type.as_str();
+            for (peer, query, succeeds) in [
+                (
+                    "192.0.2.1:1234",
+                    format!(
+                        "mutation {{ setLobbyMap(id: {id:?}, mapType: {map:?}) {{ mapType }} }}"
+                    ),
+                    false,
+                ),
+                (
+                    "127.0.0.1:1234",
+                    format!(
+                        "mutation {{ setLobbyMap(id: {id:?}, mapType: {map:?}) {{ mapType }} }}"
+                    ),
+                    true,
+                ),
+                (
+                    "127.0.0.1:1234",
+                    format!(
+                        "mutation {{ setLobbyController(id: {id:?}, controller: AI) {{ id }} }}"
+                    ),
+                    true,
+                ),
+                (
+                    "192.0.2.1:1234",
+                    format!("mutation {{ startGame(id: {id:?}) {{ id }} }}"),
+                    false,
+                ),
+                (
+                    "127.0.0.1:1234",
+                    format!("mutation {{ startGame(id: {id:?}) {{ id }} }}"),
+                    true,
+                ),
+            ] {
+                let request = test::TestRequest::post()
+                    .uri("/graphql")
+                    .peer_addr(peer.parse()?)
+                    .cookie(host.clone())
+                    .set_json(json!({"query": query}))
+                    .to_request();
+                let body: Value = test::call_and_read_body_json(&app, request).await;
+                assert_eq!(body.get("errors").is_none(), succeeds, "{body}");
+                if !succeeds {
+                    assert!(
+                        body["errors"][0]["message"]
+                            .as_str()
+                            .fixture()?
+                            .contains("not released"),
+                        "{body}"
+                    );
+                }
+            }
         }
         Ok(())
     }

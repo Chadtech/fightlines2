@@ -1,7 +1,11 @@
 //! Derived browser-rendered map images. Definition fingerprints keep cache URLs
 //! stable across processes; bump the render version when shared artwork changes.
-use crate::map_definition::MapDefinition;
+use crate::{
+    map::MapTheme,
+    map_definition::{DepotPlacement, MapDefinition, TerrainPlacement, UnitPlacement},
+};
 use base64::{Engine, engine::general_purpose::STANDARD};
+use serde::Serialize;
 use std::{fs, io, path::Path};
 
 const RENDER_VERSION: &str = "v1";
@@ -9,7 +13,28 @@ const MAX_PNG_BYTES: usize = 1_000_000;
 
 pub fn url(definition: &MapDefinition) -> Result<String, serde_json::Error> {
     // FNV-1a is a stable cache fingerprint, not a security or identity token.
-    let hash = serde_json::to_vec(definition)?
+    // Release metadata does not alter the rendered map. Keep the original field
+    // order so existing shipped thumbnail URLs remain valid.
+    #[derive(Serialize)]
+    struct Content<'a> {
+        description: &'a str,
+        width: u16,
+        height: u16,
+        theme: MapTheme,
+        features: &'a [TerrainPlacement],
+        depots: &'a [DepotPlacement],
+        units: &'a [UnitPlacement],
+    }
+    let content = Content {
+        description: &definition.description,
+        width: definition.width,
+        height: definition.height,
+        theme: definition.theme,
+        features: &definition.features,
+        depots: &definition.depots,
+        units: &definition.units,
+    };
+    let hash = serde_json::to_vec(&content)?
         .into_iter()
         .fold(0xcbf29ce484222325_u64, |hash, byte| {
             (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
@@ -67,6 +92,7 @@ mod tests {
     fn definition() -> MapDefinition {
         MapDefinition {
             description: "thumbnail test".into(),
+            release_status: Default::default(),
             width: 1,
             height: 1,
             theme: MapTheme::GreenForest,
@@ -82,6 +108,8 @@ mod tests {
         let original_url = url(&original)?;
         assert_eq!(original_url, url(&original)?);
         let mut changed = original.clone();
+        changed.release_status = crate::map_definition::MapReleaseStatus::Released;
+        assert_eq!(original_url, url(&changed)?);
         changed.theme = MapTheme::Snow;
         assert_ne!(original_url, url(&changed)?);
         changed = original;

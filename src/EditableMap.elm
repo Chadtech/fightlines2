@@ -16,6 +16,7 @@ module EditableMap exposing
 
 import Api.Enum.BuildingKind as BuildingKind exposing (BuildingKind)
 import Api.Enum.Direction as Direction exposing (Direction)
+import Api.Enum.MapReleaseStatus exposing (MapReleaseStatus)
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
 import Api.Enum.PlayerNumber as PlayerNumber exposing (PlayerNumber)
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
@@ -42,6 +43,7 @@ import Graphql.SelectionSet as SS exposing (SelectionSet)
 
 type alias Definition =
     { description : String
+    , releaseStatus : MapReleaseStatus
     , width : Int
     , height : Int
     , theme : MapTheme
@@ -162,6 +164,7 @@ definitionSelection : SelectionSet Definition Api.Object.MapDefinition
 definitionSelection =
     SS.succeed Definition
         |> SS.with DefinitionApi.description
+        |> SS.with DefinitionApi.releaseStatus
         |> SS.with DefinitionApi.width
         |> SS.with DefinitionApi.height
         |> SS.with DefinitionApi.theme
@@ -230,6 +233,7 @@ definitionInput : Definition -> Input.MapDefinitionInput
 definitionInput definition =
     Input.buildMapDefinitionInput
         { description = definition.description
+        , releaseStatus = definition.releaseStatus
         , width = definition.width
         , height = definition.height
         , theme = definition.theme

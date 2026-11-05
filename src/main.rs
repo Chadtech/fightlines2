@@ -30,6 +30,7 @@ mod seed;
 mod server_limits;
 mod server_log;
 mod session_token;
+mod storage_budget;
 mod store;
 mod supplies;
 mod turns;
@@ -177,13 +178,13 @@ async fn run(frontend: PathBuf) -> io::Result<()> {
     })
     .listen(listener)?
     .run();
-    let cleanup = actix_web::rt::spawn(cleanup_finished_games(cleanup_store));
+    let cleanup = actix_web::rt::spawn(cleanup_expired_entries(cleanup_store));
     let result = server.await;
     cleanup.abort();
     result
 }
 
-async fn cleanup_finished_games(store: web::Data<store::Store>) {
+async fn cleanup_expired_entries(store: web::Data<store::Store>) {
     let dispatch = tracing::dispatcher::get_default(Clone::clone);
     loop {
         actix_web::rt::time::sleep(Duration::from_secs(60)).await;
@@ -191,12 +192,12 @@ async fn cleanup_finished_games(store: web::Data<store::Store>) {
         let dispatch = dispatch.clone();
         let result = web::block(move || {
             tracing::dispatcher::with_default(&dispatch, || {
-                let removed = store.remove_finished_games(Instant::now())?;
+                let removed = store.remove_expired_entries(Instant::now())?;
                 if removed > 0 {
                     tracing::info!(
-                        event = "finished_games_removed",
+                        event = "expired_entries_removed",
                         removed,
-                        "expired finished games removed from memory"
+                        "inactive lobbies and expired finished games removed from memory"
                     );
                 }
                 Ok::<_, juniper::FieldError>(())
@@ -204,7 +205,7 @@ async fn cleanup_finished_games(store: web::Data<store::Store>) {
         })
         .await;
         if let Err(error) = result {
-            tracing::error!(event = "game_cleanup_worker_failed", error = %error, "finished game cleanup worker failed");
+            tracing::error!(event = "game_cleanup_worker_failed", error = %error, "lobby and game cleanup worker failed");
         }
     }
 }

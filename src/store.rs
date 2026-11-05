@@ -8,7 +8,7 @@ use crate::{
     lobby_name::LobbyName,
     lobby_snapshot::Snapshot,
     map::MapError,
-    map_id,
+    map_id::{self, CatalogAccess},
     player::{Player, PlayerController},
     player_name::PlayerName,
     player_number::PlayerNumber,
@@ -47,6 +47,8 @@ pub struct Store {
 /// One stable entry owns the transition from lobby to game and all later mutations.
 pub(crate) enum GameRegistry {
     Lobby(Lobby),
+    /// Detached handles must reject requests that were queued before removal.
+    Closed,
     Game(Box<Game>),
 }
 
@@ -145,7 +147,7 @@ impl Store {
 
     /// Snapshot handles before inspecting games, and skip busy entries so cleanup
     /// never queues behind AI planning, disk writes, or player requests.
-    pub fn remove_finished_games(&self, now: Instant) -> FieldResult<usize> {
+    pub fn remove_expired_entries(&self, now: Instant) -> FieldResult<usize> {
         let entries = self
             .registry
             .lock()
@@ -160,7 +162,7 @@ impl Store {
             .clone();
         let mut removed = 0;
         for (id, entry) in entries {
-            let game = match entry.try_lock() {
+            let mut game = match entry.try_lock() {
                 Ok(game) => game,
                 Err(TryLockError::WouldBlock) => continue,
                 Err(TryLockError::Poisoned(_)) => {
@@ -169,7 +171,8 @@ impl Store {
                 }
             };
             let expired = match &*game {
-                GameRegistry::Lobby(_) => false,
+                GameRegistry::Lobby(lobby) => lobby.is_expired(now),
+                GameRegistry::Closed => false,
                 GameRegistry::Game(game) => game.is_expired(now),
             };
             if !expired {
@@ -189,10 +192,45 @@ impl Store {
                 .is_some_and(|stored| Arc::ptr_eq(stored, &entry))
             {
                 registry.remove(&id);
+                *game = GameRegistry::Closed;
                 removed += 1;
             }
         }
         Ok(removed)
+    }
+
+    /// Close under the entry lock so a concurrent start cannot survive teardown.
+    pub fn close_lobby(&self, id: LobbyId, session: Option<&SessionToken>) -> FieldResult<bool> {
+        let entry = self.entry(&id)?.ok_or("this lobby no longer exists.")?;
+        let mut state = entry.lock().map_err(|_| {
+            tracing::error!(event = "server_state_lock_unavailable", game_id = %id, "game state lock is poisoned");
+            server_log::internal_error("the server state is unavailable.")
+        })?;
+        match &*state {
+            GameRegistry::Lobby(lobby) => lobby.authorize_close(session)?,
+            GameRegistry::Game(_) => {
+                return Err("the game has already started. its lobby cannot be closed.".into());
+            }
+            GameRegistry::Closed => return Err("this lobby no longer exists.".into()),
+        }
+        let mut registry = self.registry.lock().map_err(|_| {
+            tracing::error!(
+                event = "server_state_lock_unavailable",
+                state = "lobby_registry",
+                "server state lock is poisoned"
+            );
+            server_log::internal_error("the server state is unavailable.")
+        })?;
+        if registry
+            .get(&id)
+            .is_some_and(|stored| Arc::ptr_eq(stored, &entry))
+        {
+            registry.remove(&id);
+            *state = GameRegistry::Closed;
+            Ok(true)
+        } else {
+            Err("this lobby no longer exists.".into())
+        }
     }
 
     pub(crate) fn insert_lobby(&self, lobby: Lobby) -> FieldResult<()> {
@@ -214,7 +252,12 @@ impl Store {
     }
 
     /// Prepare and record the game under the same entry lock before replacing its lobby.
-    pub fn start(&self, id: LobbyId, session: Option<&SessionToken>) -> FieldResult<Snapshot> {
+    pub fn start(
+        &self,
+        id: LobbyId,
+        session: Option<&SessionToken>,
+        access: CatalogAccess,
+    ) -> FieldResult<Snapshot> {
         let entry = self.entry(&id)?.ok_or_else(|| {
             FieldError::from("This lobby no longer exists. Create a new lobby from the home page.")
         })?;
@@ -227,10 +270,11 @@ impl Store {
             server_log::internal_error("The server state is unavailable.")
         })?;
         let lobby = match &*entry {
+            GameRegistry::Closed => return Err("this lobby no longer exists.".into()),
             GameRegistry::Lobby(lobby) => lobby,
             GameRegistry::Game(game) => return game.start_snapshot(session),
         };
-        let mut game = lobby.prepare_game(session)?;
+        let mut game = lobby.prepare_game(session, access)?;
         if let Some(directory) = &self.game_logs {
             game.record_start(directory)?;
         }
@@ -375,7 +419,7 @@ mod tests {
         let retention = Duration::from_secs(16 * 60);
         assert_eq!(
             store
-                .remove_finished_games(before + retention - Duration::from_secs(1))
+                .remove_expired_entries(before + retention - Duration::from_secs(1))
                 .fixture()?,
             0
         );
@@ -389,13 +433,22 @@ mod tests {
         // A busy finished game is skipped rather than blocking unrelated cleanup.
         {
             let _guard = entry.lock().fixture()?;
-            assert_eq!(store.remove_finished_games(after + retention).fixture()?, 0);
+            assert_eq!(
+                store.remove_expired_entries(after + retention).fixture()?,
+                0
+            );
         }
         drop(entry);
-        assert_eq!(store.remove_finished_games(after + retention).fixture()?, 1);
+        assert_eq!(
+            store.remove_expired_entries(after + retention).fixture()?,
+            1
+        );
         assert!(store.entry(finished).fixture()?.is_none());
         assert!(weak.upgrade().is_none());
-        assert_eq!(store.remove_finished_games(after + retention).fixture()?, 0);
+        assert_eq!(
+            store.remove_expired_entries(after + retention).fixture()?,
+            0
+        );
         for id in ids
             .iter()
             .skip(1)
@@ -507,7 +560,7 @@ mod tests {
                 let mut other = other.lock().fixture()?;
                 let game = match &mut *other {
                     GameRegistry::Game(game) => game,
-                    GameRegistry::Lobby(_) => return Err("independent entry must have started".into()),
+                    GameRegistry::Lobby(_) | GameRegistry::Closed => return Err("independent entry must have started".into()),
                 };
                 **game = Game::new(
                     LobbyId::from_token(other_id.into()),

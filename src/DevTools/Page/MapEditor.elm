@@ -13,6 +13,7 @@ module DevTools.Page.MapEditor exposing
 
 import Api.Enum.BuildingKind as BuildingKind exposing (BuildingKind)
 import Api.Enum.Direction as Direction exposing (Direction)
+import Api.Enum.MapReleaseStatus as MapReleaseStatus exposing (MapReleaseStatus)
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
 import Api.Enum.PlayerNumber as PlayerNumber exposing (PlayerNumber)
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
@@ -207,6 +208,7 @@ type Msg
     | PlayerNumberInputChanged String
     | FacingInputChanged String
     | ThemeInputChanged String
+    | ReleaseStatusInputChanged MapReleaseStatus
     | MirrorInputChanged Bool
     | BrushSizeInputChanged String
     | HandToolClicked
@@ -1074,6 +1076,7 @@ update msg model =
                                 definition : Definition
                                 definition =
                                     { description = ""
+                                    , releaseStatus = MapReleaseStatus.Draft
                                     , width = 17
                                     , height = 17
                                     , theme = MapTheme.GreenForest
@@ -1164,6 +1167,9 @@ update msg model =
 
                 Nothing ->
                     ( model, E.none )
+
+        ReleaseStatusInputChanged releaseStatus ->
+            ( applyEdit { draft | releaseStatus = releaseStatus } (finishGesture model), E.none )
 
         MirrorInputChanged enabled ->
             ( { model | mirror = enabled }, E.none )
@@ -1868,10 +1874,10 @@ status model =
                         "no unsaved changes · existing games keep their board"
 
 
-select : String -> String -> String -> (String -> Msg) -> List ( String, String ) -> Html Msg
+select : String -> String -> value -> (value -> Msg) -> List ( value, String ) -> Html Msg
 select htmlId label value changed options =
     let
-        option : ( String, String ) -> { value : String, label : String }
+        option : ( value, String ) -> { value : value, label : String }
         option ( key, caption ) =
             { value = key
             , label = caption
@@ -2064,7 +2070,14 @@ mapSettings model =
             , S.g3
             ]
         ]
-        [ select "map-editor-theme"
+        [ select "map-editor-release-status"
+            "release status"
+            model.current.draft.releaseStatus
+            ReleaseStatusInputChanged
+            [ ( MapReleaseStatus.Draft, "draft" )
+            , ( MapReleaseStatus.Released, "released" )
+            ]
+        , select "map-editor-theme"
             "theme"
             (MapTheme.toString model.current.draft.theme)
             ThemeInputChanged
