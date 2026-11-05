@@ -815,9 +815,9 @@ fuelChecks rules =
                                 }
                             , fuel =
                                 Just
-                                    { current = 14
-                                    , maximum = 128
-                                    , movementPerTile = 7
+                                    { current = 56
+                                    , maximum = 512
+                                    , movementPerTile = 28
                                     , movementPerCargoSlot = 0
                                     }
                             }
@@ -842,7 +842,7 @@ fuelChecks rules =
                             (Maybe.map
                                 (\resources ->
                                     resources
-                                        |> UnitResources.setFuel (Just { current = 0, maximum = 128, movementPerTile = 7, movementPerCargoSlot = 0 })
+                                        |> UnitResources.setFuel (Just { current = 0, maximum = 512, movementPerTile = 28, movementPerCargoSlot = 0 })
                                 )
                                 unit.resources
                             )
@@ -861,7 +861,7 @@ fuelChecks rules =
                             (Maybe.map
                                 (\resources ->
                                     resources
-                                        |> UnitResources.setFuel (Just { current = 12, maximum = 128, movementPerTile = 2, movementPerCargoSlot = 2 })
+                                        |> UnitResources.setFuel (Just { current = 48, maximum = 512, movementPerTile = 8, movementPerCargoSlot = 2 })
                                 )
                                 unit.resources
                             )
@@ -900,7 +900,7 @@ fuelChecks rules =
                             (Maybe.map
                                 (\resources ->
                                     resources
-                                        |> UnitResources.setFuel (Just { current = 6, maximum = 128, movementPerTile = 2, movementPerCargoSlot = 2 })
+                                        |> UnitResources.setFuel (Just { current = 24, maximum = 512, movementPerTile = 8, movementPerCargoSlot = 2 })
                                 )
                                 truck.resources
                             )
@@ -957,10 +957,16 @@ fuelChecks rules =
                 , test "road savings do not make unaffordable plain steps reachable"
                     (roadRoute |> Maybe.andThen (\option -> Movement.trace rules roadMap [ roadTruck ] roadTruck option { x = 3, y = 0 }) |> (==) Nothing)
                 , test "empty trucks can travel up to twelve road tiles" (Movement.tileLimit rules [ truck ] truck == Just 12)
-                , test "passengers add one road fuel per tile" (Movement.tileLimit rules [ truck, passenger ] truck == Just 6)
-                , test "freight adds one road fuel per tile" (Movement.tileLimit rules [ loadedTruck ] loadedTruck == Just 6)
-                , test "mixed full cargo spends three road fuel per tile" (Movement.tileLimit rules fullCargo loadedTruck == Just 4)
-                , test "loaded tracing accounts for fuel already spent" (cargoTrace |> Maybe.andThen (\path -> Movement.trace rules map fullCargo loadedTruck path { x = 2, y = 1 }) |> (==) Nothing)
+                , test "passengers add one road fuel per tile" (Movement.tileLimit rules [ truck, passenger ] truck == Just 9)
+                , test "freight adds one road fuel per tile" (Movement.tileLimit rules [ loadedTruck ] loadedTruck == Just 9)
+                , test "mixed full cargo spends six road fuel per tile" (Movement.tileLimit rules fullCargo loadedTruck == Just 8)
+                , test "loaded tracing accounts for fuel already spent"
+                    (cargoTrace
+                        |> Maybe.andThen (\path -> Movement.trace rules map fullCargo loadedTruck path { x = 2, y = 1 })
+                        |> Maybe.andThen (\path -> Movement.trace rules map fullCargo loadedTruck path { x = 3, y = 1 })
+                        |> Maybe.andThen (\path -> Movement.trace rules map fullCargo loadedTruck path { x = 4, y = 1 })
+                        |> (==) Nothing
+                    )
                 , test "empty vehicles have no movement choices" (List.isEmpty (Movement.options [] rules map units emptyUnit))
                 , test "fuel bounds every returned path" (List.all (\option -> List.length option.path <= 3) reachable)
                 , test "short expensive routes remain reachable when cheaper detours exceed fuel"
@@ -986,7 +992,7 @@ fuelChecks rules =
                                 (Maybe.map
                                     (\resources ->
                                         resources
-                                            |> UnitResources.setFuel (Just { current = 128, maximum = 128, movementPerTile = 7, movementPerCargoSlot = 0 })
+                                            |> UnitResources.setFuel (Just { current = 512, maximum = 512, movementPerTile = 28, movementPerCargoSlot = 0 })
                                     )
                                     unit.resources
                                 )

@@ -2540,6 +2540,27 @@ combatPlaybackChecks first second =
                         hiddenPlayback =
                             TurnPlayback.start [ before, hidden, cleanup ] |> Maybe.andThen (TurnPlayback.tick 450 >> Tuple.first)
 
+                        newlyRevealed : CombatKind.CombatKind -> ( Maybe TurnPlayback.Playback, TurnPlayback.Frame )
+                        newlyRevealed kind =
+                            let
+                                unseen : TurnPlayback.Frame
+                                unseen =
+                                    { before | units = [ target ], visibleTiles = [ shot.destination ] }
+                            in
+                            TurnPlayback.start
+                                [ unseen
+                                , volley |> TurnPlayback.setFrameShots [ { shot | kind = kind } ]
+                                , cleanup
+                                ]
+                                |> Maybe.map (TurnPlayback.tick 450)
+                                |> Maybe.withDefault ( Nothing, unseen )
+
+                        ( revealedFocus, revealedFrame ) =
+                            newlyRevealed CombatKind.Ambush
+
+                        ( _, indirectFrame ) =
+                            newlyRevealed CombatKind.IndirectFire
+
                         ( finalShot, _ ) =
                             TurnPlayback.start [ before, volley ] |> Maybe.map (TurnPlayback.tick 450) |> Maybe.withDefault ( Nothing, before )
 
@@ -2710,6 +2731,17 @@ combatPlaybackChecks first second =
                                     == Just first
                                     && (Maybe.map (.current >> .units) hiddenPlayback == Just [ target ])
                                 )
+                            , expect "direct-fire reveals appear on the opening spotlight without revealing the hit"
+                                (List.map .id revealedFrame.units
+                                    == [ second, first ]
+                                    && List.all (not << Unit.isDying) revealedFrame.units
+                                    && List.member shot.origin revealedFrame.visibleTiles
+                                    && List.member shot.destination revealedFrame.visibleTiles
+                                    && (Maybe.andThen TurnPlayback.spotlight revealedFocus |> Maybe.map List.length)
+                                    == Just 2
+                                )
+                            , expect "indirect-fire portraits do not add an early battlefield reveal"
+                                (indirectFrame.units == [ target ] && indirectFrame.visibleTiles == [ shot.destination ])
                             , expect "a volley in the final frame still receives combat focus"
                                 (Maybe.andThen TurnPlayback.combat finalShot /= Nothing)
                             , multipleChecks

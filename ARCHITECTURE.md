@@ -281,8 +281,8 @@ exit. `Combat` derives preparation from accepted actions; synthetic combat-chart
 matchups supply combat preparation directly without inventing movement routes.
 
 Hit points, supplies and vehicle fuel are authoritative. Fuel, provisions, freight stocks,
-and their consumption costs use integer quantities at four times the original scale
-for finer balance adjustments. HP, damage, tile ranges, movement points, and cargo
+and their consumption costs use integer quantities with finer scales for balance
+adjustments. HP, damage, tile ranges, movement points, and cargo
 berths retain their existing scale. Directional ambush combat is authoritative.
 `Unit` owns a serialized exhaustion state. The first zero-supply settlement starts
 a two-turn countdown; later zero-supply settlements decrement it. Replenishment
@@ -405,6 +405,10 @@ before AI planning; the AI still receives only the original pre-turn board.
 AI processing is synchronous under that game's entry lock on a blocking worker.
 Other games and lobbies can proceed independently; there is no autonomous AI
 worker or external model service.
+`server_limits::Limits` provides one server-wide AI permit, acquired after human
+validation and held through AI planning, resolution, and recording. Busy rejection
+leaves the prepared copies uncommitted. Turn submission uses a nonblocking entry
+lock so contending requests return a retry message instead of waiting.
 
 The member-only `game` query returns `GameSnapshot`, including the scenario and
 players with `playerNumber` and `isYou`. Lobby snapshots stay small and never include the
@@ -641,6 +645,26 @@ sends an `audio error` message through the existing `fromJs` port with string
 The warning and history entry share once-per-operation deduplication for the
 manager's lifetime. Native errors retain their stack when available; invalid
 payloads become printable text before crossing the port.
+
+Both documents load `public/asset-loader.js` before audio and shared interop.
+Each app has one loader shared by image warming and audio: at most four tasks
+run at once, each attempt times out after 15 seconds, and failures retry twice
+with one- and two-second backoff. Backoff releases its slot; successful results
+and pending requests are shared, while exhausted failures can retry on a later
+request. Current audio requests and the small interface cues take priority over
+background images; speculative combat/movement audio follows them.
+`Game.Assets.imagePaths` assembles renderer-owned paths for the current theme,
+with battlefield images ahead of combat sprites and backdrops. The player app
+sends `PreloadImages` on lobby entry, theme changes, and game entry, including
+direct game links. DevTools does the same for replay/editor themes. Page initialization
+and the specific map, theme, undo/redo, and backdrop transitions dispatch these
+effects directly; neither app checks asset paths after every update. The JavaScript
+loader fetches and decodes images in the background with low fetch priority.
+There is no asset-readiness state, loading screen, or navigation/turn gate.
+Image failures warn in the console after retries; audio failures retain the
+existing error-history path. Old shell-wide combat preload hints are replaced
+by this bounded queue. `tools/check-assets.cjs` checks recovery, scheduling,
+and the existence and theme selection of every catalog entry.
 The three cues map to `/audio/ui-{affirm,cancel,confirm}-switch-v1.ogg`, excerpts
 from CC0 physical switch recordings by Joseph Sardin credited in
 `public/audio/README.md`. Affirm uses a desk-lamp switch press (230ms), cancel
@@ -915,6 +939,15 @@ selections and top-level fields before execution, and limits concurrent blocking
 jobs. Rejected documents run no resolvers. The admission permit belongs to the
 blocking job so disconnects cannot free capacity while work continues. See
 [deployment](DEPLOYMENT.md) for limits and HTTP responses.
+
+`graphql::Endpoint` also owns the shared `server_limits::Limits` used by every
+request context. The HTTP boundary resolves a client address using the socket peer
+and same-machine proxy policy. Each `createLobby` and `submitTurn` resolver checks
+independent IP and session budgets before entering domain operations; aliases
+cannot bypass them. The bounded budget table drops fully refilled entries during
+periodic cleanup and never evicts an active budget to admit a new client. Retry
+errors travel through the existing submission-error flow, which restores planning
+and preserves drafted orders. No schema fields or client bindings change.
 
 `UnitOrder` owns the order vocabulary and per-unit availability.
 `Game.OrderPlanning` owns editable unit/tile selection and saved drafts;
@@ -1381,11 +1414,13 @@ model as part of that experiment rather than copying the old engine.
 
 ## Vehicle fuel
 
-Rust units carry optional `Fuel` state: tanks and trucks start at 128/128;
-infantry and field guns have none. One traversed path edge consumes seven fuel for
-tanks on non-road terrain, or five on roads. Trucks spend two fuel plus two per occupied cargo slot at departure, counting
+Rust units carry optional `Fuel` state: tanks and trucks start at 512/512;
+infantry and field guns have none. Fuel quantities and base costs use four times
+the preceding fuel scale, preserving empty-vehicle range while allowing integer
+25% cargo increments. One traversed path edge consumes 28 fuel for
+tanks on non-road terrain, or 20 on roads. Trucks spend eight fuel plus two per occupied cargo slot at departure, counting
 passengers, supply crates, and fuel drums. Loading and unloading happen after travel,
-so they affect the next route. On roads, trucks spend one fuel plus one per occupied
+so they affect the next route. On roads, trucks spend four fuel plus one per occupied
 slot. Fuel is independent of terrain movement points, but depends on each entered
 tile. `Unit::fuel_movement_cost` is shared by validation, resolution, refunds, and
 AI planning; `movement.rs` exports road rates through `MovementRule`. Validation rejects paths exceeding
@@ -1425,11 +1460,12 @@ unit and any passengers it carries. `finish_turn_resources`
 returns a presentation snapshot with zero supplies and health for dead units.
 When deaths occur, resolution adds that snapshot followed by the authoritative
 surviving units with a 1400ms transition. `Game.View.UnitDeath` replaces the map
-sprite with `CombatExplosion.mapToSvg`: the theater's six illustrated frames over
-100ms, with the sprite fading from 20ms to removal at 50ms. Mount-triggered CSS
-runs this one-shot effect even while a loss dialog holds the playback clock;
-the casualty's tile is then empty through the remaining pause. Reduced motion
-uses a brief steady peak-impact frame and sprite removal without fading.
+sprite with `CombatExplosion.casualtyToSvg`: the theater's six illustrated frames
+stretched over 600ms, with the sprite fading from 120ms to removal at 300ms.
+An illustrated skull fades in after the blast and remains through the casualty
+pause or loss dialog. Mount-triggered CSS runs these effects even while a loss
+dialog holds the playback clock. Reduced motion uses a steady peak-impact frame,
+sprite removal without fading, and a steady skull.
 `GamePage` freezes its sprite clock while an on-board death is visible, and
 `Game.View.UnitDeath` pauses surrounding CSS animations through the game root's
 death-focus class. `TurnPlayback.start` omits previously presented casualties
@@ -1463,7 +1499,8 @@ their tile interior; terrain
 touched only at a corner does not obstruct open diagonals. Forest tiles also
 conceal their contents. Own occupied squares remain known, while
 enemies in forests remain concealed even on a known occupied square.
-Units retain an internal firing reveal flag for the next turn. After all
+Units set their internal firing reveal flag immediately when firing directly,
+so the firing frame and later frames include the shooter. After all
 combat resolves, `Turns` renews it only for units that actually fired directly,
 including attack moves, ambushes, and return fire. Indirect fire consumes a shot
 but does not create or renew a reveal. Visibility
@@ -1694,8 +1731,9 @@ draws target explosions and death feedback without connecting
 lines, floating damage numbers, or calculating combat outcomes.
 
 `TurnPlayback.Presentation` separates ordinary battlefield playback from combat
-focus. Entering a projected volley captures the pre-hit frame and queues its
-distinct encounter unit pairs, combining reciprocal shots. Redundant pairs where
+focus. Entering a projected volley captures the pre-hit frame, adds newly revealed
+direct shooters from the projected firing frame for the opening spotlight, and
+queues its distinct encounter unit pairs, combining reciprocal shots. Redundant pairs where
 a participant has already died and neither unit's health changes are omitted;
 zero-damage encounters between living units remain visible. Stationary return fire
 in a later volley shares the same theater and impact clock, using the first
@@ -1730,7 +1768,7 @@ the idle image framing and footing while firing images add transparent right
 padding. Reduced motion displays the ready drawing. `CombatTheater.attackDelay`
 starts impacts 100ms after the burst's midpoint, while infantry keep firing.
 The theater stays open until firing and impacts finish, then applies its ordinary
-automatic-close delay. `AppShell` preloads both teams' ready/firing images.
+automatic-close delay. `Game.Assets` includes both teams' ready/firing images in background loading.
 Trench impacts use 2.5 times the ordinary figure scale. Their four rear and
 three front health groups retain individual hit timing; once all groups in a
 segment are lost, its artwork switches to the empty trench. A skull fades over
@@ -1752,7 +1790,7 @@ registered on their boots and rendered at the existing pair width and footing.
 The final pose exactly repeats ready; the last smoky pose uses the same ready
 drawing under a separate smoke layer to preserve launcher geometry. Reduced motion
 keeps the static ready drawing.
-`AppShell` preloads both team atlases. `tools/build-bazooka-firing.cjs` registers
+`Game.Assets` includes both team atlases in background loading. `tools/build-bazooka-firing.cjs` registers
 the complete imagegen drawings and exports the atlases and animated previews.
 `Game.View.CombatExplosion` selects six illustrated horizontal impact frames from that
 same clock, with a 100ms duration and figure removal beneath the blast at 50ms.
@@ -1790,7 +1828,7 @@ committed 4096x736 team atlas has eight 1024x368 cells; wheel registration align
 the animated gun with the static portrait. Field guns hold the ready drawing before the
 sequence and the final drawing afterward rather than looping while the card
 waits. Element-local Elm CSS substitutes the ordinary static team portrait under
-reduced motion. The app shell preloads all four committed attack atlases.
+reduced motion. `Game.Assets` includes all four committed attack atlases in background loading.
 The theater derives a shared, rapidly decaying camera translation and rotation
 from the latest contact on either side, beginning 20ms after the projectile
 appears and settling over 160ms. Each scene moves its backdrop, figures, and
@@ -1804,8 +1842,8 @@ Encounter-only portraits never create map effects at concealed positions. Projec
 indirect-fire landings retain their tile feedback even without a known target.
 Continuing a lethal pair enters a `Deaths` presentation stage using that pair’s
 authoritative after-health. Only its visible casualties and carrier passengers
-receive the quick explosion and disappearance; concealed portraits stay off the
-board. The server’s post-volley duration supplies the pause. Playback removes these casualties from
+receive the longer explosion, disappearance, and skull marker; concealed portraits
+stay off the board. The server’s post-volley duration supplies the pause. Playback removes these casualties from
 the held board and volley before opening the next pair, so later theaters and
 map feedback cannot resurrect them. Reciprocal casualties share one pause.
 After the last pair, playback reveals the remaining volley feedback and restarts
@@ -1955,8 +1993,9 @@ loading/unloading, and end-of-turn distribution. `Scenario` owns finite depot
 stocks and ground crates; each `Unit` owns its carried crate stocks independently
 of provisions. Ground and carried freight use `CargoStock.kind` to distinguish
 supply crates from fuel drums; the existing crate collection and slot-order API
-carry both kinds. Each fuel stack holds up to the exported crate capacity and
-occupies one shared berth. Depot loading derives the freight kind from the actual
+carry both kinds. Each fuel stack holds up to the exported fuel-drum capacity (1024),
+while supply crates hold 256. Fuel depots hold 4096 and supply depots hold 1024.
+Each freight load occupies one shared berth. Depot loading derives the freight kind from the actual
 destination depot. `SupplyRules` supplies authoritative capacities
 to Elm. `Unit.resources.supplyCargo` follows the existing whole-resource fog gate.
 Depot stock is nullable outside sight; known depot positions remain available.
@@ -2108,7 +2147,7 @@ turn state, and shows it on the introduction after playback, including on reload
 `BuildingKind` distinguishes `Supply`, `Fuel`, and `Fortress` buildings through
 GraphQL and Elm.
 `ResourceStock` is the shared finite quantity for depots and supply crates.
-Fuel depots can be authored in map layouts with 1024 starting stock; existing
+Fuel depots can be authored in map layouts with 4096 starting stock; existing
 layouts retain only their supply depots. Fuel recipients are living vehicles on the depot or one cardinally adjacent tile;
 refilling draws only the deficit, without a per-turn cap. Sources never refill
 each other. Supply crate validation and loading dialogs accept only supply

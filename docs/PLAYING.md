@@ -235,10 +235,11 @@ remain eligible.
 
 ## Fuel
 
-Tanks and trucks start with 128/128 fuel. Each successfully entered non-road tile
-costs tanks 7 fuel; road tiles cost 5. Trucks spend 2 fuel plus 2 per occupied
-cargo slot (passenger, supply crate, or fuel drum) on non-road tiles, or 1 plus 1
-per occupied slot on roads. Cargo is counted at departure. Fuel is separate from
+Tanks and trucks start with 512/512 fuel. Each successfully entered non-road tile
+costs tanks 28 fuel; road tiles cost 20. Trucks spend 8 fuel plus 2 per occupied
+cargo slot (passenger, supply crate, or fuel drum) on non-road tiles, or 4 plus 1
+per occupied slot on roads. Each occupied slot adds 25% to empty-truck consumption,
+so a full truck uses 50% more fuel. Cargo is counted at departure. Fuel is separate from
 terrain movement points. Interrupted routes pay only for successfully traveled tiles; holds consume none.
 Neutral fuel depots refill living tanks and trucks at turn end from finite stocks. Movement previews and submitted paths must fit both remaining
 fuel and the per-turn movement budget.
@@ -315,8 +316,9 @@ conceal all enemy units inside, even adjacent to an observer or an allied unit
 in the same forest. Your own units and their occupied tiles are always visible. Unseen tiles are darker and desaturated, preserving terrain detail;
 the terrain and fixed depot locations remain known. Hidden enemies and their
 paths are withheld from game responses.
-Any unit that fires directly reveals its occupied tile to the enemy for the following
-turn, even in forests or beyond normal sight. Direct fire again renews the reveal;
+Any unit that fires directly immediately reveals itself and its occupied tile
+to the enemy, remaining visible through the following turn, even in forests or
+beyond normal sight. Direct fire again renews the reveal;
 otherwise it expires at the next turn boundary. Ambushes can hit revealed units
 in forests if they remain in the firing area, even through intervening terrain.
 Enemy resources stay concealed.
@@ -547,9 +549,9 @@ leave the button to restore the card. Your saved pan and zoom return when
 playback finishes. Concealed enemies
 remain absent from the battlefield and do not influence this camera framing.
 Reciprocal shots share one display; overlapping ambushes show successive health losses, carrying remaining health into the next pair;
-after each lethal pair, the card closes and its casualties vanish in quick
-explosions before the next theater opens. Reciprocal casualties share the existing
-pause. After all pairs, playback shows small target explosions and updated health
+after each lethal pair, the card closes and its casualties vanish in a brief
+explosion, leaving a skull marker during the loss pause before the next theater
+opens. Reciprocal casualties share the existing pause. After all pairs, playback shows small target explosions and updated health
 before movement resumes. Firing tanks and field guns use their illustrated firing sequences, synchronized
 with the weapon audio described in the [development guide](DEVELOPMENT.md#audio-manager). There are no connecting
 shot lines or floating damage numbers. Reduced-motion mode uses steady highlights and impact marks.
@@ -602,18 +604,18 @@ unit stays highlighted while the rest of the map and controls darken. The dialog
 uses Rust-recorded loss causes to identify the attack type and responsible player's
 unit, supply exhaustion, or a lost carrier. A destroyed truck and its lost passengers share one dialog and
 one **continue** action; unrelated losses have separate dialogs. The adjacent
-**skip this dialog** checkbox remembers your preference and preserves the quick
-explosion and sprite disappearance while skipping future dialogs.
+**skip this dialog** checkbox remembers your preference and preserves the
+explosion, sprite disappearance, and skull marker while skipping future dialogs.
 
 ## Fuel depots and drums
 
-Fuel depots are available for manual map placement and start with 1024 fuel.
+Fuel depots are available for manual map placement and start with 4096 fuel.
 They refill vehicles on their square or one cardinally adjacent square up to
 capacity, after movement and combat and before upkeep. Both players share the
 finite stock, using the same rotating distribution priority as supply depots.
 Fuel depots offer a **load fuel drums** dialog with the same available-load
 choices and fuel quantities.
-Each drum stack occupies one berth and holds up to 256 fuel, drawn from depot
+Each drum stack occupies one berth and holds up to 1024 fuel, drawn from depot
 stock. Ground and carried drums refill nearby vehicles before upkeep, retain
 remaining fuel when picked up or unloaded, and disappear when empty.
 Fuel depot inspectors and stock bars conceal
@@ -626,6 +628,8 @@ Infantry and tanks gain defensive readiness; exposed field-gun crews gain no
 damage reduction from preparation. Choose its direction on the map or with an
 arrow key / WASD, just like ambush. It never fires and costs normal upkeep plus
 4 readiness supplies for infantry or 8 for tanks and field guns each turn.
+An arrow and a dotted red square directly ahead show the chosen facing while
+planning and on saved orders, including infantry unloading from trucks.
 Choosing a direction saves the order, which counts toward turn readiness and
 can be revoked before submission. Trucks and
 passengers cannot stand ground.

@@ -37,9 +37,13 @@
 !/public/assets/home-battlefield-logistics-v1.png
 !/public/assets/misc_sheet.png
 !/public/assets/supply-depot-illustrated-v1.png
+!/public/assets/fuel-depot-illustrated-v4.png
+!/public/assets/fuel-drums-illustrated-v1.png
 !/public/assets/destroyed-depot-illustrated-v1.png
 !/public/assets/fortress-illustrated-v2.png
 !/public/assets/supply-crate-illustrated-v1.png
+!/public/assets/pack-horse-illustrated-v1.png
+!/public/assets/pack-horse-illustrated-v2.png
 !/public/assets/death-skull-illustrated-v1.png
 !/public/assets/attack-marker-illustrated-v1.png
 !/public/assets/target-sight-illustrated-v1.png
@@ -127,3 +131,6 @@
 
 # Private player feedback.
 /feedback/
+
+# Local deployment tools and host configuration.
+/deploy/

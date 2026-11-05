@@ -23,6 +23,7 @@ import Effect as E
     exposing
         ( Eff
         )
+import Game.Assets as Assets
 import Game.LogId exposing (GameLogId)
 import Html.Styled as H
     exposing
@@ -432,8 +433,9 @@ update msg page =
                     else
                         case result of
                             Ok flags ->
-                                CombatChart (CombatChart.init shared flags)
-                                    |> E.withOut
+                                ( CombatChart (CombatChart.init shared flags)
+                                , E.toJs (ToJs.PreloadImages Assets.combatImagePaths)
+                                )
 
                             Err error ->
                                 CombatChartLoadFailed shared (ApiRequest.errorMessage error)
@@ -463,7 +465,9 @@ update msg page =
                     else
                         case result of
                             Ok flags ->
-                                ( BackdropReview (BackdropReview.init shared flags), E.none )
+                                BackdropReview.init shared flags
+                                    |> Tuple.mapFirst BackdropReview
+                                    |> Tuple.mapSecond (E.map BackdropReviewMsg)
 
                             Err error ->
                                 ( BackdropReviewLoadFailed shared (ApiRequest.errorMessage error), E.none )

@@ -106,14 +106,21 @@ callers to check that their selections still match the contract.
 
 `VERSION` contains the shared application version: a single positive integer.
 Rust embeds it at compile time; `make app-version` generates the committed
-`src/AppVersion.elm` constant for both frontend apps. Frontend builds and checks
-regenerate it. The label beside the upper-left speaker and the dev panel show the
-frontend's compiled version. Every structured server diagnostic includes the backend's compiled `version` field,
-so an old browser tab can be compared with the deployed server.
+`src/AppVersion.elm` constants for both frontend apps. `VERSION_RELEASED_AT` stores
+the version's release timestamp as `YYYY-MM-DDTHH:mm:ssZ`. Frontend builds and
+checks regenerate the constants without changing that timestamp. The label beside
+the upper-left speaker and the dev panel show the frontend's compiled version and
+release time as `YYYY-MM-DD HH:mm:ss utc`. Every structured server diagnostic
+includes the backend's compiled `version` field, so an old browser tab can be
+compared with the deployed server.
 
 The check-in workflow runs `make bump-version` once before checks and approval:
-`1` becomes `2`, then `3`, and so on. This updates `VERSION` and regenerates
-the Elm constant. Cargo's package version is separate and does not change.
+`1` becomes `2`, then `3`, and so on. This updates `VERSION`, records the current
+UTC time in `VERSION_RELEASED_AT`, and regenerates the Elm constants. The release
+time identifies when the version was prepared for check-in, rather than when a
+particular server deployed it. Version 4's initial timestamp comes from the commit
+that introduced that version. Cargo's package version is separate and does not
+change.
 Reuse a pending version bump when repeating checks or retrying a push. Ordinary
 builds and `git push` do not change source files or increment the version.
 When checking in outside the agent workflow, run `make bump-version` before
@@ -200,6 +207,16 @@ operator password protection is not implemented yet.
 They remain available after restarting the server with the same archive directory.
 
 ## Audio manager
+
+Game images warm in the background on lobby entry and map-theme changes, and
+again on game entry (including direct links). `Game.Assets` gathers paths from
+the rendering modules, prioritizing battlefield artwork before combat sprites
+and theme-specific backdrops. No loading screen or readiness gate is involved.
+Both apps share one image/audio loader with four concurrent tasks, a 15-second
+timeout per attempt, and up to three attempts with brief backoff. Failed images
+warn in the console; failed audio also enters the dev panel. Later requests can
+retry exhausted failures. This reduces first-use pop-in without guaranteeing
+that every asset is ready on a slow connection.
 
 The floating speaker in the upper-left corner toggles all audio, including
 during native dialogs. `Shared` owns the typed mute state across routes in each

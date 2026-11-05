@@ -710,6 +710,9 @@ impl Combat {
             .find(|unit| unit.unit_id() == launch.shooter)
         {
             unit.spend_supplies(rules(unit.kind()).shot_cost);
+            if !self.indirect_targets.contains_key(&launch.shooter) {
+                unit.reveal_firing_position();
+            }
             if let Some(direction) = Direction::between(launch.origin, launch.destination) {
                 unit.rotate(direction);
             }
@@ -2822,7 +2825,7 @@ mod tests {
             assert_eq!(target.hit_points().current(), if survived { 2 } else { 0 });
             assert_eq!(
                 target.fuel().fixture()?.current,
-                if survived { 114 } else { 121 }
+                if survived { 456 } else { 484 }
             );
             assert_eq!(
                 target.supplies().current(),
@@ -2872,7 +2875,7 @@ mod tests {
         assert!(result.stopped.contains(&orders[1].unit_id));
         let mover = result.frames.last().fixture()?.units.get(1).fixture()?;
         assert_eq!(mover.supplies().current(), 96);
-        assert_eq!(mover.fuel().fixture()?.current, 114);
+        assert_eq!(mover.fuel().fixture()?.current, 456);
         Ok(())
     }
 
@@ -2909,7 +2912,7 @@ mod tests {
             scenario.units[1].supplies().current()
         );
         assert_eq!(units[1].direction(), Some(Direction::South));
-        assert_eq!(units[1].fuel().fixture()?.current, 121);
+        assert_eq!(units[1].fuel().fixture()?.current, 484);
         assert_eq!(
             result.paths.get(&orders[1].unit_id).fixture()?,
             &vec![Coordinate::new(4, 2), Coordinate::new(4, 3)]
@@ -3228,8 +3231,7 @@ mod tests {
     }
 
     #[test]
-    fn projected_shots_show_hidden_combatants_without_revealing_battlefield_units() -> TestResult<()>
-    {
+    fn projected_direct_shots_reveal_shooters_and_preserve_encounter_health() -> TestResult<()> {
         let (scenario, mut orders) = fixture(
             UnitKind::FieldGun,
             UnitKind::FieldGun,
@@ -3295,12 +3297,20 @@ mod tests {
         assert_eq!(shot.target_health.after.current(), 0);
         assert!(shot.attacker.resources().is_none());
         assert!(shot.target.resources().is_none());
-        assert!(observed.frames.iter().all(|frame| {
-            frame
+        let shooter_id = scenario.units.first().fixture()?.unit_id();
+        for frame in observed
+            .frames
+            .iter()
+            .skip_while(|frame| frame.shots.is_empty())
+        {
+            let shooter = frame
                 .units
                 .iter()
-                .all(|unit| unit.unit_id() != scenario.units[0].unit_id())
-        }));
+                .find(|unit| unit.unit_id() == shooter_id)
+                .fixture()?;
+            assert!(shooter.resources().is_none());
+            assert!(frame.visible_tiles.contains(&shot.origin));
+        }
         let player_number = PlayerNumber::Player1;
         let visible = visibility::visible_tiles(&scenario, player_number);
         let observed =
@@ -3401,8 +3411,11 @@ mod tests {
                         .into_iter()
                         .filter(|shot| shot.attacker.unit_id() == shooter_id)
                         .collect();
-                    assert_eq!(hits.len(), usize::from(revealed));
-                    if revealed {
+                    // Contact fire reveals the attacker immediately, allowing the
+                    // surviving ambusher to acquire it even inside a forest.
+                    let target_revealed = revealed || attack_move;
+                    assert_eq!(hits.len(), usize::from(target_revealed));
+                    if target_revealed {
                         let hit = hits.first().fixture()?;
                         assert_eq!(hit.kind, CombatKind::Ambush);
                         assert_eq!(hit.destination, Coordinate::new(4, 3));
@@ -3584,7 +3597,10 @@ mod tests {
         combat.finish(&mut scenario, &mut BTreeSet::new(), &mut Vec::new());
         assert!(!scenario.units[1].is_alive());
         assert!(!scenario.units[2].is_alive());
-        assert!(visibility::visible_tiles(&scenario, PlayerNumber::Player2).is_empty());
+        assert_eq!(
+            visibility::visible_tiles(&scenario, PlayerNumber::Player2),
+            BTreeSet::from([Coordinate::new(3, 3)])
+        );
         scenario.finish_turn_resources(1);
         assert_eq!(scenario.units.len(), 1);
         Ok(())

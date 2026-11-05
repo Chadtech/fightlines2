@@ -14,6 +14,7 @@ use crate::{
     player::Controller,
     player_number::PlayerNumber,
     scenario::UnitKind,
+    server_limits::{self, ClientAddress, Operation},
     server_log::{self, RequestId},
     session_token::SessionToken,
     store::Store,
@@ -36,6 +37,7 @@ pub struct Endpoint {
     environment: Environment,
     schema: Schema,
     requests: Arc<limits::Requests>,
+    mutation_limits: Arc<server_limits::Limits>,
 }
 
 pub fn endpoint(environment: Environment) -> Endpoint {
@@ -43,6 +45,7 @@ pub fn endpoint(environment: Environment) -> Endpoint {
         environment,
         schema: schema(),
         requests: Arc::new(limits::Requests::default()),
+        mutation_limits: Arc::new(server_limits::Limits::default()),
     }
 }
 
@@ -52,6 +55,8 @@ pub fn endpoint(environment: Environment) -> Endpoint {
 
 pub struct Context {
     pub store: Arc<Store>,
+    pub mutation_limits: Arc<server_limits::Limits>,
+    client_address: ClientAddress,
     pub feedback: Option<Arc<feedback::Directory>>,
     pub editor: map_editor::Access,
     pub archives: game_archive::Access,
@@ -62,6 +67,12 @@ pub struct Context {
 impl juniper::Context for Context {}
 
 impl Context {
+    fn admit(&self, operation: Operation) -> FieldResult<()> {
+        self.mutation_limits
+            .admit(operation, self.client_address, self.identity())
+            .map_err(server_limits::Rejection::into_field_error)
+    }
+
     pub fn identity(&self) -> Option<SessionToken> {
         self.identity
             .lock()
@@ -222,6 +233,7 @@ impl Mutation {
     }
 
     fn create_lobby(context: &Context, name: String, lobby_name: String) -> FieldResult<Snapshot> {
+        context.admit(Operation::CreateLobby)?;
         lobby::create(context, &name, &lobby_name)
     }
 
@@ -255,6 +267,7 @@ impl Mutation {
         turn_number: i32,
         orders: Vec<crate::turns::UnitOrderInput>,
     ) -> FieldResult<GameSnapshot> {
+        context.admit(Operation::SubmitTurn)?;
         game::submit_turn(context, LobbyId::from_token(id), turn_number, orders)
     }
 
@@ -367,6 +380,8 @@ pub async fn handle(
     let original = SessionToken::from_request(&request);
     let context = Context {
         store: store.into_inner(),
+        mutation_limits: endpoint.mutation_limits.clone(),
+        client_address: ClientAddress::from_request(&request),
         feedback: feedback.map(web::Data::into_inner),
         editor: map_editor::Access::from_request(editor, &request),
         archives: game_archive::Access::from_browser(archives),
@@ -435,6 +450,8 @@ fn rejected_request(rejection: limits::Rejection, request_id: RequestId) -> Http
 pub fn export_schema() -> std::io::Result<()> {
     let context = Context {
         store: Arc::new(Store::new(crate::seed::Seed::new([0; 32]))),
+        mutation_limits: Arc::new(server_limits::Limits::default()),
+        client_address: ClientAddress::Unavailable,
         feedback: None,
         editor: map_editor::Access::Disabled,
         archives: game_archive::Access::Disabled,
@@ -469,6 +486,75 @@ mod tests {
     use serde_json::{Value, json};
 
     const FIELDS: &str = "id name mapType players { name isHost } isHost isMember gameUrl";
+
+    #[actix_web::test]
+    async fn mutation_budgets_count_aliases_and_cookie_rotation_without_limiting_reads()
+    -> TestResult<()> {
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(Store::new(crate::seed::Seed::new([37; 32]))))
+                .app_data(web::Data::new(endpoint(Environment::Production)))
+                .route("/graphql", web::post().to(handle)),
+        )
+        .await;
+        let create = "createLobby(name: \"Host\", lobbyName: \"Rate test\") { id }";
+        let request = test::TestRequest::post()
+            .uri("/graphql")
+            .peer_addr("192.0.2.1:1234".parse()?)
+            .set_json(json!({"query": format!("mutation {{ {create} }}")}))
+            .to_request();
+        let response = test::call_service(&app, request).await;
+        let host = response.response().cookies().next().fixture()?.into_owned();
+        let body: Value = test::read_body_json(response).await;
+        assert!(body.get("errors").is_none(), "{body}");
+        let request = test::TestRequest::post().uri("/graphql")
+            .peer_addr("192.0.2.1:1234".parse()?).cookie(host.clone())
+            .set_json(json!({"query": format!("mutation {{ a: {create} b: {create} c: {create} d: {create} }}")})).to_request();
+        let response = test::call_service(&app, request).await;
+        let body: Value = test::read_body_json(response).await;
+        assert_eq!(body["errors"][0]["extensions"]["code"], "RATE_LIMITED");
+        assert_eq!(body["errors"][0]["extensions"]["retryAfterSeconds"], 60);
+        assert_eq!(body["errors"][0]["path"], json!(["d"]));
+        // Dropping cookies does not bypass the address budget. Four creations
+        // have run so far; six more are allowed, then the shared IP is limited.
+        for index in 0..7 {
+            let request = test::TestRequest::post()
+                .uri("/graphql")
+                .peer_addr("192.0.2.1:1234".parse()?)
+                .insert_header(("x-forwarded-for", format!("198.51.100.{index}")))
+                .set_json(json!({"query": format!("mutation {{ {create} }}")}))
+                .to_request();
+            let response = test::call_service(&app, request).await;
+            let body: Value = test::read_body_json(response).await;
+            if index < 6 {
+                assert!(body.get("errors").is_none(), "{body}");
+            } else {
+                assert_eq!(body["errors"][0]["extensions"]["code"], "RATE_LIMITED");
+            }
+        }
+        // Turn and lobby budgets are independent. Invalid turns also count.
+        for index in 0..7 {
+            let request = test::TestRequest::post().uri("/graphql")
+                .peer_addr("192.0.2.1:1234".parse()?).cookie(host.clone())
+                .set_json(json!({"query": "mutation { submitTurn(id: \"missing\", turnNumber: 1, orders: []) { turnNumber } }"})).to_request();
+            let response = test::call_service(&app, request).await;
+            let body: Value = test::read_body_json(response).await;
+            if index < 6 {
+                assert_eq!(body["errors"][0]["message"], "this game no longer exists.");
+            } else {
+                assert_eq!(body["errors"][0]["extensions"]["code"], "RATE_LIMITED");
+            }
+        }
+        let request = test::TestRequest::post()
+            .uri("/graphql")
+            .peer_addr("192.0.2.1:1234".parse()?)
+            .set_json(json!({"query": "{ health }"}))
+            .to_request();
+        let response = test::call_service(&app, request).await;
+        let body: Value = test::read_body_json(response).await;
+        assert_eq!(body["data"]["health"], true);
+        Ok(())
+    }
 
     #[actix_web::test]
     async fn feedback_validates_and_only_acknowledges_persisted_submissions() -> TestResult<()> {
@@ -1040,11 +1126,115 @@ mod tests {
     }
 
     #[actix_web::test]
+    async fn human_can_join_after_ai_slot_is_reopened() -> TestResult<()> {
+        for environment in [Environment::Development, Environment::Production] {
+            let app = test::init_service(
+                App::new()
+                    .app_data(web::Data::new(Store::new(crate::seed::Seed::new([31; 32]))))
+                    .app_data(web::Data::new(endpoint(environment)))
+                    .route("/graphql", web::post().to(handle)),
+            )
+            .await;
+            macro_rules! execute {
+                ($query:expr, $cookie:expr) => {{
+                    let mut request = test::TestRequest::post().uri("/graphql")
+                        .set_json(json!({ "query": $query }));
+                    if let Some(cookie) = $cookie { request = request.cookie(cookie); }
+                    let response = test::call_service(&app, request.to_request()).await;
+                    let cookie = response.response().cookies().next().map(|cookie| cookie.into_owned());
+                    let body: Value = test::read_body_json(response).await;
+                    (body, cookie)
+                }};
+            }
+            let (other, existing_guest) = execute!(
+                "mutation { createLobby(name: \"Guest\", lobbyName: \"Other lobby\") { id } }",
+                None
+            );
+            assert!(other.get("errors").is_none(), "{other}");
+            let existing_guest = existing_guest.fixture()?;
+            for side in ["PLAYER1", "PLAYER2"] {
+                for guest in [None, Some(existing_guest.clone())] {
+                    let (created, host) = execute!(
+                        "mutation { createLobby(name: \"Host\", lobbyName: \"Reopened slot\") { id } }",
+                        None
+                    );
+                    let host = host.fixture()?;
+                    let id = created["data"]["createLobby"]["id"].as_str().fixture()?;
+                    let (chosen, _) = execute!(
+                        format!(
+                            "mutation {{ setLobbySide(id: \"{id}\", playerNumber: {side}) {{ id }} }}"
+                        ),
+                        Some(host.clone())
+                    );
+                    assert!(chosen.get("errors").is_none(), "{chosen}");
+                    let join = format!(
+                        "mutation {{ joinLobby(id: \"{id}\", name: \"Guest\") {{ isMember players {{ isYou controller playerNumber }} }} }}"
+                    );
+                    // Retrying a full-lobby rejection must work once the host removes AI.
+                    for _ in 0..2 {
+                        let (selected, _) = execute!(
+                            format!(
+                                "mutation {{ setLobbyController(id: \"{id}\", controller: AI) {{ players {{ controller }} }} }}"
+                            ),
+                            Some(host.clone())
+                        );
+                        assert!(selected.get("errors").is_none(), "{selected}");
+                        assert_eq!(
+                            selected["data"]["setLobbyController"]["players"][1]["controller"],
+                            "AI"
+                        );
+                        let (full, _) = execute!(&join, guest.clone());
+                        assert!(
+                            full["errors"][0]["message"]
+                                .as_str()
+                                .fixture()?
+                                .contains("the lobby is full"),
+                            "{full}"
+                        );
+                        let (reopened, _) = execute!(
+                            format!(
+                                "mutation {{ setLobbyController(id: \"{id}\", controller: HUMAN) {{ players {{ controller playerNumber }} }} }}"
+                            ),
+                            Some(host.clone())
+                        );
+                        assert!(reopened.get("errors").is_none(), "{reopened}");
+                        let players = reopened["data"]["setLobbyController"]["players"]
+                            .as_array()
+                            .fixture()?;
+                        assert_eq!(players.len(), 1);
+                        assert_eq!(players[0]["controller"], "HUMAN");
+                        assert_eq!(players[0]["playerNumber"], side);
+                    }
+                    let (joined, new_guest) = execute!(&join, guest.clone());
+                    assert!(joined.get("errors").is_none(), "{joined}");
+                    assert_eq!(joined["data"]["joinLobby"]["isMember"], true);
+                    assert_eq!(joined["data"]["joinLobby"]["players"][1]["isYou"], true);
+                    assert_eq!(
+                        joined["data"]["joinLobby"]["players"][1]["controller"],
+                        "HUMAN"
+                    );
+                    let (rejoined, _) = execute!(&join, new_guest.or(guest));
+                    assert!(rejoined.get("errors").is_none(), "{rejoined}");
+                    assert_eq!(
+                        rejoined["data"]["joinLobby"]["players"]
+                            .as_array()
+                            .fixture()?
+                            .len(),
+                        2
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[actix_web::test]
     async fn ai_lobby_authorization_and_turns_over_graphql() -> TestResult<()> {
+        let endpoint = web::Data::new(endpoint(Environment::Development));
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(Store::new(crate::seed::Seed::new([19; 32]))))
-                .app_data(web::Data::new(endpoint(Environment::Development)))
+                .app_data(endpoint.clone())
                 .route("/graphql", web::post().to(handle)),
         )
         .await;
@@ -1152,6 +1342,18 @@ mod tests {
                 let (unchanged, _) = execute!(&game_query, host.clone());
                 assert_eq!(unchanged["data"]["game"]["turnNumber"], 1);
                 assert_eq!(unchanged["data"]["game"]["submitted"], false);
+                let permit = endpoint.mutation_limits.acquire_ai().fixture()?;
+                let (busy, _) = execute!(
+                    format!(
+                        "mutation {{ submitTurn(id: \"{id}\", turnNumber: 1, orders: [{}]) {{ turnNumber }} }}",
+                        orders.join(",")
+                    ),
+                    host.clone()
+                );
+                assert_eq!(busy["errors"][0]["extensions"]["code"], "AI_BUSY");
+                let (unchanged, _) = execute!(&game_query, host.clone());
+                assert_eq!(unchanged, game);
+                drop(permit);
             }
             let (result, _) = execute!(
                 format!(

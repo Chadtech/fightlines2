@@ -39,13 +39,14 @@ own messages stay silent.
 
 ## Typography and copy
 
-Both apps show a quiet `v<integer>` label beside the speaker in the upper-left
-viewport corner, including while a native dialog is open. Use a shared row with
-a small gap and center the label vertically against the speaker's click target,
+Both apps show a quiet `v<integer> · YYYY-MM-DD HH:mm:ss utc` label beside the
+speaker in the upper-left viewport corner, including while a native dialog is
+open. Use a shared row with a small gap and center the label vertically against
+the speaker's click target,
 including its larger touch target. Keep the label and gap passive so they do not
 intercept pointer input. On screens up to 400px wide, place the row below the
 battlefield header and recent chat messages below the row. The dev panel also
-identifies the compiled frontend version.
+identifies the compiled frontend version and its release timestamp.
 
 - Call unit instructions **orders** throughout the UI, guide, and gameplay code.
   Use **orders** for the menu, **cancel order** while planning, and **revoke order**
@@ -265,8 +266,12 @@ omits this decorative cycle and retains the original green background.
   duplicate saves and show failures on the library screen without losing the
   preview. Guests see the saved map in the lobby and have no change-map action.
 - Keep `start game` visible for the host and disable it until both slots are
-  filled or while a request is pending. Derive availability and adjacent explanatory
-  text from the same blocking reason, including pending requests and lobby updates.
+  filled or while a setup change or start request is pending. Background lobby
+  updates keep the button enabled. Clicking during an update queues one start
+  until that update succeeds, then rechecks the refreshed lobby before starting.
+  A failed update cancels the queued start and shows the update error for retry.
+  Derive availability and adjacent explanatory text from the same blocking reason,
+  including a queued start.
   Show `waiting for another player` when the human slot is empty; omit routine
   readiness or success text.
   Lobby updates are automatic; show `retry` only after an update fails.
@@ -394,7 +399,7 @@ omits this decorative cycle and retains the original green background.
   edges, above their illustration in a nightwood3
   inset screen, without position coordinates. Display
   authoritative hit points (out of 16), supplies (using each unit's authoritative maximum), and fuel (out
-  of 128) (for tanks and trucks) as horizontal gauges with `current / maximum` labels. Use red1 below 25%, yellow4 from
+  of 512) (for tanks and trucks) as horizontal gauges with `current / maximum` labels. Use red1 below 25%, yellow4 from
   25–75%, and green1 (`#4BBF63`) above 75%; retain the numeric labels alongside color.
 - Stack complete inspection rows for the selected tile: unit and its actions,
   depot, ground freight, then terrain. Separate rows with quiet rules and let the
@@ -684,10 +689,11 @@ absent fuel, healthy resources, and dying units show no warning badges.
 Each observable unit loss pauses playback and opens a beveled `unit lost` dialog
 below the battlefield. Darken the other map tiles and surrounding controls while
 leaving the casualty's physical tile illuminated with a gold outline. Replace the
-unit with the theater's six-frame illustrated explosion over 100ms, fading its
-sprite beneath the blast from 20ms to 50ms. The explosion plays once, including
-while the dialog holds playback, and leaves the tile empty. Passengers focus their
-carrier's tile without separate sprites or explosions. Freeze surrounding unit
+unit with the theater's six-frame illustrated explosion over 600ms, fading its
+sprite beneath the blast from 120ms to 300ms. The explosion plays once, including
+while the dialog holds playback. Then fade in an illustrated skull and crossbones
+over 200ms and keep it on the tile until the casualty pause or dialog finishes.
+Passengers focus their carrier's tile without separate sprites or explosions. Freeze surrounding unit
 and interface animations and block battlefield interaction during the dialog.
 
 Name the lost unit and show whether the lethal shot was an `ambush` or `attack move`,
@@ -709,14 +715,14 @@ Keep `continue` and the skip checkbox available so playback can proceed.
 Place `continue` and the `skip this dialog` checkbox together below all information.
 The checkbox defaults to unchecked and remembers its Boolean in local storage.
 Checking it dismisses the current dialog and skips future loss dialogs, preserving
-the quick explosion and disappearance. Continue acknowledges one loss event.
+the explosion, disappearance, and skull marker. Continue acknowledges one loss event.
 A carrier and its lost passengers share one dialog naming every casualty and
 showing the carrier’s cause once; independent
 simultaneous losses appear in sequence. Enter activates the focused action, and Escape continues.
 After acknowledgment, keep the existing server-timed casualty pause before removing
 the unit and resuming movement. Long animation ticks stop at unacknowledged losses.
 Reduced-motion mode briefly shows a steady peak-impact frame, removes the sprite
-at 50ms without fading, and retains the tile highlight.
+at 300ms without fading, and retains the steady skull and tile highlight.
 
 ## Ambush planning and playback
 
@@ -733,11 +739,13 @@ Insufficient readiness supplies disable the order with an explanatory tooltip.
 
 Server-projected volleys render quick expanding bursts on target units, without
 attacker flashes, connecting lines, or floating damage numbers.
-Combat deaths reuse the theater explosion and quick sprite removal; public
+Combat deaths use a slower map explosion, sprite removal, and a skull marker; public
 destroyed state supports observable enemy deaths without exposing their resource gauges.
 
 Every volley involving your units opens the theater, including concealed enemy
-combatants. Encounter portraits do not add concealed units to the battlefield.
+combatants. Direct shooters become visible on the map at the opening spotlight
+and remain revealed through the following turn. Other encounter portraits do not
+add concealed units to the battlefield.
 Before a projected volley, freeze the pre-hit battlefield, unit idle sprites, and
 interface animations. For 300ms, darken every other board tile and outline the two
 participants in gold with a brief moving shine. Direction markers live in a final
@@ -1036,12 +1044,14 @@ close. Retain the existing map burst after continuation.
 ## Stand ground
 
 Stand ground opens the same cardinal direction picker as ambush. Pointer hover
-previews facing with the same illustrated direction arrow; a click or arrow/WASD
+previews facing with the same illustrated direction arrow and one dotted red square
+directly ahead. Keep the square while choosing and on saved orders, including
+infantry planning from a truck's unload square. A click or arrow/WASD
 key saves the chosen direction. Keep the arrow on saved orders and during playback,
 including logged replays. Show the saved order, revoke action, defensive readiness
 explanation, and normal upkeep plus readiness supply cost in the inspector,
 including the cost while choosing direction. Disable it when readiness plus upkeep
-is unaffordable. It has no firing-area highlight because it does not fire.
+is unaffordable. The red square indicates facing; stand ground does not fire.
 
 ## Mountain terrain
 
@@ -1323,3 +1333,10 @@ Keep drafts when dismissed. Block blank or oversized submissions and disable
 repeat submits while saving. Keep the submitted text read-only during the
 request. Failures retain the draft and show an error beside the action; success
 clears the field and confirms that feedback was saved.
+
+Game conclusions invite feedback with a short note that FightLines is a new game
+in development. Place secondary `give feedback` beside primary `return to
+battlefield`. Feedback opens the existing form; closing it returns to the game
+conclusion. Returning to the battlefield dismisses the conclusion for this visit.
+Both actions use large buttons with equal widths and heights, stacking at narrow
+viewport widths.

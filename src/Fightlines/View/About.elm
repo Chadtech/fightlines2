@@ -219,7 +219,8 @@ War is really bad. I don't mean just regrettably bad, as if it was just a diffic
 I mean it's just bad. A very large majority of all the decisions to take part in a war, even in defense, have been really dumb. In some extreme
 circumstances, violence can be justified, like in self defense or the defense of others, or maybe to protect your home or business.
 Do wars resemble those cases of self defense? Not at all. Most wars were easily avoidable. Most of the time the horrors of war were
-not justified by the cause or the aims of the war. Most of the time, it would be better of either side just gave up and surrendered immediately.""" ]
+not justified by the cause or the aims of the war. Most of the time, it would be better of either side just gave up and surrendered immediately."""
+            ]
                 |> List.concatMap Prose.paragraphs
 
 

@@ -1,8 +1,10 @@
 module Game.View.CombatExplosion exposing
     ( casualtyAnimationAttribute
+    , casualtyDurationMs
+    , casualtyToSvg
     , durationMs
+    , imagePaths
     , mapToSvg
-    , preload
     , spriteDisappearsAt
     , spriteOpacity
     , styles
@@ -24,6 +26,11 @@ durationMs =
     100
 
 
+casualtyDurationMs : Float
+casualtyDurationMs =
+    600
+
+
 casualtyAnimationAttribute : String
 casualtyAnimationAttribute =
     "data-casualty-animation"
@@ -34,24 +41,11 @@ framePath index =
     "/assets/combat-impact-side-anime-v2/frame-" ++ String.fromInt index ++ ".png"
 
 
-{-| Fetch every frame at startup for both map casualties and theater strikes.
+{-| All frames used by map casualties and theater strikes.
 -}
-preload : Html msg
-preload =
-    let
-        frame : Int -> Html msg
-        frame index =
-            H.node "link"
-                [ A.rel "preload"
-                , A.attribute "as" "image"
-                , A.href (framePath index)
-                ]
-                []
-    in
-    H.div
-        [ A.hidden True
-        ]
-        (List.map frame (List.range 0 5))
+imagePaths : List String
+imagePaths =
+    List.map framePath (List.range 0 5)
 
 
 spriteDisappearsAt : Float
@@ -148,13 +142,26 @@ frameStarts =
     [ 0, 10, 20, 50, 80, 90 ]
 
 
-{-| Play once when a map casualty appears, even while a loss dialog holds the
-playback clock. Reuse the theater frames and timing, then leave the tile empty.
+{-| Keep ordinary map impacts at the theater's quick strike timing.
+-}
+mapToSvg : SpriteFacing -> Svg msg
+mapToSvg =
+    mapExplosionToSvg durationMs
+
+
+{-| Give a map casualty a longer beat, even while a loss dialog holds playback.
+-}
+casualtyToSvg : SpriteFacing -> Svg msg
+casualtyToSvg =
+    mapExplosionToSvg casualtyDurationMs
+
+
+{-| Play once when mounted, independently of the playback clock.
 Completed frames return to their base opacity instead of retaining a stepped
 animation sample, which can leave the final frames visible after they finish.
 -}
-mapToSvg : SpriteFacing -> Svg msg
-mapToSvg facing =
+mapExplosionToSvg : Float -> SpriteFacing -> Svg msg
+mapExplosionToSvg mapDurationMs facing =
     let
         frame : Float -> Float -> Svg msg
         frame startsAt endsAt =
@@ -164,9 +171,9 @@ mapToSvg facing =
                     [ S.opacity 0
                     , S.animation
                         ("fightlines-map-explosion "
-                            ++ String.fromFloat (endsAt - startsAt)
+                            ++ String.fromFloat ((endsAt - startsAt) * mapDurationMs / durationMs)
                             ++ "ms steps(1, end) "
-                            ++ String.fromFloat startsAt
+                            ++ String.fromFloat (startsAt * mapDurationMs / durationMs)
                             ++ "ms"
                         )
                     , S.reducedMotion
@@ -194,7 +201,7 @@ mapToSvg facing =
                     , S.opacity 0
                     , S.animation
                         ("fightlines-map-explosion "
-                            ++ String.fromFloat durationMs
+                            ++ String.fromFloat mapDurationMs
                             ++ "ms steps(1, end)"
                         )
                     , S.reducedMotion

@@ -56,8 +56,43 @@ HTTP `400` before any resolver runs, so rejected mutations change no game state.
 Nesting is checked before parsing and includes inline input objects and lists;
 input fields and list items do not consume the selection budget.
 The existing 2 MiB JSON body limit still applies, allowing map-editor thumbnails
-and large turn inputs. These fixed limits bound document work and concurrency;
-they do not impose a per-client request rate or a simulation time limit.
+and large turn inputs. These fixed limits bound document work and concurrency.
+
+AI games share one server-wide AI turn permit. After validating the human orders,
+the worker must acquire it immediately or reject the submission with `AI_BUSY`.
+The permit covers planning, resolution, and recording, and stays held even if the
+client disconnects. Human-only games do not use it. A submission to an already
+locked game returns `GAME_BUSY` rather than waiting on its lock. Busy rejections
+leave the authoritative turn unchanged; the UI preserves orders for a retry.
+This bounds simultaneous AI work; there is no per-calculation time limit.
+
+Lobby creation and turn submission also use separate, shared token budgets:
+
+| Mutation | Session burst / refill | IP burst / refill |
+| --- | --- | --- |
+| `createLobby` | 3 / one every 60 seconds | 10 / one every 15 seconds |
+| `submitTurn` | 6 / one every 2 seconds | 24 / one every 500 milliseconds |
+
+Both applicable budgets must allow the operation. Anonymous requests use the IP
+budget; once a session exists, its budget also applies. Each resolver invocation
+counts, including aliases, invalid inputs, and busy attempts. A rate rejection
+does not consume tokens or extend the wait. Rejections are ordinary GraphQL errors
+with `RATE_LIMITED` and `retryAfterSeconds`, so the UI shows the retry message.
+Polling, chat, and other operations do not consume these mutation budgets.
+
+For the same-Droplet Caddy setup below, the server trusts the rightmost
+`X-Forwarded-For` address only when the socket peer is loopback. Other connections
+use their socket IP, ignoring forwarding headers. Caddy supplies this header by
+default and prevents clients from spoofing it; keep port 8080 private. IPv4-mapped
+IPv6 addresses share the corresponding IPv4 budget. Additional remote proxies
+share their proxy IP budget unless this policy is deliberately extended.
+
+Budgets retain IP addresses and session credentials only in server memory, never
+in logs or responses. Fully refilled buckets are cleaned on the next mutation
+after a periodic 60-second cleanup interval. Storage is capped at 8,192 buckets;
+new buckets are rejected with a retry message when full, preserving existing
+limits. Budgets reset when the server restarts. These limits apply in development
+and production, and are starting values to tune against real server load.
 
 - `FIGHTLINES_ENV`: `development` (default) or `production`; controls cookie
   security and development-server flag availability, independently of the build.
@@ -153,6 +188,97 @@ This example runs one game-server process. Restarts still lose live games and
 lobbies; the archive files do not restore player sessions. Before replacing the
 binary on a later deployment, stop the service, install the new binary and
 production assets, and start it again. Keep runtime storage in place.
+
+## Deploying updates with the script
+
+[`deploy/deploy.sh`](deploy/deploy.sh) formalizes updates to the existing Droplet.
+Run it on the Mac from this checkout. Its defaults are `root@167.71.23.178` and
+`https://fightlines.167.71.23.178.sslip.io`. It expects the Caddy, systemd, service
+accounts, and production configuration from the first installation to exist.
+It does not provision a new server or change HTTPS or runtime configuration.
+The deployment directory is ignored for new files, so keep a separate backup of
+these local scripts and the recorded host key. A fresh clone retains the three
+already-tracked service/configuration examples but does not receive the local tools.
+
+Start by previewing the steps, without builds, network requests, or server changes:
+
+```sh
+./deploy/deploy.sh --dry-run
+```
+
+Prepare and inspect a release locally, without connecting to the Droplet:
+
+```sh
+./deploy/deploy.sh --prepare
+```
+
+Preparation retains its package for inspection. Running the command again without
+a flag prepares a fresh snapshot before publishing.
+
+Publish an update when ready for a restart:
+
+```sh
+./deploy/deploy.sh
+```
+
+The last command **restarts the server and resets active games and lobbies**.
+It does not ask for another confirmation. The check-in workflow and its approval
+remain separate: this script never commits, pushes, or increments `VERSION`.
+It captures saved working-tree changes, including staged and unstaged edits and
+relevant untracked build files. Unsaved editor buffers are not included.
+
+The numbered output follows these steps:
+
+1. `snapshot.cjs` copies Git-listed build inputs into a private temporary directory.
+   It selects the root build manifests, version files, and the `src`, `tests`, `tools`, `public`,
+   `maps`, `dev-tools`, and `deploy` directories. Ignored files, `.env` files,
+   private runtime storage, old reference material, and local build caches are
+   excluded. The five local deployment helpers/key files are explicitly included
+   even though `deploy/` is ignored; other ignored files in that directory stay
+   excluded. Symbolic links are rejected. Add new top-level build inputs to this
+   list when needed. `make check` runs deployment tests when the local test file exists.
+2. The snapshot receives a generated silent replacement for the unlicensed truck
+   audition clip. The original clip is never copied or uploaded. This deliberate
+   substitution remains until licensed audio is supplied and the deployment
+   filtering is updated.
+3. `npm ci`, `make check`, and `make frontend PRODUCTION=true` run inside the
+   snapshot. The local Cargo cache is shared; generated source and frontend files
+   stay inside the snapshot. The frontend therefore uses the Mac's installed Elm
+   compiler. Local prerequisites are Node.js 22+, npm, Rust/Cargo, Elm 0.19.3,
+   `elm-format`, Make, Git, FFmpeg with Vorbis support, tar, and `shasum`.
+4. The checked source, maps, runtime assets, generated frontend, and `RELEASE.json`
+   are packaged together. The script prints the temporary directory, release ID,
+   archive path, and SHA-256. Preparation files remain available there for inspection;
+   remove the printed temporary directory when no longer needed.
+5. SSH/SCP verify the public host key recorded in `deploy/known_hosts`. The private
+   login key stays on the Mac. Uploads go under
+   `/var/lib/fightlines-build/uploads/<release-id>`. The remote helper checks the
+   archive checksum and takes an exclusive deployment lock before building.
+6. `deploy-remote.sh` unpacks a separate source directory under
+   `/var/lib/fightlines-build/builds/<release-id>`. The `fightlines-build` account
+   runs `cargo build --locked --release` with one build job and the existing cache
+   at `/var/lib/fightlines-build/source/target`. The active server keeps running
+   during this build. No Linux installation of Elm is needed.
+7. Root installs the binary, frontend, and maps into
+   `/opt/fightlines/releases/<release-id>`, stops `fightlines`, switches the three
+   links under `/opt/fightlines`, and starts the service. Backend/public health,
+   the home page, production flag, served frontend checksum, and unavailable `/dev`
+   route are verified. Failure during activation restores the previous links and
+   restarts the previous release. A failed build never stops the running service.
+
+The previous release, uploads, and build directories are retained for inspection
+and rollback; there is no automatic cleanup. Runtime archives and feedback remain
+under `/var/lib/fightlines`, and diagnostics remain under `/var/log/fightlines`.
+Rollback does not recover games lost to a restart. Inspect a failed deployment with
+`ssh root@167.71.23.178`, `systemctl status fightlines`, and
+`journalctl -u fightlines`.
+
+`FIGHTLINES_SSH_TARGET`, `FIGHTLINES_PUBLIC_URL`, and `FIGHTLINES_KNOWN_HOSTS`
+override the destination, public HTTPS origin, and host-key file. Verify a new
+server's host key independently before updating the recorded key; the script
+never automatically accepts a replacement. The two remote path overrides
+`FIGHTLINES_INSTALL_DIR` and `FIGHTLINES_BUILD_HOME` support isolated tests of the
+remote helper; ordinary deployments use the installed paths above.
 
 ## Server diagnostics
 

@@ -1,8 +1,8 @@
 module Game.View.RotationChoices exposing
     ( Msg(..)
     , ambushToSvg
-    , attackFacing
     , attackToSvg
+    , facingHighlight
     )
 
 import Api.Enum.Direction as Direction exposing (Direction)
@@ -88,8 +88,8 @@ attackToSvg path map origin selected =
         (ambushToSvg map origin selected :: List.map choice allowed)
 
 
-attackFacing : Coordinate -> Direction -> Svg msg
-attackFacing origin direction =
+facingHighlight : Coordinate -> Direction -> Svg msg
+facingHighlight origin direction =
     directionSquare origin
         direction
         [ SA.fill S.red1Str

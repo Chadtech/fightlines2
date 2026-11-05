@@ -6,13 +6,13 @@ const { join } = require('node:path');
 const vm = require('node:vm');
 const { createHash } = require('node:crypto');
 
-const source = readFileSync('public/audio-manager.js', 'utf8');
+const source = readFileSync('public/asset-loader.js', 'utf8') + '\n' + readFileSync('public/audio-manager.js', 'utf8');
 
 function assertSeconds(actual, expected, message) {
   assert.ok(Math.abs(actual - expected) < 1e-9, `${message}: expected ${expected}, received ${actual}`);
 }
 
-function boot({ loadFails = false, decodeFails = false, resumeFails = false, deferredLoad = false } = {}) {
+function boot({ loadFails = false, decodeFails = false, resumeFails = false, deferredLoad = false, firstLoadHangs = false } = {}) {
   const events = {};
   const documentEvents = {};
   const warnings = [];
@@ -22,6 +22,7 @@ function boot({ loadFails = false, decodeFails = false, resumeFails = false, def
   const gains = [];
   const panners = [];
   const requests = [];
+  const requestedFiles = new Set();
   const document = { hidden: false, addEventListener(name, handler) { documentEvents[name] = handler; } };
   let now = 0;
   let releaseLoad;
@@ -79,7 +80,7 @@ function boot({ loadFails = false, decodeFails = false, resumeFails = false, def
     }
   }
   const sandbox = {
-    AudioContext, document,
+    AudioContext, document, AbortController, setTimeout, clearTimeout,
     reportError(failure) { errors.push(JSON.parse(JSON.stringify(failure))); },
     Math: Object.assign(Object.create(Math), { random: (() => {
       let seed = 1;
@@ -88,6 +89,9 @@ function boot({ loadFails = false, decodeFails = false, resumeFails = false, def
     performance: { now: () => now },
     async fetch(url) {
       requests.push(url);
+      const firstRequest = !requestedFiles.has(url);
+      requestedFiles.add(url);
+      if (firstLoadHangs && firstRequest) return new Promise(() => {});
       await ready;
       return { ok: !loadFails, status: loadFails ? 404 : 200, arrayBuffer: async () => new ArrayBuffer(8) };
     },
@@ -95,7 +99,8 @@ function boot({ loadFails = false, decodeFails = false, resumeFails = false, def
     console: { warn(...args) { warnings.push(args); } },
   };
   vm.createContext(sandbox);
-  vm.runInContext(source + '\nthis.audio = createAudioManager(reportError);', sandbox);
+  sandbox.assetTimeoutMs = firstLoadHangs ? 5 : 15000;
+  vm.runInContext(source + '\nthis.audio = createAudioManager(reportError, createAssetLoader({ retryDelayMs: 0, timeoutMs: assetTimeoutMs }));', sandbox);
   return {
     audio: sandbox.audio, contexts, voices, gains, panners, requests, warnings, errors, document, events, documentEvents,
     advance(ms) { now += ms; },
@@ -201,6 +206,13 @@ async function main() {
     '/audio/combat/infantry-fire-heavy-v1.ogg',
   ]);
   assert.equal(app.contexts[0].decodes, 23);
+
+  const stalledAudio = boot({ firstLoadHangs: true });
+  await stalledAudio.gesture();
+  await stalledAudio.audio.handleEvent({ play: 'affirm' });
+  assert.equal(stalledAudio.voices.length, 1, 'a hung audio download retries and restores playback');
+  assert.equal(stalledAudio.requests.filter(path => path === '/audio/ui-affirm-switch-v1.ogg').length, 2);
+  assert.equal(stalledAudio.errors.length, 0, 'successful recovery does not report a permanent failure');
   await app.audio.handleEvent({ play: 'affirm' });
   assert.equal(app.voices.length, 1, 'rapid duplicate requests are coalesced');
   for (let index = 0; index < 4; index++) {
@@ -613,7 +625,7 @@ async function main() {
   }
   const unavailableEvents = {};
   const unavailableWarnings = [];
-  const unavailable = { document: { hidden: false, addEventListener() {} },
+  const unavailable = { AbortController, setTimeout, clearTimeout, document: { hidden: false, addEventListener() {} },
     addEventListener(name, handler) { unavailableEvents[name] = handler; },
     console: { warn(...args) { unavailableWarnings.push(args); } } };
   vm.createContext(unavailable);

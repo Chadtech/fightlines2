@@ -1,5 +1,6 @@
 module Game.View.TargetSight exposing
     ( State(..)
+    , imagePath
     , styles
     , toSvg
     )
@@ -65,7 +66,7 @@ toSvg state =
             , SA.y "-0.5"
             , SA.width "17"
             , SA.height "17"
-            , SA.xlinkHref "/assets/target-sight-illustrated-v1.png"
+            , SA.xlinkHref imagePath
             , SA.pointerEvents "none"
             , Aria.svgHidden True
             ]
@@ -73,3 +74,8 @@ toSvg state =
     Svg.image
         (imageAttributes ++ stateAttributes)
         []
+
+
+imagePath : String
+imagePath =
+    "/assets/target-sight-illustrated-v1.png"

@@ -6,12 +6,13 @@
 
 ## Bugs
 
-## Immediately
 
-- Launch
+## Immediately
+- Ability to tear down lobby (what happens to lobbies that time out? Is there a timeout?)
+- Prune list of maps
 
 ## Soon
-- Horse logistics unit
+
 
 ## Later
 
@@ -20,6 +21,7 @@
 - Manufacturing and cities
 - Air planes and boats
 - Day Night Cycle
+- Horse logistics unit
 
 
 ### Future units

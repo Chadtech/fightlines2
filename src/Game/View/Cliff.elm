@@ -1,6 +1,7 @@
 module Game.View.Cliff exposing
     ( corner
     , edge
+    , imagePaths
     )
 
 import Api.Enum.Direction as Direction exposing (Direction)
@@ -82,7 +83,17 @@ artwork name =
     Svg.image
         [ SA.width "16"
         , SA.height "16"
-        , SA.xlinkHref ("/assets/coast-illustrated-v2/cliff-" ++ name ++ ".png")
+        , SA.xlinkHref (imagePath name)
         , SA.pointerEvents "none"
         ]
         []
+
+
+imagePath : String -> String
+imagePath name =
+    "/assets/coast-illustrated-v2/cliff-" ++ name ++ ".png"
+
+
+imagePaths : List String
+imagePaths =
+    List.map imagePath [ "front-edge", "back-edge", "side-edge", "front-corner", "back-corner" ]

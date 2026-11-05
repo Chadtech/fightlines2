@@ -124,8 +124,10 @@ pub(super) fn plan(
         }
     }
     for depot in &mut observed.depots {
-        if !depot.stock_visible && depot.kind.resource_kind().is_some() {
-            depot.stock = ResourceStock::depot();
+        if !depot.stock_visible
+            && let Some(kind) = depot.kind.resource_kind()
+        {
+            depot.stock = ResourceStock::depot(kind);
         }
     }
     let own: Vec<_> = observed
@@ -476,7 +478,7 @@ fn forecast(
         if let Some(unit) = after {
             // Supplies/fuel are known only for our own force.
             score += i64::from(unit.supplies().current() / 8);
-            score += i64::from(unit.fuel().map_or(0, |fuel| fuel.current / 8));
+            score += i64::from(unit.fuel().map_or(0, |fuel| fuel.current / 32));
             if before.board_position().is_some()
                 && let Some(position) = unit.board_position()
             {

@@ -3,6 +3,7 @@ module Game.Depot exposing
     , Hp
     , LoadingSource
     , description
+    , destroyedImage
     , hpSelection
     , image
     , isDestroyed
@@ -124,7 +125,7 @@ kindLabel kind =
 image : Depot -> String
 image depot =
     if isDestroyed depot then
-        "/assets/destroyed-depot-illustrated-v1.png"
+        destroyedImage
 
     else
         kindImage depot.kind
@@ -164,3 +165,8 @@ stockDescription kind =
 
         ResourceKind.Fuel ->
             "finite stock, shared by both players. vehicle refilling and loading fuel drums draw from this fuel."
+
+
+destroyedImage : String
+destroyedImage =
+    "/assets/destroyed-depot-illustrated-v1.png"

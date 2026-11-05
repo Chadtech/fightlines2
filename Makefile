@@ -39,6 +39,7 @@ check: app-version combat-theater-calibrations
 	elm-format src --validate
 	node --test tools/check-app-version.cjs
 	node --test tools/check-combat-theater-calibrations.cjs
+	@if [ -f deploy/check-deploy.cjs ]; then node --test deploy/check-deploy.cjs; fi
 	node tools/check-movement.cjs
 	node tools/check-shoreline.cjs
 	node tools/check-roads.cjs
@@ -52,6 +53,7 @@ check: app-version combat-theater-calibrations
 	node tools/check-pointer.cjs
 	node tools/check-local-storage.cjs
 	node tools/check-audio.cjs
+	node --test tools/check-assets.cjs
 	node tools/check-home.cjs
 	$(MAKE) frontend
 	elm make src/DevTools.elm src/Style.elm src/View/*.elm src/Fightlines/View/*.elm src/Game/View/*.elm --output=/dev/null

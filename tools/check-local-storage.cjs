@@ -16,6 +16,7 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
   let send;
   const clipboard = [];
   const thumbnails = [];
+  const images = [];
   const storage = {
     getItem(name) {
       if (readFails) throw new Error('storage denied');
@@ -27,9 +28,17 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
     },
   };
   const entryFile = entryPoint === 'Fightlines' ? 'public/main.js' : 'dev-tools/main.js';
-  const source = readFileSync('public/audio-manager.js', 'utf8') + '\n' + interopSource + '\n' + readFileSync(entryFile, 'utf8');
+  const source = readFileSync('public/asset-loader.js', 'utf8') + '\n' + readFileSync('public/audio-manager.js', 'utf8') + '\n' + interopSource + '\n' + readFileSync(entryFile, 'utf8');
   vm.runInNewContext(source, {
     FIGHTLINES_BUILD: build,
+    AbortController, setTimeout, clearTimeout,
+    Image: class {
+      set src(path) {
+        if (path) images.push(path);
+        Promise.resolve().then(() => this.onload?.());
+      }
+      async decode() {}
+    },
     Elm: { [entryPoint]: { init(options) {
       flags = options.flags;
       return { ports: {
@@ -48,13 +57,13 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
       if (thumbnailFails) throw new Error('thumbnail failed');
       return 'test-png';
     },
-    Math: { floor: Math.floor, random: () => randomSample },
+    Math: { floor: Math.floor, min: Math.min, random: () => randomSample },
     localStorage: storage,
     document: { addEventListener() {} },
     addEventListener(name, handler) { events[name] = handler; },
     console: { warn(...args) { warnings.push(args); } },
   });
-  return { stored, messages, warnings, flags, send, storage, events, clipboard, thumbnails };
+  return { stored, messages, warnings, flags, send, storage, events, clipboard, thumbnails, images };
 }
 
 async function checkInterop() {
@@ -72,6 +81,8 @@ async function checkInterop() {
   }
   assert.equal(JSON.stringify(boot(undefined, { readFails: true }).flags.localStorage), '{}');
   const app = boot('{"existing":{"enabled":true},"count":1}');
+  await app.send({ tag: 'preloadImages', paths: ['/assets/example.png'] });
+  assert.deepEqual(app.images, ['/assets/example.png'], 'shared interop starts background images');
   await app.send({ tag: 'audio', event: null });
   await app.send({ tag: 'audio', event: { play: 'affirm' } });
   assert.equal(app.warnings.length, 0);

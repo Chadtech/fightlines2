@@ -3,6 +3,7 @@ module Game.Supply exposing
     , GroundCrate
     , Rules
     , Stock
+    , cargoCapacity
     , cargoImage
     , cargoLabel
     , cargoPlural
@@ -45,6 +46,8 @@ type alias GroundCrate =
 type alias Rules =
     { depotCapacity : Int
     , crateCapacity : Int
+    , fuelDepotCapacity : Int
+    , fuelDrumCapacity : Int
     }
 
 
@@ -67,6 +70,8 @@ rulesSelection =
     SS.succeed Rules
         |> SS.with RulesApi.depotCapacity
         |> SS.with RulesApi.crateCapacity
+        |> SS.with RulesApi.fuelDepotCapacity
+        |> SS.with RulesApi.fuelDrumCapacity
 
 
 cargoSelection : SelectionSet CargoStock Api.Object.CargoStock
@@ -115,3 +120,13 @@ cargoImage kind =
 
         Kind.Fuel ->
             "/assets/fuel-drums-illustrated-v1.png"
+
+
+cargoCapacity : Rules -> ResourceKind -> Int
+cargoCapacity rules kind =
+    case kind of
+        Kind.Supply ->
+            rules.crateCapacity
+
+        Kind.Fuel ->
+            rules.fuelDrumCapacity

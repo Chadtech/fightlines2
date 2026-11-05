@@ -569,7 +569,7 @@ mod tests {
             .find(|unit| unit.kind() == UnitKind::Truck)
             .fixture()?
             .supply_cargo
-            .push(CargoStock::new(ResourceKind::Fuel, 256));
+            .push(CargoStock::new(ResourceKind::Fuel, 1024));
         let mut turns = Turns::default();
         let orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
         resolve(&mut scenario, &mut turns, PlayerNumber::Player1, orders)?;
@@ -755,7 +755,7 @@ mod tests {
             .iter_mut()
             .find(|unit| unit.id() == "3")
             .fixture()?;
-        carrier.set_fuel_for_test(14);
+        carrier.set_fuel_for_test(56);
         let carrier = carrier.unit_id();
         for passenger in scenario
             .units
@@ -770,7 +770,7 @@ mod tests {
             .find(|unit| unit.id() == "4")
             .fixture()?
             .supply_cargo
-            .push(CargoStock::new(ResourceKind::Fuel, 68));
+            .push(CargoStock::new(ResourceKind::Fuel, 272));
         let mut board = scenario.clone();
         let orders = ai::plan(&board, PlayerNumber::Player1).fixture()?;
         let carrier_order = orders.iter().find(|order| order.unit_id == "3").fixture()?;

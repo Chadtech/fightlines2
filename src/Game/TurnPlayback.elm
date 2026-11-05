@@ -778,9 +778,13 @@ combineImpactTargets first second =
 beginFrame : Frame -> PreparedTurn -> Playback
 beginFrame before prepared =
     let
+        revealed : Frame
+        revealed =
+            revealDirectShooters before prepared.current.frame
+
         frames : FrameTransition
         frames =
-            { current = before
+            { current = revealed
             , next = prepared.current.frame
             }
 
@@ -792,7 +796,7 @@ beginFrame before prepared =
                         { encounter = encounter
                         , remaining = rest
                         , before =
-                            before
+                            revealed
                                 |> setFrameShots []
                         , stage = Spotlighting 0
                         }
@@ -807,6 +811,44 @@ beginFrame before prepared =
     , acknowledgedLosses = []
     , movement = prepared.current.movement
     }
+
+
+{-| A firing reveal belongs to the opening spotlight as well as the hit frame.
+Only promote shooters present in the server-projected battlefield. Other portraits
+and newly sighted units cannot disclose their positions through an encounter.
+-}
+revealDirectShooters : Frame -> Frame -> Frame
+revealDirectShooters before volley =
+    let
+        reveal : Shot -> Frame -> Frame
+        reveal shot frame =
+            let
+                projected : Bool
+                projected =
+                    List.any (\unit -> unit.id == shot.attacker.id) volley.units
+
+                alreadyVisible : Bool
+                alreadyVisible =
+                    List.any (\unit -> unit.id == shot.attacker.id) frame.units
+
+                visibleTiles : List Coordinate
+                visibleTiles =
+                    if List.member shot.origin frame.visibleTiles then
+                        frame.visibleTiles
+
+                    else
+                        shot.origin :: frame.visibleTiles
+            in
+            if (shot.kind == CombatKind.IndirectFire) || not projected || alreadyVisible then
+                frame
+
+            else
+                { frame
+                    | units = frame.units ++ [ shot.attacker ]
+                    , visibleTiles = visibleTiles
+                }
+    in
+    List.foldl reveal before volley.shots
 
 
 {-| A stationary head-on exchange can span two authoritative volleys. Present

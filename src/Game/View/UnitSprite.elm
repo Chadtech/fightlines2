@@ -1,6 +1,7 @@
 module Game.View.UnitSprite exposing
     ( Appearance
     , appearance
+    , imagePaths
     , portraitFooting
     , portraitToSvg
     , portraitWidth
@@ -101,7 +102,7 @@ portraitView kind playerNumber facingLeft =
                         ""
             in
             Svg.image
-                [ SA.xlinkHref ("/assets/field-gun-portraits-anime-v1/" ++ team ++ ".png")
+                [ SA.xlinkHref (fieldGunPath team)
                 , SA.width "40"
                 , SA.height "16"
                 , SA.preserveAspectRatio "xMidYMid meet"
@@ -166,7 +167,7 @@ spriteView column kind playerNumber facingLeft =
             ]
         ]
         [ Sprite.toSvg
-            { path = "/assets/units_illustrated-v4.png"
+            { path = atlasPath
             , sheetWidth = 64
             , sheetHeight = 192
             , column = column
@@ -196,9 +197,29 @@ entrenchedView playerNumber facingLeft =
                 ""
     in
     Svg.image
-        [ SA.xlinkHref ("/assets/infantry-entrenched-v1/" ++ team ++ ".png")
+        [ SA.xlinkHref (entrenchedPath team)
         , SA.width "16"
         , SA.height "16"
         , SA.transform sideProfile
         ]
         []
+
+
+atlasPath : String
+atlasPath =
+    "/assets/units_illustrated-v4.png"
+
+
+fieldGunPath : String -> String
+fieldGunPath team =
+    "/assets/field-gun-portraits-anime-v1/" ++ team ++ ".png"
+
+
+entrenchedPath : String -> String
+entrenchedPath team =
+    "/assets/infantry-entrenched-v1/" ++ team ++ ".png"
+
+
+imagePaths : List String
+imagePaths =
+    [ atlasPath, fieldGunPath "red", fieldGunPath "blue", entrenchedPath "red", entrenchedPath "blue" ]

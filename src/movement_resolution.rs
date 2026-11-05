@@ -710,8 +710,8 @@ mod tests {
             .find(|unit| unit.id() == "1")
             .fixture()?;
         assert_eq!(truck.board_position(), Some(Coordinate::new(2, 0)));
-        // Two occupied berths cost 3 fuel on the road and 6 on plain terrain.
-        assert_eq!(truck.fuel().fixture()?.current, 119);
+        // Two occupied berths cost 6 fuel on the road and 12 on plain terrain.
+        assert_eq!(truck.fuel().fixture()?.current, 494);
         assert_eq!(truck.supplies().current(), 96);
         assert_eq!(
             truck.supply_cargo,
@@ -976,7 +976,7 @@ mod tests {
             .iter()
             .find(|unit| unit.id() == "14")
             .fixture()?;
-        assert_eq!(tank.fuel().fixture()?.current, 114);
+        assert_eq!(tank.fuel().fixture()?.current, 456);
         let occupied: BTreeSet<_> = final_units
             .iter()
             .filter_map(|unit| unit.board_position())
@@ -1124,7 +1124,7 @@ mod tests {
                         .iter()
                         .find(|unit| unit.id() == "1")
                         .fixture()?;
-                    assert_eq!(tank.fuel().fixture()?.current, 121);
+                    assert_eq!(tank.fuel().fixture()?.current, 484);
                 }
                 let final_units: Vec<_> = result
                     .frames
@@ -1285,7 +1285,7 @@ mod tests {
                 .fuel()
                 .ok_or("missing fuel")?
                 .current,
-            128
+            512
         );
         let occupied: BTreeSet<_> = units
             .iter()

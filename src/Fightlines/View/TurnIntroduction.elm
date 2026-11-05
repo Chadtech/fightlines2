@@ -3,6 +3,7 @@ module Fightlines.View.TurnIntroduction exposing
     , conclusion
     , dialog
     , dialogHtmlId
+    , feedbackButtonHtmlId
     , styles
     )
 
@@ -21,12 +22,18 @@ type Msg
     = BeginClicked
     | ReplayClicked
     | BattlefieldViewClicked
+    | FeedbackClicked
     | SkipDialogsChanged Bool
 
 
 dialogHtmlId : String
 dialogHtmlId =
     "turn-introduction"
+
+
+feedbackButtonHtmlId : String
+feedbackButtonHtmlId =
+    "game-over-feedback-button"
 
 
 type alias DialogConfig =
@@ -135,10 +142,26 @@ conclusion config =
                 [ H.text config.caption ]
             , finalReport
             ]
-        , H.form
-            [ A.attribute "method" "dialog" ]
-            [ Button.primary "view battlefield" BattlefieldViewClicked
+        , H.p
+            []
+            [ H.text "thanks for playing! fightlines is a new game in development. your feedback helps shape what comes next." ]
+        , H.div
+            [ A.css
+                [ S.grid
+                , S.gridCols2
+                , S.g3
+                , S.belowWidth 440
+                    [ S.gridCols1 ]
+                ]
+            ]
+            [ Button.primary "return to battlefield" BattlefieldViewClicked
                 |> Button.large
+                |> Button.fullWidth
+                |> Button.toHtml
+            , Button.secondary "give feedback" FeedbackClicked
+                |> Button.large
+                |> Button.fullWidth
+                |> Button.withHtmlId feedbackButtonHtmlId
                 |> Button.toHtml
             ]
         ]

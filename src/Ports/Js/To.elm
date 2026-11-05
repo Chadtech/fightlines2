@@ -13,6 +13,7 @@ type Msg
     | GenerateMapThumbnail { htmlId : String, requestId : Int }
     | OpenDialog { htmlId : String }
     | Audio Audio.Event
+    | PreloadImages (List String)
     | SetLocalStorage { key : String, value : Je.Value }
 
 
@@ -33,6 +34,11 @@ encode msg =
         Audio audio ->
             Encode.message "audio"
                 [ ( "event", Audio.encodeEvent audio )
+                ]
+
+        PreloadImages paths ->
+            Encode.message "preloadImages"
+                [ ( "paths", Je.list Je.string paths )
                 ]
 
         GenerateMapThumbnail { htmlId, requestId } ->

@@ -1,5 +1,5 @@
 // Elm chooses when to emit audio. This manager owns browser playback only.
-function createAudioManager(reportError = () => {}) {
+function createAudioManager(reportError = () => {}, assets = createAssetLoader()) {
   const sounds = Object.freeze({
     affirm: ["/audio/ui-affirm-switch-v1.ogg"],
     cancel: ["/audio/ui-cancel-switch-v1.ogg"],
@@ -27,7 +27,6 @@ function createAudioManager(reportError = () => {}) {
       "/audio/combat/impact-05.ogg",
     ],
   });
-  const buffers = new Map();
   const movementFiles = Object.freeze({
     truck: "/audio/movement/truck-volvo-6s.ogg",
     tank: "/audio/movement/tank-monosfera-6s.ogg",
@@ -77,22 +76,16 @@ function createAudioManager(reportError = () => {}) {
     reportError({ operation: key, details });
   }
 
-  function load(file) {
-    if (!buffers.has(file)) {
-      const pending = (async () => {
-        const response = await fetch(file);
-        if (!response.ok) throw new Error(`request failed (${response.status})`);
-        return context.decodeAudioData(await response.arrayBuffer());
-      })();
-      buffers.set(file, pending);
-      // A failed load may retry on a later request. Keep its rejection handled
-      // when it was started by gesture preloading rather than a play request.
-      pending.catch((error) => {
-        buffers.delete(file);
-        report(`loading ${file}`, error);
-      });
-    }
-    return buffers.get(file);
+  function load(file, priority = 0) {
+    const pending = assets.load(`audio ${file}`, async signal => {
+      const response = await fetch(file, { signal });
+      if (!response.ok) throw new Error(`request failed (${response.status})`);
+      return context.decodeAudioData(await response.arrayBuffer());
+    }, priority);
+    // Preloading has no awaiting caller. Handle failures here as well as at
+    // playback, while the loader permits a later request to try again.
+    pending.catch(error => report(`loading ${file}`, error));
+    return pending;
   }
 
   async function unlock() {
@@ -117,9 +110,12 @@ function createAudioManager(reportError = () => {}) {
         }
         await resuming;
       }
-      for (const file of Object.values(sounds).flat()) load(file);
-      for (const file of Object.values(movementFiles)) load(file);
-      load(infantryFireFile);
+      for (const [name, files] of Object.entries(sounds)) {
+        const priority = ["affirm", "cancel", "confirm", "chatReceived"].includes(name) ? 0 : 2;
+        for (const file of files) load(file, priority);
+      }
+      for (const file of Object.values(movementFiles)) load(file, 2);
+      load(infantryFireFile, 2);
     } catch (error) {
       report("initialization", error);
     }

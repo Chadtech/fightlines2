@@ -149,7 +149,7 @@
           "cost": 2
         }
       ],
-      "roadFuelPerTile": 5,
+      "roadFuelPerTile": 20,
       "roadFuelPerCargoSlot": 0
     },
     {
@@ -301,7 +301,7 @@
           "cost": 2
         }
       ],
-      "roadFuelPerTile": 1,
+      "roadFuelPerTile": 4,
       "roadFuelPerCargoSlot": 1
     }
   ],

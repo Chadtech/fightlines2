@@ -20,6 +20,7 @@ import Api.Query
 import ApiRequest
 import DevTools.Shared as Shared
 import Effect as E exposing (Eff)
+import Game.Assets as Assets
 import Game.BackdropCalibration as Calibration
     exposing
         ( Calibration
@@ -36,6 +37,7 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import NonEmptyList exposing (NonEmpty)
+import Ports.Js.To as ToJs
 import Random
 import Style as S
 import View.Button as Button
@@ -171,29 +173,31 @@ backdropSelection =
         |> SS.with BackdropApi.label
 
 
-init : Shared.Model -> Flags -> Model
+init : Shared.Model -> Flags -> ( Model, Eff Msg )
 init shared flags =
     let
         backdrop : String
         backdrop =
             initialBackdrop "road" flags.backdrops
     in
-    { shared = shared
-    , backdropCalibrations = flags.backdropCalibrations
-    , backdrops = flags.backdrops
-    , copySource = initialCopySource backdrop flags.backdropCalibrations
-    , copyDestination = initialBackdrop "snowy-road" flags.backdrops
-    , copyScope = Nothing
-    , copyStatus = CopyReady
-    , drafts = []
-    , saveStatus = Idle
-    , backdrop = backdrop
-    , kind = UnitKind.Tank
-    , player = PlayerNumber.Player1
-    , facing = SpriteFacing.Right
-    , hitPoints = 16
-    , entrenchment = Entrenchment.Exposed
-    }
+    ( { shared = shared
+      , backdropCalibrations = flags.backdropCalibrations
+      , backdrops = flags.backdrops
+      , copySource = initialCopySource backdrop flags.backdropCalibrations
+      , copyDestination = initialBackdrop "snowy-road" flags.backdrops
+      , copyScope = Nothing
+      , copyStatus = CopyReady
+      , drafts = []
+      , saveStatus = Idle
+      , backdrop = backdrop
+      , kind = UnitKind.Tank
+      , player = PlayerNumber.Player1
+      , facing = SpriteFacing.Right
+      , hitPoints = 16
+      , entrenchment = Entrenchment.Exposed
+      }
+    , E.toJs (ToJs.PreloadImages (backdrop :: Assets.combatImagePaths))
+    )
 
 
 
@@ -627,10 +631,11 @@ update msg model =
                         |> E.withOut
 
         BackdropChanged path ->
-            { model
+            ( { model
                 | backdrop = path
-            }
-                |> E.withOut
+              }
+            , E.toJs (ToJs.PreloadImages [ path ])
+            )
 
         KindChanged kind ->
             { model

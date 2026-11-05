@@ -46,6 +46,7 @@ import Error exposing (Error(..))
 import Fightlines.Route as Route
 import Fightlines.Shared as Shared
 import Fightlines.View.MapChoice as MapChoice
+import Game.Assets as Assets
 import Game.Chat as Chat
 import Game.MapId as MapId
 import Game.PlayerNumber as PlayerNumber
@@ -158,6 +159,7 @@ restore the authoritative selection.
 -}
 type RequestStatus
     = Idle
+    | WaitingToStart
     | SavingSettings
     | SavingMap
     | ChoosingSide PlayerNumber
@@ -294,6 +296,7 @@ init location shared flags =
             lobby.id
         , routeCorrection
         , scrollChatHistory model
+        , preloadMapImages lobby.mapType flags.mapPreviews
         ]
     )
 
@@ -419,11 +422,60 @@ startGameBlockedReason model =
     else if isBusy model then
         Just "waiting for the current request to finish…"
 
-    else if model.refreshing then
-        Just "updating lobby…"
-
     else
         Nothing
+
+
+startGame : Model -> ( Model, Eff Msg )
+startGame model =
+    if startGameBlockedReason model /= Nothing then
+        ( model, E.none )
+
+    else if model.refreshing then
+        ( model
+            |> setRequestStatus WaitingToStart
+            |> setActionError Nothing
+        , E.none
+        )
+
+    else
+        ( model
+            |> setRequestStatus SavingSettings
+            |> setActionError Nothing
+        , E.request ActionResponseReceived (start model.id)
+        )
+
+
+finishRefresh : Model -> Model
+finishRefresh model =
+    let
+        requestStatus : RequestStatus
+        requestStatus =
+            if model.requestStatus == WaitingToStart then
+                Idle
+
+            else
+                model.requestStatus
+    in
+    model
+        |> setRefreshing False
+        |> setRequestStatus requestStatus
+
+
+receiveRefresh : Snapshot -> Model -> ( Model, Eff Msg )
+receiveRefresh snapshot model =
+    let
+        received : ( Model, Eff Msg )
+        received =
+            model
+                |> finishRefresh
+                |> receive snapshot
+    in
+    if model.requestStatus == WaitingToStart then
+        received |> E.andThen startGame
+
+    else
+        received
 
 
 isBusy : Model -> Bool
@@ -462,15 +514,37 @@ refresh model =
         )
 
 
+preloadMapImages : MapId -> List NamedMap -> Eff msg
+preloadMapImages mapType previews =
+    case List.filter (isMap mapType) previews |> List.head of
+        Just preview ->
+            E.toJs (ToJs.PreloadImages (Assets.imagePaths preview.definition.theme))
+
+        Nothing ->
+            E.none
+
+
 receive : Snapshot -> Model -> ( Model, Eff Msg )
 receive snapshot model =
+    let
+        preload : Eff Msg
+        preload =
+            if snapshot.mapType /= model.mapType then
+                preloadMapImages snapshot.mapType model.mapPreviews
+
+            else
+                E.none
+    in
     ( { model | id = snapshot.id, name = snapshot.name, mapType = snapshot.mapType, players = snapshot.players, isHost = snapshot.isHost, isMember = snapshot.isMember, gameUrl = snapshot.gameUrl }
         |> setError Nothing
-    , gameNavigation
-        { isMember = snapshot.isMember
-        , gameUrl = snapshot.gameUrl
-        }
-        snapshot.id
+    , E.batch
+        [ gameNavigation
+            { isMember = snapshot.isMember
+            , gameUrl = snapshot.gameUrl
+            }
+            snapshot.id
+        , preload
+        ]
     )
 
 
@@ -843,15 +917,7 @@ update msg model =
                         )
 
         StartButtonClicked ->
-            if startGameBlockedReason model /= Nothing then
-                ( model, E.none )
-
-            else
-                ( model
-                    |> setRequestStatus SavingSettings
-                    |> setActionError Nothing
-                , E.request ActionResponseReceived (start model.id)
-                )
+            startGame model
 
         RetryButtonClicked ->
             refresh model
@@ -898,14 +964,11 @@ update msg model =
             else
                 case result of
                     Ok snapshot ->
-                        (model
-                            |> setRefreshing False
-                        )
-                            |> receive snapshot
+                        receiveRefresh snapshot model
 
                     Err error ->
                         (model
-                            |> setRefreshing False
+                            |> finishRefresh
                             |> setError (Just (ApiRequest.errorMessage error))
                         )
                             |> E.withOut

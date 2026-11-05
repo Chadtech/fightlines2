@@ -6,7 +6,7 @@ use actix_web::{
 
 /// A browser identity credential. Possession authorizes that player's actions.
 /// It is shared by tabs, is not an account, and is never included in JSON.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SessionToken(String);
 
 impl SessionToken {

@@ -27,6 +27,7 @@ import Drag exposing (Drag)
 import EditableMap exposing (Definition, NamedMap)
 import Effect as E exposing (Eff)
 import Error
+import Game.Assets as Assets
 import Game.Camera as Camera exposing (Camera)
 import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Depot as Depot
@@ -263,7 +264,10 @@ init shared flags =
       , heightInput = String.fromInt flags.first.definition.height
       , newMapForm = Nothing
       }
-    , measureViewport
+    , E.batch
+        [ measureViewport
+        , E.toJs (ToJs.PreloadImages (Assets.imagePaths flags.first.definition.theme))
+        ]
     )
 
 
@@ -869,6 +873,15 @@ paintTile settings position draft =
                 |> EditableMap.setDepots (List.filter elsewhere draft.depots)
 
 
+preloadThemeChange : { before : MapTheme, after : MapTheme } -> Eff msg
+preloadThemeChange themes =
+    if themes.before /= themes.after then
+        E.toJs (ToJs.PreloadImages (Assets.imagePaths themes.after))
+
+    else
+        E.none
+
+
 
 ----------------------------------------------------------------
 -- UPDATE --
@@ -1088,7 +1101,10 @@ update msg model =
                                 , heightInput = "17"
                                 , saveState = editingSaveState finished.saveState
                               }
-                            , measureViewport
+                            , E.batch
+                                [ measureViewport
+                                , preloadThemeChange { before = draft.theme, after = definition.theme }
+                                ]
                             )
 
         MapInputChanged value ->
@@ -1113,6 +1129,7 @@ update msg model =
                     )
                         |> E.withOut
                         |> E.and measureViewport
+                        |> E.and (preloadThemeChange { before = draft.theme, after = selected.draft.theme })
 
                 [] ->
                     ( model, E.none )
@@ -1141,7 +1158,9 @@ update msg model =
         ThemeInputChanged value ->
             case MapTheme.fromString value of
                 Just theme ->
-                    ( applyEdit { draft | theme = theme } (finishGesture model), E.none )
+                    ( applyEdit { draft | theme = theme } (finishGesture model)
+                    , preloadThemeChange { before = draft.theme, after = theme }
+                    )
 
                 Nothing ->
                     ( model, E.none )
@@ -1411,6 +1430,7 @@ update msg model =
                         |> setHeightInput (String.fromInt previous.height)
                     )
                         |> E.withOut
+                        |> E.and (preloadThemeChange { before = draft.theme, after = previous.theme })
 
                 [] ->
                     ( model, E.none )
@@ -1430,6 +1450,7 @@ update msg model =
                         |> setHeightInput (String.fromInt next.height)
                     )
                         |> E.withOut
+                        |> E.and (preloadThemeChange { before = draft.theme, after = next.theme })
 
                 [] ->
                     ( model, E.none )

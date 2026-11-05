@@ -6,6 +6,7 @@ module Game.UnitOrder exposing
     , available
     , canUse
     , enabledOptions
+    , image
     , isImplemented
     , label
     , shortcut
@@ -307,3 +308,8 @@ sabotageOrders depots unit =
 
         _ ->
             []
+
+
+image : Order -> String
+image order =
+    "/assets/orders-anime-v1/" ++ assetName order ++ ".png"

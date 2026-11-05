@@ -65,7 +65,7 @@ orderDescription order =
             ]
         ]
         [ H.img
-            [ A.src ("/assets/orders-anime-v1/" ++ Order.assetName order ++ ".png")
+            [ A.src (Order.image order)
             , A.alt ""
             , A.css
                 [ S.w16

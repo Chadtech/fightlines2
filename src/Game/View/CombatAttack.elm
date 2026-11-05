@@ -4,7 +4,7 @@ module Game.View.CombatAttack exposing
     , endsAt
     , firingTimes
     , frameAt
-    , preload
+    , imagePaths
     , staggerMs
     , toSvg
     )
@@ -14,7 +14,6 @@ import Api.Enum.SpriteFacing as SpriteFacing
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Css
 import Game.View.UnitSprite as UnitSprite exposing (Appearance)
-import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
 import Svg.Styled as Svg exposing (Svg)
@@ -134,21 +133,9 @@ teamName player =
             "blue"
 
 
-preload : Html msg
-preload =
-    let
-        image : String -> Html msg
-        image path =
-            H.node "link"
-                [ A.rel "preload"
-                , A.attribute "as" "image"
-                , A.href path
-                ]
-                []
-    in
-    H.div
-        [ A.hidden True ]
-        (List.map image [ tankPath "red", tankPath "blue", fieldGunPath "red", fieldGunPath "blue" ])
+imagePaths : List String
+imagePaths =
+    [ tankPath "red", tankPath "blue", fieldGunPath "red", fieldGunPath "blue" ]
 
 
 toSvg : { elapsed : Float, figureIndex : Int } -> Attack -> Appearance -> Svg msg

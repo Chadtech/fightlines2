@@ -87,7 +87,7 @@ dialog errors model =
         Canceled
         [ H.p
             []
-            [ H.text ("frontend version " ++ AppVersion.current) ]
+            [ H.text ("frontend version " ++ AppVersion.current ++ " · released " ++ AppVersion.releasedAt) ]
         , H.div
             [ A.css
                 [ S.grid

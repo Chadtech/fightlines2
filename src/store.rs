@@ -256,7 +256,10 @@ mod tests {
     use std::{error::Error, time::Duration};
 
     macro_rules! execute {
-        ($app:expr, $query:expr, $cookie:expr) => {{
+        ($app:expr, $query:expr, $cookie:expr) => {
+            execute!($app, $query, $cookie, false)
+        };
+        ($app:expr, $query:expr, $cookie:expr, $allow_busy:expr) => {{
             let mut request = web_test::TestRequest::post()
                 .uri("/graphql")
                 .set_json(json!({ "query": $query }));
@@ -277,7 +280,8 @@ mod tests {
                 .next()
                 .map(|cookie| cookie.into_owned());
             let body: Value = web_test::read_body_json(response).await;
-            assert!(body.get("errors").is_none(), "{body}");
+            assert!(body.get("errors").is_none()
+                || ($allow_busy && body["errors"][0]["extensions"]["code"] == "GAME_BUSY"), "{body}");
             (body, cookie)
         }};
     }
@@ -462,6 +466,13 @@ mod tests {
         );
 
         let progress = rt::time::timeout(Duration::from_secs(3), async {
+            let (busy, _) = execute!(
+                &app,
+                format!("mutation {{ submitTurn(id: \"{id}\", turnNumber: 1, orders: []) {{ turnNumber }} }}"),
+                None,
+                true
+            );
+            assert_eq!(busy["errors"][0]["extensions"]["code"], "GAME_BUSY");
             let (health, _) = execute!(&app, "{ health }", None);
             assert_eq!(health["data"]["health"], true);
             let (created, host) = execute!(
@@ -618,10 +629,25 @@ mod tests {
         let first_host = host.clone();
         let host_submit = submit(&host_orders);
         let first = rt::spawn(async move {
-            Ok::<_, Box<dyn Error>>(execute!(first_app.as_ref(), host_submit, Some(first_host)).0)
+            Ok::<_, Box<dyn Error>>(
+                execute!(first_app.as_ref(), host_submit, Some(first_host), true).0,
+            )
         });
-        let (guest_result, _) = execute!(app.as_ref(), submit(&guest_orders), Some(guest.clone()));
-        let host_result = first.await.fixture()??;
+        let (mut guest_result, _) = execute!(
+            app.as_ref(),
+            submit(&guest_orders),
+            Some(guest.clone()),
+            true
+        );
+        let mut host_result = first.await.fixture()??;
+        // Contending submissions fail promptly; retry after the winning worker
+        // completes and verify each transition is still published exactly once.
+        if host_result.get("errors").is_some() {
+            host_result = execute!(app.as_ref(), submit(&host_orders), Some(host.clone())).0;
+        }
+        if guest_result.get("errors").is_some() {
+            guest_result = execute!(app.as_ref(), submit(&guest_orders), Some(guest.clone())).0;
+        }
         let numbers = [
             host_result["data"]["submitTurn"]["turnNumber"]
                 .as_i64()

@@ -53,6 +53,7 @@ import Fightlines.View.Settings as Settings
 import Fightlines.View.TurnIntroduction as TurnIntroduction
 import Fightlines.View.UnloadPassenger as UnloadPassenger
 import Game.AnimationFrame as AnimationFrame
+import Game.Assets as Assets
 import Game.BattlefieldNavigation as BattlefieldNavigation
 import Game.BattlefieldSnapshot as BattlefieldSnapshot exposing (Player)
 import Game.Camera as Camera
@@ -392,6 +393,7 @@ init shared flags =
     , E.batch
         [ eff
         , E.measure Battlefield.htmlId BattlefieldSizeReceived
+        , E.toJs (ToJs.PreloadImages (Assets.imagePaths model.map.theme))
         ]
     )
 
@@ -548,19 +550,23 @@ saveCrateLoading id count state =
 depotLoadingRoom : Model -> Unit -> Int
 depotLoadingRoom model unit =
     let
-        depot : Maybe Depot
+        depot : Maybe Depot.LoadingSource
         depot =
             plannedDepot model unit.id
+                |> Maybe.andThen Depot.loadingSource
 
         stockLimit : Int
         stockLimit =
-            case
-                depot
-                    |> Maybe.andThen .stock
-            of
-                Just stock ->
-                    (stock.current + model.supplyRules.crateCapacity - 1)
-                        // model.supplyRules.crateCapacity
+            case depot of
+                Just source ->
+                    let
+                        capacity : Int
+                        capacity =
+                            Supply.cargoCapacity model.supplyRules source.kind
+                    in
+                    source.stock
+                        |> Maybe.map (\stock -> (stock.current + capacity - 1) // capacity)
+                        |> Maybe.withDefault 2
 
                 Nothing ->
                     2
@@ -2031,8 +2037,17 @@ update lobbyId msg model =
                         |> E.withOut
 
                 FeedbackView.CloseClicked ->
+                    let
+                        focusHtmlId : String
+                        focusHtmlId =
+                            if showTurnIntroduction model then
+                                TurnIntroduction.feedbackButtonHtmlId
+
+                            else
+                                GameMenu.buttonHtmlId
+                    in
                     ( model |> setMenu MenuClosed
-                    , E.focus { htmlId = GameMenu.buttonHtmlId } FocusCompleted
+                    , E.focus { htmlId = focusHtmlId } FocusCompleted
                     )
 
                 FeedbackView.SubmitClicked ->
@@ -2603,6 +2618,23 @@ update lobbyId msg model =
                         |> setCurrentTurn (CurrentTurn.acknowledgeIntroduction model.currentTurn)
                         |> E.withOut
 
+                TurnIntroduction.FeedbackClicked ->
+                    let
+                        canGiveFeedback : Bool
+                        canGiveFeedback =
+                            (model.currentTurn.outcome /= Nothing)
+                                && showTurnIntroduction model
+                                && (model.menu == MenuClosed)
+                    in
+                    if canGiveFeedback then
+                        ( model |> setMenu FeedbackMenu
+                        , E.focus { htmlId = FeedbackView.inputHtmlId } FocusCompleted
+                        )
+
+                    else
+                        model
+                            |> E.withOut
+
                 TurnIntroduction.SkipDialogsChanged skip ->
                     ( { model | skipTurnIntroduction = skip }
                         |> setCurrentTurn (CurrentTurn.acknowledgeIntroduction model.currentTurn)
@@ -2963,6 +2995,9 @@ playAudio msg model =
 
                 TurnIntroduction.BattlefieldViewClicked ->
                     Audio.confirm
+
+                TurnIntroduction.FeedbackClicked ->
+                    Audio.affirm
 
                 TurnIntroduction.SkipDialogsChanged _ ->
                     Audio.affirm
@@ -4660,12 +4695,16 @@ depotLoadingDialog model id source =
                 Nothing ->
                     "stock outside sight"
 
+        capacity : Int
+        capacity =
+            Supply.cargoCapacity model.supplyRules source.kind
+
         loadAmount : Int -> Maybe Int
         loadAmount count =
             stock
                 |> Maybe.map
                     (\known ->
-                        min known.current (count * model.supplyRules.crateCapacity)
+                        min known.current (count * capacity)
                     )
 
         choice : Int -> Html Msg
@@ -4735,11 +4774,11 @@ depotLoadingDialog model id source =
                         amount =
                             loadAmount count
                                 |> Maybe.withDefault 0
-                                |> (\total -> clamp 0 model.supplyRules.crateCapacity (total - index * model.supplyRules.crateCapacity))
+                                |> (\total -> clamp 0 capacity (total - index * capacity))
 
                         percentage : Float
                         percentage =
-                            100 * toFloat amount / toFloat model.supplyRules.crateCapacity
+                            100 * toFloat amount / toFloat capacity
                     in
                     H.div
                         [ A.css

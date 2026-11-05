@@ -32,6 +32,7 @@ import DevTools.Shared as Shared
 import Effect as E exposing (Eff)
 import Error
 import Game.AnimationFrame as AnimationFrame
+import Game.Assets as Assets
 import Game.BattlefieldNavigation as BattlefieldNavigation
 import Game.BattlefieldSnapshot as BattlefieldSnapshot
 import Game.Camera as Camera
@@ -239,7 +240,12 @@ init shared id flags =
             , playbackIntent = SingleTurnPlayback
             }
     in
-    ( model, E.measure Battlefield.htmlId BattlefieldSizeReceived )
+    ( model
+    , E.batch
+        [ E.measure Battlefield.htmlId BattlefieldSizeReceived
+        , E.toJs (ToJs.PreloadImages (Assets.imagePaths model.battlefield.map.theme))
+        ]
+    )
 
 
 

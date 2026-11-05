@@ -149,35 +149,39 @@ fuelConsumption stats fuel =
             else
                 ""
     in
-    String.fromInt fuel.movementPerTile ++ cargo ++ "; roads: " ++ String.fromInt stats.movement.roadFuelPerTile ++ roadCargo
+    String.fromInt fuel.movementPerTile
+        ++ cargo
+        ++ "; roads: "
+        ++ String.fromInt stats.movement.roadFuelPerTile
+        ++ roadCargo
 
 
 combatStats : UnitStats -> List Stat
 combatStats stats =
-    let
-        indirect : List Stat
-        indirect =
-            if stats.combat.indirectRange > 0 then
-                [ { label = "indirect fire range"
-                  , value = String.fromInt stats.combat.indirectRange ++ " tiles (radius)"
-                  }
-                ]
-
-            else
-                []
-
-        armed : List Stat
-        armed =
-            [ { label = "supplies / attack"
-              , value = String.fromInt stats.combat.shotCost
-              }
-            , { label = "supplies / readiness"
-              , value = String.fromInt stats.combat.readinessCost
-              }
-            ]
-    in
     if stats.combat.range == 0 then
         []
 
     else
+        let
+            indirect : List Stat
+            indirect =
+                if stats.combat.indirectRange > 0 then
+                    [ { label = "indirect fire range"
+                      , value = String.fromInt stats.combat.indirectRange ++ " tiles (radius)"
+                      }
+                    ]
+
+                else
+                    []
+
+            armed : List Stat
+            armed =
+                [ { label = "supplies / attack"
+                  , value = String.fromInt stats.combat.shotCost
+                  }
+                , { label = "supplies / readiness"
+                  , value = String.fromInt stats.combat.readinessCost
+                  }
+                ]
+        in
         armed ++ indirect

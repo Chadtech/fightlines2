@@ -554,13 +554,7 @@ mod tests {
     fn check_building_destruction_memory(kind: BuildingKind) -> TestResult<()> {
         let mut board = scenario(UnitKind::Infantry, "............")?;
         let position = Coordinate::new(7, 0);
-        board.depots = vec![Depot {
-            kind,
-            position,
-            stock: crate::supplies::ResourceStock::depot(),
-            stock_visible: true,
-            damage: 0,
-        }];
+        board.depots = vec![Depot::new(kind, position)];
         let mut observation = PlayerObservation::new(&board, PlayerNumber::Player1);
         board.depots.first_mut().fixture()?.sabotage();
         let resolution = |board: &Scenario| TurnResolution {

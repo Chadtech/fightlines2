@@ -4,6 +4,7 @@ module Game.View.CombatFormation exposing
     , exhaustionEndsAt
     , exhaustionToSvg
     , figureCount
+    , imagePaths
     , impactStarts
     , lossStartsAt
     , toSvg
@@ -21,6 +22,7 @@ import Game.View.CombatAttack as CombatAttack
 import Game.View.CombatBazooka as CombatBazooka
 import Game.View.CombatExplosion as CombatExplosion
 import Game.View.CombatInfantry as CombatInfantry
+import Game.View.UnitDeath as UnitDeath
 import Game.View.UnitSprite as UnitSprite exposing (Appearance)
 import Html.Styled.Attributes as A
 import Style as S
@@ -446,10 +448,10 @@ trenchToSvg occupancy calibration elapsed health unit =
                 path : String
                 path =
                     if (occupancy == ShelteringUnderground) || lostBefore || lostNow then
-                        "/assets/combat-trench-overlay-anime-v2/empty.png"
+                        trenchPath "empty"
 
                     else
-                        "/assets/combat-trench-overlay-anime-v2/" ++ team ++ ".png"
+                        trenchPath team
             in
             Svg.image
                 [ SA.xlinkHref path
@@ -514,7 +516,7 @@ trenchMarkersToSvg calibration elapsed health unit =
                         centerX - size / 2
             in
             Svg.image
-                [ SA.xlinkHref "/assets/death-skull-illustrated-v1.png"
+                [ SA.xlinkHref UnitDeath.imagePath
                 , SA.x (String.fromFloat x)
                 , SA.y (String.fromFloat (placement.y - size * 0.4))
                 , SA.width (String.fromFloat size)
@@ -917,7 +919,7 @@ layersToSvg effect calibration layers animation health unit =
                             , SA.y (String.fromFloat ((scale * UnitSprite.portraitFooting unit - markerSize) / 2))
                             , SA.width (String.fromFloat markerSize)
                             , SA.height (String.fromFloat markerSize)
-                            , SA.xlinkHref "/assets/death-skull-illustrated-v1.png"
+                            , SA.xlinkHref UnitDeath.imagePath
                             , SA.opacity (String.fromFloat pulseOpacity)
                             , SA.css [ S.reducedMotion [ S.opacity 1 ] ]
                             , A.attribute "data-exhaustion-marker" (String.fromInt index)
@@ -1011,3 +1013,13 @@ layersToSvg effect calibration layers animation health unit =
                     List.map (renderFigure layer) visiblePlacements
     in
     List.concatMap renderLayer layers
+
+
+trenchPath : String -> String
+trenchPath team =
+    "/assets/combat-trench-overlay-anime-v2/" ++ team ++ ".png"
+
+
+imagePaths : List String
+imagePaths =
+    List.map trenchPath [ "red", "blue", "empty" ]

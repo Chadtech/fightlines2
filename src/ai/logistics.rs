@@ -416,10 +416,10 @@ fn freight_plan(
             let stock = if depot.stock_visible {
                 depot.stock.current
             } else {
-                supplies::rules().depot_capacity
+                supplies::rules().depot_capacity_for(resource)
             };
-            let loads =
-                (stock + supplies::rules().crate_capacity - 1) / supplies::rules().crate_capacity;
+            let capacity = supplies::rules().cargo_capacity(resource);
+            let loads = (stock + capacity - 1) / capacity;
             order.load_crates = Some((room as i32).min(loads));
         }
     }
@@ -628,7 +628,7 @@ mod tests {
             terrain: Terrain::Road(RoadShape::NorthSouth),
         });
         let mut scenario = definition.scenario().fixture()?;
-        scenario.units.first_mut().fixture()?.set_fuel_for_test(6);
+        scenario.units.first_mut().fixture()?.set_fuel_for_test(24);
         let truck = scenario.units.first().fixture()?;
         let path = path_to(
             &scenario,
@@ -642,7 +642,7 @@ mod tests {
         )?
         .fixture()?;
         assert_eq!(path.len(), 7);
-        assert_eq!(truck.fuel_movement_cost(&scenario.map, &path, 0), 6);
+        assert_eq!(truck.fuel_movement_cost(&scenario.map, &path, 0), 24);
         assert_eq!(affordable_path(&scenario, truck, &path, false)?, path);
         Ok(())
     }
@@ -847,7 +847,7 @@ mod tests {
                 {"id": 2, "position": {"x": 7, "y": 4}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
             ]
         }"#).fixture()?.scenario().fixture()?;
-        scenario.units.first_mut().fixture()?.set_fuel_for_test(32);
+        scenario.units.first_mut().fixture()?.set_fuel_for_test(128);
         let orders = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
         assert_eq!(orders.first().fixture()?.path.len(), 1);
         Ok(())
@@ -861,7 +861,7 @@ mod tests {
         assert!(!visibility::visible_tiles(&scenario, PlayerNumber::Player1).contains(&hidden));
         changed.supply_crates.push(GroundSupplyCrate {
             position: hidden,
-            stock: CargoStock::new(ResourceKind::Fuel, 256),
+            stock: CargoStock::new(ResourceKind::Fuel, 1024),
         });
         let original = ai::plan(&scenario, PlayerNumber::Player1).fixture()?;
         let other = ai::plan(&changed, PlayerNumber::Player1).fixture()?;
@@ -884,7 +884,7 @@ mod tests {
         truck.set_supplies_for_test(8);
         truck
             .supply_cargo
-            .push(CargoStock::new(ResourceKind::Fuel, 256));
+            .push(CargoStock::new(ResourceKind::Fuel, 1024));
         let mut turns = Turns::default();
         resolve_turn(&mut scenario, &mut turns, PlayerNumber::Player1)?;
         let truck = scenario

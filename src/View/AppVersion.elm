@@ -9,11 +9,11 @@ import Style as S
 toHtml : Html msg
 toHtml =
     H.span
-        [ A.title ("version " ++ AppVersion.current)
+        [ A.title ("version " ++ AppVersion.current ++ " released " ++ AppVersion.releasedAt)
         , A.css
             [ S.textGray4
             , S.textShadowBlack
             , S.pointerEventsNone
             ]
         ]
-        [ H.text ("v" ++ AppVersion.current) ]
+        [ H.text ("v" ++ AppVersion.current ++ " · " ++ AppVersion.releasedAt) ]

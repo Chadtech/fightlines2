@@ -117,6 +117,21 @@ rendering. Eastern units are mirrored to face west. Depots have no ownership
 outlines or team labels. The illustrated assets were generated and edited with
 built-in imagegen on October 6–7, 2026.
 
+## Pack horse still
+
+`pack-horse-illustrated-v1.png` is a transparent 1536 x 1024 still sprite of an
+olive-uniformed infantryman leading a powerful bay draft horse carrying military
+supplies. Built-in imagegen created the detailed 1980s anime illustration on
+November 4, 2026. The original generated alpha is preserved. The local master
+and exact prompt are `artwork/units/illustrated/pack-horse-v1/neutral.png` and
+`prompt.txt`. This standalone asset is not yet selected by gameplay rendering.
+
+`pack-horse-illustrated-v2.png` is a fresh 1536 x 1024 drawing with a normal
+pack horse, taller and more compact proportions, and additional military supplies.
+Built-in imagegen created it on November 4, 2026, preserving generated alpha.
+Its local master and exact prompt are in `artwork/units/illustrated/pack-horse-v2/`
+as `neutral.png` and `prompt.txt`. It is also a standalone still.
+
 ## Tank firing animation
 
 The earlier `tank-firing-rigged-v1/{red,blue}.png` are 1536 x 512 atlases with

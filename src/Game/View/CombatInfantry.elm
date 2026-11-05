@@ -2,9 +2,9 @@ module Game.View.CombatInfantry exposing
     ( Loadout(..)
     , endsAt
     , frameAt
+    , imagePaths
     , impactsStartAt
     , loadoutFor
-    , preload
     , toSvg
     )
 
@@ -14,7 +14,6 @@ import Api.Enum.UnitKind as Kind exposing (UnitKind)
 import Css
 import Game.View.CombatAttack as CombatAttack
 import Game.View.UnitSprite as UnitSprite exposing (Appearance)
-import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
 import Svg.Styled as Svg exposing (Svg)
@@ -175,8 +174,8 @@ spritePath pose team frame =
     "/assets/combat-infantry-v1/" ++ poseName pose ++ "-" ++ team ++ suffix ++ ".png"
 
 
-preload : Html msg
-preload =
+imagePaths : List String
+imagePaths =
     let
         posePaths : Pose -> List String
         posePaths pose =
@@ -185,21 +184,8 @@ preload =
             , spritePath pose "blue" 0
             , spritePath pose "blue" 1
             ]
-
-        image : String -> Html msg
-        image path =
-            H.node "link"
-                [ A.rel "preload"
-                , A.attribute "as" "image"
-                , A.href path
-                ]
-                []
     in
-    H.div
-        [ A.hidden True ]
-        (List.concatMap posePaths [ MachineGunTeam, Standing, Kneeling, Prone ]
-            |> List.map image
-        )
+    List.concatMap posePaths [ MachineGunTeam, Standing, Kneeling, Prone ]
 
 
 type alias Drawing =

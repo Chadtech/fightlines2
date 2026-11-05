@@ -27,3 +27,13 @@ depotCapacity =
 crateCapacity : SelectionSet Int Api.Object.SupplyRules
 crateCapacity =
     Object.selectionForField "Int" "crateCapacity" [] Decode.int
+
+
+fuelDepotCapacity : SelectionSet Int Api.Object.SupplyRules
+fuelDepotCapacity =
+    Object.selectionForField "Int" "fuelDepotCapacity" [] Decode.int
+
+
+fuelDrumCapacity : SelectionSet Int Api.Object.SupplyRules
+fuelDrumCapacity =
+    Object.selectionForField "Int" "fuelDrumCapacity" [] Decode.int

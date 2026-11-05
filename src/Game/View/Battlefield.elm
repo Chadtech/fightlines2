@@ -325,22 +325,22 @@ preventDefault msg =
     ( msg, True )
 
 
-plannedStationaryFacing : List PlannedOrder -> Unit -> Unit
+plannedStationaryFacing : List PlannedOrder -> Unit -> Maybe PlannedOrder.Rotation
 plannedStationaryFacing orders unit =
     case ListUtil.find (\order -> order.unitId == unit.id) orders of
         Just order ->
             case order.action of
                 PlannedOrder.Ambush facing ->
-                    Unit.faceDirection (Just facing.direction) unit
+                    Just facing
 
                 PlannedOrder.StandGround facing ->
-                    Unit.faceDirection (Just facing.direction) unit
+                    Just facing
 
                 _ ->
-                    unit
+                    Nothing
 
         Nothing ->
-            unit
+            Nothing
 
 
 isIndirectTargeting : Interaction -> Bool
@@ -546,7 +546,10 @@ savedCoverage dimensions units orders =
                         |> Maybe.map (\unit -> Ambush.coverage dimensions facing.position facing.direction unit.combatRules)
 
                 PlannedOrder.AttackMove attack ->
-                    Just (RotationChoices.attackFacing attack.move.destination attack.direction)
+                    Just (RotationChoices.facingHighlight attack.move.destination attack.direction)
+
+                PlannedOrder.StandGround facing ->
+                    Just (RotationChoices.facingHighlight facing.position facing.direction)
 
                 _ ->
                     Nothing
@@ -755,16 +758,23 @@ toSvg args =
 
         previewedUnit : Unit -> Unit
         previewedUnit unit =
+            let
+                savedFacing : Unit
+                savedFacing =
+                    plannedStationaryFacing paths unit
+                        |> Maybe.map (\facing -> Unit.faceDirection (Just facing.direction) unit)
+                        |> Maybe.withDefault unit
+            in
             case rotationPreview of
                 Just rotation ->
                     if rotation.unitId == unit.id then
                         Unit.faceDirection (Just rotation.direction) unit
 
                     else
-                        plannedStationaryFacing paths unit
+                        savedFacing
 
                 Nothing ->
-                    plannedStationaryFacing paths unit
+                    savedFacing
 
         unitTransform : Unit -> Coordinate -> String
         unitTransform unit position =
@@ -790,6 +800,28 @@ toSvg args =
         facingView : Unit -> Maybe (Svg Msg)
         facingView unit =
             let
+                savedPosition : Maybe Coordinate
+                savedPosition =
+                    case plannedStationaryFacing paths unit of
+                        Just facing ->
+                            Just facing.position
+
+                        Nothing ->
+                            Unit.mapPosition unit
+
+                markerPosition : Maybe Coordinate
+                markerPosition =
+                    case rotationPreview of
+                        Just rotation ->
+                            if rotation.unitId == unit.id then
+                                Just rotation.position
+
+                            else
+                                savedPosition
+
+                        Nothing ->
+                            savedPosition
+
                 facingClass : String
                 facingClass =
                     if Maybe.map .unitId rotationPreview == Just unit.id then
@@ -815,7 +847,7 @@ toSvg args =
                     List.member unit.id args.facingUnits && not (Unit.isDying unit)
             in
             if showFacing then
-                Unit.mapPosition unit |> Maybe.map markerAt
+                markerPosition |> Maybe.map markerAt
 
             else
                 Nothing
@@ -1706,7 +1738,10 @@ directionCoverage dimensions boardInteraction =
                 AmbushFacing rules ->
                     [ Ambush.coverage dimensions direction.position direction.direction rules ]
 
-                _ ->
+                StandGroundFacing ->
+                    [ RotationChoices.facingHighlight direction.position direction.direction ]
+
+                AttackMoveFacing _ ->
                     []
 
         _ ->

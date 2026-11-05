@@ -1,5 +1,6 @@
 module Game.View.UnitFacing exposing
-    ( styles
+    ( imagePath
+    , styles
     , toSvg
     )
 
@@ -81,9 +82,14 @@ marker selected direction =
             , SA.y "-5.2"
             , SA.width "5.4"
             , SA.height "8"
-            , SA.xlinkHref "/assets/attack-marker-illustrated-v1.png"
+            , SA.xlinkHref imagePath
             , SA.class "fightlines-unit-facing"
             , SA.style ("filter: " ++ brightness)
             ]
             []
         ]
+
+
+imagePath : String
+imagePath =
+    "/assets/attack-marker-illustrated-v1.png"

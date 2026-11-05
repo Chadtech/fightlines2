@@ -1,6 +1,7 @@
 module Game.View.TerrainTile exposing
     ( clockClass
     , definitions
+    , imagePaths
     , onMap
     , portrait
     , stillOnMap
@@ -218,7 +219,7 @@ waterView motion =
         imageAttributes =
             [ SA.width "128"
             , SA.height "64"
-            , SA.xlinkHref "/assets/terrain-water-illustrated-v1.png"
+            , SA.xlinkHref waterPath
             ]
                 ++ motionAttributes
     in
@@ -392,7 +393,7 @@ transitionView theme transition =
 
 beachEdgeView : Svg msg
 beachEdgeView =
-    image { path = "/assets/coast-illustrated-v1/beach-edge.png", filter = "none" }
+    image { path = beachEdgePath, filter = "none" }
 
 
 {-| Bend the actual edge's sand/foam profile through a quarter turn. The first
@@ -484,7 +485,7 @@ terrainView motion theme terrain =
                     Just (hillPath theme)
 
                 Terrain.Forest ->
-                    Just "/assets/terrain-forest-illustrated-v3.png"
+                    Just forestPath
 
                 Terrain.Mountains ->
                     Just (mountainPath theme)
@@ -514,7 +515,7 @@ terrainView motion theme terrain =
                     waterView motion
 
                 Terrain.Beach ->
-                    image { path = "/assets/coast-illustrated-v1/beach.png", filter = "none" }
+                    image { path = beachPath, filter = "none" }
 
                 _ ->
                     image { path = art.groundPath, filter = art.groundFilter }
@@ -570,7 +571,7 @@ roadView shape =
         sprite name degrees =
             Svg.g
                 [ SA.transform ("rotate(" ++ String.fromInt degrees ++ " 8 8)") ]
-                [ image { path = "/assets/roads-illustrated-v1/" ++ name ++ ".png", filter = "none" } ]
+                [ image { path = roadPath name, filter = "none" } ]
     in
     case shape of
         Road.NorthSouth ->
@@ -605,3 +606,42 @@ roadView shape =
 
         Road.Crossroads ->
             sprite "crossroads" 0
+
+
+waterPath : String
+waterPath =
+    "/assets/terrain-water-illustrated-v1.png"
+
+
+forestPath : String
+forestPath =
+    "/assets/terrain-forest-illustrated-v3.png"
+
+
+beachPath : String
+beachPath =
+    "/assets/coast-illustrated-v1/beach.png"
+
+
+beachEdgePath : String
+beachEdgePath =
+    "/assets/coast-illustrated-v1/beach-edge.png"
+
+
+roadPath : String -> String
+roadPath name =
+    "/assets/roads-illustrated-v1/" ++ name ++ ".png"
+
+
+imagePaths : MapTheme -> List String
+imagePaths theme =
+    [ (appearance theme).groundPath
+    , hillPath theme
+    , mountainPath theme
+    , forestPath
+    , waterPath
+    , beachPath
+    , beachEdgePath
+    ]
+        ++ List.map roadPath [ "straight", "corner", "t-junction", "crossroads" ]
+        ++ Cliff.imagePaths

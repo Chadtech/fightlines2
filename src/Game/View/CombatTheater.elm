@@ -6,6 +6,7 @@ module Game.View.CombatTheater exposing
     , backdropPath
     , firingInfantry
     , firingTimes
+    , imagePaths
     , impactTimes
     , preview
     , readyToAutomaticallyClose
@@ -13,7 +14,7 @@ module Game.View.CombatTheater exposing
     , toHtml
     )
 
-import Api.Enum.BuildingKind as BuildingKind
+import Api.Enum.BuildingKind as BuildingKind exposing (BuildingKind)
 import Api.Enum.CombatKind as CombatKind
 import Api.Enum.Entrenchment as Entrenchment
 import Api.Enum.MapTheme as MapTheme exposing (MapTheme)
@@ -28,6 +29,7 @@ import Game.Coordinate as Coordinate exposing (Coordinate)
 import Game.Depot as Depot exposing (Depot)
 import Game.IndirectImpact exposing (Attacker, BuildingImpact)
 import Game.Map as Map exposing (Map)
+import Game.Road as Road
 import Game.Terrain as Terrain exposing (Terrain)
 import Game.TurnPlayback as TurnPlayback
     exposing
@@ -39,6 +41,7 @@ import Game.TurnPlayback as TurnPlayback
 import Game.Unit as Unit exposing (Unit)
 import Game.Unit.HitPoints exposing (HitPoints)
 import Game.UnitKind as UnitKindLabel
+import Game.UnitOrder as Order
 import Game.View.CombatAttack as CombatAttack
 import Game.View.CombatBazooka as CombatBazooka
 import Game.View.CombatExplosion as CombatExplosion
@@ -1028,18 +1031,7 @@ backdropAt scenery position =
     in
     case ListUtil.find atPosition scenery.depots of
         Just depot ->
-            case ( scenery.map.theme, depot.kind ) of
-                ( MapTheme.Snow, BuildingKind.Fortress ) ->
-                    "/assets/combat-backdrops-anime-v1/snowy-fortress.png"
-
-                ( _, BuildingKind.Fortress ) ->
-                    "/assets/combat-backdrops-anime-v1/fortress.png"
-
-                ( MapTheme.Snow, _ ) ->
-                    "/assets/combat-backdrops-anime-v1/snowy-depot.png"
-
-                _ ->
-                    "/assets/combat-backdrops-anime-v1/depot.png"
+            buildingBackdropPath scenery.map.theme depot.kind
 
         Nothing ->
             backdropPath scenery.map.theme (Map.terrainAt scenery.map position)
@@ -1416,7 +1408,7 @@ sabotageScene scenery panel building =
                     , SA.y "42"
                     , SA.width "10"
                     , SA.height "10"
-                    , SA.xlinkHref "/assets/orders-anime-v1/sabotage.png"
+                    , SA.xlinkHref (Order.image Order.Sabotage)
                     ]
                     []
                 ]
@@ -1737,3 +1729,35 @@ scene path transform description figures =
             ]
             content
         ]
+
+
+buildingBackdropPath : MapTheme -> BuildingKind -> String
+buildingBackdropPath theme kind =
+    case ( theme, kind ) of
+        ( MapTheme.Snow, BuildingKind.Fortress ) ->
+            "/assets/combat-backdrops-anime-v1/snowy-fortress.png"
+
+        ( _, BuildingKind.Fortress ) ->
+            "/assets/combat-backdrops-anime-v1/fortress.png"
+
+        ( MapTheme.Snow, _ ) ->
+            "/assets/combat-backdrops-anime-v1/snowy-depot.png"
+
+        _ ->
+            "/assets/combat-backdrops-anime-v1/depot.png"
+
+
+imagePaths : MapTheme -> List String
+imagePaths theme =
+    List.map (backdropPath theme)
+        [ Terrain.Plain
+        , Terrain.Forest
+        , Terrain.Hills
+        , Terrain.Mountains
+        , Terrain.Water
+        , Terrain.Beach
+        , Terrain.Road Road.NorthSouth
+        ]
+        ++ [ buildingBackdropPath theme BuildingKind.Supply
+           , buildingBackdropPath theme BuildingKind.Fortress
+           ]

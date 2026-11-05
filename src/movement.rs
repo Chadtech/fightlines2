@@ -35,8 +35,8 @@ pub struct MovementRule {
 /// Road entry consumes whole fuel quantities, including cargo at departure.
 pub fn road_fuel_cost(kind: UnitKind, occupied_slots: usize) -> i32 {
     match kind {
-        UnitKind::Tank => 5,
-        UnitKind::Truck => 1 + occupied_slots as i32,
+        UnitKind::Tank => 20,
+        UnitKind::Truck => 4 + occupied_slots as i32,
         UnitKind::Infantry | UnitKind::FieldGun => 0,
     }
 }

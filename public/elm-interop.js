@@ -26,7 +26,8 @@ function startElmApp(elmApp, handleMessage) {
     app.ports.fromJs.send({ type: tag, payload });
   }
 
-  const audio = createAudioManager(failure => toElm("audio error", failure));
+  const assets = createAssetLoader();
+  const audio = createAudioManager(failure => toElm("audio error", failure), assets);
 
   function setLocalStorage(key, value) {
     const storage = { ...getLocalStorage(), [key]: value };
@@ -49,6 +50,10 @@ function startElmApp(elmApp, handleMessage) {
 
   app.ports.toJs.subscribe(async (message) => {
     switch (message.tag) {
+      case "preloadImages": {
+        assets.preloadImages(message.paths);
+        break;
+      }
       case "audio": {
         await audio.handleEvent(message.event);
         break;

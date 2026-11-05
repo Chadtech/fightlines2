@@ -27,6 +27,7 @@ mod player_name;
 mod player_number;
 mod scenario;
 mod seed;
+mod server_limits;
 mod server_log;
 mod session_token;
 mod store;

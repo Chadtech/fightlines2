@@ -1,7 +1,7 @@
 module Game.View.CombatBazooka exposing
     ( endsAt
     , frameAt
-    , preload
+    , imagePaths
     , toSvg
     )
 
@@ -10,7 +10,6 @@ import Api.Enum.SpriteFacing as SpriteFacing
 import Css
 import Game.View.CombatAttack as CombatAttack
 import Game.View.UnitSprite as UnitSprite exposing (Appearance)
-import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
 import Svg.Styled as Svg exposing (Svg)
@@ -46,21 +45,9 @@ path team =
     "/assets/bazooka-firing-v1/" ++ team ++ ".png"
 
 
-preload : Html msg
-preload =
-    let
-        image : String -> Html msg
-        image team =
-            H.node "link"
-                [ A.rel "preload"
-                , A.attribute "as" "image"
-                , A.href (path team)
-                ]
-                []
-    in
-    H.div
-        [ A.hidden True ]
-        (List.map image [ "red", "blue" ])
+imagePaths : List String
+imagePaths =
+    List.map path [ "red", "blue" ]
 
 
 toSvg : { elapsed : Float, figureIndex : Int } -> CombatAttack.Attack -> Appearance -> Svg msg

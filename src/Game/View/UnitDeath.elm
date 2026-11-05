@@ -2,6 +2,7 @@ module Game.View.UnitDeath exposing
     ( Msg(..)
     , dialog
     , dialogHtmlId
+    , imagePath
     , spotlight
     , styles
     , toSvg
@@ -56,6 +57,10 @@ styles =
                 0%, 40% { opacity: 1; }
                 100% { opacity: 0; }
             }
+            @keyframes fightlines-unit-death-marker {
+                from { opacity: 0; }
+                to { opacity: 1; }
+            }
             .fightlines-death-focus *:not(["""
                 ++ CombatExplosion.casualtyAnimationAttribute
                 ++ """]),
@@ -69,7 +74,7 @@ styles =
         ]
 
 
-{-| Replace a destroyed unit's artwork with a quick explosion and disappearance.
+{-| Replace a destroyed unit's artwork with an explosion and a casualty marker.
 The projected casualty remains inspectable for its server-timed presentation frame.
 -}
 toSvg : Int -> Unit -> Svg msg
@@ -86,7 +91,7 @@ deathAnimation column unit =
         [ Svg.g
             [ A.attribute CombatExplosion.casualtyAnimationAttribute ""
             , A.css
-                [ S.animation ("fightlines-unit-death-vanish " ++ String.fromFloat CombatExplosion.spriteDisappearsAt ++ "ms linear both")
+                [ S.animation ("fightlines-unit-death-vanish " ++ String.fromFloat (CombatExplosion.casualtyDurationMs / 2) ++ "ms linear both")
                 , S.reducedMotion
                     [ Css.property "animation-timing-function" "steps(1, end)"
                     ]
@@ -94,7 +99,22 @@ deathAnimation column unit =
             ]
             [ UnitSprite.toSvg column unit
             ]
-        , CombatExplosion.mapToSvg unit.spriteFacing
+        , CombatExplosion.casualtyToSvg unit.spriteFacing
+        , Svg.image
+            [ SA.xlinkHref imagePath
+            , SA.x "3"
+            , SA.y "3"
+            , SA.width "10"
+            , SA.height "10"
+            , A.attribute CombatExplosion.casualtyAnimationAttribute ""
+            , A.css
+                [ S.animation ("fightlines-unit-death-marker 200ms linear " ++ String.fromFloat CombatExplosion.casualtyDurationMs ++ "ms both")
+                , S.reducedMotion
+                    [ Css.property "animation-timing-function" "steps(1, end)"
+                    ]
+                ]
+            ]
+            []
         ]
 
 
@@ -393,3 +413,8 @@ spotlight map units loss =
         , Aria.hidden True
         ]
         children
+
+
+imagePath : String
+imagePath =
+    "/assets/death-skull-illustrated-v1.png"

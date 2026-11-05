@@ -14,6 +14,7 @@ use crate::{
     player::{Controller, Player, PlayerController},
     player_number::PlayerNumber,
     scenario::Scenario,
+    server_limits::{Limits, Rejection},
     server_log,
     session_token::SessionToken,
     store::GameRegistry,
@@ -23,6 +24,7 @@ use crate::{
 use juniper::{FieldError, FieldResult, GraphQLObject};
 use std::{
     collections::BTreeMap,
+    sync::TryLockError,
     time::{Duration, Instant},
 };
 
@@ -299,6 +301,7 @@ impl Game {
         session: Option<&SessionToken>,
         turn_number: i32,
         orders: Vec<UnitOrderInput>,
+        limits: &Limits,
     ) -> FieldResult<GameSnapshot> {
         if let GameAccess::DevelopmentPreview = self.access {
             return error(
@@ -344,6 +347,12 @@ impl Game {
                 orders.clone(),
             )
             .map_err(FieldError::from)?;
+        // Admission happens after validation, before any authoritative change.
+        // Keep the permit through resolution and recording on this worker.
+        let _ai_permit = ai_player
+            .map(|_| limits.acquire_ai())
+            .transpose()
+            .map_err(Rejection::into_field_error)?;
         let mut submissions = vec![Submission {
             player_number,
             orders,
@@ -604,7 +613,13 @@ pub fn submit_turn(
         .store
         .entry(&id)?
         .ok_or_else(|| FieldError::from("this game no longer exists."))?;
-    let mut entry = entry.lock().map_err(|_| {
+    let mut entry = entry.try_lock().map_err(|error| {
+        if let TryLockError::WouldBlock = error {
+            return FieldError::new(
+                "this game is busy. please try again shortly.",
+                juniper::graphql_value!({ "code": "GAME_BUSY", "retryAfterSeconds": 1 }),
+            );
+        }
         tracing::error!(
             event = "server_state_lock_unavailable",
             game_id = %id,
@@ -616,7 +631,12 @@ pub fn submit_turn(
         GameRegistry::Lobby(_) => return error("this game no longer exists."),
         GameRegistry::Game(game) => game,
     };
-    game.submit_turn(context.identity().as_ref(), turn_number, orders)
+    game.submit_turn(
+        context.identity().as_ref(),
+        turn_number,
+        orders,
+        &context.mutation_limits,
+    )
 }
 
 fn log_error(id: &LobbyId, error: std::io::Error) -> FieldError {
@@ -641,6 +661,72 @@ mod tests {
         test_support::{FixtureValue, TestResult},
         turns::CoordinateInput,
     };
+
+    #[test]
+    fn ai_busy_preserves_the_turn_and_human_games_can_continue() -> TestResult<()> {
+        let scenario = MapDefinition::parse(r#"{
+            "width": 9, "height": 3, "theme": "GreenForest",
+            "features": [], "depots": [],
+            "units": [
+                {"id": 1, "position": {"x": 0, "y": 1}, "playerNumber": "Player1", "kind": "Infantry", "direction": "East"},
+                {"id": 2, "position": {"x": 8, "y": 1}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
+            ]
+        }"#).fixture()?.scenario().fixture()?;
+        let host = SessionToken::from_token("host".into());
+        let guest = SessionToken::from_token("guest".into());
+        let mut game = Game::new(
+            LobbyId::from_token("1".repeat(32)),
+            LobbyName::parse("Admission test").fixture()?,
+            MapId::default(),
+            host.clone(),
+            vec![
+                Player {
+                    player_number: PlayerNumber::Player1,
+                    controller: PlayerController::Human(host.clone()),
+                    name: PlayerName::parse("Host").fixture()?,
+                },
+                Player {
+                    player_number: PlayerNumber::Player2,
+                    controller: PlayerController::Ai,
+                    name: PlayerName::parse("AI").fixture()?,
+                },
+            ],
+            scenario.clone(),
+        );
+        let orders: Vec<UnitOrderInput> = serde_json::from_value(serde_json::json!([
+            { "unit_id": "1", "path": [{ "x": 0, "y": 1 }] }
+        ]))?;
+        let limits = Limits::default();
+        let permit = limits.acquire_ai().fixture()?;
+        // Invalid requests are rejected before AI admission.
+        let invalid = game
+            .submit_turn(Some(&host), 1, vec![], &limits)
+            .err()
+            .fixture()?;
+        assert!(!invalid.message().contains("ai is busy"));
+        let busy = game
+            .submit_turn(Some(&host), 1, orders.clone(), &limits)
+            .err()
+            .fixture()?;
+        assert!(busy.message().contains("ai is busy"));
+        assert_eq!(game.scenario, scenario);
+        assert_eq!(game.turns.number, 1);
+        assert!(game.turns.orders.iter().all(Option::is_none));
+        assert!(game.finished_at.is_none());
+        // A human-only game uses no AI permit, even while another game owns it.
+        game.players.get_mut(1).fixture()?.controller = PlayerController::Human(guest);
+        game.submit_turn(Some(&host), 1, orders.clone(), &limits)
+            .fixture()?;
+        assert!(game.turns.orders.first().fixture()?.is_some());
+        game.turns = Turns::default();
+        game.players.get_mut(1).fixture()?.controller = PlayerController::Ai;
+        drop(permit);
+        game.submit_turn(Some(&host), 1, orders, &limits)
+            .fixture()?;
+        assert_eq!(game.turns.number, 2);
+        assert!(limits.acquire_ai().is_ok());
+        Ok(())
+    }
 
     #[test]
     fn resignation_retention_is_fixed_and_only_starts_after_a_durable_finish() -> TestResult<()> {
@@ -808,8 +894,13 @@ mod tests {
                         })
                     })
                     .collect::<TestResult<Vec<_>>>()?;
-                game.submit_turn(Some(sessions.get(player.index()).fixture()?), 1, orders)
-                    .fixture()?;
+                game.submit_turn(
+                    Some(sessions.get(player.index()).fixture()?),
+                    1,
+                    orders,
+                    &Limits::default(),
+                )
+                .fixture()?;
             }
             assert_eq!(game.turns.outcome, Some(outcome));
             let finished_at = game.finished_at.fixture()?;

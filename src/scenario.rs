@@ -154,11 +154,11 @@ impl Fuel {
     fn for_kind(kind: UnitKind) -> Option<Self> {
         match kind {
             UnitKind::Tank | UnitKind::Truck => Some(Self {
-                current: 128,
-                maximum: 128,
+                current: 512,
+                maximum: 512,
                 movement_per_tile: match kind {
-                    UnitKind::Tank => 7,
-                    UnitKind::Truck => 2,
+                    UnitKind::Tank => 28,
+                    UnitKind::Truck => 8,
                     UnitKind::Infantry | UnitKind::FieldGun => 0,
                 },
                 movement_per_cargo_slot: if kind == UnitKind::Truck { 2 } else { 0 },
@@ -467,7 +467,7 @@ pub struct DepotHp {
 impl Depot {
     pub fn new(kind: BuildingKind, position: Coordinate) -> Self {
         let stock = match kind.resource_kind() {
-            Some(_) => ResourceStock::depot(),
+            Some(resource) => ResourceStock::depot(resource),
             None => ResourceStock {
                 current: 0,
                 maximum: 0,
@@ -538,7 +538,12 @@ impl Unit {
         self.firing_position_revealed
     }
 
-    /// Direct fire reveals a unit's position for the following turn.
+    /// Direct fire reveals the occupied tile immediately, through the following turn.
+    pub(crate) fn reveal_firing_position(&mut self) {
+        self.firing_position_revealed = true;
+    }
+
+    /// Renew direct-fire reveals, or expire the previous turn's reveal.
     pub(crate) fn finish_firing_reveal(&mut self, fired: bool) {
         self.firing_position_revealed = fired;
     }
@@ -938,8 +943,8 @@ mod tests {
                             vec![CargoStock::new(ResourceKind::Supply, 256); freight];
                         let slots = (passengers + freight) as i32;
                         let (ordinary, road_cost) = match kind {
-                            UnitKind::Tank => (7, 5),
-                            UnitKind::Truck => (2 + 2 * slots, 1 + slots),
+                            UnitKind::Tank => (28, 20),
+                            UnitKind::Truck => (8 + 2 * slots, 4 + slots),
                             _ => return Err("invalid road fixture kind".into()),
                         };
                         let initial = unit.clone();
@@ -949,10 +954,10 @@ mod tests {
                             ordinary + road_cost
                         );
                         unit.follow_terrain_path(&map, &path, passengers);
-                        assert_eq!(unit.fuel().fixture()?.current, 128 - ordinary - road_cost);
+                        assert_eq!(unit.fuel().fixture()?.current, 512 - ordinary - road_cost);
                         unit.take_damage(3);
                         unit.retract_movement(&path[..2], &map, &path[1..], &initial, passengers);
-                        assert_eq!(unit.fuel().fixture()?.current, 128 - road_cost);
+                        assert_eq!(unit.fuel().fixture()?.current, 512 - road_cost);
                         assert_eq!(unit.hit_points().current(), 13);
                     }
                 }
@@ -1371,9 +1376,9 @@ mod tests {
                     assert_eq!(
                         unit.fuel(),
                         Some(Fuel {
-                            current: 128,
-                            maximum: 128,
-                            movement_per_tile: if unit.kind == UnitKind::Tank { 7 } else { 2 },
+                            current: 512,
+                            maximum: 512,
+                            movement_per_tile: if unit.kind == UnitKind::Tank { 28 } else { 8 },
                             movement_per_cargo_slot: if unit.kind == UnitKind::Truck {
                                 2
                             } else {
