@@ -9,6 +9,7 @@ use crate::{
     lobby_snapshot::Snapshot,
     map::MapError,
     map_id::{self, CatalogAccess},
+    match_making::Queue,
     player::{Player, PlayerController},
     player_name::PlayerName,
     player_number::PlayerNumber,
@@ -19,6 +20,7 @@ use crate::{
 use juniper::{FieldError, FieldResult};
 use std::{
     collections::BTreeMap,
+    num::NonZeroUsize,
     sync::{Arc, Mutex, TryLockError},
     time::Instant,
 };
@@ -39,6 +41,7 @@ impl std::fmt::Display for DevelopmentError {
 }
 
 pub struct Store {
+    pub(crate) match_making: Mutex<Queue>,
     seed: Mutex<Seed>,
     registry: Mutex<BTreeMap<LobbyId, Arc<Mutex<GameRegistry>>>>,
     game_logs: Option<Directory>,
@@ -63,6 +66,7 @@ impl Store {
 
     pub fn new(seed: Seed) -> Self {
         Self {
+            match_making: Mutex::new(Queue::default()),
             seed: Mutex::new(seed),
             registry: Mutex::new(BTreeMap::new()),
             game_logs: None,
@@ -111,6 +115,7 @@ impl Store {
         .into_development_preview();
         registry.insert(id, Arc::new(Mutex::new(GameRegistry::Game(Box::new(game)))));
         Ok(Self {
+            match_making: Mutex::new(Queue::default()),
             seed: Mutex::new(seed),
             registry: Mutex::new(registry),
             game_logs: None,
@@ -145,9 +150,47 @@ impl Store {
         Ok(token)
     }
 
+    pub(crate) fn choose_index(&self, length: NonZeroUsize) -> FieldResult<usize> {
+        let mut seed = self.seed.lock().map_err(|_| {
+            tracing::error!(
+                event = "server_state_lock_unavailable",
+                state = "token_generator",
+                "random generator lock is poisoned"
+            );
+            server_log::internal_error("the random generator is unavailable.")
+        })?;
+        let (index, next) = seed::index(*seed, length);
+        *seed = next;
+        Ok(index)
+    }
+
+    /// Match making publishes a fully recorded game without an intermediate lobby.
+    pub(crate) fn insert_match(&self, id: LobbyId, mut game: Game) -> FieldResult<()> {
+        if let Some(directory) = &self.game_logs {
+            game.record_start(directory)?;
+        }
+        self.registry
+            .lock()
+            .map_err(|_| {
+                tracing::error!(
+                    event = "server_state_lock_unavailable",
+                    state = "lobby_registry",
+                    "game registry lock is poisoned"
+                );
+                server_log::internal_error("the game registry is unavailable.")
+            })?
+            .insert(id, Arc::new(Mutex::new(GameRegistry::Game(Box::new(game)))));
+        Ok(())
+    }
+
     /// Snapshot handles before inspecting games, and skip busy entries so cleanup
     /// never queues behind AI planning, disk writes, or player requests.
     pub fn remove_expired_entries(&self, now: Instant) -> FieldResult<usize> {
+        // Release the queue before inspecting registry entries.
+        self.match_making
+            .lock()
+            .map_err(|_| server_log::internal_error("match making is unavailable."))?
+            .remove_absent_players(now);
         let entries = self
             .registry
             .lock()
@@ -161,6 +204,7 @@ impl Store {
             })?
             .clone();
         let mut removed = 0;
+        let mut removed_ids = Vec::new();
         for (id, entry) in entries {
             let mut game = match entry.try_lock() {
                 Ok(game) => game,
@@ -194,7 +238,15 @@ impl Store {
                 registry.remove(&id);
                 *game = GameRegistry::Closed;
                 removed += 1;
+                removed_ids.push(id);
             }
+        }
+        if !removed_ids.is_empty() {
+            // Entry and registry guards are gone before acquiring the queue.
+            self.match_making
+                .lock()
+                .map_err(|_| server_log::internal_error("match making is unavailable."))?
+                .remove_games(&removed_ids);
         }
         Ok(removed)
     }

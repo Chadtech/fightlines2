@@ -102,6 +102,7 @@ struct UnitPlacementInput {
 pub struct MapDefinitionInput {
     description: String,
     release_status: MapReleaseStatus,
+    match_making: Option<bool>,
     width: i32,
     height: i32,
     theme: MapTheme,
@@ -127,6 +128,7 @@ impl MapDefinitionInput {
         Ok(MapDefinition {
             description: self.description,
             release_status: self.release_status,
+            match_making: self.match_making.unwrap_or(false),
             width: unsigned(self.width, "width")?,
             height: unsigned(self.height, "height")?,
             theme: self.theme,
@@ -314,6 +316,7 @@ mod tests {
         let input = MapDefinitionInput {
             description: definition.description,
             release_status: definition.release_status,
+            match_making: Some(definition.match_making),
             width: i32::from(definition.width),
             height: i32::from(definition.height),
             theme: definition.theme,

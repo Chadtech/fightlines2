@@ -13,6 +13,10 @@ type LoggedGameEntry
     = LoggedGameEntry
 
 
+type MatchMakingSnapshot
+    = MatchMakingSnapshot
+
+
 type UnitLocation
     = UnitLocation
 

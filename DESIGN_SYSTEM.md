@@ -146,10 +146,12 @@ lettering, thick yellow underline, flush g descender, and small explosion.
 The logo scales proportionally up to 40rem wide with viewport gutters, centered
 slightly above the viewport midpoint with the menu beneath it. Its image
 supplies the accessible heading. The ordinary beveled card has no title bar
-and contains a full-width primary `play` button followed by secondary `feedback` and `about`
-button, then a secondary `privacy policy` button. Keep it at most 24rem wide with viewport gutters. Play opens the existing
-lobby creation form at `/new`. About opens a wide reading dialog (64rem, capped
-by the viewport gutters) with titled intro, contact, code, and pacifism sections
+and contains a full-width primary `create a lobby` button followed by secondary
+`feedback`, `about`, and `privacy policy` buttons. Keep it at most 24rem wide
+with viewport gutters. `create a lobby` opens the existing form at `/new`.
+When the frontend matchmaking switch is enabled, show primary `match making`
+first and make `create a lobby` secondary. About opens a wide reading dialog
+(64rem, capped by the viewport gutters) with titled intro, contact, code, and pacifism sections
 and the creator portrait. Contact addresses and account names are real
 links using the shared link style; web links open a new tab or window and email
 opens the configured mail handler. Group the portrait and its small caption in
@@ -199,6 +201,14 @@ viewport. They ignore pointer input and assistive technology. Reduced motion
 omits this decorative cycle and retains the original green background.
 
 ## Cards, spacing, and layout
+
+The `/match-making` page uses a centered, headerless `Card.simple`. Its entry
+form contains only **user name** and the gold **find a game** action. Waiting
+shows **finding a game…**, the existing `View.LoadingBar`, a quiet **last game
+started … ago** line, and a full-width secondary **cancel** button. With no
+recorded match since startup, show **no games started yet**. Do not add a page
+header, title bar, explanatory paragraphs, or an estimated wait. Errors appear
+near the action; pending join/cancel requests disable duplicate actions.
 
 - Pass title bars separately with `Card.withHeader (CardHeader.simple title)`;
   keep the header out of the body content list. `Card` owns their positioning.
@@ -298,9 +308,13 @@ omits this decorative cycle and retains the original green background.
   `human` or `ai` for the other side. The AI evaluates tactics using one-turn
   simulations, tests advancing enemy responses, and revisits allied choices.
   Keep these choices in the existing controller selector. Disable that selector once a human joins.
-  Guests see controller types as read-only text. Put the occupied count in the
-  players title bar. Below the slots, show each member a compact `your side`
-  select using the shared inset control. Explain that
+  The host sees a red `kick` button beneath a joined guest's controller selector
+  before starting. Disable it during a pending request and show `kicking…` while
+  removing that player. Failure preserves the roster and uses the action card's
+  error text; success opens the slot and returns the guest to the join page on
+  their next update. Guests see controller types as read-only text. Put the
+  occupied count in the players title bar. Below the slots, show each member a
+  compact `your side` select using the shared inset control. Explain that
   switching sides also moves the opponent. Keep host and own-player labels on
   their occupants when assignments change. Side changes lock at game start.
 - Use `Card.simple` for the centered creation form, inside a page-owned container

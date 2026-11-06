@@ -18,6 +18,7 @@ const CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Operation {
     CreateLobby,
+    JoinMatchMaking,
     SubmitTurn,
     SendChat,
     SubmitFeedback,
@@ -72,11 +73,11 @@ struct Budget {
 impl RateKey {
     fn budget(&self) -> Budget {
         match (&self.client, self.operation) {
-            (Client::Session(_), Operation::CreateLobby) => Budget {
+            (Client::Session(_), Operation::CreateLobby | Operation::JoinMatchMaking) => Budget {
                 burst: 3,
                 refill_every: Duration::from_secs(60),
             },
-            (Client::Address(_), Operation::CreateLobby) => Budget {
+            (Client::Address(_), Operation::CreateLobby | Operation::JoinMatchMaking) => Budget {
                 burst: 10,
                 refill_every: Duration::from_secs(15),
             },

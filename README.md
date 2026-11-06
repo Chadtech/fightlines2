@@ -20,7 +20,7 @@ into a forest. An army that wins the firefight can still run out of supplies.
 
 FightLines makes logistics part of the fight: trucks share cargo space between
 troops, provisions, and fuel, while finite depots turn every delivery route into
-a tactical decision. Play against another person through an invite lobby, or
+a tactical decision. Play against another person through match making or an invite lobby, or
 choose an AI opponent.
 
 - **Combined arms:** infantry, tanks, field guns, and transports; directional
@@ -127,7 +127,9 @@ cp .env.example .env
 make run
 ```
 
-Open [localhost:8080](http://127.0.0.1:8080), choose **play**, and create a lobby.
+Open [localhost:8080](http://127.0.0.1:8080) and choose **create a lobby** for
+invite games and AI opponents. Matchmaking is currently hidden behind a
+[frontend development switch](docs/DEVELOPMENT.md#matchmaking-preview).
 Select an AI opponent for a solo game, or share the invite link with a second
 player. Use separate browser profiles when testing both sides on one machine.
 

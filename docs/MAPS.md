@@ -22,6 +22,13 @@ defaults to `Draft`. Public map lists and new games accept only released maps.
 Crossroads and Winter Front are drafts. Localhost requests with `--map-editor`
 can list, select, and playtest all maps. Remote requests remain limited to released
 maps even when the editor is enabled.
+Released maps with `"matchMaking": true` form the public match making pool.
+The field defaults to false. Match making always excludes drafts, including for
+local editor users, and chooses uniformly from the eligible maps. The initial
+pool is Supply Point, Ridgeway, Three Crossings, and Convoy Country. In the editor, toggle
+**match making** and save to change a map's eligibility without a rebuild.
+An empty pool prevents new queue entries and games, with an explicit error;
+existing matched games keep their original boards.
 The catalog places `supply-point` first when present, then sorts the other IDs
 alphabetically. New lobbies default to the first available map. Saved edits affect
 new games; active games and archived boards retain their own layouts.

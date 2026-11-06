@@ -1,8 +1,9 @@
 use rand::{
-    Rng, SeedableRng, TryRng,
+    Rng, RngExt, SeedableRng, TryRng,
     rngs::{StdRng, SysRng},
 };
 use std::io;
+use std::num::NonZeroUsize;
 
 /// Explicit state for deterministic token generation. Never sent to clients.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -59,6 +60,15 @@ pub fn token(seed: Seed) -> (String, Seed) {
     generator.fill_bytes(&mut next);
     let token = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
     (token, Seed(next))
+}
+
+/// Uniform selection with an explicit, nonempty range and successor state.
+pub fn index(seed: Seed, length: NonZeroUsize) -> (usize, Seed) {
+    let mut generator = StdRng::from_seed(seed.0);
+    let index = generator.random_range(0..length.get());
+    let mut next = [0; 32];
+    generator.fill_bytes(&mut next);
+    (index, Seed(next))
 }
 
 #[cfg(test)]

@@ -38,6 +38,7 @@ definition : List Coordinate -> Definition
 definition positions =
     { description = "road authoring fixture"
     , releaseStatus = MapReleaseStatus.Draft
+    , matchMaking = False
     , width = 3
     , height = 3
     , theme = MapTheme.GreenForest

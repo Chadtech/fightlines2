@@ -125,6 +125,31 @@ impl Lobby {
         Ok(result)
     }
 
+    fn kick_player(
+        &mut self,
+        session: Option<&SessionToken>,
+        name: PlayerName,
+    ) -> FieldResult<Snapshot> {
+        if session != Some(&self.host) {
+            return error("only the host can kick players.");
+        }
+        let player = self
+            .players
+            .iter()
+            .find(|player| player.name.matches(&name))
+            .ok_or("this player is no longer in the lobby.")?;
+        match player.controller.session() {
+            Some(identity) if identity == &self.host => {
+                return error("the host cannot be kicked.");
+            }
+            None => return error("use the controller selector to remove the AI player."),
+            Some(_) => {}
+        }
+        self.players.retain(|player| !player.name.matches(&name));
+        self.last_activity = Instant::now();
+        Ok(self.snapshot(session))
+    }
+
     fn set_map_type(
         &mut self,
         session: Option<&SessionToken>,
@@ -327,6 +352,32 @@ pub fn join(context: &Context, id: LobbyId, input: &str) -> FieldResult<Snapshot
     lobby.join(context, name)
 }
 
+/// Names are unique within a lobby and remain stable when players swap sides.
+pub fn kick_player(context: &Context, id: LobbyId, input: &str) -> FieldResult<Snapshot> {
+    let name =
+        PlayerName::parse(input).ok_or("enter a player name between 1 and 40 characters.")?;
+    let entry = context
+        .store
+        .entry(&id)?
+        .ok_or("this lobby no longer exists.")?;
+    let mut entry = entry.lock().map_err(|_| {
+        tracing::error!(
+            event = "server_state_lock_unavailable",
+            game_id = %id,
+            "game state lock is poisoned"
+        );
+        server_log::internal_error("the server state is unavailable.")
+    })?;
+    let lobby = match &mut *entry {
+        GameRegistry::Closed => return error("this lobby no longer exists."),
+        GameRegistry::Game(_) => {
+            return error("players cannot be kicked after the game has started.");
+        }
+        GameRegistry::Lobby(lobby) => lobby,
+    };
+    lobby.kick_player(context.identity().as_ref(), name)
+}
+
 pub fn set_map_type(context: &Context, id: LobbyId, map_type: MapId) -> FieldResult<Snapshot> {
     let entry = context.store.entry(&id)?.ok_or_else(|| {
         FieldError::from("This lobby no longer exists. Create a new lobby from the home page.")
@@ -446,6 +497,155 @@ mod tests {
             let body: Value = web_test::read_body_json(response).await;
             (body, cookie)
         }};
+    }
+
+    #[actix_web::test]
+    async fn kicking_requires_host_and_removes_the_named_guest_even_after_a_side_swap() -> TestResult
+    {
+        let store = web::Data::new(Store::new(Seed::new([84; 32])));
+        let app = web_test::init_service(
+            App::new()
+                .app_data(store.clone())
+                .app_data(web::Data::new(graphql::endpoint(Environment::Development)))
+                .route("/graphql", web::post().to(graphql::handle)),
+        )
+        .await;
+        let (created, host) = execute!(
+            &app,
+            "mutation { createLobby(name: \"Host\", lobbyName: \"Kick test\") { id } }",
+            None
+        );
+        let host = host.fixture()?;
+        let id = created["data"]["createLobby"]["id"].as_str().fixture()?;
+        let (joined, guest) = execute!(
+            &app,
+            format!("mutation {{ joinLobby(id: {id:?}, name: \"Guest\") {{ id }} }}"),
+            None
+        );
+        assert!(joined.get("errors").is_none(), "{joined}");
+        let guest = guest.fixture()?;
+        let kick = format!(
+            "mutation {{ kickLobbyPlayer(id: {id:?}, name: \"Guest\") {{ players {{ name playerNumber isHost }} }} }}"
+        );
+        let entry = store
+            .entry(&LobbyId::from_token(id.into()))
+            .fixture()?
+            .fixture()?;
+        let last_activity = Instant::now() - Duration::from_secs(60);
+        {
+            let mut state = entry.lock().fixture()?;
+            match &mut *state {
+                GameRegistry::Lobby(lobby) => lobby.last_activity = last_activity,
+                _ => return Err("expected an unstarted lobby".into()),
+            }
+        }
+        for cookie in [None, Some(guest.clone())] {
+            let (denied, _) = execute!(&app, &kick, cookie);
+            assert!(
+                denied["errors"][0]["message"]
+                    .as_str()
+                    .fixture()?
+                    .contains("only the host"),
+                "{denied}"
+            );
+        }
+        for name in ["Host", "Missing", ""] {
+            let (denied, _) = execute!(
+                &app,
+                format!("mutation {{ kickLobbyPlayer(id: {id:?}, name: {name:?}) {{ id }} }}"),
+                Some(host.clone())
+            );
+            assert!(denied.get("errors").is_some(), "{denied}");
+        }
+        {
+            let state = entry.lock().fixture()?;
+            match &*state {
+                GameRegistry::Lobby(lobby) => {
+                    assert_eq!(lobby.players.len(), 2);
+                    assert_eq!(lobby.last_activity, last_activity);
+                }
+                _ => return Err("expected an unstarted lobby".into()),
+            }
+        }
+        let (swapped, _) = execute!(
+            &app,
+            format!("mutation {{ setLobbySide(id: {id:?}, playerNumber: PLAYER1) {{ id }} }}"),
+            Some(guest.clone())
+        );
+        assert!(swapped.get("errors").is_none(), "{swapped}");
+        let (kicked, _) = execute!(&app, &kick, Some(host.clone()));
+        assert_eq!(
+            kicked["data"]["kickLobbyPlayer"]["players"],
+            json!([
+                { "name": "Host", "playerNumber": "PLAYER2", "isHost": true }
+            ]),
+            "{kicked}"
+        );
+        {
+            let state = entry.lock().fixture()?;
+            match &*state {
+                GameRegistry::Lobby(lobby) => assert!(lobby.last_activity > last_activity),
+                _ => return Err("expected an unstarted lobby".into()),
+            }
+        }
+        let (snapshot, _) = execute!(
+            &app,
+            format!("{{ lobby(id: {id:?}) {{ isMember isHost players {{ name }} }} }}"),
+            Some(guest.clone())
+        );
+        assert_eq!(snapshot["data"]["lobby"]["isMember"], false, "{snapshot}");
+        assert_eq!(snapshot["data"]["lobby"]["isHost"], false, "{snapshot}");
+        for query in [
+            kick.clone(),
+            format!("mutation {{ startGame(id: {id:?}) {{ id }} }}"),
+        ] {
+            let (denied, _) = execute!(&app, query, Some(host.clone()));
+            assert!(denied.get("errors").is_some(), "{denied}");
+        }
+        let (denied, _) = execute!(
+            &app,
+            format!("mutation {{ setLobbySide(id: {id:?}, playerNumber: PLAYER2) {{ id }} }}"),
+            Some(guest.clone())
+        );
+        assert!(denied.get("errors").is_some(), "{denied}");
+        // Kicking opens a slot; it does not ban the browser from the invite link.
+        let (rejoined, _) = execute!(
+            &app,
+            format!("mutation {{ joinLobby(id: {id:?}, name: \"Guest\") {{ isMember }} }}"),
+            Some(guest)
+        );
+        assert_eq!(
+            rejoined["data"]["joinLobby"]["isMember"], true,
+            "{rejoined}"
+        );
+        for query in [
+            kick.clone(),
+            format!("mutation {{ setLobbyController(id: {id:?}, controller: AI) {{ id }} }}"),
+        ] {
+            let (result, _) = execute!(&app, query, Some(host.clone()));
+            assert!(result.get("errors").is_none(), "{result}");
+        }
+        let (denied, _) = execute!(
+            &app,
+            format!("mutation {{ kickLobbyPlayer(id: {id:?}, name: \"AI player\") {{ id }} }}"),
+            Some(host.clone())
+        );
+        assert!(denied.get("errors").is_some(), "{denied}");
+        let (started, _) = execute!(
+            &app,
+            format!("mutation {{ startGame(id: {id:?}) {{ id }} }}"),
+            Some(host.clone())
+        );
+        assert!(started.get("errors").is_none(), "{started}");
+        let (denied, _) = execute!(&app, kick, Some(host));
+        assert!(
+            denied["errors"][0]["message"]
+                .as_str()
+                .fixture()?
+                .contains("after the game has started"),
+            "{denied}"
+        );
+        Ok(())
     }
 
     #[actix_web::test]

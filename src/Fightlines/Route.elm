@@ -2,6 +2,7 @@ module Fightlines.Route exposing
     ( Route(..)
     , fromUrl
     , pushUrl
+    , replaceUrl
     , toString
     )
 
@@ -25,6 +26,7 @@ import Url.Parser as P
 type Route
     = Home
     | NewLobby
+    | MatchMaking
     | Lobby LobbyId
     | LobbyMaps LobbyId
     | Game LobbyId
@@ -40,6 +42,7 @@ parser =
     P.oneOf
         [ P.map Home P.top
         , P.map NewLobby (P.s "new")
+        , P.map MatchMaking (P.s "match-making")
         , P.map LobbyMaps (P.s "lobby" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe) </> P.s "maps")
         , P.map Lobby (P.s "lobby" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe))
         , P.map Game (P.s "game" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe))
@@ -49,6 +52,11 @@ parser =
 pushUrl : Route -> Eff msg
 pushUrl route =
     E.pushUrl (toString route)
+
+
+replaceUrl : Route -> Eff msg
+replaceUrl route =
+    E.replaceUrl (toString route)
 
 
 toString : Route -> String
@@ -62,6 +70,9 @@ toString route =
 
                 NewLobby ->
                     [ "new" ]
+
+                MatchMaking ->
+                    [ "match-making" ]
 
                 Lobby id ->
                     [ "lobby", LobbyId.toString id ]

@@ -11,6 +11,7 @@ module Effect exposing
     , measure
     , none
     , pushUrl
+    , replaceUrl
     , request
     , scrollToBottom
     , setLocalStorage
@@ -49,6 +50,7 @@ type Eff msg
     | Measure String (Result Browser.Dom.Error Browser.Dom.Element -> msg)
     | ScrollToBottom { htmlId : String } (Result Browser.Dom.Error () -> msg)
     | PushUrl String
+    | ReplaceUrl String
     | Load String
     | ToJsMsg ToJs.Msg
 
@@ -144,6 +146,13 @@ pushUrl =
     PushUrl
 
 
+{-| Replace a transient page, such as a completed match making queue visit.
+-}
+replaceUrl : String -> Eff msg
+replaceUrl =
+    ReplaceUrl
+
+
 {-| Load a new document, including navigation between apps.
 -}
 load : String -> Eff msg
@@ -177,6 +186,9 @@ map toMsg effect =
 
         PushUrl url ->
             PushUrl url
+
+        ReplaceUrl url ->
+            ReplaceUrl url
 
         Load url ->
             Load url
@@ -221,6 +233,9 @@ toCmd key effect =
 
         PushUrl url ->
             Navigation.pushUrl key url
+
+        ReplaceUrl url ->
+            Navigation.replaceUrl key url
 
         Load url ->
             Navigation.load url

@@ -209,6 +209,7 @@ type Msg
     | FacingInputChanged String
     | ThemeInputChanged String
     | ReleaseStatusInputChanged MapReleaseStatus
+    | MatchMakingInputChanged Bool
     | MirrorInputChanged Bool
     | BrushSizeInputChanged String
     | HandToolClicked
@@ -1077,6 +1078,7 @@ update msg model =
                                 definition =
                                     { description = ""
                                     , releaseStatus = MapReleaseStatus.Draft
+                                    , matchMaking = False
                                     , width = 17
                                     , height = 17
                                     , theme = MapTheme.GreenForest
@@ -1170,6 +1172,9 @@ update msg model =
 
         ReleaseStatusInputChanged releaseStatus ->
             ( applyEdit { draft | releaseStatus = releaseStatus } (finishGesture model), E.none )
+
+        MatchMakingInputChanged matchMaking ->
+            ( applyEdit { draft | matchMaking = matchMaking } (finishGesture model), E.none )
 
         MirrorInputChanged enabled ->
             ( { model | mirror = enabled }, E.none )
@@ -2077,6 +2082,14 @@ mapSettings model =
             [ ( MapReleaseStatus.Draft, "draft" )
             , ( MapReleaseStatus.Released, "released" )
             ]
+        , Checkbox.new
+            { label = "match making"
+            , checked = model.current.draft.matchMaking
+            , onCheck = MatchMakingInputChanged
+            }
+            |> Checkbox.toHtml
+                [ H.text "match making"
+                ]
         , select "map-editor-theme"
             "theme"
             (MapTheme.toString model.current.draft.theme)

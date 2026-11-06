@@ -12,13 +12,16 @@ import Effect as E
     exposing
         ( Eff
         )
+import Fightlines.FeatureFlags as FeatureFlags
 import Fightlines.Flags as Flags
+import Fightlines.MatchMaking.VisitId exposing (VisitId)
 import Fightlines.Page.GameLoadFailed as GameLoadFailed
 import Fightlines.Page.GamePage as GamePage
 import Fightlines.Page.Home as Home
 import Fightlines.Page.JoinLobby as JoinLobby
 import Fightlines.Page.LobbyLoadFailed as LobbyLoadFailed
 import Fightlines.Page.LobbyPage as LobbyPage
+import Fightlines.Page.MatchMaking as MatchMaking
 import Fightlines.Page.NewLobby as NewLobby
 import Fightlines.Route as Route
     exposing
@@ -65,6 +68,9 @@ type Page
     = AppInitError Decode.Error
     | Home Home.Model
     | NewLobby NewLobby.Model
+    | LoadingMatchMaking Shared.Model VisitId
+    | MatchMakingLoadFailed Shared.Model MatchMaking.Error
+    | MatchMaking MatchMaking.Model
     | LoadingLobby Shared.Model LobbyId LobbyPage.Location
     | LobbyLoadFailed LobbyId LobbyLoadFailed.Model
     | JoinLobby LobbyId JoinLobby.Model
@@ -79,6 +85,9 @@ type Msg
     = LinkClicked Browser.UrlRequest
     | RouteReceived (Maybe Route)
     | NewLobbyMsg NewLobby.Msg
+    | MatchMakingMsg VisitId MatchMaking.Msg
+    | MatchMakingResponseReceived VisitId (Response MatchMaking.Flags)
+    | MatchMakingRetryButtonClicked
     | JoinLobbyMsg LobbyId JoinLobby.Msg
     | LobbyMsg LobbyId LobbyPage.Location LobbyPage.Msg
     | LobbyResponseReceived LobbyId LobbyPage.Location (Response LobbyPage.Flags)
@@ -193,6 +202,15 @@ getShared page =
         NewLobby model ->
             Just model.shared
 
+        LoadingMatchMaking shared _ ->
+            Just shared
+
+        MatchMakingLoadFailed shared _ ->
+            Just shared
+
+        MatchMaking model ->
+            Just model.shared
+
         LoadingLobby shared _ _ ->
             Just shared
 
@@ -229,6 +247,15 @@ setShared shared page =
 
         NewLobby model ->
             NewLobby (NewLobby.setShared shared model)
+
+        LoadingMatchMaking _ id ->
+            LoadingMatchMaking shared id
+
+        MatchMakingLoadFailed _ error ->
+            MatchMakingLoadFailed shared error
+
+        MatchMaking model ->
+            MatchMaking (MatchMaking.setShared shared model)
 
         LoadingLobby _ id location ->
             LoadingLobby shared id location
@@ -293,6 +320,19 @@ handleRoute shared route =
 
         Just Route.NewLobby ->
             ( NewLobby (NewLobby.init shared), E.none )
+
+        Just Route.MatchMaking ->
+            if FeatureFlags.matchMakingEnabled then
+                let
+                    ( id, nextShared ) =
+                        MatchMaking.prepareVisit shared
+                in
+                ( LoadingMatchMaking nextShared id
+                , E.request (MatchMakingResponseReceived id) MatchMaking.load
+                )
+
+            else
+                ( NotFound shared, E.none )
 
         Just (Route.Lobby id) ->
             loadLobby LobbyPage.LobbySetup shared id
@@ -387,7 +427,23 @@ update msg page =
         RouteReceived route ->
             case getShared page of
                 Just shared ->
+                    let
+                        departure : Eff Msg
+                        departure =
+                            case page of
+                                MatchMaking model ->
+                                    if route == Just Route.MatchMaking then
+                                        E.none
+
+                                    else
+                                        MatchMaking.leave model
+                                            |> E.map (MatchMakingMsg (MatchMaking.visitId model))
+
+                                _ ->
+                                    E.none
+                    in
                     handleRoute shared route
+                        |> E.and departure
 
                 Nothing ->
                     page
@@ -399,6 +455,47 @@ update msg page =
                     NewLobby.update pageMsg model
                         |> Tuple.mapFirst NewLobby
                         |> Tuple.mapSecond (E.map NewLobbyMsg)
+
+                _ ->
+                    ( page, E.none )
+
+        MatchMakingResponseReceived id result ->
+            case page of
+                LoadingMatchMaking shared current ->
+                    if id == current then
+                        case result of
+                            Ok flags ->
+                                MatchMaking.init id shared flags
+                                    |> Tuple.mapFirst MatchMaking
+                                    |> Tuple.mapSecond (E.map (MatchMakingMsg id))
+
+                            Err error ->
+                                ( MatchMakingLoadFailed shared (MatchMaking.fromLoadError error), E.none )
+
+                    else
+                        ( page, E.none )
+
+                _ ->
+                    ( page, E.none )
+
+        MatchMakingRetryButtonClicked ->
+            case page of
+                MatchMakingLoadFailed _ _ ->
+                    ( page, Route.pushUrl Route.MatchMaking )
+
+                _ ->
+                    ( page, E.none )
+
+        MatchMakingMsg id pageMsg ->
+            case page of
+                MatchMaking model ->
+                    if id == MatchMaking.visitId model then
+                        MatchMaking.update pageMsg model
+                            |> Tuple.mapFirst MatchMaking
+                            |> Tuple.mapSecond (E.map (MatchMakingMsg id))
+
+                    else
+                        ( page, E.none )
 
                 _ ->
                     ( page, E.none )
@@ -651,6 +748,18 @@ shell page =
                 NewLobby model ->
                     List.map (H.map NewLobbyMsg) (NewLobby.view model)
 
+                LoadingMatchMaking _ _ ->
+                    MatchMaking.loadingView
+
+                MatchMakingLoadFailed _ error ->
+                    MatchMaking.loadFailedView
+                        { error = error
+                        , onRetry = MatchMakingRetryButtonClicked
+                        }
+
+                MatchMaking model ->
+                    List.map (H.map (MatchMakingMsg (MatchMaking.visitId model))) (MatchMaking.view model)
+
                 LoadingLobby _ _ _ ->
                     [ [ H.p
                             [ Aria.role Aria.Status
@@ -729,6 +838,10 @@ pageSubscriptions : Page -> Sub Msg
 pageSubscriptions page =
     Sub.batch
         [ case page of
+            MatchMaking model ->
+                MatchMaking.subscriptions model
+                    |> Sub.map (MatchMakingMsg (MatchMaking.visitId model))
+
             Lobby id model ->
                 LobbyPage.subscriptions model
                     |> Sub.map (LobbyMsg id (LobbyPage.currentLocation model))

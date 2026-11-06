@@ -21,6 +21,11 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+matchMaking : SelectionSet Bool Api.Object.MapDefinition
+matchMaking =
+    Object.selectionForField "Bool" "matchMaking" [] Decode.bool
+
+
 releaseStatus : SelectionSet Api.Enum.MapReleaseStatus.MapReleaseStatus Api.Object.MapDefinition
 releaseStatus =
     Object.selectionForField "Enum.MapReleaseStatus.MapReleaseStatus" "releaseStatus" [] Api.Enum.MapReleaseStatus.decoder

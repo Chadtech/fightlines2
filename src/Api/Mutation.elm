@@ -22,6 +22,42 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode exposing (Decoder)
 
 
+type alias JoinMatchMakingRequiredArguments =
+    { name : String }
+
+
+joinMatchMaking :
+    JoinMatchMakingRequiredArguments
+    -> SelectionSet decodesTo Api.Union.MatchMakingSnapshot
+    -> SelectionSet decodesTo RootMutation
+joinMatchMaking requiredArgs____ object____ =
+    Object.selectionForCompositeField "joinMatchMaking" [ Argument.required "name" requiredArgs____.name Encode.string ] object____ Basics.identity
+
+
+type alias PollMatchMakingRequiredArguments =
+    { ticket : String }
+
+
+pollMatchMaking :
+    PollMatchMakingRequiredArguments
+    -> SelectionSet decodesTo Api.Union.MatchMakingSnapshot
+    -> SelectionSet decodesTo RootMutation
+pollMatchMaking requiredArgs____ object____ =
+    Object.selectionForCompositeField "pollMatchMaking" [ Argument.required "ticket" requiredArgs____.ticket Encode.string ] object____ Basics.identity
+
+
+type alias LeaveMatchMakingRequiredArguments =
+    { ticket : String }
+
+
+leaveMatchMaking :
+    LeaveMatchMakingRequiredArguments
+    -> SelectionSet decodesTo Api.Union.MatchMakingSnapshot
+    -> SelectionSet decodesTo RootMutation
+leaveMatchMaking requiredArgs____ object____ =
+    Object.selectionForCompositeField "leaveMatchMaking" [ Argument.required "ticket" requiredArgs____.ticket Encode.string ] object____ Basics.identity
+
+
 type alias SubmitFeedbackRequiredArguments =
     { text : String }
 
@@ -167,6 +203,20 @@ joinLobby :
     -> SelectionSet decodesTo RootMutation
 joinLobby requiredArgs____ object____ =
     Object.selectionForCompositeField "joinLobby" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "name" requiredArgs____.name Encode.string ] object____ Basics.identity
+
+
+type alias KickLobbyPlayerRequiredArguments =
+    { id : String
+    , name : String
+    }
+
+
+kickLobbyPlayer :
+    KickLobbyPlayerRequiredArguments
+    -> SelectionSet decodesTo Api.Object.Snapshot
+    -> SelectionSet decodesTo RootMutation
+kickLobbyPlayer requiredArgs____ object____ =
+    Object.selectionForCompositeField "kickLobbyPlayer" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "name" requiredArgs____.name Encode.string ] object____ Basics.identity
 
 
 type alias CloseLobbyRequiredArguments =

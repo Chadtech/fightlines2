@@ -157,6 +157,18 @@ type MapDefinition
     = MapDefinition
 
 
+type MatchMakingIdle
+    = MatchMakingIdle
+
+
+type MatchMakingMatched
+    = MatchMakingMatched
+
+
+type MatchMakingWaiting
+    = MatchMakingWaiting
+
+
 type MovementRule
     = MovementRule
 

@@ -1,19 +1,15 @@
 # Todo
 
 ## doing now
-- Ability to tear down lobby (what happens to lobbies that time out? Is there a timeout?)
-- Prune list of maps
-- Better UI for notifying players they will be loading into trucks
-- movement sounds a pretty dang loud
-- Sound for when player joins or leaves lobby
-- sound when you send a message
-- Notice for new players describing the basics
 
 ## Bugs
 
 
 ## Immediately
-
+- Match Making
+- Some kind of timeout for inactive players
+- host needs to be able to kick players
+- Admin Page with controls and feature flags
 
 ## Soon
 - Tutorial missions

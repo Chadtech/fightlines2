@@ -42,6 +42,31 @@ functions acquire the stored entry's lock before calling those operations.
 `player_number.rs` owns `PlayerNumber` and its ordered `ALL` list of map sides.
 `store.rs` owns the registry, token generation, and the lobby-to-game transition.
 
+`match_making.rs` owns a session-authorized two-player queue under the store's
+separate queue lock. At most one player remains unmatched; the next eligible
+join creates and records a game directly in the registry. It selects a released
+map marked `matchMaking` and assigns sides using the store's explicit random
+seed. Failed map initialization or recording preserves the waiting player.
+The GraphQL snapshot is a union of idle, waiting, and matched responses. Waiting
+requires a ticket; matched requires a ticket and game ID. Elm selects these
+variants directly, preserving the state constraints across the API boundary.
+Per-visit tickets make polling, retries, and cancellation safe across revisits;
+a completed pairing wins a cancellation race. Polls every two seconds renew a
+30-second presence lease; expiry never silently rejoins a disconnected player.
+Match receipts recover page refreshes and duplicate joins until the game ends.
+Expired games remove their receipts, and the most recent match start timestamp
+remains independent of registry cleanup. Queue state and this timestamp reset
+on server restart. The queue never waits on a busy existing game lock; registry
+and entry operations release their locks before queue cleanup.
+
+`Fightlines.Page.MatchMaking` owns the entry/waiting interaction and requests.
+`Fightlines` owns initial loading and the `MatchMakingLoadFailed` page; the
+matchmaking module supplies the stateless failure view. `Fightlines` correlates
+every page message with a fresh visit ID. Poll responses also carry the queue ticket;
+responses overtaken by cancellation are ignored. Successful pairing replaces the
+queue URL with `/game/:id`, so browser back does not reopen a consumed queue
+visit. In-app departure attempts cancellation; closed documents rely on expiry.
+
 Starting a game consumes its lobby and moves the host and players into a game.
 The old lobby URL resolves the game for polling players but accepts no new
 players. Lobbies and games are held in memory and disappear on server restart.
@@ -53,8 +78,12 @@ without a successful join, setup change, or chat send; polling does not renew
 that timer. The host can also close an unstarted lobby with `closeLobby`.
 Removal clears the entry to `Closed` before releasing its lock, so requests
 already holding a detached handle cannot start or mutate it. Chat journals stay
-on disk. There is no account system, host transfer, player removal, or expiry of
-unfinished games yet.
+on disk. The host can remove a joined guest before starting with
+`kickLobbyPlayer(id, name)`. Names are unique within the lobby and remain stable
+across side swaps; removal runs under the entry lock and refreshes activity.
+The guest loses membership and returns to the join page on its next lobby poll.
+The open slot accepts a new join, including the removed browser. There is no
+account system, host transfer, or expiry of unfinished games yet.
 
 The store's registry maps each lobby ID to one shared, individually locked
 `GameRegistry`.

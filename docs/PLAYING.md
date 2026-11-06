@@ -70,7 +70,23 @@ acknowledgment. Both scenes share the continue, see-map, and automatic-close con
 
 ## Starting a game
 
-Open http://127.0.0.1:8080 for the logo home page and choose **play**.
+Open http://127.0.0.1:8080 and choose **create a lobby** for an invite game or an
+AI opponent. Matchmaking is currently disabled while under development.
+
+With the [frontend development switch](DEVELOPMENT.md#matchmaking-preview)
+enabled, choose **match making** to find a human opponent.
+Enter your user name and choose **find a game**. The waiting page shows the
+existing activity bar, **cancel**, and how recently the last match making game
+started. This is recent activity, rather than a predicted waiting time. With no
+matches since the server started, it shows **no games started yet**.
+When another player joins, both enter the game automatically with random sides
+on a random map from the match making pool. Refreshing recovers your queue visit
+or active matched game. Closing the page stops heartbeats and removes you from
+the queue after 30 seconds. Cancel removes you immediately; if a game has already
+been created, it opens that game. Match making state resets on server restart,
+along with the live games.
+
+Choose **create a lobby** for an invite game or an AI opponent.
 On `/new`, enter your user name and a lobby name, and choose **Create lobby**.
 The lobby has setup controls in the left card and two numbered player slots in
 the right card; the cards stack on narrow screens. Each player can choose
@@ -102,7 +118,10 @@ guarantee arrival through enemy action or blocked routes. Deliberate freight
 unloading is not planned yet; trucks deliver by bringing carried stock into range.
 Choose difficulty before starting.
 Switching back to **human** reopens the second slot before starting; a joined
-human cannot be replaced.
+human cannot be replaced through the controller selector. Before starting, the host
+can choose **kick** beside a joined guest to remove them and reopen the slot.
+The guest returns to the join page on their next update. Kicking does not ban
+that browser; they can join again through the invite link while a slot is open.
 
 For a human opponent, share the invite link with another player, who enters a name and chooses
 **Join lobby**. The host chooses **choose map** to open a separate library screen.

@@ -26,6 +26,8 @@ pub struct MapDefinition {
     pub description: String,
     #[serde(default, rename = "releaseStatus")]
     pub release_status: MapReleaseStatus,
+    #[serde(default, rename = "matchMaking")]
+    pub match_making: bool,
     pub width: u16,
     pub height: u16,
     pub theme: MapTheme,
@@ -79,6 +81,10 @@ impl NamedMap {
 
 #[graphql_object(context = Context)]
 impl MapDefinition {
+    fn match_making(&self) -> bool {
+        self.match_making
+    }
+
     fn release_status(&self) -> MapReleaseStatus {
         self.release_status
     }

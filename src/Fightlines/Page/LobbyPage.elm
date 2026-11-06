@@ -164,6 +164,7 @@ type RequestStatus
     | SavingSettings
     | SavingMap
     | ChoosingSide PlayerNumber
+    | KickingPlayer String
     | ConfirmingClose
     | ClosingLobby
 
@@ -190,6 +191,7 @@ type Msg
     | ChatFocusReturned (Result Browser.Dom.Error ())
     | ChatScrollCompleted (Result Browser.Dom.Error ())
     | ControllerInputChanged Controller
+    | KickPlayerButtonClicked Player
     | ChooseMapButtonClicked
     | BackToLobbyButtonClicked
     | MapPreviewClicked MapId
@@ -551,6 +553,14 @@ receive snapshot model =
             else
                 Audio.none
 
+        membershipNavigation : Eff Msg
+        membershipNavigation =
+            if model.isMember && not snapshot.isMember then
+                Route.pushUrl (Route.Lobby snapshot.id)
+
+            else
+                E.none
+
         preload : Eff Msg
         preload =
             if snapshot.mapType /= model.mapType then
@@ -567,6 +577,7 @@ receive snapshot model =
             , gameUrl = snapshot.gameUrl
             }
             snapshot.id
+        , membershipNavigation
         , preload
         , E.audio rosterAudio
         ]
@@ -848,6 +859,22 @@ update msg model =
                 , Api.Mutation.setLobbyController
                     { id = LobbyId.toString model.id
                     , controller = controller
+                    }
+                    snapshotSelection
+                    |> ApiRequest.mutationRequest
+                    |> E.request ActionResponseReceived
+                )
+
+        KickPlayerButtonClicked player ->
+            if not (canManageLobby model) || player.isHost || (player.controller /= Human) then
+                ( model, E.none )
+
+            else
+                ( beginSettingsChange model
+                    |> setRequestStatus (KickingPlayer player.name)
+                , Api.Mutation.kickLobbyPlayer
+                    { id = LobbyId.toString model.id
+                    , name = player.name
                     }
                     snapshotSelection
                     |> ApiRequest.mutationRequest
@@ -2135,10 +2162,43 @@ playerSlotView model playerNumber =
                     [ H.text (controllerLabel controller)
                     ]
 
+        kickControl : Html Msg
+        kickControl =
+            case occupant of
+                Just player ->
+                    if canConfigure && (player.controller == Human) then
+                        let
+                            button : Button.Button Msg
+                            button =
+                                if isBusy model then
+                                    Button.disabled "kick"
+
+                                else
+                                    Button.danger "kick" (KickPlayerButtonClicked player)
+
+                            feedback : Maybe String
+                            feedback =
+                                if model.requestStatus == KickingPlayer player.name then
+                                    Just "kicking…"
+
+                                else
+                                    Nothing
+                        in
+                        button
+                            |> Button.accessibleLabel ("kick " ++ player.name)
+                            |> Button.withFeedback feedback
+                            |> Button.toHtml
+
+                    else
+                        H.text ""
+
+                Nothing ->
+                    H.text ""
+
         controlTitle : String
         controlTitle =
             if canConfigure && hasJoinedHuman model then
-                "a joined human cannot be replaced"
+                "kick the joined player before changing the controller"
 
             else
                 ""
@@ -2181,11 +2241,14 @@ playerSlotView model playerNumber =
         , H.div
             [ A.title controlTitle
             , A.css
-                [ S.w32
+                [ S.col
+                , S.g2
+                , S.w32
                 , S.shrink0
                 ]
             ]
             [ control
+            , kickControl
             ]
         ]
 

@@ -14,6 +14,7 @@ import Audio
 import Browser.Dom
 import Effect as E exposing (Eff)
 import Error
+import Fightlines.FeatureFlags as FeatureFlags
 import Fightlines.Feedback as Feedback
 import Fightlines.Route as Route
 import Fightlines.Shared as Shared
@@ -40,7 +41,8 @@ import View.Dialog as Dialog exposing (Dialog)
 
 
 type Msg
-    = PlayButtonClicked
+    = CreateALobbyClicked
+    | MatchMakingButtonClicked
     | FeedbackButtonClicked
     | FeedbackMsg FeedbackView.Msg
     | FeedbackResponseReceived Feedback.RequestId (ApiRequest.Response Bool)
@@ -216,8 +218,11 @@ sceneArtwork scene =
 update : Msg -> Model -> ( Model, Eff Msg )
 update msg model =
     case msg of
-        PlayButtonClicked ->
+        CreateALobbyClicked ->
             ( model, Route.pushUrl Route.NewLobby )
+
+        MatchMakingButtonClicked ->
+            ( model, Route.pushUrl Route.MatchMaking )
 
         FeedbackButtonClicked ->
             ( { model | activeDialog = FeedbackDialog }
@@ -382,7 +387,8 @@ view model =
                 , S.maxW96
                 ]
             ]
-            [ [ Button.primary "play" PlayButtonClicked
+            [ [ matchMakingControl
+              , createLobbyButton
                     |> Button.fullWidth
                     |> Button.toHtml
               , Button.secondary "feedback" FeedbackButtonClicked
@@ -403,6 +409,26 @@ view model =
         , quotation
         ]
     ]
+
+
+matchMakingControl : Html Msg
+matchMakingControl =
+    if FeatureFlags.matchMakingEnabled then
+        Button.primary "match making" MatchMakingButtonClicked
+            |> Button.fullWidth
+            |> Button.toHtml
+
+    else
+        H.text ""
+
+
+createLobbyButton : Button.Button Msg
+createLobbyButton =
+    if FeatureFlags.matchMakingEnabled then
+        Button.secondary "create a lobby" CreateALobbyClicked
+
+    else
+        Button.primary "create a lobby" CreateALobbyClicked
 
 
 feedbackButtonHtmlId : String

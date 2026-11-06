@@ -11,6 +11,7 @@ use crate::{
     map_definition::NamedMap,
     map_editor,
     map_id::MapId,
+    match_making,
     player::Controller,
     player_number::PlayerNumber,
     scenario::UnitKind,
@@ -97,6 +98,10 @@ pub struct Query;
 
 #[graphql_object(context = Context)]
 impl Query {
+    fn match_making(context: &Context) -> FieldResult<match_making::Snapshot> {
+        match_making::get(context)
+    }
+
     fn chat(
         context: &Context,
         id: String,
@@ -188,6 +193,22 @@ pub struct Mutation;
 
 #[graphql_object(context = Context)]
 impl Mutation {
+    fn join_match_making(context: &Context, name: String) -> FieldResult<match_making::Snapshot> {
+        context.admit(Operation::JoinMatchMaking)?;
+        match_making::join(context, &name)
+    }
+
+    fn poll_match_making(context: &Context, ticket: String) -> FieldResult<match_making::Snapshot> {
+        match_making::poll(context, ticket)
+    }
+
+    fn leave_match_making(
+        context: &Context,
+        ticket: String,
+    ) -> FieldResult<match_making::Snapshot> {
+        match_making::leave(context, ticket)
+    }
+
     fn submit_feedback(context: &Context, text: String) -> FieldResult<bool> {
         context.admit(Operation::SubmitFeedback)?;
         feedback::submit(context, &text)
@@ -241,6 +262,10 @@ impl Mutation {
 
     fn join_lobby(context: &Context, id: String, name: String) -> FieldResult<Snapshot> {
         lobby::join(context, LobbyId::from_token(id), &name)
+    }
+
+    fn kick_lobby_player(context: &Context, id: String, name: String) -> FieldResult<Snapshot> {
+        lobby::kick_player(context, LobbyId::from_token(id), &name)
     }
 
     fn close_lobby(context: &Context, id: String) -> FieldResult<bool> {

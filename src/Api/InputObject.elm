@@ -197,9 +197,15 @@ encodeDepotPlacementInput input____ =
 
 buildMapDefinitionInput :
     MapDefinitionInputRequiredFields
+    -> (MapDefinitionInputOptionalFields -> MapDefinitionInputOptionalFields)
     -> MapDefinitionInput
-buildMapDefinitionInput required____ =
-    { description = required____.description, releaseStatus = required____.releaseStatus, width = required____.width, height = required____.height, theme = required____.theme, features = required____.features, depots = required____.depots, units = required____.units }
+buildMapDefinitionInput required____ fillOptionals____ =
+    let
+        optionals____ =
+            fillOptionals____
+                { matchMaking = Absent }
+    in
+    { description = required____.description, releaseStatus = required____.releaseStatus, matchMaking = optionals____.matchMaking, width = required____.width, height = required____.height, theme = required____.theme, features = required____.features, depots = required____.depots, units = required____.units }
 
 
 type alias MapDefinitionInputRequiredFields =
@@ -214,11 +220,16 @@ type alias MapDefinitionInputRequiredFields =
     }
 
 
+type alias MapDefinitionInputOptionalFields =
+    { matchMaking : OptionalArgument Bool }
+
+
 {-| Type for the MapDefinitionInput input object.
 -}
 type alias MapDefinitionInput =
     { description : String
     , releaseStatus : Api.Enum.MapReleaseStatus.MapReleaseStatus
+    , matchMaking : OptionalArgument Bool
     , width : Int
     , height : Int
     , theme : Api.Enum.MapTheme.MapTheme
@@ -233,7 +244,7 @@ type alias MapDefinitionInput =
 encodeMapDefinitionInput : MapDefinitionInput -> Value
 encodeMapDefinitionInput input____ =
     Encode.maybeObject
-        [ ( "description", Encode.string input____.description |> Just ), ( "releaseStatus", Encode.enum Api.Enum.MapReleaseStatus.toString input____.releaseStatus |> Just ), ( "width", Encode.int input____.width |> Just ), ( "height", Encode.int input____.height |> Just ), ( "theme", Encode.enum Api.Enum.MapTheme.toString input____.theme |> Just ), ( "features", (encodeTerrainPlacementInput |> Encode.list) input____.features |> Just ), ( "depots", (encodeDepotPlacementInput |> Encode.list) input____.depots |> Just ), ( "units", (encodeUnitPlacementInput |> Encode.list) input____.units |> Just ) ]
+        [ ( "description", Encode.string input____.description |> Just ), ( "releaseStatus", Encode.enum Api.Enum.MapReleaseStatus.toString input____.releaseStatus |> Just ), ( "matchMaking", Encode.bool |> Encode.optional input____.matchMaking ), ( "width", Encode.int input____.width |> Just ), ( "height", Encode.int input____.height |> Just ), ( "theme", Encode.enum Api.Enum.MapTheme.toString input____.theme |> Just ), ( "features", (encodeTerrainPlacementInput |> Encode.list) input____.features |> Just ), ( "depots", (encodeDepotPlacementInput |> Encode.list) input____.depots |> Just ), ( "units", (encodeUnitPlacementInput |> Encode.list) input____.units |> Just ) ]
 
 
 buildPositionInput :

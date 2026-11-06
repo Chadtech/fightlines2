@@ -149,6 +149,10 @@ impl Game {
         })
     }
 
+    pub(crate) fn has_ended(&self) -> bool {
+        self.finished_at.is_some()
+    }
+
     /// Record the initial board before the store replaces its lobby entry.
     pub fn record_start(&mut self, directory: &Directory) -> FieldResult<()> {
         self.log = Some(

@@ -44,6 +44,7 @@ import Graphql.SelectionSet as SS exposing (SelectionSet)
 type alias Definition =
     { description : String
     , releaseStatus : MapReleaseStatus
+    , matchMaking : Bool
     , width : Int
     , height : Int
     , theme : MapTheme
@@ -165,6 +166,7 @@ definitionSelection =
     SS.succeed Definition
         |> SS.with DefinitionApi.description
         |> SS.with DefinitionApi.releaseStatus
+        |> SS.with DefinitionApi.matchMaking
         |> SS.with DefinitionApi.width
         |> SS.with DefinitionApi.height
         |> SS.with DefinitionApi.theme
@@ -231,6 +233,11 @@ positionInput position =
 
 definitionInput : Definition -> Input.MapDefinitionInput
 definitionInput definition =
+    let
+        optionalFields : Input.MapDefinitionInputOptionalFields -> Input.MapDefinitionInputOptionalFields
+        optionalFields fields =
+            { fields | matchMaking = Optional.Present definition.matchMaking }
+    in
     Input.buildMapDefinitionInput
         { description = definition.description
         , releaseStatus = definition.releaseStatus
@@ -241,6 +248,7 @@ definitionInput definition =
         , depots = List.map depotInput definition.depots
         , units = List.map unitInput definition.units
         }
+        optionalFields
 
 
 terrainInput : TerrainFeature -> Input.TerrainPlacementInput

@@ -93,6 +93,7 @@ mod tests {
         MapDefinition {
             description: "thumbnail test".into(),
             release_status: Default::default(),
+            match_making: false,
             width: 1,
             height: 1,
             theme: MapTheme::GreenForest,
@@ -109,6 +110,8 @@ mod tests {
         assert_eq!(original_url, url(&original)?);
         let mut changed = original.clone();
         changed.release_status = crate::map_definition::MapReleaseStatus::Released;
+        assert_eq!(original_url, url(&changed)?);
+        changed.match_making = true;
         assert_eq!(original_url, url(&changed)?);
         changed.theme = MapTheme::Snow;
         assert_ne!(original_url, url(&changed)?);

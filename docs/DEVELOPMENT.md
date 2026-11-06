@@ -9,7 +9,7 @@ Read [architecture](../ARCHITECTURE.md) for state ownership and cross-module flo
 - [Apps and source layout](#apps-and-source-layout)
 - [Development fixture](#development-fixture)
 - [Checks and builds](#checks-and-builds) · [generated API](#generated-api)
-- [Production and development bundles](#production-and-development-bundles)
+- [Matchmaking preview](#matchmaking-preview) · [production and development bundles](#production-and-development-bundles)
 - [Artwork and runtime assets](#artwork-and-runtime-assets)
 - [Game archives and replay](#game-archives-and-replay)
 - [Audio manager](#audio-manager)
@@ -125,6 +125,14 @@ Reuse a pending version bump when repeating checks or retrying a push. Ordinary
 builds and `git push` do not change source files or increment the version.
 When checking in outside the agent workflow, run `make bump-version` before
 the release commit. Deploy the backend and frontend built from that commit.
+
+## Matchmaking preview
+
+`matchMakingEnabled` in `src/Fightlines/FeatureFlags.elm` is a temporary frontend
+switch, currently `False`. It hides the home button and makes `/match-making`
+show the ordinary not-found page without requesting matchmaking data. Set it to
+`True` and rebuild the frontend to test matchmaking. The switch applies in both
+production and development builds; backend matchmaking operations remain available.
 
 ## Production and development bundles
 

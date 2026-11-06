@@ -20,6 +20,13 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode exposing (Decoder)
 
 
+matchMaking :
+    SelectionSet decodesTo Api.Union.MatchMakingSnapshot
+    -> SelectionSet decodesTo RootQuery
+matchMaking object____ =
+    Object.selectionForCompositeField "matchMaking" [] object____ Basics.identity
+
+
 type alias ChatRequiredArguments =
     { id : String
     , after : Int

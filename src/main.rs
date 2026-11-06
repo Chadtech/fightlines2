@@ -20,6 +20,7 @@ mod map_definition;
 mod map_editor;
 mod map_id;
 mod map_thumbnail;
+mod match_making;
 mod movement;
 mod movement_resolution;
 mod player;
