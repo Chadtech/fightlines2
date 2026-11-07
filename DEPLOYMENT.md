@@ -14,10 +14,11 @@ by default; the flag does not alter authorization for normal games.
 
 Run `make build` before hosting to compile the optimized server with
 `cargo build --locked --release` at `target/release/fightlines-server` and generate
-the frontend's production flag. This builds only the player app, removing the
+the frontend's production flag. This builds the player and Admin apps, removing the
 DevTools bundle, copied HTML, and startup script from earlier development builds. The map
-editor, logged-game list, archive replay, and backdrop preview pages are
-unavailable. This target defaults to `PRODUCTION=true`; `make dev`, `make editor`,
+editor and other DevTools pages are unavailable. Authenticated archive replay
+is available through Admin. This target defaults to `PRODUCTION=true`;
+`make dev`, `make editor`,
 and `make logs` use `false`. Rebuilding with standalone `make frontend` also defaults
 to `false` and builds the separate DevTools app under `/dev`. The server serves
 its entry point for `/dev` and all `/dev/…` paths; Elm handles individual tool
@@ -39,6 +40,68 @@ profile are separate: set the runtime environment even when using `make build`.
 The application uses HTTP on its listening socket in both environments. Caddy
 handles public HTTPS as described below; the application does not infer cookie
 security from client-supplied forwarding headers.
+
+## Admin dashboard and password setup
+
+`/admin` runs the third Elm app in development and production. It contains one
+dashboard for concurrent games, waiting lobbies, feedback, and recorded games.
+Game status polls every five seconds without renewing player or lobby activity.
+Concurrent games means started, unfinished games; finished games retained in
+memory and waiting lobbies have separate counts. Busy entries show their last
+completed status update without waiting behind AI computation. Game details
+show players, controller kinds, accepted-order readiness, elapsed activity,
+and inactivity warnings. Recordings open the shared replay viewer under
+`/admin/recordings/<archive-id>` and return to the dashboard.
+
+Admin access is disabled unless `FIGHTLINES_ADMIN_PASSWORD_HASH` is set. There
+is no username, registration, or public password-reset flow. Generate a hash
+locally using the hidden terminal prompts (the command does not load `.env` or
+start the server):
+
+```sh
+cargo run --locked -- --hash-admin-password
+# On a deployed release, use: ./fightlines-server --hash-admin-password
+```
+
+Choose a password of at least 15 bytes. Copy only the printed Argon2id hash into
+the server's private `.env` or systemd environment file, **inside single quotes**
+so the dollar signs survive dotenv parsing:
+
+```dotenv
+FIGHTLINES_ADMIN_PASSWORD_HASH='$argon2id$v=19$m=19456,t=2,p=1$...'
+```
+
+The example is a placeholder; use the complete generated hash. Keep this setting
+out of Git and `public/`. Restart the server after configuring or replacing it.
+An invalid or empty setting stops startup. Removing the setting disables login.
+Changing it and restarting invalidates all existing admin sessions. Use SSH to
+replace the hash if the password is lost. A restart also resets live games and
+lobbies, as with any server restart.
+
+Login verifies the hash in Rust and creates a cryptographically random session
+independent of game seeds and player identity. The server keeps at most 32 admin
+sessions, with an absolute eight-hour lifetime. The cookie is `HttpOnly`,
+`SameSite=Strict`, host-only, and `Secure` in production. Logout revokes the
+server session and removes the cookie. Session expiry returns the dashboard to
+login; replay sessions are checked every 30 seconds. The password is never sent
+back, saved in browser storage, or embedded in Elm. All private admin and archive
+queries check the session on the server. Login, logout, and admin data requests
+also require a matching `Origin` and direct `Host` (HTTPS in production).
+
+Login attempts have a per-IP budget of five attempts, refilling one per minute,
+plus a server-wide limit of 20 attempts per minute. At most one Argon2 verification
+runs at once. These limits also apply to aliases in a GraphQL document. Missing
+or forged admin cookies never grant access, including through the public
+`/graphql` endpoint. Keep the production development flags disabled.
+
+Feedback is read in pages of 50 and recordings in pages of 20; corrupt entries
+show errors alongside readable entries. Refresh updates the feedback and recording
+lists; ordinary polling reads only live status. Browser assets include
+`admin.html`, `admin.js`, and `elm-admin.js` in addition to the player files.
+Their source entry files live in `tools/admin/`, which is included by the local
+deployment snapshot workflow. Production builds still remove all DevTools outputs.
+
+## HTTP requests and limits
 
 Frontend pages and assets use `Cache-Control: no-cache` so browsers revalidate
 them after a rebuild. Preserve this header in the reverse proxy. GraphQL
@@ -435,15 +498,15 @@ appear as completed turns. Turn zero is the starting board; turns one onward
 play their recorded resolution. The player selector applies normal fog and
 remembered freight, with the final reveal after terminal playback.
 
-The `loggedGames`, `loggedGame`, and `loggedTurn` GraphQL queries require this
-opt-in flag; serving the DevTools entry point does not grant archive access.
-These queries accept remote connections and deployment
-hostnames, including behind HTTPS reverse proxies. Operator password protection
-is not implemented yet; when enabled, anyone who can reach the server can browse
-recordings. Leave the flag off on public deployments until operator access is
-protected. Protect the archive GraphQL queries as well as the HTML routes when
-adding authentication. The replay API exposes no credentials and does not restore
-sessions, submit orders, or mutate logs.
+Local DevTools browsing through `loggedGames`, `loggedGame`, and `loggedTurn`
+requires this opt-in flag; serving the entry point does not grant archive access.
+These queries accept remote connections and deployment hostnames, including
+behind HTTPS reverse proxies. In development, enabling this flag allows anyone
+who can reach the server to browse recordings. Production rejects the flag;
+use the password-protected Admin app instead. Its archive queries require a valid
+admin session, including when requested directly through `/graphql`. The replay
+API exposes no credentials and does not restore sessions, submit orders, or
+mutate logs.
 
 To check a saved game with the current engine, run:
 

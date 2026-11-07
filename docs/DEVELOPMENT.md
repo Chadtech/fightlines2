@@ -48,6 +48,27 @@ live in `src/DevTools/Page/` under `DevTools.Page.*`. Both apps share
 modules under `src`. The game domain, player planning, and replay runtime live
 in `src/Game/`, with game-specific views in `src/Game/View/` and checks in `src/Game/Checks/`. Generic controls remain in `src/View/`.
 
+## Admin app
+
+`src/Admin.elm` is a separate application at `/admin`, built by `make frontend`
+in both production and development. It has its own `Admin.Route` and
+`Admin.Flags` and uses the common `Shared`, `Effect`, and `ApiRequest` modules.
+`Admin.Page.Login` owns password input; `Admin.Page.Dashboard` owns the single
+dashboard, selection, pagination, and polling. Game details and feedback expand
+in place. Archive playback opens `Game.Replay` at `/admin/recordings/<id>`;
+DevTools uses the same viewer with its own return URL. `Game.Archive` owns shared
+archive data and selections. The dashboard's logout button navigates to
+`/admin/sign-out`, which clears the admin session and returns to login.
+The Admin entry files are `tools/admin/index.html`
+and `tools/admin/main.js`, copied to `public/admin.html` and `public/admin.js`;
+Elm compiles to `public/elm-admin.js`.
+
+Configure `FIGHTLINES_ADMIN_PASSWORD_HASH` to enable login, using
+`cargo run --locked -- --hash-admin-password` and the private environment setup
+in [deployment](../DEPLOYMENT.md#admin-dashboard-and-password-setup).
+Leaving it unset keeps the app disabled. `make dev` never bypasses Admin login;
+its existing `--game-logs` flag separately enables the local DevTools archive API.
+
 ## Development fixture
 
 For a ready-to-view test game, run `make dev` and open
@@ -75,7 +96,7 @@ make check-all # Full checks, including slow AI simulations
 
 `make check` runs Rust formatting, Clippy with warnings denied, fast Rust tests, Elm
 format validation, the behavior checks in `tools/check-*.cjs`, API generation,
-and compilation of both apps and shared views. Documentation-only changes need
+and compilation of all three apps and shared views. Documentation-only changes need
 content, link, and whitespace checks rather than a full build. Finish with
 `git diff --check` and report any incomplete verification.
 
@@ -163,7 +184,7 @@ The server serves the DevTools entry point for `/dev` and every path under
 `/dev/`; Elm owns the individual tool routes and unknown-page handling. Other
 app links load a new document. Tool data and mutations still require their
 existing server flags and authorization checks. Production builds emit
-only the player app and remove previous DevTools outputs from `public`, preserving
+the player and Admin apps and remove previous DevTools outputs from `public`, preserving
 the sources in `dev-tools/`.
 Live-game turn playback remains available. Rebuild with `make frontend` to restore
 the development tools.

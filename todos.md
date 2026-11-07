@@ -19,6 +19,7 @@
 
 
 ## Later
+- mobile compatibility
 - Horse logistics unit
 - Spectators
 - Name units

@@ -93,14 +93,14 @@ replay command compares recorded outcomes with the current engine; the browser
 viewer plays captured results so historical games remain inspectable after rule
 changes.
 
-[Archive storage and verification](src/game_log.rs) · [Replay viewer](src/DevTools/Page/GameReplay.elm)
+[Archive storage and verification](src/game_log.rs) · [Replay viewer](src/Game/Replay.elm)
 
 ### Typed boundaries and shared presentation
 
 Juniper's Rust GraphQL contract generates the Elm API client. Elm custom types
-model planning and turn phases, while separate player and DevTools applications
-share battlefield rendering and playback. Keyboard controls and reduced-motion
-behavior are part of the interface.
+model planning and turn phases, while separate player, DevTools, and
+password-protected Admin applications share battlefield rendering and playback.
+Keyboard controls and reduced-motion behavior are part of the interface.
 
 [Architecture](ARCHITECTURE.md) · [Generated API workflow](docs/DEVELOPMENT.md#generated-api) · [Design system](DESIGN_SYSTEM.md)
 

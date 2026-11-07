@@ -1,4 +1,4 @@
-module DevTools.Page.GameReplay exposing
+module Game.Replay exposing
     ( Flags
     , Model
     , Msg(..)
@@ -26,11 +26,10 @@ import ApiRequest
 import Audio
 import Browser.Dom
 import Browser.Events
-import DevTools.Page.LoggedGames as LoggedGames
-import DevTools.Route as Route
 import Effect as E exposing (Eff)
 import Error
 import Game.AnimationFrame as AnimationFrame
+import Game.Archive as Archive
 import Game.Assets as Assets
 import Game.BattlefieldNavigation as BattlefieldNavigation
 import Game.BattlefieldSnapshot as BattlefieldSnapshot
@@ -95,7 +94,7 @@ type alias RecordedTurn =
 
 
 type alias Flags =
-    { game : LoggedGames.Game
+    { game : Archive.Game
     , turn : RecordedTurn
     , messages : List Chat.Message
     }
@@ -103,8 +102,9 @@ type alias Flags =
 
 type alias Model =
     { shared : Shared.Model
+    , returnUrl : String
     , id : GameLogId
-    , game : LoggedGames.Game
+    , game : Archive.Game
     , messages : List Chat.Message
     , chatHistoryOpen : Bool
     , battlefield : BattlefieldSnapshot.Snapshot
@@ -200,14 +200,14 @@ type Msg
 load : GameLogId -> Graphql.Http.Request Flags
 load id =
     SS.succeed Flags
-        |> SS.with (Api.Query.loggedGame { id = GameLogId.toString id } LoggedGames.selection)
+        |> SS.with (Api.Query.loggedGame { id = GameLogId.toString id } Archive.selection)
         |> SS.with (turnSelection id { turn = 0, player = PlayerNumber.Player1, fogOfWar = True })
         |> SS.with (Api.Query.loggedGame { id = GameLogId.toString id } (LoggedGameApi.chat Chat.selection))
         |> ApiRequest.queryRequest
 
 
-init : Shared.Model -> GameLogId -> Flags -> ( Model, Eff Msg )
-init shared id flags =
+init : { returnUrl : String } -> Shared.Model -> GameLogId -> Flags -> ( Model, Eff Msg )
+init config shared id flags =
     let
         ( skipLossDialogs, lossError ) =
             PlaybackPresentation.loadPreference PlaybackPresentation.SkipLossDialogs shared.localStorage
@@ -217,7 +217,8 @@ init shared id flags =
 
         model : Model
         model =
-            { shared = shared |> Shared.addError lossError |> Shared.addError combatError
+            { returnUrl = config.returnUrl
+            , shared = shared |> Shared.addError lossError |> Shared.addError combatError
             , id = id
             , game = flags.game
             , messages = flags.messages
@@ -1648,10 +1649,10 @@ controls model =
                     []
                     [ H.text model.game.name ]
                 , H.a
-                    [ A.href (Route.toString Route.LoggedGames)
+                    [ A.href model.returnUrl
                     , A.css [ S.link ]
                     ]
-                    [ H.text "logged games" ]
+                    [ H.text "back to recordings" ]
                 ]
             , H.div
                 [ A.css

@@ -2,6 +2,7 @@ module View.TextField exposing
     ( TextField
     , accessibleLabel
     , disabled
+    , password
     , simple
     , toHtml
     , withAutofocus
@@ -33,7 +34,13 @@ type alias TextField msg =
     , isDisabled : Bool
     , autofocus : Bool
     , autocomplete : Bool
+    , kind : Kind
     }
+
+
+type Kind
+    = Text
+    | Password
 
 
 
@@ -51,7 +58,18 @@ simple initialValue onChange =
     , isDisabled = False
     , autofocus = False
     , autocomplete = True
+    , kind = Text
     }
+
+
+password : String -> (String -> msg) -> TextField msg
+password value onChange =
+    let
+        field : TextField msg
+        field =
+            simple value onChange
+    in
+    { field | kind = Password }
 
 
 withHtmlId : String -> TextField msg -> TextField msg
@@ -89,7 +107,8 @@ toHtml textField =
                     []
 
                 Just htmlId ->
-                    [ Attr.id htmlId ]
+                    [ Attr.id htmlId
+                    ]
 
         fieldAttributes : List (Html.Attribute msg)
         fieldAttributes =
@@ -105,7 +124,7 @@ toHtml textField =
                 , S.p2
                 , S.wFull
                 ]
-            , Attr.type_ "text"
+            , Attr.type_ kind
             , Attr.disabled textField.isDisabled
             , Attr.autofocus textField.autofocus
             , Attr.value textField.value
@@ -116,7 +135,8 @@ toHtml textField =
         accessibleLabelAttributes =
             case textField.accessibleLabel of
                 Just label ->
-                    [ Attr.attribute "aria-label" label ]
+                    [ Attr.attribute "aria-label" label
+                    ]
 
                 Nothing ->
                     []
@@ -127,8 +147,29 @@ toHtml textField =
                 []
 
             else
-                [ Attr.autocomplete False ]
+                [ Attr.autocomplete False
+                ]
+
+        kind : String
+        kind =
+            case textField.kind of
+                Text ->
+                    "text"
+
+                Password ->
+                    "password"
+
+        passwordAttributes : List (Html.Attribute msg)
+        passwordAttributes =
+            case textField.kind of
+                Text ->
+                    []
+
+                Password ->
+                    [ Attr.attribute "autocomplete" "current-password"
+                    , Attr.spellcheck False
+                    ]
     in
     Html.input
-        (fieldAttributes ++ idAttributes ++ accessibleLabelAttributes ++ autocompleteAttributes)
+        (fieldAttributes ++ idAttributes ++ accessibleLabelAttributes ++ autocompleteAttributes ++ passwordAttributes)
         []

@@ -260,7 +260,8 @@ impl Queue {
             let id = LobbyId::from_token(store.next_token()?);
             let game = Game::new(
                 id.clone(),
-                LobbyName::parse("match making").ok_or("invalid match making name")?,
+                LobbyName::parse(&format!("match making {:.8}", id.to_string()))
+                    .ok_or("invalid match making name")?,
                 map.map_type.clone(),
                 opponent.session.clone(),
                 vec![
@@ -605,6 +606,7 @@ mod tests {
         let mut queue = Queue::default();
         let mut observed_maps = std::collections::BTreeSet::new();
         let mut observed_sides = std::collections::BTreeSet::new();
+        let mut observed_names = std::collections::BTreeSet::new();
         for index in 0..24 {
             let first = SessionToken::from_token(format!("first-{index}"));
             let second = SessionToken::from_token(format!("second-{index}"));
@@ -635,10 +637,17 @@ mod tests {
             assert!(queue.waiting.is_none());
             let response = web_test::call_service(&app, web_test::TestRequest::post().uri("/graphql")
                 .cookie(first.cookie(Environment::Development))
-                .set_json(json!({"query": format!("{{ game(id: {:?}) {{ mapType players {{ name playerNumber isYou }} }} }}", id.to_string())})).to_request()).await;
+                .set_json(json!({"query": format!("{{ game(id: {:?}) {{ name mapType players {{ name playerNumber isYou }} }} }}", id.to_string())})).to_request()).await;
             let snapshot: Value = web_test::read_body_json(response).await;
             assert!(snapshot.get("errors").is_none(), "{snapshot}");
             let snapshot = &snapshot["data"]["game"];
+            let game_name = snapshot["name"].as_str().fixture()?;
+            let id_text = id.to_string();
+            assert_eq!(
+                game_name,
+                format!("match making {}", id_text.get(..8).fixture()?)
+            );
+            assert!(observed_names.insert(game_name.to_owned()));
             observed_maps.insert(snapshot["mapType"].as_str().fixture()?.to_owned());
             let players = snapshot["players"].as_array().fixture()?;
             assert_eq!(players.len(), 2);

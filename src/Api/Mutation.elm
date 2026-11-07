@@ -7,6 +7,7 @@ module Api.Mutation exposing (..)
 import Api.Enum.Controller
 import Api.Enum.InactivityRenewalReason
 import Api.Enum.PlayerNumber
+import Api.Enum.SessionStatus
 import Api.Enum.UnitKind
 import Api.InputObject
 import Api.Interface
@@ -21,6 +22,22 @@ import Graphql.Operation exposing (RootMutation, RootQuery, RootSubscription)
 import Graphql.OptionalArgument exposing (OptionalArgument(..))
 import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode exposing (Decoder)
+
+
+type alias AdminLoginRequiredArguments =
+    { password : String }
+
+
+adminLogin :
+    AdminLoginRequiredArguments
+    -> SelectionSet Api.Enum.SessionStatus.SessionStatus RootMutation
+adminLogin requiredArgs____ =
+    Object.selectionForField "Enum.SessionStatus.SessionStatus" "adminLogin" [ Argument.required "password" requiredArgs____.password Encode.string ] Api.Enum.SessionStatus.decoder
+
+
+adminLogout : SelectionSet Bool RootMutation
+adminLogout =
+    Object.selectionForField "Bool" "adminLogout" [] Decode.bool
 
 
 type alias JoinMatchMakingRequiredArguments =

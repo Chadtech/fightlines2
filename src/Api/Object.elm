@@ -9,6 +9,14 @@ type Aboard
     = Aboard
 
 
+type AdminEntry
+    = AdminEntry
+
+
+type AdminPlayer
+    = AdminPlayer
+
+
 type ArchivePlayer
     = ArchivePlayer
 
@@ -85,6 +93,10 @@ type DamageFactors
     = DamageFactors
 
 
+type Dashboard
+    = Dashboard
+
+
 type Depot
     = Depot
 
@@ -103,6 +115,18 @@ type EnabledInactivity
 
 type ExhaustedUnitLoss
     = ExhaustedUnitLoss
+
+
+type FeedbackPage
+    = FeedbackPage
+
+
+type FeedbackReadError
+    = FeedbackReadError
+
+
+type FeedbackRecord
+    = FeedbackRecord
 
 
 type Fuel
@@ -195,6 +219,10 @@ type RecordedOrder
 
 type RecordedUnload
     = RecordedUnload
+
+
+type RecordingsPage
+    = RecordingsPage
 
 
 type ResourceStock

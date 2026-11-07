@@ -1,0 +1,1 @@
+startElmApp(Elm.Admin, async () => {});

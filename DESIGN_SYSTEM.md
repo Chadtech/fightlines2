@@ -142,6 +142,24 @@ Text fields use `indentStrong`: dark gray0 top/left edges and lighter gray3
 bottom/right edges, retaining the shared 1px border width.
 Text fields use `caretRed1` (`#F21D23`) for the caret to make the insertion point visible.
 
+## Admin dashboard
+
+The third Elm app at `/admin` uses the ordinary forest-green shell, Ubuntu Mono,
+beveled cards, and shared controls. Password login leads to one dashboard with a
+compact controls card containing server status, refresh, and logout. Place the
+three summary counts in one card, each in its own green depression with an inset
+bevel. Follow with games in progress, waiting lobbies, and compact feedback/recording
+lists beside one another on wide screens. Stack the lists and summary depressions
+on narrow screens, and let the controls wrap inside their card. Game rows expose
+name/map, turn, status, and last activity;
+expanding a row shows players and readiness without navigation. Busy rows label
+their last completed update. Feedback expands inline and longer lists paginate
+in place. A recording opens the shared battlefield replay viewer with an explicit
+return to the dashboard. Keep logout visible on the dashboard and replay screens.
+Use regular-sized text buttons throughout the Admin app, including refresh, row
+expansion, list browsing, pagination, and logout.
+Use the shared speaker/version controls and ordinary lowercase copy throughout.
+
 ## Home page
 
 The home page is a compact centered FightLines logo on the ordinary forest-green

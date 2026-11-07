@@ -1,4 +1,4 @@
-//! Read-only archive browsing, enabled explicitly with --game-logs.
+//! Read-only archives for authenticated Admin or explicitly enabled local DevTools.
 pub mod review;
 use crate::{
     chat::ChatMessage,
@@ -23,6 +23,7 @@ pub struct Browser {
 pub enum Access {
     Disabled,
     Enabled(Arc<Browser>),
+    Admin(Arc<Browser>),
 }
 
 impl Access {
@@ -33,12 +34,16 @@ impl Access {
         }
     }
 
-    fn browser(&self) -> FieldResult<&Browser> {
+    fn browser<'a>(&'a self, context: &Context) -> FieldResult<&'a Browser> {
         match self {
             Self::Disabled => {
                 Err("logged games are disabled. start the server with --game-logs.".into())
             }
             Self::Enabled(browser) => Ok(browser),
+            Self::Admin(browser) => {
+                context.require_admin()?;
+                Ok(browser)
+            }
         }
     }
 }
@@ -200,46 +205,59 @@ impl LoggedGameEntry {
     }
 }
 
-pub fn games(context: &Context) -> FieldResult<Vec<LoggedGameEntry>> {
-    let browser = context.archives.browser()?;
-    let mut games = Vec::new();
-    for entry in fs::read_dir(&browser.directory).map_err(|error| {
-        tracing::error!(event = "game_archive_list_failed", error = %error, "could not list recorded games");
-        server_log::internal_error(error)
-    })? {
-        let entry = entry.map_err(|error| {
-            tracing::error!(event = "game_archive_entry_failed", error = %error, "could not read recorded game directory entry");
-            server_log::internal_error(error)
-        })?;
-        if !entry
-            .file_type()
-            .map_err(|error| {
-                tracing::error!(event = "game_archive_metadata_failed", error = %error, "could not inspect recorded game directory entry");
-                server_log::internal_error(error)
-            })?
-            .is_dir()
-        {
+fn read_archive_ids(browser: &Browser) -> io::Result<Vec<ArchiveId>> {
+    let mut ids = Vec::new();
+    for entry in fs::read_dir(&browser.directory)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
             continue;
         }
-        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
-            continue;
-        };
-        let Ok(id) = ArchiveId::parse(name) else {
-            continue;
-        };
-        match id.read(browser) {
-            Ok(archive) => games.push(LoggedGameEntry::Game(LoggedGame::from_archive(
-                id, &archive,
-            ))),
-            Err(error) => {
-                tracing::error!(event = "game_archive_unreadable", archive_id = %id.0, error = %error, "could not read recorded game");
-                games.push(LoggedGameEntry::Unreadable(ArchiveReadError {
-                    id: id.0,
-                    message: error.to_string(),
-                }));
-            }
+        if let Some(name) = entry.file_name().to_str()
+            && let Ok(id) = ArchiveId::parse(name.to_owned())
+        {
+            ids.push(id);
         }
     }
+    // Archive basenames end in the start timestamp, independent of the game id.
+    ids.sort_by(|left, right| {
+        let time = |id: &ArchiveId| {
+            id.0.rsplit('-')
+                .next()
+                .and_then(|time| time.parse::<u128>().ok())
+        };
+        time(right)
+            .cmp(&time(left))
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    Ok(ids)
+}
+
+fn archive_ids(browser: &Browser) -> FieldResult<Vec<ArchiveId>> {
+    read_archive_ids(browser).map_err(|error| {
+        tracing::error!(event = "game_archive_list_failed", error = %error, "could not list recorded games");
+        server_log::internal_error(error)
+    })
+}
+
+fn read_entry(browser: &Browser, id: ArchiveId) -> LoggedGameEntry {
+    match id.read(browser) {
+        Ok(archive) => LoggedGameEntry::Game(LoggedGame::from_archive(id, &archive)),
+        Err(error) => {
+            tracing::error!(event = "game_archive_unreadable", archive_id = %id.0, error = %error, "could not read recorded game");
+            LoggedGameEntry::Unreadable(ArchiveReadError {
+                id: id.0,
+                message: "could not read this recorded game.".into(),
+            })
+        }
+    }
+}
+
+pub fn games(context: &Context) -> FieldResult<Vec<LoggedGameEntry>> {
+    let browser = context.archives.browser(context)?;
+    let mut games: Vec<_> = archive_ids(browser)?
+        .into_iter()
+        .map(|id| read_entry(browser, id))
+        .collect();
     games.sort_by(|left, right| {
         right
             .started_at()
@@ -250,8 +268,36 @@ pub fn games(context: &Context) -> FieldResult<Vec<LoggedGameEntry>> {
     Ok(games)
 }
 
+#[derive(GraphQLObject)]
+#[graphql(context = Context)]
+pub struct RecordingsPage {
+    entries: Vec<LoggedGameEntry>,
+    total: i32,
+    next_offset: Option<i32>,
+}
+
+pub fn recordings(context: &Context, offset: i32) -> FieldResult<RecordingsPage> {
+    context.require_admin()?;
+    if offset < 0 {
+        return Err("recording offset must be nonnegative.".into());
+    }
+    let browser = context.archives.browser(context)?;
+    let ids = archive_ids(browser)?;
+    let total = ids.len() as i32;
+    Ok(RecordingsPage {
+        entries: ids
+            .into_iter()
+            .skip(offset as usize)
+            .take(20)
+            .map(|id| read_entry(browser, id))
+            .collect(),
+        total,
+        next_offset: (offset.saturating_add(20) < total).then_some(offset.saturating_add(20)),
+    })
+}
+
 pub fn game(context: &Context, id: String) -> FieldResult<LoggedGame> {
-    let browser = context.archives.browser()?;
+    let browser = context.archives.browser(context)?;
     let id = ArchiveId::parse(id)?;
     let archive = id.read(browser)?;
     Ok(LoggedGame::from_archive(id, &archive))
@@ -264,7 +310,7 @@ pub fn turn(
     player: PlayerNumber,
     fog_of_war: bool,
 ) -> FieldResult<GameSnapshot> {
-    let browser = context.archives.browser()?;
+    let browser = context.archives.browser(context)?;
     let archive = ArchiveId::parse(id)?.read(browser)?;
     if turn_number < 0 || turn_number > archive.turn_count() {
         return Err("this logged turn does not exist".into());

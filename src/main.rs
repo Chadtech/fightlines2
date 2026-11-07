@@ -1,5 +1,6 @@
 #![deny(clippy::unwrap_used, clippy::expect_used)]
 
+mod admin;
 mod ai;
 mod app_version;
 mod backdrop_calibration;
@@ -42,7 +43,7 @@ mod visibility;
 
 use actix_files::{Files, NamedFile};
 use actix_web::{
-    App, Error, HttpResponse, HttpServer,
+    App, Error, HttpResponse, HttpServer, Responder,
     dev::{self, ServiceRequest},
     http::header::{Accept, Header, Quality},
     middleware::{self, DefaultHeaders},
@@ -58,6 +59,9 @@ use std::{
 };
 
 fn main() -> io::Result<()> {
+    if env::args().nth(1).as_deref() == Some("--hash-admin-password") {
+        return admin::password_command();
+    }
     if env::args().nth(1).as_deref() == Some("--export-schema") {
         return graphql::export_schema();
     }
@@ -100,6 +104,7 @@ fn main() -> io::Result<()> {
 
 async fn run(frontend: PathBuf) -> io::Result<()> {
     let environment = Environment::load()?;
+    let admin_auth = admin::Auth::load()?;
     environment.validate_arguments(env::args().skip(1))?;
     let address = env::var("FIGHTLINES_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".into());
 
@@ -159,7 +164,13 @@ async fn run(frontend: PathBuf) -> io::Result<()> {
         tracing::info!("development tools available at /dev");
     }
     let store = web::Data::new(store);
-    let endpoint = web::Data::new(graphql::endpoint(environment));
+    let endpoint = web::Data::new(graphql::endpoint_with_admin(
+        environment,
+        admin_auth,
+        game_archive::Browser {
+            directory: archives.directory.clone(),
+        },
+    ));
     let cleanup_store = store.clone();
     let server = HttpServer::new(move || {
         let mut app = App::new()
@@ -169,7 +180,8 @@ async fn run(frontend: PathBuf) -> io::Result<()> {
             .app_data(endpoint.clone())
             .app_data(feedback.clone())
             .route("/graphql", web::post().to(graphql::handle))
-            .service(dev_tools(&frontend));
+            .service(dev_tools(&frontend))
+            .service(admin_frontend(&frontend));
         if archives_enabled {
             app = app.app_data(archives.clone());
         }
@@ -247,6 +259,19 @@ fn player_frontend(frontend: &Path) -> Files {
         }))
 }
 
+fn admin_frontend(frontend: &Path) -> actix_web::Scope {
+    let index = frontend.join("admin.html");
+    web::scope("/admin").default_service(web::get().to(move || {
+        let index = index.clone();
+        async move {
+            NamedFile::open(index).map(|file| {
+                file.customize()
+                    .insert_header(("Cache-Control", "no-store"))
+            })
+        }
+    }))
+}
+
 // Elm owns every route within the tools app, including unknown-page handling.
 fn dev_tools(frontend: &Path) -> actix_web::Scope {
     let index = frontend.join("dev-tools.html");
@@ -262,6 +287,45 @@ mod tests {
     use crate::test_support::TestResult;
     use actix_web::{http::StatusCode, test};
     use std::fs;
+
+    #[actix_web::test]
+    async fn admin_routes_keep_replay_navigation_in_the_admin_app() -> TestResult<()> {
+        let directory =
+            env::temp_dir().join(format!("fightlines-admin-routes-{}", std::process::id()));
+        fs::create_dir_all(&directory)?;
+        fs::write(directory.join("index.html"), "player app")?;
+        fs::write(directory.join("admin.html"), "admin app")?;
+        let app = test::init_service(
+            App::new()
+                .service(admin_frontend(&directory))
+                .service(player_frontend(&directory)),
+        )
+        .await;
+        for uri in ["/admin", "/admin/recordings/example", "/admin/unknown"] {
+            let response =
+                test::call_service(&app, test::TestRequest::get().uri(uri).to_request()).await;
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(
+                response
+                    .headers()
+                    .get("Cache-Control")
+                    .ok_or("missing cache control")?,
+                "no-store"
+            );
+            assert_eq!(test::read_body(response).await, "admin app");
+        }
+        let response = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri("/administrator")
+                .insert_header(("accept", "text/html"))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(test::read_body(response).await, "player app");
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
 
     #[actix_web::test]
     async fn player_navigation_falls_back_without_masking_assets_or_other_services()

@@ -48,7 +48,7 @@ import Url exposing (Url)
 ----------------------------------------------------------------
 
 
-{-| Browser state and diagnostics shared by both applications.
+{-| Browser state and diagnostics shared by all applications.
 `now` is the latest browser clock sample, initialized by JavaScript and refreshed
 by the shared clock subscription. `origin` contains the scheme, hostname, and
 optional port for constructing complete application links.

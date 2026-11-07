@@ -3,11 +3,15 @@ module ApiRequest exposing
     , errorMessage
     , mutationRequest
     , queryRequest
+    , requiresAdminLogin
     )
 
+import Dict
 import Graphql.Http
+import Graphql.Http.GraphqlError exposing (GraphqlError)
 import Graphql.Operation exposing (RootMutation, RootQuery)
 import Graphql.SelectionSet exposing (SelectionSet)
+import Json.Decode as Decode
 
 
 type alias Response v =
@@ -22,6 +26,30 @@ queryRequest =
 mutationRequest : SelectionSet response RootMutation -> Graphql.Http.Request response
 mutationRequest =
     request Graphql.Http.mutationRequest
+
+
+requiresAdminLogin : Graphql.Http.Error response -> Bool
+requiresAdminLogin =
+    hasErrorCode "ADMIN_LOGIN_REQUIRED"
+
+
+hasErrorCode : String -> Graphql.Http.Error response -> Bool
+hasErrorCode code error =
+    let
+        matches : GraphqlError -> Bool
+        matches item =
+            item.details
+                |> Dict.get "extensions"
+                |> Maybe.map (Decode.decodeValue (Decode.field "code" Decode.string))
+                |> Maybe.andThen Result.toMaybe
+                |> (==) (Just code)
+    in
+    case error of
+        Graphql.Http.GraphqlError _ errors ->
+            List.any matches errors
+
+        _ ->
+            False
 
 
 request : (String -> SelectionSet response scope -> Graphql.Http.Request response) -> SelectionSet response scope -> Graphql.Http.Request response

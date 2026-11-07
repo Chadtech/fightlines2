@@ -10,7 +10,6 @@ import Api.Enum.UnitKind as Kind
 import Api.Scalar exposing (MapId(..))
 import Browser
 import Browser.Dom
-import DevTools.Page.GameReplay as GameReplay
 import DevTools.Page.LoggedGames as LoggedGames
 import Effect as E exposing (Eff)
 import Game.BattlefieldNavigation as BattlefieldNavigation
@@ -21,6 +20,7 @@ import Game.Inspection exposing (Inspection(..))
 import Game.Map as Map
 import Game.PlaybackPresentation as PlaybackPresentation
 import Game.RecordedOrder exposing (RecordedOrder)
+import Game.Replay as GameReplay
 import Game.Terrain as Terrain
 import Game.Turn as Turn
 import Game.TurnPlayback as TurnPlayback
@@ -109,7 +109,7 @@ checks shared =
 
                 initial : GameReplay.Model
                 initial =
-                    GameReplay.init shared game.id { game = game, turn = opening, messages = [] } |> Tuple.first
+                    GameReplay.init { returnUrl = "/dev/logged-games" } shared game.id { game = game, turn = opening, messages = [] } |> Tuple.first
 
                 step : GameReplay.Msg -> GameReplay.Model -> GameReplay.Model
                 step msg model =

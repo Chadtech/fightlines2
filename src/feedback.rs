@@ -6,7 +6,7 @@ use crate::{
     storage_budget::{self, Budget, Capacity, Usage},
 };
 use juniper::FieldResult;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, Write},
@@ -19,6 +19,35 @@ const MAX_CHARACTERS: usize = 5000;
 const MAX_STORAGE_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_STORAGE_ENTRIES: u64 = 4096;
 static NEXT_FILE: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Deserialize)]
+struct SavedRecord {
+    submitted_at_unix_ms: u128,
+    server_version: String,
+    text: String,
+}
+
+#[derive(juniper::GraphQLObject)]
+pub struct FeedbackRecord {
+    id: String,
+    submitted_at: String,
+    server_version: String,
+    text: String,
+}
+
+#[derive(juniper::GraphQLObject)]
+pub struct FeedbackReadError {
+    id: String,
+    message: String,
+}
+
+#[derive(juniper::GraphQLObject)]
+pub struct FeedbackPage {
+    records: Vec<FeedbackRecord>,
+    errors: Vec<FeedbackReadError>,
+    total: i32,
+    next_offset: Option<i32>,
+}
 
 pub struct Directory {
     path: PathBuf,
@@ -50,6 +79,55 @@ struct Record<'a> {
 }
 
 impl Directory {
+    /// List newest submissions in bounded pages. Corrupt files remain visible as
+    /// errors without concealing otherwise readable feedback.
+    pub fn list(&self, offset: i32) -> FieldResult<FeedbackPage> {
+        if offset < 0 {
+            return Err("feedback offset must be nonnegative.".into());
+        }
+        let mut files = fs::read_dir(&self.path).and_then(|entries| entries.collect::<io::Result<Vec<_>>>()).map_err(|error| {
+            tracing::error!(event = "feedback_list_failed", error = %error, "could not list feedback");
+            server_log::internal_error("could not list feedback.")
+        })?;
+        files.retain(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            name.starts_with("feedback-") && name.ends_with(".json")
+        });
+        files.sort_by_key(|entry| std::cmp::Reverse(entry.file_name()));
+        let total = files.len() as i32;
+        let mut records = Vec::new();
+        let mut errors = Vec::new();
+        for entry in files.into_iter().skip(offset as usize).take(50) {
+            let id = entry.file_name().to_string_lossy().into_owned();
+            let read = (|| -> io::Result<SavedRecord> {
+                let metadata = fs::symlink_metadata(entry.path())?;
+                if !metadata.is_file() || metadata.len() > 64 * 1024 {
+                    return Err(io::Error::other("invalid feedback file"));
+                }
+                serde_json::from_slice(&fs::read(entry.path())?).map_err(io::Error::other)
+            })();
+            match read {
+                Ok(record) => records.push(FeedbackRecord {
+                    id,
+                    submitted_at: record.submitted_at_unix_ms.to_string(),
+                    server_version: record.server_version,
+                    text: record.text,
+                }),
+                Err(_) => errors.push(FeedbackReadError {
+                    id,
+                    message: "could not read this feedback submission.".into(),
+                }),
+            }
+        }
+        Ok(FeedbackPage {
+            records,
+            errors,
+            total,
+            next_offset: (offset.saturating_add(50) < total).then_some(offset.saturating_add(50)),
+        })
+    }
+
     pub fn open(path: PathBuf, frontend: &Path) -> io::Result<Self> {
         // Check the existing ancestor before creating anything under a public root.
         let frontend = frontend.canonicalize()?;
@@ -193,6 +271,42 @@ pub fn submit(context: &Context, text: &str) -> FieldResult<bool> {
 mod tests {
     use super::*;
     use crate::test_support::{FixtureValue, TestResult};
+
+    #[test]
+    fn admin_pages_are_bounded_newest_first_and_isolate_corrupt_entries() -> TestResult<()> {
+        let root = std::env::temp_dir().join(format!("fightlines-feedback-list-{}", file_id()?));
+        let frontend = root.join("public");
+        fs::create_dir_all(&frontend)?;
+        let directory = Directory::open(root.join("feedback"), &frontend)?;
+        for number in 0..52 {
+            directory.save(FeedbackText::parse(&format!("submission {number}")).fixture()?)?;
+        }
+        let page = directory.list(0).fixture()?;
+        assert_eq!(page.total, 52);
+        assert_eq!(page.records.len(), 50);
+        assert_eq!(page.next_offset, Some(50));
+        assert_eq!(page.records.first().fixture()?.text, "submission 51");
+        let older = directory.list(50).fixture()?;
+        assert_eq!(older.records.len(), 2);
+        assert_eq!(older.next_offset, None);
+        let newest = page.records.first().fixture()?.id.clone();
+        fs::write(directory.path.join(&newest), b"invalid json")?;
+        let damaged = directory.list(0).fixture()?;
+        assert_eq!(damaged.records.len(), 49);
+        assert_eq!(damaged.errors.first().fixture()?.id, newest);
+        assert!(directory.list(-1).is_err());
+        assert!(directory.list(i32::MAX).fixture()?.records.is_empty());
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(
+                root.join("public"),
+                directory.path.join("feedback-zzzz.json"),
+            )?;
+            assert_eq!(directory.list(0).fixture()?.errors.len(), 2);
+        }
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
 
     #[test]
     fn storage_limit_survives_reopening_and_failed_writes_release_capacity() -> TestResult<()> {

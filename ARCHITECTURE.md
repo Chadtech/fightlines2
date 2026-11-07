@@ -9,6 +9,35 @@ Rust and Elm source files share `src/`. `Cargo.toml` and `elm.json` live at the
 repository root, and frontend assets live in `public/`. The earlier prototype in
 `old/` is reference material; the current game rules are developed separately.
 
+## Admin application
+
+`Admin.elm` is the third Elm entry point, served under `/admin` in all builds.
+Its model owns the `Page` union and a typed visit ID, which rejects asynchronous
+responses from earlier page visits. It owns session checks,
+initial loading/failure dispatch, and typed routes, using the navigation key in
+`Shared.Model`. Login and the single dashboard own their page state and use
+`Shared`, `Effect`, and generated GraphQL selections. `Game.Archive` holds shared
+archive data/selections; `Game.Replay` is shared by Admin and DevTools with an
+explicit return URL.
+
+`admin.rs` owns Argon2id configuration, the hidden-password hash command,
+independent random admin credentials, eight-hour server sessions, origin checks,
+and bounded login admission. The GraphQL request context carries admin access
+and a deferred cookie change. Every admin resolver checks that access; production
+archive access uses the same guard, including direct requests to existing archive
+queries. Development archive access remains independently gated by `--game-logs`.
+Admin sessions never become player sessions or acquire game membership.
+
+`admin_server/dashboard.rs` defines credential-free operator read models. The store's
+`Entry` wraps each authoritative state lock and maintains a small cached projection
+when its guard is dropped. Status reads clone that projection without waiting
+behind a busy game. Lobby-to-game and terminal transitions update it under the
+same owning lock. Counts and busy indicators are snapshots, and busy rows label
+their last completed update. Polling does not renew activity or mutate gameplay.
+`Game` owns started/last-activity times; its existing inactivity clocks remain the
+authority for warnings. Feedback and archive listings read bounded pages and
+surface individual corrupt entries without hiding readable data.
+
 ## State and identity
 
 `environment.rs` owns the runtime hosting policy. `FIGHTLINES_ENV=production`
@@ -154,13 +183,14 @@ so waiting for an entry or storage does not block a request worker's event loop.
 all recorded results using the current engine; it does not regenerate AI orders or
 restore browser sessions. These archives are for operator debugging and never go
 through player GraphQL responses. `game_archive.rs` exposes separate read-only
-`loggedGames`, `loggedGame`, and `loggedTurn` queries only when `--game-logs` is
-enabled. Elm routes `/dev/logged-games` and `/dev/logged-games/:archiveId` to the
-archive pages; their data queries require the flag. The server serves one
+`loggedGames`, `loggedGame`, and `loggedTurn` queries for authenticated Admin
+sessions or when the development `--game-logs` flag is enabled. Elm routes
+`/dev/logged-games` and `/dev/logged-games/:archiveId` to the archive pages;
+their data queries use the same archive access guard. The server serves one
 DevTools entry point for the entire `/dev` prefix without knowing the individual
 tool routes. Browsing works through the server's deployment address, including
-HTTPS reverse proxies. There is no operator authentication yet: enabled archive
-pages and queries are accessible to anyone who can reach the server.
+HTTPS reverse proxies. The development flag allows anyone who can reach the
+server to browse archives; production rejects that flag and requires Admin login.
 An archive ID includes its start timestamp, distinguishing
 games whose lobby ID was reused after restart. `GameLogId` validates this ID at
 the Elm boundary.
@@ -178,7 +208,8 @@ to regenerate orders. A selected turn advances `PlayerObservation` from the star
 through each recorded resolution, preserving fog and freight memory. Live games
 and archives share terminal reveal projection in `game::observed_board`.
 
-`DevTools` owns initial loading/failure states for `LoggedGames` and `GameReplay`.
+`DevTools` owns initial loading/failure states for its archive list and `Game.Replay`;
+`Admin` owns the corresponding states for its dashboard and replay routes.
 Replay responses correlate with their archive ID and requested turn/player.
 `GamePage` and `GameReplay` are independent pages. `GamePage` owns live turn
 planning, submission, polling, and introductions through `CurrentTurn` and

@@ -1,5 +1,9 @@
 //! Shared in-memory registry and coordinated lobby-to-game transitions.
+mod entry;
+use entry::Entry;
+
 use crate::{
+    admin::dashboard::AdminEntry,
     chat,
     game::Game,
     game_log::{Directory, GameLog},
@@ -43,7 +47,7 @@ impl std::fmt::Display for DevelopmentError {
 pub struct Store {
     pub(crate) match_making: Mutex<Queue>,
     seed: Mutex<Seed>,
-    registry: Mutex<BTreeMap<LobbyId, Arc<Mutex<GameRegistry>>>>,
+    registry: Mutex<BTreeMap<LobbyId, Arc<Entry>>>,
     game_logs: Option<Directory>,
 }
 
@@ -56,6 +60,20 @@ pub(crate) enum GameRegistry {
 }
 
 impl Store {
+    pub fn admin_entries(&self, now: Instant) -> FieldResult<Vec<AdminEntry>> {
+        let entries: Vec<_> = self
+            .registry
+            .lock()
+            .map_err(|_| server_log::internal_error("game registry is unavailable."))?
+            .values()
+            .cloned()
+            .collect();
+        entries
+            .into_iter()
+            .filter_map(|entry| entry.admin_snapshot(now).transpose())
+            .collect()
+    }
+
     pub fn start_chat_log(&self, id: &LobbyId) -> FieldResult<GameLog> {
         self.game_logs
             .as_ref()
@@ -113,7 +131,7 @@ impl Store {
             map_type.scenario().map_err(DevelopmentError::Map)?,
         )
         .into_development_preview();
-        registry.insert(id, Arc::new(Mutex::new(GameRegistry::Game(Box::new(game)))));
+        registry.insert(id, Arc::new(Entry::new(GameRegistry::Game(Box::new(game)))));
         Ok(Self {
             match_making: Mutex::new(Queue::default()),
             seed: Mutex::new(seed),
@@ -124,7 +142,7 @@ impl Store {
 
     /// Never acquire an entry lock while holding the registry lock. Callers own
     /// the cloned handle before waiting for that lobby or game's operation.
-    pub(crate) fn entry(&self, id: &LobbyId) -> FieldResult<Option<Arc<Mutex<GameRegistry>>>> {
+    pub(crate) fn entry(&self, id: &LobbyId) -> FieldResult<Option<Arc<Entry>>> {
         let registry = self.registry.lock().map_err(|_| {
             tracing::error!(
                 event = "server_state_lock_unavailable",
@@ -179,7 +197,7 @@ impl Store {
                 );
                 server_log::internal_error("the game registry is unavailable.")
             })?
-            .insert(id, Arc::new(Mutex::new(GameRegistry::Game(Box::new(game)))));
+            .insert(id, Arc::new(Entry::new(GameRegistry::Game(Box::new(game)))));
         Ok(())
     }
 
@@ -304,7 +322,7 @@ impl Store {
             })?
             .insert(
                 lobby.id().clone(),
-                Arc::new(Mutex::new(GameRegistry::Lobby(lobby))),
+                Arc::new(Entry::new(GameRegistry::Lobby(lobby))),
             );
         Ok(())
     }

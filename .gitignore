@@ -2,6 +2,9 @@
 /elm-stuff/
 /public/elm.js
 /public/elm-dev-tools.js
+/public/elm-admin.js
+/public/admin.html
+/public/admin.js
 /public/dev-tools.html
 /public/dev-tools.js
 /public/build-config.js

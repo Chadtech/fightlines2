@@ -8,6 +8,8 @@ exclude = ["old"]
 resolver = "2"
 
 [dependencies]
+argon2 = "0.5"
+rpassword = "7"
 base64 = "0.22"
 dotenvy = "0.15.7"
 actix-files = "0.7"

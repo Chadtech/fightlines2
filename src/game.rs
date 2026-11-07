@@ -1,5 +1,6 @@
 //! Running games, durable turn transitions, and live/replay projections.
 use crate::{
+    admin::dashboard::{AdminPlayer, EntrySnapshot, EntryStatus},
     ai, app_version,
     chat::{self, ChatMessage, Draft, Sender, Submission as ChatSubmission, Transcript},
     game_activity::{ActivityClock, EnabledInactivity, InactivityRenewalReason},
@@ -34,6 +35,8 @@ const FINISHED_GAME_RETENTION: Duration = Duration::from_secs(16 * 60);
 /// Starting consumes the lobby. The source ID keeps existing invite URLs
 /// resolvable for polling players and repeated start requests.
 pub(crate) struct Game {
+    started_at: Instant,
+    last_activity: Instant,
     chat: Transcript,
     log: Option<GameLog>,
     turns: Turns,
@@ -108,6 +111,8 @@ impl Game {
             None
         };
         Self {
+            started_at: Instant::now(),
+            last_activity: Instant::now(),
             activity,
             chat: Transcript::default(),
             log: None,
@@ -122,6 +127,50 @@ impl Game {
             map_type,
             host,
             players,
+        }
+    }
+
+    pub fn admin_snapshot(&self, now: Instant) -> EntrySnapshot {
+        let warning_deadline = self.activity.as_ref().and_then(|clocks| {
+            PlayerNumber::ALL
+                .into_iter()
+                .filter(|player| self.turns.orders[player.index()].is_none())
+                .filter_map(|player| {
+                    clocks[player.index()]
+                        .countdown_seconds(now)
+                        .map(|_| clocks[player.index()].deadline())
+                })
+                .min()
+        });
+        let status = if self.turns.outcome.is_some() {
+            EntryStatus::Finished
+        } else if warning_deadline.is_some() {
+            EntryStatus::InactivityWarning
+        } else if self.turns.orders.iter().any(Option::is_some) {
+            EntryStatus::WaitingForPlayer
+        } else {
+            EntryStatus::Planning
+        };
+        EntrySnapshot {
+            id: self.source_lobby.clone(),
+            name: self.name.to_string(),
+            map_type: self.map_type.clone(),
+            status,
+            turn_number: Some(self.turns.number),
+            outcome: self.turns.outcome,
+            players: self
+                .players
+                .iter()
+                .map(|player| {
+                    AdminPlayer::new(
+                        player,
+                        self.turns.orders[player.player_number.index()].is_some(),
+                    )
+                })
+                .collect(),
+            started_at: Some(self.started_at),
+            last_activity: self.last_activity,
+            warning_deadline,
         }
     }
 
@@ -147,13 +196,15 @@ impl Game {
             turn_number: self.turns.number,
             draft,
         };
-        self.chat.send(submission, |message| {
+        let message = self.chat.send(submission, |message| {
             self.log
                 .as_mut()
                 .ok_or("chat is unavailable in this preview.")?
                 .chat(message)
                 .map_err(chat::recording_error)
-        })
+        })?;
+        self.last_activity = Instant::now();
+        Ok(message)
     }
 
     /// Reads and repeated resignations never extend the final-results window.
@@ -367,6 +418,9 @@ impl Game {
             && let Some(clocks) = &mut self.activity
         {
             clocks[player.index()].observe(reason, now);
+            if let InactivityRenewalReason::UserInteraction = reason {
+                self.last_activity = now;
+            }
         }
         self.player_view(identity)
     }
@@ -396,6 +450,7 @@ impl Game {
             log.submitted(result)
                 .map_err(|error| log_error(&self.source_lobby, error))?;
         }
+        self.last_activity = Instant::now();
         self.turns = next_turns;
         self.finished_at = Some(Instant::now());
         self.player_view(identity)
@@ -510,6 +565,7 @@ impl Game {
             .map_err(|error| log_error(&self.source_lobby, error))?;
         }
         // Commit only after both validation/resolution and the durable write succeed.
+        self.last_activity = Instant::now();
         self.turns = next_turns;
         self.scenario = next_scenario;
         if self.turns.outcome.is_some() {
@@ -988,7 +1044,9 @@ mod tests {
                 .expire_inactive(deadline - Duration::from_nanos(1))
                 .fixture()?
         );
+        let last_activity = game.admin_snapshot(now).last_activity;
         assert!(game.expire_inactive(deadline).fixture()?);
+        assert_eq!(game.admin_snapshot(deadline).last_activity, last_activity);
         assert_eq!(
             game.turns.outcome,
             Some(GameOutcome::Inactivity(Some(PlayerNumber::Player1)))

@@ -27,6 +27,9 @@ bump-version:
 frontend: app-version generate-api combat-theater-calibrations
 	node tools/build-config.cjs $(PRODUCTION)
 	elm make src/Fightlines.elm --output=public/elm.js
+	elm make src/Admin.elm --output=public/elm-admin.js
+	cp tools/admin/index.html public/admin.html
+	cp tools/admin/main.js public/admin.js
 	node tools/build-dev-tools.cjs $(PRODUCTION)
 
 check-all: RUST_TEST_ARGS = --include-ignored
@@ -47,6 +50,7 @@ check: app-version combat-theater-calibrations
 	node tools/check-orders.cjs
 	node tools/check-lifecycle.cjs
 	node tools/check-replay.cjs
+	node tools/check-admin.cjs
 	node tools/check-chat.cjs
 	node tools/check-combat-chart.cjs
 	node tools/check-planning.cjs

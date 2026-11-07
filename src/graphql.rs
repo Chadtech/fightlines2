@@ -1,5 +1,5 @@
 use crate::{
-    backdrop_calibration,
+    admin, backdrop_calibration,
     chat::{self, ChatMessage, SendChatInput},
     combat::chart,
     environment::Environment,
@@ -37,6 +37,8 @@ mod limits;
 /// Shared by every HTTP worker; schema export remains independent of admission.
 pub struct Endpoint {
     environment: Environment,
+    admin: Arc<admin::Auth>,
+    admin_archives: Option<Arc<game_archive::Browser>>,
     schema: Schema,
     requests: Arc<limits::Requests>,
     mutation_limits: Arc<server_limits::Limits>,
@@ -45,9 +47,23 @@ pub struct Endpoint {
 pub fn endpoint(environment: Environment) -> Endpoint {
     Endpoint {
         environment,
+        admin: Arc::new(admin::Auth::default()),
+        admin_archives: None,
         schema: schema(),
         requests: Arc::new(limits::Requests::default()),
         mutation_limits: Arc::new(server_limits::Limits::default()),
+    }
+}
+
+pub fn endpoint_with_admin(
+    environment: Environment,
+    auth: admin::Auth,
+    archives: game_archive::Browser,
+) -> Endpoint {
+    Endpoint {
+        admin: Arc::new(auth),
+        admin_archives: Some(Arc::new(archives)),
+        ..endpoint(environment)
     }
 }
 
@@ -56,6 +72,7 @@ pub fn endpoint(environment: Environment) -> Endpoint {
 //----------------------------------------------------------------
 
 pub struct Context {
+    pub admin: admin::Access,
     pub store: Arc<Store>,
     pub mutation_limits: Arc<server_limits::Limits>,
     client_address: ClientAddress,
@@ -69,6 +86,10 @@ pub struct Context {
 impl juniper::Context for Context {}
 
 impl Context {
+    pub fn require_admin(&self) -> FieldResult<()> {
+        self.admin.require()
+    }
+
     fn admit(&self, operation: Operation) -> FieldResult<()> {
         self.mutation_limits
             .admit(operation, self.client_address, self.identity())
@@ -99,6 +120,30 @@ pub struct Query;
 
 #[graphql_object(context = Context)]
 impl Query {
+    fn admin_session(context: &Context) -> FieldResult<admin::SessionStatus> {
+        context.admin.status()
+    }
+    fn admin_dashboard(context: &Context) -> FieldResult<admin::dashboard::Dashboard> {
+        admin::dashboard::get(context)
+    }
+    fn admin_recordings(
+        context: &Context,
+        #[graphql(default = 0)] offset: i32,
+    ) -> FieldResult<game_archive::RecordingsPage> {
+        game_archive::recordings(context, offset)
+    }
+    fn admin_feedback(
+        context: &Context,
+        #[graphql(default = 0)] offset: i32,
+    ) -> FieldResult<feedback::FeedbackPage> {
+        context.require_admin()?;
+        context
+            .feedback
+            .as_ref()
+            .ok_or("feedback is unavailable.")?
+            .list(offset)
+    }
+
     fn match_making(context: &Context) -> FieldResult<match_making::Snapshot> {
         match_making::get(context)
     }
@@ -194,6 +239,14 @@ pub struct Mutation;
 
 #[graphql_object(context = Context)]
 impl Mutation {
+    fn admin_login(context: &Context, password: String) -> FieldResult<admin::SessionStatus> {
+        context.admit(Operation::AdminLogin)?;
+        context.admin.login(&password)
+    }
+    fn admin_logout(context: &Context) -> FieldResult<bool> {
+        context.admin.logout()
+    }
+
     fn join_match_making(context: &Context, name: String) -> FieldResult<match_making::Snapshot> {
         context.admit(Operation::JoinMatchMaking)?;
         match_making::join(context, &name)
@@ -345,6 +398,7 @@ enum ExecutedRequest {
     Completed {
         body: String,
         identity: Option<SessionToken>,
+        admin_cookie: Option<admin::CookieChange>,
     },
     Rejected(limits::Rejection),
 }
@@ -389,6 +443,7 @@ async fn execute_request(
                 server_log::graphql_errors(&result);
                 Ok(ExecutedRequest::Completed {
                     body: serde_json::to_string(&GraphQLResponse::from_result(result))?,
+                    admin_cookie: context.admin.take_cookie_change(),
                     identity: context
                         .identity()
                         .filter(|_| context.persist_identity.load(Ordering::Relaxed)),
@@ -424,12 +479,19 @@ pub async fn handle(
     // Mutations in one document share the newly created browser identity.
     let original = SessionToken::from_request(&request);
     let context = Context {
+        admin: admin::Access::from_request(endpoint.admin.clone(), &request, environment),
         store: store.into_inner(),
         mutation_limits: endpoint.mutation_limits.clone(),
         client_address: ClientAddress::from_request(&request),
         feedback: feedback.map(web::Data::into_inner),
         editor: map_editor::Access::from_request(editor, &request),
-        archives: game_archive::Access::from_browser(archives),
+        archives: match archives {
+            Some(archives) => game_archive::Access::from_browser(Some(archives)),
+            None => match &endpoint.admin_archives {
+                Some(browser) => game_archive::Access::Admin(browser.clone()),
+                None => game_archive::Access::Disabled,
+            },
+        },
         identity: Mutex::new(original),
         persist_identity: AtomicBool::new(false),
     };
@@ -452,8 +514,12 @@ pub async fn handle(
                 .finish();
         }
     };
-    let (body, identity) = match executed {
-        ExecutedRequest::Completed { body, identity } => (body, identity),
+    let (body, identity, admin_cookie) = match executed {
+        ExecutedRequest::Completed {
+            body,
+            identity,
+            admin_cookie,
+        } => (body, identity, admin_cookie),
         ExecutedRequest::Rejected(rejection) => {
             return span.in_scope(|| rejected_request(rejection, request_id));
         }
@@ -463,6 +529,9 @@ pub async fn handle(
     response.insert_header(("X-Request-Id", request_id.to_string()));
     if let Some(identity) = identity {
         response.cookie(identity.cookie(environment));
+    }
+    if let Some(change) = admin_cookie {
+        response.cookie(change.cookie(environment));
     }
     response.content_type("application/json").body(body)
 }
@@ -494,6 +563,7 @@ fn rejected_request(rejection: limits::Rejection, request_id: RequestId) -> Http
 /// Export the real resolver schema without starting a server or mutating game state.
 pub fn export_schema() -> std::io::Result<()> {
     let context = Context {
+        admin: admin::Access::disabled(),
         store: Arc::new(Store::new(crate::seed::Seed::new([0; 32]))),
         mutation_limits: Arc::new(server_limits::Limits::default()),
         client_address: ClientAddress::Unavailable,

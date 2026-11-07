@@ -5,6 +5,7 @@
 module Api.Query exposing (..)
 
 import Api.Enum.PlayerNumber
+import Api.Enum.SessionStatus
 import Api.InputObject
 import Api.Interface
 import Api.Object
@@ -18,6 +19,42 @@ import Graphql.Operation exposing (RootMutation, RootQuery, RootSubscription)
 import Graphql.OptionalArgument exposing (OptionalArgument(..))
 import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode exposing (Decoder)
+
+
+adminSession : SelectionSet Api.Enum.SessionStatus.SessionStatus RootQuery
+adminSession =
+    Object.selectionForField "Enum.SessionStatus.SessionStatus" "adminSession" [] Api.Enum.SessionStatus.decoder
+
+
+adminDashboard :
+    SelectionSet decodesTo Api.Object.Dashboard
+    -> SelectionSet decodesTo RootQuery
+adminDashboard object____ =
+    Object.selectionForCompositeField "adminDashboard" [] object____ Basics.identity
+
+
+type alias AdminRecordingsRequiredArguments =
+    { offset : Int }
+
+
+adminRecordings :
+    AdminRecordingsRequiredArguments
+    -> SelectionSet decodesTo Api.Object.RecordingsPage
+    -> SelectionSet decodesTo RootQuery
+adminRecordings requiredArgs____ object____ =
+    Object.selectionForCompositeField "adminRecordings" [ Argument.required "offset" requiredArgs____.offset Encode.int ] object____ Basics.identity
+
+
+type alias AdminFeedbackRequiredArguments =
+    { offset : Int }
+
+
+adminFeedback :
+    AdminFeedbackRequiredArguments
+    -> SelectionSet decodesTo Api.Object.FeedbackPage
+    -> SelectionSet decodesTo RootQuery
+adminFeedback requiredArgs____ object____ =
+    Object.selectionForCompositeField "adminFeedback" [ Argument.required "offset" requiredArgs____.offset Encode.int ] object____ Basics.identity
 
 
 matchMaking :

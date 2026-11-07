@@ -11,7 +11,6 @@ import DevPanel
 import DevTools.Flags as Flags
 import DevTools.Page.BackdropReview as BackdropReview
 import DevTools.Page.CombatChart as CombatChart
-import DevTools.Page.GameReplay as GameReplay
 import DevTools.Page.LoggedGames as LoggedGames
 import DevTools.Page.MapEditor as MapEditor
 import DevTools.Route as Route
@@ -24,6 +23,7 @@ import Effect as E
         )
 import Game.Assets as Assets
 import Game.LogId exposing (GameLogId)
+import Game.Replay as GameReplay
 import Html.Styled as H
     exposing
         ( Html
@@ -509,7 +509,7 @@ update msg page =
                     else
                         case result of
                             Ok flags ->
-                                GameReplay.init shared id flags
+                                GameReplay.init { returnUrl = "/dev/logged-games" } shared id flags
                                     |> Tuple.mapFirst (Replay id)
                                     |> Tuple.mapSecond (E.map (ReplayMsg id))
 

@@ -1,5 +1,6 @@
 //! Pregame setup and lobby membership.
 use crate::{
+    admin::dashboard::{AdminPlayer, EntrySnapshot, EntryStatus},
     chat::{self, ChatMessage, Draft, Sender, Submission, Transcript},
     game::Game,
     game_log::GameLog,
@@ -32,6 +33,25 @@ pub(crate) struct Lobby {
 }
 
 impl Lobby {
+    pub fn admin_snapshot(&self) -> EntrySnapshot {
+        EntrySnapshot {
+            id: self.id.clone(),
+            name: self.name.to_string(),
+            map_type: self.map_type.clone(),
+            status: EntryStatus::WaitingLobby,
+            turn_number: None,
+            outcome: None,
+            players: self
+                .players
+                .iter()
+                .map(|player| AdminPlayer::new(player, false))
+                .collect(),
+            started_at: None,
+            last_activity: self.last_activity,
+            warning_deadline: None,
+        }
+    }
+
     pub fn is_expired(&self, now: Instant) -> bool {
         now.saturating_duration_since(self.last_activity) >= INACTIVITY_TIMEOUT
     }
