@@ -152,8 +152,6 @@ import Util.List as ListUtil
 import Util.Maybe as MaybeUtil
 import View.Aria as Aria
 import View.Button as Button
-import View.Card as Card
-import View.CardHeader as CardHeader
 import View.Checkbox as Checkbox
 import View.Dialog as Dialog exposing (Dialog)
 import View.RequestError as RequestError
@@ -166,7 +164,7 @@ import View.RequestError as RequestError
 
 
 type alias Model =
-    { activity : Inactivity.Model
+    { inactivity : Inactivity.Model
     , currentTurn : CurrentTurn.Model
     , feedback : Feedback.Draft
     , chat : Chat.Model
@@ -367,7 +365,7 @@ init shared flags =
 
         model : Model
         model =
-            { activity = Inactivity.init shared.now flags.snapshot.inactivity
+            { inactivity = Inactivity.init shared.now flags.snapshot.inactivity
             , currentTurn = CurrentTurn.init (turnObservation flags.snapshot)
             , chat = Chat.initGame flags.messages
             , shared =
@@ -1017,7 +1015,7 @@ applyTurnSnapshot snapshot currentTurn model =
 reconcileActivityTurn : Int -> Model -> Model
 reconcileActivityTurn previousTurn model =
     if model.currentTurn.number > previousTurn then
-        { model | activity = Inactivity.nextTurn model.activity }
+        { model | inactivity = Inactivity.nextTurn model.inactivity }
 
     else
         model
@@ -1644,7 +1642,11 @@ handleBattlefieldMsg msg model =
             in
             next
 
-        Battlefield.MousePressed point ->
+        Battlefield.TouchInputReceived input ->
+            model
+                |> mapNavigation (BattlefieldNavigation.touch input)
+
+        Battlefield.PointerPressed point ->
             model
                 |> mapNavigation (BattlefieldNavigation.press point)
 
@@ -1696,7 +1698,9 @@ resignGame lobbyId destination model =
     let
         canResign : Bool
         canResign =
-            (model.menu == ConfirmingResignation destination) && not model.resigning && (model.currentTurn.outcome == Nothing)
+            (model.menu == ConfirmingResignation destination)
+                && not model.resigning
+                && (model.currentTurn.outcome == Nothing)
     in
     if canResign then
         ( model
@@ -1733,7 +1737,12 @@ updatePlaybackCamera model =
             let
                 held : PlaybackPresentation.PlaybackCamera
                 held =
-                    PlaybackPresentation.frameCamera viewport model.map (BattlefieldNavigation.camera model.navigation) playing.animation playing.camera
+                    PlaybackPresentation.frameCamera
+                        viewport
+                        model.map
+                        (BattlefieldNavigation.camera model.navigation)
+                        playing.animation
+                        playing.camera
 
                 currentTurn : CurrentTurn.Model
                 currentTurn =
@@ -1908,7 +1917,11 @@ scrollChatHistory chat shared =
 
 chatExpiration : Model -> Eff Msg
 chatExpiration model =
-    if model.welcomeBriefingPending || showTurnIntroduction model || List.isEmpty model.chat.recent then
+    if
+        model.welcomeBriefingPending
+            || showTurnIntroduction model
+            || List.isEmpty model.chat.recent
+    then
         E.none
 
     else
@@ -1967,7 +1980,7 @@ pollChat lobbyId model =
 recordUserInteraction : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 recordUserInteraction lobbyId msg model =
     if isUserInteraction msg && (model.currentTurn.outcome == Nothing) then
-        { model | activity = Inactivity.recordInteraction model.activity }
+        { model | inactivity = Inactivity.recordInteraction model.inactivity }
             |> renewInactivityTimer lobbyId
 
     else
@@ -2005,11 +2018,11 @@ renewInactivityTimer lobbyId model =
                     { turnNumber = model.currentTurn.number
                     , presentation = presentation
                     }
-                    model.activity
+                    model.inactivity
 
             next : Model
             next =
-                { model | activity = activity }
+                { model | inactivity = activity }
         in
         case report of
             Just request ->
@@ -2379,14 +2392,21 @@ update lobbyId msg model =
             case result of
                 Ok status ->
                     if report.turnNumber == model.currentTurn.number then
-                        { model | activity = Inactivity.succeeded model.shared.now report status.inactivity model.activity }
+                        { model
+                            | inactivity =
+                                Inactivity.succeeded
+                                    model.shared.now
+                                    report
+                                    status.inactivity
+                                    model.inactivity
+                        }
                             |> E.withOut
 
                     else
                         model |> E.withOut
 
                 Err error ->
-                    { model | activity = Inactivity.failed report (ApiRequest.errorMessage error) model.activity }
+                    { model | inactivity = Inactivity.failed report (ApiRequest.errorMessage error) model.inactivity }
                         |> E.withOut
 
         ChatMsg chatMsg ->
@@ -2995,7 +3015,7 @@ update lobbyId msg model =
                         observed : Model
                         observed =
                             if status.number == currentTurn.number then
-                                { model | activity = Inactivity.observe model.shared.now activitySequence status.inactivity model.activity }
+                                { model | inactivity = Inactivity.observe model.shared.now activitySequence status.inactivity model.inactivity }
 
                             else
                                 model
@@ -3303,7 +3323,10 @@ playAudio msg model =
                 Battlefield.MouseOverTile _ ->
                     Audio.none
 
-                Battlefield.MousePressed _ ->
+                Battlefield.TouchInputReceived _ ->
+                    Audio.none
+
+                Battlefield.PointerPressed _ ->
                     Audio.none
 
                 Battlefield.WheelScrolled _ _ ->
@@ -3325,9 +3348,6 @@ playAudio msg model =
 
         OrderMenuMsg orderMsg ->
             case orderMsg of
-                OrderMenu.MenuPressed ->
-                    Audio.none
-
                 OrderMenu.InfoClicked ->
                     Audio.affirm
 
@@ -3984,7 +4004,7 @@ refreshTurn lobbyId model =
     else
         ( model
             |> setCurrentTurn (CurrentTurn.setRefreshing True model.currentTurn)
-        , E.request (PollStatusResponseReceived (Inactivity.sequence model.activity)) (pollRequest lobbyId)
+        , E.request (PollStatusResponseReceived (Inactivity.sequence model.inactivity)) (pollRequest lobbyId)
         )
 
 
@@ -4169,10 +4189,6 @@ applyPlaybackFrame next model =
 handleOrderMsg : OrderMenu.Msg -> Model -> ( Model, Eff Msg )
 handleOrderMsg orderMsg model =
     case orderMsg of
-        OrderMenu.MenuPressed ->
-            model
-                |> E.withOut
-
         OrderMenu.InfoClicked ->
             if hasDialog model then
                 model
@@ -4258,7 +4274,6 @@ battlefieldView model =
                 |> H.fromUnstyled
             ]
             |> H.map BattlefieldMsg
-        , orderMenu model
         ]
 
 
@@ -4394,6 +4409,7 @@ view model =
             , combat = combatEncounter model /= Nothing
             , dying = deathInFocus model
             , battlefield = battlefieldView model
+            , orders = orderMenu model
             , header =
                 GameMenu.panel
                     { enabled = canOpenMenu model
@@ -5455,7 +5471,7 @@ inactivityDialog model _ =
             let
                 failure : List (Html Msg)
                 failure =
-                    case Inactivity.error model.activity of
+                    case Inactivity.error model.inactivity of
                         Just message ->
                             [ H.p
                                 []
@@ -5468,7 +5484,7 @@ inactivityDialog model _ =
 
                 button : Html Msg
                 button =
-                    if Inactivity.pending model.activity then
+                    if Inactivity.pending model.inactivity then
                         Button.disabled "confirming…"
                             |> Button.toHtml
 
@@ -5496,7 +5512,7 @@ inactivityDialog model _ =
             Dialog.make inactivityDialogHtmlId "inactivity warning" StillHereClicked body
     in
     if (model.currentTurn.outcome == Nothing) && inactivityTimerNeeded model then
-        Inactivity.countdownSeconds model.shared.now model.activity |> Maybe.map warning
+        Inactivity.countdownSeconds model.shared.now model.inactivity |> Maybe.map warning
 
     else
         Nothing
@@ -5789,7 +5805,10 @@ turnPanel model =
 
 displayedTurnNumber : Model -> Int
 displayedTurnNumber model =
-    if (model.currentTurn.outcome /= Nothing) && not (GameOutcome.interruptsPlayback model.currentTurn.outcome) then
+    if
+        (model.currentTurn.outcome /= Nothing)
+            && not (GameOutcome.interruptsPlayback model.currentTurn.outcome)
+    then
         model.currentTurn.number - 1
 
     else

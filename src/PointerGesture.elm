@@ -1,6 +1,7 @@
 module PointerGesture exposing
     ( PointerGesture
     , active
+    , cancel
     , finish
     , idle
     , move
@@ -62,6 +63,13 @@ suppressesClick gesture =
 
         Pressed _ ->
             False
+
+
+{-| A cancelled or multi-touch gesture must never activate its starting tile.
+-}
+cancel : PointerGesture
+cancel =
+    SuppressingClick
 
 
 finish : PointerGesture -> PointerGesture

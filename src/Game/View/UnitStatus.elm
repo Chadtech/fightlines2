@@ -182,6 +182,9 @@ portrait playerName unit =
             [ S.bgNightwood3
             , S.indentStrong
             , S.p3
+            , S.compactViewport
+                [ S.p1
+                ]
             ]
         ]
         [ Svg.svg
@@ -190,6 +193,9 @@ portrait playerName unit =
             , SA.height "128"
             , SA.css
                 [ S.block
+                , S.compactViewport
+                    [ S.h16
+                    ]
                 ]
             ]
             [ UnitSprite.portraitToSvg (UnitSprite.appearance unit)

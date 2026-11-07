@@ -2,6 +2,7 @@ module Game.BattlefieldNavigation exposing
     ( DragMode(..)
     , Model
     , Msg(..)
+    , TouchInput(..)
     , active
     , camera
     , finishReturn
@@ -19,6 +20,7 @@ module Game.BattlefieldNavigation exposing
     , startReturn
     , subscriptions
     , suppressesClick
+    , touch
     , update
     , zoomIn
     , zoomOut
@@ -40,9 +42,14 @@ import PointerGesture exposing (PointerGesture)
 type alias Model =
     { offset : Point
     , zoom : Float
-    , pointerGesture : PointerGesture
+    , gesture : Gesture
     , returnMotion : ReturnMotion
     }
+
+
+type Gesture
+    = MouseGesture PointerGesture
+    | TouchGesture TouchGesture
 
 
 type ReturnMotion
@@ -61,6 +68,33 @@ type Msg
     | WindowVisibilityChanged Browser.Events.Visibility
 
 
+{-| Touch positions are relative to the navigation surface's center.
+-}
+type TouchInput
+    = TouchStarted (List Point)
+    | TouchMoved (List Point)
+    | TouchEnded TouchRelease
+    | TouchCancelled
+
+
+type alias TouchRelease =
+    { remaining : List Point
+    , released : List Point
+    }
+
+
+type TouchGesture
+    = SingleTouch PointerGesture
+    | Pinching Pinch
+    | AwaitingTouchRelease
+
+
+type alias Pinch =
+    { midpoint : Point
+    , distance : Float
+    }
+
+
 
 ----------------------------------------------------------------
 -- INIT --
@@ -71,7 +105,7 @@ init : Model
 init =
     { offset = { x = 0, y = 0 }
     , zoom = 1
-    , pointerGesture = PointerGesture.idle
+    , gesture = MouseGesture PointerGesture.idle
     , returnMotion = Settled
     }
 
@@ -106,12 +140,25 @@ returning model =
 
 active : Model -> Bool
 active model =
-    PointerGesture.active model.pointerGesture
+    case model.gesture of
+        MouseGesture gesture ->
+            PointerGesture.active gesture
+
+        TouchGesture _ ->
+            True
 
 
 suppressesClick : Model -> Bool
 suppressesClick model =
-    PointerGesture.suppressesClick model.pointerGesture
+    case model.gesture of
+        MouseGesture gesture ->
+            PointerGesture.suppressesClick gesture
+
+        TouchGesture (SingleTouch gesture) ->
+            PointerGesture.suppressesClick gesture
+
+        TouchGesture _ ->
+            True
 
 
 panLeft : Model -> Model
@@ -158,13 +205,34 @@ resetViewport model =
         |> setOffset
             { x = 0, y = 0 }
         |> setZoom 1
-        |> setPointerGesture PointerGesture.idle
+        |> setGesture (MouseGesture PointerGesture.idle)
 
 
 press : Point -> Model -> Model
 press point model =
     model
-        |> setPointerGesture (PointerGesture.press { start = point, origin = model.offset })
+        |> setGesture (MouseGesture (PointerGesture.press { start = point, origin = model.offset }))
+
+
+touch : TouchInput -> Model -> Model
+touch input model =
+    case input of
+        TouchStarted points ->
+            case model.gesture of
+                TouchGesture AwaitingTouchRelease ->
+                    model
+
+                _ ->
+                    startTouch points model
+
+        TouchMoved points ->
+            moveTouch points model
+
+        TouchEnded touches ->
+            endTouch touches model
+
+        TouchCancelled ->
+            model |> setGesture (MouseGesture PointerGesture.cancel)
 
 
 scroll : Point -> Float -> Model -> Model
@@ -193,28 +261,43 @@ setZoom zoom model =
     { model | zoom = zoom }
 
 
-setPointerGesture : PointerGesture -> Model -> Model
-setPointerGesture pointerGesture model =
-    { model | pointerGesture = pointerGesture }
+setGesture : Gesture -> Model -> Model
+setGesture gesture model =
+    { model | gesture = gesture }
 
 
 drag : DragMode -> Point -> Model -> Model
 drag dragMode point model =
     let
-        moved : { gesture : PointerGesture, offset : Maybe Point }
-        moved =
-            PointerGesture.move point model.pointerGesture
-    in
-    model
-        |> setPointerGesture moved.gesture
-        |> setOffset
-            (case dragMode of
-                PanCamera ->
-                    Maybe.withDefault model.offset moved.offset
+        move : (PointerGesture -> Gesture) -> PointerGesture -> Model
+        move wrap gesture =
+            let
+                moved : { gesture : PointerGesture, offset : Maybe Point }
+                moved =
+                    PointerGesture.move point gesture
 
-                TraceRoute ->
-                    model.offset
-            )
+                offset : Point
+                offset =
+                    case dragMode of
+                        PanCamera ->
+                            Maybe.withDefault model.offset moved.offset
+
+                        TraceRoute ->
+                            model.offset
+            in
+            model
+                |> setGesture (wrap moved.gesture)
+                |> setOffset offset
+    in
+    case model.gesture of
+        MouseGesture gesture ->
+            move MouseGesture gesture
+
+        TouchGesture (SingleTouch gesture) ->
+            move (SingleTouch >> TouchGesture) gesture
+
+        TouchGesture _ ->
+            model
 
 
 zoomAt : Point -> Float -> Model -> Model
@@ -234,13 +317,101 @@ zoomAt anchor factor model =
             { x = anchor.x - (anchor.x - model.offset.x) * ratio
             , y = anchor.y - (anchor.y - model.offset.y) * ratio
             }
-        |> setPointerGesture (PointerGesture.finish model.pointerGesture)
+        |> finish
 
 
 finish : Model -> Model
 finish model =
-    model
-        |> setPointerGesture (PointerGesture.finish model.pointerGesture)
+    case model.gesture of
+        MouseGesture gesture ->
+            model |> setGesture (MouseGesture (PointerGesture.finish gesture))
+
+        TouchGesture _ ->
+            model
+
+
+pinch : { first : Point, second : Point } -> Pinch
+pinch points =
+    { midpoint =
+        { x = (points.first.x + points.second.x) / 2
+        , y = (points.first.y + points.second.y) / 2
+        }
+    , distance = max 1 (sqrt ((points.second.x - points.first.x) ^ 2 + (points.second.y - points.first.y) ^ 2))
+    }
+
+
+startTouch : List Point -> Model -> Model
+startTouch points model =
+    case points of
+        first :: second :: _ ->
+            model |> setGesture (TouchGesture (Pinching (pinch { first = first, second = second })))
+
+        [ point ] ->
+            model
+                |> setGesture
+                    (TouchGesture (SingleTouch (PointerGesture.press { start = point, origin = model.offset })))
+
+        [] ->
+            model
+
+
+moveTouch : List Point -> Model -> Model
+moveTouch points model =
+    case ( model.gesture, points ) of
+        ( TouchGesture (SingleTouch _), [ point ] ) ->
+            -- Touch always pans. Route tracing remains available to mouse and keyboard;
+            -- a tap on a reachable tile saves a route without requiring hover.
+            drag PanCamera point model
+
+        ( TouchGesture (Pinching previous), first :: second :: _ ) ->
+            let
+                current : Pinch
+                current =
+                    pinch { first = first, second = second }
+
+                zoomed : Model
+                zoomed =
+                    zoomAt previous.midpoint (current.distance / previous.distance) model
+            in
+            zoomed
+                |> setGesture (TouchGesture (Pinching current))
+                |> setOffset
+                    { x = zoomed.offset.x + current.midpoint.x - previous.midpoint.x
+                    , y = zoomed.offset.y + current.midpoint.y - previous.midpoint.y
+                    }
+
+        _ ->
+            model
+
+
+endTouch : TouchRelease -> Model -> Model
+endTouch touches model =
+    case ( model.gesture, touches.remaining ) of
+        ( TouchGesture (SingleTouch gesture), [] ) ->
+            let
+                moved : Model
+                moved =
+                    case touches.released of
+                        [ point ] ->
+                            model
+                                |> setGesture (MouseGesture gesture)
+                                |> drag PanCamera point
+
+                        _ ->
+                            model |> setGesture (MouseGesture gesture)
+            in
+            finish moved
+
+        ( TouchGesture _, [] ) ->
+            model |> setGesture (MouseGesture PointerGesture.cancel)
+
+        ( TouchGesture _, _ ) ->
+            -- Wait for every finger to lift after pinching. Lifting one finger
+            -- must not turn the remaining finger into a new tap or jump the map.
+            model |> setGesture (TouchGesture AwaitingTouchRelease)
+
+        ( MouseGesture _, _ ) ->
+            model
 
 
 
@@ -255,19 +426,34 @@ update : DragMode -> Msg -> Model -> Model
 update dragMode msg model =
     case msg of
         MouseMoved point buttons ->
-            if buttons == 0 then
-                finish model
+            case model.gesture of
+                MouseGesture _ ->
+                    if buttons == 0 then
+                        finish model
 
-            else
-                drag dragMode point model
+                    else
+                        drag dragMode point model
+
+                TouchGesture _ ->
+                    model
 
         MouseReleased point ->
-            model
-                |> drag dragMode point
-                |> finish
+            case model.gesture of
+                MouseGesture _ ->
+                    model
+                        |> drag dragMode point
+                        |> finish
+
+                TouchGesture _ ->
+                    model
 
         WindowVisibilityChanged _ ->
-            finish model
+            case model.gesture of
+                TouchGesture _ ->
+                    model |> setGesture (MouseGesture PointerGesture.cancel)
+
+                MouseGesture _ ->
+                    finish model
 
 
 
@@ -278,22 +464,22 @@ update dragMode msg model =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-    let
-        pointerGesture : PointerGesture
-        pointerGesture =
-            model.pointerGesture
-    in
-    if PointerGesture.active pointerGesture then
-        Sub.batch
-            [ Browser.Events.onMouseMove
-                (Decode.map2
-                    MouseMoved
-                    Point.decoder
-                    (Decode.field "buttons" Decode.int)
-                )
-            , Browser.Events.onMouseUp (Decode.map MouseReleased Point.decoder)
-            , Browser.Events.onVisibilityChange WindowVisibilityChanged
-            ]
+    case model.gesture of
+        TouchGesture _ ->
+            Browser.Events.onVisibilityChange WindowVisibilityChanged
 
-    else
-        Sub.none
+        MouseGesture gesture ->
+            if PointerGesture.active gesture then
+                Sub.batch
+                    [ Browser.Events.onMouseMove
+                        (Decode.map2
+                            MouseMoved
+                            Point.decoder
+                            (Decode.field "buttons" Decode.int)
+                        )
+                    , Browser.Events.onMouseUp (Decode.map MouseReleased Point.decoder)
+                    , Browser.Events.onVisibilityChange WindowVisibilityChanged
+                    ]
+
+            else
+                Sub.none

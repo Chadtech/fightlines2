@@ -230,9 +230,10 @@ movement, facing, and targeting from resolved display inputs; it has no requests
 or planning state. `Game.View.BattlefieldInspection` shares keyed unit/depot/freight/
 terrain rows and cargo inspection. `Game.View.BattlefieldWorkspace` shares the viewport
 and panel layout. `BattlefieldNavigation` shares pan/zoom and pointer gestures.
-Live and replay pages measure the full battlefield, inspector, and floating
-controls. The controls' rendered height becomes the playback camera's bottom
-inset, keeping subjects above the strip without changing the map's scaling.
+Live and replay pages measure the battlefield, inspector, and controls. Their
+overlap with the navigation surface determines playback camera insets, keeping
+subjects clear of overlaid panels without subtracting space already reserved
+for adjacent panels.
 `PlaybackPresentation` shares camera framing, combat/loss views, preferences,
 and playback subscriptions, while `TurnPlayback` owns the recorded animation.
 Only live `CurrentTurn` subscribes to polling. `Game.Checks.Replay` covers replay
@@ -1013,6 +1014,29 @@ Reset restores the centered whole-map overview. Pan and cursor zoom update the
 offset directly, without DOM measurements or team centering. Polling does not
 move the camera. Subscription events use the navigation module's `Msg` and `update`.
 
+### Touch navigation and narrow layouts
+
+`Battlefield` decodes touch contacts from the browser's array-like `TouchList`
+relative to the map surface's center. `BattlefieldNavigation` keeps mouse and
+touch gestures in distinct alternatives, with single-finger drag state inside
+its touch alternative. `BattlefieldNavigation.touch` owns single
+finger panning, midpoint-anchored pinch zoom, and gesture cancellation. Touch
+dragging always pans, including during route planning; tapping a reachable tile
+uses the existing destination selection path. Mouse route tracing remains
+unchanged. Gesture movement suppresses compatibility clicks, while taps and
+small finger jitter retain ordinary click activation. After a pinch, remaining
+fingers wait for release before another gesture can start. No device flags or
+user-agent detection are needed.
+
+`BattlefieldWorkspace` reserves rows for controls and a bounded selection panel
+below 768px. Short landscape screens up to 1023px instead put inspection beside
+the map and reserve a full-width control row below both. Desktop panels continue
+to overlay the map. Playback camera insets
+measure actual overlap with the navigation surface. The order menu is a sibling
+of the touch surface, retaining its map-relative desktop anchor and using a
+scrollable two-column layout on narrow screens. Its scrolling therefore stays
+outside the map's `touch-action: none` boundary.
+
 ## GraphQL and generated client
 
 `Unit.resources` is nullable as a whole: concealed enemy resources return `null`.
@@ -1231,7 +1255,8 @@ in the side panel. The popup sits beside the transformed board inside the battle
 viewport, retaining its display size at every zoom. Viewport container units place
 it beside the unit using the camera offset and zoom; its translation is constrained
 by its actual dimensions and the battlefield edges. Oversized menus scroll. The
-popup stops mouse presses from starting a battlefield drag.
+popup sits outside the navigation surface, so its presses and scrolling do not
+start battlefield gestures.
 
 `GamePage` owns unit/tile selection and an explicit four-state `AnimationFrame`.
 Board data types live in `Coordinate`, `TerrainFeature`, `Map`, `Depot`, `Unit`
@@ -1243,7 +1268,8 @@ for the status panel and combat formations; other portraits use the board atlas.
 Portrait width drives SVG framing and formation scaling without changing map cells.
 `Camera` names the shared offset/zoom data used by navigation, the page viewport
 and order positioning. `BattlefieldNavigation` owns camera offset, zoom and an opaque
-`PointerGesture`. The page handles pointer, button and keyboard events by calling
+`PointerGesture` within its mouse or single-touch gesture alternative. The page
+handles pointer, button and keyboard events by calling
 its direct transition functions. Pointer subscriptions emit its own `Msg` for mouse movement, release and
 visibility changes; the page maps these messages and delegates to its `update`.
 `Game.View.Battlefield.Msg` describes shared board events; each page interprets them.
@@ -1264,7 +1290,8 @@ at the bottom-left edge, with submit, player statuses, and camera controls side 
 to the button's size and emphasis modifiers. `View.Button` owns button styling
 and animations; `View.AppShell` mounts its keyframes once.
 `Battlefield.navigationControls` owns its pan/zoom grids directly, without descendant selectors. Narrow
-layouts wrap the camera controls below without reserving a fixed panel height.
+layouts reserve space for controls and inspection as described under touch
+navigation and narrow layouts, while retaining internal scrolling.
 The gesture transitions from idle to pressed to panning, then retains click
 suppression after release until a fresh press or viewport reset. Zoom and lost
 mouse/visibility events finish the gesture while preserving suppression.

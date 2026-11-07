@@ -17,7 +17,7 @@
 
 
 ## Later
-- mobile compatibility
+- A/B deployments
 - Horse logistics unit
 - Spectators
 - Name units

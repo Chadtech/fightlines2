@@ -27,8 +27,7 @@ import View.InfoMarker as InfoMarker
 
 
 type Msg
-    = MenuPressed
-    | InfoClicked
+    = InfoClicked
     | CancelClicked
     | OrderFocused MenuOption
     | OrderPicked Order
@@ -122,7 +121,6 @@ ordersView depots map offset zoom position unit =
     in
     H.section
         [ Aria.label "unit orders"
-        , Ev.stopPropagationOn "mousedown" (Decode.succeed ( MenuPressed, True ))
         , A.css
             [ S.absolute
             , S.leftValue menuAnchor.x
@@ -142,6 +140,15 @@ ordersView depots map offset zoom position unit =
             , S.defaultCursor
             , S.col
             , S.g1
+            , S.compactViewport
+                [ S.left0
+                , S.topAuto
+                , S.bottom0
+                , S.wFull
+                , S.maxWFull
+                , Css.property "max-height" "calc(100% - 3.5rem)"
+                , S.transformNone
+                ]
             ]
         ]
         [ CardHeader.simple "orders"
@@ -156,6 +163,10 @@ ordersView depots map offset zoom position unit =
             , A.css
                 [ S.col
                 , S.shrink0
+                , S.compactViewport
+                    [ S.grid
+                    , S.gridColumns "repeat(2, minmax(0, 1fr))"
+                    ]
                 ]
             ]
             (List.map (orderButton map depots unit) orders)
@@ -196,6 +207,13 @@ headerButtonStyles =
     , S.justifyCenter
     , S.shrink0
     , S.w6
+    , S.coarsePointer
+        [ S.w11
+        ]
+    , S.belowWidth 767
+        [ S.w11
+        , S.minH11
+        ]
     , S.p0
     , S.borderTransparent
     , S.pointerCursor
@@ -344,6 +362,9 @@ orderRowStyles =
     , S.itemsCenter
     , S.g2
     , S.p2
+    , S.coarsePointer
+        [ S.minH11
+        ]
     , S.wFull
     , S.textLeft
     , S.borderTransparent

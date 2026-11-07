@@ -650,7 +650,10 @@ handleBattlefieldMsg msg model =
         Battlefield.HomePressed ->
             mapNavigation BattlefieldNavigation.resetViewport model
 
-        Battlefield.MousePressed point ->
+        Battlefield.TouchInputReceived input ->
+            mapNavigation (BattlefieldNavigation.touch input) model
+
+        Battlefield.PointerPressed point ->
             mapNavigation (BattlefieldNavigation.press point) model
 
         Battlefield.WheelScrolled anchor delta ->
@@ -1437,6 +1440,7 @@ view model =
         , combat = (playback model |> Maybe.andThen TurnPlayback.activeEncounter) /= Nothing
         , dying = List.any (\unit -> Unit.onMap unit && Unit.isDying unit) model.battlefield.units
         , battlefield = battlefieldView model
+        , orders = H.text ""
         , header = Nothing
         , controls = controls model
         , notification = Nothing

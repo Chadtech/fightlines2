@@ -86,6 +86,21 @@ panelView kind children =
             , S.row
             , S.flexWrap
             , S.itemsCenter
+            , S.when (kind == LiveControls)
+                (S.compactViewport
+                    [ S.wFull
+                    , S.grid
+                    , S.gridColumns "minmax(0, 1fr) minmax(0, 1fr)"
+                    , S.g2
+                    , S.p2
+                    , S.shortLandscape
+                        [ S.gridColumns "repeat(4, minmax(0, 1fr))"
+                        , S.belowWidth 639
+                            [ S.gridColumns "repeat(2, minmax(0, 1fr))"
+                            ]
+                        ]
+                    ]
+                )
             , S.when (kind == ReplayControls)
                 (S.batch
                     [ S.maxH40Viewport
@@ -123,6 +138,10 @@ submit activity label =
             , S.g2
             , S.shrink0
             , S.w36
+            , S.compactViewport
+                [ S.wFull
+                , S.minW0
+                ]
             ]
         ]
         [ button
@@ -162,6 +181,9 @@ feedback children =
             , S.minW0
             , S.maxWFull
             , S.w66
+            , S.compactViewport
+                [ S.wFull
+                ]
             , S.wrapAnywhere
             ]
         ]
@@ -182,6 +204,11 @@ playerRowView name playerNumber status =
             , S.g2
             , S.itemsCenter
             , S.minH6
+            , S.compactViewport
+                [ S.gridColumns "minmax(0, 1fr)"
+                , S.g0
+                , S.fontSizeRem 0.875
+                ]
             ]
         ]
         [ H.div

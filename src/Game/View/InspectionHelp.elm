@@ -66,6 +66,14 @@ button events label help =
             , S.bgTransparent
             , S.textGray5
             , S.pointerCursor
+            , S.coarsePointer
+                [ S.w11
+                , S.h11
+                ]
+            , S.belowWidth 767
+                [ S.w11
+                , S.h11
+                ]
             ]
         ]
         [ InfoMarker.toHtml ]

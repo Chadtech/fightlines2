@@ -210,6 +210,14 @@ panel has selection details and unit actions; the bottom-left control panel has
 pan arrows, zoom and reset controls. Games open at 100%, centered on the whole-map overview.
 Reset restores this centered overview; zoom ranges from 35% to 300%. Arrow keys or WASD pan the map while the order popup is closed and no move or ambush direction is being chosen.
 Plus/minus zoom without requiring battlefield focus; Home resets the view while the battlefield is focused. Dragging does not select a tile.
+On a phone, drag with one finger to pan and pinch with two fingers to zoom.
+Tap a unit, choose its order, then tap a highlighted destination; hovering is
+not required. Dragging while choosing a destination pans without saving the
+order. The selected-unit panel scrolls above the full-width turn controls.
+Use the minus/plus buttons to zoom, or tap the percentage to reset the view.
+The order menu uses two columns above the selected-unit panel, with internal
+scrolling when space is limited. Rotate the phone for a wider battlefield.
+
 The panel remains fixed while the board moves. Terrain uses detailed 80s anime
 illustrations, with a grass tile in every square, defined hill ridges and tree
 silhouettes, and a subtle grid.

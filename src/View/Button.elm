@@ -465,6 +465,15 @@ toHtml button =
                 , S.when button.fullWidth S.wFull
                 , Css.maxWidth (Css.pct 100)
                 , S.pointerCursor
+                , S.touchActionManipulation
+                , S.coarsePointer
+                    [ S.minH11
+                    , S.when (button.shape == IconOnly) S.minW11
+                    ]
+                , S.belowWidth 767
+                    [ S.minH11
+                    , S.when (button.shape == IconOnly) S.minW11
+                    ]
                 , S.batch variantStyles
                 , emphasisStyles
                 ]

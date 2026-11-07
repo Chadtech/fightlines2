@@ -982,9 +982,10 @@ theaterView calibrations automaticallyClose visibleTiles depots map panel =
                             [ Button.primary "continue" ContinueClicked |> Button.toHtml
                             ]
                         , H.div
-                            [ Ev.onMouseDown SeeMapPressed
-                            , Ev.onMouseUp SeeMapReleased
-                            , Ev.onMouseLeave SeeMapReleased
+                            [ Ev.on "pointerdown" (Decode.succeed SeeMapPressed)
+                            , Ev.on "pointerup" (Decode.succeed SeeMapReleased)
+                            , Ev.on "pointerleave" (Decode.succeed SeeMapReleased)
+                            , Ev.on "pointercancel" (Decode.succeed SeeMapReleased)
                             , Ev.on "focusout" (Decode.succeed SeeMapReleased)
                             , Ev.custom "keydown" (seeMapKey SeeMapPressed)
                             , Ev.custom "keyup" (seeMapKey SeeMapReleased)

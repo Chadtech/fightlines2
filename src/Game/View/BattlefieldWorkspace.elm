@@ -27,6 +27,7 @@ type alias Contents msg =
     , dying : Bool
     , header : Maybe (Html msg)
     , battlefield : Html msg
+    , orders : Html msg
     , controls : Html msg
     , notification : Maybe (Html msg)
     , inspection : Html msg
@@ -51,8 +52,8 @@ inspectorWidth =
     "min(15.5rem, 45vw)"
 
 
-{-| The header, controls and inspector overlay the full navigation surface
-without changing the map's coordinate system.
+{-| Desktop panels overlay the navigation surface; narrow screens reserve rows
+for controls and inspection. Measure only overlap as camera insets.
 -}
 viewport :
     { battlefield : Browser.Dom.Element
@@ -61,12 +62,31 @@ viewport :
     }
     -> Camera.Viewport
 viewport measured =
+    let
+        battlefieldBottom : Float
+        battlefieldBottom =
+            measured.battlefield.element.y + measured.battlefield.element.height
+
+        inspectorOverlaps : Bool
+        inspectorOverlaps =
+            (measured.inspector.element.height > 0)
+                && (measured.inspector.element.y < battlefieldBottom)
+                && (measured.inspector.element.x < measured.battlefield.element.x + measured.battlefield.element.width)
+
+        rightInset : Float
+        rightInset =
+            if inspectorOverlaps then
+                measured.inspector.element.width
+
+            else
+                0
+    in
     { size =
         { x = measured.battlefield.element.width
         , y = measured.battlefield.element.height
         }
-    , bottomInset = measured.controls.element.height
-    , rightInset = measured.inspector.element.width
+    , bottomInset = clamp 0 measured.battlefield.element.height (battlefieldBottom - measured.controls.element.y)
+    , rightInset = rightInset
     }
 
 
@@ -105,14 +125,21 @@ toHtml model =
             else
                 []
 
-        hasHeader : Bool
-        hasHeader =
-            case model.header of
-                Just _ ->
-                    True
+        landscapeColumns : String
+        landscapeColumns =
+            if model.hasSelection then
+                "minmax(0, 1fr) minmax(0, 32%)"
 
-                Nothing ->
-                    False
+            else
+                "minmax(0, 1fr)"
+
+        headerWidth : String
+        headerWidth =
+            if model.hasSelection then
+                "68%"
+
+            else
+                "100%"
 
         header : Html msg
         header =
@@ -128,6 +155,10 @@ toHtml model =
                             , S.row
                             , S.justifyCenter
                             , S.z3
+                            , S.shortLandscape
+                                [ S.left0
+                                , S.widthValue headerWidth
+                                ]
                             ]
                         ]
                         [ content ]
@@ -145,6 +176,12 @@ toHtml model =
                 , S.left0
                 , S.right0
                 , S.col
+                , S.overflowHidden
+                , S.shortLandscape
+                    [ S.grid
+                    , S.gridColumns landscapeColumns
+                    , Css.property "grid-template-rows" "minmax(0, 1fr) auto"
+                    ]
                 ]
             ]
 
@@ -176,9 +213,14 @@ toHtml model =
                 , S.minW0
                 , S.minH0
                 , S.row
+                , S.containerSize
+                , S.shortLandscape
+                    [ Css.property "grid-area" "1 / 1" ]
                 ]
             ]
-            [ model.battlefield ]
+            [ model.battlefield
+            , model.orders
+            ]
         , H.div
             [ A.attribute "data-loss-dim" ""
             , A.css
@@ -193,6 +235,16 @@ toHtml model =
                 , S.pointerEventsNone
                 , S.when model.hasSelection
                     (Css.property "max-width" ("calc(100% - " ++ inspectorWidth ++ ")"))
+                , S.compactViewport
+                    [ S.relative
+                    , S.wFull
+                    , S.maxWFull
+                    , S.shrink0
+                    , Css.order (Css.int 2)
+                    ]
+                , S.shortLandscape
+                    [ Css.property "grid-area" "2 / 1 / 3 / -1"
+                    ]
                 ]
             ]
             [ notification
@@ -204,6 +256,10 @@ toHtml model =
                     , Css.maxHeight (Css.vh 50)
                     , S.overflowAuto
                     , S.pointerEventsAuto
+                    , S.compactViewport
+                        [ S.wFull
+                        , Css.maxHeight (Css.vh 35)
+                        ]
                     ]
                 ]
                 [ model.controls ]
@@ -228,10 +284,20 @@ toHtml model =
                 , S.overflowAuto
                 , S.wrapAnywhere
                 , S.widthValue inspectorWidth
-                , S.when hasHeader
-                    (S.belowWidth 767
-                        [ Css.paddingTop (Css.rem 3.25) ]
-                    )
+                , S.compactViewport
+                    [ S.relative
+                    , S.wFull
+                    , Css.maxHeight (Css.vh 28)
+                    , S.shrink0
+                    , Css.order (Css.int 1)
+                    , S.outdentTopRight
+                    , S.g2
+                    , S.shortLandscape
+                        [ Css.property "grid-area" "1 / 2"
+                        , Css.maxHeight (Css.pct 100)
+                        , S.outdentLeft
+                        ]
+                    ]
                 , S.when (not model.hasSelection) S.displayNone
                 ]
             ]

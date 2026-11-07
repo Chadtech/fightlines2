@@ -13,7 +13,7 @@ try {
       console.error(failures.join('\n'));
       process.exitCode = 1;
     } else {
-      console.log('Pointer gesture threshold, panning, release, and click suppression transitions passed.');
+      console.log('Mouse/touch panning, pinch zoom, tap suppression, event decoding, and responsive camera insets passed.');
     }
   });
 } finally {

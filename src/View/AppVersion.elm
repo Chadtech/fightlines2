@@ -16,4 +16,13 @@ toHtml =
             , S.pointerEventsNone
             ]
         ]
-        [ H.text ("v" ++ AppVersion.current ++ " · " ++ AppVersion.releasedAt) ]
+        [ H.text ("v" ++ AppVersion.current)
+        , H.span
+            [ A.css
+                [ S.compactViewport
+                    [ S.displayNone
+                    ]
+                ]
+            ]
+            [ H.text (" · " ++ AppVersion.releasedAt) ]
+        ]

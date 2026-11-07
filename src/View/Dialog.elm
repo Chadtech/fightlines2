@@ -249,6 +249,8 @@ toHtml (Dialog model) =
             , S.bgGray1
             , S.textGray4
             , S.outdent
+            , S.maxHViewportInset8
+            , S.overflowAuto
             ]
 
         header : CardHeader msg

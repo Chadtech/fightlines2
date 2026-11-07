@@ -16,7 +16,9 @@ module Game.View.Battlefield exposing
     , inspection
     , interaction
     , navigationControls
+    , pointerPressedDecoder
     , toSvg
+    , touchInputDecoder
     , viewportAttributes
     )
 
@@ -25,6 +27,7 @@ import Api.Enum.SpriteFacing exposing (SpriteFacing)
 import Api.Enum.UnitKind as UnitKind
 import Css
 import Game.AnimationFrame as AnimationFrame
+import Game.BattlefieldNavigation as Navigation exposing (TouchInput)
 import Game.Camera as Camera exposing (Camera)
 import Game.CombatRules exposing (CombatRules)
 import Game.Coordinate as Coordinate exposing (Coordinate)
@@ -127,7 +130,8 @@ type Msg
     | FocusedBoardTile Coordinate
     | TargetPreviewLeft
     | MouseOverTile Coordinate
-    | MousePressed Point
+    | PointerPressed Point
+    | TouchInputReceived TouchInput
     | WheelScrolled Point Float
     | HomePressed
 
@@ -245,19 +249,129 @@ reachableTiles map boardInteraction =
             []
 
 
-mousePressedDecoder : Decode.Decoder Msg
-mousePressedDecoder =
-    Decode.field "button" Decode.int
-        |> Decode.andThen primaryMousePressed
+pointerPressedDecoder : Decode.Decoder Msg
+pointerPressedDecoder =
+    let
+        fromPointerType : String -> Decode.Decoder Msg
+        fromPointerType pointerType =
+            -- A compatibility mousedown after touch must never restart the gesture
+            -- and clear the click suppression established by the swipe or pinch.
+            if pointerType == "touch" then
+                Decode.fail "touch contacts use touch navigation"
+
+            else
+                Decode.field "button" Decode.int
+                    |> Decode.andThen primaryPointerPressed
+    in
+    Decode.field "pointerType" Decode.string
+        |> Decode.andThen fromPointerType
 
 
-primaryMousePressed : Int -> Decode.Decoder Msg
-primaryMousePressed button =
+primaryPointerPressed : Int -> Decode.Decoder Msg
+primaryPointerPressed button =
     if button == 0 then
-        Decode.map MousePressed Point.decoder
+        Decode.map PointerPressed Point.decoder
 
     else
         Decode.fail "only the primary button pans"
+
+
+touchInputDecoder : Decode.Decoder TouchInput
+touchInputDecoder =
+    let
+        fromType : String -> Decode.Decoder TouchInput
+        fromType eventType =
+            case eventType of
+                "touchstart" ->
+                    Decode.map Navigation.TouchStarted (touchPointsDecoder "touches")
+
+                "touchmove" ->
+                    Decode.map Navigation.TouchMoved (touchPointsDecoder "touches")
+
+                "touchend" ->
+                    Decode.map2 ended
+                        (touchPointsDecoder "touches")
+                        (touchPointsDecoder "changedTouches")
+
+                "touchcancel" ->
+                    Decode.succeed Navigation.TouchCancelled
+
+                _ ->
+                    Decode.fail "not a battlefield touch event"
+
+        ended : List Point -> List Point -> TouchInput
+        ended remaining released =
+            Navigation.TouchEnded { remaining = remaining, released = released }
+    in
+    Decode.field "type" Decode.string |> Decode.andThen fromType
+
+
+touchPointsDecoder : String -> Decode.Decoder (List Point)
+touchPointsDecoder field =
+    let
+        centered : Point -> Point -> Point
+        centered size point =
+            { x = point.x - size.x / 2
+            , y = point.y - size.y / 2
+            }
+
+        points : Point -> List Point -> List Point
+        points size =
+            List.map (centered size)
+    in
+    Decode.map2 points
+        viewportSizeDecoder
+        (Decode.field field touchListDecoder)
+
+
+touchListDecoder : Decode.Decoder (List Point)
+touchListDecoder =
+    let
+        contacts : Int -> Decode.Decoder (List Point)
+        contacts length =
+            List.range 0 (length - 1)
+                |> List.map contact
+                |> List.foldr (Decode.map2 (::)) (Decode.succeed [])
+                |> Decode.map (List.filterMap identity)
+
+        contact : Int -> Decode.Decoder (Maybe Point)
+        contact index =
+            Decode.field (String.fromInt index)
+                (Decode.map2 battlefieldContact
+                    (Decode.field "target" battlefieldTargetDecoder)
+                    Point.decoder
+                )
+
+        battlefieldContact : Bool -> Point -> Maybe Point
+        battlefieldContact onBattlefield point =
+            if onBattlefield then
+                Just point
+
+            else
+                Nothing
+    in
+    Decode.field "length" Decode.int
+        |> Decode.andThen contacts
+
+
+{-| Touch targets stay on the original tile or unit as fingers move. Collect
+contacts across those descendants, excluding fingers on controls outside the map.
+-}
+battlefieldTargetDecoder : Decode.Decoder Bool
+battlefieldTargetDecoder =
+    let
+        fromHtmlId : String -> Decode.Decoder Bool
+        fromHtmlId targetHtmlId =
+            if targetHtmlId == htmlId then
+                Decode.succeed True
+
+            else
+                Decode.field "parentElement"
+                    (Decode.nullable (Decode.lazy (\_ -> battlefieldTargetDecoder)))
+                    |> Decode.map (Maybe.withDefault False)
+    in
+    Decode.field "id" Decode.string
+        |> Decode.andThen fromHtmlId
 
 
 wheelScrolledDecoder : Decode.Decoder Msg
@@ -394,10 +508,15 @@ viewportAttributes view =
         , S.justifyCenter
         , S.overflowHidden
         , S.userSelectNone
+        , S.touchActionNone
         , S.containerSize
         , cursorStyle
         ]
-    , HtmlEvents.on "mousedown" mousePressedDecoder
+    , HtmlEvents.on "touchstart" (Decode.map TouchInputReceived touchInputDecoder)
+    , HtmlEvents.on "touchmove" (Decode.map TouchInputReceived touchInputDecoder)
+    , HtmlEvents.on "touchend" (Decode.map TouchInputReceived touchInputDecoder)
+    , HtmlEvents.on "touchcancel" (Decode.map TouchInputReceived touchInputDecoder)
+    , HtmlEvents.on "pointerdown" pointerPressedDecoder
     , HtmlEvents.preventDefaultOn "wheel"
         (Decode.map preventDefault wheelScrolledDecoder)
     , HtmlEvents.preventDefaultOn "keydown"
@@ -447,6 +566,10 @@ navigationControls zoomPercent =
             , S.flexWrap
             , S.itemsCenter
             , S.g3
+            , S.compactViewport
+                [ S.g1
+                , S.wFull
+                ]
             ]
         ]
         [ H.div
@@ -457,6 +580,9 @@ navigationControls zoomPercent =
                 , S.itemsCenter
                 , S.justifyItemsCenter
                 , S.g0p5
+                , S.compactViewport
+                    [ S.displayNone
+                    ]
                 ]
             ]
             [ panButton "↑" "pan up" PanUpClicked
@@ -464,6 +590,9 @@ navigationControls zoomPercent =
                 [ A.css
                     [ S.grid
                     , S.gridColumnsRem 3 1.625
+                    , S.coarsePointer
+                        [ S.gridColumnsRem 3 2.75
+                        ]
                     , S.itemsCenter
                     , S.justifyItemsCenter
                     , S.g0p5
@@ -485,6 +614,9 @@ navigationControls zoomPercent =
                 , S.itemsCenter
                 , S.justifyItemsCenter
                 , S.g1
+                , S.compactViewport
+                    [ S.wFull
+                    ]
                 ]
             ]
             [ H.div
@@ -494,22 +626,40 @@ navigationControls zoomPercent =
                     , S.itemsCenter
                     , S.justifyItemsCenter
                     , S.g0p5
+                    , S.coarsePointer
+                        [ S.gridColumns "2.75rem 3rem 2.75rem"
+                        ]
+                    , S.compactViewport
+                        [ S.gridColumns "2.75rem minmax(0, 1fr) 2.75rem"
+                        , S.wFull
+                        ]
                     ]
                 ]
                 [ Button.secondary "−" ZoomOutClicked
                     |> Button.iconOnly "zoom out"
                     |> Button.toHtml
-                , H.span
-                    []
-                    [ H.text (String.fromInt zoomPercent ++ "%") ]
+                , Button.secondary (String.fromInt zoomPercent ++ "%") ResetViewClicked
+                    |> Button.small
+                    |> Button.accessibleLabel ("reset view (" ++ String.fromInt zoomPercent ++ "%)")
+                    |> Button.fullWidth
+                    |> Button.toHtml
                 , Button.secondary "+" ZoomInClicked
                     |> Button.iconOnly "zoom in"
                     |> Button.toHtml
                 ]
-            , Button.secondary "reset view" ResetViewClicked
-                |> Button.small
-                |> Button.fullWidth
-                |> Button.toHtml
+            , H.div
+                [ A.css
+                    [ S.wFull
+                    , S.compactViewport
+                        [ S.displayNone
+                        ]
+                    ]
+                ]
+                [ Button.secondary "reset view" ResetViewClicked
+                    |> Button.small
+                    |> Button.fullWidth
+                    |> Button.toHtml
+                ]
             ]
         ]
 

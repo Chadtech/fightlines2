@@ -65,10 +65,12 @@ module Style exposing
     , capitalize
     , caretRed1
     , childButtons
+    , coarsePointer
     , col
     , colReverse
     , colorTransition2
     , columnGap6
+    , compactViewport
     , containerInlineSize
     , containerSize
     , contentEmpty
@@ -100,6 +102,7 @@ module Style exposing
     , fontMonospace
     , fontSizeRem
     , fontSizeValue
+    , g0
     , g0p5
     , g1
     , g1p4
@@ -385,6 +388,7 @@ module Style exposing
     , setBgColorVar
     , setPrimaryColorVar
     , shadowMenu
+    , shortLandscape
     , shrink0
     , softEdgeMask
     , squareBL
@@ -426,7 +430,10 @@ module Style exposing
     , topNeg30Pct
     , topNeg4
     , topValue
+    , touchActionManipulation
+    , touchActionNone
     , transform
+    , transformNone
     , transformOriginTopLeft
     , transformTransition
     , translateXNeg50pct
@@ -2038,6 +2045,11 @@ pt3 =
     Css.paddingTop s3
 
 
+g0 : Css.Style
+g0 =
+    Css.property "gap" "0"
+
+
 g0p5 : Css.Style
 g0p5 =
     Css.property "gap" "0.125rem"
@@ -3410,6 +3422,11 @@ transform value =
     Css.property "transform" value
 
 
+transformNone : Css.Style
+transformNone =
+    transform "none"
+
+
 focus : List Css.Style -> Css.Style
 focus =
     Css.focus
@@ -3557,3 +3574,30 @@ childButtons styles =
 disabled : List Css.Style -> Css.Style
 disabled =
     Css.disabled
+
+
+coarsePointer : List Css.Style -> Css.Style
+coarsePointer =
+    Css.Media.withMediaQuery [ "(pointer: coarse)" ]
+
+
+touchActionNone : Css.Style
+touchActionNone =
+    Css.property "touch-action" "none"
+
+
+touchActionManipulation : Css.Style
+touchActionManipulation =
+    Css.property "touch-action" "manipulation"
+
+
+compactViewport : List Css.Style -> Css.Style
+compactViewport =
+    Css.Media.withMediaQuery
+        [ "(max-width: 767px), (orientation: landscape) and (max-height: 500px) and (max-width: 1023px)" ]
+
+
+shortLandscape : List Css.Style -> Css.Style
+shortLandscape =
+    Css.Media.withMediaQuery
+        [ "(orientation: landscape) and (max-height: 500px) and (max-width: 1023px)" ]

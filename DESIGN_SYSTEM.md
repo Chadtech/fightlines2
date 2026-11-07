@@ -463,6 +463,25 @@ Refresh resumes the shared countdown; a completed pairing cannot be cancelled.
   Place a `skip this dialog` checkbox beside these actions and remember its
   Boolean in local storage. Checking it leaves the current warning open for
   confirmation; later submissions fill missing orders with holds directly.
+- Below 768px, reserve a full-width bottom row for turn controls and a bounded,
+  internally scrolling selection panel immediately above it. Keep the map in
+  the remaining space. Arrange submit/status and zoom/surrender in two columns;
+  omit the directional pad, use finger dragging to pan, and let the zoom
+  percentage reset the view. Keep camera insets based on actual overlap.
+  On short landscape screens (at most 500px high and 1023px wide), put inspection
+  beside the map and reserve the full-width turn strip below both. Use four
+  control columns from 640px wide and two below it.
+  In portrait, limit selection details to 28vh and controls to 35vh, preserving internal
+  scrolling. Use a compact unit portrait so order actions are easy to reach.
+  Place the order menu at the map's lower edge in two columns; keep it outside
+  the map's gesture surface so its contents can scroll. Buttons have at least
+  44px height on narrow screens or coarse pointers; icon buttons also have at
+  least 44px width. Keep the short version label and hide its timestamp below
+  768px, retaining release details in its accessible title.
+  One finger pans and two fingers pinch-zoom around their midpoint. Ordinary
+  taps select units and commit highlighted destinations; gesture completion and
+  cancellation must not activate a tile. Keep native page zoom available outside
+  the map, and preserve desktop mouse, wheel, and keyboard controls.
 - Selected objects supply their own titles; omit a generic selection/status heading.
   Units show their type and owning player’s name on one line, spaced to opposite
   edges, above their illustration in a nightwood3
