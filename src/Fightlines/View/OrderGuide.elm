@@ -119,4 +119,4 @@ description order =
             "infantry already standing on an intact depot or fortress spend the whole turn sabotaging it. if they survive combat, the building is destroyed. sabotage costs normal upkeep and does not damage units or freight. moving, firing, and sabotage cannot be combined."
 
         DigIn ->
-            "infantry spend their whole turn and supplies digging into trenches. protection begins at turn end and greatly reduces damage from infantry and field guns. tanks ignore trench protection. roads, buildings, and building wreckage prevent digging."
+            "infantry spend their whole turn and supplies digging into trenches. protection begins at turn end and greatly reduces damage from infantry and field guns. tank damage is reduced by 25%. roads, buildings, and building wreckage prevent digging."

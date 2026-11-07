@@ -602,7 +602,8 @@ impl Combat {
             match shooter.kind() {
                 UnitKind::Infantry => 0.15,
                 UnitKind::FieldGun => 0.06,
-                UnitKind::Tank | UnitKind::Truck => 1.0,
+                UnitKind::Tank => 0.75,
+                UnitKind::Truck => 1.0,
             }
         } else {
             1.0
@@ -632,12 +633,16 @@ impl Combat {
             * factors.defender_facing
             * factors.attacker_aim
             * factors.cover
-            * factors.ambush
-            * factors.entrenchment;
-        // Apply fortress cover to the bounded hit so even the heaviest weapon
-        // cannot bypass the bonus by exceeding the ordinary maximum damage.
-        let bounded_damage =
-            raw_damage.min(f64::from(target.hit_points().maximum())) * factors.fortification;
+            * factors.ambush;
+        let maximum_damage = f64::from(target.hit_points().maximum());
+        // Tank hits receive trench protection after the cap, so excess weapon
+        // power cannot erase the reduction. Other weapons retain their existing balance.
+        let entrenched_damage = match shooter.kind() {
+            UnitKind::Tank => raw_damage.min(maximum_damage) * factors.entrenchment,
+            _ => (raw_damage * factors.entrenchment).min(maximum_damage),
+        };
+        // Fortress cover also protects against hits that exceed the ordinary cap.
+        let bounded_damage = entrenched_damage * factors.fortification;
         // Round once, after every factor. A living armed shooter still inflicts a hit.
         let damage = if shooter.is_alive() && shooter.kind() != UnitKind::Truck {
             (bounded_damage.round() as i32).clamp(1, target.hit_points().maximum())
@@ -1489,13 +1494,12 @@ mod tests {
     }
 
     #[test]
-    fn entrenchment_protects_against_infantry_and_both_gun_attacks_but_not_tanks() -> TestResult<()>
-    {
+    fn entrenchment_protects_against_every_weapon() -> TestResult<()> {
         for (kind, combat_kind, expected) in [
             (UnitKind::Infantry, CombatKind::AttackMove, 1),
             (UnitKind::FieldGun, CombatKind::Ambush, 1),
             (UnitKind::FieldGun, CombatKind::IndirectFire, 1),
-            (UnitKind::Tank, CombatKind::AttackMove, 16),
+            (UnitKind::Tank, CombatKind::AttackMove, 12),
         ] {
             let (mut board, mut orders) = fixture(kind, UnitKind::Infantry, Coordinate::new(4, 3))?;
             board.units.get_mut(1).fixture()?.rotate(Direction::West);
@@ -1512,6 +1516,90 @@ mod tests {
                 expected
             );
         }
+        Ok(())
+    }
+
+    #[test]
+    fn tank_trench_protection_applies_after_the_cap_and_before_rounding() -> TestResult<()> {
+        for attack in [CombatKind::AttackMove, CombatKind::Ambush] {
+            for defense in [
+                CombatAction::Unprepared,
+                CombatAction::StandGround(Direction::West),
+                CombatAction::StandGround(Direction::North),
+                CombatAction::StandGround(Direction::East),
+                CombatAction::AttackMove,
+            ] {
+                for terrain in [Terrain::Plain, Terrain::Hills, Terrain::Forest] {
+                    for (fortress, expected) in [(false, 12), (true, 3)] {
+                        let position = Coordinate::new(4, 3);
+                        let (mut board, mut orders) =
+                            fixture(UnitKind::Tank, UnitKind::Infantry, position)?;
+                        board.map = Map::new(9, 9, terrain, BTreeMap::new()).fixture()?;
+                        board.units.get_mut(1).fixture()?.dig_in();
+                        orders.get_mut(1).fixture()?.action = defense;
+                        board.depots = if fortress {
+                            vec![Depot::new(BuildingKind::Fortress, position)]
+                        } else {
+                            Vec::new()
+                        };
+                        let combat = prepare_fixture(&mut board, &orders);
+                        let calculation = combat.damage_calculation(
+                            &board,
+                            board.units.first().fixture()?,
+                            board.units.get(1).fixture()?,
+                            attack,
+                        );
+                        assert_eq!(calculation.factors.entrenchment, 0.75);
+                        assert_eq!(calculation.damage, expected);
+                    }
+                }
+            }
+        }
+        // Below the cap, a half-health tank's 5-damage hit becomes 3.75,
+        // rounded once to 4. Very weak hits still deal the minimum 1 HP.
+        for (health, expected) in [(8, 4), (1, 1)] {
+            let (mut board, mut orders) =
+                fixture(UnitKind::Tank, UnitKind::Infantry, Coordinate::new(4, 3))?;
+            board.units.first_mut().fixture()?.take_damage(16 - health);
+            let target = board.units.get_mut(1).fixture()?;
+            target.rotate(Direction::West);
+            target.dig_in();
+            orders.get_mut(1).fixture()?.action = CombatAction::StandGround(Direction::West);
+            let combat = prepare_fixture(&mut board, &orders);
+            assert_eq!(
+                combat.damage(
+                    &board,
+                    board.units.first().fixture()?,
+                    board.units.get(1).fixture()?,
+                    CombatKind::AttackMove,
+                ),
+                expected,
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn full_health_entrenched_infantry_survive_a_tank_volley() -> TestResult<()> {
+        let (mut board, mut orders) =
+            fixture(UnitKind::Tank, UnitKind::Infantry, Coordinate::new(4, 3))?;
+        board.units.get_mut(1).fixture()?.dig_in();
+        orders.get_mut(1).fixture()?.action = CombatAction::Ambush(Direction::West);
+        let result = resolve_completed_movement(&board, &orders, 1)?;
+        assert_eq!(
+            result.board.units.first().fixture()?.hit_points().current(),
+            15
+        );
+        assert_eq!(
+            result.board.units.get(1).fixture()?.hit_points().current(),
+            4
+        );
+        let hits = shots(&result);
+        let tank_hit = hits
+            .iter()
+            .find(|shot| shot.attacker.kind() == UnitKind::Tank)
+            .fixture()?;
+        assert_eq!(tank_hit.damage, 12);
         Ok(())
     }
 

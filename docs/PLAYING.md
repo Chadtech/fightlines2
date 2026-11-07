@@ -37,10 +37,11 @@ and stock discarded with destroyed units are not spending. Choose **begin turn**
 **skip this dialog** dismisses it and remembers the preference in this browser.
 When the previous turn has an animation, **replay turn** on this card rewatches it
 and returns to the card. Replay is available only here, before beginning the turn.
-Choose **menu** then **resign game** to concede immediately, including after
-submitting orders. Your opponent wins, and both players see the game-over card.
+Choose **surrender** at the end of the bottom turn controls to concede, including
+after submitting orders. Confirm with **surrender**, or choose **keep fighting**
+to return to the battlefield. Your opponent wins, and both players see the game-over card.
 Choose **home** in the menu to return to the home screen. In an ongoing game,
-this resigns first and navigates only after the request succeeds. Finished games
+this surrenders first and navigates only after the request succeeds. Finished games
 return home immediately.
 Human-versus-human games end if a player stops interacting for two minutes and
 then lets a 60-second warning expire. Only the inactive player sees the warning;
@@ -163,8 +164,9 @@ join and lobby headers.
 
 ## Chat
 
-Press C while the battlefield is active, or choose **chat (c)** in the game
-menu. In the lobby, C focuses the chat field. Game chat opens a centered dialog
+Press C while the battlefield is active, including during turn playback, or choose
+**chat (c)** in the game menu. Playback continues while chat is open.
+In the lobby, C focuses the chat field. Game chat opens a centered dialog
 and focuses its message field. Enter or
 **send** sends the message and immediately closes the dialog; Escape or the close
 button cancels. Failed sends retain the draft and show a floating HTTP error
@@ -269,7 +271,8 @@ Infantry can choose **dig in** to spend their whole turn and 16 supplies plus
 normal upkeep. They cannot move or fire while digging and gain entrenchment only
 after all combat resolves. Entrenchment persists through holding, ambush, stand
 ground, and facing changes; infantry and field guns do very little damage to
-them, while tanks retain their devastating damage. Entrenchment grants no
+them, while tank hits deal 75% of their otherwise capped damage (at most 12 HP
+before fortress protection). Entrenchment grants no
 automatic firing: choose ambush on later turns to intercept enemies. Successful
 movement or boarding removes it, leaving no trench behind; a move blocked before
 departure preserves it. Infantry cannot dig on roads, supply or fuel depots,

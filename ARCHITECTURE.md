@@ -1101,6 +1101,9 @@ Its submission adapter converts these actions to the existing GraphQL input,
 using single-coordinate paths for holds and ambushes. `Game.Checks.PlannedOrder`
 verifies that conversion, including unloading from stationary trucks.
 `TurnLifecycle.Phase` owns planning, submission, waiting and playback.
+Its playback state owns the held combat Enter key; changing encounters or leaving
+playback clears it. Opening chat also clears the press, so sending a message cannot
+advance combat when Enter is released.
 `Game.OrderPlanning` owns the planning custom type and its transitions:
 `OrdinaryPlanning`, `ConfirmingSubmission`,
 `ChoosingPassengers` or `ChoosingExits`. Ordinary planning and submission
@@ -1109,7 +1112,7 @@ move, other units' orders and stage-specific passenger data. The submission
 warning and unload checklist are rendered directly from these alternatives;
 `GamePage.Model` has no separate planning-dialog state. Only one planning
 workflow can be active. Inspector reference help is independent of planning:
-`Game.View.InspectionHelp.Help` identifies unit, supply, or fuel help, or carries
+`Game.View.InspectionHelp.Help` identifies unit, supply, fuel, or cargo help, or carries
 the map tile location needed for its explanation and themed terrain portrait. The live-game
 and replay pages own the optional open help. `InspectionHelp` renders the shared
 native dialog; dismissal preserves selection and drafts. Starting live playback
@@ -1974,8 +1977,9 @@ reduced motion. `Game.Assets` includes all four committed attack atlases in back
 The theater derives a shared, rapidly decaying camera translation and rotation
 from the latest contact on either side, beginning 20ms after the projectile
 appears and settling over 160ms. Each scene moves its backdrop, figures, and
-impact overlays together; backdrop overscan prevents exposed edges. Reduced
-motion disables the shake.
+impact overlays together, except infantry scenes always stay steady, including
+trenches and bazooka teams. Backdrop overscan prevents exposed edges. Reduced
+motion disables the shake for all scenes.
 Reduced motion substitutes a steady peak-impact frame. `Game.View.CombatEffects`
 owns the board spotlight, shine, and target explosions.
 Spotlight coordinates and camera subjects resolve encounter IDs against projected
@@ -2461,7 +2465,9 @@ marks surviving diggers `Entrenched` after indirect fire and before resource
 settlement. Earlier playback frames retain the exposed state.
 
 `Combat::damage` applies incoming infantry ×0.15 and field-gun ×0.06 factors
-before final rounding; tanks bypass this factor. Entrenchment supplies no firing
+before the damage cap. Tank hits apply ×0.75 after the cap so excess weapon power
+cannot bypass trench protection. Fortress protection follows, then final rounding.
+Entrenchment supplies no firing
 or readiness. `Unit::move_to` clears it on a changed square; boarding clears it
 even for a stationary pickup. Holds and rotation preserve it. Projection reuses
 ordinary unit visibility, so hidden entrenchment never creates a map marker.

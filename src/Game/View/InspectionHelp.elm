@@ -30,6 +30,7 @@ type Help
     = UnitHelp UnitKind
     | SupplyHelp
     | FuelHelp
+    | CargoHelp
     | TerrainHelp TerrainLocation
 
 
@@ -82,6 +83,9 @@ buttonHtmlId help =
         FuelHelp ->
             "unit-fuel-info-button"
 
+        CargoHelp ->
+            "unit-cargo-info-button"
+
         TerrainHelp _ ->
             "terrain-info-button"
 
@@ -106,6 +110,9 @@ dialog stats dismissed help =
                 FuelHelp ->
                     "fuel"
 
+                CargoHelp ->
+                    "cargo"
+
                 TerrainHelp location ->
                     "about terrain: " ++ Terrain.label (Map.terrainAt location.map location.position)
 
@@ -124,6 +131,11 @@ dialog stats dismissed help =
                     H.p
                         []
                         [ H.text fuelExplanation ]
+
+                CargoHelp ->
+                    H.p
+                        []
+                        [ H.text "supplies refill provisions; fuel drums refill vehicles before upkeep, while stock lasts" ]
 
                 TerrainHelp location ->
                     terrainReference location

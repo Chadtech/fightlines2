@@ -1,11 +1,25 @@
 {
+  "description": "an exposed highway and two road loops connect bases across a wooded battlefield. the central crossroads holds the forward fuel depot, while supply caches in the northern and southern woods reward infantry infiltration and protected convoy routes.",
   "releaseStatus": "Released",
   "matchMaking": true,
-  "description": "an exposed highway and two road loops connect bases across a wooded battlefield. the central crossroads holds the forward fuel depot, while supply caches in the northern and southern woods reward infantry infiltration and protected convoy routes.",
   "width": 25,
   "height": 19,
-  "theme": "GreenForest",
+  "theme": "Desert",
   "features": [
+    {
+      "position": {
+        "x": 24,
+        "y": 9
+      },
+      "terrain": "RoadEastWest"
+    },
+    {
+      "position": {
+        "x": 0,
+        "y": 9
+      },
+      "terrain": "RoadEastWest"
+    },
     {
       "position": {
         "x": 7,
@@ -1641,29 +1655,29 @@
   "depots": [
     {
       "position": {
-        "x": 2,
-        "y": 7
+        "x": 20,
+        "y": 10
       },
       "kind": "Supply"
     },
     {
       "position": {
-        "x": 22,
-        "y": 7
+        "x": 4,
+        "y": 8
       },
       "kind": "Supply"
     },
     {
       "position": {
-        "x": 2,
-        "y": 9
+        "x": 20,
+        "y": 8
       },
       "kind": "Fuel"
     },
     {
       "position": {
-        "x": 22,
-        "y": 9
+        "x": 4,
+        "y": 10
       },
       "kind": "Fuel"
     },
@@ -1690,6 +1704,16 @@
     }
   ],
   "units": [
+    {
+      "id": 17,
+      "position": {
+        "x": 2,
+        "y": 12
+      },
+      "playerNumber": "Player1",
+      "kind": "FieldGun",
+      "direction": "East"
+    },
     {
       "id": 1,
       "position": {
@@ -1738,16 +1762,6 @@
       },
       "playerNumber": "Player1",
       "kind": "Tank",
-      "direction": "East"
-    },
-    {
-      "id": 6,
-      "position": {
-        "x": 2,
-        "y": 6
-      },
-      "playerNumber": "Player1",
-      "kind": "FieldGun",
       "direction": "East"
     },
     {

@@ -1479,6 +1479,7 @@ selectionView model =
                     { units = model.battlefield.units
                     , ownPlayers = [ model.position.player ]
                     , onSelectPassenger = CargoUnitClicked
+                    , onHelp = InspectionHelpClicked
                     }
                     unit
                 ]

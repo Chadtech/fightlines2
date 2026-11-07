@@ -1,9 +1,11 @@
 port module Game.Checks.TurnLifecycle exposing (main)
 
+import Api.Enum.BuildingKind as BuildingKind
 import Api.Enum.InactivityRenewalReason exposing (InactivityRenewalReason)
 import Api.Enum.PlayerNumber as PlayerNumber
 import Game.Coordinate as Coordinate
 import Game.CurrentTurn as CurrentTurn
+import Game.Depot exposing (Depot)
 import Game.DestinationFeedback exposing (DestinationFeedback(..))
 import Game.Inactivity as Inactivity exposing (Inactivity)
 import Game.Inspection as Inspection exposing (Inspection(..))
@@ -64,10 +66,81 @@ setObservationTurn turn model =
 main : Program () () Never
 main =
     Platform.worker
-        { init = \_ -> ( (), results (checks ++ unloadChecks ++ currentTurnChecks ++ outcomeChecks ++ activityChecks) )
+        { init = \_ -> ( (), results (checks ++ combatEnterChecks ++ unloadChecks ++ currentTurnChecks ++ outcomeChecks ++ activityChecks) )
         , update = \_ model -> ( model, Cmd.none )
         , subscriptions = \_ -> Sub.none
         }
+
+
+combatEnterChecks : List String
+combatEnterChecks =
+    let
+        building : Int -> Depot
+        building x =
+            { kind = BuildingKind.Fortress
+            , position = { x = x, y = 1 }
+            , stock = Nothing
+            , hp = { current = 16, maximum = 16 }
+            }
+
+        before : TurnPlayback.Frame
+        before =
+            { depots = [ building 1, building 2 ]
+            , supplyCrates = []
+            , departures = []
+            , losses = []
+            , sabotages = []
+            , indirectImpacts = []
+            , shots = []
+            , durationMs = 180
+            , units = []
+            , visibleTiles = []
+            }
+
+        after : TurnPlayback.Frame
+        after =
+            { before | sabotages = [ { x = 1, y = 1 }, { x = 2, y = 1 } ] }
+
+        advance : Float -> Phase -> Maybe Phase
+        advance delta phase =
+            TurnLifecycle.tick delta phase |> Maybe.map .phase
+
+        showing : Maybe Phase
+        showing =
+            TurnLifecycle.startTurn False [ before, after ]
+                |> advance 180
+                |> Maybe.andThen (advance 300)
+
+        held : Maybe Phase
+        held =
+            showing |> Maybe.map (TurnLifecycle.setCombatEnterHeld True)
+
+        nextEncounter : Maybe Phase
+        nextEncounter =
+            held |> Maybe.andThen TurnLifecycle.continueCombat |> Maybe.map .phase
+
+        finished : Maybe Phase
+        finished =
+            nextEncounter
+                |> Maybe.andThen (advance 300)
+                |> Maybe.map (TurnLifecycle.setCombatEnterHeld True)
+                |> Maybe.andThen TurnLifecycle.continueCombat
+                |> Maybe.map .phase
+                |> Maybe.andThen (advance 1000)
+    in
+    List.concat
+        [ expect "combat enter is held only during an open combat panel"
+            ((Maybe.map TurnLifecycle.combatEnterHeld held == Just True)
+                && not (TurnLifecycle.combatEnterHeld (TurnLifecycle.setCombatEnterHeld True (Planning OrderPlanning.init)))
+                && not (TurnLifecycle.combatEnterHeld (TurnLifecycle.setCombatEnterHeld True (TurnLifecycle.startTurn False [ before, after ])))
+            )
+        , expect "combat enter survives animation within the same encounter"
+            (held |> Maybe.andThen (advance 1) |> Maybe.map TurnLifecycle.combatEnterHeld |> (==) (Just True))
+        , expect "continuing to another encounter clears the previous enter press"
+            (Maybe.map TurnLifecycle.combatEnterHeld nextEncounter == Just False)
+        , expect "finishing playback discards combat enter state"
+            (Maybe.map TurnLifecycle.combatEnterHeld finished == Just False)
+        ]
 
 
 activityChecks : List String

@@ -24,8 +24,9 @@ can list, select, and playtest all maps. Remote requests remain limited to relea
 maps even when the editor is enabled.
 Released maps with `"matchMaking": true` form the public match making pool.
 The field defaults to false. Match making always excludes drafts, including for
-local editor users, and chooses uniformly from the eligible maps. The initial
-pool is Supply Point, Ridgeway, Three Crossings, and Convoy Country. In the editor, toggle
+local editor users, and chooses uniformly from the eligible maps. The current
+pool is Supply Point, Ridgeway, Three Crossings, Convoy Country, and Bastion Pass.
+In the editor, toggle
 **match making** and save to change a map's eligibility without a rebuild.
 An empty pool prevents new queue entries and games, with an explicit error;
 existing matched games keep their original boards.
@@ -180,9 +181,9 @@ gun and trucks near the base. Depot squares stay clear.
   Two field guns and two tanks per side support assaults, while infantry can
   occupy a fortress for protection or spend a later turn sabotaging it.
   Fortresses supply no resources: four rear supply depots, two rear fuel depots,
-  and two contested forward supply caches make deliveries and interdiction useful.
+  and contested forward supply and fuel caches make deliveries and interdiction useful.
   Infantry cannot dig in on fortress squares, even where the underlying ground is plain.
-- **Convoy Country**: a mirrored green battlefield built around fuel-efficient,
+- **Convoy Country**: a desert battlefield built around fuel-efficient,
   exposed roads and concealed woodland approaches. A direct east–west highway,
   two road loops, and a central connecting road offer flexible convoy routes.
   Hills overlook the approaches, and forest pockets beside the highway offer
@@ -205,7 +206,7 @@ gun and trucks near the base. Depot squares stay clear.
 - **Three Crossings**: a mirrored green river battlefield showcasing animated,
   impassable water. Northern and southern causeways and a central island crossing
   are the only land routes between banks. Each crossing has a neutral supply
-  depot; home supply and fuel depots support flanking and transport. Forests
+  depot; home fuel depots support flanking and transport. Forests
   conceal the bank approaches, and hills overlook the crossings. Rocky banks
   surround the river, with mirrored beach coves and sandy island corners. Each player
   commands three infantry, two tanks, a field gun, and two trucks.

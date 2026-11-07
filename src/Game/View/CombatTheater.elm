@@ -1636,10 +1636,18 @@ portraitScene scenery panel health unit =
                         health.after.current
                     )
                 ++ " remaining"
+
+        transform : String
+        transform =
+            if unit.kind == UnitKind.Infantry then
+                "none"
+
+            else
+                rumbleTransform panel
     in
     scene
         (Just path)
-        (rumbleTransform panel)
+        transform
         description
         (CombatFormation.toSvgWithCalibration
             (BackdropCalibration.find

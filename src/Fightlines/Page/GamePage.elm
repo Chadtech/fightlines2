@@ -257,6 +257,7 @@ type Msg
     | ChatSendReceived Chat.Submission (ApiRequest.Response Chat.Message)
     | ChatOverlayExpired Int
     | ChatScrollCompleted (Result Browser.Dom.Error ())
+    | CombatEnterPressed
     | InspectorSizeReceived Browser.Dom.Element (Result Browser.Dom.Error Browser.Dom.Element)
     | ControlsSizeReceived { battlefield : Browser.Dom.Element, inspector : Browser.Dom.Element } (Result Browser.Dom.Error Browser.Dom.Element)
     | CameraReturnFinished
@@ -457,6 +458,21 @@ setFeedback feedback model =
 setCurrentTurn : CurrentTurn.Model -> Model -> Model
 setCurrentTurn currentTurn model =
     { model | currentTurn = currentTurn }
+
+
+setCombatEnterHeld : Bool -> Model -> Model
+setCombatEnterHeld held model =
+    model
+        |> setCurrentTurn
+            (CurrentTurn.setPhase
+                (TurnLifecycle.setCombatEnterHeld held model.currentTurn.phase)
+                model.currentTurn
+            )
+
+
+canContinueCombatWithEnter : Model -> Bool
+canContinueCombatWithEnter model =
+    TurnLifecycle.combatEnterHeld model.currentTurn.phase && not (hasDialog model)
 
 
 setMenu : Menu -> Model -> Model
@@ -726,6 +742,11 @@ hasDialog model =
 canOpenMenu : Model -> Bool
 canOpenMenu model =
     not (hasDialog model) && (playback model == Nothing)
+
+
+canOpenChat : Model -> Bool
+canOpenChat model =
+    not (hasDialog model)
 
 
 plannedOrders : Model -> List PlannedOrder
@@ -1636,14 +1657,26 @@ handleBattlefieldMsg msg model =
                 |> mapNavigation BattlefieldNavigation.resetViewport
 
 
+canSurrender : Model -> Bool
+canSurrender model =
+    canOpenMenu model
+        && not model.resigning
+        && (model.currentTurn.outcome == Nothing)
+
+
 requestResignation : ResignationDestination -> Model -> ( Model, Eff Msg )
 requestResignation destination model =
     let
         canRequestResignation : Bool
         canRequestResignation =
-            (model.menu == MainMenu)
-                && not model.resigning
-                && (model.currentTurn.outcome == Nothing)
+            case destination of
+                RemainInGame ->
+                    canSurrender model
+
+                GoHome ->
+                    (model.menu == MainMenu)
+                        && not model.resigning
+                        && (model.currentTurn.outcome == Nothing)
     in
     if canRequestResignation then
         ( model
@@ -1668,7 +1701,7 @@ resignGame lobbyId destination model =
     if canResign then
         ( model
             |> setResigning True
-            |> setMenu MainMenu
+            |> setMenu MenuClosed
         , Api.Mutation.resignGame { id = LobbyId.toString lobbyId } snapshotSelection
             |> ApiRequest.mutationRequest
             |> E.request (ResignResponseReceived destination)
@@ -1884,8 +1917,9 @@ chatExpiration model =
 
 openChat : Model -> ( Model, Eff Msg )
 openChat model =
-    if canOpenMenu model then
+    if canOpenChat model then
         ( model
+            |> setCombatEnterHeld False
             |> setChat (Chat.open model.chat)
         , E.focus { htmlId = ChatView.inputHtmlId } FocusCompleted
         )
@@ -2003,6 +2037,9 @@ focus management, hover and passive pointer movement never count as activity.
 isUserInteraction : Msg -> Bool
 isUserInteraction msg =
     case msg of
+        CombatEnterPressed ->
+            False
+
         StillHereClicked ->
             True
 
@@ -2330,6 +2367,11 @@ superUpdate lobbyId msg model =
 update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 update lobbyId msg model =
     case msg of
+        CombatEnterPressed ->
+            model
+                |> setCombatEnterHeld (not (hasDialog model))
+                |> E.withOut
+
         StillHereClicked ->
             model |> E.withOut
 
@@ -3124,6 +3166,9 @@ Clicks ignored after panning also stay silent.
 playAudio : Msg -> Model -> Audio.Event
 playAudio msg model =
     case msg of
+        CombatEnterPressed ->
+            Audio.none
+
         StillHereClicked ->
             Audio.confirm
 
@@ -3384,9 +3429,6 @@ playAudio msg model =
                 GameMenu.ResignationConfirmed ->
                     Audio.confirm
 
-                GameMenu.ResignClicked ->
-                    Audio.affirm
-
                 GameMenu.HomeClicked ->
                     Audio.confirm
 
@@ -3551,6 +3593,9 @@ playAudio msg model =
                 TurnControls.SubmitClicked ->
                     Audio.confirm
 
+                TurnControls.SurrenderClicked ->
+                    Audio.affirm
+
         RequestRetryClicked ->
             Audio.confirm
 
@@ -3571,7 +3616,11 @@ playAudio msg model =
                             Audio.none
 
                         PlaybackPresentation.CombatEnterReleased ->
-                            Audio.confirm
+                            if canContinueCombatWithEnter model then
+                                Audio.confirm
+
+                            else
+                                Audio.none
 
                         PlaybackPresentation.CombatSeeMapReleased ->
                             Audio.none
@@ -3745,9 +3794,6 @@ handleGameMenuMsg lobbyId msg model =
                 (GameMenu.FocusReturned >> GameMenuMsg)
             )
 
-        GameMenu.ResignClicked ->
-            requestResignation RemainInGame model
-
         GameMenu.ResignationConfirmed ->
             case model.menu of
                 ConfirmingResignation destination ->
@@ -3759,13 +3805,21 @@ handleGameMenuMsg lobbyId msg model =
 
         GameMenu.ResignationCanceled ->
             case model.menu of
-                ConfirmingResignation _ ->
-                    ( model
-                        |> setMenu MainMenu
-                    , E.focus
-                        { htmlId = GameMenu.closeButtonHtmlId }
-                        (GameMenu.FocusReturned >> GameMenuMsg)
-                    )
+                ConfirmingResignation destination ->
+                    case destination of
+                        RemainInGame ->
+                            ( model
+                                |> setMenu MenuClosed
+                            , E.focus { htmlId = TurnControls.surrenderButtonHtmlId } FocusCompleted
+                            )
+
+                        GoHome ->
+                            ( model
+                                |> setMenu MainMenu
+                            , E.focus
+                                { htmlId = GameMenu.closeButtonHtmlId }
+                                (GameMenu.FocusReturned >> GameMenuMsg)
+                            )
 
                 _ ->
                     model
@@ -3866,6 +3920,9 @@ handleTurnControlsMsg lobbyId msg model =
         TurnControls.SubmitClicked ->
             requestSubmission lobbyId model
 
+        TurnControls.SurrenderClicked ->
+            requestResignation RemainInGame model
+
 
 canSubmitWithKeyboard : Model -> Bool
 canSubmitWithKeyboard model =
@@ -3948,8 +4005,16 @@ handleCurrentTurnMsg lobbyId msg model =
                     advanceCurrentPlayback delta model
 
                 PlaybackPresentation.CombatEnterReleased ->
-                    continueCombat model
-                        |> presentPlaybackTransition model
+                    if canContinueCombatWithEnter model then
+                        model
+                            |> setCombatEnterHeld False
+                            |> continueCombat
+                            |> presentPlaybackTransition model
+
+                    else
+                        model
+                            |> setCombatEnterHeld False
+                            |> E.withOut
 
                 PlaybackPresentation.CombatSeeMapReleased ->
                     setCombatMapView TurnPlayback.CardVisible model
@@ -4460,6 +4525,7 @@ battlefieldSelectionView model =
                         { units = model.units
                         , ownPlayers = ownPlayerNumbers model
                         , onSelectPassenger = CargoUnitClicked
+                        , onHelp = InspectionHelpClicked
                         }
                         unit
                     ]
@@ -4505,11 +4571,7 @@ movementView model =
                         ]
 
                     else if planningLocked model then
-                        [ H.p
-                            []
-                            [ H.text "orders are locked while waiting or playing the turn."
-                            ]
-                        ]
+                        []
 
                     else if isChoosingUnload model then
                         []
@@ -5458,19 +5520,7 @@ gameMenuDialog : Model -> () -> Maybe (Dialog Msg)
 gameMenuDialog model _ =
     case model.menu of
         MainMenu ->
-            let
-                status : GameMenu.Status
-                status =
-                    if model.resigning then
-                        GameMenu.Resigning
-
-                    else if model.currentTurn.outcome == Nothing then
-                        GameMenu.ActiveGame
-
-                    else
-                        GameMenu.FinishedGame
-            in
-            Just (GameMenu.dialog status |> Dialog.map GameMenuMsg)
+            Just (GameMenu.dialog { resigning = model.resigning } |> Dialog.map GameMenuMsg)
 
         ConfirmingResignation destination ->
             Just
@@ -5551,7 +5601,7 @@ turnAnnouncement model =
             victory "the opposing army has no surviving combat units" winner
 
         Just (GameOutcome.Resignation winner) ->
-            victory "the game ended by resignation" winner
+            victory "the game ended by surrender" winner
 
         Just (GameOutcome.Inactivity (Just winner)) ->
             let
@@ -5675,6 +5725,17 @@ submissionWarning model =
 turnPanel : Model -> Html Msg
 turnPanel model =
     let
+        surrenderState : TurnControls.SurrenderState
+        surrenderState =
+            if model.resigning then
+                TurnControls.SurrenderPending
+
+            else if canSurrender model then
+                TurnControls.SurrenderAvailable
+
+            else
+                TurnControls.SurrenderUnavailable
+
         ownStatus : String
         ownStatus =
             case model.currentTurn.phase of
@@ -5721,6 +5782,8 @@ turnPanel model =
             opponentStatus
             model.currentTurn.outcome
         , Lazy.lazy viewControls zoomPercent
+        , TurnControls.surrender surrenderState
+            |> H.map TurnControlsMsg
         ]
 
 
@@ -5765,7 +5828,7 @@ turnFeedback players ownStatus opponentStatus outcome =
                                 "won"
 
                             else
-                                "resigned"
+                                "surrendered"
 
                         Just (GameOutcome.Inactivity (Just winner)) ->
                             if player.playerNumber == winner then
@@ -5836,10 +5899,10 @@ requestErrorCard model =
 
                 Just (CurrentTurn.ResignationError message) ->
                     Just
-                        { title = "couldn’t resign"
+                        { title = "couldn’t surrender"
                         , message = message
-                        , guidance = "your resignation has not been confirmed."
-                        , retryEnabled = canOpenMenu model && not model.resigning && (model.currentTurn.outcome == Nothing)
+                        , guidance = "your surrender has not been confirmed."
+                        , retryEnabled = canSurrender model
                         }
 
                 _ ->
@@ -5973,8 +6036,41 @@ panNavigation _ =
 
 chatShortcut : Model -> Sub Msg
 chatShortcut model =
-    if canOpenMenu model && not model.shared.devPanelOpen then
+    if canOpenChat model && not model.shared.devPanelOpen then
         Browser.Events.onKeyDown (Decode.map ChatMsg ChatView.openKeyDecoder)
+
+    else
+        Sub.none
+
+
+{-| Only a press begun outside a dialog may advance combat on release.
+Sending chat closes its dialog before Enter is released.
+-}
+combatEnterShortcut : Model -> Sub Msg
+combatEnterShortcut model =
+    let
+        firstPress : Bool -> Decode.Decoder Msg
+        firstPress repeated =
+            if repeated then
+                Decode.fail "held enter key"
+
+            else
+                Decode.at [ "target", "tagName" ] Decode.string
+                    |> Decode.andThen outsideControl
+
+        outsideControl : String -> Decode.Decoder Msg
+        outsideControl tag =
+            if List.member tag [ "INPUT", "TEXTAREA", "SELECT", "BUTTON" ] then
+                Decode.fail "control handles its own enter key"
+
+            else
+                HtmlEvent.enter CombatEnterPressed
+    in
+    if not (hasDialog model) && (combatEncounter model /= Nothing) then
+        Browser.Events.onKeyDown
+            (Decode.field "repeat" Decode.bool
+                |> Decode.andThen firstPress
+            )
 
     else
         Sub.none
@@ -5984,6 +6080,7 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
         [ chatShortcut model
+        , combatEnterShortcut model
         , Time.every 1000 ChatPollElapsed
         , Browser.Events.onResize (\_ _ -> WindowResized)
         , Time.every 400 AnimationTimerElapsed

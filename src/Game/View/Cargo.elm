@@ -9,11 +9,11 @@ import Game.Supply as Supply
 import Game.Unit as Unit exposing (Unit)
 import Game.UnitId as UnitId exposing (UnitId)
 import Game.View.CargoPassenger as CargoPassenger
+import Game.View.InspectionHelp as InspectionHelp
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
 import View.Aria as Aria
-import View.InfoMarker as InfoMarker
 
 
 {-| Show the available ground load using the same inset freight row as carried cargo.
@@ -38,6 +38,7 @@ toHtml :
     , passengers : List Unit
     , freight : List Supply.CargoStock
     , onSelectPassenger : UnitId -> msg
+    , onHelp : InspectionHelp.Help -> msg
     }
     -> Html msg
 toHtml config =
@@ -100,49 +101,33 @@ toHtml config =
             , S.g2
             ]
         ]
-        [ H.details
-            []
-            [ H.summary
-                [ Aria.label "about cargo replenishment"
-                , A.css
+        [ H.div
+            [ A.css
+                [ S.row
+                , S.itemsCenter
+                , S.justifySpaceBetween
+                , S.flexWrap
+                , S.g2
+                ]
+            ]
+            [ H.span
+                [ A.css
                     [ S.row
                     , S.itemsCenter
-                    , S.justifySpaceBetween
-                    , S.flexWrap
                     , S.g2
-                    , S.pointerCursor
-                    , S.listStyleNone
-                    , S.hideDetailsMarker
-                    ]
-                ]
-                [ H.span
-                    [ A.css
-                        [ S.row
-                        , S.itemsCenter
-                        , S.g2
-                        , S.textGray5
-                        ]
-                    ]
-                    [ H.text "cargo"
-                    , InfoMarker.toHtml
-                    ]
-                , H.span
-                    [ A.css
-                        [ S.noWrap
-                        , S.tabularNums
-                        ]
-                    ]
-                    [ H.text (String.fromInt occupiedSlots ++ " / " ++ String.fromInt config.capacity ++ " slots") ]
-                ]
-            , H.p
-                [ A.css
-                    [ S.bgYellow2
                     , S.textGray5
-                    , S.p2
-                    , S.mt2
                     ]
                 ]
-                [ H.text "supplies refill provisions; fuel drums refill vehicles before upkeep, while stock lasts" ]
+                [ H.text "cargo"
+                , InspectionHelp.button { onHelp = config.onHelp } "about cargo replenishment" InspectionHelp.CargoHelp
+                ]
+            , H.span
+                [ A.css
+                    [ S.noWrap
+                    , S.tabularNums
+                    ]
+                ]
+                [ H.text (String.fromInt occupiedSlots ++ " / " ++ String.fromInt config.capacity ++ " slots") ]
             ]
         , H.div
             [ A.css

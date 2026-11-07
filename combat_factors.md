@@ -2,7 +2,7 @@
 - field-gun crews remain exposed regardless of firing readiness; infantry have a ×3 damage multiplier against them
 - field guns should obliterate most things, including tanks, except infantry dug into trenches, which they should do very little damage to
 - tanks should devastate field guns at direct contact unless the tank is in the firing area of a ready gun that can still fire
-- infantry should take little damage when dug in, except from tanks, who will obliterate them
+- infantry should take little damage when dug in; tank hits deal 75% of their otherwise capped damage
 - Units that are not battle ready should pretty much always lose at a great cost. Unready tanks should take big losses to ready infantry
 - Ready tanks should obliterate infantry in frontal mutual combat; infantry should barely damage ready tanks except when ambushing their flank or rear
 - Unready units do not establish a front, flank, or rear defense
@@ -15,7 +15,13 @@
 
 Damage is deterministic and calculated in Rust for ambushes, attack moves, and indirect fire:
 
-`round(base power × min(1, attacker HP / target HP)² × matchup × readiness × defender facing × attacker aim × cover × ambush advantage × entrenchment)`
+`raw = base power × min(1, attacker HP / target HP)² × matchup × readiness × defender facing × attacker aim × cover × ambush advantage`
+
+For tanks, cap `raw` at the target's maximum HP, then apply entrenchment (×0.75
+against entrenched infantry). For other weapons, apply entrenchment before the
+cap. Apply fortress protection (×0.25 when present), then round once and enforce
+the minimum hit. Applying tank trench protection after the cap prevents excess
+weapon power from erasing the reduction.
 
 The health ratio uses both units' current HP before the volley. A 5 HP attacker
 against a 5 HP target has the same weapon power as a 16 HP attacker against a
@@ -38,7 +44,7 @@ chosen to express the expectations above rather than a fixed outcome table.
 | Hills or forest cover | ×0.85 incoming damage |
 | Ambush firing on an attack mover | ×1.125 |
 | Infantry ambushing a ready tank's flank or rear | ×5 instead of the ordinary ambush factor; applies to all forms of tank readiness |
-| Entrenched infantry | incoming infantry damage ×0.15; incoming field-gun damage ×0.06 (direct and indirect); tank damage unchanged |
+| Entrenched infantry | incoming infantry damage ×0.15; incoming field-gun damage ×0.06 (direct and indirect); tank damage ×0.75 after the damage cap |
 
 Battle readiness means an ambush or stand-ground order, or an attack-move order with enough
 supplies to fire while preserving upkeep. An attack mover that already fired
@@ -90,6 +96,8 @@ use ambush shots. Readiness does not grant return fire by itself.
 | Tank | Unready infantry | 16 | 0 |
 | Tank | Ready infantry on open ground | 16 | 0 |
 | Tank | Ready infantry on a hill | 16 | 0 |
+| Tank | Ready entrenched infantry on open ground | 12 | 4 |
+| Tank | Unready entrenched infantry | 12 | 4 |
 | Tank | Unready tank | 16 | 0 |
 | Tank | Ready tank | 8 | 8 |
 | Tank | Ready tank hit from the flank | 12 | 4 |
@@ -174,8 +182,11 @@ infantry cannot dig in during their unloading turn. Roads, depots, fortresses,
 and building wreckage also prevent digging; adjacent squares remain eligible.
 
 Full-health, head-on attacks against ready entrenched infantry on open ground
-inflict 1 HP from infantry, 1 HP from a field gun (direct or indirect), and 16 HP
+inflict 1 HP from infantry, 1 HP from a field gun (direct or indirect), and 12 HP
 from a tank. Against holding entrenched infantry, infantry deal 2 HP and field
-guns deal 2 HP. Health, facing, cover, readiness, and the existing minimum 1 HP
+guns deal 2 HP; a full-health tank still deals 12 HP. Tanks retain their ×2.5
+infantry matchup, with trench protection reducing the capped hit by 25% before
+rounding. Full-health entrenched infantry therefore survive one tank hit with
+at least 4 HP. Health, facing, cover, readiness, and the existing minimum 1 HP
 hit still apply. Entrenchment changes incoming damage without adding return
 fire, range, visibility, or offensive power.

@@ -365,19 +365,20 @@ Refresh resumes the shared countdown; a completed pairing cannot be cancelled.
   menu button; keep the turn label at a 1.875rem minimum height.
   Keep the menu button raised when disabled, including while the menu is open.
   Open a centered native menu dialog
-  with `resign game` at the top and a primary `close` action at the bottom;
+  with `settings` at the top and a primary `close` action at the bottom;
   Escape also returns to the battlefield.
-  Enable `settings` to open the settings workspace described below. Enable the red danger `resign game` action while the
-  game is active, including after submitting orders; show `resigning…` while its
-  request is pending. Use the same spacing between all menu actions, including resignation.
-  Both `resign game` and `home` require confirmation before resigning an active game.
-  Explain that the opponent wins and the action cannot be undone; focus the primary
-  `cancel` button first and use a red confirmation button. Cancel or Escape returns
-  to the menu. Resignation opens the existing game-over card for both
-  players, naming the winner and explaining that the game ended by resignation.
-  Add a secondary `home` action that resigns an active game before navigating
+  Enable `settings` to open the settings workspace described below.
+  Keep surrender out of the menu. Both the turn strip's `surrender` and the menu's
+  `home` require confirmation before surrendering an active game.
+  Title the confirmation `surrender?`, explain that the opponent wins and the action
+  cannot be undone, and focus the gold `keep fighting` button first. Use a red
+  `surrender` confirmation (`surrender and go home` when leaving).
+  Keep fighting or Escape returns to the originating controls and restores focus.
+  Surrender opens the existing game-over card for both players, naming the winner
+  and explaining that the game ended by surrender.
+  Add a secondary `home` action that surrenders an active game before navigating
   home, waits for success, and stays in the game on failure. Disable it while
-  resignation is pending; finished games navigate directly home.
+  surrender is pending; finished games navigate directly home.
   Disable the menu
   during playback and other dialogs, and close it when new playback starts.
 - The game is a full-viewport workspace. Render the board directly on the page
@@ -410,6 +411,10 @@ Refresh resumes the shared countdown; a completed pairing cannot be cancelled.
   and right edges, 0.5rem vertical padding and 0.75rem horizontal padding.
   Keep the large submit button on the left, list every player's name and status
   in the middle, and place pan/zoom/reset alongside with 1.5rem between groups.
+  Put a regular-size red `surrender` button last, after the camera controls and
+  separated from submit by the other groups. Enable it during active planning
+  and after submitting orders; disable it during playback, dialogs, and finished
+  games. Show disabled `surrendering…` while its request is pending.
   Use plain compact roster rows in a 16.5rem area, allowing four player rows
   without a separate inset surface. Show names without an own-player suffix,
   truncate long names with their full text available on hover, and reserve 14ch
@@ -477,7 +482,7 @@ Refresh resumes the shared countdown; a completed pairing cannot be cancelled.
   Stack the portrait above the text on very narrow screens. Mouse focus has no
   enclosing outline; keyboard focus underlines the terrain row. Keep it tied to
   the selected object (or a passenger's carrier), and clear it with selection.
-- Unit, supply, fuel, and terrain info markers open centered native reference dialogs
+- Unit, supply, fuel, cargo, and terrain info markers open centered native reference dialogs
   with the existing explanations, a title-bar close button, and a secondary
   `close` action. Escape dismisses help while preserving selection and order
   planning. Keep the inspector layout stable when help opens. Use the shared
@@ -903,8 +908,10 @@ the projectile. The moving projectile approach and contact each get 10ms, follow
 flash and 30ms pressure blast. Only 20ms remains for the two clearing frames. The shockwave blows
 apart and vanishes, with no ember or lingering smoke phase. Each casualty fades
 beneath the blast between 20ms and 50ms. Mirror the strike from the opponent's side. Survivors
-remain in place. Every contact shakes both backdrops and formations together,
-with a sharp translation and slight rotation that decays to rest over 160ms.
+remain in place. Infantry scenes stay steady through firing and incoming hits,
+including trenches and bazooka teams. Other unit scenes shake their backdrop
+and formation together on contact, with a sharp translation and slight rotation
+that decays to rest over 160ms.
 Start at impact, after the 20ms projectile approach; later contacts kick again.
 Overscan backdrop artwork to avoid exposed edges, keep the card controls still,
 and suppress the shake for reduced motion. Damage within a count band shows an impact without inventing
@@ -995,7 +1002,7 @@ shows passengers and freight together in one inset nightwood cargo list, with
 subtle dividers between rows. Each freight row shows its illustrated sprite, name,
 stock beneath the name, and a slim gold fill bar; saved unloading destinations
 appear beneath that stock. Keep the shared slot count in the cargo heading and
-replenishment help in its native info disclosure. Passenger rows retain their
+replenishment help in a native info dialog. Passenger rows retain their
 inspection action and resource details. An empty cargo tray reads `empty`.
 Saving a truck destination on a depot opens a modal titled `load supply crates`
 asking `how many crates would you like to load?`, with compact `none`, `1`, and
@@ -1272,8 +1279,10 @@ restores the ordinary infantry sprite, and leaves no terrain graphic behind.
 
 ## Chat
 
-C on the live battlefield or **chat (c)** in the game menu opens a compact native
-dialog in the center of the screen with a transparent backdrop. Focus its inset green text
+C on the live battlefield, including during turn playback, or **chat (c)** in the
+game menu opens a compact native dialog in the center of the screen with a
+transparent backdrop. Playback continues while chat is open; chat's Enter key
+must not advance combat underneath it. Focus its inset green text
 field, preserve planned orders, and suspend gameplay shortcuts while it is open.
 In the lobby, C focuses its always-visible chat field. Ignore the shortcut in text
 fields, native select controls, and other dialogs. Enter retains ordinary

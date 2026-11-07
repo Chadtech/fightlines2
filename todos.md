@@ -6,12 +6,10 @@
 
 
 ## Immediately
-- Match Making
-- Some kind of timeout for inactive players
-- host needs to be able to kick players
-- Admin Page with controls and feature flags
+
 
 ## Soon
+- feature flags
 - Tutorial missions
 - Manufacturing and cities
 - Air planes and boats

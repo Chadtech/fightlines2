@@ -1,12 +1,15 @@
 module Game.View.TurnControls exposing
     ( Activity(..)
     , Msg(..)
+    , SurrenderState(..)
     , feedback
     , htmlId
     , panel
     , playerRow
     , replayPanel
     , submit
+    , surrender
+    , surrenderButtonHtmlId
     )
 
 import Api.Enum.PlayerNumber as PlayerNumber exposing (PlayerNumber)
@@ -31,11 +34,23 @@ type Activity
 
 type Msg
     = SubmitClicked
+    | SurrenderClicked
+
+
+type SurrenderState
+    = SurrenderAvailable
+    | SurrenderUnavailable
+    | SurrenderPending
 
 
 htmlId : String
 htmlId =
     "game-controls"
+
+
+surrenderButtonHtmlId : String
+surrenderButtonHtmlId =
+    htmlId ++ "-surrender"
 
 
 panel : List (Html msg) -> Html msg
@@ -118,6 +133,26 @@ submit activity label =
         ]
 
 
+surrender : SurrenderState -> Html Msg
+surrender state =
+    let
+        button : Button.Button Msg
+        button =
+            case state of
+                SurrenderAvailable ->
+                    Button.danger "surrender" SurrenderClicked
+
+                SurrenderUnavailable ->
+                    Button.disabled "surrender"
+
+                SurrenderPending ->
+                    Button.disabled "surrendering…"
+    in
+    button
+        |> Button.withHtmlId surrenderButtonHtmlId
+        |> Button.toHtml
+
+
 feedback : List (Html msg) -> Html msg
 feedback children =
     H.div
@@ -143,7 +178,7 @@ playerRowView name playerNumber status =
     H.li
         [ A.css
             [ S.grid
-            , S.gridColumns "minmax(0, 1fr) 14ch"
+            , S.gridColumns "minmax(0, 1fr) minmax(0, 14ch)"
             , S.g2
             , S.itemsCenter
             , S.minH6
@@ -168,7 +203,7 @@ playerRowView name playerNumber status =
             ]
         , H.span
             [ A.css
-                [ S.noWrap
+                [ S.minW0
                 ]
             ]
             [ H.text status

@@ -1,7 +1,7 @@
 {
+  "description": "a river divides the battlefield, with northern and southern causeways and a central island linking the banks. each crossing holds a supply depot, with woods and hills covering the approaches and home depots supporting transport and armor.",
   "releaseStatus": "Released",
   "matchMaking": true,
-  "description": "a river divides the battlefield, with northern and southern causeways and a central island linking the banks. each crossing holds a supply depot, with woods and hills covering the approaches and home depots supporting transport and armor.",
   "width": 21,
   "height": 17,
   "theme": "GreenForest",
@@ -948,17 +948,17 @@
   "depots": [
     {
       "position": {
-        "x": 1,
-        "y": 8
-      },
-      "kind": "Supply"
-    },
-    {
-      "position": {
         "x": 19,
         "y": 8
       },
-      "kind": "Supply"
+      "kind": "Fuel"
+    },
+    {
+      "position": {
+        "x": 1,
+        "y": 8
+      },
+      "kind": "Fuel"
     },
     {
       "position": {
@@ -980,20 +980,6 @@
         "y": 13
       },
       "kind": "Supply"
-    },
-    {
-      "position": {
-        "x": 2,
-        "y": 12
-      },
-      "kind": "Fuel"
-    },
-    {
-      "position": {
-        "x": 18,
-        "y": 12
-      },
-      "kind": "Fuel"
     }
   ],
   "units": [

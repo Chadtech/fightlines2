@@ -1,6 +1,5 @@
 module Fightlines.View.GameMenu exposing
     ( Msg(..)
-    , Status(..)
     , buttonHtmlId
     , closeButtonHtmlId
     , dialog
@@ -35,16 +34,9 @@ type Msg
     | PrivacyPolicyClicked
     | CloseClicked
     | FocusReturned (Result Browser.Dom.Error ())
-    | ResignClicked
     | ResignationConfirmed
     | ResignationCanceled
     | HomeClicked
-
-
-type Status
-    = ActiveGame
-    | Resigning
-    | FinishedGame
 
 
 
@@ -144,37 +136,21 @@ panel config =
         ]
 
 
-dialog : Status -> Dialog Msg
-dialog status =
+dialog : { resigning : Bool } -> Dialog Msg
+dialog config =
     let
         homeButton : Button.Button Msg
         homeButton =
-            case status of
-                Resigning ->
-                    Button.disabled "home"
+            if config.resigning then
+                Button.disabled "home"
 
-                _ ->
-                    Button.secondary "home" HomeClicked
-
-        resignButton : Button.Button Msg
-        resignButton =
-            case status of
-                ActiveGame ->
-                    Button.danger "resign game" ResignClicked
-
-                Resigning ->
-                    Button.disabled "resigning…"
-
-                FinishedGame ->
-                    Button.disabled "resign game"
+            else
+                Button.secondary "home" HomeClicked
     in
     Dialog.make dialogHtmlId
         "menu"
         CloseClicked
-        [ resignButton
-            |> Button.fullWidth
-            |> Button.toHtml
-        , Button.secondary "settings" SettingsClicked
+        [ Button.secondary "settings" SettingsClicked
             |> Button.fullWidth
             |> Button.toHtml
         , Button.secondary "chat (c)" ChatClicked
@@ -210,26 +186,26 @@ resignationDialog config =
         explanation : String
         explanation =
             if config.goingHome then
-                "going home will resign this game. your opponent will win, and this cannot be undone."
+                "going home will surrender this game. your opponent will win, and this cannot be undone."
 
             else
-                "resigning ends this game. your opponent will win, and this cannot be undone."
+                "your opponent will win, and this cannot be undone."
 
         confirmLabel : String
         confirmLabel =
             if config.goingHome then
-                "resign and go home"
+                "surrender and go home"
 
             else
-                "resign game"
+                "surrender"
     in
     Dialog.make resignationDialogHtmlId
-        "resign game?"
+        "surrender?"
         ResignationCanceled
         [ H.p
             []
             [ H.text explanation ]
-        , Button.primary "cancel" ResignationCanceled
+        , Button.primary "keep fighting" ResignationCanceled
             |> Button.fullWidth
             |> Button.withHtmlId resignationCancelButtonHtmlId
             |> Button.toHtml

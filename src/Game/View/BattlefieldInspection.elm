@@ -45,6 +45,7 @@ type alias CargoArgs msg =
     { units : List Unit
     , ownPlayers : List PlayerNumber
     , onSelectPassenger : UnitId -> msg
+    , onHelp : InspectionHelp.Help -> msg
     }
 
 
@@ -201,6 +202,7 @@ cargo args unit =
             , passengers = passengers
             , freight = freight
             , onSelectPassenger = args.onSelectPassenger
+            , onHelp = args.onHelp
             }
 
     else

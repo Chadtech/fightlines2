@@ -563,8 +563,25 @@ factorBreakdown hit =
             , ( "attacker aim", factors.attackerAim )
             , ( "terrain", factors.cover )
             , ( "ambush", factors.ambush )
-            , ( "trenches", factors.entrenchment )
             ]
+
+        trenchMultiplier : List ( String, Float )
+        trenchMultiplier =
+            case hit.attacker of
+                Kind.Tank ->
+                    []
+
+                _ ->
+                    [ ( "trenches", factors.entrenchment ) ]
+
+        afterCap : String
+        afterCap =
+            case hit.attacker of
+                Kind.Tank ->
+                    " → trenches ×" ++ String.fromFloat factors.entrenchment
+
+                _ ->
+                    ""
 
         base : Html msg
         base =
@@ -575,7 +592,7 @@ factorBreakdown hit =
 
         values : List (Html msg)
         values =
-            base :: List.map factor multipliers
+            base :: List.map factor (multipliers ++ trenchMultiplier)
     in
     H.div
         [ A.css
@@ -596,7 +613,7 @@ factorBreakdown hit =
             values
         , H.p
             []
-            [ H.text ("cap at 16 hp → fortress ×" ++ String.fromFloat factors.fortification ++ " → round → minimum 1 hp")
+            [ H.text ("cap at 16 hp" ++ afterCap ++ " → fortress ×" ++ String.fromFloat factors.fortification ++ " → round → minimum 1 hp")
             ]
         ]
 

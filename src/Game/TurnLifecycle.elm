@@ -5,6 +5,7 @@ module Game.TurnLifecycle exposing
     , WaitingState
     , acknowledgeLoss
     , canPoll
+    , combatEnterHeld
     , continueCombat
     , finishSubmission
     , mapPlanning
@@ -14,6 +15,7 @@ module Game.TurnLifecycle exposing
     , planningLocked
     , playback
     , selection
+    , setCombatEnterHeld
     , setCombatMapView
     , setOrders
     , setPlaybackCamera
@@ -46,6 +48,7 @@ type alias PlaybackState =
     , inspection : Maybe Inspection
     , afterPlayback : AfterPlayback
     , camera : Maybe PlaybackCamera
+    , combatEnterHeld : Bool
     }
 
 
@@ -73,7 +76,16 @@ type alias WaitingState =
 
 setPlaybackAnimation : TurnPlayback.Playback -> PlaybackState -> PlaybackState
 setPlaybackAnimation animation model =
-    { model | animation = animation }
+    let
+        sameEncounter : Bool
+        sameEncounter =
+            Maybe.map .encounter (TurnPlayback.panels model.animation)
+                == Maybe.map .encounter (TurnPlayback.panels animation)
+    in
+    { model
+        | animation = animation
+        , combatEnterHeld = model.combatEnterHeld && sameEncounter
+    }
 
 
 setPlaybackCamera : Maybe PlaybackCamera -> PlaybackState -> PlaybackState
@@ -284,6 +296,26 @@ playback phase =
             Nothing
 
 
+combatEnterHeld : Phase -> Bool
+combatEnterHeld phase =
+    case phase of
+        Playing playing ->
+            playing.combatEnterHeld
+
+        _ ->
+            False
+
+
+setCombatEnterHeld : Bool -> Phase -> Phase
+setCombatEnterHeld held phase =
+    case phase of
+        Playing playing ->
+            Playing { playing | combatEnterHeld = held && (TurnPlayback.panels playing.animation /= Nothing) }
+
+        _ ->
+            phase
+
+
 continueCombat : Phase -> Maybe { phase : Phase, frame : TurnPlayback.Frame }
 continueCombat phase =
     case phase of
@@ -368,7 +400,13 @@ startTurn submitted frames =
     in
     case TurnPlayback.start frames of
         Just animation ->
-            Playing { animation = animation, inspection = Nothing, afterPlayback = afterPlayback, camera = Nothing }
+            Playing
+                { animation = animation
+                , inspection = Nothing
+                , afterPlayback = afterPlayback
+                , camera = Nothing
+                , combatEnterHeld = False
+                }
 
         Nothing ->
             ready
