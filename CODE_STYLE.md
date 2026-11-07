@@ -86,8 +86,8 @@ prototype; do not update it unless the task explicitly requires that.
   each case.
 - Keep each app's top-level `Page` union in its entry point (`Fightlines` or `DevTools`).
   Pages own their models, messages, updates, and views; each page model carries
-  its app's `Shared.Model` (`Fightlines.Shared` or `DevTools.Shared`). Keep
-  coordinated interaction state in the owning page. A view component may expose its own
+  the common closed `Shared.Model` from `Shared.elm`. Keep coordinated interaction
+  state in the owning page. A view component may expose its own
   `Msg` handled by its parent without having a separate `Model` and `update`.
   Split state ownership only when the boundary helps coordination.
 - Use `setShared` to update a page's shared state through its public interface.

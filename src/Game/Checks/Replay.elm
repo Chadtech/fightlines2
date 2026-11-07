@@ -12,7 +12,6 @@ import Browser
 import Browser.Dom
 import DevTools.Page.GameReplay as GameReplay
 import DevTools.Page.LoggedGames as LoggedGames
-import DevTools.Shared as Shared
 import Effect as E exposing (Eff)
 import Game.BattlefieldNavigation as BattlefieldNavigation
 import Game.BattlefieldSnapshot as BattlefieldSnapshot
@@ -37,6 +36,8 @@ import Json.Decode as Decode
 import LocalStorage
 import OperatingSystem
 import Random
+import Shared
+import Time
 
 
 port results : List String -> Cmd msg
@@ -61,10 +62,10 @@ main : Program () () ()
 main =
     Browser.application
         { init =
-            \_ _ key ->
+            \_ url key ->
                 let
                     ( failures, effect ) =
-                        checks (Shared.init (Random.initialSeed 0) OperatingSystem.Unknown LocalStorage.test key)
+                        checks (Shared.init (Time.millisToPosix 1700000000000) (Random.initialSeed 0) OperatingSystem.Unknown LocalStorage.test url key)
                 in
                 ( (), Cmd.batch [ results failures, E.toCmd key effect ] )
         , update = \_ model -> ( model, Cmd.none )

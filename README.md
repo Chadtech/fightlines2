@@ -128,8 +128,7 @@ make run
 ```
 
 Open [localhost:8080](http://127.0.0.1:8080) and choose **create a lobby** for
-invite games and AI opponents. Matchmaking is currently hidden behind a
-[frontend development switch](docs/DEVELOPMENT.md#matchmaking-preview).
+invite games and AI opponents, or **match making** to find a human opponent.
 Select an AI opponent for a solo game, or share the invite link with a second
 player. Use separate browser profiles when testing both sides on one machine.
 

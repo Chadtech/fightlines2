@@ -18,7 +18,6 @@ import Api.Object.CombatBackdrop as BackdropApi
 import Api.Object.CombatBackdropCatalog as BackdropCatalogApi
 import Api.Query
 import ApiRequest
-import DevTools.Shared as Shared
 import Effect as E exposing (Eff)
 import Game.Assets as Assets
 import Game.BackdropCalibration as Calibration
@@ -39,6 +38,7 @@ import Html.Styled.Events as Ev
 import NonEmptyList exposing (NonEmpty)
 import Ports.Js.To as ToJs
 import Random
+import Shared
 import Style as S
 import View.Button as Button
 import View.Card as Card exposing (Card)

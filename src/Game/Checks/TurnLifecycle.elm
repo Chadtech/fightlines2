@@ -1,9 +1,11 @@
 port module Game.Checks.TurnLifecycle exposing (main)
 
+import Api.Enum.InactivityRenewalReason exposing (InactivityRenewalReason)
 import Api.Enum.PlayerNumber as PlayerNumber
 import Game.Coordinate as Coordinate
 import Game.CurrentTurn as CurrentTurn
 import Game.DestinationFeedback exposing (DestinationFeedback(..))
+import Game.Inactivity as Inactivity exposing (Inactivity)
 import Game.Inspection as Inspection exposing (Inspection(..))
 import Game.MovePlanning as MovePlanning
 import Game.Movement as Movement
@@ -28,6 +30,7 @@ import InvariantCheck as IC exposing (InvariantCheck)
 import Json.Decode as JD
 import Json.Encode as JE
 import Platform
+import Time
 
 
 port results : List String -> Cmd msg
@@ -61,10 +64,104 @@ setObservationTurn turn model =
 main : Program () () Never
 main =
     Platform.worker
-        { init = \_ -> ( (), results (checks ++ unloadChecks ++ currentTurnChecks ++ outcomeChecks) )
+        { init = \_ -> ( (), results (checks ++ unloadChecks ++ currentTurnChecks ++ outcomeChecks ++ activityChecks) )
         , update = \_ model -> ( model, Cmd.none )
         , subscriptions = \_ -> Sub.none
         }
+
+
+activityChecks : List String
+activityChecks =
+    let
+        decodeInactivity : JE.Value -> Result JD.Error Inactivity
+        decodeInactivity value =
+            JE.object
+                [ ( "data", JE.object [ ( "inactivity", value ) ] )
+                ]
+                |> JD.decodeValue (Graphql.Document.decoder Inactivity.selection)
+
+        context : { turnNumber : Int, presentation : Maybe InactivityRenewalReason }
+        context =
+            { turnNumber = 1, presentation = Nothing }
+
+        initial : Inactivity.Model
+        initial =
+            Inactivity.init (Time.millisToPosix 0) (Inactivity.Enabled (Just 60))
+
+        ( sending, request ) =
+            initial |> Inactivity.recordInteraction |> Inactivity.beginReport (Time.millisToPosix 0) context
+    in
+    case request of
+        Nothing ->
+            [ "interaction did not report activity" ]
+
+        Just report ->
+            let
+                acknowledged : Inactivity.Model
+                acknowledged =
+                    Inactivity.succeeded (Time.millisToPosix 0) report (Inactivity.Enabled Nothing) sending
+
+                failed : Inactivity.Model
+                failed =
+                    Inactivity.failed report "offline" sending
+
+                ( duplicate, duplicateRequest ) =
+                    Inactivity.beginReport (Time.millisToPosix 0) context (Inactivity.recordInteraction sending)
+
+                ( throttled, throttledRequest ) =
+                    acknowledged
+                        |> Inactivity.recordInteraction
+                        |> Inactivity.beginReport (Time.millisToPosix 5000) context
+
+                ( _, subsequentRequest ) =
+                    throttled
+                        |> Inactivity.beginReport (Time.millisToPosix 10000) context
+
+                ( _, disabledRequest ) =
+                    Inactivity.init (Time.millisToPosix 0) Inactivity.Disabled
+                        |> Inactivity.recordInteraction
+                        |> Inactivity.beginReport (Time.millisToPosix 0) context
+
+                ( _, passiveRequest ) =
+                    Inactivity.init (Time.millisToPosix 0) (Inactivity.Enabled Nothing)
+                        |> Inactivity.beginReport (Time.millisToPosix 0) context
+
+                recovered : Inactivity.Model
+                recovered =
+                    Inactivity.succeeded (Time.millisToPosix 0) report (Inactivity.Enabled Nothing) (Inactivity.nextTurn sending)
+            in
+            List.concat
+                [ expect "disabled inactivity decodes directly from null"
+                    (decodeInactivity JE.null == Ok Inactivity.Disabled)
+                , expect "enabled inactivity without a warning remains distinct from disabled"
+                    (decodeInactivity (JE.object [ ( "warningSecondsRemaining", JE.null ) ]) == Ok (Inactivity.Enabled Nothing))
+                , expect "an enabled warning decodes with its remaining seconds"
+                    (decodeInactivity (JE.object [ ( "warningSecondsRemaining", JE.int 42 ) ]) == Ok (Inactivity.Enabled (Just 42)))
+                , expect "disabling inactivity drops countdown and reporting state"
+                    (let
+                        disabled : Inactivity.Model
+                        disabled =
+                            Inactivity.observe (Time.millisToPosix 0) (Inactivity.sequence acknowledged) Inactivity.Disabled acknowledged
+                     in
+                     (Inactivity.countdownSeconds (Time.millisToPosix 0) disabled == Nothing) && not (Inactivity.pending disabled)
+                    )
+                , expect "activity countdown uses elapsed time, including delayed ticks"
+                    (Inactivity.countdownSeconds (Time.millisToPosix 9500) initial == Just 51)
+                , expect "pending activity blocks duplicate requests and stale polls"
+                    (Inactivity.pending duplicate && (duplicateRequest == Nothing) && (Inactivity.countdownSeconds (Time.millisToPosix 0) (Inactivity.observe (Time.millisToPosix 0) (Inactivity.sequence sending) (Inactivity.Enabled (Just 40)) sending) == Just 60))
+                , expect "acknowledged activity clears the warning and rejects all earlier polls"
+                    ((Inactivity.countdownSeconds (Time.millisToPosix 0) acknowledged == Nothing)
+                        && (Inactivity.countdownSeconds (Time.millisToPosix 0) (Inactivity.observe (Time.millisToPosix 0) (Inactivity.sequence sending) (Inactivity.Enabled (Just 40)) acknowledged) == Nothing)
+                    )
+                , expect "activity reporting is throttled without discarding later interactions"
+                    ((throttledRequest == Nothing) && (subsequentRequest /= Nothing))
+                , expect "passive clocks and exempt games do not report interaction"
+                    ((disabledRequest == Nothing) && (passiveRequest == Nothing))
+                , expect "activity failures retain the countdown and expose the error"
+                    ((Inactivity.error failed == Just "offline") && (Inactivity.countdownSeconds (Time.millisToPosix 0) failed == Just 60) && not (Inactivity.pending failed))
+                , expect "late activity acknowledgments cannot reopen a previous turn's warning"
+                    (Inactivity.countdownSeconds (Time.millisToPosix 0) recovered == Nothing)
+                ]
 
 
 checks : List String
@@ -605,17 +702,25 @@ outcomeChecks =
         [ expect "ongoing game outcomes decode as absent"
             (decodeOutcome JE.null == Ok Nothing)
         , expect "draw outcomes decode distinctly from an ongoing game"
-            (decodeOutcome (JE.object [ ( "winner", JE.null ), ( "resigned", JE.bool False ) ]) == Ok (Just GameOutcome.Draw))
+            (decodeOutcome (JE.object [ ( "winner", JE.null ), ( "resigned", JE.bool False ), ( "inactive", JE.bool False ) ]) == Ok (Just GameOutcome.Draw))
         , expect "victory outcomes retain player 1 as the winner"
-            (decodeOutcome (JE.object [ ( "winner", JE.string "PLAYER1" ), ( "resigned", JE.bool False ) ])
+            (decodeOutcome (JE.object [ ( "winner", JE.string "PLAYER1" ), ( "resigned", JE.bool False ), ( "inactive", JE.bool False ) ])
                 == Ok (Just (GameOutcome.Victory PlayerNumber.Player1))
             )
         , expect "resignation outcomes retain the opponent as the winner"
-            (decodeOutcome (JE.object [ ( "winner", JE.string "PLAYER2" ), ( "resigned", JE.bool True ) ])
+            (decodeOutcome (JE.object [ ( "winner", JE.string "PLAYER2" ), ( "resigned", JE.bool True ), ( "inactive", JE.bool False ) ])
                 == Ok (Just (GameOutcome.Resignation PlayerNumber.Player2))
             )
+        , expect "inactivity outcomes retain their winner and ending reason"
+            (decodeOutcome (JE.object [ ( "winner", JE.string "PLAYER1" ), ( "resigned", JE.bool False ), ( "inactive", JE.bool True ) ])
+                == Ok (Just (GameOutcome.Inactivity (Just PlayerNumber.Player1)))
+            )
+        , expect "simultaneous inactivity decodes as an inactivity draw"
+            (decodeOutcome (JE.object [ ( "winner", JE.null ), ( "resigned", JE.bool False ), ( "inactive", JE.bool True ) ])
+                == Ok (Just (GameOutcome.Inactivity Nothing))
+            )
         , expect "victory outcomes retain player 2 as the winner"
-            (decodeOutcome (JE.object [ ( "winner", JE.string "PLAYER2" ), ( "resigned", JE.bool False ) ])
+            (decodeOutcome (JE.object [ ( "winner", JE.string "PLAYER2" ), ( "resigned", JE.bool False ), ( "inactive", JE.bool False ) ])
                 == Ok (Just (GameOutcome.Victory PlayerNumber.Player2))
             )
         ]
@@ -806,7 +911,19 @@ currentTurnChecks =
                 && (CurrentTurn.replay replay.currentTurn == Nothing)
     in
     List.concat
-        [ expect "resignation interrupts planning, submission, waiting, and playback with an end card"
+        [ expect "inactivity interrupts playback and announces the ordinary win"
+            (let
+                timeout : CurrentTurn.Observation
+                timeout =
+                    { resignation | turn = setTurnOutcome (Just (GameOutcome.Inactivity (Just PlayerNumber.Player2))) resignation.turn }
+
+                ended : CurrentTurn.Model
+                ended =
+                    CurrentTurn.pollSucceeded timeout advanced
+             in
+             (ended.outcome == timeout.turn.outcome) && CurrentTurn.introductionPending ended && (TurnLifecycle.playback ended.phase == Nothing) && (TurnLifecycle.orders ended.phase == [])
+            )
+        , expect "resignation interrupts planning, submission, waiting, and playback with an end card"
             (List.all resignationAnnounced [ CurrentTurn.acknowledgeIntroduction initial, submitting, waiting, advanced ])
         , expect "stale polls and submission responses cannot reverse resignation"
             ((CurrentTurn.pollSucceeded nextObservation resigned).outcome

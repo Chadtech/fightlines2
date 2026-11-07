@@ -150,6 +150,30 @@ or shrinks, including adding/removing AI. Initial loading, repeated polls,
 side swaps and started-game snapshots stay silent. Closing a human player's
 tab currently retains their membership, so it does not produce a departure cue.
 
+## Matchmaking ready
+
+`match-making-ready-v1.ogg` is the approved three-second trim of
+`simple-welcome-stretched`: a simplified retro synth welcome with a low opening
+note and a fuller final chord. It plays once when matchmaking enters get-ready,
+including when resuming an active countdown, through the interface volume channel
+and ordinary mute, gesture-unlock, and hidden-page handling. Countdown updates
+and game navigation do not replay it.
+
+- Source: [monophonic synth fanfare sound by _def](https://freesound.org/people/_def/sounds/751890/).
+- License: **CC0 1.0**, as listed on the source page.
+- The source was made with Ableton Live's Wavetable synthesizer to evoke analog
+  synthesizers. This is an edited synth recording.
+- Processing: simplify the original melody to its opening and final note;
+  layer the final note with supporting pitches, add short stereo reflections,
+  and low-pass at 8.5kHz. Stretch the entire 2.15-second audition to six seconds
+  with pitch preserved, then retain exactly the first three seconds.
+- Runtime: stereo, 48kHz Vorbis quality 6, encoded directly from the approved
+  three-second WAV master with no further processing or gain change.
+
+[Source manifest](match-making-ready-v1.json) records the derivation, source and
+master hashes, and runtime hash. Recordings, preparation scripts, and auditions
+remain in the ignored `audio-experiments/match-ready-*` directories.
+
 ## Previous gamelan UI cues (inactive)
 
 The three UI cues are excerpts from **Javanese Court Gamelan 2 - Indonesia** by

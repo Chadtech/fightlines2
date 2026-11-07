@@ -44,7 +44,6 @@ import Effect as E
         )
 import Error exposing (Error(..))
 import Fightlines.Route as Route
-import Fightlines.Shared as Shared
 import Fightlines.View.MapChoice as MapChoice
 import Game.Assets as Assets
 import Game.Chat as Chat
@@ -66,6 +65,7 @@ import LobbyId
         )
 import Ports.Js.From as FromJs
 import Ports.Js.To as ToJs
+import Shared
 import Style as S
 import Time
 import View.Aria as Aria

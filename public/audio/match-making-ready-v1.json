@@ -1,0 +1,88 @@
+{
+  "source": {
+    "title": "monophonic synth fanfare sound",
+    "author": "_def",
+    "url": "https://freesound.org/people/_def/sounds/751890/",
+    "rendition": "https://cdn.freesound.org/previews/751/751890_909262-hq.mp3",
+    "license": "CC0 1.0 Universal",
+    "sha256": "b5a21244c1ad71e447e8e920894d30a764b91bf9a882f55b64b3e6b7d05acd52"
+  },
+  "approvedAudition": "simple-welcome-stretched, trimmed to its first 3 seconds",
+  "derivation": [
+    {
+      "source": "https://freesound.org/people/_def/sounds/751890/",
+      "author": "_def",
+      "license": "CC0",
+      "sourceSha256": "b5a21244c1ad71e447e8e920894d30a764b91bf9a882f55b64b3e6b7d05acd52",
+      "openingExcerpt": [
+        0.3,
+        0.49
+      ],
+      "landingExcerpt": [
+        1.75,
+        2.08
+      ],
+      "landingAtSeconds": 0.255,
+      "landingPitchAndGainLayers": [
+        [
+          0.25,
+          0.18
+        ],
+        [
+          0.5,
+          0.34
+        ],
+        [
+          0.6299605249474366,
+          0.24
+        ],
+        [
+          0.7491535384383408,
+          0.29
+        ],
+        [
+          1,
+          0.62
+        ]
+      ],
+      "processing": "remove intermediate melody; sustain final note with pitch-preserving stretch; supporting major chord and bass; short stereo reflections; edge fades; 8.5kHz lowpass; -9dBFS peak before filtering",
+      "durationSeconds": 2.15,
+      "auditionSha256": "92dfc8ec21d6c7ffd41aade90decacb20ad1e4796f1f0c0d2d8134331fe9760f",
+      "outputDurationCapsSeconds": {
+        "opening": 0.19,
+        "landingLayer": 0.33
+      },
+      "landingTempo": 0.3
+    },
+    {
+      "source": "https://freesound.org/people/_def/sounds/751890/",
+      "author": "_def",
+      "license": "CC0",
+      "inputMaster": "audio-experiments/match-ready-simple-v3/simple-welcome.wav",
+      "inputSha256": "0cb88aedb97180e345e0c7af65961de376995976dc23a20c4c77c7b187863c34",
+      "inputDurationSeconds": 2.15,
+      "durationSeconds": 6.0,
+      "tempo": 0.35833333333333334,
+      "processing": "pitch-preserving time stretch of the entire original v3 cue, including opening, transition and finish; original stereo layout and gain",
+      "masterSha256": "691188183ebc769aaca6dd48f5e839f6e87f4667a17f034a2d84aeae3143d85b",
+      "auditionSha256": "592753979a5b155e6a700310dcd22e691a4cad6dfc2abab1c3188615e31bbb18"
+    }
+  ],
+  "trim": {
+    "startSeconds": 0,
+    "durationSeconds": 3
+  },
+  "master": {
+    "path": "audio-experiments/match-ready-simple-v7-trimmed-3s/simple-welcome-stretched-3s.wav",
+    "sha256": "78e3a70c1ed70a92e0241149babea8bb35732a6e31616c1b0b8b915f803cfa09"
+  },
+  "runtime": {
+    "path": "public/audio/match-making-ready-v1.ogg",
+    "codec": "Vorbis",
+    "quality": 6,
+    "sampleRate": 48000,
+    "channels": 2,
+    "durationSeconds": 3,
+    "sha256": "48f14c94dcc832a72ac56789d0bf27895dfe877689a005212291b4c637510087"
+  }
+}

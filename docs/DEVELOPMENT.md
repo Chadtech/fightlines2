@@ -9,7 +9,7 @@ Read [architecture](../ARCHITECTURE.md) for state ownership and cross-module flo
 - [Apps and source layout](#apps-and-source-layout)
 - [Development fixture](#development-fixture)
 - [Checks and builds](#checks-and-builds) · [generated API](#generated-api)
-- [Matchmaking preview](#matchmaking-preview) · [production and development bundles](#production-and-development-bundles)
+- [Feature switches](#feature-switches) · [production and development bundles](#production-and-development-bundles)
 - [Artwork and runtime assets](#artwork-and-runtime-assets)
 - [Game archives and replay](#game-archives-and-replay)
 - [Audio manager](#audio-manager)
@@ -35,8 +35,9 @@ specific seed for debugging; see [deployment](../DEPLOYMENT.md#game-archives).
 
 `src/Fightlines.elm` runs the player app (home, lobbies, and live games).
 `src/DevTools.elm` runs the separate map editor, game archive/replay, and backdrop
-review app under `/dev`, with its own `DevTools.Route`, `DevTools.Flags`, and
-`DevTools.Shared`. Open [the tools index](http://127.0.0.1:8080/dev) for links to
+review app under `/dev`, with its own `DevTools.Route` and `DevTools.Flags`.
+Both apps use the common closed model and browser infrastructure in `Shared.elm`.
+Open [the tools index](http://127.0.0.1:8080/dev) for links to
 `/dev/map-editor`, `/dev/logged-games`, `/dev/backdrop-review`, and `/dev/combat-chart`.
 Both apps use `Effect.Eff` and outgoing ports in `Ports.Js.To`. Their route modules
 provide typed `Route.pushUrl` helpers for in-app navigation; `Effect.load` opens
@@ -126,13 +127,13 @@ builds and `git push` do not change source files or increment the version.
 When checking in outside the agent workflow, run `make bump-version` before
 the release commit. Deploy the backend and frontend built from that commit.
 
-## Matchmaking preview
+## Feature switches
 
-`matchMakingEnabled` in `src/Fightlines/FeatureFlags.elm` is a temporary frontend
-switch, currently `False`. It hides the home button and makes `/match-making`
-show the ordinary not-found page without requesting matchmaking data. Set it to
-`True` and rebuild the frontend to test matchmaking. The switch applies in both
-production and development builds; backend matchmaking operations remain available.
+Frontend feature switches live in
+[`src/Fightlines/FeatureFlags.elm`](../src/Fightlines/FeatureFlags.elm).
+Keep their current values in code rather than duplicating enabled/disabled status
+in documentation. Rebuild the frontend after changing a switch; the values apply
+to both production and development builds.
 
 ## Production and development bundles
 

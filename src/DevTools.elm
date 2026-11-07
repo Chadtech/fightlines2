@@ -18,7 +18,6 @@ import DevTools.Route as Route
     exposing
         ( Route
         )
-import DevTools.Shared as Shared
 import Effect as E
     exposing
         ( Eff
@@ -35,6 +34,7 @@ import KeyCmd
 import Ports.Js.From as FromJs
 import Ports.Js.To as ToJs
 import Random
+import Shared
 import Style as S
 import Subscriptions
 import Url
@@ -147,7 +147,7 @@ init value url key =
             let
                 shared : Shared.Model
                 shared =
-                    Shared.init flags.seed flags.operatingSystem flags.localStorage key
+                    Shared.init flags.now flags.seed flags.operatingSystem flags.localStorage url key
             in
             handleRoute shared (Route.fromUrl url)
                 |> E.and (E.audio (Audio.SetMute shared.audioMute))
@@ -589,7 +589,7 @@ update msg page =
                 Just shared ->
                     let
                         ( newShared, effect ) =
-                            Shared.update subMsg shared
+                            Shared.superUpdate subMsg shared
                     in
                     ( setShared newShared page, E.map GotSharedMsg effect )
 
@@ -836,13 +836,17 @@ subscriptions : Page -> Sub Msg
 subscriptions page =
     [ case getShared page of
         Just shared ->
-            Subscriptions.common
-                { operatingSystem = shared.operatingSystem
-                , keyCommands = keyCommands page
-                , listeners = listeners page
-                , onFromJsError =
-                    GotSharedMsg << Shared.gotFromJsError
-                }
+            Sub.batch
+                [ Shared.subscriptions
+                    |> Sub.map GotSharedMsg
+                , Subscriptions.common
+                    { operatingSystem = shared.operatingSystem
+                    , keyCommands = keyCommands page
+                    , listeners = listeners page
+                    , onFromJsError =
+                        GotSharedMsg << Shared.gotFromJsError
+                    }
+                ]
 
         Nothing ->
             Sub.none

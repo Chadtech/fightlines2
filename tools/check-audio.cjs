@@ -180,9 +180,11 @@ async function main() {
   assert.notEqual(mixer.voices.at(-1).buffer, receivedBuffer, 'sending uses a distinct recording');
   await mixer.audio.handleEvent({ play: 'chatSent' });
   assert.equal(mixer.voices.length, beforeSend + 1, 'rapid duplicate send cues are coalesced');
-  for (const play of ['lobbyPlayerJoined', 'lobbyPlayerLeft']) {
+  for (const play of ['lobbyPlayerJoined', 'lobbyPlayerLeft', 'matchMakingReady']) {
+    const beforeCue = mixer.voices.length;
     await mixer.audio.handleEvent({ play });
-    assert.equal(mixer.voices.at(-1).destination, uiBus, 'lobby presence uses the interface volume bus');
+    assert.equal(mixer.voices.length, beforeCue + 1, `${play} starts a voice`);
+    assert.equal(mixer.voices.at(-1).destination, uiBus, `${play} uses the interface volume bus`);
   }
   await mixer.audio.handleEvent({ volumes: { ...mix, interface: 0 } });
   assert.equal(uiBus.gain.value, 0, 'zero interface volume silences chat notifications too');
@@ -208,6 +210,7 @@ async function main() {
     '/audio/chat-sent-radio-v1.ogg',
     '/audio/lobby-player-joined-pager-v1.ogg',
     '/audio/lobby-player-left-scanner-v1.ogg',
+    '/audio/match-making-ready-v1.ogg',
     '/audio/combat/field-gun-fire-01.ogg',
     '/audio/combat/field-gun-fire-02.ogg',
     '/audio/combat/field-gun-fire-03.ogg',
@@ -228,7 +231,7 @@ async function main() {
     '/audio/movement/infantry-stib-2x.ogg',
     '/audio/combat/infantry-fire-heavy-v1.ogg',
   ]);
-  assert.equal(app.contexts[0].decodes, 26);
+  assert.equal(app.contexts[0].decodes, 27);
 
   const stalledAudio = boot({ firstLoadHangs: true });
   await stalledAudio.gesture();
@@ -244,7 +247,7 @@ async function main() {
   }
   assert.equal(app.voices.length, 5);
   assert.equal(app.voices[0].stopped, true, 'voice limit replaces the oldest voice');
-  assert.equal(app.contexts[0].decodes, 26, 'decoded buffers are reused');
+  assert.equal(app.contexts[0].decodes, 27, 'decoded buffers are reused');
   app.voices[1].finish();
   assert.equal(app.voices[1].disconnected, true);
   app.audio.setVolume(0);
@@ -282,6 +285,7 @@ async function main() {
   await muted.audio.handleEvent({ play: 'chatSent' });
   await muted.audio.handleEvent({ play: 'lobbyPlayerJoined' });
   await muted.audio.handleEvent({ play: 'lobbyPlayerLeft' });
+  await muted.audio.handleEvent({ play: 'matchMakingReady' });
   await muted.audio.handleEvent({ movement: [{ unitId: 'tank', sound: 'tank' }] });
   await muted.audio.handleEvent({ ambience: [{ environment: 'forest', pan: 0 }] });
   assert.equal(muted.voices.length, 0, 'muted pages discard all sound categories');
@@ -361,7 +365,7 @@ async function main() {
   await ambience.audio.handleEvent({ ambience: [plains] });
   assert.equal(ambience.contexts.length, 0, 'ambience cannot unlock the context');
   await ambience.gesture();
-  assert.equal(ambience.requests.length, 26, 'ambience loads only when the theater needs it');
+  assert.equal(ambience.requests.length, 27, 'ambience loads only when the theater needs it');
   await ambience.audio.handleEvent({ ambience: [plains, forest] });
   assert.equal(ambience.voices.length, 2);
   assert.ok(ambience.voices.every(voice => voice.loop && voice.started));

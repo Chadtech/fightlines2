@@ -14,7 +14,6 @@ import Effect
         )
 import Fightlines.Page.GamePage as GamePage
 import Fightlines.Route as Route
-import Fightlines.Shared as Shared
 import Graphql.Http
 import Html.Styled as H
     exposing
@@ -25,6 +24,7 @@ import LobbyId
     exposing
         ( LobbyId
         )
+import Shared
 import Style as S
 import View.Aria as Aria
 import View.Button as Button

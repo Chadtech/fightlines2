@@ -3,11 +3,12 @@ port module Fightlines.Checks.Home exposing (main)
 import Browser
 import Fightlines.Feedback as Feedback
 import Fightlines.Page.Home as Home
-import Fightlines.Shared as Shared
 import Graphql.Http
 import LocalStorage
 import OperatingSystem
 import Random
+import Shared
+import Time
 
 
 type Error
@@ -33,23 +34,82 @@ type Error
 port results : List String -> Cmd msg
 
 
-main : Program () () ()
+type Model
+    = WaitingForClock
+        { shared : Shared.Model
+        , failures : List String
+        }
+    | Finished
+
+
+type Msg
+    = SharedMsg Shared.Msg
+    | NavigationIgnored
+
+
+main : Program () Model Msg
 main =
     Browser.application
         { init =
             \_ url key ->
-                ( ()
-                , Shared.init (Random.initialSeed 42) OperatingSystem.Unknown LocalStorage.test url key
-                    |> checks
-                    |> List.map errorToString
-                    |> results
+                let
+                    initialTime : Time.Posix
+                    initialTime =
+                        Time.millisToPosix 1700000000000
+
+                    shared : Shared.Model
+                    shared =
+                        Shared.init initialTime (Random.initialSeed 42) OperatingSystem.Unknown LocalStorage.test url key
+
+                    clockFailures : List String
+                    clockFailures =
+                        if shared.now == initialTime then
+                            []
+
+                        else
+                            [ "shared initialization must retain the supplied startup time" ]
+                in
+                ( WaitingForClock
+                    { shared = shared
+                    , failures = List.map errorToString (checks shared) ++ clockFailures
+                    }
+                , Cmd.none
                 )
-        , update = \_ model -> ( model, Cmd.none )
-        , subscriptions = \_ -> Sub.none
-        , view = \_ -> { title = "home seed checks", body = [] }
-        , onUrlChange = \_ -> ()
-        , onUrlRequest = \_ -> ()
+        , update = updateClock
+        , subscriptions = clockSubscriptions
+        , view = \_ -> { title = "home seed and shared clock checks", body = [] }
+        , onUrlChange = \_ -> NavigationIgnored
+        , onUrlRequest = \_ -> NavigationIgnored
         }
+
+
+updateClock : Msg -> Model -> ( Model, Cmd Msg )
+updateClock msg model =
+    case ( msg, model ) of
+        ( SharedMsg sharedMsg, WaitingForClock pending ) ->
+            let
+                ( shared, _ ) =
+                    Shared.superUpdate sharedMsg pending.shared
+            in
+            if shared.now /= pending.shared.now then
+                ( Finished, results pending.failures )
+
+            else
+                ( WaitingForClock { pending | shared = shared }, Cmd.none )
+
+        _ ->
+            ( model, Cmd.none )
+
+
+clockSubscriptions : Model -> Sub Msg
+clockSubscriptions model =
+    case model of
+        WaitingForClock _ ->
+            Shared.subscriptions
+                |> Sub.map SharedMsg
+
+        Finished ->
+            Sub.none
 
 
 checks : Shared.Model -> List Error

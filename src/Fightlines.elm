@@ -27,7 +27,6 @@ import Fightlines.Route as Route
     exposing
         ( Route
         )
-import Fightlines.Shared as Shared
 import Fightlines.View.TurnIntroduction as TurnIntroduction
 import Fightlines.View.WelcomeBriefing as WelcomeBriefing
 import Html.Styled as H
@@ -43,7 +42,9 @@ import LobbyId
 import LocalStorage exposing (LocalStorage)
 import Ports.Js.From as FromJs
 import Ports.Js.To as ToJs
+import Shared
 import Subscriptions
+import Time
 import Url
     exposing
         ( Url
@@ -147,7 +148,13 @@ init value url key =
             let
                 shared : Shared.Model
                 shared =
-                    Shared.init flags.seed flags.operatingSystem flags.localStorage url key
+                    Shared.init
+                        flags.now
+                        flags.seed
+                        flags.operatingSystem
+                        flags.localStorage
+                        url
+                        key
             in
             handleRoute shared (Route.fromUrl url)
                 |> E.and (E.audio (Audio.SetMute shared.audioMute))
@@ -644,13 +651,36 @@ update msg page =
                         ( newShared, effect ) =
                             Shared.superUpdate subMsg shared
                     in
-                    ( setShared newShared page
-                    , E.map GotSharedMsg effect
-                    )
+                    setShared newShared page
+                        |> afterSharedClockUpdate shared.now
+                        |> E.and (E.map GotSharedMsg effect)
 
                 Nothing ->
                     page
                         |> E.withOut
+
+
+afterSharedClockUpdate : Time.Posix -> Page -> ( Page, Eff Msg )
+afterSharedClockUpdate previousTime page =
+    case page of
+        MatchMaking model ->
+            if model.shared.now /= previousTime then
+                MatchMaking.enterGameWhenReady model
+                    |> Tuple.mapBoth MatchMaking (E.map (MatchMakingMsg (MatchMaking.visitId model)))
+
+            else
+                page |> E.withOut
+
+        Game id model ->
+            if model.shared.now /= previousTime then
+                GamePage.renewInactivityTimer id model
+                    |> Tuple.mapBoth (Game id) (E.map (GameMsg id))
+
+            else
+                page |> E.withOut
+
+        _ ->
+            page |> E.withOut
 
 
 
@@ -819,13 +849,17 @@ subscriptions : Page -> Sub Msg
 subscriptions page =
     [ case getShared page of
         Just shared ->
-            Subscriptions.common
-                { operatingSystem = shared.operatingSystem
-                , keyCommands = keyCommands page
-                , listeners = listeners page
-                , onFromJsError =
-                    Shared.gotFromJsError >> GotSharedMsg
-                }
+            Sub.batch
+                [ Shared.subscriptions
+                    |> Sub.map GotSharedMsg
+                , Subscriptions.common
+                    { operatingSystem = shared.operatingSystem
+                    , keyCommands = keyCommands page
+                    , listeners = listeners page
+                    , onFromJsError =
+                        Shared.gotFromJsError >> GotSharedMsg
+                    }
+                ]
 
         Nothing ->
             Sub.none

@@ -15,6 +15,7 @@ function startElmApp(elmApp, handleMessage) {
 
   const app = elmApp.init({
     flags: {
+      now: Date.now(),
       isProduction: globalThis.FIGHTLINES_BUILD?.isProduction,
       operatingSystem: navigator.userAgentData?.platform ?? navigator.userAgent,
       localStorage: getLocalStorage(),

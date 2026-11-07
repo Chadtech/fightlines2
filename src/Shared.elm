@@ -6,16 +6,19 @@ module Shared exposing
     , devPanelErrors
     , devPanelMsg
     , gotFromJsError
+    , init
     , keyCommands
     , listeners
     , setAudioMute
     , setAudioVolumes
     , setSeed
+    , subscriptions
     , superUpdate
     )
 
 import Audio
 import Browser.Dom
+import Browser.Events
 import Browser.Navigation as Navigation
 import DevPanel
 import Effect as E exposing (Eff)
@@ -35,6 +38,8 @@ import OperatingSystem exposing (OperatingSystem)
 import Ports.Js.From as FromJs
 import Ports.Js.To as ToJs
 import Random
+import Time
+import Url exposing (Url)
 
 
 
@@ -43,29 +48,72 @@ import Random
 ----------------------------------------------------------------
 
 
-{-| Shared browser state and diagnostics. Each app supplies its additional fields.
+{-| Browser state and diagnostics shared by both applications.
+`now` is the latest browser clock sample, initialized by JavaScript and refreshed
+by the shared clock subscription. `origin` contains the scheme, hostname, and
+optional port for constructing complete application links.
 -}
-type alias Model fields =
-    { fields
-        | key : Navigation.Key
-        , operatingSystem : OperatingSystem
-        , localStorage : LocalStorage
-        , seed : Random.Seed
-        , errors : ErrorHistory.Model Error
-        , devPanel : DevPanel.Model
-        , devPanelOpen : Bool
-        , audioMute : Audio.MuteState
-        , audioVolumes : Audio.Volumes
+type alias Model =
+    { now : Time.Posix
+    , key : Navigation.Key
+    , operatingSystem : OperatingSystem
+    , localStorage : LocalStorage
+    , seed : Random.Seed
+    , errors : ErrorHistory.Model Error
+    , devPanel : DevPanel.Model
+    , devPanelOpen : Bool
+    , audioMute : Audio.MuteState
+    , audioVolumes : Audio.Volumes
+    , origin : String
     }
 
 
 type Msg
-    = GotLocalstorage LocalStorage
+    = CurrentTimeReceived Time.Posix
+    | WindowVisibilityChanged Browser.Events.Visibility
+    | GotLocalstorage LocalStorage
     | GotFromJsError FromJs.Error
     | AudioErrorReceived Error
     | DevPanelToggleKeyPressed
     | DevPanelMsg DevPanel.Msg
     | AudioMuteButtonClicked
+
+
+
+----------------------------------------------------------------
+-- INIT --
+----------------------------------------------------------------
+
+
+init : Time.Posix -> Random.Seed -> OperatingSystem -> LocalStorage -> Url -> Navigation.Key -> Model
+init now seed operatingSystem localStorage url key =
+    let
+        ( audioMute, muteError ) =
+            Audio.loadMutePreference localStorage
+
+        ( audioVolumes, volumesError ) =
+            Audio.loadVolumesPreference localStorage
+    in
+    { now = now
+    , key = key
+    , operatingSystem = operatingSystem
+    , localStorage = localStorage
+    , seed = seed
+    , errors = ErrorHistory.init
+    , devPanel = DevPanel.init
+    , devPanelOpen = False
+    , audioMute = audioMute
+    , audioVolumes = audioVolumes
+    , origin =
+        Url.toString
+            { url
+                | path = ""
+                , query = Nothing
+                , fragment = Nothing
+            }
+    }
+        |> addError muteError
+        |> addError volumesError
 
 
 
@@ -79,7 +127,7 @@ audioMuteButtonClicked =
     AudioMuteButtonClicked
 
 
-devPanelErrors : Model fields -> List DevPanel.Error
+devPanelErrors : Model -> List DevPanel.Error
 devPanelErrors model =
     List.map toDevPanelError model.errors.errors
 
@@ -94,22 +142,22 @@ gotFromJsError =
     GotFromJsError
 
 
-setAudioMute : Audio.MuteState -> Model fields -> Model fields
+setAudioMute : Audio.MuteState -> Model -> Model
 setAudioMute audioMute model =
     { model | audioMute = audioMute }
 
 
-setAudioVolumes : Audio.Volumes -> Model fields -> Model fields
+setAudioVolumes : Audio.Volumes -> Model -> Model
 setAudioVolumes audioVolumes model =
     { model | audioVolumes = audioVolumes }
 
 
-setSeed : Random.Seed -> Model fields -> Model fields
+setSeed : Random.Seed -> Model -> Model
 setSeed seed model =
     { model | seed = seed }
 
 
-addError : Maybe Error -> Model fields -> Model fields
+addError : Maybe Error -> Model -> Model
 addError maybeError model =
     { model | errors = ErrorHistory.add maybeError model.errors }
 
@@ -128,7 +176,7 @@ audioErrorDecoder =
         (Decode.field "details" Decode.string)
 
 
-setDevPanelOpen : Bool -> Model fields -> Model fields
+setDevPanelOpen : Bool -> Model -> Model
 setDevPanelOpen devPanelOpen model =
     { model | devPanelOpen = devPanelOpen }
 
@@ -246,7 +294,7 @@ planningErrorDetails violation =
 {-| Check shared transitions after every shared message. Page dialog restoration
 belongs to each app; Shared only opens its own dev panel.
 -}
-superUpdate : Msg -> Model fields -> ( Model fields, Eff Msg )
+superUpdate : Msg -> Model -> ( Model, Eff Msg )
 superUpdate msg model =
     let
         ( updated, effect ) =
@@ -256,7 +304,7 @@ superUpdate msg model =
         panelOpened =
             not model.devPanelOpen && updated.devPanelOpen
 
-        result : ( Model fields, Eff Msg )
+        result : ( Model, Eff Msg )
         result =
             ( updated, effect )
     in
@@ -268,9 +316,27 @@ superUpdate msg model =
         result
 
 
-update : Msg -> Model fields -> ( Model fields, Eff Msg )
+update : Msg -> Model -> ( Model, Eff Msg )
 update msg model =
     case msg of
+        CurrentTimeReceived now ->
+            ( { model | now = now }
+            , E.none
+            )
+
+        WindowVisibilityChanged visibility ->
+            let
+                eff : Eff Msg
+                eff =
+                    case visibility of
+                        Browser.Events.Visible ->
+                            E.now CurrentTimeReceived
+
+                        Browser.Events.Hidden ->
+                            E.none
+            in
+            ( model, eff )
+
         AudioMuteButtonClicked ->
             let
                 audioMute : Audio.MuteState
@@ -350,6 +416,14 @@ update msg model =
 ----------------------------------------------------------------
 -- SUBSCRIPTIONS --
 ----------------------------------------------------------------
+
+
+subscriptions : Sub Msg
+subscriptions =
+    Sub.batch
+        [ Time.every 1000 CurrentTimeReceived
+        , Browser.Events.onVisibilityChange WindowVisibilityChanged
+        ]
 
 
 keyCommands : KeyCmd Msg

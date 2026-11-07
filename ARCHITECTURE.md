@@ -48,7 +48,10 @@ join creates and records a game directly in the registry. It selects a released
 map marked `matchMaking` and assigns sides using the store's explicit random
 seed. Failed map initialization or recording preserves the waiting player.
 The GraphQL snapshot is a union of idle, waiting, and matched responses. Waiting
-requires a ticket; matched requires a ticket and game ID. Elm selects these
+requires a ticket; matched requires a ticket, game ID, selected map, opponent
+name, and the remaining milliseconds until a shared 16-second ready deadline.
+Both receipts share the chosen map snapshot and deadline; refreshes and retries
+resume that deadline rather than restarting it. Elm selects these
 variants directly, preserving the state constraints across the API boundary.
 Per-visit tickets make polling, retries, and cancellation safe across revisits;
 a completed pairing wins a cancellation race. Polls every two seconds renew a
@@ -63,15 +66,23 @@ and entry operations release their locks before queue cleanup.
 `Fightlines` owns initial loading and the `MatchMakingLoadFailed` page; the
 matchmaking module supplies the stateless failure view. `Fightlines` correlates
 every page message with a fresh visit ID. Poll responses also carry the queue ticket;
-responses overtaken by cancellation are ignored. Successful pairing replaces the
-queue URL with `/game/:id`, so browser back does not reopen a consumed queue
-visit. In-app departure attempts cancellation; closed documents rely on expiry.
+responses overtaken by cancellation are ignored. Successful pairing shows the
+map and opponent during a get-ready countdown. Elm anchors the server's remaining
+duration to `Shared.Model.now` and derives the displayed seconds from that deadline.
+Shared clock updates enter the game when the deadline is reached; there is no
+page-specific clock subscription or asynchronous clock initialization. The recent
+match label also derives elapsed time from the shared clock, so delayed ticks do
+not stretch either duration. At the deadline it replaces the queue URL with
+`/game/:id`,
+so browser back does not reopen a consumed queue visit. In-app departure attempts
+cancellation; closed documents rely on expiry.
 
 Starting a game consumes its lobby and moves the host and players into a game.
 The old lobby URL resolves the game for polling players but accepts no new
 players. Lobbies and games are held in memory and disappear on server restart.
-Finished games leave the registry 16 minutes after victory, draw, or resignation.
-A server-wide task sweeps once per minute on the blocking pool, skipping busy
+Finished games leave the registry 16 minutes after victory, draw, resignation,
+or inactivity.
+A server-wide task sweeps once per second on the blocking pool, skipping busy
 entries and preserving their private replay archives. Reads and repeated requests
 do not extend finished-game retention. Unstarted lobbies expire after 30 minutes
 without a successful join, setup change, or chat send; polling does not renew
@@ -83,7 +94,40 @@ on disk. The host can remove a joined guest before starting with
 across side swaps; removal runs under the entry lock and refreshes activity.
 The guest loses membership and returns to the join page on its next lobby poll.
 The open slot accepts a new join, including the removed browser. There is no
-account system, host transfer, or expiry of unfinished games yet.
+account system or host transfer yet.
+
+Human-versus-human games own per-side inactivity clocks in `game_activity.rs`.
+After two minutes without meaningful input, only that player's authorized snapshot
+exposes a 60-second countdown. The snapshot carries `Option<EnabledInactivity>`:
+`None` is disabled, while the enabled object alone owns optional warning seconds.
+GraphQL preserves this as a nullable `inactivity` object; Elm decodes it immediately
+into `Disabled | Enabled (Maybe Int)`. Its activity model also places countdown and
+reporting state only inside the enabled variant. Polls never renew activity.
+`renewInactivityTimer` authorizes the session and current turn, checks expiry under
+the game lock, then accepts an `InactivityRenewalReason`: `UserInteraction`,
+`PlaybackAllowance`, or `BriefingAllowance`. These distinguish actual input from
+bounded presentation allowances. Playback can renew activity
+for the first five minutes of a turn, and the first-game briefing for the first
+two minutes. These limits are anchored to the server's turn start, survive browser
+refreshes, and do not rewind later input. Submitted players, AI games, and the
+read-only development preview are exempt. New resolved turns reset both clocks.
+The sweep and player requests record expiry before publishing an inactivity
+outcome, without resolving pending orders or changing the board. The earliest
+expired player loses; exactly tied deadlines with both players absent yield a
+draw. Archive replay preserves this distinct outcome and final-board projection.
+
+`GamePage.superUpdate` classifies meaningful input with `isUserInteraction`.
+`Game.Inactivity` throttles reports to once per ten seconds, except for an immediate
+response during the warning, and sequences reports/polls to reject stale countdowns.
+A private native warning dialog remains actionable above menus and onboarding;
+its button and Escape both report interaction. The displayed countdown uses elapsed
+browser time between server observations. JavaScript supplies the required `now`
+startup flag to both apps. `Shared.Model.now` owns the latest browser timestamp;
+`Shared.subscriptions` updates it every second and refreshes it when the document
+becomes visible. Inactivity receives this clock explicitly rather than storing
+another clock or optional observation timestamps. Shared ticks drive due renewals
+in the live game; user interaction can request a renewal immediately. Inactivity interrupts playback and opens
+the ordinary victory conclusion, with a viewer-specific inactivity caption.
 
 The store's registry maps each lobby ID to one shared, individually locked
 `GameRegistry`.
@@ -141,8 +185,7 @@ planning, submission, polling, and introductions through `CurrentTurn` and
 `TurnLifecycle`. `GameReplay` owns archive requests, turn/player selection,
 continuous playback, pause, and inspection. Its timeline permits only `Ready`
 and `Playing`; it carries no live lifecycle or lobby ID and cannot submit orders.
-Each page owns its app's shared state: `Shared.Model` for live play and
-`DevTools.Shared.Model` for replay.
+Each page carries the common `Shared.Model`, used by both live play and replay.
 
 Replay's turn request includes the fog checkbox state in its response correlation.
 `loggedTurn` defaults to player fog; disabling `fogOfWar` selects authoritative
@@ -335,15 +378,15 @@ death independently of zero supplies. Old archive units default to supplied when
 the exhaustion field is absent, preserving captured HP and explicit loss events.
 `Turns` checks victory on the authoritative final board after resource settlement.
 Its optional `GameOutcome` (`Victory(PlayerNumber)`, `Resignation(PlayerNumber)`,
-or `Draw`) is public in each game snapshot and permanently blocks further
-submissions. Living infantry,
+`Inactivity(Option<PlayerNumber>)`, or `Draw`) is public in each game snapshot and
+permanently blocks further submissions. Living infantry,
 tanks, and field guns count regardless of location; trucks do not.
 Simultaneous elimination is a draw. GraphQL exposes a
 nullable outcome object whose nullable `winner` distinguishes victory from a draw;
-an absent outcome means play continues. The `resigned` field distinguishes
-resignation from elimination. Both victory variants carry the winner. Elm decodes
-this into `Victory PlayerNumber`, `Resignation PlayerNumber`, or `Draw` and retains
-the result through playback, then uses the turn announcement dialog to present it,
+an absent outcome means play continues. The `resigned` and `inactive` fields
+distinguish resignation and inactivity from elimination. Elm decodes this into
+`Victory PlayerNumber`, `Resignation PlayerNumber`, `Inactivity (Maybe PlayerNumber)`,
+or `Draw` and retains the result through playback, then uses the turn announcement dialog to present it,
 including on refresh and when ordinary introductions are skipped.
 `resignGame` authorizes the caller against the roster and records the result before
 committing it under the submission lock. It clears pending orders without resolving
@@ -598,18 +641,20 @@ retain 404 responses for missing files, including requests that accept HTML.
 Requests without an explicit HTML media type do not use the page fallback.
 Each app handles its own routes and page dispatch, converting effects to
 commands at its application boundary. Links outside an app's routes load a new
-document so the server can select the correct bundle. Each app owns its browser
-state through `Fightlines.Shared` for the player app and `DevTools.Shared` for
-tools. Both apps use the common `Effect.Eff msg` type and interpreter. Each route
+document so the server can select the correct bundle. Both apps use one closed
+`Shared.Model`, with common initialization, messages, updates, and subscriptions
+in `Shared.elm`. Pages and entry points import it directly. It owns the browser
+clock, navigation key, origin, operating system, local storage, random seed,
+audio preferences, and diagnostics. `origin` is derived from each app's startup
+URL by removing the path, query, and fragment; the player lobby uses it for
+complete invite links. `ErrorHistory.Model` stores the session's errors newest
+first. `Shared.update` records incoming JavaScript failures directly as
+`Error.FromJsFailed`. Shared infrastructure does not depend on either app's
+model. Outgoing JS messages are shared through `Ports.Js.To`.
+
+Both apps use the common `Effect.Eff msg` type and interpreter. Each route
 module exposes `pushUrl : Route -> Eff msg`, converting its typed route to a
 string for `Effect.pushUrl`. `Effect` has no dependency on either route module.
-The tools model has no invite-link origin. Both models use `Shared.Model`,
-parameterized only by their additional fields and sharing the concrete `Error` type. Each app exposes seed and diagnostic
-updates through thin wrappers in its own shared module, backed by `Shared`;
-`ErrorHistory.Model` stores the session's errors newest first. `Shared.update`
-records incoming JavaScript failures directly as `Error.FromJsFailed`; app
-wrappers do not supply an error constructor. Shared infrastructure does not depend
-on either app's model. Outgoing JS messages are shared through `Ports.Js.To`.
 
 `Shared.Model.devPanel` owns the page-independent dev panel state in both apps.
 `DevPanel.Model.selectedTab` stores the selected `DevPanel.Tab`.
@@ -625,9 +670,9 @@ maps panel events through `Shared.superUpdate`. Its `dialog` function prioritize
 the dev panel over the page dialog and renders only the selected dialog.
 `Shared.update` returns the updated model and the common `Eff Msg` directly.
 `Shared.superUpdate` detects when the dev panel opens and adds an open-dialog
-effect using the static `DevPanel.htmlId`. App shared wrappers delegate directly
-without a dialog callback. Each entry point checks when the panel closes after
-its app update and reopens its pending page dialog. Shared has no knowledge of
+effect using the static `DevPanel.htmlId`. Each entry point calls it directly,
+checks when the panel closes after its app update, and reopens its pending page
+dialog. Shared has no knowledge of
 page dialogs. Page key commands are suspended while the dev panel is open;
 Escape uses the native dialog cancel event. The dev panel enables the dialog
 header’s optional close button, which emits the same cancellation event.
@@ -656,8 +701,9 @@ player app's startup flags; shared state does not retain it, and DevTools does n
 decode or store it. Non-production builds compile `Fightlines` to `elm.js` and `DevTools` to
 `elm-dev-tools.js`. `tools/build-dev-tools.cjs` copies the tools HTML and startup
 script unchanged to `public/dev-tools.html` and `public/dev-tools.js`; it never
-reads or rewrites the player entry files. Both HTML sources embed the interface
-font. Map thumbnail interop loads only in the tools document. Server tool routes
+reads or rewrites the player entry files. Both HTML sources load the shared
+interface font from `public/ubuntu-mono-regular.ttf`. Map thumbnail interop loads
+only in the tools document. Server tool routes
 serve that document while player routes serve `index.html`. Production builds
 compile only `Fightlines` and delete stale tools HTML/JavaScript from `public`, retaining
 the tools sources. Server editor and archive access still use their independent

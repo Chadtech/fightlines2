@@ -8,6 +8,7 @@ mod combat;
 mod environment;
 mod feedback;
 mod game;
+mod game_activity;
 mod game_archive;
 mod game_log;
 mod graphql;
@@ -188,7 +189,7 @@ async fn run(frontend: PathBuf) -> io::Result<()> {
 async fn cleanup_expired_entries(store: web::Data<store::Store>) {
     let dispatch = tracing::dispatcher::get_default(Clone::clone);
     loop {
-        actix_web::rt::time::sleep(Duration::from_secs(60)).await;
+        actix_web::rt::time::sleep(Duration::from_secs(1)).await;
         let store = store.clone();
         let dispatch = dispatch.clone();
         let result = web::block(move || {

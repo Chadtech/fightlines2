@@ -10,6 +10,7 @@ module Effect exposing
     , map
     , measure
     , none
+    , now
     , pushUrl
     , replaceUrl
     , request
@@ -33,6 +34,7 @@ import Json.Encode as Encode
 import Ports.Js.To as ToJs
 import Process
 import Task
+import Time
 
 
 
@@ -46,6 +48,7 @@ type Eff msg
     | Batch (List (Eff msg))
     | Request (GraphqlRequest msg)
     | After Float msg
+    | Now (Time.Posix -> msg)
     | Focus { htmlId : String } (Result Browser.Dom.Error () -> msg)
     | Measure String (Result Browser.Dom.Error Browser.Dom.Element -> msg)
     | ScrollToBottom { htmlId : String } (Result Browser.Dom.Error () -> msg)
@@ -126,6 +129,11 @@ after =
     After
 
 
+now : (Time.Posix -> msg) -> Eff msg
+now =
+    Now
+
+
 focus : { htmlId : String } -> (Result Browser.Dom.Error () -> msg) -> Eff msg
 focus =
     Focus
@@ -175,6 +183,9 @@ map toMsg effect =
         After milliseconds completed ->
             After milliseconds (toMsg completed)
 
+        Now received ->
+            Now (received >> toMsg)
+
         Focus element received ->
             Focus element (received >> toMsg)
 
@@ -212,6 +223,10 @@ toCmd key effect =
         After milliseconds completed ->
             Process.sleep milliseconds
                 |> Task.perform (always completed)
+
+        Now received ->
+            Time.now
+                |> Task.perform received
 
         Focus element received ->
             Browser.Dom.focus element.htmlId

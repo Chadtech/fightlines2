@@ -19,7 +19,6 @@ import Effect as E
         ( Eff
         )
 import Fightlines.Route as Route
-import Fightlines.Shared as Shared
 import Fightlines.UserName as UserName
 import Graphql.Http
 import Graphql.SelectionSet as SS exposing (SelectionSet)
@@ -30,6 +29,7 @@ import Html.Styled as H
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import LobbyId exposing (LobbyId)
+import Shared
 import Style as S
 import View.Aria as Aria
 import View.Button as Button

@@ -17,7 +17,6 @@ import Error
 import Fightlines.FeatureFlags as FeatureFlags
 import Fightlines.Feedback as Feedback
 import Fightlines.Route as Route
-import Fightlines.Shared as Shared
 import Fightlines.View.About as About
 import Fightlines.View.Feedback as FeedbackView
 import Fightlines.View.PrivacyPolicy as PrivacyPolicy
@@ -27,6 +26,7 @@ import Html.Styled.Events as Ev
 import Json.Decode as Decode
 import Ports.Js.To as ToJs
 import Random
+import Shared
 import Style as S
 import View.Aria as Aria
 import View.Button as Button

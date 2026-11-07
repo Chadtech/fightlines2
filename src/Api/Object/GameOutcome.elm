@@ -20,6 +20,11 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+inactive : SelectionSet Bool Api.Object.GameOutcome
+inactive =
+    Object.selectionForField "Bool" "inactive" [] Decode.bool
+
+
 resigned : SelectionSet Bool Api.Object.GameOutcome
 resigned =
     Object.selectionForField "Bool" "resigned" [] Decode.bool

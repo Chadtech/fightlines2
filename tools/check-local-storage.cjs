@@ -7,7 +7,7 @@ const vm = require('node:vm');
 
 const key = 'fightlines.localStorage';
 const interopSource = readFileSync('public/elm-interop.js', 'utf8');
-function boot(initial, { readFails = false, writeFails = false, randomSample = 0.5, build, entryPoint = 'Fightlines', clipboardFails = false, thumbnailFails = false } = {}) {
+function boot(initial, { readFails = false, writeFails = false, randomSample = 0.5, now = 1700000000123, build, entryPoint = 'Fightlines', clipboardFails = false, thumbnailFails = false } = {}) {
   const stored = new Map(initial === undefined ? [] : [[key, initial]]);
   const messages = [];
   const warnings = [];
@@ -57,6 +57,7 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
       if (thumbnailFails) throw new Error('thumbnail failed');
       return 'test-png';
     },
+    Date: { now: () => now },
     Math: { floor: Math.floor, min: Math.min, random: () => randomSample },
     localStorage: storage,
     document: { addEventListener() {} },
@@ -69,7 +70,10 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
 async function checkInterop() {
   for (const isProduction of [false, true]) {
     for (const entryPoint of ['Fightlines', 'DevTools']) {
-      assert.equal(boot(undefined, { build: { isProduction }, entryPoint }).flags.isProduction, isProduction);
+      const initialTime = 1700000000123;
+      const flags = boot(undefined, { build: { isProduction }, entryPoint, now: initialTime }).flags;
+      assert.equal(flags.isProduction, isProduction);
+      assert.equal(flags.now, initialTime, 'both apps receive their initial time from JavaScript');
     }
   }
   assert.equal(boot(undefined).flags.isProduction, undefined);

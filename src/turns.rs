@@ -248,6 +248,8 @@ pub struct TurnResolution {
 pub enum GameOutcome {
     Victory(PlayerNumber),
     Resignation(PlayerNumber),
+    /// No winner means both clocks expired at the same deadline.
+    Inactivity(Option<PlayerNumber>),
     Draw,
 }
 
@@ -277,10 +279,17 @@ impl GameOutcome {
 
 #[graphql_object]
 impl GameOutcome {
+    pub fn inactive(&self) -> bool {
+        match self {
+            Self::Inactivity(_) => true,
+            Self::Victory(_) | Self::Resignation(_) | Self::Draw => false,
+        }
+    }
+
     fn resigned(&self) -> bool {
         match self {
             Self::Resignation(_) => true,
-            Self::Victory(_) | Self::Draw => false,
+            Self::Victory(_) | Self::Inactivity(_) | Self::Draw => false,
         }
     }
 
@@ -288,6 +297,7 @@ impl GameOutcome {
     fn winner(&self) -> Option<PlayerNumber> {
         match self {
             Self::Victory(player) | Self::Resignation(player) => Some(*player),
+            Self::Inactivity(winner) => *winner,
             Self::Draw => None,
         }
     }
@@ -1110,6 +1120,13 @@ fn playback_order(
 }
 
 impl Turns {
+    pub fn end_by_inactivity(&mut self, winner: Option<PlayerNumber>) {
+        if self.outcome.is_none() {
+            self.outcome = Some(GameOutcome::Inactivity(winner));
+            self.orders = [None, None];
+        }
+    }
+
     /// Resignation ends the game without resolving pending orders or changing the board.
     pub fn resign(&mut self, player: PlayerNumber) {
         if self.outcome.is_some() {

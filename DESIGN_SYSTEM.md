@@ -46,6 +46,10 @@ interface volume channel. Initial loading, unchanged polls, side swaps, and
 the transition into a game stay silent. Adding or removing an AI also changes
 the roster and plays the corresponding cue.
 
+Matchmaking plays its approved three-second retro welcome cue once when entering
+the get-ready step, using the interface volume channel. Countdown updates and
+the subsequent game navigation stay silent.
+
 ## Typography and copy
 
 Both apps show a quiet `v<integer> · YYYY-MM-DD HH:mm:ss utc` label beside the
@@ -72,10 +76,11 @@ identifies the compiled frontend version and its release timestamp.
   caption uses 0.875rem text.
   Use placement, spacing, grouping, and color to distinguish roles.
 - Use Ubuntu Mono Regular at weight 400. The unmodified TrueType font is
-  embedded as a data URL in `public/index.html` and `dev-tools/index.html`; its
-  Ubuntu Font Licence 1.0 and pinned upstream revision are in
+  bundled in `public/ubuntu-mono-regular.ttf` and loaded by both
+  `public/index.html` and `dev-tools/index.html`. Its Ubuntu Font Licence 1.0
+  and pinned upstream revision are in
   `public/ubuntu-mono-LICENSE.txt`.
-  No separate font request is required.
+  Both apps use the same font URL so the browser can reuse its cached copy.
   Fall back to SFMono-Regular, SF Mono, Menlo, Monaco, Consolas, Liberation Mono,
   then generic monospace.
 
@@ -209,6 +214,10 @@ started … ago** line, and a full-width secondary **cancel** button. With no
 recorded match since startup, show **no games started yet**. Do not add a page
 header, title bar, explanatory paragraphs, or an estimated wait. Errors appear
 near the action; pending join/cancel requests disable duplicate actions.
+When paired, keep the same headerless card for a **get ready** step with the
+opponent's name, an inert map preview and name, and **starting in …** counting
+down from 16 seconds. Open the game automatically when the countdown ends.
+Refresh resumes the shared countdown; a completed pairing cannot be cancelled.
 
 - Pass title bars separately with `Card.withHeader (CardHeader.simple title)`;
   keep the header out of the body content list. `Card` owns their positioning.
@@ -398,6 +407,15 @@ near the action; pending join/cancel requests disable duplicate actions.
   limited; use natural
   height rather than reserving empty space. Longer feedback scrolls within the
   control strip, which is capped at half the viewport height.
+  After two minutes without meaningful input in a human game, show a private
+  native **inactivity warning** dialog with a remaining-seconds timer and the
+  gold **i’m still here** action. It takes priority over other dialogs without
+  losing the player's drafts. Escape also confirms presence. Keep the warning
+  visible until the server acknowledges activity, disable duplicate confirmation,
+  and show failed confirmation text in the dialog. Do not show opponent inactivity
+  before the game ends. Timeout victories use the ordinary gold conclusion, with
+  **victory due to opponent inactivity** for the winner and **you lost due to
+  inactivity** for the loser.
   Request failures appear in a persistent `Card.danger` above this strip, with
   a header naming the failed action, the server or connection message, and
   regular-size `try again` / `dismiss` buttons. Use a 24rem maximum width and 0.75rem gutters;
@@ -662,6 +680,7 @@ near the action; pending join/cancel requests disable duplicate actions.
 ## Decision log
 
 - 2026-10-04: use bundled Ubuntu Mono Regular for the interface, embedding the font data directly in the HTML.
+- 2026-11-06: extract the unchanged font into one shared TrueType asset used by both HTML entry points.
 - 2026-10-04: keep equal-size, normal-weight monospace typography; use a separate
   inverted gray title bar, nightwood text fields, brighter primary actions, and
   lowercase presentation throughout the interface.

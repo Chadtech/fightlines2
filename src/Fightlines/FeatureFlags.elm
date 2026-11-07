@@ -1,9 +1,9 @@
 module Fightlines.FeatureFlags exposing (matchMakingEnabled)
 
-{-| Keep matchmaking hidden until its player flow is ready to release.
+{-| Frontend switches controlling player-facing feature availability.
 -}
 
 
 matchMakingEnabled : Bool
 matchMakingEnabled =
-    False
+    True

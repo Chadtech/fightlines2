@@ -495,7 +495,9 @@ impl Archive {
                 Event::Submitted(submitted) => submitted,
                 Event::Started(_) => return Err(io::Error::other("unexpected Started record")),
             };
-            if (submitted.submissions.is_empty() && submitted.resigned_player.is_none())
+            if (submitted.submissions.is_empty()
+                && submitted.resigned_player.is_none()
+                && !submitted.outcome.is_some_and(|outcome| outcome.inactive()))
                 || submitted.turn_number != next_turn
             {
                 return Err(io::Error::other("invalid submission sequence"));
@@ -543,7 +545,10 @@ pub fn replay(directory: &Path) -> io::Result<String> {
                 let scenario = scenario
                     .as_mut()
                     .ok_or_else(|| io::Error::other("game log must begin with Started"))?;
-                if submitted.submissions.is_empty() && submitted.resigned_player.is_none() {
+                if submitted.submissions.is_empty()
+                    && submitted.resigned_player.is_none()
+                    && !submitted.outcome.is_some_and(|outcome| outcome.inactive())
+                {
                     return Err(io::Error::other("submission record has no orders"));
                 }
                 for submission in &submitted.submissions {
@@ -560,6 +565,9 @@ pub fn replay(directory: &Path) -> io::Result<String> {
                 }
                 if let Some(player) = submitted.resigned_player {
                     turns.resign(player);
+                }
+                if let Some(GameOutcome::Inactivity(winner)) = submitted.outcome {
+                    turns.end_by_inactivity(winner);
                 }
                 let mut actual = SubmissionResult::new(
                     submitted.turn_number,

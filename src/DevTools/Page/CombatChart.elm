@@ -34,7 +34,6 @@ import DevTools.CombatChart as Chart
         , Settings
         )
 import DevTools.Route as Route
-import DevTools.Shared as Shared
 import DevTools.View.CombatChart as ChartView
 import Effect as E exposing (Eff)
 import Graphql.Http
@@ -44,6 +43,7 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Random
+import Shared
 import Style as S
 import View.Aria as Aria
 import View.Button as Button

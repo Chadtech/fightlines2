@@ -257,7 +257,7 @@ pollSucceeded observation model =
 
         preservePlayback : Bool
         preservePlayback =
-            (TurnLifecycle.playback model.phase /= Nothing) && not (GameOutcome.isResignation observation.turn.outcome)
+            (TurnLifecycle.playback model.phase /= Nothing) && not (GameOutcome.interruptsPlayback observation.turn.outcome)
     in
     if preservePlayback then
         recovered
@@ -357,7 +357,7 @@ receive observation model =
     if model.outcome /= Nothing then
         model
 
-    else if GameOutcome.isResignation observation.turn.outcome then
+    else if GameOutcome.interruptsPlayback observation.turn.outcome then
         model
             |> setNumber observation.turn.number
             |> setOutcome observation.turn.outcome

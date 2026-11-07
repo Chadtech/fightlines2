@@ -1,6 +1,6 @@
 module Game.Outcome exposing
     ( GameOutcome(..)
-    , isResignation
+    , interruptsPlayback
     , selection
     )
 
@@ -13,34 +13,51 @@ import Graphql.SelectionSet as SS exposing (SelectionSet)
 type GameOutcome
     = Victory PlayerNumber
     | Resignation PlayerNumber
+    | Inactivity (Maybe PlayerNumber)
     | Draw
+
+
+type alias OutcomeDetails =
+    { winner : Maybe PlayerNumber
+    , resigned : Bool
+    , inactive : Bool
+    }
 
 
 selection : SelectionSet GameOutcome Api.Object.GameOutcome
 selection =
-    SS.succeed fromResult
+    SS.succeed OutcomeDetails
         |> SS.with OutcomeApi.winner
         |> SS.with OutcomeApi.resigned
+        |> SS.with OutcomeApi.inactive
+        |> SS.map fromResult
 
 
-fromResult : Maybe PlayerNumber -> Bool -> GameOutcome
-fromResult winner resigned =
-    case winner of
-        Just player ->
-            if resigned then
-                Resignation player
+fromResult : OutcomeDetails -> GameOutcome
+fromResult details =
+    if details.inactive then
+        Inactivity details.winner
 
-            else
-                Victory player
+    else
+        case details.winner of
+            Just player ->
+                if details.resigned then
+                    Resignation player
 
-        Nothing ->
-            Draw
+                else
+                    Victory player
+
+            Nothing ->
+                Draw
 
 
-isResignation : Maybe GameOutcome -> Bool
-isResignation outcome =
+interruptsPlayback : Maybe GameOutcome -> Bool
+interruptsPlayback outcome =
     case outcome of
         Just (Resignation _) ->
+            True
+
+        Just (Inactivity _) ->
             True
 
         _ ->

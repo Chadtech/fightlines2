@@ -19,6 +19,13 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+inactivity :
+    SelectionSet decodesTo Api.Object.EnabledInactivity
+    -> SelectionSet (Maybe decodesTo) Api.Object.GameSnapshot
+inactivity object____ =
+    Object.selectionForCompositeField "inactivity" [] object____ (Basics.identity >> Decode.nullable)
+
+
 replayOrders :
     SelectionSet decodesTo Api.Object.RecordedOrder
     -> SelectionSet (List decodesTo) Api.Object.GameSnapshot

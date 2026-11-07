@@ -29,6 +29,23 @@ gameId =
     Object.selectionForField "String" "gameId" [] Decode.string
 
 
+map :
+    SelectionSet decodesTo Api.Object.NamedMap
+    -> SelectionSet decodesTo Api.Object.MatchMakingMatched
+map object____ =
+    Object.selectionForCompositeField "map" [] object____ Basics.identity
+
+
+opponentName : SelectionSet String Api.Object.MatchMakingMatched
+opponentName =
+    Object.selectionForField "String" "opponentName" [] Decode.string
+
+
+readyRemainingMilliseconds : SelectionSet Int Api.Object.MatchMakingMatched
+readyRemainingMilliseconds =
+    Object.selectionForField "Int" "readyRemainingMilliseconds" [] Decode.int
+
+
 lastGameStartedSecondsAgo : SelectionSet (Maybe Int) Api.Object.MatchMakingMatched
 lastGameStartedSecondsAgo =
     Object.selectionForField "(Maybe Int)" "lastGameStartedSecondsAgo" [] (Decode.int |> Decode.nullable)

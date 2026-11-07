@@ -1,13 +1,16 @@
 port module Checks.LocalStorage exposing (main)
 
 import Audio
+import DevTools.Flags as DevToolsFlags
 import Error exposing (Error(..))
+import Fightlines.Flags as PlayerFlags
 import Fightlines.UserName as UserName
 import Json.Decode as JD
 import Json.Encode as Encode
 import LocalStorage
 import Platform
 import Preference
+import Time
 
 
 port results : List String -> Cmd msg
@@ -16,7 +19,7 @@ port results : List String -> Cmd msg
 main : Program () () Never
 main =
     Platform.worker
-        { init = \_ -> ( (), results checks )
+        { init = \_ -> ( (), results (checks ++ clockFlagChecks) )
         , update = \_ model -> ( model, Cmd.none )
         , subscriptions = \_ -> Sub.none
         }
@@ -207,3 +210,50 @@ checks =
         , check "both mute states survive storage round trips" (List.all muteRoundTrip [ Audio.Muted, Audio.Unmuted ])
         , check "invalid mute defaults to unmuted and retains its decoder error" invalidMutePreservesError
         ]
+
+
+clockFlagChecks : List String
+clockFlagChecks =
+    let
+        commonFlags : List ( String, Encode.Value )
+        commonFlags =
+            [ ( "isProduction", Encode.bool False )
+            , ( "operatingSystem", Encode.string "test" )
+            , ( "localStorage", Encode.object [] )
+            , ( "seed", Encode.int 42 )
+            ]
+
+        flags : Encode.Value
+        flags =
+            Encode.object (( "now", Encode.int 1700000000123 ) :: commonFlags)
+
+        missingClock : Encode.Value
+        missingClock =
+            Encode.object commonFlags
+
+        clockRequired : Bool
+        clockRequired =
+            case ( JD.decodeValue PlayerFlags.decoder missingClock, JD.decodeValue DevToolsFlags.decoder missingClock ) of
+                ( Err _, Err _ ) ->
+                    True
+
+                _ ->
+                    False
+
+        expected : Time.Posix
+        expected =
+            Time.millisToPosix 1700000000123
+
+        playerTime : Result JD.Error Time.Posix
+        playerTime =
+            JD.decodeValue PlayerFlags.decoder flags |> Result.map .now
+
+        toolsTime : Result JD.Error Time.Posix
+        toolsTime =
+            JD.decodeValue DevToolsFlags.decoder flags |> Result.map .now
+    in
+    if (playerTime == Ok expected) && (toolsTime == Ok expected) && clockRequired then
+        []
+
+    else
+        [ "both applications must decode the required JavaScript startup clock" ]

@@ -18,11 +18,12 @@ use juniper::{FieldResult, GraphQLUnion, graphql_object};
 use std::{
     collections::BTreeMap,
     num::NonZeroUsize,
-    sync::{MutexGuard, TryLockError},
+    sync::{Arc, MutexGuard, TryLockError},
     time::{Duration, Instant},
 };
 
 const PRESENCE_TIMEOUT: Duration = Duration::from_secs(30);
+const GET_READY_DURATION: Duration = Duration::from_secs(16);
 
 #[derive(Clone, PartialEq, Eq)]
 struct Ticket(String);
@@ -34,9 +35,13 @@ struct WaitingPlayer {
     last_seen: Instant,
 }
 
+#[derive(Clone)]
 struct Match {
     ticket: Ticket,
     game_id: LobbyId,
+    map: Arc<NamedMap>,
+    opponent: PlayerName,
+    ready_at: Instant,
 }
 
 #[derive(Default)]
@@ -49,7 +54,7 @@ pub(crate) struct Queue {
 
 /// Each GraphQL variant requires exactly the fields belonging to its queue state.
 #[derive(GraphQLUnion)]
-#[graphql(name = "MatchMakingSnapshot")]
+#[graphql(name = "MatchMakingSnapshot", context = Context)]
 pub enum Snapshot {
     Idle(IdleSnapshot),
     Waiting(WaitingSnapshot),
@@ -105,7 +110,7 @@ pub struct MatchedSnapshot {
     activity: RecentActivity,
 }
 
-#[graphql_object(name = "MatchMakingMatched")]
+#[graphql_object(name = "MatchMakingMatched", context = Context)]
 impl MatchedSnapshot {
     fn ticket(&self) -> &str {
         &self.result.ticket.0
@@ -113,6 +118,22 @@ impl MatchedSnapshot {
 
     fn game_id(&self) -> String {
         self.result.game_id.to_string()
+    }
+
+    fn map(&self) -> &NamedMap {
+        &self.result.map
+    }
+
+    fn opponent_name(&self) -> String {
+        self.result.opponent.to_string()
+    }
+
+    fn ready_remaining_milliseconds(&self) -> i32 {
+        self.result
+            .ready_at
+            .saturating_duration_since(self.activity.observed_at)
+            .as_millis()
+            .min(i32::MAX as u128) as i32
     }
 
     fn last_game_started_seconds_ago(&self) -> Option<i32> {
@@ -149,10 +170,7 @@ impl Queue {
                 && ticket.is_none_or(|ticket| ticket == &found.ticket)
             {
                 return Snapshot::Matched(MatchedSnapshot {
-                    result: Match {
-                        ticket: found.ticket.clone(),
-                        game_id: found.game_id.clone(),
-                    },
+                    result: found.clone(),
                     activity,
                 });
             }
@@ -243,7 +261,7 @@ impl Queue {
             let game = Game::new(
                 id.clone(),
                 LobbyName::parse("match making").ok_or("invalid match making name")?,
-                map.map_type,
+                map.map_type.clone(),
                 opponent.session.clone(),
                 vec![
                     Player {
@@ -254,7 +272,7 @@ impl Queue {
                     Player {
                         player_number: side.opponent(),
                         controller: PlayerController::Human(session.clone()),
-                        name,
+                        name: name.clone(),
                     },
                 ],
                 map.definition
@@ -263,11 +281,17 @@ impl Queue {
             );
             // Keep the waiting player and both receipts unchanged if recording fails.
             store.insert_match(id.clone(), game)?;
+            let map = Arc::new(map);
+            let started = Instant::now();
+            let ready_at = started + GET_READY_DURATION;
             self.matches.insert(
                 opponent.session.clone(),
                 Match {
                     ticket: opponent.ticket.clone(),
                     game_id: id.clone(),
+                    map: map.clone(),
+                    opponent: name,
+                    ready_at,
                 },
             );
             self.matches.insert(
@@ -275,10 +299,13 @@ impl Queue {
                 Match {
                     ticket,
                     game_id: id,
+                    map,
+                    opponent: opponent.name.clone(),
+                    ready_at,
                 },
             );
             self.waiting = None;
-            self.last_game_started = Some(Instant::now());
+            self.last_game_started = Some(started);
         } else {
             self.waiting = Some(WaitingPlayer {
                 session: session.clone(),
@@ -424,6 +451,59 @@ mod tests {
             Snapshot::Idle(_) => Ok(()),
             _ => Err("expected an idle queue".into()),
         }
+    }
+
+    #[test]
+    fn ready_countdown_is_shared_and_refreshes_and_retries_do_not_restart_it() -> TestResult {
+        let store = Store::new(Seed::new([95; 32]));
+        let mut queue = Queue::default();
+        let first = SessionToken::from_token("first".into());
+        let second = SessionToken::from_token("second".into());
+        let stranger = SessionToken::from_token("stranger".into());
+        let now = Instant::now();
+        let first_ticket = ticket(
+            queue
+                .join(&store, first.clone(), name("first")?, pool()?, now)
+                .fixture()?,
+        )?;
+        queue
+            .join(&store, second.clone(), name("second")?, pool()?, now)
+            .fixture()?;
+        let receipt = queue.matches.get(&first).fixture()?.clone();
+        let other = queue.matches.get(&second).fixture()?;
+        assert_eq!(receipt.ready_at, other.ready_at);
+        assert!(Arc::ptr_eq(&receipt.map, &other.map));
+        assert_eq!(receipt.opponent.to_string(), "second");
+        assert_eq!(other.opponent.to_string(), "first");
+        assert_idle(queue.snapshot(Some(&stranger), None, now))?;
+        assert_idle(queue.snapshot(Some(&first), Some(&Ticket("stale".into())), now))?;
+
+        let started = receipt.ready_at - GET_READY_DURATION;
+        for (elapsed, expected_remaining) in [(0, 16000), (7, 9000), (16, 0), (30, 0)] {
+            let observed_at = started + Duration::from_secs(elapsed);
+            // Initial load/refresh and the existing poll/cancel paths share the deadline.
+            for snapshot in [
+                queue.snapshot(Some(&first), None, observed_at),
+                queue.poll(&first, &first_ticket, observed_at),
+                queue.leave(&first, &first_ticket, observed_at),
+            ] {
+                match snapshot {
+                    Snapshot::Matched(matched) => {
+                        assert_eq!(matched.ready_remaining_milliseconds(), expected_remaining);
+                        assert_eq!(matched.result.game_id, receipt.game_id);
+                    }
+                    _ => return Err("expected the matched countdown to survive a retry".into()),
+                }
+            }
+        }
+        queue
+            .join(&store, first.clone(), name("first")?, pool()?, started)
+            .fixture()?;
+        assert_eq!(
+            queue.matches.get(&first).fixture()?.ready_at,
+            receipt.ready_at
+        );
+        Ok(())
     }
 
     #[test]
@@ -655,7 +735,10 @@ mod tests {
         let fields = "__typename
             ... on MatchMakingIdle { lastGameStartedSecondsAgo }
             ... on MatchMakingWaiting { ticket lastGameStartedSecondsAgo }
-            ... on MatchMakingMatched { ticket gameId lastGameStartedSecondsAgo }";
+            ... on MatchMakingMatched {
+                ticket gameId lastGameStartedSecondsAgo opponentName
+                readyRemainingMilliseconds map { mapType thumbnailUrl }
+            }";
         let (idle, _) = execute!(&app, format!("{{ matchMaking {{ {fields} }} }}"), None);
         assert_eq!(
             idle["data"]["matchMaking"],
@@ -704,6 +787,12 @@ mod tests {
             "MatchMakingMatched"
         );
         assert!(paired["data"]["joinMatchMaking"]["ticket"].is_string());
+        assert_eq!(paired["data"]["joinMatchMaking"]["opponentName"], "First");
+        let remaining = paired["data"]["joinMatchMaking"]["readyRemainingMilliseconds"]
+            .as_i64()
+            .fixture()?;
+        assert!((1..=16000).contains(&remaining));
+        assert!(paired["data"]["joinMatchMaking"]["map"]["thumbnailUrl"].is_string());
         let id = paired["data"]["joinMatchMaking"]["gameId"]
             .as_str()
             .fixture()?;
@@ -717,6 +806,10 @@ mod tests {
             );
             assert!(snapshot.get("errors").is_none(), "{snapshot}");
             assert_eq!(snapshot["data"]["game"]["turnNumber"], 1);
+            assert_eq!(
+                paired["data"]["joinMatchMaking"]["map"]["mapType"],
+                snapshot["data"]["game"]["mapType"]
+            );
             let map_id = MapId::parse(
                 snapshot["data"]["game"]["mapType"]
                     .as_str()
@@ -734,6 +827,7 @@ mod tests {
             Some(first)
         );
         assert_eq!(poll["data"]["pollMatchMaking"]["gameId"], id);
+        assert_eq!(poll["data"]["pollMatchMaking"]["opponentName"], "Second");
         let (activity, _) = execute!(&app, format!("{{ matchMaking {{ {fields} }} }}"), None);
         assert_eq!(
             activity["data"]["matchMaking"]["__typename"],

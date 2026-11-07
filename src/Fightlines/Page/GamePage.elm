@@ -9,6 +9,7 @@ module Fightlines.Page.GamePage exposing
     , keyCommands
     , load
     , movingUnits
+    , renewInactivityTimer
     , setDepots
     , setShared
     , setUnits
@@ -18,6 +19,7 @@ module Fightlines.Page.GamePage exposing
     )
 
 import Api.Enum.Direction as DirectionEnum exposing (Direction)
+import Api.Enum.InactivityRenewalReason as RenewalReason exposing (InactivityRenewalReason)
 import Api.Enum.PlayerNumber as PlayerNumberEnum exposing (PlayerNumber)
 import Api.Enum.ResourceKind as ResourceKind
 import Api.Enum.TurnEventKind as TurnEventKind
@@ -42,7 +44,6 @@ import Effect as E
 import Error exposing (Error)
 import Fightlines.Feedback as Feedback
 import Fightlines.Route as Route
-import Fightlines.Shared as Shared
 import Fightlines.View.About as About
 import Fightlines.View.Feedback as FeedbackView
 import Fightlines.View.GameMenu as GameMenu
@@ -71,6 +72,7 @@ import Game.Depot as Depot
 import Game.DestinationFeedback exposing (DestinationFeedback(..))
 import Game.Direction as Direction
 import Game.DirectionPlanning as DirectionPlanning
+import Game.Inactivity as Inactivity exposing (Inactivity)
 import Game.IndirectFirePlanning as IndirectFirePlanning
 import Game.Inspection as Inspection exposing (Inspection(..))
 import Game.Map as Map exposing (Map)
@@ -142,6 +144,7 @@ import LobbyId
 import Ports.Js.To as ToJs
 import Preference
 import Random
+import Shared
 import Style as S
 import Time
 import Util.Html.Event as HtmlEvent
@@ -163,7 +166,8 @@ import View.RequestError as RequestError
 
 
 type alias Model =
-    { currentTurn : CurrentTurn.Model
+    { activity : Inactivity.Model
+    , currentTurn : CurrentTurn.Model
     , feedback : Feedback.Draft
     , chat : Chat.Model
     , shared : Shared.Model
@@ -193,7 +197,8 @@ type alias Model =
 
 
 type alias Snapshot =
-    { battlefield : BattlefieldSnapshot.Snapshot
+    { inactivity : Inactivity
+    , battlefield : BattlefieldSnapshot.Snapshot
     , supplyRules : Supply.Rules
     , movementRules : List Movement.Rule
     , turn : Turn.Snapshot
@@ -207,7 +212,8 @@ type ResignationDestination
 
 
 type alias PollStatus =
-    { number : Int
+    { inactivity : Inactivity
+    , number : Int
     , outcome : Maybe GameOutcome
     , submitted : Bool
     , opponentSubmitted : Bool
@@ -240,7 +246,9 @@ type alias RequestErrorDetails =
 
 
 type Msg
-    = BattlefieldSizeReceived (Result Browser.Dom.Error Browser.Dom.Element)
+    = StillHereClicked
+    | InactivityRenewalResponseReceived Inactivity.Report (ApiRequest.Response PollStatus)
+    | BattlefieldSizeReceived (Result Browser.Dom.Error Browser.Dom.Element)
     | FeedbackMsg FeedbackView.Msg
     | FeedbackResponseReceived Feedback.RequestId (ApiRequest.Response Bool)
     | ChatMsg ChatView.Msg
@@ -303,7 +311,7 @@ type Msg
     | SubmitResponseReceived Int (ApiRequest.Response Snapshot)
     | CurrentTurnMsg CurrentTurn.Msg
     | ResignResponseReceived ResignationDestination (ApiRequest.Response Snapshot)
-    | PollStatusResponseReceived (ApiRequest.Response PollStatus)
+    | PollStatusResponseReceived Int (ApiRequest.Response PollStatus)
     | PollResponseReceived (ApiRequest.Response Snapshot)
 
 
@@ -358,7 +366,8 @@ init shared flags =
 
         model : Model
         model =
-            { currentTurn = CurrentTurn.init (turnObservation flags.snapshot)
+            { activity = Inactivity.init shared.now flags.snapshot.inactivity
+            , currentTurn = CurrentTurn.init (turnObservation flags.snapshot)
             , chat = Chat.initGame flags.messages
             , shared =
                 shared
@@ -966,7 +975,10 @@ applyTurnSnapshot snapshot currentTurn model =
     let
         next : Model
         next =
-            reconcileTurnSnapshot snapshot currentTurn model
+            model
+                |> setCurrentTurn currentTurn
+                |> reconcileActivityTurn model.currentTurn.number
+                |> reconcileTurnSnapshot snapshot model.currentTurn
     in
     case ( playback model, playback next ) of
         ( Nothing, Just _ ) ->
@@ -981,19 +993,26 @@ applyTurnSnapshot snapshot currentTurn model =
                 |> E.withOut
 
 
-reconcileTurnSnapshot : Snapshot -> CurrentTurn.Model -> Model -> Model
-reconcileTurnSnapshot snapshot currentTurn model =
-    let
-        next : Model
-        next =
-            model
-                |> setCurrentTurn currentTurn
-    in
-    if model.currentTurn.outcome /= Nothing then
-        next
+reconcileActivityTurn : Int -> Model -> Model
+reconcileActivityTurn previousTurn model =
+    if model.currentTurn.number > previousTurn then
+        { model | activity = Inactivity.nextTurn model.activity }
 
-    else if GameOutcome.isResignation currentTurn.outcome then
-        next
+    else
+        model
+
+
+reconcileTurnSnapshot : Snapshot -> CurrentTurn.Model -> Model -> Model
+reconcileTurnSnapshot snapshot previousTurn model =
+    if previousTurn.outcome /= Nothing then
+        model
+
+    else if GameOutcome.interruptsPlayback model.currentTurn.outcome then
+        { model
+            | welcomeBriefingPending = False
+            , inspectionHelp = Nothing
+        }
+            |> setChat (Chat.close model.chat)
             |> setMap snapshot.battlefield.map
             |> setDepots snapshot.battlefield.depots
             |> setSupplyCrates snapshot.battlefield.supplyCrates
@@ -1002,7 +1021,7 @@ reconcileTurnSnapshot snapshot currentTurn model =
             |> setMenu MenuClosed
             |> setNavigation (BattlefieldNavigation.finishReturn model.navigation)
 
-    else if currentTurn.number > model.currentTurn.number then
+    else if model.currentTurn.number > previousTurn.number then
         let
             frame : TurnPlayback.Frame
             frame =
@@ -1019,7 +1038,7 @@ reconcileTurnSnapshot snapshot currentTurn model =
                     , supplyCrates = snapshot.battlefield.supplyCrates
                     }
         in
-        { next | supplyRules = snapshot.supplyRules }
+        { model | supplyRules = snapshot.supplyRules }
             |> setMap snapshot.battlefield.map
             |> setDepots frame.depots
             |> setSupplyCrates frame.supplyCrates
@@ -1027,7 +1046,7 @@ reconcileTurnSnapshot snapshot currentTurn model =
             |> setVisibleTiles frame.visibleTiles
 
     else
-        next
+        model
 
 
 plannedAction : Model -> Unit -> Movement.Option -> String
@@ -1149,22 +1168,24 @@ loadSnapshot id =
 
 pollRequest : LobbyId -> Graphql.Http.Request PollStatus
 pollRequest id =
-    let
-        selection : SelectionSet PollStatus Api.Object.GameSnapshot
-        selection =
-            SS.succeed PollStatus
-                |> SS.with SnapshotApi.turnNumber
-                |> SS.with (SnapshotApi.outcome GameOutcome.selection)
-                |> SS.with SnapshotApi.submitted
-                |> SS.with SnapshotApi.opponentSubmitted
-    in
-    Api.Query.game { id = LobbyId.toString id } selection
+    Api.Query.game { id = LobbyId.toString id } pollStatusSelection
         |> ApiRequest.queryRequest
+
+
+pollStatusSelection : SelectionSet PollStatus Api.Object.GameSnapshot
+pollStatusSelection =
+    SS.succeed PollStatus
+        |> SS.with Inactivity.selection
+        |> SS.with SnapshotApi.turnNumber
+        |> SS.with (SnapshotApi.outcome GameOutcome.selection)
+        |> SS.with SnapshotApi.submitted
+        |> SS.with SnapshotApi.opponentSubmitted
 
 
 snapshotSelection : SelectionSet Snapshot Api.Object.GameSnapshot
 snapshotSelection =
     SS.succeed Snapshot
+        |> SS.with Inactivity.selection
         |> SS.with BattlefieldSnapshot.selection
         |> SS.with (SnapshotApi.scenario (Scenario.supplyRules Supply.rulesSelection))
         |> SS.with (SnapshotApi.movementRules Movement.ruleSelection)
@@ -1909,6 +1930,354 @@ pollChat lobbyId model =
             )
 
 
+recordUserInteraction : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
+recordUserInteraction lobbyId msg model =
+    if isUserInteraction msg && (model.currentTurn.outcome == Nothing) then
+        { model | activity = Inactivity.recordInteraction model.activity }
+            |> renewInactivityTimer lobbyId
+
+    else
+        model |> E.withOut
+
+
+inactivityTimerNeeded : Model -> Bool
+inactivityTimerNeeded model =
+    case model.currentTurn.phase of
+        TurnLifecycle.WaitingForOpponent _ ->
+            False
+
+        _ ->
+            True
+
+
+renewInactivityTimer : LobbyId -> Model -> ( Model, Eff Msg )
+renewInactivityTimer lobbyId model =
+    let
+        presentation : Maybe InactivityRenewalReason
+        presentation =
+            if playback model /= Nothing then
+                Just RenewalReason.PlaybackAllowance
+
+            else if model.welcomeBriefingPending && (model.currentTurn.number == 1) then
+                Just RenewalReason.BriefingAllowance
+
+            else
+                Nothing
+    in
+    if (model.currentTurn.outcome == Nothing) && inactivityTimerNeeded model then
+        let
+            ( activity, report ) =
+                Inactivity.beginReport model.shared.now
+                    { turnNumber = model.currentTurn.number
+                    , presentation = presentation
+                    }
+                    model.activity
+
+            next : Model
+            next =
+                { model | activity = activity }
+        in
+        case report of
+            Just request ->
+                ( next
+                , Api.Mutation.renewInactivityTimer
+                    { id = LobbyId.toString lobbyId
+                    , turnNumber = request.turnNumber
+                    , reason = request.reason
+                    }
+                    pollStatusSelection
+                    |> ApiRequest.mutationRequest
+                    |> E.request (InactivityRenewalResponseReceived request)
+                )
+
+            Nothing ->
+                next |> E.withOut
+
+    else
+        model |> E.withOut
+
+
+{-| Explicitly classify input intent. Polls, response messages, animation,
+focus management, hover and passive pointer movement never count as activity.
+-}
+isUserInteraction : Msg -> Bool
+isUserInteraction msg =
+    case msg of
+        StillHereClicked ->
+            True
+
+        InactivityRenewalResponseReceived _ _ ->
+            False
+
+        BattlefieldSizeReceived _ ->
+            False
+
+        FeedbackMsg _ ->
+            True
+
+        FeedbackResponseReceived _ _ ->
+            False
+
+        ChatMsg chatMsg ->
+            case chatMsg of
+                ChatView.DialogOpened ->
+                    False
+
+                ChatView.HistoryScrolled _ ->
+                    False
+
+                _ ->
+                    True
+
+        ChatPollElapsed _ ->
+            False
+
+        ChatPollReceived _ ->
+            False
+
+        ChatSendReceived _ _ ->
+            False
+
+        ChatOverlayExpired _ ->
+            False
+
+        ChatScrollCompleted _ ->
+            False
+
+        InspectorSizeReceived _ _ ->
+            False
+
+        ControlsSizeReceived _ _ ->
+            False
+
+        CameraReturnFinished ->
+            False
+
+        WindowResized ->
+            False
+
+        BattlefieldMsg battlefieldMsg ->
+            case battlefieldMsg of
+                Battlefield.MouseOverUnit _ ->
+                    False
+
+                Battlefield.MouseOverDepot _ ->
+                    False
+
+                Battlefield.MouseOverTile _ ->
+                    False
+
+                Battlefield.FocusedBoardUnit _ ->
+                    False
+
+                Battlefield.FocusedBoardTile _ ->
+                    False
+
+                Battlefield.TargetPreviewLeft ->
+                    False
+
+                Battlefield.RotationChoicesMsg rotationMsg ->
+                    case rotationMsg of
+                        RotationChoices.MouseMovedOverDirection _ ->
+                            False
+
+                        RotationChoices.FocusedDirection _ ->
+                            False
+
+                        RotationChoices.ClickedDirection _ ->
+                            True
+
+                        RotationChoices.DirectionActivationKeyPressed _ ->
+                            True
+
+                _ ->
+                    True
+
+        BattlefieldNavigationMsg navigationMsg ->
+            case navigationMsg of
+                BattlefieldNavigation.MouseReleased _ ->
+                    True
+
+                BattlefieldNavigation.MouseMoved _ _ ->
+                    False
+
+                BattlefieldNavigation.WindowVisibilityChanged _ ->
+                    False
+
+        OrderMenuMsg orderMsg ->
+            case orderMsg of
+                OrderMenu.OrderFocused _ ->
+                    False
+
+                _ ->
+                    True
+
+        GameMenuMsg menuMsg ->
+            case menuMsg of
+                GameMenu.FocusReturned _ ->
+                    False
+
+                _ ->
+                    True
+
+        SettingsMsg _ ->
+            True
+
+        FocusCompleted _ ->
+            False
+
+        PreviousOrderPressed ->
+            True
+
+        NextOrderPressed ->
+            True
+
+        OrderFocusCompleted _ ->
+            False
+
+        PanLeftKeyPressed ->
+            True
+
+        PanRightKeyPressed ->
+            True
+
+        PanUpKeyPressed ->
+            True
+
+        PanDownKeyPressed ->
+            True
+
+        ZoomInKeyPressed ->
+            True
+
+        ZoomOutKeyPressed ->
+            True
+
+        AnimationTimerElapsed _ ->
+            False
+
+        TurnIntroductionMsg _ ->
+            True
+
+        UnitDeathMsg _ ->
+            True
+
+        CombatTheaterMsg _ ->
+            True
+
+        DirectionKeyPressed _ ->
+            True
+
+        PathDirectionKeyPressed _ ->
+            True
+
+        PathEnterPressed ->
+            True
+
+        NextUnorderedUnitKeyPressed ->
+            True
+
+        ClearMoveClicked ->
+            True
+
+        CancelOrderClicked ->
+            True
+
+        CargoUnitClicked _ ->
+            True
+
+        LoadCratesClicked _ _ ->
+            True
+
+        GroundFreightPickupClicked ->
+            True
+
+        UnloadCrateToggled _ _ ->
+            True
+
+        UnloadUnitToggled _ _ ->
+            True
+
+        UnloadChoicesConfirmed ->
+            True
+
+        UnloadSkipped ->
+            True
+
+        InspectClicked ->
+            True
+
+        InspectorCloseClicked ->
+            True
+
+        InspectionHelpClicked _ ->
+            True
+
+        InspectionHelpFocusReturned _ ->
+            False
+
+        EscapePressed ->
+            True
+
+        WelcomeBriefingDismissed ->
+            True
+
+        DialogDismissed ->
+            True
+
+        SubmissionCancelled ->
+            True
+
+        SubmissionConfirmed ->
+            True
+
+        SubmitKeyPressed ->
+            True
+
+        SubmissionEnterPressed ->
+            True
+
+        SkipUnplannedUnitsWarningChanged _ ->
+            True
+
+        TurnControlsMsg _ ->
+            True
+
+        RequestRetryClicked ->
+            True
+
+        RequestErrorDismissed ->
+            True
+
+        SubmitResponseReceived _ _ ->
+            False
+
+        CurrentTurnMsg turnMsg ->
+            case turnMsg of
+                CurrentTurn.PollTimerElapsed ->
+                    False
+
+                CurrentTurn.GotPlaybackPresentationMsg playbackMsg ->
+                    case playbackMsg of
+                        PlaybackPresentation.CombatEnterReleased ->
+                            True
+
+                        PlaybackPresentation.CombatSeeMapReleased ->
+                            False
+
+                        PlaybackPresentation.FrameElapsed _ ->
+                            False
+
+        ResignResponseReceived _ _ ->
+            False
+
+        PollStatusResponseReceived _ _ ->
+            False
+
+        PollResponseReceived _ ->
+            False
+
+
 
 ----------------------------------------------------------------
 -- UPDATE --
@@ -1926,6 +2295,7 @@ superUpdate lobbyId msg model =
                 |> update lobbyId msg
                 |> E.andThen (withLayoutMeasurement model)
                 |> E.and (E.audio (playAudio msg model))
+                |> E.andThen (recordUserInteraction lobbyId msg)
 
         briefingClosed : Bool
         briefingClosed =
@@ -1960,6 +2330,23 @@ superUpdate lobbyId msg model =
 update : LobbyId -> Msg -> Model -> ( Model, Eff Msg )
 update lobbyId msg model =
     case msg of
+        StillHereClicked ->
+            model |> E.withOut
+
+        InactivityRenewalResponseReceived report result ->
+            case result of
+                Ok status ->
+                    if report.turnNumber == model.currentTurn.number then
+                        { model | activity = Inactivity.succeeded model.shared.now report status.inactivity model.activity }
+                            |> E.withOut
+
+                    else
+                        model |> E.withOut
+
+                Err error ->
+                    { model | activity = Inactivity.failed report (ApiRequest.errorMessage error) model.activity }
+                        |> E.withOut
+
         ChatMsg chatMsg ->
             handleChatMsg lobbyId chatMsg model
 
@@ -2555,13 +2942,21 @@ update lobbyId msg model =
         CurrentTurnMsg turnMsg ->
             handleCurrentTurnMsg lobbyId turnMsg model
 
-        PollStatusResponseReceived result ->
+        PollStatusResponseReceived activitySequence result ->
             case result of
                 Ok status ->
                     let
                         currentTurn : CurrentTurn.Model
                         currentTurn =
                             model.currentTurn
+
+                        observed : Model
+                        observed =
+                            if status.number == currentTurn.number then
+                                { model | activity = Inactivity.observe model.shared.now activitySequence status.inactivity model.activity }
+
+                            else
+                                model
 
                         needsSnapshot : Bool
                         needsSnapshot =
@@ -2583,10 +2978,10 @@ update lobbyId msg model =
                             }
                     in
                     if needsSnapshot then
-                        ( model, E.request PollResponseReceived (loadSnapshot lobbyId) )
+                        ( observed, E.request PollResponseReceived (loadSnapshot lobbyId) )
 
                     else
-                        (model
+                        (observed
                             |> setCurrentTurn (CurrentTurn.pollSucceeded observation currentTurn)
                         )
                             |> E.withOut
@@ -2729,6 +3124,12 @@ Clicks ignored after panning also stay silent.
 playAudio : Msg -> Model -> Audio.Event
 playAudio msg model =
     case msg of
+        StillHereClicked ->
+            Audio.confirm
+
+        InactivityRenewalResponseReceived _ _ ->
+            Audio.none
+
         ChatMsg _ ->
             Audio.none
 
@@ -3178,7 +3579,7 @@ playAudio msg model =
         ResignResponseReceived _ _ ->
             Audio.none
 
-        PollStatusResponseReceived _ ->
+        PollStatusResponseReceived _ _ ->
             Audio.none
 
         PollResponseReceived _ ->
@@ -3526,7 +3927,7 @@ refreshTurn lobbyId model =
     else
         ( model
             |> setCurrentTurn (CurrentTurn.setRefreshing True model.currentTurn)
-        , E.request PollStatusResponseReceived (pollRequest lobbyId)
+        , E.request (PollStatusResponseReceived (Inactivity.sequence model.activity)) (pollRequest lobbyId)
         )
 
 
@@ -4962,12 +5363,13 @@ chatDialog model _ =
             Nothing
 
 
-{-| Dialogs derive from the welcome briefing, chat, inspector help, the game menu, order guide, turn introduction, playback loss, or the active planning workflow.
+{-| Dialogs derive from inactivity warnings, the welcome briefing, chat, inspector help, the game menu, order guide, turn introduction, playback loss, or the active planning workflow.
 -}
 dialog : Model -> Maybe (Dialog Msg)
 dialog model =
     MaybeUtil.lazyFirst
-        [ welcomeBriefingDialog model
+        [ inactivityDialog model
+        , welcomeBriefingDialog model
         , chatDialog model
         , inspectionHelpDialog model
         , gameMenuDialog model
@@ -4976,6 +5378,66 @@ dialog model =
         , lossDialog model
         , planningDialog model
         ]
+
+
+inactivityDialogHtmlId : String
+inactivityDialogHtmlId =
+    "game-inactivity-warning"
+
+
+inactivityDialog : Model -> () -> Maybe (Dialog Msg)
+inactivityDialog model _ =
+    let
+        warning : Int -> Dialog Msg
+        warning seconds =
+            let
+                failure : List (Html Msg)
+                failure =
+                    case Inactivity.error model.activity of
+                        Just message ->
+                            [ H.p
+                                []
+                                [ H.text ("couldn’t confirm activity: " ++ message)
+                                ]
+                            ]
+
+                        Nothing ->
+                            []
+
+                button : Html Msg
+                button =
+                    if Inactivity.pending model.activity then
+                        Button.disabled "confirming…"
+                            |> Button.toHtml
+
+                    else
+                        Button.primary "i’m still here" StillHereClicked
+                            |> Button.toHtml
+
+                content : List (Html Msg)
+                content =
+                    [ H.p
+                        []
+                        [ H.text "are you still playing?"
+                        ]
+                    , H.p
+                        [ A.attribute "role" "timer" ]
+                        [ H.text ("you will lose due to inactivity in " ++ String.fromInt seconds ++ "s")
+                        ]
+                    , button
+                    ]
+
+                body : List (Html Msg)
+                body =
+                    content ++ failure
+            in
+            Dialog.make inactivityDialogHtmlId "inactivity warning" StillHereClicked body
+    in
+    if (model.currentTurn.outcome == Nothing) && inactivityTimerNeeded model then
+        Inactivity.countdownSeconds model.shared.now model.activity |> Maybe.map warning
+
+    else
+        Nothing
 
 
 welcomeBriefingDialog : Model -> () -> Maybe (Dialog Msg)
@@ -5090,6 +5552,25 @@ turnAnnouncement model =
 
         Just (GameOutcome.Resignation winner) ->
             victory "the game ended by resignation" winner
+
+        Just (GameOutcome.Inactivity (Just winner)) ->
+            let
+                caption : String
+                caption =
+                    if List.member winner (ownPlayerNumbers model) then
+                        "victory due to opponent inactivity"
+
+                    else
+                        "you lost due to inactivity"
+            in
+            victory caption winner
+
+        Just (GameOutcome.Inactivity Nothing) ->
+            TurnIntroduction.conclusion
+                { headline = "draw"
+                , caption = "both players were inactive"
+                , previousTurn = model.currentTurn.resolution
+                }
 
         Just GameOutcome.Draw ->
             TurnIntroduction.conclusion
@@ -5245,7 +5726,7 @@ turnPanel model =
 
 displayedTurnNumber : Model -> Int
 displayedTurnNumber model =
-    if (model.currentTurn.outcome /= Nothing) && not (GameOutcome.isResignation model.currentTurn.outcome) then
+    if (model.currentTurn.outcome /= Nothing) && not (GameOutcome.interruptsPlayback model.currentTurn.outcome) then
         model.currentTurn.number - 1
 
     else
@@ -5285,6 +5766,16 @@ turnFeedback players ownStatus opponentStatus outcome =
 
                             else
                                 "resigned"
+
+                        Just (GameOutcome.Inactivity (Just winner)) ->
+                            if player.playerNumber == winner then
+                                "won"
+
+                            else
+                                "lost due to inactivity"
+
+                        Just (GameOutcome.Inactivity Nothing) ->
+                            "draw"
 
                         Just GameOutcome.Draw ->
                             "draw"

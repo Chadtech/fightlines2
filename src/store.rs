@@ -214,6 +214,12 @@ impl Store {
                     continue;
                 }
             };
+            if let GameRegistry::Game(game) = &mut *game
+                && let Err(error) = game.expire_inactive(now)
+            {
+                tracing::error!(event = "game_inactivity_finish_failed", game_id = %id, error = ?error, "could not finish inactive game");
+                continue;
+            }
             let expired = match &*game {
                 GameRegistry::Lobby(lobby) => lobby.is_expired(now),
                 GameRegistry::Closed => false,

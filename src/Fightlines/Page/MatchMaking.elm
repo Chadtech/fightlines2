@@ -3,6 +3,7 @@ module Fightlines.Page.MatchMaking exposing
     , Flags
     , Model
     , Msg
+    , enterGameWhenReady
     , fromLoadError
     , init
     , leave
@@ -25,11 +26,14 @@ import Api.Query
 import Api.Union
 import Api.Union.MatchMakingSnapshot as SnapshotApi
 import ApiRequest exposing (Response)
+import Audio
+import EditableMap exposing (NamedMap)
 import Effect as E exposing (Eff)
 import Fightlines.MatchMaking.VisitId as VisitId exposing (VisitId)
 import Fightlines.Route as Route
-import Fightlines.Shared as Shared
 import Fightlines.UserName as UserName
+import Game.MapId as MapId
+import Game.View.MapPreview as MapPreview
 import Graphql.Http
 import Graphql.SelectionSet as SS exposing (SelectionSet)
 import Html.Styled as H exposing (Html)
@@ -37,6 +41,7 @@ import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import LobbyId exposing (LobbyId)
 import Random
+import Shared
 import Style as S
 import Time
 import View.Aria as Aria
@@ -70,7 +75,7 @@ type alias Model =
     , visit : VisitId
     , name : String
     , stage : Stage
-    , lastGameSecondsAgo : Maybe Int
+    , lastGameStartedAt : Maybe Time.Posix
     , error : Maybe Error
     }
 
@@ -79,7 +84,16 @@ type Stage
     = Entry
     | Joining
     | Waiting Ticket Activity
+    | GettingReady ReadyMatch Time.Posix
     | EnteringGame
+
+
+type alias ReadyMatch =
+    { gameId : LobbyId
+    , map : NamedMap
+    , opponentName : String
+    , remainingMilliseconds : Int
+    }
 
 
 type Activity
@@ -91,7 +105,7 @@ type Activity
 type QueueState
     = Idle
     | Queued Ticket
-    | Matched LobbyId
+    | Matched ReadyMatch
 
 
 type alias Snapshot =
@@ -109,8 +123,7 @@ type Msg
     = NameInputChanged String
     | FindGameRequested
     | JoinResponseReceived String (Response Snapshot)
-    | PollTick Time.Posix
-    | ClockTick Time.Posix
+    | PollTick
     | PollResponseReceived Ticket (Response Snapshot)
     | CancelButtonClicked
     | CancelResponseReceived Ticket (Response Snapshot)
@@ -148,7 +161,7 @@ init id shared flags =
             , visit = id
             , name = name
             , stage = Entry
-            , lastGameSecondsAgo = Nothing
+            , lastGameStartedAt = Nothing
             , error = Nothing
             }
     in
@@ -213,8 +226,11 @@ selection =
         , onMatchMakingMatched =
             SS.succeed Snapshot
                 |> SS.with
-                    (MatchedApi.gameId
-                        |> SS.mapOrFail LobbyId.parse
+                    (SS.succeed ReadyMatch
+                        |> SS.with (MatchedApi.gameId |> SS.mapOrFail LobbyId.parse)
+                        |> SS.with (MatchedApi.map EditableMap.namedSelection)
+                        |> SS.with MatchedApi.opponentName
+                        |> SS.with MatchedApi.readyRemainingMilliseconds
                         |> SS.map Matched
                     )
                 |> SS.with MatchedApi.lastGameStartedSecondsAgo
@@ -240,31 +256,69 @@ setError error model =
 receive : Snapshot -> Model -> ( Model, Eff Msg )
 receive snapshot model =
     let
-        eff : Eff msg
-        eff =
-            case snapshot.state of
-                Matched gameId ->
-                    Route.replaceUrl (Route.Game gameId)
-
-                _ ->
-                    E.none
-
-        stage : Stage
-        stage =
+        f : Model -> ( Model, Eff Msg )
+        f =
             case snapshot.state of
                 Idle ->
-                    Entry
+                    setStage Entry >> E.withOut
 
                 Queued ticket ->
-                    Waiting ticket Available
+                    setStage (Waiting ticket Available) >> E.withOut
 
-                Matched _ ->
-                    EnteringGame
+                Matched found ->
+                    if found.remainingMilliseconds <= 0 then
+                        enterGame found
+
+                    else
+                        setStage
+                            (GettingReady found
+                                (Time.millisToPosix
+                                    (Time.posixToMillis model.shared.now + found.remainingMilliseconds)
+                                )
+                            )
+                            >> E.with (E.audio Audio.matchMakingReady)
     in
-    { model | lastGameSecondsAgo = snapshot.lastGameSecondsAgo }
-        |> setStage stage
-        |> setError Nothing
-        |> E.with eff
+    { model
+        | lastGameStartedAt =
+            snapshot.lastGameSecondsAgo
+                |> Maybe.map
+                    (\secondsAgo ->
+                        Time.millisToPosix (Time.posixToMillis model.shared.now - secondsAgo * 1000)
+                    )
+        , error = Nothing
+    }
+        |> f
+
+
+enterGameWhenReady : Model -> ( Model, Eff Msg )
+enterGameWhenReady model =
+    case model.stage of
+        GettingReady found endsAt ->
+            if Time.posixToMillis model.shared.now >= Time.posixToMillis endsAt then
+                enterGame found model
+
+            else
+                model |> E.withOut
+
+        _ ->
+            model |> E.withOut
+
+
+recentMatchSecondsAgo : Model -> Maybe Int
+recentMatchSecondsAgo model =
+    let
+        elapsedSeconds : Time.Posix -> Int
+        elapsedSeconds startedAt =
+            max 0 ((Time.posixToMillis model.shared.now - Time.posixToMillis startedAt) // 1000)
+    in
+    Maybe.map elapsedSeconds model.lastGameStartedAt
+
+
+enterGame : ReadyMatch -> Model -> ( Model, Eff Msg )
+enterGame found model =
+    model
+        |> setStage EnteringGame
+        |> E.with (Route.replaceUrl (Route.Game found.gameId))
 
 
 join : Model -> ( Model, Eff Msg )
@@ -362,7 +416,7 @@ update msg model =
                 _ ->
                     ( model, E.none )
 
-        PollTick _ ->
+        PollTick ->
             case model.stage of
                 Waiting ((Ticket value) as ticket) Available ->
                     ( model
@@ -374,9 +428,6 @@ update msg model =
 
                 _ ->
                     ( model, E.none )
-
-        ClockTick _ ->
-            ( { model | lastGameSecondsAgo = Maybe.map ((+) 1) model.lastGameSecondsAgo }, E.none )
 
         PollResponseReceived ticket result ->
             case model.stage of
@@ -483,13 +534,16 @@ view model =
                     ]
 
                 Joining ->
-                    waitingContent model.lastGameSecondsAgo (Button.disabled "cancel")
+                    waitingContent (recentMatchSecondsAgo model) (Button.disabled "cancel")
 
                 Waiting _ Cancelling ->
-                    waitingContent model.lastGameSecondsAgo (Button.disabled "cancel")
+                    waitingContent (recentMatchSecondsAgo model) (Button.disabled "cancel")
 
                 Waiting _ _ ->
-                    waitingContent model.lastGameSecondsAgo (Button.secondary "cancel" CancelButtonClicked)
+                    waitingContent (recentMatchSecondsAgo model) (Button.secondary "cancel" CancelButtonClicked)
+
+                GettingReady found endsAt ->
+                    readyContent found { now = model.shared.now, endsAt = endsAt }
 
                 EnteringGame ->
                     [ waitingStatus "starting game…" ]
@@ -614,6 +668,62 @@ waitingContent lastGameSecondsAgo cancel =
     ]
 
 
+readyContent : ReadyMatch -> { now : Time.Posix, endsAt : Time.Posix } -> List (Html Msg)
+readyContent found clock =
+    let
+        seconds : Int
+        seconds =
+            max 0 (ceiling (toFloat (Time.posixToMillis clock.endsAt - Time.posixToMillis clock.now) / 1000))
+    in
+    [ H.p
+        [ A.css
+            [ S.m0
+            , S.textAlignCenter
+            , S.textYellow5
+            ]
+        ]
+        [ H.text "get ready"
+        ]
+    , H.p
+        [ A.css
+            [ S.m0
+            , S.textAlignCenter
+            , S.wrapAnywhere
+            ]
+        ]
+        [ H.text ("opponent: " ++ found.opponentName)
+        ]
+    , H.div
+        [ A.css
+            [ S.wFull
+            , S.h64
+            , S.bgNightwood2
+            , S.indentStrong
+            ]
+        ]
+        [ MapPreview.toHtml found.map
+        ]
+    , H.p
+        [ A.css
+            [ S.m0
+            , S.textAlignCenter
+            ]
+        ]
+        [ H.text (MapId.label found.map.mapType)
+        ]
+    , H.p
+        [ Aria.role Aria.Status
+        , A.css
+            [ S.m0
+            , S.textAlignCenter
+            , S.textYellow5
+            ]
+        ]
+        [ H.text ("starting in " ++ String.fromInt seconds ++ "…")
+        ]
+    ]
+
+
 
 ----------------------------------------------------------------
 -- SUBSCRIPTIONS --
@@ -624,10 +734,7 @@ subscriptions : Model -> Sub Msg
 subscriptions model =
     case model.stage of
         Waiting _ _ ->
-            Sub.batch
-                [ Time.every 2000 PollTick
-                , Time.every 1000 ClockTick
-                ]
+            Time.every 2000 (\_ -> PollTick)
 
         _ ->
             Sub.none

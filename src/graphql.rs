@@ -5,6 +5,7 @@ use crate::{
     environment::Environment,
     feedback,
     game::{self, GameSnapshot},
+    game_activity::InactivityRenewalReason,
     game_archive, lobby,
     lobby_id::LobbyId,
     lobby_snapshot::Snapshot,
@@ -302,6 +303,15 @@ impl Mutation {
     ) -> FieldResult<GameSnapshot> {
         context.admit(Operation::SubmitTurn)?;
         game::submit_turn(context, LobbyId::from_token(id), turn_number, orders)
+    }
+
+    fn renew_inactivity_timer(
+        context: &Context,
+        id: String,
+        turn_number: i32,
+        reason: InactivityRenewalReason,
+    ) -> FieldResult<GameSnapshot> {
+        game::renew_inactivity_timer(context, LobbyId::from_token(id), turn_number, reason)
     }
 
     fn resign_game(context: &Context, id: String) -> FieldResult<GameSnapshot> {

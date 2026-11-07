@@ -97,6 +97,10 @@ type DepotPlacement
     = DepotPlacement
 
 
+type EnabledInactivity
+    = EnabledInactivity
+
+
 type ExhaustedUnitLoss
     = ExhaustedUnitLoss
 

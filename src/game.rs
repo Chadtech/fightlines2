@@ -2,6 +2,7 @@
 use crate::{
     ai, app_version,
     chat::{self, ChatMessage, Draft, Sender, Submission as ChatSubmission, Transcript},
+    game_activity::{ActivityClock, EnabledInactivity, InactivityRenewalReason},
     game_archive::review::RecordedOrder,
     game_log::{Directory, GameLog, GameStarted, RecordedPlayer, Submission, SubmissionResult},
     graphql::Context,
@@ -37,6 +38,7 @@ pub(crate) struct Game {
     log: Option<GameLog>,
     turns: Turns,
     finished_at: Option<Instant>,
+    activity: Option<[ActivityClock; 2]>,
     observations: [visibility::PlayerObservation; 2],
     access: GameAccess,
     scenario: Scenario,
@@ -56,6 +58,7 @@ enum GameAccess {
 /// Stored game state remains in `Game`; viewer-specific flags are computed here.
 #[derive(GraphQLObject)]
 pub struct GameSnapshot {
+    inactivity: Option<EnabledInactivity>,
     replay_orders: Vec<RecordedOrder>,
     turn_number: i32,
     outcome: Option<GameOutcome>,
@@ -95,7 +98,17 @@ impl Game {
         players: Vec<Player>,
         scenario: Scenario,
     ) -> Self {
+        let activity = if players.len() == 2
+            && players
+                .iter()
+                .all(|player| player.controller.session().is_some())
+        {
+            Some([ActivityClock::new(Instant::now()); 2])
+        } else {
+            None
+        };
         Self {
+            activity,
             chat: Transcript::default(),
             log: None,
             observations: PlayerNumber::ALL
@@ -114,6 +127,7 @@ impl Game {
 
     pub fn into_development_preview(mut self) -> Self {
         self.access = GameAccess::DevelopmentPreview;
+        self.activity = None;
         self
     }
 
@@ -241,6 +255,15 @@ impl Game {
             player_number,
         );
         Ok(GameSnapshot {
+            inactivity: self.activity.as_ref().map(|activity| EnabledInactivity {
+                warning_seconds_remaining: if self.turns.outcome.is_none()
+                    && self.turns.orders[index].is_none()
+                {
+                    activity[index].countdown_seconds(Instant::now())
+                } else {
+                    None
+                },
+            }),
             replay_orders: Vec::new(),
             turn_number: self.turns.number,
             outcome: self.turns.outcome,
@@ -271,6 +294,83 @@ impl Game {
         })
     }
 
+    /// The earliest expired unsubmitted player loses. Equal deadlines with both
+    /// players absent end in a draw, rather than arbitrarily awarding one side.
+    pub fn expire_inactive(&mut self, now: Instant) -> FieldResult<bool> {
+        if self.turns.outcome.is_some() {
+            return Ok(false);
+        }
+        let Some(activity) = &self.activity else {
+            return Ok(false);
+        };
+        let deadlines = PlayerNumber::ALL.map(|player| {
+            let index = player.index();
+            let deadline = activity[index].deadline();
+            (self.turns.orders[index].is_none() && now >= deadline).then_some(deadline)
+        });
+        let winner = match deadlines {
+            [None, None] => return Ok(false),
+            [Some(_), None] => Some(PlayerNumber::Player2),
+            [None, Some(_)] => Some(PlayerNumber::Player1),
+            [Some(first), Some(second)] => match first.cmp(&second) {
+                std::cmp::Ordering::Less => Some(PlayerNumber::Player2),
+                std::cmp::Ordering::Greater => Some(PlayerNumber::Player1),
+                std::cmp::Ordering::Equal => None,
+            },
+        };
+        let mut turns = self.turns.clone();
+        turns.end_by_inactivity(winner);
+        if let Some(log) = &mut self.log {
+            log.submitted(SubmissionResult::new(
+                turns.number,
+                Vec::new(),
+                &self.scenario,
+                &turns,
+            ))
+            .map_err(|error| log_error(&self.source_lobby, error))?;
+        }
+        self.turns = turns;
+        self.finished_at = Some(now);
+        Ok(true)
+    }
+
+    pub fn renew_inactivity_timer(
+        &mut self,
+        session: Option<&SessionToken>,
+        turn_number: i32,
+        reason: InactivityRenewalReason,
+        now: Instant,
+    ) -> FieldResult<GameSnapshot> {
+        let identity = session.ok_or_else(|| {
+            FieldError::from("only joined players can renew the inactivity timer.")
+        })?;
+        let player = self
+            .players
+            .iter()
+            .find(|player| player.controller.session() == Some(identity))
+            .map(|player| player.player_number)
+            .ok_or_else(|| {
+                FieldError::from("only joined players can renew the inactivity timer.")
+            })?;
+        if self.turns.number != turn_number {
+            return self.player_view(identity);
+        }
+        self.expire_inactive(now)?;
+        let renewal_allowed = match reason {
+            InactivityRenewalReason::UserInteraction => true,
+            InactivityRenewalReason::PlaybackAllowance => self.turns.last_resolution.is_some(),
+            InactivityRenewalReason::BriefingAllowance => self.turns.number == 1,
+        };
+        if renewal_allowed
+            && self.turns.outcome.is_none()
+            && self.turns.orders[player.index()].is_none()
+            && let Some(clocks) = &mut self.activity
+        {
+            clocks[player.index()].observe(reason, now);
+        }
+        self.player_view(identity)
+    }
+
     pub fn resign(&mut self, session: Option<&SessionToken>) -> FieldResult<GameSnapshot> {
         if let GameAccess::DevelopmentPreview = self.access {
             return error("the development preview is read-only. create a game to resign.");
@@ -283,6 +383,7 @@ impl Game {
             .find(|player| player.controller.session() == Some(identity))
             .map(|player| player.player_number)
             .ok_or_else(|| FieldError::from("only joined players can resign."))?;
+        self.expire_inactive(Instant::now())?;
         if self.turns.outcome.is_some() {
             return self.player_view(identity);
         }
@@ -324,6 +425,9 @@ impl Game {
             .find(|player| player.controller.session() == Some(identity))
             .map(|player| player.player_number)
             .ok_or_else(|| FieldError::from("only joined players can submit turns."))?;
+        if self.expire_inactive(Instant::now())? {
+            return self.player_view(identity);
+        }
         // Lost-response retries keep the already accepted orders and create no new
         // archive entry. Stale turn numbers still follow normal validation below.
         if self.turns.number == turn_number
@@ -410,6 +514,11 @@ impl Game {
         self.scenario = next_scenario;
         if self.turns.outcome.is_some() {
             self.finished_at = Some(Instant::now());
+        }
+        if self.turns.number != turn_number
+            && let Some(activity) = &mut self.activity
+        {
+            *activity = [ActivityClock::new(Instant::now()); 2];
         }
         if self.turns.number != turn_number
             && let Some(resolution) = &self.turns.last_resolution
@@ -537,6 +646,7 @@ impl GameSnapshot {
             }
         };
         Self {
+            inactivity: None,
             replay_orders: Vec::new(),
             turn_number,
             outcome,
@@ -572,7 +682,7 @@ pub fn get(context: &Context, id: LobbyId) -> FieldResult<GameSnapshot> {
     let entry = context.store.entry(&id)?.ok_or_else(|| {
         FieldError::from("This lobby no longer exists. Create a new lobby from the home page.")
     })?;
-    let entry = entry.lock().map_err(|_| {
+    let mut entry = entry.lock().map_err(|_| {
         tracing::error!(
             event = "server_state_lock_unavailable",
             game_id = %id,
@@ -580,11 +690,12 @@ pub fn get(context: &Context, id: LobbyId) -> FieldResult<GameSnapshot> {
         );
         server_log::internal_error("The server state is unavailable.")
     })?;
-    let game = match &*entry {
+    let game = match &mut *entry {
         GameRegistry::Closed => return error("this game no longer exists."),
         GameRegistry::Lobby(_) => return error("The host has not started the game yet."),
         GameRegistry::Game(game) => game,
     };
+    game.expire_inactive(Instant::now())?;
     game.view(context.identity().as_ref())
 }
 
@@ -607,6 +718,37 @@ pub fn resign(context: &Context, id: LobbyId) -> FieldResult<GameSnapshot> {
         GameRegistry::Game(game) => game,
     };
     game.resign(context.identity().as_ref())
+}
+
+pub fn renew_inactivity_timer(
+    context: &Context,
+    id: LobbyId,
+    turn_number: i32,
+    reason: InactivityRenewalReason,
+) -> FieldResult<GameSnapshot> {
+    let entry = context
+        .store
+        .entry(&id)?
+        .ok_or_else(|| FieldError::from("this game no longer exists."))?;
+    let mut entry = entry.lock().map_err(|_| {
+        tracing::error!(
+            event = "server_state_lock_unavailable",
+            game_id = %id,
+            "game state lock is poisoned"
+        );
+        server_log::internal_error("the server state is unavailable.")
+    })?;
+    let game = match &mut *entry {
+        GameRegistry::Closed => return error("this game no longer exists."),
+        GameRegistry::Lobby(_) => return error("this game no longer exists."),
+        GameRegistry::Game(game) => game,
+    };
+    game.renew_inactivity_timer(
+        context.identity().as_ref(),
+        turn_number,
+        reason,
+        Instant::now(),
+    )
 }
 
 pub fn submit_turn(
@@ -668,6 +810,357 @@ mod tests {
         test_support::{FixtureValue, TestResult},
         turns::CoordinateInput,
     };
+
+    fn inactivity_fixture(now: Instant) -> TestResult<Game> {
+        let scenario = MapDefinition::parse(r#"{
+            "width": 9, "height": 3, "theme": "GreenForest",
+            "features": [], "depots": [],
+            "units": [
+                {"id": 1, "position": {"x": 0, "y": 1}, "playerNumber": "Player1", "kind": "Infantry", "direction": "East"},
+                {"id": 2, "position": {"x": 8, "y": 1}, "playerNumber": "Player2", "kind": "Infantry", "direction": "West"}
+            ]
+        }"#).fixture()?.scenario().fixture()?;
+        let players = PlayerNumber::ALL
+            .into_iter()
+            .map(|player_number| {
+                let name = format!("{player_number:?}");
+                Ok(Player {
+                    player_number,
+                    controller: PlayerController::Human(SessionToken::from_token(name.clone())),
+                    name: PlayerName::parse(&name).fixture()?,
+                })
+            })
+            .collect::<TestResult<Vec<_>>>()?;
+        let mut game = Game::new(
+            LobbyId::from_token("a1".repeat(16)),
+            LobbyName::parse("Inactivity test").fixture()?,
+            MapId::default(),
+            SessionToken::from_token("Player1".to_owned()),
+            players,
+            scenario,
+        );
+        game.activity = Some([ActivityClock::new(now); 2]);
+        Ok(game)
+    }
+
+    #[test]
+    fn inactivity_graphql_preserves_disabled_enabled_and_warning_states() -> TestResult<()> {
+        use juniper::{EmptyMutation, EmptySubscription, RootNode, Variables};
+        use serde_json::json;
+
+        #[derive(GraphQLObject)]
+        struct Query {
+            snapshot: GameSnapshot,
+        }
+
+        let now = Instant::now();
+        let host = SessionToken::from_token("Player1".to_owned());
+        let mut game = inactivity_fixture(now)?;
+        for (clock, expected) in [
+            (
+                Some(ActivityClock::new(now)),
+                json!({ "warningSecondsRemaining": null }),
+            ),
+            (
+                Some(ActivityClock::new(now - Duration::from_secs(121))),
+                json!({ "warningSecondsRemaining": 59 }),
+            ),
+            (None, serde_json::Value::Null),
+        ] {
+            game.activity = clock.map(|clock| [clock; 2]);
+            let schema = RootNode::new(
+                Query {
+                    snapshot: game.view(Some(&host)).fixture()?,
+                },
+                EmptyMutation::<()>::new(),
+                EmptySubscription::<()>::new(),
+            );
+            let (data, errors) = juniper::execute_sync(
+                "{ snapshot { inactivity { warningSecondsRemaining } } }",
+                None,
+                &schema,
+                &Variables::new(),
+                &(),
+            )
+            .fixture()?;
+            assert!(errors.is_empty(), "{errors:?}");
+            let data = serde_json::to_value(data)?;
+            assert_eq!(data["snapshot"]["inactivity"], expected);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn inactivity_is_private_and_only_current_member_interactions_renew_it() -> TestResult<()> {
+        let now = Instant::now();
+        let mut game = inactivity_fixture(now)?;
+        let host = SessionToken::from_token("Player1".to_owned());
+        let guest = SessionToken::from_token("Player2".to_owned());
+        let outsider = SessionToken::from_token("outsider".into());
+        let stale = now - Duration::from_secs(121);
+        game.activity.as_mut().fixture()?[0] = ActivityClock::new(stale);
+        let deadline = game.activity.as_ref().fixture()?[0].deadline();
+        let own = game.view(Some(&host)).fixture()?;
+        assert!(
+            own.inactivity
+                .as_ref()
+                .fixture()?
+                .warning_seconds_remaining
+                .is_some_and(|seconds| seconds > 0 && seconds <= 60)
+        );
+        assert_eq!(
+            game.view(Some(&guest))
+                .fixture()?
+                .inactivity
+                .fixture()?
+                .warning_seconds_remaining,
+            None
+        );
+        assert!(
+            game.renew_inactivity_timer(None, 1, InactivityRenewalReason::UserInteraction, now)
+                .is_err()
+        );
+        assert!(
+            game.renew_inactivity_timer(
+                Some(&outsider),
+                1,
+                InactivityRenewalReason::UserInteraction,
+                now
+            )
+            .is_err()
+        );
+        game.renew_inactivity_timer(
+            Some(&host),
+            0,
+            InactivityRenewalReason::UserInteraction,
+            now,
+        )
+        .fixture()?;
+        // Playback cannot manufacture an allowance before a turn has resolved.
+        game.renew_inactivity_timer(
+            Some(&host),
+            1,
+            InactivityRenewalReason::PlaybackAllowance,
+            now,
+        )
+        .fixture()?;
+        assert_eq!(game.activity.as_ref().fixture()?[0].deadline(), deadline);
+        // Reads and the other player's activity never renew this player's clock.
+        game.view(Some(&host)).fixture()?;
+        game.renew_inactivity_timer(
+            Some(&guest),
+            1,
+            InactivityRenewalReason::UserInteraction,
+            now,
+        )
+        .fixture()?;
+        assert_eq!(game.activity.as_ref().fixture()?[0].deadline(), deadline);
+        let renewed = game
+            .renew_inactivity_timer(
+                Some(&host),
+                1,
+                InactivityRenewalReason::UserInteraction,
+                now,
+            )
+            .fixture()?;
+        assert_eq!(
+            renewed.inactivity,
+            Some(EnabledInactivity {
+                warning_seconds_remaining: None
+            })
+        );
+        assert!(game.activity.as_ref().fixture()?[0].deadline() > deadline);
+        Ok(())
+    }
+
+    #[test]
+    fn inactivity_awards_the_waiting_player_and_cannot_be_undone() -> TestResult<()> {
+        let now = Instant::now();
+        let mut game = inactivity_fixture(now)?;
+        let host = SessionToken::from_token("Player1".to_owned());
+        let guest = SessionToken::from_token("Player2".to_owned());
+        // A submitted player is safe even if their own activity is older.
+        game.turns.orders[0] = Some(Vec::new());
+        let board = serde_json::to_value(&game.scenario)?;
+        let deadline = game.activity.as_ref().fixture()?[1].deadline();
+        assert!(
+            !game
+                .expire_inactive(deadline - Duration::from_nanos(1))
+                .fixture()?
+        );
+        assert!(game.expire_inactive(deadline).fixture()?);
+        assert_eq!(
+            game.turns.outcome,
+            Some(GameOutcome::Inactivity(Some(PlayerNumber::Player1)))
+        );
+        assert_eq!(game.turns.number, 1);
+        assert!(game.turns.orders.iter().all(Option::is_none));
+        assert_eq!(serde_json::to_value(&game.scenario)?, board);
+        let final_view = game.view(Some(&host)).fixture()?;
+        assert_eq!(final_view.scenario.units.len(), game.scenario.units.len());
+        assert_eq!(final_view.visible_tiles.len(), 9 * 3);
+        game.renew_inactivity_timer(
+            Some(&guest),
+            1,
+            InactivityRenewalReason::UserInteraction,
+            deadline,
+        )
+        .fixture()?;
+        game.resign(Some(&host)).fixture()?;
+        assert!(
+            !game
+                .expire_inactive(deadline + Duration::from_secs(1))
+                .fixture()?
+        );
+        assert_eq!(game.finished_at, Some(deadline));
+        assert_eq!(
+            game.turns.outcome,
+            Some(GameOutcome::Inactivity(Some(PlayerNumber::Player1)))
+        );
+        assert!(
+            game.view(Some(&host))
+                .fixture()?
+                .inactivity
+                .fixture()?
+                .warning_seconds_remaining
+                .is_none()
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn inactivity_uses_the_earliest_deadline_and_draws_only_on_a_tie() -> TestResult<()> {
+        let now = Instant::now();
+        for (delay, winner) in [(0, None), (1, Some(PlayerNumber::Player2))] {
+            let mut game = inactivity_fixture(now)?;
+            game.activity.as_mut().fixture()?[1] =
+                ActivityClock::new(now + Duration::from_secs(delay));
+            game.expire_inactive(now + Duration::from_secs(200))
+                .fixture()?;
+            assert_eq!(game.turns.outcome, Some(GameOutcome::Inactivity(winner)));
+        }
+        let mut late_submission = inactivity_fixture(now - Duration::from_secs(181))?;
+        let host = SessionToken::from_token("Player1".to_owned());
+        late_submission.activity.as_mut().fixture()?[1] = ActivityClock::new(now);
+        let snapshot = late_submission
+            .submit_turn(Some(&host), 1, Vec::new(), &Limits::default())
+            .fixture()?;
+        assert_eq!(
+            snapshot.outcome,
+            Some(GameOutcome::Inactivity(Some(PlayerNumber::Player2)))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn inactivity_exempts_ai_and_preview_and_resets_after_resolution() -> TestResult<()> {
+        let now = Instant::now();
+        let mut game = inactivity_fixture(now)?;
+        let host = SessionToken::from_token("Player1".to_owned());
+        let guest = SessionToken::from_token("Player2".to_owned());
+        // Actual valid submissions advance the turn and renew both clocks.
+        for (player, session) in [
+            (PlayerNumber::Player1, &host),
+            (PlayerNumber::Player2, &guest),
+        ] {
+            let orders = game
+                .scenario
+                .units
+                .iter()
+                .filter(|unit| unit.player_number() == player)
+                .map(|unit| {
+                    let position = unit.board_position().fixture()?;
+                    Ok(serde_json::from_value(serde_json::json!({
+                        "unit_id": unit.id(), "path": [{"x": position.x(), "y": position.y()}]
+                    }))?)
+                })
+                .collect::<TestResult<Vec<UnitOrderInput>>>()?;
+            game.submit_turn(Some(session), 1, orders, &Limits::default())
+                .fixture()?;
+        }
+        assert_eq!(game.turns.number, 2);
+        let deadline = game.activity.as_ref().fixture()?[0].deadline();
+        game.renew_inactivity_timer(
+            Some(&host),
+            2,
+            InactivityRenewalReason::BriefingAllowance,
+            now + Duration::from_secs(10),
+        )
+        .fixture()?;
+        assert_eq!(game.activity.as_ref().fixture()?[0].deadline(), deadline);
+        game.renew_inactivity_timer(
+            Some(&host),
+            2,
+            InactivityRenewalReason::PlaybackAllowance,
+            now + Duration::from_secs(10),
+        )
+        .fixture()?;
+        assert!(game.activity.as_ref().fixture()?[0].deadline() > deadline);
+        let mut preview = game.into_development_preview();
+        assert!(
+            !preview
+                .expire_inactive(now + Duration::from_secs(10000))
+                .fixture()?
+        );
+        let mut ai = inactivity_fixture(now)?;
+        ai.players.get_mut(1).fixture()?.controller = PlayerController::Ai;
+        let mut ai = Game::new(
+            ai.source_lobby,
+            ai.name,
+            ai.map_type,
+            ai.host,
+            ai.players,
+            ai.scenario,
+        );
+        assert!(ai.activity.is_none());
+        assert_eq!(ai.view(Some(&host)).fixture()?.inactivity, None);
+        assert!(
+            !ai.expire_inactive(now + Duration::from_secs(10000))
+                .fixture()?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn inactivity_finish_is_durable_replayable_and_retries_after_storage_failure() -> TestResult<()>
+    {
+        use crate::game_log::{self, Archive};
+        use std::{
+            fs,
+            time::{SystemTime, UNIX_EPOCH},
+        };
+        let directory = std::env::temp_dir().join(format!(
+            "fightlines-inactivity-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        let logs = Directory::open(directory.clone())?;
+        let now = Instant::now();
+        let mut game = inactivity_fixture(now)?;
+        game.turns.orders[0] = Some(Vec::new());
+        game.record_start(&logs).fixture()?;
+        let deadline = game.activity.as_ref().fixture()?[1].deadline();
+        let offline = directory.with_extension("offline");
+        fs::rename(&directory, &offline)?;
+        assert!(game.expire_inactive(deadline).is_err());
+        assert_eq!(game.turns.outcome, None);
+        assert!(game.turns.orders[0].is_some());
+        assert_eq!(game.finished_at, None);
+        fs::rename(&offline, &directory)?;
+        game.expire_inactive(deadline).fixture()?;
+        let archive_path = fs::read_dir(&directory)?.next().fixture()??.path();
+        let archive = Archive::read(&archive_path)?;
+        assert_eq!(archive.submissions.len(), 1);
+        assert_eq!(
+            archive.submissions.first().fixture()?.outcome,
+            Some(GameOutcome::Inactivity(Some(PlayerNumber::Player1)))
+        );
+        assert!(game_log::replay(&archive_path)?.contains("Inactivity(Some(Player1))"));
+        game.expire_inactive(deadline).fixture()?;
+        assert_eq!(Archive::read(&archive_path)?.submissions.len(), 1);
+        fs::remove_dir_all(directory)?;
+        Ok(())
+    }
 
     #[test]
     fn ai_busy_preserves_the_turn_and_human_games_can_continue() -> TestResult<()> {
@@ -840,10 +1333,10 @@ mod tests {
             }];
             for unit in &mut game.scenario.units {
                 let survives = match outcome {
-                    GameOutcome::Victory(winner) | GameOutcome::Resignation(winner) => {
-                        unit.player_number() == winner
-                    }
-                    GameOutcome::Draw => false,
+                    GameOutcome::Victory(winner)
+                    | GameOutcome::Resignation(winner)
+                    | GameOutcome::Inactivity(Some(winner)) => unit.player_number() == winner,
+                    GameOutcome::Draw | GameOutcome::Inactivity(None) => false,
                 };
                 if !survives && unit.kind() != UnitKind::Truck {
                     unit.set_supplies_for_test(4);

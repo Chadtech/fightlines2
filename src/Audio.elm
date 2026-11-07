@@ -25,6 +25,7 @@ module Audio exposing
     , loadVolumesPreference
     , lobbyPlayerJoined
     , lobbyPlayerLeft
+    , matchMakingReady
     , none
     , setChannelVolume
     , syncAmbience
@@ -286,6 +287,7 @@ type Audio
     | ChatSent
     | LobbyPlayerJoined
     | LobbyPlayerLeft
+    | MatchMakingReady
     | TankFire
     | FieldGunFire
     | CombatImpact
@@ -331,6 +333,11 @@ lobbyPlayerLeft =
     e LobbyPlayerLeft
 
 
+matchMakingReady : Event
+matchMakingReady =
+    e MatchMakingReady
+
+
 tankFire : Event
 tankFire =
     e TankFire
@@ -374,6 +381,9 @@ audioToName audio =
 
         LobbyPlayerLeft ->
             "lobbyPlayerLeft"
+
+        MatchMakingReady ->
+            "matchMakingReady"
 
         TankFire ->
             "tankFire"

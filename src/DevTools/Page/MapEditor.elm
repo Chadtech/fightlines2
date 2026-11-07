@@ -23,7 +23,6 @@ import Api.Scalar exposing (MapId(..))
 import ApiRequest
 import Browser.Dom
 import Browser.Events
-import DevTools.Shared as Shared
 import Drag exposing (Drag)
 import EditableMap exposing (Definition, NamedMap)
 import Effect as E exposing (Eff)
@@ -50,6 +49,7 @@ import Point exposing (Point)
 import Ports.Js.From as FromJs
 import Ports.Js.To as ToJs
 import Random
+import Shared
 import Style as S
 import Svg.Styled as Svg exposing (Svg)
 import Svg.Styled.Attributes as SA

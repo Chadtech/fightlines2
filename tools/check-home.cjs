@@ -11,6 +11,8 @@ try {
   // Let Browser.application supply the opaque navigation key to Shared.init.
   global.window = { addEventListener() {}, navigator: { userAgent: 'home-checks' } };
   global.document = {
+    addEventListener() {},
+    removeEventListener() {},
     location: { href: 'http://localhost/' },
     title: 'home seed checks',
     body: { nodeType: 1, tagName: 'BODY', attributes: [], childNodes: [] },
@@ -18,12 +20,17 @@ try {
   };
   const { Elm } = require(output);
   const app = Elm.Fightlines.Checks.Home.init({ flags: null });
+  const clockTimeout = setTimeout(() => {
+    console.error('Shared clock did not update through its one-second subscription.');
+    process.exit(1);
+  }, 10000);
   app.ports.results.subscribe(failures => {
+    clearTimeout(clockTimeout);
     if (failures.length) {
       console.error(failures.join('\n'));
       process.exitCode = 1;
     } else {
-      console.log('Home initialization, shared seed continuity, and feedback submission checks passed.');
+      console.log('Home initialization, shared seed continuity, shared clock subscription, and feedback submission checks passed.');
     }
   });
 } finally {

@@ -459,15 +459,19 @@ game rules can cause an older archive to differ. The JSON files remain available
 for inspection. For build attribution, set `FIGHTLINES_BUILD_REVISION` to the Git
 commit when compiling the server; it is embedded in new archives.
 
-Finished games remain accessible for 16 minutes after victory, draw, or resignation.
-An automatic sweep removes them from memory once per minute; busy games are retried
+Finished games remain accessible for 16 minutes after victory, draw, resignation,
+or inactivity. An automatic sweep removes them from memory once per second; busy games are retried
 on a later sweep. Polling and repeated requests do not extend this window. After
 removal, their live game and lobby URLs report that the game no longer exists.
 Replay archives remain on disk. The same sweep removes unstarted lobbies after
 30 minutes without a successful join, setup change, or chat send. Lobby and chat
 polling do not extend this timer. Hosts can close unstarted lobbies immediately;
 closing or expiring a lobby preserves its on-disk chat journal. The timeout is
-`INACTIVITY_TIMEOUT` in `src/lobby.rs`. Unfinished games do not expire.
+`INACTIVITY_TIMEOUT` in `src/lobby.rs`. Human-versus-human games also end after
+two minutes without player interaction followed by a 60-second warning, with
+bounded allowances for playback and the first-game briefing. Polling does not
+renew activity. AI games and the development preview are exempt; see
+[playing](docs/PLAYING.md) for the inactivity rules.
 
 Archives survive server restarts, but active games and lobbies still do not resume
 after restart. There is no automatic archive retention or deletion yet: monitor disk

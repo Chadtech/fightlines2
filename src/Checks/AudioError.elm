@@ -2,11 +2,12 @@ port module Checks.AudioError exposing (main)
 
 import Browser
 import DevPanel
-import Fightlines.Shared as Shared
 import LocalStorage
 import OperatingSystem
 import Ports.Js.From as FromJs
 import Random
+import Shared
+import Time
 
 
 port diagnostics : List { title : String, details : String } -> Cmd msg
@@ -22,7 +23,7 @@ main =
     Browser.application
         { init =
             \_ url key ->
-                ( Shared.init (Random.initialSeed 42) OperatingSystem.Unknown LocalStorage.test url key
+                ( Shared.init (Time.millisToPosix 1700000000000) (Random.initialSeed 42) OperatingSystem.Unknown LocalStorage.test url key
                 , Cmd.none
                 )
         , update = update

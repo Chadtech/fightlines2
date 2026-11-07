@@ -9,11 +9,12 @@ import Browser.Navigation as Navigation
 import DevTools.CombatChart as Chart
 import DevTools.Page.CombatChart as Page
 import DevTools.Route as Route
-import DevTools.Shared as Shared
 import Graphql.Http
 import LocalStorage
 import OperatingSystem
 import Random
+import Shared
+import Time
 import Url
 
 
@@ -39,8 +40,8 @@ main =
 
 
 initialize : () -> Url.Url -> Navigation.Key -> ( (), Cmd () )
-initialize _ _ key =
-    ( (), results (checks (Shared.init (Random.initialSeed 17) OperatingSystem.Unknown LocalStorage.test key)) )
+initialize _ url key =
+    ( (), results (checks (Shared.init (Time.millisToPosix 1700000000000) (Random.initialSeed 17) OperatingSystem.Unknown LocalStorage.test url key)) )
 
 
 view : () -> Browser.Document ()

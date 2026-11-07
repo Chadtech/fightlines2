@@ -5,6 +5,7 @@
 module Api.Mutation exposing (..)
 
 import Api.Enum.Controller
+import Api.Enum.InactivityRenewalReason
 import Api.Enum.PlayerNumber
 import Api.Enum.UnitKind
 import Api.InputObject
@@ -285,6 +286,21 @@ submitTurn :
     -> SelectionSet decodesTo RootMutation
 submitTurn requiredArgs____ object____ =
     Object.selectionForCompositeField "submitTurn" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "turnNumber" requiredArgs____.turnNumber Encode.int, Argument.required "orders" requiredArgs____.orders (Api.InputObject.encodeUnitOrderInput |> Encode.list) ] object____ Basics.identity
+
+
+type alias RenewInactivityTimerRequiredArguments =
+    { id : String
+    , turnNumber : Int
+    , reason : Api.Enum.InactivityRenewalReason.InactivityRenewalReason
+    }
+
+
+renewInactivityTimer :
+    RenewInactivityTimerRequiredArguments
+    -> SelectionSet decodesTo Api.Object.GameSnapshot
+    -> SelectionSet decodesTo RootMutation
+renewInactivityTimer requiredArgs____ object____ =
+    Object.selectionForCompositeField "renewInactivityTimer" [ Argument.required "id" requiredArgs____.id Encode.string, Argument.required "turnNumber" requiredArgs____.turnNumber Encode.int, Argument.required "reason" requiredArgs____.reason (Encode.enum Api.Enum.InactivityRenewalReason.toString) ] object____ Basics.identity
 
 
 type alias ResignGameRequiredArguments =

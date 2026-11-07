@@ -28,7 +28,6 @@ import Browser.Dom
 import Browser.Events
 import DevTools.Page.LoggedGames as LoggedGames
 import DevTools.Route as Route
-import DevTools.Shared as Shared
 import Effect as E exposing (Eff)
 import Error
 import Game.AnimationFrame as AnimationFrame
@@ -63,6 +62,7 @@ import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import KeyCmd
 import Ports.Js.To as ToJs
+import Shared
 import Style as S
 import Time
 import Util.List as ListUtil

@@ -8,6 +8,7 @@ function createAudioManager(reportError = () => {}, assets = createAssetLoader()
     chatSent: ["/audio/chat-sent-radio-v1.ogg"],
     lobbyPlayerJoined: ["/audio/lobby-player-joined-pager-v1.ogg"],
     lobbyPlayerLeft: ["/audio/lobby-player-left-scanner-v1.ogg"],
+    matchMakingReady: ["/audio/match-making-ready-v1.ogg"],
     fieldGunFire: [
       "/audio/combat/field-gun-fire-01.ogg",
       "/audio/combat/field-gun-fire-02.ogg",
@@ -114,7 +115,7 @@ function createAudioManager(reportError = () => {}, assets = createAssetLoader()
         await resuming;
       }
       for (const [name, files] of Object.entries(sounds)) {
-        const priority = ["affirm", "cancel", "confirm", "chatReceived", "chatSent", "lobbyPlayerJoined", "lobbyPlayerLeft"].includes(name) ? 0 : 2;
+        const priority = ["affirm", "cancel", "confirm", "chatReceived", "chatSent", "lobbyPlayerJoined", "lobbyPlayerLeft", "matchMakingReady"].includes(name) ? 0 : 2;
         for (const file of files) load(file, priority);
       }
       for (const file of Object.values(movementFiles)) load(file, 2);
