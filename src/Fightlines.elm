@@ -12,7 +12,6 @@ import Effect as E
     exposing
         ( Eff
         )
-import Fightlines.FeatureFlags as FeatureFlags
 import Fightlines.Flags as Flags
 import Fightlines.MatchMaking.VisitId exposing (VisitId)
 import Fightlines.Page.GameLoadFailed as GameLoadFailed
@@ -329,17 +328,13 @@ handleRoute shared route =
             ( NewLobby (NewLobby.init shared), E.none )
 
         Just Route.MatchMaking ->
-            if FeatureFlags.matchMakingEnabled then
-                let
-                    ( id, nextShared ) =
-                        MatchMaking.prepareVisit shared
-                in
-                ( LoadingMatchMaking nextShared id
-                , E.request (MatchMakingResponseReceived id) MatchMaking.load
-                )
-
-            else
-                ( NotFound shared, E.none )
+            let
+                ( id, nextShared ) =
+                    MatchMaking.prepareVisit shared
+            in
+            ( LoadingMatchMaking nextShared id
+            , E.request (MatchMakingResponseReceived id) MatchMaking.load
+            )
 
         Just (Route.Lobby id) ->
             loadLobby LobbyPage.LobbySetup shared id

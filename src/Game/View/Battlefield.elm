@@ -1285,12 +1285,13 @@ toSvg args =
         , Ev.on "mouseleave" (Decode.succeed TargetPreviewLeft)
         ]
         (List.concat
-            [ [ terrain
-              , interactionMovement args.map paths boardInteraction
-              ]
+            [ [ terrain ]
             , [ interactionTileTargets args.map boardInteraction ]
             , List.map depotView args.depots
             , List.map crateView args.supplyCrates
+            , [ SvgLazy.lazy2 fogShading args.map args.visibleTiles
+              , interactionMovement args.map paths boardInteraction
+              ]
             , List.concatMap (PlannedOrder.crateUnloads >> List.map (.destination >> targetOutline)) paths
             , List.filterMap
                 (\unit ->
@@ -1624,13 +1625,13 @@ terrainAppearanceFilter appearance =
             "none"
 
         FoggedTerrain ->
-            "saturate(0.18) brightness(0.58)"
+            "saturate(0.18)"
 
         DimmedTerrain ->
             "brightness(0.6)"
 
         FoggedDimmedTerrain ->
-            "saturate(0.18) brightness(0.58) brightness(0.6)"
+            "saturate(0.18) brightness(0.6)"
 
 
 {-| Unwrap interaction and selection before lazy boundaries. The input records
@@ -1740,6 +1741,52 @@ terrainArtworkLayer map visibleTiles =
         ]
 
 
+{-| Draw fog darkness directly so visibility does not depend on CSS filters.
+Keep it above terrain and static objects, below units, routes, and highlights.
+Cut visible tiles out of one board rectangle instead of building every unseen
+tile. The server supplies unique, in-bounds visibility coordinates.
+-}
+fogShading : Map -> List Coordinate -> Svg Msg
+fogShading map visibleTiles =
+    let
+        shadingPath : String
+        shadingPath =
+            if List.length visibleTiles == (map.width * map.height) then
+                ""
+
+            else
+                mapOutlinePath map
+                    ++ (visibleTiles |> List.map (Coordinate.key >> tileSquarePath) |> String.concat)
+    in
+    Svg.path
+        [ SA.d shadingPath
+        , SA.fill S.blackStr
+        , SA.fillOpacity "0.42"
+        , SA.fillRule "evenodd"
+        , SA.pointerEvents "none"
+        , Aria.svgHidden True
+        ]
+        []
+
+
+mapOutlinePath : Map -> String
+mapOutlinePath map =
+    "M0 0h"
+        ++ String.fromInt (map.width * 16)
+        ++ "v"
+        ++ String.fromInt (map.height * 16)
+        ++ "H0z"
+
+
+tileSquarePath : Coordinate.Key -> String
+tileSquarePath ( x, y ) =
+    "M"
+        ++ String.fromInt (x * 16)
+        ++ " "
+        ++ String.fromInt (y * 16)
+        ++ "h16v16h-16z"
+
+
 {-| A black overlay at 40% opacity matches brightness(0.6). The even-odd path
 cuts out reachable squares and the selected origin, including when the origin
 is also a legal target. Keep this below routes, objects, and click targets.
@@ -1754,23 +1801,11 @@ destinationDimming map reachable choosingDestination selected =
                 |> Set.fromList
                 |> Set.union (selected |> Maybe.map (Coordinate.key >> Set.singleton) |> Maybe.withDefault Set.empty)
 
-        tileHole : Coordinate.Key -> String
-        tileHole ( x, y ) =
-            "M"
-                ++ String.fromInt (x * 16)
-                ++ " "
-                ++ String.fromInt (y * 16)
-                ++ "h16v16h-16z"
-
         shadingPath : String
         shadingPath =
             if choosingDestination then
-                "M0 0h"
-                    ++ String.fromInt (map.width * 16)
-                    ++ "v"
-                    ++ String.fromInt (map.height * 16)
-                    ++ "H0z"
-                    ++ (clearPositions |> Set.toList |> List.map tileHole |> String.concat)
+                mapOutlinePath map
+                    ++ (clearPositions |> Set.toList |> List.map tileSquarePath |> String.concat)
 
             else
                 ""

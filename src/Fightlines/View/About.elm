@@ -22,7 +22,8 @@ import View.Prose as Prose
 
 
 type Section
-    = Intro
+    = Game
+    | Intro
     | Contact
     | Code
     | Pacifism
@@ -36,7 +37,8 @@ type Section
 
 all : List Section
 all =
-    [ Intro
+    [ Game
+    , Intro
     , Contact
     , Code
     , Pacifism
@@ -51,6 +53,9 @@ htmlId =
 sectionTitle : Section -> String
 sectionTitle section =
     case section of
+        Game ->
+            "the game"
+
         Intro ->
             "intro"
 
@@ -82,46 +87,6 @@ aboutPhotoCaption =
 
 dialog : { onClose : msg } -> Dialog msg
 dialog events =
-    let
-        photo : Html msg
-        photo =
-            H.figure
-                [ A.css
-                    [ S.block
-                    , S.floatLeft
-                    , S.wFull
-                    , S.maxW64
-                    , S.mr4
-                    , S.mb4
-                    , S.belowWidth 600
-                        [ S.floatNone
-                        , S.m0
-                        , S.mb4
-                        ]
-                    ]
-                ]
-                [ H.img
-                    [ A.src aboutPhotoSource
-                    , A.alt "the creator of fightlines"
-                    , A.css
-                        [ S.block
-                        , S.wFull
-                        , S.hAuto
-                        , S.outdent
-                        ]
-                    ]
-                    []
-                , H.figcaption
-                    [ A.css
-                        [ S.mt2
-                        , S.fontSizeRem 0.875
-                        , S.textGray4
-                        , S.wrapAnywhere
-                        ]
-                    ]
-                    [ H.text aboutPhotoCaption ]
-                ]
-    in
     Dialog.make htmlId
         "about fightlines"
         events.onClose
@@ -133,11 +98,11 @@ dialog events =
                 , S.p3
                 , S.bgNightwood3
                 , S.indentStrong
-                , S.maxHViewportInsetRem 11
+                , S.minH0
                 , S.overflowAuto
                 ]
             ]
-            (photo :: List.map sectionView all)
+            (List.map sectionView all)
         , Button.secondary "close" events.onClose
             |> Button.toHtml
         ]
@@ -145,13 +110,65 @@ dialog events =
         |> Dialog.withCloseButton
 
 
+creatorPhoto : Html msg
+creatorPhoto =
+    H.figure
+        [ A.css
+            [ S.block
+            , S.floatLeft
+            , S.wFull
+            , S.maxW64
+            , S.mr4
+            , S.mb4
+            , S.belowWidth 600
+                [ S.floatNone
+                , S.m0
+                , S.mb4
+                ]
+            ]
+        ]
+        [ H.img
+            [ A.src aboutPhotoSource
+            , A.alt "the creator of fightlines"
+            , A.css
+                [ S.block
+                , S.wFull
+                , S.hAuto
+                , S.outdent
+                ]
+            ]
+            []
+        , H.figcaption
+            [ A.css
+                [ S.mt2
+                , S.fontSizeRem 0.875
+                , S.textGray4
+                , S.wrapAnywhere
+                ]
+            ]
+            [ H.text aboutPhotoCaption ]
+        ]
+
+
 {-| Fill in each section here. Blank lines separate paragraphs.
 -}
 sectionBody : Section -> List (Html msg)
 sectionBody section =
     case section of
+        Game ->
+            Prose.paragraphs """fightlines is a turn based strategy game about logistics, supply, and transportation.
+command infantry, tanks, field guns, and trucks. both players plan their orders at the same time,
+then watch them play out together.
+
+keeping your army supplied is part of the fight. without supplies and fuel, your army will quickly become ineffective
+or perish. anticipating where you need to transport supplies is key. use terrain and fog of war to hide your approach,
+set ambushes, and cut off enemy supply lines. winning a firefight means little if your army
+runs out of supplies and becomes stranded.
+"""
+
         Intro ->
-            [ H.p
+            [ creatorPhoto
+            , H.p
                 [ A.css
                     [ S.wrapAnywhere
                     ]

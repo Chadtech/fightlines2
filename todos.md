@@ -6,18 +6,20 @@
 
 
 ## Immediately
-
+- A/B deployments
+- Tutorial missions
+- firefox?
 
 ## Soon
 - feature flags
-- Tutorial missions
+
 - Manufacturing and cities
 - Air planes and boats
 - Day Night Cycle
 
 
 ## Later
-- A/B deployments
+
 - Horse logistics unit
 - Spectators
 - Name units

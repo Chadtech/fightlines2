@@ -1701,9 +1701,13 @@ loading and unloading.
 enemies and the player's current sight mask. Hidden paths remain withheld from
 the summary events; transient sightings are carried by frames rather than by
 complete enemy paths. Stored units and authoritative movement validation still use the complete board. `GamePage` stores the mask
-and refreshes it at each playback tile boundary; `GamePage` darkens and desaturates unseen
-terrain and known depots
-with the same image filter, preserving artwork detail and crisp tile boundaries.
+and refreshes it at each playback tile boundary. `Battlefield` desaturates unseen
+terrain and known depots with an image filter, then draws a passive black SVG
+path at 42% opacity over their tiles. Fog darkness does not depend on CSS filter
+support. This path cuts visible tiles out of one board rectangle and is lazy by
+map and visibility, avoiding per-tile fog elements or work during camera and
+planning updates. Units, routes, and target highlights stay above the fog, preserving
+artwork detail and crisp tile boundaries.
 Both players receive the same timeline timing with their own projected visibility.
 Projected `TurnFrame.departures` contains only an enemy unit ID and cardinal exit
 direction from a sighting immediately before it moves into fog. Projection checks

@@ -1,9 +1,12 @@
-module Fightlines.FeatureFlags exposing (matchMakingEnabled)
+module Fightlines.FeatureFlags exposing (Feature)
 
 {-| Frontend switches controlling player-facing feature availability.
 -}
 
+----------------------------------------------------------------
+-- TYPES --
+----------------------------------------------------------------
 
-matchMakingEnabled : Bool
-matchMakingEnabled =
-    True
+
+type Feature
+    = None

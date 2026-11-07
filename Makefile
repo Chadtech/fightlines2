@@ -1,6 +1,7 @@
 .PHONY: build frontend app-version bump-version generate-api combat-theater-calibrations sprites check check-all run dev editor logs
 
 PRODUCTION ?= false
+ELM_BUILD_FLAGS = $(if $(filter true,$(PRODUCTION)),--optimize)
 RUST_TEST_ARGS ?=
 
 build: PRODUCTION = true
@@ -26,8 +27,8 @@ bump-version:
 
 frontend: app-version generate-api combat-theater-calibrations
 	node tools/build-config.cjs $(PRODUCTION)
-	elm make src/Fightlines.elm --output=public/elm.js
-	elm make src/Admin.elm --output=public/elm-admin.js
+	elm make src/Fightlines.elm $(ELM_BUILD_FLAGS) --output=public/elm.js
+	elm make src/Admin.elm $(ELM_BUILD_FLAGS) --output=public/elm-admin.js
 	cp tools/admin/index.html public/admin.html
 	cp tools/admin/main.js public/admin.js
 	node tools/build-dev-tools.cjs $(PRODUCTION)

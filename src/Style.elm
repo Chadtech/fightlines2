@@ -333,6 +333,7 @@ module Style exposing
     , pr3
     , pr4
     , pre
+    , pt0
     , pt1
     , pt12
     , pt16
@@ -1887,6 +1888,11 @@ py16 =
         [ Css.paddingTop s16
         , Css.paddingBottom s16
         ]
+
+
+pt0 : Css.Style
+pt0 =
+    Css.paddingTop Css.zero
 
 
 pt1 : Css.Style

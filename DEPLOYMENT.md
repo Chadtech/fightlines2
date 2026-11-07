@@ -14,7 +14,9 @@ by default; the flag does not alter authorization for normal games.
 
 Run `make build` before hosting to compile the optimized server with
 `cargo build --locked --release` at `target/release/fightlines-server` and generate
-the frontend's production flag. This builds the player and Admin apps, removing the
+the frontend's production flag. Production frontend builds compile the player and
+Admin Elm apps with `--optimize`, including `make frontend PRODUCTION=true` in the
+deployment workflow. This builds the player and Admin apps, removing the
 DevTools bundle, copied HTML, and startup script from earlier development builds. The map
 editor and other DevTools pages are unavailable. Authenticated archive replay
 is available through Admin. This target defaults to `PRODUCTION=true`;

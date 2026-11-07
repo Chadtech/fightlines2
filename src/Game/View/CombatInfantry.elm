@@ -276,17 +276,9 @@ toSvg clock attack unit =
 
         artwork : Int -> Svg msg
         artwork index =
-            let
-                width : Int
-                width =
-                    if index == 1 then
-                        drawing.width + drawing.padding
-
-                    else
-                        drawing.width
-            in
-            -- Retain the idle canvas scale and footing. Only the flash extends
-            -- beyond its right edge, so swapping frames cannot shrink the figure.
+            -- Keep one padded image box and anchor both drawings at its origin.
+            -- Browsers can retain the previous bitmap while the next one loads;
+            -- changing the box or centering that bitmap would shift the figure.
             Svg.svg
                 [ SA.width "16"
                 , SA.height (String.fromFloat (UnitSprite.portraitFooting unit))
@@ -297,8 +289,9 @@ toSvg clock attack unit =
                 [ Svg.image
                     [ SA.xlinkHref (spritePath pose team index)
                     , SA.y (String.fromInt imageY)
-                    , SA.width (String.fromInt width)
+                    , SA.width (String.fromInt (drawing.width + drawing.padding))
                     , SA.height (String.fromInt drawing.height)
+                    , SA.preserveAspectRatio "xMinYMin meet"
                     ]
                     []
                 ]

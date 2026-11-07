@@ -169,6 +169,8 @@ is separate from the frontend build flag below. See
 and `make logs` use `PRODUCTION=false`; standalone `make frontend` and `make run`
 also default to non-production. Override a command explicitly with
 `PRODUCTION=true` or `PRODUCTION=false` when needed.
+Production builds compile the player and Admin Elm apps with `--optimize`;
+development builds retain Elm's development mode.
 The generated `public/build-config.js` passes a required `isProduction` Boolean
 through JavaScript startup flags into the player app's flags decoder; shared state
 does not retain it, and DevTools does not decode or store it. Non-production

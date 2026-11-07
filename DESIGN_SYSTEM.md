@@ -169,12 +169,11 @@ lettering, thick yellow underline, flush g descender, and small explosion.
 The logo scales proportionally up to 40rem wide with viewport gutters, centered
 slightly above the viewport midpoint with the menu beneath it. Its image
 supplies the accessible heading. The ordinary beveled card has no title bar
-and contains a full-width primary `create a lobby` button followed by secondary
-`feedback`, `about`, and `privacy policy` buttons. Keep it at most 24rem wide
-with viewport gutters. `create a lobby` opens the existing form at `/new`.
-When the frontend matchmaking switch is enabled, show primary `match making`
-first and make `create a lobby` secondary. About opens a wide reading dialog
-(64rem, capped by the viewport gutters) with titled intro, contact, code, and pacifism sections
+and contains a full-width primary `match making` button followed by secondary
+`create a lobby`, `feedback`, `about`, and `privacy policy` buttons. Keep it at most
+24rem wide with viewport gutters. `create a lobby` opens the existing form at `/new`.
+About opens a wide reading dialog
+(64rem, capped by the viewport gutters) with titled game, intro, contact, code, and pacifism sections
 and the creator portrait. Contact addresses and account names are real
 links using the shared link style; web links open a new tab or window and email
 opens the configured mail handler. Group the portrait and its small caption in
@@ -576,9 +575,11 @@ Refresh resumes the shared countdown; a completed pairing cannot be cancelled.
   after theme styling. BloodGulch uses GreenForest, including ordinary forest
   artwork for its hiding spots. Arabia and ElAlamein use Desert. Tile inspection and
   movement costs continue to use the underlying plain, hills, and forest rules.
-- Unseen terrain and known depots use 18% saturation and 58% brightness,
-  preserving the artwork's internal shading instead of covering it with an opaque
-  tint. Keep visibility boundaries crisp at tile edges.
+- Unseen terrain and known depots use 18% saturation with a black SVG overlay
+  at 42% opacity, preserving the artwork's internal shading. Draw the darkness
+  independently of CSS filters so fog stays visible on mobile browsers when
+  filtering is unavailable. Keep visibility boundaries crisp at tile edges,
+  with units, routes, and target highlights above the fog.
   After the final turn's playback, lift fog across the entire battlefield for
   victory and draw results. Show all remaining units, freight, and resource stocks
   at normal visibility, including when viewing a finished game after refresh.

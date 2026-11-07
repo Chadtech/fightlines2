@@ -438,7 +438,7 @@ dialog events =
             [ Aria.label "game basics"
             , A.tabindex 0
             , A.css
-                [ S.maxHViewportInsetRem 11
+                [ S.minH0
                 , S.overflowAuto
                 , S.pr1
                 ]
@@ -467,7 +467,8 @@ dialog events =
             ]
         , H.div
             [ A.css
-                [ S.borderT
+                [ S.shrink0
+                , S.borderT
                 , S.borderGray2
                 , S.pt3
                 ]

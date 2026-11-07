@@ -14,7 +14,6 @@ import Audio
 import Browser.Dom
 import Effect as E exposing (Eff)
 import Error
-import Fightlines.FeatureFlags as FeatureFlags
 import Fightlines.Feedback as Feedback
 import Fightlines.Route as Route
 import Fightlines.View.About as About
@@ -413,22 +412,14 @@ view model =
 
 matchMakingControl : Html Msg
 matchMakingControl =
-    if FeatureFlags.matchMakingEnabled then
-        Button.primary "match making" MatchMakingButtonClicked
-            |> Button.fullWidth
-            |> Button.toHtml
-
-    else
-        H.text ""
+    Button.primary "match making" MatchMakingButtonClicked
+        |> Button.fullWidth
+        |> Button.toHtml
 
 
 createLobbyButton : Button.Button Msg
 createLobbyButton =
-    if FeatureFlags.matchMakingEnabled then
-        Button.secondary "create a lobby" CreateALobbyClicked
-
-    else
-        Button.primary "create a lobby" CreateALobbyClicked
+    Button.secondary "create a lobby" CreateALobbyClicked
 
 
 feedbackButtonHtmlId : String

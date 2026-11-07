@@ -126,7 +126,7 @@ reference =
     setPlacement Reference
 
 
-{-| A wide reading surface for long-form text.
+{-| A wide reading surface bounded below its title. Content owns its scrolling areas.
 -}
 article : Dialog msg -> Dialog msg
 article =
@@ -210,7 +210,12 @@ toHtml (Dialog model) =
                 Article ->
                     [ S.w256
                     , S.maxHViewportInset8
-                    , S.overflowAuto
+                    , Css.property "max-height" "calc(100dvh - 2rem)"
+                    , S.overflowHidden
+                    , Css.pseudoClass "is([open])"
+                        [ S.grid
+                        , S.gridRows "auto minmax(0, 1fr)"
+                        ]
                     ]
 
                 Workspace ->
@@ -295,6 +300,25 @@ toHtml (Dialog model) =
         dialogStyles =
             baseStyles ++ placementStyles
 
+        placementBodyStyles : List Css.Style
+        placementBodyStyles =
+            case model.placement of
+                Article ->
+                    [ S.minH0
+                    , S.overflowHidden
+                    ]
+
+                _ ->
+                    []
+
+        bodyStyles : List Css.Style
+        bodyStyles =
+            [ S.col
+            , S.g3
+            , S.p3
+            ]
+                ++ placementBodyStyles
+
         content : List (Html msg)
         content =
             [ H.div
@@ -303,11 +327,7 @@ toHtml (Dialog model) =
                 ]
                 [ headerContent ]
             , H.div
-                [ A.css
-                    [ S.col
-                    , S.g3
-                    , S.p3
-                    ]
+                [ A.css bodyStyles
                 ]
                 model.body
             ]
