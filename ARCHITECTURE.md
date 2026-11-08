@@ -12,10 +12,10 @@ repository root, and frontend assets live in `public/`. The earlier prototype in
 ## Admin application
 
 `Admin.elm` is the third Elm entry point, served under `/admin` in all builds.
-Its model owns the `Page` union and a typed visit ID, which rejects asynchronous
-responses from earlier page visits. It owns session checks,
-initial loading/failure dispatch, and typed routes, using the navigation key in
-`Shared.Model`. Login and the single dashboard own their page state and use
+Its top-level model is the `Page` union. Its `Msg` union handles navigation,
+shared events, page events, and request responses. The entry point owns session
+checks, initial loading/failure dispatch, and typed routes, using the navigation
+key in `Shared.Model`. Login and the single dashboard own their page state and use
 `Shared`, `Effect`, and generated GraphQL selections. `Game.Archive` holds shared
 archive data/selections; `Game.Replay` is shared by Admin and DevTools with an
 explicit return URL.

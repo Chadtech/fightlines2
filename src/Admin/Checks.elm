@@ -1,6 +1,6 @@
 port module Admin.Checks exposing (main)
 
-import Admin exposing (Model, Msg(..), Page(..), PageMsg(..))
+import Admin exposing (Msg(..), Page(..))
 import Admin.Page.Login as Login
 import Admin.Route as Route
 import Api.Enum.SessionStatus as Session
@@ -34,12 +34,8 @@ initialize _ url key =
 
 checks : Url -> Navigation.Key -> List String
 checks url key =
-    case
-        ( GameLogId.parse "00000000000000000000000000000001-1700000000000"
-        , GameLogId.parse "00000000000000000000000000000002-1700000000001"
-        )
-    of
-        ( Ok firstId, Ok secondId ) ->
+    case GameLogId.parse "00000000000000000000000000000001-1700000000000" of
+        Ok id ->
             let
                 flags : Encode.Value
                 flags =
@@ -50,119 +46,91 @@ checks url key =
                         , ( "localStorage", Encode.object [] )
                         ]
 
-                initial : Model
+                initial : Page
                 initial =
                     Admin.init flags url key |> Tuple.first
 
-                step : Msg -> Model -> Model
-                step msg model =
-                    Admin.update msg model |> Tuple.first
+                step : Msg -> Page -> Page
+                step msg page =
+                    Admin.superUpdate msg page |> Tuple.first
 
-                send : PageMsg -> Model -> Model
-                send event model =
-                    step (PageMsg model.visitId event) model
-
-                first : Model
-                first =
+                loadingReplay : Page
+                loadingReplay =
                     initial
-                        |> step (RouteReceived (Just (Route.Replay firstId)))
-                        |> send (SessionResponseReceived (Ok Session.SignedIn))
+                        |> step (RouteReceived (Just (Route.Replay id)))
+                        |> step (SessionResponseReceived (Ok Session.SignedIn))
 
-                second : Model
-                second =
-                    first
-                        |> step (RouteReceived (Just (Route.Replay secondId)))
-                        |> send (SessionResponseReceived (Ok Session.SignedIn))
-
-                delayedFailure : Model
-                delayedFailure =
-                    second
-                        |> step (PageMsg first.visitId (ReplayResponseReceived (Err (Graphql.Http.HttpError Graphql.Http.Timeout))))
-
-                delayedSession : Model
-                delayedSession =
-                    first
-                        |> step (RouteReceived (Just (Route.Replay secondId)))
-                        |> step (PageMsg initial.visitId (SessionResponseReceived (Ok Session.SignedOut)))
-
-                failed : Model
-                failed =
-                    second
-                        |> send (ReplayResponseReceived (Err (Graphql.Http.HttpError Graphql.Http.Timeout)))
-
-                retry : Model
+                retry : Page
                 retry =
-                    failed |> send RetryButtonClicked
+                    loadingReplay
+                        |> step (ReplayResponseReceived (Err (Graphql.Http.HttpError Graphql.Http.Timeout)))
+                        |> step RetryButtonClicked
 
-                login : Model
+                login : Page
                 login =
                     initial
                         |> step (RouteReceived (Just Route.Dashboard))
-                        |> send (SessionResponseReceived (Ok Session.SignedOut))
+                        |> step (SessionResponseReceived (Ok Session.SignedOut))
 
-                signedOut : Model
+                signedIn : Page
+                signedIn =
+                    login
+                        |> step (LoginMsg (Login.LoginResponseReceived (Ok Session.SignedIn)))
+
+                signedOut : Page
                 signedOut =
                     login
                         |> step (RouteReceived (Just Route.SignOut))
-                        |> send (LogoutResponseReceived (Ok True))
+                        |> step (LogoutResponseReceived (Ok True))
 
-                staleLogin : Model
-                staleLogin =
-                    signedOut
-                        |> step (PageMsg login.visitId (LoginMsg (Login.LoginResponseReceived (Ok Session.SignedIn))))
-
-                isSecondLoading : Model -> Bool
-                isSecondLoading model =
-                    case model.page of
-                        LoadingReplay _ id ->
-                            id == secondId
+                replayKeepsRoute : Bool
+                replayKeepsRoute =
+                    case loadingReplay of
+                        LoadingReplay _ loadedId ->
+                            loadedId == id
 
                         _ ->
                             False
 
                 retryKeepsRoute : Bool
                 retryKeepsRoute =
-                    case retry.page of
+                    case retry of
                         Checking _ route ->
-                            route == Just (Route.Replay secondId)
+                            route == Just (Route.Replay id)
 
                         _ ->
                             False
 
-                staysSignedOut : Bool
-                staysSignedOut =
-                    case staleLogin.page of
-                        Login _ _ ->
+                loginLoadsDashboard : Bool
+                loginLoadsDashboard =
+                    case signedIn of
+                        LoadingDashboard _ ->
                             True
+
+                        _ ->
+                            False
+
+                logoutReturnsToLogin : Bool
+                logoutReturnsToLogin =
+                    case signedOut of
+                        Login route _ ->
+                            route == Just Route.Dashboard
 
                         _ ->
                             False
 
                 checksWithLabels : List ( String, Bool )
                 checksWithLabels =
-                    [ ( "a delayed replay response must not replace the next replay", isSecondLoading delayedFailure )
-                    , ( "a delayed session response must not replace a newer session check", isChecking delayedSession )
+                    [ ( "an authenticated replay route must load the requested archive", replayKeepsRoute )
                     , ( "retry must keep the failed replay route", retryKeepsRoute )
-                    , ( "a login response from before logout must be ignored", staysSignedOut )
+                    , ( "successful login must load the dashboard", loginLoadsDashboard )
+                    , ( "successful logout must return to dashboard login", logoutReturnsToLogin )
                     ]
             in
             List.filterMap failedCheck checksWithLabels
 
-        ( Err error, _ ) ->
+        Err error ->
             [ error ]
-
-        ( _, Err error ) ->
-            [ error ]
-
-
-isChecking : Model -> Bool
-isChecking model =
-    case model.page of
-        Checking _ _ ->
-            True
-
-        _ ->
-            False
 
 
 failedCheck : ( String, Bool ) -> Maybe String

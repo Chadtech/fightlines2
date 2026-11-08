@@ -206,7 +206,12 @@ load id =
         |> ApiRequest.queryRequest
 
 
-init : { returnUrl : String } -> Shared.Model -> GameLogId -> Flags -> ( Model, Eff Msg )
+init :
+    { returnUrl : String }
+    -> Shared.Model
+    -> GameLogId
+    -> Flags
+    -> ( Model, Eff Msg )
 init config shared id flags =
     let
         ( skipLossDialogs, lossError ) =
@@ -283,6 +288,12 @@ setViewport viewport model =
 setNavigation : BattlefieldNavigation.Model -> Model -> Model
 setNavigation navigation model =
     { model | navigation = navigation }
+
+
+mapNavigation : (BattlefieldNavigation.Model -> BattlefieldNavigation.Model) -> Model -> Model
+mapNavigation change model =
+    model
+        |> setNavigation (change model.navigation)
 
 
 setRequest : TurnRequest -> Model -> Model
@@ -446,7 +457,7 @@ finishPlayback : Model -> ( Model, Eff Msg )
 finishPlayback model =
     (model
         |> setTimeline Ready
-        |> setNavigation (BattlefieldNavigation.startReturn model.navigation)
+        |> mapNavigation BattlefieldNavigation.startReturn
     )
         |> loadNextTurn
         |> E.and (E.after PlaybackPresentation.cameraPanDurationMs CameraReturnFinished)
@@ -504,7 +515,11 @@ loadTurn position model =
             (model
                 |> setRequest (Loading position)
             )
-        , E.request (TurnResponseReceived position) (turnSelection model.id position |> ApiRequest.queryRequest)
+        , E.request
+            (TurnResponseReceived position)
+            (turnSelection model.id position
+                |> ApiRequest.queryRequest
+            )
         )
 
 
@@ -535,32 +550,30 @@ applyFrame frame model =
             }
 
 
-mapNavigation : (BattlefieldNavigation.Model -> BattlefieldNavigation.Model) -> Model -> Model
-mapNavigation change model =
+navigate : (BattlefieldNavigation.Model -> BattlefieldNavigation.Model) -> Model -> Model
+navigate change model =
     case model.timeline of
         Playing playing ->
             if playing.paused then
                 let
-                    navigation : BattlefieldNavigation.Model
-                    navigation =
-                        model.navigation
-
                     camera : Camera.Camera
                     camera =
                         playing.camera
                             |> Maybe.map .camera
-                            |> Maybe.withDefault (BattlefieldNavigation.camera navigation)
+                            |> Maybe.withDefault (BattlefieldNavigation.camera model.navigation)
 
-                    inspecting : BattlefieldNavigation.Model
-                    inspecting =
+                    changeFromCamera : BattlefieldNavigation.Model -> BattlefieldNavigation.Model
+                    changeFromCamera navigation =
                         navigation
                             |> BattlefieldNavigation.setOffset
                                 camera.offset
                             |> BattlefieldNavigation.setZoom
                                 camera.zoom
+                            |> change
+                            |> BattlefieldNavigation.finishReturn
                 in
                 model
-                    |> setNavigation (change inspecting |> BattlefieldNavigation.finishReturn)
+                    |> mapNavigation changeFromCamera
                     |> setTimeline
                         (Playing
                             (playing
@@ -569,14 +582,13 @@ mapNavigation change model =
                         )
 
             else
-                (model
-                    |> setNavigation (change model.navigation |> BattlefieldNavigation.finishReturn)
-                )
+                model
+                    |> mapNavigation (change >> BattlefieldNavigation.finishReturn)
                     |> updateCamera
 
         Ready ->
             model
-                |> setNavigation (change model.navigation |> BattlefieldNavigation.finishReturn)
+                |> mapNavigation (change >> BattlefieldNavigation.finishReturn)
 
 
 selectUnit : UnitId -> Model -> Model
@@ -627,37 +639,37 @@ handleBattlefieldMsg : Battlefield.Msg -> Model -> Model
 handleBattlefieldMsg msg model =
     case msg of
         Battlefield.PanLeftClicked ->
-            mapNavigation BattlefieldNavigation.panLeft model
+            navigate BattlefieldNavigation.panLeft model
 
         Battlefield.PanRightClicked ->
-            mapNavigation BattlefieldNavigation.panRight model
+            navigate BattlefieldNavigation.panRight model
 
         Battlefield.PanUpClicked ->
-            mapNavigation BattlefieldNavigation.panUp model
+            navigate BattlefieldNavigation.panUp model
 
         Battlefield.PanDownClicked ->
-            mapNavigation BattlefieldNavigation.panDown model
+            navigate BattlefieldNavigation.panDown model
 
         Battlefield.ZoomInClicked ->
-            mapNavigation BattlefieldNavigation.zoomIn model
+            navigate BattlefieldNavigation.zoomIn model
 
         Battlefield.ZoomOutClicked ->
-            mapNavigation BattlefieldNavigation.zoomOut model
+            navigate BattlefieldNavigation.zoomOut model
 
         Battlefield.ResetViewClicked ->
-            mapNavigation BattlefieldNavigation.resetViewport model
+            navigate BattlefieldNavigation.resetViewport model
 
         Battlefield.HomePressed ->
-            mapNavigation BattlefieldNavigation.resetViewport model
+            navigate BattlefieldNavigation.resetViewport model
 
         Battlefield.TouchInputReceived input ->
-            mapNavigation (BattlefieldNavigation.touch input) model
+            navigate (BattlefieldNavigation.touch input) model
 
         Battlefield.PointerPressed point ->
-            mapNavigation (BattlefieldNavigation.press point) model
+            navigate (BattlefieldNavigation.press point) model
 
         Battlefield.WheelScrolled anchor delta ->
-            mapNavigation (BattlefieldNavigation.scroll anchor delta) model
+            navigate (BattlefieldNavigation.scroll anchor delta) model
 
         Battlefield.ClickedUnit id click ->
             inspectClick click (selectUnit id) model
@@ -969,7 +981,7 @@ update msg model =
 
         NavigationMsg navigationMsg ->
             model
-                |> mapNavigation (BattlefieldNavigation.update BattlefieldNavigation.PanCamera navigationMsg)
+                |> navigate (BattlefieldNavigation.update BattlefieldNavigation.PanCamera navigationMsg)
                 |> E.withOut
 
         CargoUnitClicked id ->
@@ -1021,37 +1033,37 @@ update msg model =
 
         PanLeftKeyPressed ->
             model
-                |> mapNavigation BattlefieldNavigation.panLeft
+                |> navigate BattlefieldNavigation.panLeft
                 |> E.withOut
 
         PanRightKeyPressed ->
             model
-                |> mapNavigation BattlefieldNavigation.panRight
+                |> navigate BattlefieldNavigation.panRight
                 |> E.withOut
 
         PanUpKeyPressed ->
             model
-                |> mapNavigation BattlefieldNavigation.panUp
+                |> navigate BattlefieldNavigation.panUp
                 |> E.withOut
 
         PanDownKeyPressed ->
             model
-                |> mapNavigation BattlefieldNavigation.panDown
+                |> navigate BattlefieldNavigation.panDown
                 |> E.withOut
 
         ZoomInKeyPressed ->
             model
-                |> mapNavigation BattlefieldNavigation.zoomIn
+                |> navigate BattlefieldNavigation.zoomIn
                 |> E.withOut
 
         ZoomOutKeyPressed ->
             model
-                |> mapNavigation BattlefieldNavigation.zoomOut
+                |> navigate BattlefieldNavigation.zoomOut
                 |> E.withOut
 
         CameraReturnFinished ->
             (model
-                |> setNavigation (BattlefieldNavigation.finishReturn model.navigation)
+                |> mapNavigation BattlefieldNavigation.finishReturn
             )
                 |> E.withOut
 
@@ -1102,7 +1114,8 @@ update msg model =
 
                 Err error ->
                     (model
-                        |> setShared (Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared)
+                        |> setShared
+                            (Shared.addError (Just (Error.BattlefieldMeasurementFailed error)) model.shared)
                     )
                         |> E.withOut
 
@@ -1303,7 +1316,7 @@ update msg model =
                             , inspectionHelp = Nothing
                         }
                             |> setBattlefield recorded.battlefield
-                            |> setNavigation (BattlefieldNavigation.finishReturn model.navigation)
+                            |> mapNavigation BattlefieldNavigation.finishReturn
                             |> setRequest Idle
                             |> startTurnPlayback
 
@@ -1331,7 +1344,8 @@ inspectionPosition model =
             Just position
 
         _ ->
-            selectedUnit model |> Maybe.andThen (Unit.physicalPosition model.battlefield.units)
+            selectedUnit model
+                |> Maybe.andThen (Unit.physicalPosition model.battlefield.units)
 
 
 facingUnits : Model -> List UnitId
@@ -1766,7 +1780,12 @@ keyCommands model =
     let
         blocked : Bool
         blocked =
-            (dialog model /= Nothing) || ((playback model |> Maybe.andThen TurnPlayback.activeEncounter) /= Nothing)
+            (dialog model /= Nothing)
+                || ((playback model
+                        |> Maybe.andThen TurnPlayback.activeEncounter
+                    )
+                        /= Nothing
+                   )
     in
     if blocked then
         KeyCmd.none

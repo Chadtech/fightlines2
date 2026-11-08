@@ -1,11 +1,9 @@
 module Admin exposing
-    ( Model
-    , Msg(..)
+    ( Msg(..)
     , Page(..)
-    , PageMsg(..)
     , init
     , main
-    , update
+    , superUpdate
     )
 
 import Admin.Flags as Flags
@@ -63,25 +61,11 @@ type Page
     | NotFound Shared.Model
 
 
-type alias Model =
-    { page : Page
-    , visitId : VisitId
-    }
-
-
-type VisitId
-    = VisitId Int
-
-
 type Msg
     = LinkClicked Browser.UrlRequest
     | RouteReceived (Maybe Route)
     | SharedMsg Shared.Msg
-    | PageMsg VisitId PageMsg
-
-
-type PageMsg
-    = SessionResponseReceived (Response SessionStatus)
+    | SessionResponseReceived (Response SessionStatus)
     | LoginMsg Login.Msg
     | DashboardResponseReceived (Response Dashboard.Flags)
     | DashboardMsg Dashboard.Msg
@@ -99,13 +83,13 @@ type PageMsg
 ----------------------------------------------------------------
 
 
-main : Program Decode.Value Model Msg
+main : Program Decode.Value Page Msg
 main =
     Browser.application
         { init = \value url key -> init value url key |> Tuple.mapSecond (E.toCmd key)
         , update = updateWithEffects
-        , view = \model -> view model.visitId model.page
-        , subscriptions = \model -> subscriptions model.visitId model.page
+        , view = view
+        , subscriptions = subscriptions
         , onUrlRequest = LinkClicked
         , onUrlChange = RouteReceived << Route.fromUrl
         }
@@ -117,11 +101,11 @@ main =
 ----------------------------------------------------------------
 
 
-init : Decode.Value -> Url -> Navigation.Key -> ( Model, Eff Msg )
+init : Decode.Value -> Url -> Navigation.Key -> ( Page, Eff Msg )
 init value url key =
     case Decode.decodeValue Flags.decoder value of
         Err error ->
-            ( { page = InitError error, visitId = VisitId 0 }, E.none )
+            ( InitError error, E.none )
 
         Ok flags ->
             let
@@ -132,8 +116,6 @@ init value url key =
             handleRoute shared (Route.fromUrl url)
                 |> E.and (E.audio (Audio.SetMute shared.audioMute))
                 |> E.and (E.audio (Audio.SetVolumes shared.audioVolumes))
-                |> Tuple.mapFirst (\page -> { page = page, visitId = VisitId 0 })
-                |> Tuple.mapSecond (E.map (PageMsg (VisitId 0)))
 
 
 
@@ -222,7 +204,7 @@ setShared shared page =
             NotFound shared
 
 
-handleRoute : Shared.Model -> Maybe Route -> ( Page, Eff PageMsg )
+handleRoute : Shared.Model -> Maybe Route -> ( Page, Eff Msg )
 handleRoute shared route =
     case route of
         Just Route.SignOut ->
@@ -236,7 +218,7 @@ handleRoute shared route =
             )
 
 
-loadRoute : Shared.Model -> Maybe Route -> ( Page, Eff PageMsg )
+loadRoute : Shared.Model -> Maybe Route -> ( Page, Eff Msg )
 loadRoute shared route =
     case route of
         Just Route.Dashboard ->
@@ -271,7 +253,7 @@ replayNeedsLogin msg =
             False
 
 
-playbackAudio : Page -> Page -> Eff PageMsg
+playbackAudio : Page -> Page -> Eff Msg
 playbackAudio before after =
     let
         moving : Page -> List Audio.MovingUnit
@@ -323,18 +305,17 @@ playbackAudio before after =
         ]
 
 
-updateWithEffects : Msg -> Model -> ( Model, Cmd Msg )
-updateWithEffects msg model =
+updateWithEffects : Msg -> Page -> ( Page, Cmd Msg )
+updateWithEffects msg page =
     let
         ( next, effect ) =
-            update msg model
+            superUpdate msg page
 
         audio : Eff Msg
         audio =
-            playbackAudio model.page next.page
-                |> E.map (PageMsg next.visitId)
+            playbackAudio page next
     in
-    case getShared next.page of
+    case getShared next of
         Just shared ->
             ( next
             , E.toCmd shared.key
@@ -349,38 +330,7 @@ updateWithEffects msg model =
             ( next, Cmd.none )
 
 
-nextVisitId : VisitId -> VisitId
-nextVisitId (VisitId value) =
-    VisitId (value + 1)
-
-
-{-| Keep async events with their loaded page; entering a loading, login or failure
-state starts a new visit, including when navigating back to the same route.
--}
-transition : Model -> ( Page, Eff PageMsg ) -> ( Model, Eff Msg )
-transition model ( page, effect ) =
-    let
-        visitId : VisitId
-        visitId =
-            case ( model.page, page ) of
-                ( Login _ _, Login _ _ ) ->
-                    model.visitId
-
-                ( Dashboard _, Dashboard _ ) ->
-                    model.visitId
-
-                ( Replay _, Replay _ ) ->
-                    model.visitId
-
-                _ ->
-                    nextVisitId model.visitId
-    in
-    ( { model | page = page, visitId = visitId }
-    , E.map (PageMsg visitId) effect
-    )
-
-
-requiresCurrentDeployment : PageMsg -> Bool
+requiresCurrentDeployment : Msg -> Bool
 requiresCurrentDeployment event =
     case event of
         SessionResponseReceived (Err error) ->
@@ -417,214 +367,213 @@ requiresCurrentDeployment event =
 ----------------------------------------------------------------
 
 
-update : Msg -> Model -> ( Model, Eff Msg )
-update msg model =
+superUpdate : Msg -> Page -> ( Page, Eff Msg )
+superUpdate msg page =
+    if requiresCurrentDeployment msg then
+        ( page, Route.load Route.Dashboard )
+
+    else
+        update msg page
+
+
+update : Msg -> Page -> ( Page, Eff Msg )
+update msg page =
     case msg of
         LinkClicked request ->
             case request of
                 Browser.Internal url ->
                     case Route.fromUrl url of
                         Just route ->
-                            ( model, Route.pushUrl route )
+                            ( page, Route.pushUrl route )
 
                         Nothing ->
-                            ( model, E.loadUrl (Url.toString url) )
+                            ( page, E.loadUrl (Url.toString url) )
 
                 Browser.External url ->
-                    ( model, E.loadUrl url )
+                    ( page, E.loadUrl url )
 
         RouteReceived route ->
-            case getShared model.page of
+            case getShared page of
                 Nothing ->
-                    model |> E.withOut
+                    page
+                        |> E.withOut
 
                 Just shared ->
-                    transition model (handleRoute shared route)
+                    handleRoute shared route
 
         SharedMsg inner ->
-            case getShared model.page of
+            case getShared page of
                 Nothing ->
-                    model |> E.withOut
+                    page
+                        |> E.withOut
 
                 Just shared ->
                     Shared.superUpdate inner shared
-                        |> Tuple.mapFirst (\next -> { model | page = setShared next model.page })
+                        |> Tuple.mapFirst (\next -> setShared next page)
                         |> Tuple.mapSecond (E.map SharedMsg)
 
-        PageMsg visitId subMsg ->
-            if visitId /= model.visitId then
-                model |> E.withOut
+        SessionResponseReceived result ->
+            case page of
+                Checking shared route ->
+                    case result of
+                        Ok Session.SignedIn ->
+                            loadRoute shared route
 
-            else if requiresCurrentDeployment subMsg then
-                ( model, Route.load Route.Dashboard )
+                        Ok Session.SignedOut ->
+                            loginPage shared route |> E.withOut
 
-            else
-                let
-                    page : Page
-                    page =
-                        model.page
+                        Ok Session.Disabled ->
+                            Disabled shared |> E.withOut
 
-                    pageUpdate : ( Page, Eff PageMsg )
-                    pageUpdate =
-                        case subMsg of
-                            SessionResponseReceived result ->
-                                case page of
-                                    Checking shared route ->
-                                        case result of
-                                            Ok Session.SignedIn ->
-                                                loadRoute shared route
+                        Err error ->
+                            Failed shared route (ApiRequest.errorMessage error) |> E.withOut
 
-                                            Ok Session.SignedOut ->
-                                                loginPage shared route |> E.withOut
+                _ ->
+                    page |> E.withOut
 
-                                            Ok Session.Disabled ->
-                                                Disabled shared |> E.withOut
+        LoginMsg inner ->
+            case page of
+                Login route login ->
+                    case inner of
+                        Login.LoginResponseReceived (Ok Session.SignedIn) ->
+                            loadRoute login.shared route
 
-                                            Err error ->
-                                                Failed shared route (ApiRequest.errorMessage error) |> E.withOut
+                        _ ->
+                            Login.update inner login
+                                |> Tuple.mapFirst (Login route)
+                                |> Tuple.mapSecond (E.map LoginMsg)
 
-                                    _ ->
-                                        page |> E.withOut
+                _ ->
+                    page |> E.withOut
 
-                            LoginMsg inner ->
-                                case page of
-                                    Login route login ->
-                                        case inner of
-                                            Login.LoginResponseReceived (Ok Session.SignedIn) ->
-                                                loadRoute login.shared route
+        DashboardResponseReceived result ->
+            case page of
+                LoadingDashboard shared ->
+                    case result of
+                        Ok flags ->
+                            Dashboard (Dashboard.init shared flags)
+                                |> E.withOut
 
-                                            _ ->
-                                                Login.update inner login
-                                                    |> Tuple.mapFirst (Login route)
-                                                    |> Tuple.mapSecond (E.map LoginMsg)
+                        Err error ->
+                            if ApiRequest.requiresAdminLogin error then
+                                loginPage shared (Just Route.Dashboard)
+                                    |> E.withOut
 
-                                    _ ->
-                                        page |> E.withOut
+                            else
+                                Failed shared (Just Route.Dashboard) (ApiRequest.errorMessage error)
+                                    |> E.withOut
 
-                            DashboardResponseReceived result ->
-                                case page of
-                                    LoadingDashboard shared ->
-                                        case result of
-                                            Ok flags ->
-                                                Dashboard (Dashboard.init shared flags) |> E.withOut
+                _ ->
+                    page |> E.withOut
 
-                                            Err error ->
-                                                if ApiRequest.requiresAdminLogin error then
-                                                    loginPage shared (Just Route.Dashboard) |> E.withOut
+        DashboardMsg inner ->
+            case page of
+                Dashboard dashboard ->
+                    if Dashboard.needsLogin inner then
+                        loginPage dashboard.shared (Just Route.Dashboard) |> E.withOut
 
-                                                else
-                                                    Failed shared (Just Route.Dashboard) (ApiRequest.errorMessage error) |> E.withOut
+                    else
+                        Dashboard.update inner dashboard
+                            |> Tuple.mapFirst Dashboard
+                            |> Tuple.mapSecond (E.map DashboardMsg)
 
-                                    _ ->
-                                        page |> E.withOut
+                _ ->
+                    page |> E.withOut
 
-                            DashboardMsg inner ->
-                                case page of
-                                    Dashboard dashboard ->
-                                        if Dashboard.needsLogin inner then
-                                            loginPage dashboard.shared (Just Route.Dashboard) |> E.withOut
+        ReplayResponseReceived result ->
+            case page of
+                LoadingReplay shared id ->
+                    case result of
+                        Ok flags ->
+                            Replay.init
+                                { returnUrl = Route.toString Route.Dashboard
+                                }
+                                shared
+                                id
+                                flags
+                                |> Tuple.mapFirst Replay
+                                |> Tuple.mapSecond (E.map ReplayMsg)
 
-                                        else
-                                            Dashboard.update inner dashboard
-                                                |> Tuple.mapFirst Dashboard
-                                                |> Tuple.mapSecond (E.map DashboardMsg)
+                        Err error ->
+                            if ApiRequest.requiresAdminLogin error then
+                                loginPage shared (Just (Route.Replay id)) |> E.withOut
 
-                                    _ ->
-                                        page |> E.withOut
+                            else
+                                Failed shared
+                                    (Just (Route.Replay id))
+                                    (ApiRequest.errorMessage error)
+                                    |> E.withOut
 
-                            ReplayResponseReceived result ->
-                                case page of
-                                    LoadingReplay shared id ->
-                                        case result of
-                                            Ok flags ->
-                                                Replay.init
-                                                    { returnUrl = Route.toString Route.Dashboard
-                                                    }
-                                                    shared
-                                                    id
-                                                    flags
-                                                    |> Tuple.mapFirst Replay
-                                                    |> Tuple.mapSecond (E.map ReplayMsg)
+                _ ->
+                    page |> E.withOut
 
-                                            Err error ->
-                                                if ApiRequest.requiresAdminLogin error then
-                                                    loginPage shared (Just (Route.Replay id)) |> E.withOut
+        ReplayMsg inner ->
+            case page of
+                Replay replay ->
+                    if replayNeedsLogin inner then
+                        loginPage replay.shared (Just (Route.Replay replay.id)) |> E.withOut
 
-                                                else
-                                                    Failed shared (Just (Route.Replay id)) (ApiRequest.errorMessage error) |> E.withOut
+                    else
+                        Replay.update inner replay
+                            |> Tuple.mapFirst Replay
+                            |> Tuple.mapSecond (E.map ReplayMsg)
 
-                                    _ ->
-                                        page |> E.withOut
+                _ ->
+                    page |> E.withOut
 
-                            ReplayMsg inner ->
-                                case page of
-                                    Replay replay ->
-                                        if replayNeedsLogin inner then
-                                            loginPage replay.shared (Just (Route.Replay replay.id)) |> E.withOut
+        LogoutResponseReceived result ->
+            case page of
+                SigningOut shared ->
+                    case result of
+                        Ok _ ->
+                            ( loginPage shared (Just Route.Dashboard)
+                            , E.replaceUrl (Route.toString Route.Dashboard)
+                            )
 
-                                        else
-                                            Replay.update inner replay
-                                                |> Tuple.mapFirst Replay
-                                                |> Tuple.mapSecond (E.map ReplayMsg)
+                        Err error ->
+                            LogoutFailed
+                                shared
+                                ("could not log out. " ++ ApiRequest.errorMessage error)
+                                |> E.withOut
 
-                                    _ ->
-                                        page |> E.withOut
+                _ ->
+                    page |> E.withOut
 
-                            LogoutResponseReceived result ->
-                                case page of
-                                    SigningOut shared ->
-                                        case result of
-                                            Ok _ ->
-                                                ( loginPage shared (Just Route.Dashboard)
-                                                , E.replaceUrl (Route.toString Route.Dashboard)
-                                                )
+        RetryButtonClicked ->
+            case page of
+                Failed shared route _ ->
+                    handleRoute shared route
 
-                                            Err error ->
-                                                LogoutFailed
-                                                    shared
-                                                    ("could not log out. " ++ ApiRequest.errorMessage error)
-                                                    |> E.withOut
+                _ ->
+                    page |> E.withOut
 
-                                    _ ->
-                                        page |> E.withOut
+        SessionTimerElapsed _ ->
+            case page of
+                Replay _ ->
+                    ( page
+                    , Api.Query.adminSession
+                        |> ApiRequest.queryRequest
+                        |> E.request ReplaySessionResponseReceived
+                    )
 
-                            RetryButtonClicked ->
-                                case page of
-                                    Failed shared route _ ->
-                                        handleRoute shared route
+                _ ->
+                    page |> E.withOut
 
-                                    _ ->
-                                        page |> E.withOut
+        ReplaySessionResponseReceived result ->
+            case page of
+                Replay replay ->
+                    case result of
+                        Ok Session.SignedOut ->
+                            loginPage replay.shared (Just (Route.Replay replay.id)) |> E.withOut
 
-                            SessionTimerElapsed _ ->
-                                case page of
-                                    Replay _ ->
-                                        ( page
-                                        , Api.Query.adminSession
-                                            |> ApiRequest.queryRequest
-                                            |> E.request ReplaySessionResponseReceived
-                                        )
+                        Ok Session.Disabled ->
+                            Disabled replay.shared |> E.withOut
 
-                                    _ ->
-                                        page |> E.withOut
+                        _ ->
+                            page |> E.withOut
 
-                            ReplaySessionResponseReceived result ->
-                                case page of
-                                    Replay replay ->
-                                        case result of
-                                            Ok Session.SignedOut ->
-                                                loginPage replay.shared (Just (Route.Replay replay.id)) |> E.withOut
-
-                                            Ok Session.Disabled ->
-                                                Disabled replay.shared |> E.withOut
-
-                                            _ ->
-                                                page |> E.withOut
-
-                                    _ ->
-                                        page |> E.withOut
-                in
-                transition model pageUpdate
+                _ ->
+                    page |> E.withOut
 
 
 
@@ -633,8 +582,8 @@ update msg model =
 ----------------------------------------------------------------
 
 
-view : VisitId -> Page -> Browser.Document Msg
-view visitId page =
+view : Page -> Browser.Document Msg
+view page =
     let
         controls : List (Html Msg)
         controls =
@@ -660,7 +609,7 @@ view visitId page =
                 Replay replay ->
                     Replay.dialog replay
                         |> Maybe.map
-                            (Dialog.map (PageMsg visitId << ReplayMsg)
+                            (Dialog.map ReplayMsg
                                 >> Dialog.withOverlay overlays
                                 >> Dialog.toHtml
                                 >> List.singleton
@@ -670,7 +619,7 @@ view visitId page =
                 _ ->
                     []
 
-        logout : List (Html PageMsg)
+        logout : List (Html Msg)
         logout =
             case page of
                 Replay _ ->
@@ -698,7 +647,7 @@ view visitId page =
 
         pageContent : List (Html Msg)
         pageContent =
-            List.map (H.map (PageMsg visitId)) (logout ++ pageView page)
+            logout ++ pageView page
 
         content : List (Html Msg)
         content =
@@ -724,7 +673,7 @@ view visitId page =
     }
 
 
-pageView : Page -> List (Html PageMsg)
+pageView : Page -> List (Html Msg)
 pageView page =
     case page of
         InitError error ->
@@ -818,8 +767,8 @@ pageView page =
 ----------------------------------------------------------------
 
 
-subscriptions : VisitId -> Page -> Sub Msg
-subscriptions visitId page =
+subscriptions : Page -> Sub Msg
+subscriptions page =
     let
         common : Sub Msg
         common =
@@ -832,7 +781,7 @@ subscriptions visitId page =
                         [ Shared.subscriptions |> Sub.map SharedMsg
                         , Subscriptions.common
                             { operatingSystem = shared.operatingSystem
-                            , keyCommands = pageKeyCommands page |> KeyCmd.map (PageMsg visitId)
+                            , keyCommands = pageKeyCommands page
                             , listeners =
                                 [ Shared.listeners |> FromJs.map SharedMsg
                                 ]
@@ -840,7 +789,7 @@ subscriptions visitId page =
                             }
                         ]
 
-        pageSubscriptions : Sub PageMsg
+        pageSubscriptions : Sub Msg
         pageSubscriptions =
             case page of
                 Dashboard _ ->
@@ -857,11 +806,11 @@ subscriptions visitId page =
     in
     Sub.batch
         [ common
-        , pageSubscriptions |> Sub.map (PageMsg visitId)
+        , pageSubscriptions
         ]
 
 
-pageKeyCommands : Page -> KeyCmd.KeyCmd PageMsg
+pageKeyCommands : Page -> KeyCmd.KeyCmd Msg
 pageKeyCommands page =
     case page of
         Replay replay ->
