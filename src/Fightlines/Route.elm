@@ -1,6 +1,7 @@
 module Fightlines.Route exposing
     ( Route(..)
     , fromUrl
+    , load
     , pushUrl
     , replaceUrl
     , toString
@@ -47,6 +48,11 @@ parser =
         , P.map Lobby (P.s "lobby" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe))
         , P.map Game (P.s "game" </> P.custom "lobbyId" (LobbyId.fromString >> Result.toMaybe))
         ]
+
+
+load : Route -> Eff msg
+load route =
+    E.loadUrl (toString route)
 
 
 pushUrl : Route -> Eff msg

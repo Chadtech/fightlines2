@@ -1,7 +1,14 @@
 //! URL-accessible conversation state, independent of battlefield authorization.
 use crate::{
-    graphql::Context, lobby_id::LobbyId, player::Player, player_number::PlayerNumber, server_log,
-    session_token::SessionToken, storage_budget, store::GameRegistry,
+    deployment::{ShutdownNotice, ShutdownReminder},
+    graphql::Context,
+    lobby_id::LobbyId,
+    player::Player,
+    player_number::PlayerNumber,
+    server_log,
+    session_token::SessionToken,
+    storage_budget,
+    store::GameRegistry,
 };
 use juniper::{FieldResult, GraphQLInputObject, GraphQLObject};
 use serde::{Deserialize, Serialize};
@@ -40,8 +47,16 @@ struct MessageText(String);
 #[derive(Clone)]
 struct AcceptedMessage {
     message: ChatMessage,
-    session: SessionToken,
-    id: MessageId,
+    receipt: Receipt,
+}
+
+#[derive(Clone)]
+enum Receipt {
+    Player {
+        session: SessionToken,
+        id: MessageId,
+    },
+    Shutdown(ShutdownReminder),
 }
 
 #[derive(Clone, Default)]
@@ -115,21 +130,79 @@ impl Transcript {
         persist: impl FnOnce(&ChatMessage) -> FieldResult<()>,
     ) -> FieldResult<ChatMessage> {
         let Draft { id, text } = submission.draft;
-        if let Some(previous) = self
-            .accepted
-            .iter()
-            .find(|entry| entry.session == submission.session && entry.id == id)
-        {
+        if let Some(previous) = self.accepted.iter().find(|entry| match &entry.receipt {
+            Receipt::Player {
+                session,
+                id: previous_id,
+            } => *session == submission.session && *previous_id == id,
+            Receipt::Shutdown(_) => false,
+        }) {
             if previous.message.text != text.0 {
                 return Err("this message id was already used for different text.".into());
             }
             return Ok(previous.message.clone());
         }
-        if self.accepted.len() >= MAX_MESSAGES {
+        let player_messages = self
+            .accepted
+            .iter()
+            .filter(|entry| match entry.receipt {
+                Receipt::Player { .. } => true,
+                Receipt::Shutdown(_) => false,
+            })
+            .count();
+        if player_messages >= MAX_MESSAGES {
             return Err(storage_budget::full(
                 "this conversation has reached its 1000-message limit.",
             ));
         }
+        self.append(
+            submission.sender,
+            submission.turn_number,
+            text.0,
+            Receipt::Player {
+                session: submission.session,
+                id,
+            },
+            persist,
+        )
+    }
+
+    /// Server reminders share ordinary chat delivery and durable sequence numbers.
+    /// Keep their receipts across lobby-to-game transfer; polls never create them.
+    pub(crate) fn announce_shutdown(
+        &mut self,
+        notice: ShutdownNotice,
+        turn_number: i32,
+        persist: impl FnOnce(&ChatMessage) -> FieldResult<()>,
+    ) -> FieldResult<()> {
+        let already_announced = self.accepted.iter().any(|entry| match entry.receipt {
+            Receipt::Shutdown(reminder) => reminder >= notice.reminder,
+            Receipt::Player { .. } => false,
+        });
+        if already_announced {
+            return Ok(());
+        }
+        self.append(
+            Sender {
+                name: "server".into(),
+                player_number: None,
+            },
+            turn_number,
+            notice.text(),
+            Receipt::Shutdown(notice.reminder),
+            persist,
+        )?;
+        Ok(())
+    }
+
+    fn append(
+        &mut self,
+        sender: Sender,
+        turn_number: i32,
+        text: String,
+        receipt: Receipt,
+        persist: impl FnOnce(&ChatMessage) -> FieldResult<()>,
+    ) -> FieldResult<ChatMessage> {
         let sequence = i32::try_from(self.accepted.len())
             .ok()
             .and_then(|count| count.checked_add(1))
@@ -145,16 +218,15 @@ impl Transcript {
         let message = ChatMessage {
             sequence,
             sent_at,
-            turn_number: submission.turn_number,
-            sender: submission.sender.name,
-            player_number: submission.sender.player_number,
-            text: text.0,
+            turn_number,
+            sender: sender.name,
+            player_number: sender.player_number,
+            text,
         };
         persist(&message)?;
         self.accepted.push(AcceptedMessage {
             message: message.clone(),
-            session: submission.session,
-            id,
+            receipt,
         });
         Ok(message)
     }
@@ -240,7 +312,7 @@ mod tests {
     };
     use actix_web::{App, test as web_test, web};
     use serde_json::{Value, json};
-    use std::fs;
+    use std::{fs, time::Instant};
 
     macro_rules! execute {
         ($app:expr, $query:expr, $cookie:expr) => {{
@@ -448,6 +520,150 @@ mod tests {
     }
 
     #[test]
+    fn shutdown_reminders_retry_failed_writes_and_do_not_repeat_or_replay_old_stages() -> TestResult
+    {
+        let mut transcript = Transcript::default();
+        let ten_minutes = ShutdownNotice::at(1_000_000, 400_000).fixture()?;
+        assert!(
+            transcript
+                .announce_shutdown(ten_minutes, 1, |_| Err("disk failed".into()))
+                .is_err()
+        );
+        assert!(transcript.messages(0).is_empty());
+        transcript
+            .announce_shutdown(ten_minutes, 1, |_| Ok(()))
+            .fixture()?;
+        let first = transcript.messages(0).first().cloned().fixture()?;
+        assert_eq!(first.sender, "server");
+        assert_eq!(first.player_number, None);
+        assert_eq!(first.sequence, 1);
+        transcript
+            .send(submission("player", "still playing").fixture()?, |_| Ok(()))
+            .fixture()?;
+        let mut transferred = transcript.clone();
+        transferred
+            .announce_shutdown(ten_minutes, 2, |_| Err("must not repeat".into()))
+            .fixture()?;
+        let thirty_seconds = ShutdownNotice::at(1_000_000, 970_000).fixture()?;
+        transferred
+            .announce_shutdown(thirty_seconds, 2, |_| Ok(()))
+            .fixture()?;
+        let five_minutes = ShutdownNotice::at(1_000_000, 700_000).fixture()?;
+        transferred
+            .announce_shutdown(five_minutes, 2, |_| {
+                Err("must not replay an older stage".into())
+            })
+            .fixture()?;
+        let latest = transferred.messages(2);
+        assert_eq!(latest.len(), 1);
+        assert_eq!(latest.first().fixture()?.sequence, 3);
+        assert_eq!(latest.first().fixture()?.turn_number, 2);
+        assert_eq!(
+            latest.first().fixture()?.text,
+            "this session closes in 30 seconds for a server update."
+        );
+        Ok(())
+    }
+
+    #[actix_web::test]
+    async fn shutdown_chat_survives_lobby_start_without_renewing_activity_and_is_archived()
+    -> TestResult {
+        let root = std::env::temp_dir().join(format!(
+            "fightlines-shutdown-chat-{}-{}",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos()
+        ));
+        let store = web::Data::new(
+            Store::new(Seed::new([58; 32]))
+                .with_game_logs(game_log::Directory::open(root.clone())?),
+        );
+        let app = web_test::init_service(
+            App::new()
+                .app_data(store.clone())
+                .app_data(web::Data::new(graphql::endpoint(Environment::Development)))
+                .route("/graphql", web::post().to(graphql::handle)),
+        )
+        .await;
+        let (created, host) = execute!(
+            &app,
+            "mutation { createLobby(name: \"Host\", lobbyName: \"Shutdown reminders\") { id } }",
+            None
+        );
+        let host = host.fixture()?;
+        let id = created["data"]["createLobby"]["id"].as_str().fixture()?;
+        let entry = store
+            .entry(&LobbyId::from_token(id.into()))
+            .fixture()?
+            .fixture()?;
+        let last_activity = match &*entry.lock().fixture()? {
+            GameRegistry::Lobby(lobby) => lobby.admin_snapshot().last_activity,
+            _ => return Err("expected a lobby".into()),
+        };
+        let ten_minutes = ShutdownNotice::at(1_000_000, 400_000).fixture()?;
+        store.announce_shutdown(ten_minutes).fixture()?;
+        store.announce_shutdown(ten_minutes).fixture()?;
+        match &*entry.lock().fixture()? {
+            GameRegistry::Lobby(lobby) => {
+                assert_eq!(lobby.admin_snapshot().last_activity, last_activity)
+            }
+            _ => return Err("expected a lobby".into()),
+        }
+        let (joined, _) = execute!(
+            &app,
+            format!("mutation {{ joinLobby(id: {id:?}, name: \"Guest\") {{ id }} }}"),
+            None
+        );
+        assert!(joined.get("errors").is_none(), "{joined}");
+        let (started, _) = execute!(
+            &app,
+            format!("mutation {{ startGame(id: {id:?}) {{ id }} }}"),
+            Some(host)
+        );
+        assert!(started.get("errors").is_none(), "{started}");
+        let last_activity = match &*entry.lock().fixture()? {
+            GameRegistry::Game(game) => game.admin_snapshot(Instant::now()).last_activity,
+            _ => return Err("expected a game".into()),
+        };
+        store.announce_shutdown(ten_minutes).fixture()?;
+        store
+            .announce_shutdown(ShutdownNotice::at(1_000_000, 700_000).fixture()?)
+            .fixture()?;
+        match &*entry.lock().fixture()? {
+            GameRegistry::Game(game) => assert_eq!(
+                game.admin_snapshot(Instant::now()).last_activity,
+                last_activity
+            ),
+            _ => return Err("expected a game".into()),
+        }
+        let (history, _) = execute!(
+            &app,
+            format!("{{ chat(id: {id:?}, after: 0) {{ sequence turnNumber sender text }} }}"),
+            None
+        );
+        let messages = history["data"]["chat"].as_array().fixture()?;
+        assert_eq!(messages.len(), 2);
+        let first = messages.first().fixture()?;
+        let last = messages.last().fixture()?;
+        assert_eq!(first["turnNumber"], 0);
+        assert_eq!(last["turnNumber"], 1);
+        assert_eq!(last["sender"], "server");
+        assert_eq!(
+            last["text"],
+            "this session closes in 5 minutes for a server update."
+        );
+        let archive = fs::read_dir(&root)?
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .find(|entry| entry.file_name().to_string_lossy().starts_with(id))
+            .fixture()?
+            .path();
+        let recorded = game_log::Archive::read(&archive)?;
+        assert_eq!(recorded.chat.len(), 2);
+        fs::remove_dir_all(root)?;
+        Ok(())
+    }
+
+    #[test]
     fn validation_durability_and_idempotent_retries() -> TestResult<()> {
         let mut transcript = Transcript::default();
         for text in ["".into(), " \t ".into(), "a\nb".into(), "a".repeat(501)] {
@@ -516,6 +732,12 @@ mod tests {
             .fixture()?;
         assert_eq!(retry.sequence, 1);
         assert_eq!(transcript.messages(0).len(), MAX_MESSAGES);
+        transcript
+            .announce_shutdown(ShutdownNotice::at(1_000_000, 400_000).fixture()?, 1, |_| {
+                Ok(())
+            })
+            .fixture()?;
+        assert_eq!(transcript.messages(0).len(), MAX_MESSAGES + 1);
         Ok(())
     }
 }

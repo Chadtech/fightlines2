@@ -737,14 +737,9 @@ hasDialog model =
     dialog model /= Nothing
 
 
-canOpenMenu : Model -> Bool
-canOpenMenu model =
+canOpenDialog : Model -> Bool
+canOpenDialog model =
     not (hasDialog model) && (playback model == Nothing)
-
-
-canOpenChat : Model -> Bool
-canOpenChat model =
-    not (hasDialog model)
 
 
 plannedOrders : Model -> List PlannedOrder
@@ -1661,7 +1656,7 @@ handleBattlefieldMsg msg model =
 
 canSurrender : Model -> Bool
 canSurrender model =
-    canOpenMenu model
+    canOpenDialog model
         && not model.resigning
         && (model.currentTurn.outcome == Nothing)
 
@@ -1821,6 +1816,7 @@ startPlayback model =
     remeasureWorkspace
         ({ model | inspectionHelp = Nothing }
             |> setMenu MenuClosed
+            |> setChat (Chat.hide model.chat)
         )
 
 
@@ -1930,7 +1926,7 @@ chatExpiration model =
 
 openChat : Model -> ( Model, Eff Msg )
 openChat model =
-    if canOpenChat model then
+    if canOpenDialog model then
         ( model
             |> setCombatEnterHeld False
             |> setChat (Chat.open model.chat)
@@ -3739,17 +3735,10 @@ handleGameMenuMsg : LobbyId -> GameMenu.Msg -> Model -> ( Model, Eff Msg )
 handleGameMenuMsg lobbyId msg model =
     case msg of
         GameMenu.ChatClicked ->
-            if model.menu == MainMenu then
-                model
-                    |> setMenu MenuClosed
-                    |> openChat
-
-            else
-                model
-                    |> E.withOut
+            openChat model
 
         GameMenu.OpenClicked ->
-            if canOpenMenu model then
+            if canOpenDialog model then
                 ( model
                     |> setMenu MainMenu
                 , E.none
@@ -4412,7 +4401,7 @@ view model =
             , orders = orderMenu model
             , header =
                 GameMenu.panel
-                    { enabled = canOpenMenu model
+                    { enabled = canOpenDialog model
                     , turnNumber = displayedTurnNumber model
                     }
                     |> H.map GameMenuMsg
@@ -6055,7 +6044,7 @@ panNavigation _ =
 
 chatShortcut : Model -> Sub Msg
 chatShortcut model =
-    if canOpenChat model && not model.shared.devPanelOpen then
+    if canOpenDialog model && not model.shared.devPanelOpen then
         Browser.Events.onKeyDown (Decode.map ChatMsg ChatView.openKeyDecoder)
 
     else
@@ -6063,7 +6052,6 @@ chatShortcut model =
 
 
 {-| Only a press begun outside a dialog may advance combat on release.
-Sending chat closes its dialog before Enter is released.
 -}
 combatEnterShortcut : Model -> Sub Msg
 combatEnterShortcut model =

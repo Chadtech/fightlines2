@@ -115,12 +115,12 @@ frameAt kind age =
 
 tankPath : String -> String
 tankPath team =
-    "/assets/tank-firing-drawn-v6/" ++ team ++ ".png"
+    "assets/tank-firing-drawn-v6/" ++ team ++ ".png"
 
 
 fieldGunPath : String -> String
 fieldGunPath team =
-    "/assets/field-gun-firing-drawn-v2/" ++ team ++ ".png"
+    "assets/field-gun-firing-drawn-v2/" ++ team ++ ".png"
 
 
 teamName : PlayerNumber -> String

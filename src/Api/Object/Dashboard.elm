@@ -19,6 +19,13 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode
 
 
+deployments :
+    SelectionSet decodesTo Api.Object.DeploymentObservation
+    -> SelectionSet (List decodesTo) Api.Object.Dashboard
+deployments object____ =
+    Object.selectionForCompositeField "deployments" [] object____ (Basics.identity >> Decode.list)
+
+
 serverVersion : SelectionSet String Api.Object.Dashboard
 serverVersion =
     Object.selectionForField "String" "serverVersion" [] Decode.string

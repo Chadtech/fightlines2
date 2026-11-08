@@ -120,6 +120,20 @@ pub struct Query;
 
 #[graphql_object(context = Context)]
 impl Query {
+    fn deployment_status(
+        context: &Context,
+    ) -> FieldResult<crate::deployment::PlayerDeploymentStatus> {
+        context
+            .store
+            .deployment
+            .as_ref()
+            .map(|deployment| deployment.player_status())
+            .unwrap_or(Ok(crate::deployment::PlayerDeploymentStatus {
+                draining: false,
+                shutdown_at: None,
+            }))
+    }
+
     fn admin_session(context: &Context) -> FieldResult<admin::SessionStatus> {
         context.admin.status()
     }

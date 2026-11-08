@@ -116,10 +116,10 @@ cargoImage : ResourceKind -> String
 cargoImage kind =
     case kind of
         Kind.Supply ->
-            "/assets/supply-crate-illustrated-v1.png"
+            "assets/supply-crate-illustrated-v1.png"
 
         Kind.Fuel ->
-            "/assets/fuel-drums-illustrated-v1.png"
+            "assets/fuel-drums-illustrated-v1.png"
 
 
 cargoCapacity : Rules -> ResourceKind -> Int

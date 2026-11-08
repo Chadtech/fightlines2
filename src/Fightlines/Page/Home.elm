@@ -190,19 +190,19 @@ sceneArtwork : BackgroundScene -> SceneArtwork
 sceneArtwork scene =
     case scene of
         Snow ->
-            { source = "/assets/home-battlefield-snow-v1.png"
+            { source = "assets/home-battlefield-snow-v1.png"
             , delaySeconds = 4
             , width = "clamp(42rem, 78vw, 86rem)"
             }
 
         Desert ->
-            { source = "/assets/home-battlefield-desert-v1.png"
+            { source = "assets/home-battlefield-desert-v1.png"
             , delaySeconds = 22
             , width = "clamp(42rem, 78vw, 86rem)"
             }
 
         Logistics ->
-            { source = "/assets/home-battlefield-logistics-v1.png"
+            { source = "assets/home-battlefield-logistics-v1.png"
             , delaySeconds = 40
             , width = "clamp(34rem, 62vw, 68rem)"
             }
@@ -350,7 +350,7 @@ view model =
             [ H.h1
                 []
                 [ H.img
-                    [ A.src "/assets/fightlines-logo-v1.png"
+                    [ A.src "assets/fightlines-logo-v1.png"
                     , A.alt "fightlines"
                     , A.width 2146
                     , A.height 732
@@ -598,7 +598,7 @@ quotation =
 
 bradleyPortraitSource : String
 bradleyPortraitSource =
-    "/assets/omar-bradley-cutout-v1.png"
+    "assets/omar-bradley-cutout-v1.png"
 
 
 bradleyEntranceAnimation : String

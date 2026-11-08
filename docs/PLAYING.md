@@ -164,8 +164,9 @@ join and lobby headers.
 
 ## Chat
 
-Press C while the battlefield is active, including during turn playback, or choose
-**chat (c)** in the game menu. Playback continues while chat is open.
+Press C while the battlefield is active or choose **chat** in the top header.
+Both are unavailable during turn playback. If playback starts while chat is open,
+the dialog closes and keeps your draft for later.
 In the lobby, C focuses the chat field. Game chat opens a centered dialog
 and focuses its message field. Enter or
 **send** sends the message and immediately closes the dialog; Escape or the close
@@ -194,6 +195,12 @@ messages are rejected without interrupting the game.
 
 Entering a running game shows its latest in-game messages after the turn intro,
 including messages sent before your browser reached the game page.
+
+Before a server update closes an old session, `server` sends chat reminders with
+ten minutes, five minutes, one minute, and thirty seconds remaining. They appear
+and sound like incoming chat and remain in message history. They do not count
+toward the 1,000 player-message limit. The production drain limit defaults to six
+hours after the update; the local interactive rehearsal uses ten minutes.
 
 Anyone who knows the lobby/game ID can use its chat API; visitors are labeled
 `visitor` and receive no battlefield or player-action permissions. Accepted
@@ -489,8 +496,9 @@ Escape clears selection without removing saved orders. Orders remain editable
 until the turn is submitted.
 
 The centered top header contains a small FightLines logo between the raised
-**menu** button and an inset turn number. The inspector stays hidden until an
-object is selected, then opens over the right edge at full height. Closing it
+**menu** button and an inset turn number, followed by an always-visible **chat**
+button. The inspector stays hidden until an object is selected, then opens over
+the right edge at full height. Closing it
 or pressing Escape clears selection without shifting the map sideways.
 The compact bottom-left control strip keeps a large **submit turn** button,
 plain rows of player names and statuses, and 26-pixel pan/zoom/reset controls.

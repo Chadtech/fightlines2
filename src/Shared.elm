@@ -16,10 +16,12 @@ module Shared exposing
     , superUpdate
     )
 
+import ApiRequest
 import Audio
 import Browser.Dom
 import Browser.Events
 import Browser.Navigation as Navigation
+import Deployment
 import DevPanel
 import Effect as E exposing (Eff)
 import Error exposing (Error)
@@ -54,7 +56,8 @@ by the shared clock subscription. `origin` contains the scheme, hostname, and
 optional port for constructing complete application links.
 -}
 type alias Model =
-    { now : Time.Posix
+    { deployment : Deployment.Model
+    , now : Time.Posix
     , key : Navigation.Key
     , operatingSystem : OperatingSystem
     , localStorage : LocalStorage
@@ -94,7 +97,8 @@ init now seed operatingSystem localStorage url key =
         ( audioVolumes, volumesError ) =
             Audio.loadVolumesPreference localStorage
     in
-    { now = now
+    { deployment = Deployment.init url
+    , now = now
     , key = key
     , operatingSystem = operatingSystem
     , localStorage = localStorage
@@ -212,6 +216,12 @@ toDevPanelError error =
             DevPanel.Error
                 { title = "audio " ++ failure.operation
                 , details = failure.details
+                }
+
+        Error.DeploymentStatusFailed failure ->
+            DevPanel.Error
+                { title = "deployment status failed"
+                , details = ApiRequest.errorDetails failure
                 }
 
         Error.ElementFocusFailed failure ->

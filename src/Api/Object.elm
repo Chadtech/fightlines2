@@ -97,6 +97,14 @@ type Dashboard
     = Dashboard
 
 
+type DeploymentObservation
+    = DeploymentObservation
+
+
+type DeploymentStatus
+    = DeploymentStatus
+
+
 type Depot
     = Depot
 
@@ -207,6 +215,10 @@ type NamedMap
 
 type OnMap
     = OnMap
+
+
+type PlayerDeploymentStatus
+    = PlayerDeploymentStatus
 
 
 type PlayerView

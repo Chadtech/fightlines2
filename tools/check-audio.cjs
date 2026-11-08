@@ -88,6 +88,7 @@ function boot({ loadFails = false, decodeFails = false, resumeFails = false, def
     })() }),
     performance: { now: () => now },
     async fetch(url) {
+      assert.ok(url.startsWith('audio/'), `audio URL must be document-relative: ${url}`);
       requests.push(url);
       const firstRequest = !requestedFiles.has(url);
       requestedFiles.add(url);
@@ -203,33 +204,33 @@ async function main() {
   assert.equal(app.voices.length, 1);
   assert.equal(app.voices[0].started, true);
   assert.deepEqual(app.requests, [
-    '/audio/ui-affirm-switch-v1.ogg',
-    '/audio/ui-cancel-switch-v1.ogg',
-    '/audio/ui-confirm-switch-v1.ogg',
-    '/audio/chat-received-radio-v1.ogg',
-    '/audio/chat-sent-radio-v1.ogg',
-    '/audio/lobby-player-joined-pager-v1.ogg',
-    '/audio/lobby-player-left-scanner-v1.ogg',
-    '/audio/match-making-ready-v1.ogg',
-    '/audio/combat/field-gun-fire-01.ogg',
-    '/audio/combat/field-gun-fire-02.ogg',
-    '/audio/combat/field-gun-fire-03.ogg',
-    '/audio/combat/field-gun-fire-04.ogg',
-    '/audio/combat/field-gun-fire-05.ogg',
-    '/audio/combat/tank-fire-01.ogg',
-    '/audio/combat/tank-fire-02.ogg',
-    '/audio/combat/tank-fire-03.ogg',
-    '/audio/combat/tank-fire-04.ogg',
-    '/audio/combat/tank-fire-05.ogg',
-    '/audio/combat/impact-01.ogg',
-    '/audio/combat/impact-02.ogg',
-    '/audio/combat/impact-03.ogg',
-    '/audio/combat/impact-04.ogg',
-    '/audio/combat/impact-05.ogg',
-    '/audio/movement/truck-volvo-6s.ogg',
-    '/audio/movement/tank-monosfera-6s.ogg',
-    '/audio/movement/infantry-stib-2x.ogg',
-    '/audio/combat/infantry-fire-heavy-v1.ogg',
+    'audio/ui-affirm-switch-v1.ogg',
+    'audio/ui-cancel-switch-v1.ogg',
+    'audio/ui-confirm-switch-v1.ogg',
+    'audio/chat-received-radio-v1.ogg',
+    'audio/chat-sent-radio-v1.ogg',
+    'audio/lobby-player-joined-pager-v1.ogg',
+    'audio/lobby-player-left-scanner-v1.ogg',
+    'audio/match-making-ready-v1.ogg',
+    'audio/combat/field-gun-fire-01.ogg',
+    'audio/combat/field-gun-fire-02.ogg',
+    'audio/combat/field-gun-fire-03.ogg',
+    'audio/combat/field-gun-fire-04.ogg',
+    'audio/combat/field-gun-fire-05.ogg',
+    'audio/combat/tank-fire-01.ogg',
+    'audio/combat/tank-fire-02.ogg',
+    'audio/combat/tank-fire-03.ogg',
+    'audio/combat/tank-fire-04.ogg',
+    'audio/combat/tank-fire-05.ogg',
+    'audio/combat/impact-01.ogg',
+    'audio/combat/impact-02.ogg',
+    'audio/combat/impact-03.ogg',
+    'audio/combat/impact-04.ogg',
+    'audio/combat/impact-05.ogg',
+    'audio/movement/truck-volvo-6s.ogg',
+    'audio/movement/tank-monosfera-6s.ogg',
+    'audio/movement/infantry-stib-2x.ogg',
+    'audio/combat/infantry-fire-heavy-v1.ogg',
   ]);
   assert.equal(app.contexts[0].decodes, 27);
 
@@ -237,7 +238,7 @@ async function main() {
   await stalledAudio.gesture();
   await stalledAudio.audio.handleEvent({ play: 'affirm' });
   assert.equal(stalledAudio.voices.length, 1, 'a hung audio download retries and restores playback');
-  assert.equal(stalledAudio.requests.filter(path => path === '/audio/ui-affirm-switch-v1.ogg').length, 2);
+  assert.equal(stalledAudio.requests.filter(path => path === 'audio/ui-affirm-switch-v1.ogg').length, 2);
   assert.equal(stalledAudio.errors.length, 0, 'successful recovery does not report a permanent failure');
   await app.audio.handleEvent({ play: 'affirm' });
   assert.equal(app.voices.length, 1, 'rapid duplicate requests are coalesced');

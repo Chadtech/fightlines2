@@ -119,7 +119,8 @@ submit activity label =
         button =
             case activity of
                 Planning ->
-                    Button.secondary label SubmitClicked
+                    Button.primary label SubmitClicked
+                        |> Button.attention
 
                 Ready ->
                     Button.primary label SubmitClicked

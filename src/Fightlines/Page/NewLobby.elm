@@ -57,7 +57,7 @@ type Msg
     = NameInputChanged String
     | LobbyNameInputChanged String
     | CreateButtonClicked
-    | CreateResponseReceived String (Response LobbyId)
+    | CreateResponseReceived (Response LobbyId)
 
 
 
@@ -77,9 +77,7 @@ init shared =
                 Err error ->
                     ( "", Just error )
     in
-    { shared =
-        shared
-            |> Shared.addError maybeError
+    { shared = Shared.addError maybeError shared
     , name = name
     , lobbyName = ""
     , busy = False
@@ -116,14 +114,14 @@ setError error model =
     { model | error = error }
 
 
-create : String -> String -> Graphql.Http.Request LobbyId
-create name lobbyName =
+create : { name : String, lobbyName : String } -> Graphql.Http.Request LobbyId
+create input =
     let
         lobbyIdSelection : SelectionSet LobbyId Api.Object.Snapshot
         lobbyIdSelection =
             Snapshot.id |> SS.mapOrFail LobbyId.parse
     in
-    Api.Mutation.createLobby { name = name, lobbyName = lobbyName } lobbyIdSelection
+    Api.Mutation.createLobby input lobbyIdSelection
         |> ApiRequest.mutationRequest
 
 
@@ -140,11 +138,13 @@ update msg model =
             ( { model
                 | name = name
               }
-            , E.none
+            , UserName.remember name
             )
 
         LobbyNameInputChanged lobbyName ->
-            ( { model | lobbyName = lobbyName }, E.none )
+            ( { model | lobbyName = lobbyName }
+            , E.none
+            )
 
         CreateButtonClicked ->
             if model.busy then
@@ -154,25 +154,32 @@ update msg model =
                 ( model
                     |> setBusy True
                     |> setError Nothing
-                , E.request (CreateResponseReceived model.name) (create model.name model.lobbyName)
+                , E.request
+                    CreateResponseReceived
+                    (create
+                        { name = model.name
+                        , lobbyName = model.lobbyName
+                        }
+                    )
                 )
 
-        CreateResponseReceived submittedName result ->
+        CreateResponseReceived result ->
             case result of
                 Ok lobbyId ->
                     ( model
                         |> setBusy False
-                    , E.batch
-                        [ UserName.remember submittedName
-                        , Route.pushUrl (Route.Lobby lobbyId)
-                        ]
+                    , Route.pushUrl (Route.Lobby lobbyId)
                     )
 
                 Err error ->
                     ( model
                         |> setBusy False
                         |> setError (Just (ApiRequest.errorMessage error))
-                    , E.none
+                    , if ApiRequest.requiresCurrentDeployment error then
+                        Route.load Route.NewLobby
+
+                      else
+                        E.none
                     )
 
 
@@ -217,11 +224,15 @@ view model =
                 , S.maxW96
                 ]
             ]
-            [ [ H.p
+            [ Card.toHtml
+                (Card.simple
+                    |> Card.withHeader (CardHeader.simple "start a lobby")
+                )
+                [ H.p
                     []
                     [ H.text "create a lobby, then share its invite link."
                     ]
-              , H.form
+                , H.form
                     [ Ev.onSubmit CreateButtonClicked
                     ]
                     [ H.fieldset
@@ -256,12 +267,8 @@ view model =
                             |> Button.toHtml
                         ]
                     ]
-              , errorArea
-              ]
-                |> Card.toHtml
-                    (Card.simple
-                        |> Card.withHeader (CardHeader.simple "start a lobby")
-                    )
+                , errorArea
+                ]
             ]
         ]
     ]

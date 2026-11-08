@@ -4071,7 +4071,7 @@ combatTheaterChecks =
 
         expectedPaths : List String
         expectedPaths =
-            List.map (\name -> "/assets/combat-backdrops-anime-v1/" ++ name ++ ".png") names
+            List.map (\name -> "assets/combat-backdrops-anime-v1/" ++ name ++ ".png") names
 
         smallArmsAttack : CombatAttack.Attack
         smallArmsAttack =

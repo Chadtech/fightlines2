@@ -357,11 +357,14 @@ Refresh resumes the shared countdown; a completed pairing cannot be cancelled.
 
 - Float a compact header over the battlefield, centered flush with the top edge.
   Keep the surrounding area transparent and let map interaction reach it.
-  Place the existing FightLines logo at 4rem wide in its center, with equal
-  4.5rem columns on either side.
+  Place the existing FightLines logo at 4rem wide between the menu and turn label.
+  Use columns capped at 4.5rem, 6rem, 4.5rem, and 4.5rem, allowing them to shrink
+  on narrow screens.
   Put a raised gray `menu` button on the left and a passive inset turn number
-  on the right so their different roles are clear. Use `Button.small` for the
+  after the logo so their different roles are clear. Use `Button.small` for the
   menu button; keep the turn label at a 1.875rem minimum height.
+  Put a raised gray `chat` button after the turn label, using `Button.small`.
+  Disable chat throughout playback and while another dialog is open.
   Keep the menu button raised when disabled, including while the menu is open.
   Open a centered native menu dialog
   with `settings` at the top and a primary `close` action at the bottom;
@@ -447,9 +450,9 @@ Refresh resumes the shared countdown; a completed pairing cannot be cancelled.
   automatically and clear on recovery; dismissing suppresses repeated notices
   during the same outage. Keep the card quiet: no warning icon, bright red
   border, animation, or automatic dismissal of action failures.
-  Submit becomes gold with a gentle brightness pulse and sweeping highlight when every
-  on-board unit has an explicit order. Keep it enabled while planning and disable
-  it while orders are locked. Submitted turns retain gold text. Always show a
+  Submit stays gold with a gentle brightness pulse and sweeping highlight throughout
+  planning, including while units still need orders. Keep it enabled while planning
+  and disable it while orders are locked. Submitted turns retain gold text. Always show a
   1.25rem-high inset track beneath submit. Keep it empty while idle; while waiting
   for the opponent, show a single solid gray bar moving smoothly left to right.
   It fully exits the right edge before
@@ -1299,10 +1302,10 @@ restores the ordinary infantry sprite, and leaves no terrain graphic behind.
 
 ## Chat
 
-C on the live battlefield, including during turn playback, or **chat (c)** in the
-game menu opens a compact native dialog in the center of the screen with a
-transparent backdrop. Playback continues while chat is open; chat's Enter key
-must not advance combat underneath it. Focus its inset green text
+C on the live battlefield or **chat** in the always-visible battlefield header
+opens a compact native dialog in the center of the screen with a transparent
+backdrop. Disable both entry points throughout turn playback. Starting playback
+closes an open composer while preserving its draft. Focus its inset green text
 field, preserve planned orders, and suspend gameplay shortcuts while it is open.
 In the lobby, C focuses its always-visible chat field. Ignore the shortcut in text
 fields, native select controls, and other dialogs. Enter retains ordinary
@@ -1337,6 +1340,11 @@ field while retaining the panel. Recorded replays have a read-only
 When a player enters a running game, show the latest in-game messages on the map
 after its turn introduction. Keep those messages available throughout the intro
 before starting their display timeout.
+
+Deployment shutdown reminders arrive as ordinary chat messages from `server` at
+ten minutes, five minutes, one minute, and thirty seconds remaining. Use the same
+neutral sender color, incoming radio cue, temporary battlefield display, and
+history as chat. Keep the battlefield free of a persistent shutdown countdown.
 
 ## Logged games and replay
 

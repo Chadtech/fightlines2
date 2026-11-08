@@ -18,7 +18,7 @@ Read [architecture](../ARCHITECTURE.md) for state ownership and cross-module flo
 
 ## Local setup
 
-Requires Rust/Cargo, Elm 0.19.3, Node.js 22 or newer, npm, and Make.
+Requires Rust/Cargo 1.89+, Elm 0.19.3, Node.js 22 or newer, npm, and Make.
 Install `elm-format` for calibration generation and the development checks.
 
 ```sh
@@ -40,9 +40,10 @@ Both apps use the common closed model and browser infrastructure in `Shared.elm`
 Open [the tools index](http://127.0.0.1:8080/dev) for links to
 `/dev/map-editor`, `/dev/logged-games`, `/dev/backdrop-review`, and `/dev/combat-chart`.
 Both apps use `Effect.Eff` and outgoing ports in `Ports.Js.To`. Their route modules
-provide typed `Route.pushUrl` helpers for in-app navigation; `Effect.load` opens
-another app's document. Player pages
-and app infrastructure live in `src/Fightlines/`, with pages in
+provide typed `Route.pushUrl` helpers for in-app navigation and `Route.load`
+for loading a new document. `Effect.loadUrl` loads a browser-provided URL
+through the same `Load` effect. Player pages and app infrastructure live in
+`src/Fightlines/`, with pages in
 `src/Fightlines/Page/` and player-only views in `src/Fightlines/View/`. Tool pages
 live in `src/DevTools/Page/` under `DevTools.Page.*`. Both apps share
 modules under `src`. The game domain, player planning, and replay runtime live
@@ -99,6 +100,14 @@ format validation, the behavior checks in `tools/check-*.cjs`, API generation,
 and compilation of all three apps and shared views. Documentation-only changes need
 content, link, and whitespace checks rather than a full build. Finish with
 `git diff --check` and report any incomplete verification.
+
+### Deployment rehearsal
+
+`make rehearse-deployment` builds and runs real local Caddy/server processes in
+isolated temporary directories. Set `CADDY=/absolute/path/to/caddy` when needed.
+See [deployment draining](../DEPLOYMENT.md#deploying-updates-with-draining) for
+interactive and HTTPS rehearsals, test coverage, and the separate Linux/systemd
+verification required before production setup.
 
 ### Slow simulations
 
@@ -159,7 +168,9 @@ to both production and development builds.
 ## Production and development bundles
 
 `make build` compiles the Rust server with `--release` to
-`target/release/fightlines-server`. Set `FIGHTLINES_ENV=production` when running
+`target/release/fightlines-server` and the release supervisor to
+`target/release/fightlines-supervisor`. `cargo run` still selects the game server
+by default. Set `FIGHTLINES_ENV=production` when running
 that server behind HTTPS; this enables secure cookies and rejects development
 server flags. Ordinary local runs default to `development`. Runtime hosting policy
 is separate from the frontend build flag below. See
@@ -212,6 +223,9 @@ Edit the multiline `policy` string in
 Builds use the committed runtime sprites and desert SVG in `public/assets/`. Source artwork,
 experiments and older exports are kept locally and ignored by Git. `make sprites`
 requires that local `artwork/` directory; a fresh clone can build and run without it.
+Local asset URLs use document-relative paths (`assets/...`, `audio/...`, and
+`map-thumbnails/...`) so the server-supplied document base selects the deployment.
+Backdrop calibration keys use the same relative paths as the artwork catalog.
 The export scripts remain in `tools/`. Back up source artwork separately.
 
 - [Architecture](../ARCHITECTURE.md): state, frontend flow, GraphQL, and shared views.

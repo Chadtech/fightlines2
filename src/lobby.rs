@@ -2,6 +2,7 @@
 use crate::{
     admin::dashboard::{AdminPlayer, EntrySnapshot, EntryStatus},
     chat::{self, ChatMessage, Draft, Sender, Submission, Transcript},
+    deployment::ShutdownNotice,
     game::Game,
     game_log::GameLog,
     graphql::Context,
@@ -14,7 +15,7 @@ use crate::{
     player_number::PlayerNumber,
     server_log,
     session_token::SessionToken,
-    store::GameRegistry,
+    store::{GameRegistry, Store},
 };
 use juniper::{FieldError, FieldResult};
 use std::time::{Duration, Instant};
@@ -65,6 +66,23 @@ impl Lobby {
 
     pub fn chat_messages(&self, after: i32) -> Vec<ChatMessage> {
         self.chat.messages(after)
+    }
+
+    pub(crate) fn announce_shutdown(
+        &mut self,
+        store: &Store,
+        notice: ShutdownNotice,
+    ) -> FieldResult<()> {
+        self.chat.announce_shutdown(notice, 0, |message| {
+            if self.chat_log.is_none() {
+                self.chat_log = Some(store.start_chat_log(&self.id)?);
+            }
+            self.chat_log
+                .as_mut()
+                .ok_or("chat recording is unavailable.")?
+                .chat(message)
+                .map_err(chat::recording_error)
+        })
     }
 
     pub fn send_chat(
@@ -281,6 +299,7 @@ impl Lobby {
 }
 
 pub fn create(context: &Context, input: &str, lobby_input: &str) -> FieldResult<Snapshot> {
+    let _admission = context.store.admit_session()?;
     let Some(name) = PlayerName::parse(input) else {
         return error("Enter a name between 1 and 40 characters.");
     };

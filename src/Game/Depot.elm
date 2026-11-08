@@ -135,13 +135,13 @@ kindImage : BuildingKind -> String
 kindImage kind =
     case kind of
         BuildingKind.Supply ->
-            "/assets/supply-depot-illustrated-v1.png"
+            "assets/supply-depot-illustrated-v1.png"
 
         BuildingKind.Fuel ->
-            "/assets/fuel-depot-illustrated-v4.png"
+            "assets/fuel-depot-illustrated-v4.png"
 
         BuildingKind.Fortress ->
-            "/assets/fortress-illustrated-v2.png"
+            "assets/fortress-illustrated-v2.png"
 
 
 description : Depot -> String
@@ -169,4 +169,4 @@ stockDescription kind =
 
 destroyedImage : String
 destroyedImage =
-    "/assets/destroyed-depot-illustrated-v1.png"
+    "assets/destroyed-depot-illustrated-v1.png"

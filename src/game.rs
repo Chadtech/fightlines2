@@ -3,6 +3,7 @@ use crate::{
     admin::dashboard::{AdminPlayer, EntrySnapshot, EntryStatus},
     ai, app_version,
     chat::{self, ChatMessage, Draft, Sender, Submission as ChatSubmission, Transcript},
+    deployment::ShutdownNotice,
     game_activity::{ActivityClock, EnabledInactivity, InactivityRenewalReason},
     game_archive::review::RecordedOrder,
     game_log::{Directory, GameLog, GameStarted, RecordedPlayer, Submission, SubmissionResult},
@@ -187,6 +188,17 @@ impl Game {
 
     pub fn chat_messages(&self, after: i32) -> Vec<ChatMessage> {
         self.chat.messages(after)
+    }
+
+    pub(crate) fn announce_shutdown(&mut self, notice: ShutdownNotice) -> FieldResult<()> {
+        self.chat
+            .announce_shutdown(notice, self.turns.number, |message| {
+                self.log
+                    .as_mut()
+                    .ok_or("chat is unavailable in this preview.")?
+                    .chat(message)
+                    .map_err(chat::recording_error)
+            })
     }
 
     pub fn send_chat(&mut self, session: SessionToken, draft: Draft) -> FieldResult<ChatMessage> {

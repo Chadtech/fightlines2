@@ -78,4 +78,4 @@ toSvg state =
 
 imagePath : String
 imagePath =
-    "/assets/target-sight-illustrated-v1.png"
+    "assets/target-sight-illustrated-v1.png"

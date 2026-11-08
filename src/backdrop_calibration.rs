@@ -101,7 +101,7 @@ const UNIT_KINDS: [UnitKind; 4] = [
     UnitKind::Truck,
 ];
 const FILE_NAME: &str = "backdrop-calibrations.json";
-const ASSET_PREFIX: &str = "/assets/combat-backdrops-anime-v1/";
+const ASSET_PREFIX: &str = "assets/combat-backdrops-anime-v1/";
 
 fn default_trench_footing() -> f64 {
     86.0
@@ -764,9 +764,10 @@ mod tests {
         assert_eq!(before, fs::read(directory.as_path().join(FILE_NAME))?);
         for invalid in [
             "../road.png",
-            "/assets/combat-backdrops-anime-v1/../road.png",
+            "/assets/combat-backdrops-anime-v1/road.png",
+            "assets/combat-backdrops-anime-v1/../road.png",
             "https://example.com/road.png",
-            "/assets/combat-backdrops-anime-v1/missing.png",
+            "assets/combat-backdrops-anime-v1/missing.png",
         ] {
             assert!(validate_backdrop(directory.as_path(), invalid).is_err());
         }

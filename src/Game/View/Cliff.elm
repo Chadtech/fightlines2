@@ -91,7 +91,7 @@ artwork name =
 
 imagePath : String -> String
 imagePath name =
-    "/assets/coast-illustrated-v2/cliff-" ++ name ++ ".png"
+    "assets/coast-illustrated-v2/cliff-" ++ name ++ ".png"
 
 
 imagePaths : List String

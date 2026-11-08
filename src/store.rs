@@ -5,6 +5,7 @@ use entry::Entry;
 use crate::{
     admin::dashboard::AdminEntry,
     chat,
+    deployment::{Admission, Deployment, ShutdownNotice},
     game::Game,
     game_log::{Directory, GameLog},
     lobby::Lobby,
@@ -45,6 +46,7 @@ impl std::fmt::Display for DevelopmentError {
 }
 
 pub struct Store {
+    pub deployment: Option<Deployment>,
     pub(crate) match_making: Mutex<Queue>,
     seed: Mutex<Seed>,
     registry: Mutex<BTreeMap<LobbyId, Arc<Entry>>>,
@@ -60,6 +62,25 @@ pub(crate) enum GameRegistry {
 }
 
 impl Store {
+    pub fn with_deployment(mut self, deployment: Option<Deployment>) -> Self {
+        self.deployment = deployment;
+        self
+    }
+
+    pub fn admit_session(&self) -> FieldResult<Option<Admission<'_>>> {
+        self.deployment
+            .as_ref()
+            .map(|deployment| deployment.admission())
+            .transpose()
+    }
+
+    pub fn is_draining(&self) -> FieldResult<bool> {
+        self.deployment
+            .as_ref()
+            .map(|deployment| deployment.player_status().map(|status| status.draining))
+            .unwrap_or(Ok(false))
+    }
+
     pub fn admin_entries(&self, now: Instant) -> FieldResult<Vec<AdminEntry>> {
         let entries: Vec<_> = self
             .registry
@@ -82,8 +103,39 @@ impl Store {
             .map_err(chat::recording_error)
     }
 
+    /// Skip busy entries and retry next sweep without renewing player activity.
+    pub(crate) fn announce_shutdown(&self, notice: ShutdownNotice) -> FieldResult<()> {
+        let entries: Vec<_> = self
+            .registry
+            .lock()
+            .map_err(|_| server_log::internal_error("game registry is unavailable."))?
+            .iter()
+            .map(|(id, entry)| (id.clone(), Arc::clone(entry)))
+            .collect();
+        for (id, entry) in entries {
+            let mut state = match entry.try_lock() {
+                Ok(state) => state,
+                Err(TryLockError::WouldBlock) => continue,
+                Err(TryLockError::Poisoned(_)) => {
+                    tracing::error!(event = "server_state_lock_unavailable", game_id = %id, "shutdown chat state lock is poisoned");
+                    continue;
+                }
+            };
+            let result = match &mut *state {
+                GameRegistry::Lobby(lobby) => lobby.announce_shutdown(self, notice),
+                GameRegistry::Game(game) => game.announce_shutdown(notice),
+                GameRegistry::Closed => Ok(()),
+            };
+            if let Err(error) = result {
+                tracing::error!(event = "shutdown_chat_failed", game_id = %id, error = ?error, "could not announce session shutdown");
+            }
+        }
+        Ok(())
+    }
+
     pub fn new(seed: Seed) -> Self {
         Self {
+            deployment: None,
             match_making: Mutex::new(Queue::default()),
             seed: Mutex::new(seed),
             registry: Mutex::new(BTreeMap::new()),
@@ -133,6 +185,7 @@ impl Store {
         .into_development_preview();
         registry.insert(id, Arc::new(Entry::new(GameRegistry::Game(Box::new(game)))));
         Ok(Self {
+            deployment: None,
             match_making: Mutex::new(Queue::default()),
             seed: Mutex::new(seed),
             registry: Mutex::new(registry),
@@ -186,6 +239,11 @@ impl Store {
     pub(crate) fn insert_match(&self, id: LobbyId, mut game: Game) -> FieldResult<()> {
         if let Some(directory) = &self.game_logs {
             game.record_start(directory)?;
+        }
+        if let Some(deployment) = &self.deployment {
+            deployment
+                .claim_session(&id)
+                .map_err(server_log::internal_error)?;
         }
         self.registry
             .lock()
@@ -310,6 +368,11 @@ impl Store {
     }
 
     pub(crate) fn insert_lobby(&self, lobby: Lobby) -> FieldResult<()> {
+        if let Some(deployment) = &self.deployment {
+            deployment
+                .claim_session(lobby.id())
+                .map_err(server_log::internal_error)?;
+        }
         self.registry
             .lock()
             .map_err(|_| {

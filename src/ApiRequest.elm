@@ -1,9 +1,11 @@
 module ApiRequest exposing
     ( Response
+    , errorDetails
     , errorMessage
     , mutationRequest
     , queryRequest
     , requiresAdminLogin
+    , requiresCurrentDeployment
     )
 
 import Dict
@@ -54,7 +56,7 @@ hasErrorCode code error =
 
 request : (String -> SelectionSet response scope -> Graphql.Http.Request response) -> SelectionSet response scope -> Graphql.Http.Request response
 request makeRequest selectionSet =
-    makeRequest "/graphql" selectionSet
+    makeRequest "graphql" selectionSet
         |> Graphql.Http.withTimeout 10000
 
 
@@ -87,3 +89,28 @@ errorMessage error =
 
                 Graphql.Http.BadUrl _ ->
                     "the server address is invalid."
+
+
+{-| Preserve decoder and address details for diagnostics without changing user-facing copy.
+-}
+errorDetails : Graphql.Http.Error response -> String
+errorDetails error =
+    case error of
+        Graphql.Http.HttpError (Graphql.Http.BadPayload details) ->
+            Decode.errorToString details
+
+        Graphql.Http.HttpError (Graphql.Http.BadUrl url) ->
+            "invalid server address: " ++ url
+
+        _ ->
+            errorMessage error
+
+
+requiresCurrentDeployment : Graphql.Http.Error response -> Bool
+requiresCurrentDeployment error =
+    case error of
+        Graphql.Http.HttpError (Graphql.Http.BadStatus metadata _) ->
+            metadata.statusCode == 410
+
+        _ ->
+            hasErrorCode "DEPLOYMENT_DRAINING" error

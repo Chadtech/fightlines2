@@ -1,50 +1,50 @@
 // Elm chooses when to emit audio. This manager owns browser playback only.
 function createAudioManager(reportError = () => {}, assets = createAssetLoader()) {
   const sounds = Object.freeze({
-    affirm: ["/audio/ui-affirm-switch-v1.ogg"],
-    cancel: ["/audio/ui-cancel-switch-v1.ogg"],
-    confirm: ["/audio/ui-confirm-switch-v1.ogg"],
-    chatReceived: ["/audio/chat-received-radio-v1.ogg"],
-    chatSent: ["/audio/chat-sent-radio-v1.ogg"],
-    lobbyPlayerJoined: ["/audio/lobby-player-joined-pager-v1.ogg"],
-    lobbyPlayerLeft: ["/audio/lobby-player-left-scanner-v1.ogg"],
-    matchMakingReady: ["/audio/match-making-ready-v1.ogg"],
+    affirm: ["audio/ui-affirm-switch-v1.ogg"],
+    cancel: ["audio/ui-cancel-switch-v1.ogg"],
+    confirm: ["audio/ui-confirm-switch-v1.ogg"],
+    chatReceived: ["audio/chat-received-radio-v1.ogg"],
+    chatSent: ["audio/chat-sent-radio-v1.ogg"],
+    lobbyPlayerJoined: ["audio/lobby-player-joined-pager-v1.ogg"],
+    lobbyPlayerLeft: ["audio/lobby-player-left-scanner-v1.ogg"],
+    matchMakingReady: ["audio/match-making-ready-v1.ogg"],
     fieldGunFire: [
-      "/audio/combat/field-gun-fire-01.ogg",
-      "/audio/combat/field-gun-fire-02.ogg",
-      "/audio/combat/field-gun-fire-03.ogg",
-      "/audio/combat/field-gun-fire-04.ogg",
-      "/audio/combat/field-gun-fire-05.ogg",
+      "audio/combat/field-gun-fire-01.ogg",
+      "audio/combat/field-gun-fire-02.ogg",
+      "audio/combat/field-gun-fire-03.ogg",
+      "audio/combat/field-gun-fire-04.ogg",
+      "audio/combat/field-gun-fire-05.ogg",
     ],
     tankFire: [
-      "/audio/combat/tank-fire-01.ogg",
-      "/audio/combat/tank-fire-02.ogg",
-      "/audio/combat/tank-fire-03.ogg",
-      "/audio/combat/tank-fire-04.ogg",
-      "/audio/combat/tank-fire-05.ogg",
+      "audio/combat/tank-fire-01.ogg",
+      "audio/combat/tank-fire-02.ogg",
+      "audio/combat/tank-fire-03.ogg",
+      "audio/combat/tank-fire-04.ogg",
+      "audio/combat/tank-fire-05.ogg",
     ],
     combatImpact: [
-      "/audio/combat/impact-01.ogg",
-      "/audio/combat/impact-02.ogg",
-      "/audio/combat/impact-03.ogg",
-      "/audio/combat/impact-04.ogg",
-      "/audio/combat/impact-05.ogg",
+      "audio/combat/impact-01.ogg",
+      "audio/combat/impact-02.ogg",
+      "audio/combat/impact-03.ogg",
+      "audio/combat/impact-04.ogg",
+      "audio/combat/impact-05.ogg",
     ],
   });
   const movementFiles = Object.freeze({
-    truck: "/audio/movement/truck-volvo-6s.ogg",
-    tank: "/audio/movement/tank-monosfera-6s.ogg",
-    infantry: "/audio/movement/infantry-stib-2x.ogg",
+    truck: "audio/movement/truck-volvo-6s.ogg",
+    tank: "audio/movement/tank-monosfera-6s.ogg",
+    infantry: "audio/movement/infantry-stib-2x.ogg",
   });
   const movingUnits = new Map();
-  const infantryFireFile = "/audio/combat/infantry-fire-heavy-v1.ogg";
+  const infantryFireFile = "audio/combat/infantry-fire-heavy-v1.ogg";
   const firingInfantry = new Map();
   const ambienceFiles = Object.freeze({
-    plains: "/audio/ambience/plains.ogg",
-    forest: "/audio/ambience/forest.ogg",
-    snow: "/audio/ambience/snow.ogg",
-    desert: "/audio/ambience/desert.ogg",
-    beach: "/audio/ambience/beach.ogg",
+    plains: "audio/ambience/plains.ogg",
+    forest: "audio/ambience/forest.ogg",
+    snow: "audio/ambience/snow.ogg",
+    desert: "audio/ambience/desert.ogg",
+    beach: "audio/ambience/beach.ogg",
   });
   const ambientVoices = new Map();
   const ambienceFadeSeconds = 0.35;

@@ -245,7 +245,7 @@ initialBackdrop preferred catalog =
     let
         preferredPath : String
         preferredPath =
-            "/assets/combat-backdrops-anime-v1/" ++ preferred ++ ".png"
+            "assets/combat-backdrops-anime-v1/" ++ preferred ++ ".png"
 
         available : Backdrop -> Bool
         available backdrop =

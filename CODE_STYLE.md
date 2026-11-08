@@ -29,6 +29,8 @@ prototype; do not update it unless the task explicitly requires that.
   when presenting them rather than arbitrarily keeping only the first.
 - Prefer explicit state and data flow. Document invariants and reasons for a
   choice when they are not apparent from the code.
+- Define local asset URLs relative to the document base at their owning source,
+  such as `assets/...` or `audio/...`. Renderers and loaders use these URLs directly.
 - Make numeric units and representations clear through names, types, or
   documentation, including half-points, pixels, milliseconds, and atlas indices.
 - Capitalize acronyms like ordinary words in names we control: `Html`, `Ai`,
@@ -91,10 +93,11 @@ prototype; do not update it unless the task explicitly requires that.
   `Msg` handled by its parent without having a separate `Model` and `update`.
   Split state ownership only when the boundary helps coordination.
 - Use `setShared` to update a page's shared state through its public interface.
-- Route navigation through each app's typed `Route.pushUrl` helper. Both route
-  modules convert their routes to strings for the common `Effect.pushUrl`.
+- Use each app's typed `Route.pushUrl` for in-app navigation and `Route.load`
+  for full document navigation. Route modules convert their routes to strings
+  for the common `Effect.pushUrl` and `Effect.loadUrl` helpers.
   Page updates return `( Model, Eff Msg )` using `Effect`; each entry point
-  converts effects to commands. Use `Effect.load` for navigation between apps.
+  converts effects to commands. Use `Effect.loadUrl` for browser-provided URLs.
 - Keep initial loading and failure dispatch in the owning app entry point.
   A separate failure page may own its messages and updates, retrying through
   typed route navigation.

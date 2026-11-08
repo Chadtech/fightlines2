@@ -251,19 +251,19 @@ appearance : MapTheme -> Appearance
 appearance theme =
     case theme of
         MapTheme.GreenForest ->
-            { groundPath = "/assets/terrain-grass-illustrated-v2.png"
+            { groundPath = "assets/terrain-grass-illustrated-v2.png"
             , groundFilter = "none"
             , featureFilter = "none"
             }
 
         MapTheme.Desert ->
-            { groundPath = "/assets/terrain-desert.svg"
+            { groundPath = "assets/terrain-desert.svg"
             , groundFilter = "none"
             , featureFilter = "sepia(0.8) saturate(0.65) brightness(1.15)"
             }
 
         MapTheme.Snow ->
-            { groundPath = "/assets/terrain-snow-plains-illustrated-v1.png"
+            { groundPath = "assets/terrain-snow-plains-illustrated-v1.png"
             , groundFilter = "none"
             , featureFilter = "saturate(0.15) brightness(1.8)"
             }
@@ -546,26 +546,26 @@ hillPath : MapTheme -> String
 hillPath theme =
     case theme of
         MapTheme.GreenForest ->
-            "/assets/terrain-hills-illustrated-v7.png"
+            "assets/terrain-hills-illustrated-v7.png"
 
         MapTheme.Snow ->
-            "/assets/terrain-hills-snow-illustrated-v7.png"
+            "assets/terrain-hills-snow-illustrated-v7.png"
 
         MapTheme.Desert ->
-            "/assets/terrain-hills-desert-illustrated-v7.png"
+            "assets/terrain-hills-desert-illustrated-v7.png"
 
 
 mountainPath : MapTheme -> String
 mountainPath theme =
     case theme of
         MapTheme.GreenForest ->
-            "/assets/terrain-mountains-illustrated-v1.png"
+            "assets/terrain-mountains-illustrated-v1.png"
 
         MapTheme.Snow ->
-            "/assets/terrain-mountains-snow-illustrated-v1.png"
+            "assets/terrain-mountains-snow-illustrated-v1.png"
 
         MapTheme.Desert ->
-            "/assets/terrain-mountains-desert-illustrated-v1.png"
+            "assets/terrain-mountains-desert-illustrated-v1.png"
 
 
 roadView : RoadShape -> Svg msg
@@ -614,27 +614,27 @@ roadView shape =
 
 waterPath : String
 waterPath =
-    "/assets/terrain-water-illustrated-v1.png"
+    "assets/terrain-water-illustrated-v1.png"
 
 
 forestPath : String
 forestPath =
-    "/assets/terrain-forest-illustrated-v3.png"
+    "assets/terrain-forest-illustrated-v3.png"
 
 
 beachPath : String
 beachPath =
-    "/assets/coast-illustrated-v1/beach.png"
+    "assets/coast-illustrated-v1/beach.png"
 
 
 beachEdgePath : String
 beachEdgePath =
-    "/assets/coast-illustrated-v1/beach-edge.png"
+    "assets/coast-illustrated-v1/beach-edge.png"
 
 
 roadPath : String -> String
 roadPath name =
-    "/assets/roads-illustrated-v1/" ++ name ++ ".png"
+    "assets/roads-illustrated-v1/" ++ name ++ ".png"
 
 
 imagePaths : MapTheme -> List String

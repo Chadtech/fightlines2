@@ -1,6 +1,7 @@
 module DevTools.Route exposing
     ( Route(..)
     , fromUrl
+    , load
     , pushUrl
     , toString
     )
@@ -43,6 +44,11 @@ parser =
         , P.map Replay (P.s "logged-games" </> P.custom "gameLogId" (GameLogId.parse >> Result.toMaybe))
         , P.map MapEditor (P.s "map-editor")
         ]
+
+
+load : Route -> Eff msg
+load route =
+    E.loadUrl (toString route)
 
 
 pushUrl : Route -> Eff msg

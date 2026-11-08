@@ -10,7 +10,7 @@ import Game.BackdropCalibration exposing (Entry)
 
 catalog : List Entry
 catalog =
-    [ { backdrop = "/assets/combat-backdrops-anime-v1/beach-ocean.png"
+    [ { backdrop = "assets/combat-backdrops-anime-v1/beach-ocean.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 82
@@ -23,7 +23,7 @@ catalog =
             , secondTrenchSize = 39
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/beach-ocean.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/beach-ocean.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 80
@@ -36,7 +36,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/beach-ocean.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/beach-ocean.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 83
@@ -49,7 +49,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/beach-ocean.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/beach-ocean.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 82
@@ -62,7 +62,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/depot.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/depot.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 77
@@ -75,7 +75,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/depot.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/depot.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 75
@@ -88,7 +88,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/depot.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/depot.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 77
@@ -101,7 +101,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/depot.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/depot.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 76
@@ -114,7 +114,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/desert-forest.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/desert-forest.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 79
@@ -127,7 +127,7 @@ catalog =
             , secondTrenchSize = 37
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/desert-forest.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/desert-forest.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 87
@@ -140,7 +140,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/desert-forest.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/desert-forest.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 92
@@ -153,7 +153,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/desert-forest.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/desert-forest.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 87
@@ -166,7 +166,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/desert-hills.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/desert-hills.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 87
@@ -179,7 +179,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/desert-hills.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/desert-hills.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 86
@@ -192,7 +192,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/desert-hills.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/desert-hills.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 86
@@ -205,7 +205,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/desert-hills.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/desert-hills.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 86
@@ -218,7 +218,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/desert-mountains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/desert-mountains.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 84
@@ -231,7 +231,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/desert-mountains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/desert-mountains.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 81
@@ -244,7 +244,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/desert-mountains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/desert-mountains.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 83
@@ -257,7 +257,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/desert-mountains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/desert-mountains.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 86
@@ -270,7 +270,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/desert-plains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/desert-plains.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 80
@@ -283,7 +283,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/desert-plains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/desert-plains.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 73
@@ -296,7 +296,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/desert-plains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/desert-plains.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 82
@@ -309,7 +309,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/desert-plains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/desert-plains.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 85
@@ -322,7 +322,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/forest.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/forest.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 84
@@ -335,7 +335,7 @@ catalog =
             , secondTrenchSize = 36
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/forest.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/forest.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 87
@@ -348,7 +348,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/forest.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/forest.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 92
@@ -361,7 +361,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/forest.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/forest.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 87
@@ -374,7 +374,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/fortress.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/fortress.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 77
@@ -387,7 +387,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/fortress.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/fortress.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 75
@@ -400,7 +400,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/fortress.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/fortress.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 77
@@ -413,7 +413,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/fortress.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/fortress.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 76
@@ -426,7 +426,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/hills.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/hills.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 82
@@ -439,7 +439,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/hills.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/hills.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 83
@@ -452,7 +452,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/hills.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/hills.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 85
@@ -465,7 +465,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/hills.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/hills.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 83
@@ -478,7 +478,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/mountains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/mountains.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 83
@@ -491,7 +491,7 @@ catalog =
             , secondTrenchSize = 34
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/mountains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/mountains.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 86
@@ -504,7 +504,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/mountains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/mountains.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 83
@@ -517,7 +517,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/mountains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/mountains.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 86
@@ -530,7 +530,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/plains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/plains.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 81
@@ -543,7 +543,7 @@ catalog =
             , secondTrenchSize = 34
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/plains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/plains.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 73
@@ -556,7 +556,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/plains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/plains.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 82
@@ -569,7 +569,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/plains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/plains.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 85
@@ -582,7 +582,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/road.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/road.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 75
@@ -595,7 +595,7 @@ catalog =
             , secondTrenchSize = 45
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/road.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/road.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 77
@@ -608,7 +608,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/road.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/road.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 70
@@ -621,7 +621,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/road.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/road.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 76
@@ -634,7 +634,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-depot.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-depot.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 77
@@ -647,7 +647,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-depot.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-depot.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 75
@@ -660,7 +660,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-depot.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-depot.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 77
@@ -673,7 +673,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-depot.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-depot.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 76
@@ -686,7 +686,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-forest.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-forest.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 84
@@ -699,7 +699,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-forest.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-forest.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 87
@@ -712,7 +712,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-forest.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-forest.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 92
@@ -725,7 +725,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-forest.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-forest.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 87
@@ -738,7 +738,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-fortress.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-fortress.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 76
@@ -751,7 +751,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-fortress.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-fortress.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 75
@@ -764,7 +764,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-fortress.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-fortress.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 77
@@ -777,7 +777,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-fortress.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-fortress.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 76
@@ -790,7 +790,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-hills.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-hills.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 85
@@ -803,7 +803,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-hills.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-hills.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 84
@@ -816,7 +816,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-hills.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-hills.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 83
@@ -829,7 +829,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-hills.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-hills.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 86
@@ -842,7 +842,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-mountains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-mountains.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 82
@@ -855,7 +855,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-mountains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-mountains.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 84
@@ -868,7 +868,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-mountains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-mountains.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 84
@@ -881,7 +881,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-mountains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-mountains.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 85
@@ -894,7 +894,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-road.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-road.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 75
@@ -907,7 +907,7 @@ catalog =
             , secondTrenchSize = 45
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-road.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-road.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 77
@@ -920,7 +920,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-road.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-road.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 70
@@ -933,7 +933,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/snowy-road.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/snowy-road.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 76
@@ -946,7 +946,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/tundra-plains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/tundra-plains.png"
       , unitKind = UnitKind.Infantry
       , calibration =
             { frontFooting = 79
@@ -959,7 +959,7 @@ catalog =
             , secondTrenchSize = 34
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/tundra-plains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/tundra-plains.png"
       , unitKind = UnitKind.Tank
       , calibration =
             { frontFooting = 73
@@ -972,7 +972,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/tundra-plains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/tundra-plains.png"
       , unitKind = UnitKind.FieldGun
       , calibration =
             { frontFooting = 82
@@ -985,7 +985,7 @@ catalog =
             , secondTrenchSize = 35
             }
       }
-    , { backdrop = "/assets/combat-backdrops-anime-v1/tundra-plains.png"
+    , { backdrop = "assets/combat-backdrops-anime-v1/tundra-plains.png"
       , unitKind = UnitKind.Truck
       , calibration =
             { frontFooting = 85

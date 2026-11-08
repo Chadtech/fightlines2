@@ -21,6 +21,13 @@ import Graphql.SelectionSet exposing (SelectionSet)
 import Json.Decode as Decode exposing (Decoder)
 
 
+deploymentStatus :
+    SelectionSet decodesTo Api.Object.PlayerDeploymentStatus
+    -> SelectionSet decodesTo RootQuery
+deploymentStatus object____ =
+    Object.selectionForCompositeField "deploymentStatus" [] object____ Basics.identity
+
+
 adminSession : SelectionSet Api.Enum.SessionStatus.SessionStatus RootQuery
 adminSession =
     Object.selectionForField "Enum.SessionStatus.SessionStatus" "adminSession" [] Api.Enum.SessionStatus.decoder

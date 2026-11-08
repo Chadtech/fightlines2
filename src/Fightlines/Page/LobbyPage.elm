@@ -1544,7 +1544,7 @@ lobbyHeaderView name =
                 ]
             ]
             [ H.img
-                [ A.src "/assets/fightlines-logo-v1.png"
+                [ A.src "assets/fightlines-logo-v1.png"
                 , A.alt "fightlines"
                 , A.css
                     [ S.w16

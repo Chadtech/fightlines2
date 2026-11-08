@@ -381,6 +381,15 @@ activityText seconds =
                 ago (elapsed // 86400) "days"
 
 
+handoff : Graphql.Http.Error Snapshot -> Eff Msg
+handoff error =
+    if ApiRequest.requiresCurrentDeployment error then
+        Route.load Route.MatchMaking
+
+    else
+        E.none
+
+
 
 ----------------------------------------------------------------
 -- UPDATE --
@@ -411,7 +420,7 @@ update msg model =
                     model
                         |> setStage Entry
                         |> setError (Just (RequestFailed error))
-                        |> E.withOut
+                        |> E.with (handoff error)
 
                 _ ->
                     ( model, E.none )
@@ -449,7 +458,7 @@ update msg model =
                                 model
                                     |> setStage (Waiting ticket Available)
                                     |> setError (Just (RequestFailed error))
-                                    |> E.withOut
+                                    |> E.with (handoff error)
 
                     else
                         ( model, E.none )
@@ -487,7 +496,7 @@ update msg model =
                                 model
                                     |> setStage (Waiting ticket Available)
                                     |> setError (Just (RequestFailed error))
-                                    |> E.withOut
+                                    |> E.with (handoff error)
 
                     else
                         ( model, E.none )

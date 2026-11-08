@@ -15,6 +15,7 @@ type Msg
     | Audio Audio.Event
     | PreloadImages (List String)
     | SetLocalStorage { key : String, value : Je.Value }
+    | ReplaceDocument { url : String }
 
 
 toCmd : Msg -> Cmd msg
@@ -25,6 +26,11 @@ toCmd msg =
 encode : Msg -> Je.Value
 encode msg =
     case msg of
+        ReplaceDocument { url } ->
+            Encode.message "replaceDocument"
+                [ ( "url", Je.string url )
+                ]
+
         SetLocalStorage entry ->
             Encode.setLocalStorage entry
 

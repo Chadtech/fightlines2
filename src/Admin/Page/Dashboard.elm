@@ -5,6 +5,7 @@ module Admin.Page.Dashboard exposing
     , init
     , load
     , needsLogin
+    , requiresCurrentDeployment
     , setShared
     , subscriptions
     , update
@@ -19,6 +20,8 @@ import Api.Object
 import Api.Object.AdminEntry as EntryApi
 import Api.Object.AdminPlayer as PlayerApi
 import Api.Object.Dashboard as DashboardApi
+import Api.Object.DeploymentObservation as DeploymentApi
+import Api.Object.DeploymentStatus as DeploymentStatusApi
 import Api.Object.FeedbackPage as FeedbackPageApi
 import Api.Object.FeedbackReadError as FeedbackErrorApi
 import Api.Object.FeedbackRecord as FeedbackApi
@@ -51,7 +54,28 @@ import View.CardHeader as CardHeader
 
 
 type alias Snapshot =
-    { serverVersion : String
+    { deployments : List Deployment
+    , serverVersion : String
+    , concurrentGames : Int
+    , waitingLobbies : Int
+    , retainedFinishedGames : Int
+    , entries : List LiveEntry
+    }
+
+
+type alias Deployment =
+    { id : String
+    , available : Bool
+    , status : Maybe DeploymentStatus
+    }
+
+
+type alias DeploymentStatus =
+    { version : String
+    , startedAt : String
+    , observedAt : String
+    , draining : Bool
+    , shutdownAt : Maybe String
     , concurrentGames : Int
     , waitingLobbies : Int
     , retainedFinishedGames : Int
@@ -223,6 +247,7 @@ setShared shared model =
 snapshotSelection : SelectionSet Snapshot Api.Object.Dashboard
 snapshotSelection =
     SS.succeed Snapshot
+        |> SS.with (DashboardApi.deployments deploymentSelection)
         |> SS.with DashboardApi.serverVersion
         |> SS.with DashboardApi.concurrentGames
         |> SS.with DashboardApi.waitingLobbies
@@ -362,6 +387,25 @@ statusLabel entry =
 
             Status.Finished ->
                 "finished"
+
+
+requiresCurrentDeployment : Msg -> Bool
+requiresCurrentDeployment msg =
+    case msg of
+        SnapshotResponseReceived (Err error) ->
+            ApiRequest.requiresCurrentDeployment error
+
+        RefreshResponseReceived (Err error) ->
+            ApiRequest.requiresCurrentDeployment error
+
+        FeedbackResponseReceived _ (Err error) ->
+            ApiRequest.requiresCurrentDeployment error
+
+        RecordingsResponseReceived _ (Err error) ->
+            ApiRequest.requiresCurrentDeployment error
+
+        _ ->
+            False
 
 
 
@@ -604,6 +648,7 @@ view model =
                             , stat { title = "feedback submissions", value = model.feedback.total, caption = "all time · refresh to update" }
                             ]
                         ]
+                   , deploymentsView model
                    , entriesPanel model "games in progress" live
                    , entriesPanel model "waiting lobbies" lobbies
                    , H.div
@@ -1193,6 +1238,157 @@ pageButtons pagination =
             ]
         ]
         content
+
+
+deploymentSelection : SelectionSet Deployment Api.Object.DeploymentObservation
+deploymentSelection =
+    SS.succeed Deployment
+        |> SS.with DeploymentApi.id
+        |> SS.with DeploymentApi.available
+        |> SS.with (DeploymentApi.status deploymentStatusSelection)
+
+
+deploymentStatusSelection : SelectionSet DeploymentStatus Api.Object.DeploymentStatus
+deploymentStatusSelection =
+    SS.succeed DeploymentStatus
+        |> SS.with DeploymentStatusApi.version
+        |> SS.with DeploymentStatusApi.startedAt
+        |> SS.with DeploymentStatusApi.observedAt
+        |> SS.with DeploymentStatusApi.draining
+        |> SS.with DeploymentStatusApi.shutdownAt
+        |> SS.with DeploymentStatusApi.concurrentGames
+        |> SS.with DeploymentStatusApi.waitingLobbies
+        |> SS.with DeploymentStatusApi.retainedFinishedGames
+        |> SS.with (DeploymentStatusApi.entries entrySelection)
+
+
+deploymentsView : Model -> Html Msg
+deploymentsView model =
+    let
+        deploymentRow : Deployment -> Html Msg
+        deploymentRow deployment =
+            let
+                description : String
+                description =
+                    case deployment.status of
+                        Just status ->
+                            "v"
+                                ++ status.version
+                                ++ " · "
+                                ++ lifecycle status
+                                ++ " · "
+                                ++ String.fromInt status.concurrentGames
+                                ++ " games"
+                                ++ " · "
+                                ++ String.fromInt status.waitingLobbies
+                                ++ " lobbies"
+                                ++ " · "
+                                ++ String.fromInt status.retainedFinishedGames
+                                ++ " postgame"
+                                ++ " · uptime "
+                                ++ elapsed status.startedAt
+                                ++ " · last seen "
+                                ++ elapsed status.observedAt
+                                ++ " ago"
+
+                        Nothing ->
+                            "no status received"
+
+                health : String
+                health =
+                    if deployment.available then
+                        "healthy"
+
+                    else
+                        "status unavailable · last reported values follow"
+
+                gameRows : List (Html Msg)
+                gameRows =
+                    deployment.status
+                        |> Maybe.map (.entries >> List.map gameRow)
+                        |> Maybe.withDefault []
+
+                gameRow : LiveEntry -> Html Msg
+                gameRow entry =
+                    H.p
+                        []
+                        [ H.text (entry.name ++ " · " ++ statusLabel entry)
+                        ]
+            in
+            H.details
+                []
+                [ H.summary
+                    []
+                    [ H.text (deployment.id ++ " · " ++ health ++ " · " ++ description)
+                    ]
+                , H.div
+                    [ A.css
+                        [ S.col
+                        , S.g2
+                        ]
+                    ]
+                    gameRows
+                ]
+
+        lifecycle : DeploymentStatus -> String
+        lifecycle status =
+            if status.draining then
+                "draining" ++ Maybe.withDefault "" (Maybe.map remaining status.shutdownAt)
+
+            else
+                "accepting new games"
+
+        remaining : String -> String
+        remaining value =
+            case String.toInt value of
+                Just deadline ->
+                    " · shutdown in " ++ duration (max 0 ((deadline - Time.posixToMillis model.shared.now) // 1000))
+
+                Nothing ->
+                    " · invalid shutdown deadline"
+
+        elapsed : String -> String
+        elapsed value =
+            value
+                |> String.toInt
+                |> Maybe.map elapsedTimestamp
+                |> Maybe.withDefault "unknown"
+
+        elapsedTimestamp : Int -> String
+        elapsedTimestamp timestamp =
+            duration (max 0 ((Time.posixToMillis model.shared.now - timestamp) // 1000))
+
+        rows : List (Html Msg)
+        rows =
+            List.map deploymentRow model.snapshot.deployments
+
+        isDraining : Deployment -> Bool
+        isDraining deployment =
+            Maybe.map .draining deployment.status == Just True
+
+        draining : Int
+        draining =
+            model.snapshot.deployments
+                |> List.filter isDraining
+                |> List.length
+    in
+    Card.toHtml Card.simple
+        [ H.h2
+            []
+            [ H.text (String.fromInt (List.length rows) ++ " deployments supervised · " ++ String.fromInt draining ++ " draining")
+            ]
+        , H.div
+            [ A.css
+                [ S.col
+                , S.g3
+                ]
+            ]
+            rows
+        , H.p
+            []
+            [ H.text "stale deployments remain visible; counts above describe this admin server. expand a deployment to inspect its sessions."
+            ]
+        ]
 
 
 

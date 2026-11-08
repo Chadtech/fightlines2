@@ -417,4 +417,4 @@ spotlight map units loss =
 
 imagePath : String
 imagePath =
-    "/assets/death-skull-illustrated-v1.png"
+    "assets/death-skull-illustrated-v1.png"

@@ -142,6 +142,24 @@ impl MatchedSnapshot {
 }
 
 impl Queue {
+    fn handoff_if_unmatched(
+        &mut self,
+        snapshot: Snapshot,
+        draining: bool,
+    ) -> FieldResult<Snapshot> {
+        match snapshot {
+            Snapshot::Matched(_) => Ok(snapshot),
+            Snapshot::Idle(_) | Snapshot::Waiting(_) => {
+                if draining {
+                    self.waiting = None;
+                    Err(crate::deployment::draining_error())
+                } else {
+                    Ok(snapshot)
+                }
+            }
+        }
+    }
+
     pub(crate) fn remove_absent_players(&mut self, now: Instant) {
         if self.waiting.as_ref().is_some_and(|player| {
             now.saturating_duration_since(player.last_seen) >= PRESENCE_TIMEOUT
@@ -354,6 +372,7 @@ fn queue(context: &Context) -> FieldResult<MutexGuard<'_, Queue>> {
 }
 
 pub fn get(context: &Context) -> FieldResult<Snapshot> {
+    let draining = context.store.is_draining()?;
     let mut queue = queue(context)?;
     let session = context.identity();
     let now = Instant::now();
@@ -361,10 +380,22 @@ pub fn get(context: &Context) -> FieldResult<Snapshot> {
     if let Some(session) = &session {
         queue.retire_finished_match(&context.store, session)?;
     }
-    Ok(queue.snapshot(session.as_ref(), None, now))
+    let snapshot = queue.snapshot(session.as_ref(), None, now);
+    queue.handoff_if_unmatched(snapshot, draining)
 }
 
 pub fn join(context: &Context, input: &str) -> FieldResult<Snapshot> {
+    let _admission = match context.store.admit_session() {
+        Ok(admission) => admission,
+        Err(error) => {
+            // A retry after a committed pairing must recover its original game,
+            // even if cutover happened before the browser received the response.
+            if context.store.is_draining()? {
+                return get(context);
+            }
+            return Err(error);
+        }
+    };
     let name = PlayerName::parse(input).ok_or("enter a name between 1 and 40 characters.")?;
     // Always use the public pool, including when the caller has local editor access.
     let maps = CatalogAccess::Public.catalog().map_err(|error| {
@@ -382,8 +413,11 @@ pub fn join(context: &Context, input: &str) -> FieldResult<Snapshot> {
 }
 
 pub fn poll(context: &Context, ticket: String) -> FieldResult<Snapshot> {
+    let draining = context.store.is_draining()?;
     let session = context.identity().ok_or("join match making first.")?;
-    Ok(queue(context)?.poll(&session, &Ticket(ticket), Instant::now()))
+    let mut queue = queue(context)?;
+    let snapshot = queue.poll(&session, &Ticket(ticket), Instant::now());
+    queue.handoff_if_unmatched(snapshot, draining)
 }
 
 pub fn leave(context: &Context, ticket: String) -> FieldResult<Snapshot> {

@@ -570,10 +570,10 @@ update msg page =
                             ( page, E.pushUrl (Url.toString url) )
 
                         Nothing ->
-                            ( page, E.load (Url.toString url) )
+                            ( page, E.loadUrl (Url.toString url) )
 
                 Browser.External url ->
-                    ( page, E.load url )
+                    ( page, E.loadUrl url )
 
         RouteReceived route ->
             case getShared page of

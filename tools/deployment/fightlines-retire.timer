@@ -1,0 +1,9 @@
+[Unit]
+Description=Check FightLines deployment retirement
+
+[Timer]
+OnBootSec=15
+OnUnitActiveSec=5
+
+[Install]
+WantedBy=timers.target

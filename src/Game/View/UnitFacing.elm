@@ -92,4 +92,4 @@ marker selected direction =
 
 imagePath : String
 imagePath =
-    "/assets/attack-marker-illustrated-v1.png"
+    "assets/attack-marker-illustrated-v1.png"

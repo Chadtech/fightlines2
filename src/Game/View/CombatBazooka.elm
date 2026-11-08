@@ -42,7 +42,7 @@ frameAt age =
 
 path : String -> String
 path team =
-    "/assets/bazooka-firing-v1/" ++ team ++ ".png"
+    "assets/bazooka-firing-v1/" ++ team ++ ".png"
 
 
 imagePaths : List String

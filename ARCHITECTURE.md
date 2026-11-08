@@ -581,7 +581,7 @@ The `chat(id, after)` query returns messages after a sequence cursor, while
 `sendChat` validates a single-line message and deduplicates retries by browser
 session and client message ID. Credentials and retry receipts are never recorded.
 The GraphQL boundary rate limits each send, including aliases and retries. A
-transcript accepts 1,000 messages; retries of accepted IDs remain idempotent at
+transcript accepts 1,000 player messages; retries of accepted IDs remain idempotent at
 capacity. `game_log::Directory` and its journals/game logs share one chat storage
 budget, independent of turn recording. Each chat write prepays its possible lobby
 transcript copy. Startup conservatively counts persisted chat, copied transcripts,
@@ -597,9 +597,11 @@ sequence and turn association; simulation replay ignores conversation events.
 
 `Game.Chat` owns pure transcript, composer, delivery, and notification operations.
 The lobby and game pages own request effects, seed advancement, modal coordination,
-and focus. C opens the game composer or focuses the lobby input, while text-entry
-controls and other dialogs retain their keyboard behavior. They poll chat
-independently of turn changes, including after victory.
+and focus. The game header button and C shortcut share the same admission check:
+neither opens chat during playback or while another dialog is open. Starting
+playback hides the composer without discarding its draft. C focuses the lobby
+input, while text-entry controls and other dialogs retain their keyboard behavior.
+The pages poll chat independently of turn changes, including after victory.
 Game sends hide the composer while retaining its pending request in background
 state. Lobby sends keep the inline composer open and clear its field on success.
 Only poll responses advance the cursor, so a faster send response cannot skip
@@ -958,8 +960,10 @@ including removal or clearing of the stored object. Both apps listen for
 `local storage changed` on every initialized page and replace shared storage
 through `setShared`. Failed writes log a warning without reporting a saved value.
 `UserName` reads and writes the `userName` key. Creation and join forms prefill
-it during initialization and remember the trimmed submitted name after a
-successful response, preserving its casing. The response message carries the
+it during initialization. The creation form remembers the trimmed player name
+on every input event. The lobby name stays in the page model and starts empty
+whenever the form initializes. Joining remembers the trimmed
+submitted name after a successful response. Its response message carries the
 submitted name so edits made while joining do not change which name is saved.
 Missing stored names leave the field empty. Incorrectly typed names also leave
 the field empty, but each form records `Error.LocalStorageDecodeFailed` in
@@ -969,9 +973,10 @@ the field empty, but each form records `Error.LocalStorageDecodeFailed` in
 decoders, defaults, and loaded state remain with their owning pages or game
 modules; `PlaybackPresentation` retains its typed playback preference API.
 Each app's `Shared.addError` wrapper prepends errors to its session's history
-without clearing earlier errors; new shared state starts with an empty history. Failed requests
-keep the previous remembered name, and storage notifications preserve active
-form edits. Game state is not persisted in local storage.
+without clearing earlier errors; new shared state starts with an empty history.
+Ordinary failed creation requests retain the active form values; failed joins
+keep the previous remembered name. Storage notifications preserve active form edits.
+Game state is not persisted in local storage.
 
 `GamePage` and `GameReplay` read their saved preferences during `init`, defaulting
 to false when absent and retaining decoder failures in `Shared.Model.errors`.
@@ -1126,8 +1131,7 @@ using single-coordinate paths for holds and ambushes. `Game.Checks.PlannedOrder`
 verifies that conversion, including unloading from stationary trucks.
 `TurnLifecycle.Phase` owns planning, submission, waiting and playback.
 Its playback state owns the held combat Enter key; changing encounters or leaving
-playback clears it. Opening chat also clears the press, so sending a message cannot
-advance combat when Enter is released.
+playback clears it. Opening chat also clears the press.
 `Game.OrderPlanning` owns the planning custom type and its transitions:
 `OrdinaryPlanning`, `ConfirmingSubmission`,
 `ChoosingPassengers` or `ChoosingExits`. Ordinary planning and submission
@@ -2605,3 +2609,85 @@ Refreshes retain the previous chart with its original settings
 and an explicit status; stale responses are ignored and hit selection is
 disabled until fresh values arrive. `DevTools.View.CombatChart` renders the
 semantic table, accessible damage cells, lethal-hit styling, and factor details.
+
+## Deployment draining
+
+`deployment_id.rs` owns the validated `DeploymentId` shared by both binaries.
+`deployment.rs` owns each game process's admission gate, monotonic drain state,
+and private status snapshots. Lobby creation and queue
+joining hold a sealed admission guard through publication. Retirement snapshots
+take the same gate; an admitted creation cannot appear after an empty snapshot.
+Existing lobby joins/starts and game operations continue during draining.
+Unmatched matchmaking callers receive `DEPLOYMENT_DRAINING`; committed matches
+keep their original game and receipt. Registry cleanup preserves postgame viewing.
+
+`src/supervisor/` builds the separate Rust `fightlines-supervisor` binary, invoked
+by activation and a systemd timer. Production supervision needs no Python runtime;
+the local Python rehearsal invokes this same compiled controller. The binary's
+OS file lock serializes control changes, including port queries. It owns
+the desired registry, Caddy routing, running markers, and fixed drain deadlines.
+A candidate's identity and port enter a durable `Preparing` state before its
+service starts. Activation and retirement sweeps discard interrupted candidates
+before reusing their ports; failed cleanup retains the reservation. A candidate
+must report healthy and accepting before becoming the current release. The desired
+registry is recorded before routing changes so the timer can complete an
+interrupted cutover. Old admission closes only after a successful routing reload.
+After routing might have changed, failures preserve the candidate because it may
+already own sessions. A fresh empty snapshot allows early retirement; the fixed
+deadline also retires a process with missing status or failed routing updates.
+Stopping a process keeps its port reserved until Caddy confirms removal of that
+release's routes. The supervisor persists that confirmation before the allocator
+or activation can reuse the port; missing confirmation remains reserved across
+supervisor restarts, including for older registry entries.
+
+Every release has immutable frontend/maps and private archive, feedback, and log
+directories. Archives and feedback can be read across retired releases without
+sharing their write-budget accounting. Admin reads credential-free private
+snapshots from all supervised deployments, labels reports older than 15 seconds
+unavailable, and retains last-known values. Existing summary cards describe the
+process serving Admin; deployment rows describe each process separately.
+
+Public page URLs stay stable: `/lobby/<id>`, `/lobby/<id>/maps`, and `/game/<id>`.
+Creation publishes an immutable `.session-owners/<id>` record before returning
+the session. Caddy uses a private loopback `/_routing` lookup on the current
+server to resolve that owner against the supervisor's registry and serve the
+matching release's document without a redirect. Unknown sessions return 404;
+retired sessions return 410, including after a private port is reused. Lookup
+failures return 503 instead of falling through to a different server. Ownership
+records remain after retirement. This lookup selects a server, not a player;
+ordinary API authorization still applies.
+
+The document supplies a private `/_releases/<deployment-id>/` base for matching
+scripts, assets, and GraphQL requests. Caddy strips this base when proxying to
+that release; retired bases return 410. The routing endpoint is blocked publicly
+both directly and beneath these bases. Local asset URLs are document-relative
+at their source, including Rust's thumbnail and backdrop catalog URLs, saved
+calibration keys, Elm artwork catalogs, and JavaScript audio files. Renderers
+and loaders use them directly, so the browser resolves them against the
+document base. Asset identities and public invite URLs remain independent of
+the deployment prefix.
+`Deployment.elm` owns shared player navigation policy and the document's session
+identity, while shared browser state carries its current observation. The player
+polls every ten seconds. Failed polls retain the last observed status and record
+typed failures in shared diagnostics, including decoder details. Consecutive
+matching failures are coalesced; recovery permits a later outage to be recorded
+again. Retirement responses remain ordinary navigation handoffs.
+Navigation within the document's session stays in the
+SPA, including lobby-to-game transitions. Entering a different session or leaving
+one loads the server-selected document; draining entry pages also reload for
+new-session destinations. Document replacements retain replace-history semantics
+so Back skips completed matchmaking queues. This keeps different tabs independently
+connected to their own sessions. Typed admission errors cover races and reload the canonical
+creation form. The saved player name restores; the lobby name starts empty
+and must be re-entered after this deployment handoff.
+The server's one-second sweep adds durable `server` chat messages at ten minutes,
+five minutes, one minute, and thirty seconds before the fixed cutoff. Deployment
+owns the reminder schedule; each transcript owns its reminder receipts and keeps
+them through lobby-to-game transfer. Busy entries retry on a later sweep, using
+the current remaining time and skipping obsolete reminders. Publication precedes
+in-memory acceptance, just like player chat. Notices do not renew activity or
+consume the conversation's 1,000 player-message allowance; they still use the
+shared chat storage budget. Chat polling delivers them with the ordinary sound,
+temporary battlefield messages, and history, without a separate countdown banner.
+The local rehearsal uses real Caddy and server
+processes, including optional production-cookie HTTPS, without production access.

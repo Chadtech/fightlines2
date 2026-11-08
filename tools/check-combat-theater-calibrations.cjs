@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { render } = require('./build-combat-theater-calibrations.cjs');
 
-const backdrop = '/assets/combat-backdrops-anime-v1/plains.png';
+const backdrop = 'assets/combat-backdrops-anime-v1/plains.png';
 const settings = { frontFooting: 82, rowSpacing: 10, unitSize: 18, rearScale: 65 };
 const exists = () => true;
 
@@ -23,7 +23,7 @@ test('per-unit settings preserve missing units and independent trench values', (
 });
 
 test('generation is independent of JSON key order', () => {
-  const road = '/assets/combat-backdrops-anime-v1/road.png';
+  const road = 'assets/combat-backdrops-anime-v1/road.png';
   const first = { [backdrop]: { Tank: settings, Infantry: settings }, [road]: settings };
   const second = { [road]: settings, [backdrop]: { Infantry: settings, Tank: settings } };
   assert.equal(render(first, exists), render(second, exists));
@@ -34,7 +34,8 @@ test('invalid catalogs fail with context instead of generating bad Elm', () => {
   for (const invalid of [null, [], 'invalid']) {
     assert.throws(() => render(invalid, exists), /expected an object/);
   }
-  assert.throws(() => render({ '/assets/../plains.png': settings }, exists), /Invalid backdrop path/);
+  assert.throws(() => render({ 'assets/../plains.png': settings }, exists), /Invalid backdrop path/);
+  assert.throws(() => render({ [`/${backdrop}`]: settings }, exists), /Invalid backdrop path/);
   assert.throws(() => render({ [backdrop]: settings }, () => false), /Backdrop does not exist/);
   assert.throws(() => render({ [backdrop]: { Plane: settings } }, exists), /unknown unit kind Plane/);
   assert.throws(() => render({ [backdrop]: { ...settings, typo: 1 } }, exists), /unknown field typo/);

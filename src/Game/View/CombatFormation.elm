@@ -1017,7 +1017,7 @@ layersToSvg effect calibration layers animation health unit =
 
 trenchPath : String -> String
 trenchPath team =
-    "/assets/combat-trench-overlay-anime-v2/" ++ team ++ ".png"
+    "assets/combat-trench-overlay-anime-v2/" ++ team ++ ".png"
 
 
 imagePaths : List String

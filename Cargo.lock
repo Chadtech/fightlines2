@@ -629,6 +629,7 @@ dependencies = [
  "base64",
  "dotenvy",
  "juniper",
+ "libc",
  "rand",
  "rpassword",
  "serde",

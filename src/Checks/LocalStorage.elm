@@ -82,6 +82,9 @@ checks =
                 AudioFailed _ ->
                     "unexpected audio error while reading local storage"
 
+                DeploymentStatusFailed _ ->
+                    "unexpected deployment status error while reading local storage"
+
                 ElementFocusFailed _ ->
                     "unexpected element focus error while reading local storage"
 

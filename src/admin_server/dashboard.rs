@@ -1,6 +1,7 @@
 //! Credential-free read models. They never grant player membership or change activity.
 use crate::{
     app_version,
+    deployment::DeploymentObservation,
     graphql::Context,
     lobby_id::LobbyId,
     map_id::MapId,
@@ -9,9 +10,10 @@ use crate::{
     turns::GameOutcome,
 };
 use juniper::{FieldResult, GraphQLEnum, GraphQLObject};
+use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, GraphQLEnum, Serialize, Deserialize)]
 pub enum EntryStatus {
     WaitingLobby,
     Planning,
@@ -20,7 +22,7 @@ pub enum EntryStatus {
     Finished,
 }
 
-#[derive(Clone, GraphQLObject)]
+#[derive(Clone, GraphQLObject, Serialize, Deserialize)]
 pub struct AdminPlayer {
     name: String,
     controller: Controller,
@@ -55,7 +57,7 @@ pub struct EntrySnapshot {
     pub warning_deadline: Option<Instant>,
 }
 
-#[derive(GraphQLObject)]
+#[derive(Clone, GraphQLObject, Serialize, Deserialize)]
 pub struct AdminEntry {
     id: String,
     name: String,
@@ -101,6 +103,7 @@ impl EntrySnapshot {
 
 #[derive(GraphQLObject)]
 pub struct Dashboard {
+    deployments: Vec<DeploymentObservation>,
     server_version: String,
     concurrent_games: i32,
     waiting_lobbies: i32,
@@ -111,22 +114,41 @@ pub struct Dashboard {
 pub fn get(context: &Context) -> FieldResult<Dashboard> {
     context.require_admin()?;
     let entries = context.store.admin_entries(Instant::now())?;
+    let counts = counts(&entries);
     Ok(Dashboard {
+        deployments: context
+            .store
+            .deployment
+            .as_ref()
+            .map(|deployment| deployment.observations())
+            .transpose()?
+            .unwrap_or_default(),
         server_version: app_version::current().into(),
-        concurrent_games: entries
-            .iter()
-            .filter(|entry| {
-                entry.status != EntryStatus::WaitingLobby && entry.status != EntryStatus::Finished
-            })
-            .count() as i32,
-        waiting_lobbies: entries
-            .iter()
-            .filter(|entry| entry.status == EntryStatus::WaitingLobby)
-            .count() as i32,
-        retained_finished_games: entries
-            .iter()
-            .filter(|entry| entry.status == EntryStatus::Finished)
-            .count() as i32,
+        concurrent_games: counts.concurrent_games,
+        waiting_lobbies: counts.waiting_lobbies,
+        retained_finished_games: counts.retained_finished_games,
         entries,
     })
+}
+
+pub struct Counts {
+    pub concurrent_games: i32,
+    pub waiting_lobbies: i32,
+    pub retained_finished_games: i32,
+}
+
+pub fn counts(entries: &[AdminEntry]) -> Counts {
+    let waiting = entries
+        .iter()
+        .filter(|entry| entry.status == EntryStatus::WaitingLobby)
+        .count() as i32;
+    let finished = entries
+        .iter()
+        .filter(|entry| entry.status == EntryStatus::Finished)
+        .count() as i32;
+    Counts {
+        concurrent_games: entries.len() as i32 - waiting - finished,
+        waiting_lobbies: waiting,
+        retained_finished_games: finished,
+    }
 }

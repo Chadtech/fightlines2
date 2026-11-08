@@ -171,7 +171,7 @@ unitToSvg unit =
         , SA.pointerEvents "none"
         ]
         [ Sprite.toSvg
-            { path = "/assets/units_illustrated-v4.png"
+            { path = "assets/units_illustrated-v4.png"
             , sheetWidth = 64
             , sheetHeight = 192
             , column = 0

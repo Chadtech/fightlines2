@@ -50,6 +50,11 @@ buttonHtmlId =
     "game-menu-button"
 
 
+chatButtonHtmlId : String
+chatButtonHtmlId =
+    "game-chat-button"
+
+
 dialogHtmlId : String
 dialogHtmlId =
     "game-menu"
@@ -68,13 +73,13 @@ resignationCancelButtonHtmlId =
 panel : { enabled : Bool, turnNumber : Int } -> Html Msg
 panel config =
     let
-        button : Button.Button Msg
-        button =
+        headerButton : String -> Msg -> Button.Button Msg
+        headerButton label onClick =
             if config.enabled then
-                Button.secondary "menu" OpenClicked
+                Button.secondary label onClick
 
             else
-                Button.disabled "menu"
+                Button.disabled label
 
         turnLabel : String
         turnLabel =
@@ -87,7 +92,7 @@ panel config =
             , S.outdent
             , S.borderT0
             , S.grid
-            , S.gridColumns "4.5rem 6rem 4.5rem"
+            , S.gridColumns "minmax(0, 4.5rem) minmax(0, 6rem) minmax(0, 4.5rem) minmax(0, 4.5rem)"
             , S.itemsCenter
             , S.g2
             , S.py1
@@ -100,17 +105,18 @@ panel config =
                 ]
             ]
         ]
-        [ button
+        [ headerButton "menu" OpenClicked
             |> Button.small
             |> Button.fullWidth
             |> Button.withHtmlId buttonHtmlId
             |> Button.toHtml
         , H.img
-            [ A.src "/assets/fightlines-logo-v1.png"
+            [ A.src "assets/fightlines-logo-v1.png"
             , A.alt "fightlines"
             , A.css
                 [ S.block
                 , S.w16
+                , S.maxWFull
                 , S.hAuto
                 , S.justifySelfCenter
                 ]
@@ -133,6 +139,11 @@ panel config =
             ]
             [ H.text turnLabel
             ]
+        , headerButton "chat" ChatClicked
+            |> Button.small
+            |> Button.fullWidth
+            |> Button.withHtmlId chatButtonHtmlId
+            |> Button.toHtml
         ]
 
 
@@ -151,9 +162,6 @@ dialog config =
         "menu"
         CloseClicked
         [ Button.secondary "settings" SettingsClicked
-            |> Button.fullWidth
-            |> Button.toHtml
-        , Button.secondary "chat (c)" ChatClicked
             |> Button.fullWidth
             |> Button.toHtml
         , Button.secondary "feedback" FeedbackClicked

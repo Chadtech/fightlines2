@@ -39,7 +39,7 @@ pub fn url(definition: &MapDefinition) -> Result<String, serde_json::Error> {
         .fold(0xcbf29ce484222325_u64, |hash, byte| {
             (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
         });
-    Ok(format!("/map-thumbnails/{RENDER_VERSION}-{hash:016x}.png"))
+    Ok(format!("map-thumbnails/{RENDER_VERSION}-{hash:016x}.png"))
 }
 
 pub fn save(frontend: &Path, definition: &MapDefinition, encoded: &str) -> io::Result<()> {
@@ -74,7 +74,7 @@ pub fn save(frontend: &Path, definition: &MapDefinition, encoded: &str) -> io::R
         return Err(invalid("map thumbnail dimensions do not match the map"));
     }
     let relative = url(definition).map_err(io::Error::other)?;
-    let destination = frontend.join(relative.trim_start_matches('/'));
+    let destination = frontend.join(relative);
     let directory = destination
         .parent()
         .ok_or_else(|| invalid("missing thumbnail directory"))?;
@@ -107,6 +107,7 @@ mod tests {
     fn fingerprint_is_stable_and_changes_with_saved_content() -> TestResult<()> {
         let original = definition();
         let original_url = url(&original)?;
+        assert!(original_url.starts_with("map-thumbnails/"));
         assert_eq!(original_url, url(&original)?);
         let mut changed = original.clone();
         changed.release_status = crate::map_definition::MapReleaseStatus::Released;
@@ -128,7 +129,7 @@ mod tests {
         let definition = definition();
         let png = include_bytes!("../tests/fixtures/map-thumbnail.png");
         save(&directory, &definition, &STANDARD.encode(png))?;
-        let destination = directory.join(url(&definition)?.trim_start_matches('/'));
+        let destination = directory.join(url(&definition)?);
         assert_eq!(fs::read(&destination)?, png);
         for invalid in [
             "invalid base64".to_owned(),

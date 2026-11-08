@@ -1092,7 +1092,7 @@ backdropPath theme terrain =
                 ( MapTheme.Desert, _ ) ->
                     "desert-plains"
     in
-    "/assets/combat-backdrops-anime-v1/" ++ name ++ ".png"
+    "assets/combat-backdrops-anime-v1/" ++ name ++ ".png"
 
 
 {-| Both scenes share a camera kick at contact, then settle over 160ms.
@@ -1744,16 +1744,16 @@ buildingBackdropPath : MapTheme -> BuildingKind -> String
 buildingBackdropPath theme kind =
     case ( theme, kind ) of
         ( MapTheme.Snow, BuildingKind.Fortress ) ->
-            "/assets/combat-backdrops-anime-v1/snowy-fortress.png"
+            "assets/combat-backdrops-anime-v1/snowy-fortress.png"
 
         ( _, BuildingKind.Fortress ) ->
-            "/assets/combat-backdrops-anime-v1/fortress.png"
+            "assets/combat-backdrops-anime-v1/fortress.png"
 
         ( MapTheme.Snow, _ ) ->
-            "/assets/combat-backdrops-anime-v1/snowy-depot.png"
+            "assets/combat-backdrops-anime-v1/snowy-depot.png"
 
         _ ->
-            "/assets/combat-backdrops-anime-v1/depot.png"
+            "assets/combat-backdrops-anime-v1/depot.png"
 
 
 imagePaths : MapTheme -> List String

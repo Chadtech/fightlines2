@@ -17,6 +17,7 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
   const clipboard = [];
   const thumbnails = [];
   const images = [];
+  const documentReplacements = [];
   const storage = {
     getItem(name) {
       if (readFails) throw new Error('storage denied');
@@ -52,6 +53,7 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
         clipboard.push(url);
       },
     } },
+    location: { replace(url) { documentReplacements.push(url); } },
     async generateMapThumbnail(htmlId) {
       thumbnails.push(htmlId);
       if (thumbnailFails) throw new Error('thumbnail failed');
@@ -64,7 +66,7 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
     addEventListener(name, handler) { events[name] = handler; },
     console: { warn(...args) { warnings.push(args); } },
   });
-  return { stored, messages, warnings, flags, send, storage, events, clipboard, thumbnails, images };
+  return { stored, messages, warnings, flags, send, storage, events, clipboard, thumbnails, images, documentReplacements };
 }
 
 async function checkInterop() {
@@ -85,8 +87,11 @@ async function checkInterop() {
   }
   assert.equal(JSON.stringify(boot(undefined, { readFails: true }).flags.localStorage), '{}');
   const app = boot('{"existing":{"enabled":true},"count":1}');
-  await app.send({ tag: 'preloadImages', paths: ['/assets/example.png'] });
-  assert.deepEqual(app.images, ['/assets/example.png'], 'shared interop starts background images');
+  await app.send({ tag: 'replaceDocument', url: '/game/0123456789abcdef0123456789abcdef' });
+  assert.deepEqual(app.documentReplacements, ['/game/0123456789abcdef0123456789abcdef'],
+    'document handoffs replace transient pages instead of adding a history entry');
+  await app.send({ tag: 'preloadImages', paths: ['assets/example.png'] });
+  assert.deepEqual(app.images, ['assets/example.png'], 'shared interop starts background images');
   await app.send({ tag: 'audio', event: null });
   await app.send({ tag: 'audio', event: { play: 'affirm' } });
   assert.equal(app.warnings.length, 0);

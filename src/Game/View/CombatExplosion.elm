@@ -38,7 +38,7 @@ casualtyAnimationAttribute =
 
 framePath : Int -> String
 framePath index =
-    "/assets/combat-impact-side-anime-v2/frame-" ++ String.fromInt index ++ ".png"
+    "assets/combat-impact-side-anime-v2/frame-" ++ String.fromInt index ++ ".png"
 
 
 {-| All frames used by map casualties and theater strikes.

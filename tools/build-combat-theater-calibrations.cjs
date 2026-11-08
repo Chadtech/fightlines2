@@ -50,7 +50,7 @@ function render(catalog, assetExists) {
   object(catalog, source);
   const entries = [];
   for (const backdrop of Object.keys(catalog).sort()) {
-    if (!/^\/assets\/combat-backdrops-anime-v1\/[A-Za-z0-9.-]+\.png$/.test(backdrop)
+    if (!/^assets\/combat-backdrops-anime-v1\/[A-Za-z0-9.-]+\.png$/.test(backdrop)
         || backdrop.includes('..')) {
       throw new Error(`Invalid backdrop path: ${backdrop}`);
     }

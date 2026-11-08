@@ -207,17 +207,17 @@ entrenchedView playerNumber facingLeft =
 
 atlasPath : String
 atlasPath =
-    "/assets/units_illustrated-v4.png"
+    "assets/units_illustrated-v4.png"
 
 
 fieldGunPath : String -> String
 fieldGunPath team =
-    "/assets/field-gun-portraits-anime-v1/" ++ team ++ ".png"
+    "assets/field-gun-portraits-anime-v1/" ++ team ++ ".png"
 
 
 entrenchedPath : String -> String
 entrenchedPath team =
-    "/assets/infantry-entrenched-v1/" ++ team ++ ".png"
+    "assets/infantry-entrenched-v1/" ++ team ++ ".png"
 
 
 imagePaths : List String

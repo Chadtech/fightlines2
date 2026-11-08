@@ -380,6 +380,37 @@ transition model ( page, effect ) =
     )
 
 
+requiresCurrentDeployment : PageMsg -> Bool
+requiresCurrentDeployment event =
+    case event of
+        SessionResponseReceived (Err error) ->
+            ApiRequest.requiresCurrentDeployment error
+
+        DashboardResponseReceived (Err error) ->
+            ApiRequest.requiresCurrentDeployment error
+
+        DashboardMsg inner ->
+            Dashboard.requiresCurrentDeployment inner
+
+        ReplayResponseReceived (Err error) ->
+            ApiRequest.requiresCurrentDeployment error
+
+        ReplayMsg (Replay.TurnResponseReceived _ (Err error)) ->
+            ApiRequest.requiresCurrentDeployment error
+
+        ReplaySessionResponseReceived (Err error) ->
+            ApiRequest.requiresCurrentDeployment error
+
+        LogoutResponseReceived (Err error) ->
+            ApiRequest.requiresCurrentDeployment error
+
+        LoginMsg (Login.LoginResponseReceived (Err error)) ->
+            ApiRequest.requiresCurrentDeployment error
+
+        _ ->
+            False
+
+
 
 ----------------------------------------------------------------
 -- UPDATE --
@@ -397,10 +428,10 @@ update msg model =
                             ( model, Route.pushUrl route )
 
                         Nothing ->
-                            ( model, E.load (Url.toString url) )
+                            ( model, E.loadUrl (Url.toString url) )
 
                 Browser.External url ->
-                    ( model, E.load url )
+                    ( model, E.loadUrl url )
 
         RouteReceived route ->
             case getShared model.page of
@@ -420,9 +451,12 @@ update msg model =
                         |> Tuple.mapFirst (\next -> { model | page = setShared next model.page })
                         |> Tuple.mapSecond (E.map SharedMsg)
 
-        PageMsg visitId event ->
+        PageMsg visitId subMsg ->
             if visitId /= model.visitId then
                 model |> E.withOut
+
+            else if requiresCurrentDeployment subMsg then
+                ( model, Route.load Route.Dashboard )
 
             else
                 let
@@ -432,7 +466,7 @@ update msg model =
 
                     pageUpdate : ( Page, Eff PageMsg )
                     pageUpdate =
-                        case event of
+                        case subMsg of
                             SessionResponseReceived result ->
                                 case page of
                                     Checking shared route ->

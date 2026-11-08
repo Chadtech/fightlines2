@@ -85,7 +85,13 @@ impl Directory {
         if offset < 0 {
             return Err("feedback offset must be nonnegative.".into());
         }
-        let mut files = fs::read_dir(&self.path).and_then(|entries| entries.collect::<io::Result<Vec<_>>>()).map_err(|error| {
+        let mut files = (|| -> io::Result<Vec<fs::DirEntry>> {
+            let mut files = Vec::new();
+            for root in crate::deployment::storage_roots(&self.path, "feedback")? {
+                files.extend(fs::read_dir(root)?.collect::<io::Result<Vec<_>>>()?);
+            }
+            Ok(files)
+        })().map_err(|error| {
             tracing::error!(event = "feedback_list_failed", error = %error, "could not list feedback");
             server_log::internal_error("could not list feedback.")
         })?;

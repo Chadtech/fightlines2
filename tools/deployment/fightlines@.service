@@ -1,0 +1,20 @@
+[Unit]
+Description=FightLines deployment %i
+After=network.target
+
+[Service]
+Type=simple
+User=fightlines
+Group=fightlines
+WorkingDirectory=/opt/fightlines/releases/%i
+EnvironmentFile=/etc/fightlines/fightlines.env
+EnvironmentFile=/etc/fightlines/deployments/%i.env
+ExecStart=/opt/fightlines/releases/%i/fightlines-server
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,7 @@
 module Admin.Route exposing
     ( Route(..)
     , fromUrl
+    , load
     , pushUrl
     , toString
     )
@@ -40,6 +41,11 @@ toString route =
 
         SignOut ->
             "/admin/sign-out"
+
+
+load : Route -> Eff msg
+load route =
+    E.loadUrl (toString route)
 
 
 pushUrl : Route -> Eff msg

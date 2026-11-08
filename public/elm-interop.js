@@ -51,6 +51,12 @@ function startElmApp(elmApp, handleMessage) {
 
   app.ports.toJs.subscribe(async (message) => {
     switch (message.tag) {
+      case "replaceDocument": {
+        // A session handoff can require another document while preserving
+        // replaceUrl semantics (e.g. leaving the matchmaking queue).
+        location.replace(message.url);
+        break;
+      }
       case "preloadImages": {
         assets.preloadImages(message.paths);
         break;

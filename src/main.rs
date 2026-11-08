@@ -6,6 +6,9 @@ mod app_version;
 mod backdrop_calibration;
 mod chat;
 mod combat;
+mod deployment;
+mod deployment_id;
+mod deployment_routing;
 mod environment;
 mod feedback;
 mod game;
@@ -41,9 +44,9 @@ mod unit_loss;
 mod unit_order;
 mod visibility;
 
-use actix_files::{Files, NamedFile};
+use actix_files::Files;
 use actix_web::{
-    App, Error, HttpResponse, HttpServer, Responder,
+    App, Error, HttpResponse, HttpServer,
     dev::{self, ServiceRequest},
     http::header::{Accept, Header, Quality},
     middleware::{self, DefaultHeaders},
@@ -149,7 +152,9 @@ async fn run(frontend: PathBuf) -> io::Result<()> {
     } else {
         store::Store::new(seed)
     };
-    let store = store.with_game_logs(logs);
+    let store = store
+        .with_game_logs(logs)
+        .with_deployment(deployment::Deployment::load(&frontend)?);
     let editor_enabled = env::args().any(|argument| argument == "--map-editor");
     let editor = web::Data::new(map_editor::Editor {
         directory: map_id::directory(),
@@ -176,10 +181,13 @@ async fn run(frontend: PathBuf) -> io::Result<()> {
         let mut app = App::new()
             .wrap(DefaultHeaders::new().add(("Cache-Control", "no-cache")))
             .wrap(middleware::from_fn(server_log::request))
+            .app_data(web::Data::new(frontend.clone()))
             .app_data(store.clone())
             .app_data(endpoint.clone())
             .app_data(feedback.clone())
+            .route("/", web::get().to(player_index))
             .route("/graphql", web::post().to(graphql::handle))
+            .route("/_routing", web::get().to(deployment_routing::route))
             .service(dev_tools(&frontend))
             .service(admin_frontend(&frontend));
         if archives_enabled {
@@ -207,6 +215,14 @@ async fn cleanup_expired_entries(store: web::Data<store::Store>) {
         let result = web::block(move || {
             tracing::dispatcher::with_default(&dispatch, || {
                 let removed = store.remove_expired_entries(Instant::now())?;
+                if let Some(deployment) = &store.deployment {
+                    if let Some(notice) = deployment.shutdown_notice(
+                        deployment::unix_ms().map_err(server_log::internal_error)?,
+                    )? {
+                        store.announce_shutdown(notice)?;
+                    }
+                    deployment.publish(&store)?;
+                }
                 if removed > 0 {
                     tracing::info!(
                         event = "expired_entries_removed",
@@ -218,14 +234,45 @@ async fn cleanup_expired_entries(store: web::Data<store::Store>) {
             })
         })
         .await;
-        if let Err(error) = result {
-            tracing::error!(event = "game_cleanup_worker_failed", error = %error, "lobby and game cleanup worker failed");
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                tracing::error!(event = "game_cleanup_failed", error = ?error, "lobby, game, or deployment cleanup failed");
+            }
+            Err(error) => {
+                tracing::error!(event = "game_cleanup_worker_failed", error = %error, "lobby and game cleanup worker failed");
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod test_support;
+
+async fn player_index(
+    request: actix_web::HttpRequest,
+    frontend: web::Data<PathBuf>,
+) -> HttpResponse {
+    frontend_document(&frontend.join("index.html"), &request)
+}
+
+fn frontend_document(index: &Path, request: &actix_web::HttpRequest) -> HttpResponse {
+    let base = request
+        .app_data::<web::Data<store::Store>>()
+        .and_then(|store| store.deployment.as_ref())
+        .map(|deployment| deployment.base_path())
+        .unwrap_or_else(|| "/".into());
+    match std::fs::read_to_string(index) {
+        Ok(html) => HttpResponse::Ok()
+            .insert_header(("Cache-Control", "no-store"))
+            .content_type("text/html; charset=utf-8")
+            .body(html.replace(
+                "<!-- deployment-base: replaced by the server with a <base> tag -->",
+                &format!("<base href=\"{base}\">"),
+            )),
+        Err(error) => Error::from(error).error_response(),
+    }
+}
 
 // Existing files take priority. Elm owns all remaining player-page routes.
 fn player_frontend(frontend: &Path) -> Files {
@@ -247,10 +294,7 @@ fn player_frontend(frontend: &Path) -> Files {
                     })
                 });
                 let response = if accepts_html && !asset_path && !api_path {
-                    match NamedFile::open(index) {
-                        Ok(file) => file.into_response(request.request()),
-                        Err(error) => Error::from(error).error_response(),
-                    }
+                    frontend_document(&index, request.request())
                 } else {
                     HttpResponse::NotFound().finish()
                 };
@@ -261,23 +305,18 @@ fn player_frontend(frontend: &Path) -> Files {
 
 fn admin_frontend(frontend: &Path) -> actix_web::Scope {
     let index = frontend.join("admin.html");
-    web::scope("/admin").default_service(web::get().to(move || {
+    web::scope("/admin").default_service(web::get().to(move |request: actix_web::HttpRequest| {
         let index = index.clone();
-        async move {
-            NamedFile::open(index).map(|file| {
-                file.customize()
-                    .insert_header(("Cache-Control", "no-store"))
-            })
-        }
+        async move { Ok::<_, io::Error>(frontend_document(&index, &request)) }
     }))
 }
 
 // Elm owns every route within the tools app, including unknown-page handling.
 fn dev_tools(frontend: &Path) -> actix_web::Scope {
     let index = frontend.join("dev-tools.html");
-    web::scope("/dev").default_service(web::get().to(move || {
+    web::scope("/dev").default_service(web::get().to(move |request: actix_web::HttpRequest| {
         let index = index.clone();
-        async move { NamedFile::open(index) }
+        async move { Ok::<_, io::Error>(frontend_document(&index, &request)) }
     }))
 }
 

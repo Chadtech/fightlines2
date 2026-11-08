@@ -257,98 +257,173 @@ lobbies; the archive files do not restore player sessions. Before replacing the
 binary on a later deployment, stop the service, install the new binary and
 production assets, and start it again. Keep runtime storage in place.
 
-## Deploying updates with the script
+## Deploying updates with draining
 
-[`deploy/deploy.sh`](deploy/deploy.sh) formalizes updates to the existing Droplet.
-Run it on the Mac from this checkout. Its defaults are `root@167.71.23.178` and
-`https://fightlines.167.71.23.178.sslip.io`. It expects the Caddy, systemd, service
-accounts, and production configuration from the first installation to exist.
-It does not provision a new server or change HTTPS or runtime configuration.
-The deployment directory is ignored for new files, so keep a separate backup of
-these local scripts and the recorded host key. A fresh clone retains the three
-already-tracked service/configuration examples but does not receive the local tools.
+The versioned helpers in `tools/deployment/` start a new server alongside older
+releases. Public page URLs remain stable across updates. Caddy serves entry
+pages from the current deployment and resolves `/lobby/<id>` and `/game/<id>`
+to their owning process without redirects. Each document privately pins its API,
+scripts, and assets to its release. A draining process
+admits no new lobbies or queue joins; existing invite lobbies can still join and
+start. An unmatched queue player moves to the current release, while a completed
+pairing remains on its original release.
 
-Start by previewing the steps, without builds, network requests, or server changes:
+A release retires once its registry is empty, including the normal 16-minute
+postgame window, or at its fixed drain deadline. The default maximum drain time
+is **six hours**, configured by `FIGHTLINES_MAX_DRAIN_SECONDS` in
+`/etc/fightlines/deployment-supervisor.env`. Changing this value affects future
+drains only. Requests cannot extend a recorded deadline. The timer checks every
+five seconds, with routing checks bounded to ten seconds; systemd allows up to
+15 seconds per process for shutdown. At the cutoff,
+remaining games/lobbies are lost, while their saved archives remain available.
+Players receive chat reminders at ten minutes, five minutes, one minute, and
+thirty seconds before the cutoff. These use the ordinary chat notifications and
+history, with no persistent countdown banner.
+
+### Local rehearsal
+
+Install Caddy and use the normal Rust/Elm prerequisites plus Python 3.10+ for
+the local rehearsal harness. The harness exercises the compiled Rust supervisor;
+production activation and retirement do not require Python.
 
 ```sh
-./deploy/deploy.sh --dry-run
+make rehearse-deployment
+# With a Caddy binary outside PATH:
+make rehearse-deployment CADDY=/absolute/path/to/caddy
+# Exercise production cookies over local HTTPS without installing a trusted CA:
+python3 -B tools/deployment/rehearse.py --https
+# Interactive two-browser rehearsal:
+python3 -B tools/deployment/rehearse.py --serve
 ```
 
-Prepare and inspect a release locally, without connecting to the Droplet:
+The harness prints a temporary loopback URL and uses isolated release directories,
+storage, Caddy admin port, and test-only Admin credentials. It never contacts the
+Droplet. Interactive mode starts A and prepares B; enter `b` to activate B, `s` to
+run retirement, and `q` to stop and remove the fixture. Admin's password is
+`local-rehearsal-only`. Repeating `b` leaves B in place. Failed control commands
+report the process log path and keep the rehearsal open; use `s` to retry routing
+and retirement. Automatic mode checks canonical links, pinned refreshes
+and assets, stale-tab and unmatched-queue rejection, joining/starting an old
+invite, resolving a turn after cutover, postgame retention, Admin aggregation,
+cross-release recordings, forced retirement, failed-reload port reservation and
+safe reuse, empty-server retirement, and current release continuity. The HTTPS
+client trusts only its temporary test connection; the harness does not install
+certificates into system trust stores.
+
+`make check` includes lifecycle/admission tests, Elm navigation checks, supervisor
+failure/deadline tests, and package filtering checks. Actual systemd execution
+must additionally be rehearsed in a local Linux VM before the first production
+cutover; the macOS harness runs child processes in its place.
+
+### One-time host setup
+
+This setup is separate from deploying code. The legacy single process cannot
+adopt deployment-aware routes while running, so the first migration requires a
+planned reset after its games finish. Future releases use draining. Do not run
+these commands until ready for that initial cutover.
+
+1. Retain the existing Caddy and `fightlines` / `fightlines-build` accounts.
+   On Linux, build the supervisor from this checkout with
+   `cargo build --locked --release --bin fightlines-supervisor` using Rust 1.89+.
+   Keep that native binary and `tools/deployment/` available on the host.
+2. Run `sudo bash tools/deployment/install.sh /path/to/fightlines-supervisor`.
+   This atomically installs the compiled supervisor, activation helper, service
+   template, and retirement timer definitions. It does not change Caddy, stop
+   the legacy service, or enable the timer. From a native checkout build, the
+   binary argument defaults to `target/release/fightlines-supervisor`.
+3. Create `/etc/caddy/fightlines-routes.caddy` containing the existing
+   `reverse_proxy 127.0.0.1:8080`. In the game's existing domain block, replace
+   that proxy line with `import /etc/caddy/fightlines-routes.caddy`. Preserve TLS,
+   the `www` redirect, and other site configuration. Validate and reload Caddy.
+   Keep the routes file readable by Caddy (0644).
+4. Prepare the first new release, schedule the legacy reset, and use the new
+   deployment command below. Once the current release's stable URLs are verified,
+   disable and stop the old `fightlines.service`. It is outside the new registry
+   and cannot be retired automatically.
+5. Confirm `fightlines-retire.timer` is enabled. The deployment helper enables it
+   after activation. Check Admin shows the current release and a fresh heartbeat.
+
+The Rust supervisor is installed at
+`/opt/fightlines/deployment/fightlines-supervisor`. It uses
+`/var/lib/fightlines/deployments/registry.json`, private
+per-release directories, and `/etc/fightlines/deployments/<id>.env`. The template
+launches the exact immutable binary under `/opt/fightlines/releases/<id>` on an
+unused private port from 8100–8999. A stopped process's port stays reserved until
+Caddy confirms removal of its routes. Failed or interrupted reloads retain that
+reservation across supervisor restarts, including for older registry entries
+without a confirmation record. Active instances are enabled for boot;
+retirement disables them. A machine reboot still loses in-memory sessions, but
+restarts the current release and resumes retirement from persisted deadlines.
+These ports remain inaccessible publicly.
+Each release writes only to its own `game-logs`, `feedback`, and `server-logs`.
+Admin reads recordings and feedback from old releases and the legacy directories.
+Do not delete retired runtime directories if you want to retain their data.
+The shared `.session-owners` directory records session-to-release ownership before
+creation completes. Keep these records and the registry when retaining old links:
+retired sessions return 410 and never resolve to a new owner, even when ports are
+reused. Caddy asks the current server's loopback-only `/_routing` endpoint for
+session page routing and blocks public access to that endpoint. Private
+`/_releases/<id>/` URLs are used only for document resources and API requests.
+Supervisor JSON files are readable by the web service inside the private runtime
+directory; they contain no credentials and remain writable only by the supervisor.
+
+### Release command
+
+The tracked command replaces the earlier ignored deployment helpers. The local
+`deploy/deploy.sh` compatibility entry point forwards to it; a fresh checkout
+needs only its private `deploy/known_hosts` file restored separately.
 
 ```sh
-./deploy/deploy.sh --prepare
+bash tools/deployment/deploy.sh --dry-run
+bash tools/deployment/deploy.sh --prepare
+bash tools/deployment/deploy.sh
 ```
 
-Preparation retains its package for inspection. Running the command again without
-a flag prepares a fresh snapshot before publishing.
-
-Publish an update when ready for a restart:
-
-```sh
-./deploy/deploy.sh
-```
-
-The last command **restarts the server and resets active games and lobbies**.
-It does not ask for another confirmation. The check-in workflow and its approval
-remain separate: this script never commits, pushes, or increments `VERSION`.
-It captures saved working-tree changes, including staged and unstaged edits and
-relevant untracked build files. Unsaved editor buffers are not included.
-
-The numbered output follows these steps:
-
-1. `snapshot.cjs` copies Git-listed build inputs into a private temporary directory.
-   It selects the root build manifests, version files, and the `src`, `tests`, `tools`, `public`,
-   `maps`, `dev-tools`, and `deploy` directories. Ignored files, `.env` files,
-   private runtime storage, old reference material, and local build caches are
-   excluded. The five local deployment helpers/key files are explicitly included
-   even though `deploy/` is ignored; other ignored files in that directory stay
-   excluded. Symbolic links are rejected. Add new top-level build inputs to this
-   list when needed. `make check` runs deployment tests when the local test file exists.
-2. The snapshot receives a generated silent replacement for the unlicensed truck
-   audition clip. The original clip is never copied or uploaded. This deliberate
-   substitution remains until licensed audio is supplied and the deployment
-   filtering is updated.
-3. `npm ci`, `make check`, and `make frontend PRODUCTION=true` run inside the
-   snapshot. The local Cargo cache is shared; generated source and frontend files
-   stay inside the snapshot. The frontend therefore uses the Mac's installed Elm
-   compiler. Local prerequisites are Node.js 22+, npm, Rust/Cargo, Elm 0.19.3,
-   `elm-format`, Make, Git, FFmpeg with Vorbis support, tar, and `shasum`.
-4. The checked source, maps, runtime assets, generated frontend, and `RELEASE.json`
-   are packaged together. Packaging disables macOS metadata and excludes `._*`
-   files so Linux does not discover AppleDouble sidecars as maps.
-   The script prints the temporary directory, release ID,
-   archive path, and SHA-256. Preparation files remain available there for inspection;
-   remove the printed temporary directory when no longer needed.
-5. SSH/SCP verify the public host key recorded in `deploy/known_hosts`. The private
-   login key stays on the Mac. Uploads go under
-   `/var/lib/fightlines-build/uploads/<release-id>`. The remote helper checks the
-   archive checksum and takes an exclusive deployment lock before building.
-6. `deploy-remote.sh` unpacks a separate source directory under
-   `/var/lib/fightlines-build/builds/<release-id>`. The `fightlines-build` account
-   runs `cargo build --locked --release` with one build job and the existing cache
-   at `/var/lib/fightlines-build/source/target`. The active server keeps running
-   during this build. No Linux installation of Elm is needed.
-7. Root installs the binary, frontend, and maps into
-   `/opt/fightlines/releases/<release-id>`, stops `fightlines`, switches the three
-   links under `/opt/fightlines`, and starts the service. Backend/public health,
-   the home page, production flag, served frontend checksum, and unavailable `/dev`
-   route are verified. Failure during activation restores the previous links and
-   restarts the previous release. A failed build never stops the running service.
-
-The previous release, uploads, and build directories are retained for inspection
-and rollback; there is no automatic cleanup. Runtime archives and feedback remain
-under `/var/lib/fightlines`, and diagnostics remain under `/var/log/fightlines`.
-Rollback does not recover games lost to a restart. Inspect a failed deployment with
-`ssh root@167.71.23.178`, `systemctl status fightlines`, and
-`journalctl -u fightlines`.
-
+The default destination is the existing Droplet and `https://fightlines.online`.
 `FIGHTLINES_SSH_TARGET`, `FIGHTLINES_PUBLIC_URL`, and `FIGHTLINES_KNOWN_HOSTS`
-override the destination, public HTTPS origin, and host-key file. Verify a new
-server's host key independently before updating the recorded key; the script
-never automatically accepts a replacement. The two remote path overrides
-`FIGHTLINES_INSTALL_DIR` and `FIGHTLINES_BUILD_HOME` support isolated tests of the
-remote helper; ordinary deployments use the installed paths above.
+override the target, origin, and known-hosts file. No command commits, pushes, or
+bumps the application version. Production activation is an explicit operation.
+
+Preparation copies saved tracked and relevant untracked build inputs to a
+private temporary snapshot, excludes secrets/ignored assets, generates the silent
+replacement for the unlicensed truck clip, runs `npm ci`, `make check`, and the
+production frontend build, then packages without macOS metadata. Node.js 22+ is
+required. SSH verifies the recorded host key and uploaded bundle SHA-256. The
+remote helper builds both Rust binaries as `fightlines-build` while live
+processes remain running, installs the immutable game release, atomically updates
+the supervisor binary, then activates the release. The registry,
+status, and drain file formats remain compatible across overlapping releases.
+
+A deployment lock serializes builds/activations, and a separate supervisor lock
+serializes activation with retirement. Failed build/startup checks leave the
+current release untouched. Candidate identities and ports are reserved before
+starting services. The next activation or timer sweep stops an interrupted
+candidate before releasing its port; cleanup failures keep that port reserved.
+Once a routing update may have succeeded, the new
+process is preserved because it could already own sessions; the timer reconciles
+the persisted desired registry. Public health and the served frontend checksum
+are checked after activation. A failure there leaves all admitted sessions alive
+for inspection. Avoid stopping processes as an automatic rollback. Deploy a
+corrected release with a fresh deployment ID; a draining ID cannot be reused or
+made accepting again.
+Activation refuses existing runtime storage or service configuration before changing
+either. Use a fresh deployment ID after an interrupted activation.
+
+Inspect operation with:
+
+```sh
+systemctl list-units 'fightlines@*'
+systemctl status fightlines-retire.timer
+journalctl -u fightlines-retire.service
+journalctl -u 'fightlines@<deployment-id>.service'
+```
+
+Admin shows supervised deployments, accepting/draining state, version, uptime,
+last report, cutoff, and per-release game/lobby/postgame counts. Expand a row to
+see session names/statuses. An Admin page whose own process retires reloads the
+current Admin app and may require signing in again. Missing or stale snapshots remain visibly unavailable;
+they are never treated as zero games for early retirement. Existing dashboard
+summary cards describe the Admin server, rather than totals across deployments.
 
 ## Server diagnostics
 
@@ -421,7 +496,8 @@ has no automatic retention policy.
 Feedback has a server-wide storage budget of **32 MiB and 4,096 entries**.
 Chat has a separate budget of **128 MiB and 32,768 entries**, shared by all lobby
 journals and game chat records. Each conversation also accepts at most **1,000
-messages**, including its lobby history. Existing messages and idempotent chat
+player messages**, including its lobby history, plus up to four shutdown reminders.
+Existing messages and idempotent chat
 retries remain readable/usable at capacity; new writes return `STORAGE_FULL`.
 These limits do not delete records or charge turn snapshots against chat capacity,
 so a full chat budget does not prevent game starts or turn recording.

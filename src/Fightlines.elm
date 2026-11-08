@@ -7,11 +7,13 @@ import ApiRequest
 import Audio
 import Browser
 import Browser.Navigation as Navigation
+import Deployment
 import DevPanel
 import Effect as E
     exposing
         ( Eff
         )
+import Error
 import Fightlines.Flags as Flags
 import Fightlines.MatchMaking.VisitId exposing (VisitId)
 import Fightlines.Page.GameLoadFailed as GameLoadFailed
@@ -32,6 +34,7 @@ import Html.Styled as H
     exposing
         ( Html
         )
+import Html.Styled.Attributes as A
 import Json.Decode as Decode
 import KeyCmd
 import LobbyId
@@ -42,6 +45,7 @@ import LocalStorage exposing (LocalStorage)
 import Ports.Js.From as FromJs
 import Ports.Js.To as ToJs
 import Shared
+import Style as S
 import Subscriptions
 import Time
 import Url
@@ -98,6 +102,8 @@ type Msg
     | ReturnHomeButtonClicked
     | HomeMsg Home.Msg
     | GotSharedMsg Shared.Msg
+    | DeploymentPollTimerElapsed Time.Posix
+    | DeploymentStatusReceived (Response Deployment.Status)
 
 
 
@@ -123,7 +129,7 @@ main =
                 in
                 case getShared newPage of
                     Just shared ->
-                        ( newPage, E.toCmd shared.key eff )
+                        ( newPage, eff |> E.navigation (Deployment.navigation shared.deployment) |> E.toCmd shared.key )
 
                     Nothing ->
                         ( newPage, Cmd.none )
@@ -156,6 +162,7 @@ init value url key =
                         key
             in
             handleRoute shared (Route.fromUrl url)
+                |> E.and (E.request DeploymentStatusReceived Deployment.load)
                 |> E.and (E.audio (Audio.SetMute shared.audioMute))
                 |> E.and (E.audio (Audio.SetVolumes shared.audioVolumes))
 
@@ -397,6 +404,26 @@ withPlaybackAudio before after =
 update : Msg -> Page -> ( Page, Eff Msg )
 update msg page =
     case msg of
+        DeploymentPollTimerElapsed _ ->
+            ( page, E.request DeploymentStatusReceived Deployment.load )
+
+        DeploymentStatusReceived result ->
+            case getShared page of
+                Just shared ->
+                    let
+                        ( deployment, failure ) =
+                            Deployment.receive result shared.deployment
+
+                        updatedShared : Shared.Model
+                        updatedShared =
+                            { shared | deployment = deployment }
+                                |> Shared.addError (Maybe.map Error.DeploymentStatusFailed failure)
+                    in
+                    ( setShared updatedShared page, E.none )
+
+                Nothing ->
+                    ( page, E.none )
+
         ReturnHomeButtonClicked ->
             ( page, Route.pushUrl Route.Home )
 
@@ -417,14 +444,14 @@ update msg page =
             case request of
                 Browser.Internal url ->
                     case Route.fromUrl url of
-                        Just _ ->
-                            ( page, E.pushUrl (Url.toString url) )
+                        Just route ->
+                            ( page, Route.pushUrl route )
 
                         Nothing ->
-                            ( page, E.load (Url.toString url) )
+                            ( page, E.loadUrl (Url.toString url) )
 
                 Browser.External url ->
-                    ( page, E.load url )
+                    ( page, E.loadUrl url )
 
         RouteReceived route ->
             case getShared page of
@@ -472,7 +499,13 @@ update msg page =
                                     |> Tuple.mapSecond (E.map (MatchMakingMsg id))
 
                             Err error ->
-                                ( MatchMakingLoadFailed shared (MatchMaking.fromLoadError error), E.none )
+                                ( MatchMakingLoadFailed shared (MatchMaking.fromLoadError error)
+                                , if ApiRequest.requiresCurrentDeployment error then
+                                    Route.load Route.MatchMaking
+
+                                  else
+                                    E.none
+                                )
 
                     else
                         ( page, E.none )
@@ -845,7 +878,8 @@ subscriptions page =
     [ case getShared page of
         Just shared ->
             Sub.batch
-                [ Shared.subscriptions
+                [ Time.every 10000 DeploymentPollTimerElapsed
+                , Shared.subscriptions
                     |> Sub.map GotSharedMsg
                 , Subscriptions.common
                     { operatingSystem = shared.operatingSystem

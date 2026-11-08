@@ -171,7 +171,7 @@ spritePath pose team frame =
             else
                 ""
     in
-    "/assets/combat-infantry-v1/" ++ poseName pose ++ "-" ++ team ++ suffix ++ ".png"
+    "assets/combat-infantry-v1/" ++ poseName pose ++ "-" ++ team ++ suffix ++ ".png"
 
 
 imagePaths : List String

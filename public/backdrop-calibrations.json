@@ -1,5 +1,5 @@
 {
-  "/assets/combat-backdrops-anime-v1/beach-ocean.png": {
+  "assets/combat-backdrops-anime-v1/beach-ocean.png": {
     "Infantry": {
       "frontFooting": 82.0,
       "rowSpacing": 10.0,
@@ -41,7 +41,7 @@
       "secondTrenchSize": 35.0
     }
   },
-  "/assets/combat-backdrops-anime-v1/depot.png": {
+  "assets/combat-backdrops-anime-v1/depot.png": {
     "Infantry": {
       "frontFooting": 77.0,
       "rowSpacing": 15.0,
@@ -83,7 +83,7 @@
       "secondTrenchSize": 35.0
     }
   },
-  "/assets/combat-backdrops-anime-v1/desert-forest.png": {
+  "assets/combat-backdrops-anime-v1/desert-forest.png": {
     "Infantry": {
       "frontFooting": 79.0,
       "rowSpacing": 9.0,
@@ -125,7 +125,7 @@
       "secondTrenchSize": 35.0
     }
   },
-  "/assets/combat-backdrops-anime-v1/desert-hills.png": {
+  "assets/combat-backdrops-anime-v1/desert-hills.png": {
     "Infantry": {
       "frontFooting": 87.0,
       "rowSpacing": 5.0,
@@ -167,7 +167,7 @@
       "secondTrenchSize": 35.0
     }
   },
-  "/assets/combat-backdrops-anime-v1/desert-mountains.png": {
+  "assets/combat-backdrops-anime-v1/desert-mountains.png": {
     "Infantry": {
       "frontFooting": 84.0,
       "rowSpacing": 7.0,
@@ -209,7 +209,7 @@
       "secondTrenchSize": 35.0
     }
   },
-  "/assets/combat-backdrops-anime-v1/desert-plains.png": {
+  "assets/combat-backdrops-anime-v1/desert-plains.png": {
     "Infantry": {
       "frontFooting": 80.0,
       "rowSpacing": 14.0,
@@ -251,7 +251,7 @@
       "secondTrenchSize": 35.0
     }
   },
-  "/assets/combat-backdrops-anime-v1/forest.png": {
+  "assets/combat-backdrops-anime-v1/forest.png": {
     "Infantry": {
       "frontFooting": 84.0,
       "rowSpacing": 12.0,
@@ -293,7 +293,7 @@
       "secondTrenchSize": 35.0
     }
   },
-  "/assets/combat-backdrops-anime-v1/fortress.png": {
+  "assets/combat-backdrops-anime-v1/fortress.png": {
     "Infantry": {
       "frontFooting": 77.0,
       "rowSpacing": 14.0,
@@ -335,7 +335,7 @@
       "secondTrenchSize": 35.0
     }
   },
-  "/assets/combat-backdrops-anime-v1/hills.png": {
+  "assets/combat-backdrops-anime-v1/hills.png": {
     "Infantry": {
       "frontFooting": 82.0,
       "rowSpacing": 6.0,
@@ -377,7 +377,7 @@
       "secondTrenchSize": 35.0
     }
   },
-  "/assets/combat-backdrops-anime-v1/mountains.png": {
+  "assets/combat-backdrops-anime-v1/mountains.png": {
     "Infantry": {
       "frontFooting": 83.0,
       "rowSpacing": 6.0,
@@ -419,7 +419,7 @@
       "secondTrenchSize": 35.0
     }
   },
-  "/assets/combat-backdrops-anime-v1/plains.png": {
+  "assets/combat-backdrops-anime-v1/plains.png": {
     "Infantry": {
       "frontFooting": 81.0,
       "rowSpacing": 15.0,
@@ -461,7 +461,7 @@
       "secondTrenchSize": 35.0
     }
   },
-  "/assets/combat-backdrops-anime-v1/road.png": {
+  "assets/combat-backdrops-anime-v1/road.png": {
     "Infantry": {
       "frontFooting": 75.0,
       "rowSpacing": 13.0,
@@ -503,7 +503,7 @@
       "secondTrenchSize": 35.0
     }
   },
-  "/assets/combat-backdrops-anime-v1/snowy-depot.png": {
+  "assets/combat-backdrops-anime-v1/snowy-depot.png": {
     "Infantry": {
       "frontFooting": 77.0,
       "rowSpacing": 15.0,
@@ -545,7 +545,7 @@
       "secondTrenchSize": 35.0
     }
   },
-  "/assets/combat-backdrops-anime-v1/snowy-forest.png": {
+  "assets/combat-backdrops-anime-v1/snowy-forest.png": {
     "Infantry": {
       "frontFooting": 84.0,
       "rowSpacing": 11.0,
@@ -587,7 +587,7 @@
       "secondTrenchSize": 35.0
     }
   },
-  "/assets/combat-backdrops-anime-v1/snowy-fortress.png": {
+  "assets/combat-backdrops-anime-v1/snowy-fortress.png": {
     "Infantry": {
       "frontFooting": 76.0,
       "rowSpacing": 13.0,
@@ -629,7 +629,7 @@
       "secondTrenchSize": 35.0
     }
   },
-  "/assets/combat-backdrops-anime-v1/snowy-hills.png": {
+  "assets/combat-backdrops-anime-v1/snowy-hills.png": {
     "Infantry": {
       "frontFooting": 85.0,
       "rowSpacing": 6.0,
@@ -671,7 +671,7 @@
       "secondTrenchSize": 35.0
     }
   },
-  "/assets/combat-backdrops-anime-v1/snowy-mountains.png": {
+  "assets/combat-backdrops-anime-v1/snowy-mountains.png": {
     "Infantry": {
       "frontFooting": 82.0,
       "rowSpacing": 6.0,
@@ -713,7 +713,7 @@
       "secondTrenchSize": 35.0
     }
   },
-  "/assets/combat-backdrops-anime-v1/snowy-road.png": {
+  "assets/combat-backdrops-anime-v1/snowy-road.png": {
     "Infantry": {
       "frontFooting": 75.0,
       "rowSpacing": 13.0,
@@ -755,7 +755,7 @@
       "secondTrenchSize": 35.0
     }
   },
-  "/assets/combat-backdrops-anime-v1/tundra-plains.png": {
+  "assets/combat-backdrops-anime-v1/tundra-plains.png": {
     "Infantry": {
       "frontFooting": 79.0,
       "rowSpacing": 14.0,

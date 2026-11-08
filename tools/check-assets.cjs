@@ -94,8 +94,8 @@ test('images load and decode in the background, retrying a transient failure', a
     async decode() { decodes += 1; }
   }
   const { loader, warnings } = boot({}, Image);
-  assert.equal(loader.preloadImages(['/assets/example.png']), undefined, 'preloading never waits for readiness');
-  await loader.load('image /assets/example.png', () => assert.fail('duplicate image'));
+  assert.equal(loader.preloadImages(['assets/example.png']), undefined, 'preloading never waits for readiness');
+  await loader.load('image assets/example.png', () => assert.fail('duplicate image'));
   assert.equal(images.length, 2);
   assert.equal(decodes, 1);
   assert.equal(images[1].fetchPriority, 'low');
@@ -114,9 +114,9 @@ test('hung image decoding can recover without blocking other images', async () =
     decode() { return this.index === 1 ? new Promise(() => {}) : Promise.resolve(); }
   }
   const { loader } = boot({ concurrency: 1, timeoutMs: 5 }, Image);
-  loader.preloadImages(['/assets/first.png', '/assets/second.png']);
-  await loader.load('image /assets/second.png', () => assert.fail('duplicate image'));
-  await loader.load('image /assets/first.png', () => assert.fail('duplicate image'));
+  loader.preloadImages(['assets/first.png', 'assets/second.png']);
+  await loader.load('image assets/second.png', () => assert.fail('duplicate image'));
+  await loader.load('image assets/first.png', () => assert.fail('duplicate image'));
   assert.equal(images.length, 3);
   assert.equal(images[0].path, '', 'timed-out image is detached');
 });
@@ -133,17 +133,17 @@ test('every theme catalog names existing runtime assets and excludes other theme
     for (const { paths } of catalogs) {
       assert.equal(paths.length, new Set(paths).size, 'catalog contains no duplicate URLs');
       for (const path of paths) {
-        assert.ok(path.startsWith('/assets/'));
-        assert.ok(statSync(`public${path}`).isFile(), `missing ${path}`);
+        assert.ok(path.startsWith('assets/'), `asset URL must be document-relative: ${path}`);
+        assert.ok(statSync(join('public', path)).isFile(), `missing ${path}`);
         assert.ok(!path.includes('pack-horse'), 'unintegrated artwork is excluded');
       }
-      assert.ok(paths.includes('/assets/units_illustrated-v4.png'));
-      assert.ok(paths.includes('/assets/tank-firing-drawn-v6/red.png'));
-      const snow = paths.includes('/assets/terrain-snow-plains-illustrated-v1.png');
-      assert.equal(paths.includes('/assets/combat-backdrops-anime-v1/snowy-forest.png'), snow);
-      const desert = paths.includes('/assets/terrain-desert.svg');
-      assert.equal(paths.includes('/assets/combat-backdrops-anime-v1/desert-forest.png'), desert);
-      assert.equal(paths.includes('/assets/combat-backdrops-anime-v1/forest.png'), !snow && !desert);
+      assert.ok(paths.includes('assets/units_illustrated-v4.png'));
+      assert.ok(paths.includes('assets/tank-firing-drawn-v6/red.png'));
+      const snow = paths.includes('assets/terrain-snow-plains-illustrated-v1.png');
+      assert.equal(paths.includes('assets/combat-backdrops-anime-v1/snowy-forest.png'), snow);
+      const desert = paths.includes('assets/terrain-desert.svg');
+      assert.equal(paths.includes('assets/combat-backdrops-anime-v1/desert-forest.png'), desert);
+      assert.equal(paths.includes('assets/combat-backdrops-anime-v1/forest.png'), !snow && !desert);
     }
   } finally {
     rmSync(directory, { recursive: true, force: true });

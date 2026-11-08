@@ -71,7 +71,7 @@ sectionTitle section =
 
 aboutPhotoSource : String
 aboutPhotoSource =
-    "/assets/creator-portrait.jpg"
+    "assets/creator-portrait.jpg"
 
 
 aboutPhotoCaption : String

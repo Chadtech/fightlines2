@@ -43,7 +43,7 @@ check: app-version combat-theater-calibrations
 	elm-format src --validate
 	node --test tools/check-app-version.cjs
 	node --test tools/check-combat-theater-calibrations.cjs
-	@if [ -f deploy/check-deploy.cjs ]; then node --test deploy/check-deploy.cjs; fi
+	node --test tools/deployment/check-package.cjs
 	node tools/check-movement.cjs
 	node tools/check-shoreline.cjs
 	node tools/check-roads.cjs
@@ -51,6 +51,7 @@ check: app-version combat-theater-calibrations
 	node tools/check-orders.cjs
 	node tools/check-lifecycle.cjs
 	node tools/check-replay.cjs
+	node tools/check-deployment.cjs
 	node tools/check-admin.cjs
 	node tools/check-chat.cjs
 	node tools/check-combat-chart.cjs
@@ -76,3 +77,9 @@ editor: frontend
 
 logs: frontend
 	cargo run --locked -p fightlines-server -- --game-logs
+
+
+.PHONY: rehearse-deployment
+rehearse-deployment: frontend
+	cargo build --locked
+	python3 -B tools/deployment/rehearse.py $(if $(CADDY),--caddy $(CADDY))

@@ -312,4 +312,4 @@ sabotageOrders depots unit =
 
 image : Order -> String
 image order =
-    "/assets/orders-anime-v1/" ++ assetName order ++ ".png"
+    "assets/orders-anime-v1/" ++ assetName order ++ ".png"

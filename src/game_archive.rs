@@ -68,7 +68,17 @@ impl ArchiveId {
     }
 
     fn read(&self, browser: &Browser) -> io::Result<Archive> {
-        let path = browser.directory.join(&self.0);
+        let mut candidates = Vec::new();
+        for root in crate::deployment::storage_roots(&browser.directory, "game-logs")? {
+            let path = root.join(&self.0);
+            if path.exists() {
+                candidates.push(path);
+            }
+        }
+        if candidates.len() != 1 {
+            return Err(io::Error::other("recorded game is missing or ambiguous"));
+        }
+        let path = candidates.remove(0);
         // Operator-controlled archives still must not follow links outside the root.
         if fs::symlink_metadata(&path)?.file_type().is_symlink() {
             return Err(io::Error::other(
@@ -207,15 +217,17 @@ impl LoggedGameEntry {
 
 fn read_archive_ids(browser: &Browser) -> io::Result<Vec<ArchiveId>> {
     let mut ids = Vec::new();
-    for entry in fs::read_dir(&browser.directory)? {
-        let entry = entry?;
-        if !entry.file_type()?.is_dir() {
-            continue;
-        }
-        if let Some(name) = entry.file_name().to_str()
-            && let Ok(id) = ArchiveId::parse(name.to_owned())
-        {
-            ids.push(id);
+    for root in crate::deployment::storage_roots(&browser.directory, "game-logs")? {
+        for entry in fs::read_dir(root)? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+            if let Some(name) = entry.file_name().to_str()
+                && let Ok(id) = ArchiveId::parse(name.to_owned())
+            {
+                ids.push(id);
+            }
         }
     }
     // Archive basenames end in the start timestamp, independent of the game id.

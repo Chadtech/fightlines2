@@ -2,6 +2,12 @@
 name = "fightlines-server"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.89"
+default-run = "fightlines-server"
+
+[[bin]]
+name = "fightlines-supervisor"
+path = "src/supervisor/main.rs"
 
 [workspace]
 exclude = ["old"]
@@ -21,3 +27,4 @@ serde_json = "1"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["json"] }
+libc = "0.2"

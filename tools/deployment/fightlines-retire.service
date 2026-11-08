@@ -1,0 +1,10 @@
+[Unit]
+Description=Retire drained FightLines deployments
+After=caddy.service
+
+[Service]
+Type=oneshot
+TimeoutStartSec=120
+EnvironmentFile=/etc/fightlines/deployment-supervisor.env
+ExecStart=/opt/fightlines/deployment/fightlines-supervisor --root /var/lib/fightlines/deployments --routes /etc/caddy/fightlines-routes.caddy --caddy-config /etc/caddy/Caddyfile --max-drain-seconds ${FIGHTLINES_MAX_DRAIN_SECONDS} sweep
+UMask=0077

@@ -116,7 +116,7 @@ at runtime, so new scenarios require no application rebuild.
 
 ## Run locally
 
-Requires Rust/Cargo with edition 2024 support, Elm 0.19.3, Node.js 22+, npm,
+Requires Rust/Cargo 1.89+, Elm 0.19.3, Node.js 22+, npm,
 and Make. Install `elm-format` for development checks.
 
 ```sh
@@ -142,7 +142,9 @@ player. Use separate browser profiles when testing both sides on one machine.
 
 **Current status:** playable prototype under active development. Active games and
 lobbies live in memory and reset when the server restarts; recorded archives
-remain on disk. See [deployment](DEPLOYMENT.md) for hosting and tool-access details.
+remain on disk. Planned updates can keep existing server processes running until
+their sessions drain; see [deployment](DEPLOYMENT.md) for the local rehearsal,
+hosting setup, and tool-access details.
 
 ## Documentation
 

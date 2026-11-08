@@ -13,6 +13,7 @@ module Game.Chat exposing
     , expire
     , followsHistory
     , hasNewIncoming
+    , hide
     , historyOpened
     , historyVisible
     , init
@@ -211,6 +212,18 @@ open model =
                         }
                 , historyScroll = FollowingLatest
             }
+
+
+{-| Hide the composer while retaining its draft and delivery state for reopening.
+-}
+hide : Model -> Model
+hide model =
+    case model.panel of
+        Composing composer ->
+            { model | panel = Background composer }
+
+        _ ->
+            model
 
 
 close : Model -> Model
