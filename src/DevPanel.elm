@@ -6,16 +6,20 @@ module DevPanel exposing
     , dialog
     , htmlId
     , init
+    , tabHtmlId
     )
 
 import AppVersion
+import Features exposing (Feature)
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
-import Html.Styled.Events as Ev
+import NonEmptyList
 import Style as S
 import View.Aria as Aria
 import View.Button as Button
+import View.Checkbox as Checkbox
 import View.Dialog as Dialog exposing (Dialog)
+import View.Tabs as Tabs
 
 
 
@@ -31,6 +35,7 @@ type alias Model =
 
 type Tab
     = ErrorsTab
+    | FeaturesTab
 
 
 type Error
@@ -43,7 +48,9 @@ type Error
 type Msg
     = Canceled
     | TabClicked Tab
+    | TabNavigationPressed Tab
     | TestErrorButtonClicked
+    | FeatureCheckboxChanged Feature Bool
 
 
 htmlId : String
@@ -58,7 +65,7 @@ errorsTabHtmlId =
 
 errorsPanelHtmlId : String
 errorsPanelHtmlId =
-    "dev-panel-errors-panel"
+    errorsTabHtmlId ++ "-panel"
 
 
 
@@ -80,8 +87,8 @@ init =
 
 {-| Errors are presentation data supplied by the caller, independent of Shared.
 -}
-dialog : List Error -> Model -> Dialog Msg
-dialog errors model =
+dialog : List Error -> Features.Model -> Model -> Dialog Msg
+dialog errors features model =
     Dialog.make htmlId
         "dev panel"
         Canceled
@@ -100,7 +107,7 @@ dialog errors model =
                 ]
             ]
             [ tabs errors model.selectedTab
-            , tabContent errors model.selectedTab
+            , tabContent errors features model.selectedTab
             ]
         ]
         |> Dialog.workspace
@@ -109,52 +116,84 @@ dialog errors model =
 
 tabs : List Error -> Tab -> Html Msg
 tabs errors selectedTab =
-    H.nav
-        [ A.attribute "role" "tablist"
-        , A.attribute "aria-orientation" "vertical"
-        , Aria.label "dev panel sections"
-        ]
-        [ H.button
-            [ A.id errorsTabHtmlId
-            , A.type_ "button"
-            , A.attribute "role" "tab"
-            , A.attribute "aria-selected" (selectedTabText selectedTab)
-            , A.attribute "aria-controls" errorsPanelHtmlId
-            , Ev.onClick (TabClicked ErrorsTab)
-            , A.css
-                [ S.row
-                , S.itemsCenter
-                , S.justifySpaceBetween
-                , S.g2
-                , S.wFull
-                , S.p2
-                , S.bgNightwood3
-                , S.textYellow5
-                , S.indentStrong
+    Tabs.new
+        { label = "dev panel sections"
+        , selected = selectedTab
+        , options =
+            NonEmptyList.fromCons
+                { value = ErrorsTab
+                , label = "errors (" ++ String.fromInt (List.length errors) ++ ")"
+                }
+                [ { value = FeaturesTab
+                  , label = "features"
+                  }
                 ]
-            ]
-            [ H.text "errors"
-            , H.span
-                [ A.css
-                    [ S.textGray4 ]
-                ]
-                [ H.text (String.fromInt (List.length errors)) ]
-            ]
-        ]
+        , htmlId = tabHtmlId
+        , onClick = TabClicked
+        , onNavigate = TabNavigationPressed
+        }
+        |> Tabs.toHtml
 
 
-selectedTabText : Tab -> String
-selectedTabText tab =
+tabHtmlId : Tab -> String
+tabHtmlId tab =
     case tab of
         ErrorsTab ->
-            "true"
+            errorsTabHtmlId
+
+        FeaturesTab ->
+            "dev-panel-features-tab"
 
 
-tabContent : List Error -> Tab -> Html Msg
-tabContent errors tab =
+panelHtmlId : Tab -> String
+panelHtmlId tab =
+    tabHtmlId tab ++ "-panel"
+
+
+tabContent : List Error -> Features.Model -> Tab -> Html Msg
+tabContent errors features tab =
     case tab of
         ErrorsTab ->
             errorsView errors
+
+        FeaturesTab ->
+            featuresView features
+
+
+featuresView : Features.Model -> Html Msg
+featuresView features =
+    H.section
+        [ A.id (panelHtmlId FeaturesTab)
+        , A.attribute "role" "tabpanel"
+        , Aria.labelledBy (tabHtmlId FeaturesTab)
+        , A.css
+            [ S.col
+            , S.g3
+            , S.minW0
+            , S.overflowAuto
+            ]
+        ]
+        [ H.p
+            []
+            [ H.text "features saved on this device" ]
+        , H.div
+            [ A.css
+                [ S.col
+                , S.g3
+                ]
+            ]
+            (List.map (featureCheckbox features) Features.all)
+        ]
+
+
+featureCheckbox : Features.Model -> Feature -> Html Msg
+featureCheckbox features feature =
+    Checkbox.new
+        { label = Features.label feature
+        , checked = Features.enabled feature features
+        , onCheck = FeatureCheckboxChanged feature
+        }
+        |> Checkbox.toHtml [ H.text (Features.label feature) ]
 
 
 errorsView : List Error -> Html Msg

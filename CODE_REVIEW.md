@@ -64,9 +64,13 @@ compiler success do not establish that these checks pass.
 - [ ] Conditional markup and list fragments are typed named values before view
   composition. Do not append inline `if`/`case` expressions or construct and
   concatenate anonymous list fragments inside markup.
-- [ ] Exposing lists, records, record updates, markup, attributes, styles,
-  children, and component pipelines follow the vertical layout in `CODE_STYLE`.
-  Long signatures and calls are arranged vertically for readability.
+- [ ] Function calls and type signatures use a soft 64-character limit,
+  including indentation. Keep readable short forms compact; expand arguments or
+  argument types vertically when a line exceeds that limit where possible.
+  Do not expand short calls just because they have multiple arguments, or force
+  awkward splits of literals and language/formatter-required forms.
+- [ ] Tuple members, record fields/updates, list entries, markup attributes and
+  children, and pipeline steps follow the vertical layout in `CODE_STYLE`.
 - [ ] Use the established section separators. Helpers precede updates;
   subscriptions are at the bottom. Public domain operations belong in an
   `API` section where appropriate. Elm doc comments use `{-| ... -}`.

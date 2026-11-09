@@ -3,6 +3,8 @@ module Game.View.TurnControls exposing
     , Msg(..)
     , SurrenderState(..)
     , feedback
+    , headerSubmit
+    , headerSurrender
     , htmlId
     , panel
     , playerRow
@@ -112,26 +114,45 @@ panelView kind children =
         children
 
 
+submitButton : Activity -> String -> Button.Button Msg
+submitButton activity label =
+    case activity of
+        Planning ->
+            Button.primary label SubmitClicked
+                |> Button.attention
+
+        Ready ->
+            Button.primary label SubmitClicked
+                |> Button.attention
+
+        Waiting ->
+            Button.disabled label
+                |> Button.highlighted
+
+        _ ->
+            Button.disabled label
+
+
+headerSubmit : Activity -> String -> Html Msg
+headerSubmit activity label =
+    submitButton activity label
+        |> Button.small
+        |> Button.toHtml
+
+
+headerSurrender : SurrenderState -> Html Msg
+headerSurrender state =
+    surrenderButton state
+        |> Button.small
+        |> Button.toHtml
+
+
 submit : Activity -> String -> Html Msg
 submit activity label =
     let
         button : Button.Button Msg
         button =
-            case activity of
-                Planning ->
-                    Button.primary label SubmitClicked
-                        |> Button.attention
-
-                Ready ->
-                    Button.primary label SubmitClicked
-                        |> Button.attention
-
-                Waiting ->
-                    Button.disabled label
-                        |> Button.highlighted
-
-                _ ->
-                    Button.disabled label
+            submitButton activity label
     in
     H.div
         [ A.css
@@ -153,8 +174,8 @@ submit activity label =
         ]
 
 
-surrender : SurrenderState -> Html Msg
-surrender state =
+surrenderButton : SurrenderState -> Button.Button Msg
+surrenderButton state =
     let
         button : Button.Button Msg
         button =
@@ -170,6 +191,11 @@ surrender state =
     in
     button
         |> Button.withHtmlId surrenderButtonHtmlId
+
+
+surrender : SurrenderState -> Html Msg
+surrender state =
+    surrenderButton state
         |> Button.toHtml
 
 

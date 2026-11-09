@@ -42,6 +42,12 @@ checks url key =
                     Encode.object
                         [ ( "now", Encode.int 1700000000000 )
                         , ( "seed", Encode.int 17 )
+                        , ( "screenSize"
+                          , Encode.object
+                                [ ( "width", Encode.int 1280 )
+                                , ( "height", Encode.int 800 )
+                                ]
+                          )
                         , ( "operatingSystem", Encode.string "unknown" )
                         , ( "localStorage", Encode.object [] )
                         ]

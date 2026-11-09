@@ -31,7 +31,11 @@ function boot(initial, { readFails = false, writeFails = false, randomSample = 0
   const entryFile = entryPoint === 'Fightlines' ? 'public/main.js' : 'dev-tools/main.js';
   const source = readFileSync('public/asset-loader.js', 'utf8') + '\n' + readFileSync('public/audio-manager.js', 'utf8') + '\n' + interopSource + '\n' + readFileSync(entryFile, 'utf8');
   vm.runInNewContext(source, {
-    FIGHTLINES_BUILD: build,
+    window: {
+      FIGHTLINES_BUILD: build,
+      innerWidth: 852,
+      innerHeight: 393,
+    },
     AbortController, setTimeout, clearTimeout,
     Image: class {
       set src(path) {
@@ -76,6 +80,8 @@ async function checkInterop() {
       const flags = boot(undefined, { build: { isProduction }, entryPoint, now: initialTime }).flags;
       assert.equal(flags.isProduction, isProduction);
       assert.equal(flags.now, initialTime, 'both apps receive their initial time from JavaScript');
+      assert.deepEqual(JSON.parse(JSON.stringify(flags.screenSize)), { width: 852, height: 393 },
+        'startup flags carry the actual browser viewport dimensions');
     }
   }
   assert.equal(boot(undefined).flags.isProduction, undefined);

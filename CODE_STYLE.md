@@ -7,6 +7,13 @@ prototype; do not update it unless the task explicitly requires that.
 ## General
 
 - Follow the surrounding code and keep changes focused on the requested behavior.
+- Prefer vertical structure for tuples, records/updates, lists, pipelines, and
+  UI markup. For function calls and type signatures, use a soft limit of 64
+  characters, including indentation: keep readable short forms compact, and go
+  vertical when they exceed that limit where the language and formatter permit.
+  This is a readability guide, not a hard limit requiring awkward splits of
+  literals or language-required forms. Apply it to changed code without
+  reformatting unrelated code.
 - Use concrete domain names and small functions with clear responsibilities.
 - Represent distinct concepts with named types rather than interchangeable
   strings, booleans, or positional tuples. Ordinary update/effect pairs are fine.
@@ -55,6 +62,31 @@ prototype; do not update it unless the task explicitly requires that.
 - Use `elm-format`. Write multiline exposing lists, imports with exposing lists,
   record definitions, and record updates with one entry per line, following the
   existing layout. A single exported entry may remain inline.
+- Keep function calls and type signatures on one line when they fit within
+  64 characters. Beyond that soft limit, put arguments or argument types on
+  separate lines below the function or signature name where possible. Avoid
+  expanding short calls solely because they have multiple arguments.
+- Keep tuple values and tuple types vertical, with one member per line. Keep
+  Elm definition heads in the form required by `elm-format`.
+
+  ```elm
+  chooseOrder map unit destination
+
+  OrderPlanning.selectUnit
+      map
+      units
+      playerNumbers
+      movementRules
+      supplyCrates
+      depots
+      unitId
+      planning
+
+  ( updatedModel
+  , effect
+  )
+  ```
+
 - Give every top-level declaration and named local binding a type annotation,
   including functions, lists, booleans, decoders, and intermediate results.
 - Use the established aliases: `Html.Styled as H`, attributes as `A`, events as

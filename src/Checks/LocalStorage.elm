@@ -1,8 +1,10 @@
 port module Checks.LocalStorage exposing (main)
 
+import Admin.Flags as AdminFlags
 import Audio
 import DevTools.Flags as DevToolsFlags
 import Error exposing (Error(..))
+import Features
 import Fightlines.Flags as PlayerFlags
 import Fightlines.UserName as UserName
 import Json.Decode as JD
@@ -10,6 +12,7 @@ import Json.Encode as Encode
 import LocalStorage
 import Platform
 import Preference
+import ScreenSize exposing (ScreenSize)
 import Time
 
 
@@ -19,7 +22,7 @@ port results : List String -> Cmd msg
 main : Program () () Never
 main =
     Platform.worker
-        { init = \_ -> ( (), results (checks ++ clockFlagChecks) )
+        { init = \_ -> ( (), results (checks ++ featureChecks ++ clockFlagChecks ++ screenSizeFlagChecks) )
         , update = \_ model -> ( model, Cmd.none )
         , subscriptions = \_ -> Sub.none
         }
@@ -221,6 +224,12 @@ clockFlagChecks =
         commonFlags : List ( String, Encode.Value )
         commonFlags =
             [ ( "isProduction", Encode.bool False )
+            , ( "screenSize"
+              , Encode.object
+                    [ ( "width", Encode.int 1280 )
+                    , ( "height", Encode.int 800 )
+                    ]
+              )
             , ( "operatingSystem", Encode.string "test" )
             , ( "localStorage", Encode.object [] )
             , ( "seed", Encode.int 42 )
@@ -260,3 +269,175 @@ clockFlagChecks =
 
     else
         [ "both applications must decode the required JavaScript startup clock" ]
+
+
+screenSizeFlagChecks : List String
+screenSizeFlagChecks =
+    let
+        baseFields : List ( String, Encode.Value )
+        baseFields =
+            [ ( "now"
+              , Encode.int 1700000000123
+              )
+            , ( "isProduction"
+              , Encode.bool False
+              )
+            , ( "operatingSystem"
+              , Encode.string "test"
+              )
+            , ( "localStorage"
+              , Encode.object []
+              )
+            , ( "seed"
+              , Encode.int 42
+              )
+            ]
+
+        withSize : Encode.Value -> Encode.Value
+        withSize size =
+            Encode.object
+                (( "screenSize"
+                 , size
+                 )
+                    :: baseFields
+                )
+
+        validFlags : Encode.Value
+        validFlags =
+            withSize
+                (Encode.object
+                    [ ( "width"
+                      , Encode.int 852
+                      )
+                    , ( "height"
+                      , Encode.int 393
+                      )
+                    ]
+                )
+
+        invalidFlags : List Encode.Value
+        invalidFlags =
+            [ Encode.object baseFields
+            , withSize Encode.null
+            , withSize (Encode.object [])
+            , withSize
+                (Encode.object
+                    [ ( "width"
+                      , Encode.int 852
+                      )
+                    ]
+                )
+            , withSize
+                (Encode.object
+                    [ ( "width"
+                      , Encode.string "852"
+                      )
+                    , ( "height"
+                      , Encode.int 393
+                      )
+                    ]
+                )
+            ]
+
+        expected : ScreenSize
+        expected =
+            { width = 852
+            , height = 393
+            }
+
+        validDecoder : JD.Decoder ScreenSize -> Bool
+        validDecoder decoder =
+            let
+                rejectsInvalid : Encode.Value -> Bool
+                rejectsInvalid flags =
+                    case JD.decodeValue decoder flags of
+                        Err _ ->
+                            True
+
+                        Ok _ ->
+                            False
+            in
+            (JD.decodeValue decoder validFlags == Ok expected)
+                && List.all
+                    rejectsInvalid
+                    invalidFlags
+
+        decoders : List (JD.Decoder ScreenSize)
+        decoders =
+            [ JD.map .screenSize PlayerFlags.decoder
+            , JD.map .screenSize DevToolsFlags.decoder
+            , JD.map .screenSize AdminFlags.decoder
+            ]
+    in
+    if List.all validDecoder decoders then
+        []
+
+    else
+        [ "all applications must require a complete numeric screen size in startup flags" ]
+
+
+featureChecks : List String
+featureChecks =
+    let
+        load : String -> Result JD.Error ( Features.Model, Maybe Error )
+        load json =
+            JD.decodeString LocalStorage.decoder json
+                |> Result.map Features.init
+
+        off : Features.Model
+        off =
+            { enabled = [] }
+
+        on : Features.Model
+        on =
+            Features.setEnabled Features.MobileLandscape True off
+
+        entry : { key : String, value : Encode.Value }
+        entry =
+            Features.encodePreference on
+
+        roundTrip : Bool
+        roundTrip =
+            Encode.object [ ( entry.key, entry.value ) ]
+                |> JD.decodeValue LocalStorage.decoder
+                |> Result.map Features.init
+                |> (==) (Ok ( on, Nothing ))
+
+        invalid : String -> Bool
+        invalid json =
+            case load json of
+                Ok ( model, Just (LocalStorageDecodeFailed details) ) ->
+                    (model == off) && (details.key == "features")
+
+                _ ->
+                    False
+
+        check : String -> Bool -> List String
+        check description passes =
+            if passes then
+                []
+
+            else
+                [ description ]
+    in
+    List.concat
+        [ check "features default to disabled" (load "{}" == Ok ( off, Nothing ))
+        , check "saved mobile feature is restored"
+            (load "{\"features\":[\"mobileLandscape\"]}" == Ok ( on, Nothing ))
+        , check "empty feature list disables mobile view"
+            (load "{\"features\":[]}" == Ok ( off, Nothing ))
+        , check "feature storage round trips" roundTrip
+        , check "feature enabling checks list membership"
+            (Features.enabled Features.MobileLandscape on)
+        , check "enabling a feature twice adds no duplicate"
+            (Features.setEnabled Features.MobileLandscape True on == on)
+        , check "disabling removes the feature"
+            (Features.setEnabled Features.MobileLandscape False on == off)
+        , check "invalid feature lists retain a diagnostic"
+            (List.all invalid
+                [ "{\"features\":true}"
+                , "{\"features\":[42]}"
+                , "{\"features\":[\"unknown\"]}"
+                ]
+            )
+        ]

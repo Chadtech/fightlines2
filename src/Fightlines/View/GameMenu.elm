@@ -31,7 +31,6 @@ type Msg
     | SettingsClicked
     | FeedbackClicked
     | AboutClicked
-    | PrivacyPolicyClicked
     | CloseClicked
     | FocusReturned (Result Browser.Dom.Error ())
     | ResignationConfirmed
@@ -168,9 +167,6 @@ dialog config =
             |> Button.fullWidth
             |> Button.toHtml
         , Button.secondary "about" AboutClicked
-            |> Button.fullWidth
-            |> Button.toHtml
-        , Button.secondary "privacy policy" PrivacyPolicyClicked
             |> Button.fullWidth
             |> Button.toHtml
         , homeButton

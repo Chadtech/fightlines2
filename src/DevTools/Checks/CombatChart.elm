@@ -41,7 +41,22 @@ main =
 
 initialize : () -> Url.Url -> Navigation.Key -> ( (), Cmd () )
 initialize _ url key =
-    ( (), results (checks (Shared.init (Time.millisToPosix 1700000000000) (Random.initialSeed 17) OperatingSystem.Unknown LocalStorage.test url key)) )
+    ( ()
+    , results
+        (checks
+            (Shared.init
+                (Time.millisToPosix 1700000000000)
+                (Random.initialSeed 17)
+                OperatingSystem.Unknown
+                { width = 1280
+                , height = 800
+                }
+                LocalStorage.test
+                url
+                key
+            )
+        )
+    )
 
 
 view : () -> Browser.Document ()

@@ -65,7 +65,18 @@ main =
             \_ url key ->
                 let
                     ( failures, effect ) =
-                        checks (Shared.init (Time.millisToPosix 1700000000000) (Random.initialSeed 0) OperatingSystem.Unknown LocalStorage.test url key)
+                        checks
+                            (Shared.init
+                                (Time.millisToPosix 1700000000000)
+                                (Random.initialSeed 0)
+                                OperatingSystem.Unknown
+                                { width = 1280
+                                , height = 800
+                                }
+                                LocalStorage.test
+                                url
+                                key
+                            )
                 in
                 ( (), Cmd.batch [ results failures, E.toCmd key effect ] )
         , update = \_ model -> ( model, Cmd.none )

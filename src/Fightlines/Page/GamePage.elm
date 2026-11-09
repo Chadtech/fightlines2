@@ -9,6 +9,7 @@ module Fightlines.Page.GamePage exposing
     , keyCommands
     , load
     , movingUnits
+    , refreshLayout
     , renewInactivityTimer
     , setDepots
     , setShared
@@ -47,9 +48,9 @@ import Fightlines.Route as Route
 import Fightlines.View.About as About
 import Fightlines.View.Feedback as FeedbackView
 import Fightlines.View.GameMenu as GameMenu
+import Fightlines.View.MobileBattlefield as MobileBattlefield
 import Fightlines.View.OrderGuide as OrderGuide
 import Fightlines.View.OrderMenu as OrderMenu
-import Fightlines.View.PrivacyPolicy as PrivacyPolicy
 import Fightlines.View.Settings as Settings
 import Fightlines.View.TurnIntroduction as TurnIntroduction
 import Fightlines.View.UnloadPassenger as UnloadPassenger
@@ -191,6 +192,7 @@ type alias Model =
     , menu : Menu
     , inspectionHelp : Maybe InspectionHelp.Help
     , unitStats : List UnitStats
+    , mobileTab : MobileBattlefield.Tab
     }
 
 
@@ -221,10 +223,10 @@ type alias PollStatus =
 type Menu
     = MenuClosed
     | MainMenu
+    | MobileOrdersHelp
     | ConfirmingResignation ResignationDestination
     | FeedbackMenu
     | AboutMenu
-    | PrivacyPolicyMenu
     | SettingsMenu Settings.Tab
 
 
@@ -265,6 +267,7 @@ type Msg
     | OrderMenuMsg OrderMenu.Msg
     | GameMenuMsg GameMenu.Msg
     | SettingsMsg Settings.Msg
+    | RotationNoticeCanceled
     | FocusCompleted (Result Browser.Dom.Error ())
     | PreviousOrderPressed
     | NextOrderPressed
@@ -294,6 +297,8 @@ type Msg
     | UnloadSkipped
     | InspectClicked
     | InspectorCloseClicked
+    | MobileTabClicked MobileBattlefield.Tab
+    | MobileTabNavigationPressed MobileBattlefield.Tab
     | InspectionHelpClicked InspectionHelp.Help
     | InspectionHelpFocusReturned (Result Browser.Dom.Error ())
     | EscapePressed
@@ -398,6 +403,7 @@ init shared flags =
             , feedback = Feedback.init
             , menu = MenuClosed
             , inspectionHelp = Nothing
+            , mobileTab = MobileBattlefield.Orders
             }
 
         eff : Eff Msg
@@ -412,7 +418,7 @@ init shared flags =
     ( model
     , E.batch
         [ eff
-        , E.measure Battlefield.htmlId BattlefieldSizeReceived
+        , measureWorkspace
         , E.toJs (ToJs.PreloadImages (Assets.imagePaths model.map.theme))
         ]
     )
@@ -430,6 +436,22 @@ load id =
 ----------------------------------------------------------------
 -- API --
 ----------------------------------------------------------------
+
+
+isMobileView : Model -> Bool
+isMobileView model =
+    Shared.isMobileView model.shared
+
+
+{-| Feature changes can replace the workspace without a browser resize.
+-}
+refreshLayout : Shared.Model -> Model -> Eff Msg
+refreshLayout previous model =
+    if Shared.isMobileView previous /= Shared.isMobileView model.shared then
+        measureWorkspace
+
+    else
+        E.none
 
 
 setShared : Shared.Model -> Model -> Model
@@ -1768,12 +1790,41 @@ playbackCamera model =
             Nothing
 
 
+measureWorkspace : Eff Msg
+measureWorkspace =
+    E.measure Battlefield.htmlId BattlefieldSizeReceived
+
+
 remeasureWorkspace : Model -> ( Model, Eff Msg )
 remeasureWorkspace model =
     ( model
         |> setBattlefieldViewport Nothing
-    , E.measure Battlefield.htmlId BattlefieldSizeReceived
+    , measureWorkspace
     )
+
+
+resetMobileTab : Model -> Model -> Model
+resetMobileTab previous next =
+    let
+        selectionChanged : Bool
+        selectionChanged =
+            Maybe.map .id (selectedUnit previous)
+                /= Maybe.map .id (selectedUnit next)
+    in
+    if selectionChanged then
+        let
+            tab : MobileBattlefield.Tab
+            tab =
+                if mobileOrdersAvailable next then
+                    MobileBattlefield.Orders
+
+                else
+                    MobileBattlefield.Details
+        in
+        { next | mobileTab = tab }
+
+    else
+        next
 
 
 {-| Selection changes the inspector inset; turn controls can change
@@ -1787,9 +1838,15 @@ withLayoutMeasurement previous next =
         playbackStarted =
             (playback previous == Nothing) && (playback next /= Nothing)
 
+        mobilePanelChanged : Bool
+        mobilePanelChanged =
+            isMobileView next
+                && ((selectedUnit previous == Nothing) /= (selectedUnit next == Nothing))
+
         layoutChanged : Bool
         layoutChanged =
             ((currentSelection previous == Nothing) /= (currentSelection next == Nothing))
+                || mobilePanelChanged
                 || (turnActivity previous /= turnActivity next)
                 || (previous.currentTurn.outcome /= next.currentTurn.outcome)
     in
@@ -2055,6 +2112,9 @@ isUserInteraction msg =
         InactivityRenewalResponseReceived _ _ ->
             False
 
+        WindowResized ->
+            False
+
         BattlefieldSizeReceived _ ->
             False
 
@@ -2097,9 +2157,6 @@ isUserInteraction msg =
             False
 
         CameraReturnFinished ->
-            False
-
-        WindowResized ->
             False
 
         BattlefieldMsg battlefieldMsg ->
@@ -2168,6 +2225,9 @@ isUserInteraction msg =
 
         SettingsMsg _ ->
             True
+
+        RotationNoticeCanceled ->
+            False
 
         FocusCompleted _ ->
             False
@@ -2256,6 +2316,12 @@ isUserInteraction msg =
         InspectorCloseClicked ->
             True
 
+        MobileTabClicked _ ->
+            True
+
+        MobileTabNavigationPressed _ ->
+            True
+
         InspectionHelpClicked _ ->
             True
 
@@ -2339,6 +2405,7 @@ superUpdate lobbyId msg model =
         ( next, effect ) =
             model
                 |> update lobbyId msg
+                |> Tuple.mapFirst (resetMobileTab model)
                 |> E.andThen (withLayoutMeasurement model)
                 |> E.and (E.audio (playAudio msg model))
                 |> E.andThen (recordUserInteraction lobbyId msg)
@@ -2575,6 +2642,9 @@ update lobbyId msg model =
             , E.focus { htmlId = Battlefield.htmlId } FocusCompleted
             )
 
+        RotationNoticeCanceled ->
+            E.withOut model
+
         FocusCompleted result ->
             recordFocusResult result model
                 |> E.withOut
@@ -2627,10 +2697,40 @@ update lobbyId msg model =
                 |> updatePlaybackCamera
                 |> E.withOut
 
+        WindowResized ->
+            ( model
+            , measureWorkspace
+            )
+
         BattlefieldSizeReceived result ->
             case result of
                 Ok battlefield ->
-                    ( model, E.measure BattlefieldWorkspace.inspectorHtmlId (InspectorSizeReceived battlefield) )
+                    if (battlefield.element.width <= 0) || (battlefield.element.height <= 0) then
+                        E.withOut model
+
+                    else if isMobileView model then
+                        let
+                            viewport : Camera.Viewport
+                            viewport =
+                                { size =
+                                    { x = battlefield.element.width
+                                    , y = battlefield.element.height
+                                    }
+                                , bottomInset = 0
+                                , rightInset = 0
+                                }
+                        in
+                        model
+                            |> setBattlefieldViewport (Just viewport)
+                            |> updatePlaybackCamera
+                            |> E.withOut
+
+                    else
+                        ( model
+                        , E.measure
+                            BattlefieldWorkspace.inspectorHtmlId
+                            (InspectorSizeReceived battlefield)
+                        )
 
                 Err error ->
                     (model
@@ -2677,9 +2777,6 @@ update lobbyId msg model =
                                 model.shared
                             )
                         |> E.withOut
-
-        WindowResized ->
-            ( model, E.measure Battlefield.htmlId BattlefieldSizeReceived )
 
         PanLeftKeyPressed ->
             model
@@ -2889,6 +2986,17 @@ update lobbyId msg model =
             model
                 |> clearSelection
                 |> E.withOut
+
+        MobileTabClicked tab ->
+            { model | mobileTab = tab }
+                |> E.withOut
+
+        MobileTabNavigationPressed tab ->
+            ( { model | mobileTab = tab }
+            , E.focus
+                { htmlId = MobileBattlefield.tabHtmlId tab }
+                FocusCompleted
+            )
 
         InspectionHelpClicked help ->
             if hasDialog model then
@@ -3209,6 +3317,9 @@ playAudio msg model =
         ChatOverlayExpired _ ->
             Audio.none
 
+        WindowResized ->
+            Audio.none
+
         BattlefieldSizeReceived _ ->
             Audio.none
 
@@ -3219,9 +3330,6 @@ playAudio msg model =
             Audio.none
 
         CameraReturnFinished ->
-            Audio.none
-
-        WindowResized ->
             Audio.none
 
         BattlefieldMsg battlefieldMsg ->
@@ -3396,6 +3504,9 @@ playAudio msg model =
                 _ ->
                     Audio.affirm
 
+        RotationNoticeCanceled ->
+            Audio.none
+
         FocusCompleted _ ->
             Audio.none
 
@@ -3428,9 +3539,6 @@ playAudio msg model =
                     Audio.affirm
 
                 GameMenu.AboutClicked ->
-                    Audio.affirm
-
-                GameMenu.PrivacyPolicyClicked ->
                     Audio.affirm
 
                 GameMenu.CloseClicked ->
@@ -3573,6 +3681,12 @@ playAudio msg model =
 
         InspectorCloseClicked ->
             Audio.cancel
+
+        MobileTabClicked _ ->
+            Audio.affirm
+
+        MobileTabNavigationPressed _ ->
+            Audio.affirm
 
         InspectionHelpClicked _ ->
             Audio.affirm
@@ -3770,19 +3884,6 @@ handleGameMenuMsg lobbyId msg model =
                 model
                     |> E.withOut
 
-        GameMenu.PrivacyPolicyClicked ->
-            if (model.menu == MainMenu) && not model.resigning then
-                ( model
-                    |> setMenu PrivacyPolicyMenu
-                , E.focus
-                    { htmlId = PrivacyPolicy.htmlId ++ "-title" }
-                    (GameMenu.FocusReturned >> GameMenuMsg)
-                )
-
-            else
-                model
-                    |> E.withOut
-
         GameMenu.SettingsClicked ->
             if (model.menu == MainMenu) && not model.resigning then
                 ( model
@@ -3795,11 +3896,19 @@ handleGameMenuMsg lobbyId msg model =
                     |> E.withOut
 
         GameMenu.CloseClicked ->
+            let
+                returnHtmlId : String
+                returnHtmlId =
+                    if model.menu == MobileOrdersHelp then
+                        MobileBattlefield.ordersHelpButtonHtmlId
+
+                    else
+                        GameMenu.buttonHtmlId
+            in
             ( model
                 |> setMenu MenuClosed
             , E.focus
-                { htmlId = GameMenu.buttonHtmlId
-                }
+                { htmlId = returnHtmlId }
                 (GameMenu.FocusReturned >> GameMenuMsg)
             )
 
@@ -4183,6 +4292,11 @@ handleOrderMsg orderMsg model =
                 model
                     |> E.withOut
 
+            else if isMobileView model then
+                model
+                    |> setMenu MobileOrdersHelp
+                    |> E.withOut
+
             else
                 model
                     |> mapPlanning (OrderPlanning.openOrderGuide model.map model.units (ownPlayerNumbers model))
@@ -4218,6 +4332,20 @@ handleOrderMsg orderMsg model =
 ----------------------------------------------------------------
 -- VIEW --
 ----------------------------------------------------------------
+
+
+view : Model -> List (Html Msg)
+view model =
+    let
+        workspace : List (Html Msg)
+        workspace =
+            if isMobileView model then
+                mobileView model
+
+            else
+                desktopView model
+    in
+    ChatView.overlay model.chat.recent :: workspace
 
 
 battlefieldView : Model -> Html Msg
@@ -4390,35 +4518,253 @@ viewControls zoom =
         |> H.map BattlefieldMsg
 
 
-view : Model -> List (Html Msg)
-view model =
-    ChatView.overlay model.chat.recent
-        :: BattlefieldWorkspace.toHtml
+desktopView : Model -> List (Html Msg)
+desktopView model =
+    BattlefieldWorkspace.toHtml
+        { loss = unitLoss model /= Nothing
+        , combat = combatEncounter model /= Nothing
+        , dying = deathInFocus model
+        , battlefield = battlefieldView model
+        , orders = orderMenu model
+        , header =
+            GameMenu.panel
+                { enabled = canOpenDialog model
+                , turnNumber = displayedTurnNumber model
+                }
+                |> H.map GameMenuMsg
+                |> Just
+        , controls = turnPanel model
+        , notification = requestErrorCard model
+        , inspection = selectionView model
+        , hasSelection = currentSelection model /= Nothing
+        , onCloseInspection = InspectorCloseClicked
+        , combatOverlay =
+            PlaybackPresentation.combatOverlay
+                CombatTheaterCalibrations.catalog
+                model.automaticallyCloseCombatTheater
+                model.map
+                (playback model)
+                |> H.map CombatTheaterMsg
+        }
+
+
+mobileView : Model -> List (Html Msg)
+mobileView model =
+    let
+        close : Button.Button Msg
+        close =
+            if (currentSelection model /= Nothing) && canOpenDialog model then
+                Button.secondary "close" InspectorCloseClicked
+
+            else
+                Button.disabled "close"
+
+        activity : TurnControls.Activity
+        activity =
+            if canOpenDialog model then
+                turnActivity model
+
+            else
+                TurnControls.Locked
+    in
+    MobileBattlefield.toHtml
+        { header =
+            MobileBattlefield.topBar
+                { surrender =
+                    TurnControls.headerSurrender (surrenderState model)
+                        |> H.map TurnControlsMsg
+                , center =
+                    GameMenu.panel
+                        { enabled = canOpenDialog model
+                        , turnNumber = displayedTurnNumber model
+                        }
+                        |> H.map GameMenuMsg
+                , submit =
+                    TurnControls.headerSubmit activity (turnSubmitLabel model)
+                        |> H.map TurnControlsMsg
+                }
+        , battlefield = battlefieldView model
+        , hasSelection = selectedUnit model /= Nothing
+        , panelHeader = mobilePanelHeader model
+        , panel = mobileTaskPanel model
+        , close =
+            close
+                |> Button.fullWidth
+                |> Button.toHtml
+        , notification = requestErrorCard model
+        , focus =
             { loss = unitLoss model /= Nothing
             , combat = combatEncounter model /= Nothing
             , dying = deathInFocus model
-            , battlefield = battlefieldView model
-            , orders = orderMenu model
-            , header =
-                GameMenu.panel
-                    { enabled = canOpenDialog model
-                    , turnNumber = displayedTurnNumber model
-                    }
-                    |> H.map GameMenuMsg
-                    |> Just
-            , controls = turnPanel model
-            , notification = requestErrorCard model
-            , inspection = selectionView model
-            , hasSelection = currentSelection model /= Nothing
-            , onCloseInspection = InspectorCloseClicked
-            , combatOverlay =
-                PlaybackPresentation.combatOverlay
-                    CombatTheaterCalibrations.catalog
-                    model.automaticallyCloseCombatTheater
-                    model.map
-                    (playback model)
-                    |> H.map CombatTheaterMsg
             }
+        , combatOverlay =
+            PlaybackPresentation.combatOverlay
+                CombatTheaterCalibrations.catalog
+                model.automaticallyCloseCombatTheater
+                model.map
+                (playback model)
+                |> H.map CombatTheaterMsg
+        }
+
+
+mobileOrdersAvailable : Model -> Bool
+mobileOrdersAvailable model =
+    case selectedUnit model of
+        Just unit ->
+            isOwnUnit model unit && not (planningLocked model)
+
+        Nothing ->
+            False
+
+
+mobilePanelTab : Model -> MobileBattlefield.Tab
+mobilePanelTab model =
+    if mobileOrdersAvailable model then
+        model.mobileTab
+
+    else
+        MobileBattlefield.Details
+
+
+mobilePanelHeader : Model -> Html Msg
+mobilePanelHeader model =
+    if currentSelection model == Nothing then
+        H.text ""
+
+    else
+        MobileBattlefield.panelHeader
+            { tab = mobilePanelTab model
+            , ordersAvailable = mobileOrdersAvailable model
+            , onTabClick = MobileTabClicked
+            , onTabNavigate = MobileTabNavigationPressed
+            , onOrdersHelp = OrderMenuMsg OrderMenu.InfoClicked
+            }
+
+
+mobileTaskPanel : Model -> Html Msg
+mobileTaskPanel model =
+    let
+        selectedTab : MobileBattlefield.Tab
+        selectedTab =
+            mobilePanelTab model
+
+        tabs : List MobileBattlefield.Tab
+        tabs =
+            if mobileOrdersAvailable model then
+                [ MobileBattlefield.Orders
+                , MobileBattlefield.Details
+                ]
+
+            else
+                [ MobileBattlefield.Details ]
+
+        panel : MobileBattlefield.Tab -> Html Msg
+        panel tab =
+            let
+                active : Bool
+                active =
+                    tab == selectedTab
+
+                content : List (Html Msg)
+                content =
+                    if active then
+                        case tab of
+                            MobileBattlefield.Orders ->
+                                [ mobileOrdersPanel model ]
+
+                            MobileBattlefield.Details ->
+                                [ selectionView model ]
+
+                    else
+                        []
+            in
+            H.section
+                [ A.id (MobileBattlefield.tabHtmlId tab ++ "-panel")
+                , A.attribute "role" "tabpanel"
+                , Aria.labelledBy (MobileBattlefield.tabHtmlId tab)
+                , A.hidden (not active)
+                ]
+                content
+    in
+    if currentSelection model == Nothing then
+        H.text ""
+
+    else
+        H.div
+            []
+            (List.map panel tabs)
+
+
+mobileOrdersPanel : Model -> Html Msg
+mobileOrdersPanel model =
+    case orderMenuUnit model of
+        Just unit ->
+            OrderMenu.embedded model.depots model.map unit
+                |> H.map OrderMenuMsg
+
+        Nothing ->
+            case selectedUnit model of
+                Just unit ->
+                    let
+                        canCancelOrder : Bool
+                        canCancelOrder =
+                            not (planningLocked model) && isOwnUnit model unit
+
+                        action : Html Msg
+                        action =
+                            if canRevokeOrder model unit then
+                                Button.primary
+                                    "revoke order"
+                                    ClearMoveClicked
+                                    |> Button.fullWidth
+                                    |> Button.toHtml
+
+                            else if canCancelOrder then
+                                Button.secondary
+                                    "cancel order"
+                                    CancelOrderClicked
+                                    |> Button.fullWidth
+                                    |> Button.toHtml
+
+                            else
+                                H.text ""
+
+                        choosingFacing : Bool
+                        choosingFacing =
+                            choosingDirection model
+                                || choosingAmbush model
+                                || choosingStandGround model
+
+                        instruction : String
+                        instruction =
+                            if choosingFacing then
+                                "choose a direction on the map"
+
+                            else if choosingIndirectFire model then
+                                "tap a target on the map"
+
+                            else if pathPreview model /= Nothing then
+                                "tap a highlighted tile to plan a route"
+
+                            else
+                                ""
+                    in
+                    H.div
+                        [ A.css
+                            [ S.col
+                            , S.g2
+                            ]
+                        ]
+                        [ H.p
+                            []
+                            [ H.text instruction ]
+                        , action
+                        ]
+
+                Nothing ->
+                    H.p
+                        []
+                        [ H.text "tap a unit to plan its orders" ]
 
 
 orderMenu : Model -> Html Msg
@@ -5430,12 +5776,13 @@ chatDialog model _ =
             Nothing
 
 
-{-| Dialogs derive from inactivity warnings, the welcome briefing, chat, inspector help, the game menu, order guide, turn introduction, playback loss, or the active planning workflow.
+{-| Dialogs derive from the rotation notice, inactivity warnings, the welcome briefing, chat, inspector help, the game menu, order guide, turn introduction, playback loss, or the active planning workflow.
 -}
 dialog : Model -> Maybe (Dialog Msg)
 dialog model =
     MaybeUtil.lazyFirst
-        [ inactivityDialog model
+        [ rotationDialog model
+        , inactivityDialog model
         , welcomeBriefingDialog model
         , chatDialog model
         , inspectionHelpDialog model
@@ -5445,6 +5792,21 @@ dialog model =
         , lossDialog model
         , planningDialog model
         ]
+
+
+rotationDialog : Model -> () -> Maybe (Dialog Msg)
+rotationDialog model _ =
+    let
+        isPortrait : Bool
+        isPortrait =
+            model.shared.screenSize.height
+                > model.shared.screenSize.width
+    in
+    if isMobileView model && isPortrait then
+        Just (MobileBattlefield.portraitDialog RotationNoticeCanceled)
+
+    else
+        Nothing
 
 
 inactivityDialogHtmlId : String
@@ -5539,9 +5901,6 @@ gameMenuDialog model _ =
         AboutMenu ->
             Just (About.dialog { onClose = GameMenuMsg GameMenu.CloseClicked })
 
-        PrivacyPolicyMenu ->
-            Just (PrivacyPolicy.dialog { onClose = GameMenuMsg GameMenu.CloseClicked })
-
         SettingsMenu tab ->
             Just
                 (Settings.dialog
@@ -5554,6 +5913,9 @@ gameMenuDialog model _ =
                     }
                     |> Dialog.map SettingsMsg
                 )
+
+        MobileOrdersHelp ->
+            Just (OrderGuide.dialog (GameMenuMsg GameMenu.CloseClicked))
 
         MenuClosed ->
             Nothing
@@ -5727,20 +6089,30 @@ submissionWarning model =
         ]
 
 
+surrenderState : Model -> TurnControls.SurrenderState
+surrenderState model =
+    if model.resigning then
+        TurnControls.SurrenderPending
+
+    else if canSurrender model then
+        TurnControls.SurrenderAvailable
+
+    else
+        TurnControls.SurrenderUnavailable
+
+
+turnSubmitLabel : Model -> String
+turnSubmitLabel model =
+    if model.currentTurn.outcome /= Nothing then
+        "game over"
+
+    else
+        TurnLifecycle.toLabel model.currentTurn.phase
+
+
 turnPanel : Model -> Html Msg
 turnPanel model =
     let
-        surrenderState : TurnControls.SurrenderState
-        surrenderState =
-            if model.resigning then
-                TurnControls.SurrenderPending
-
-            else if canSurrender model then
-                TurnControls.SurrenderAvailable
-
-            else
-                TurnControls.SurrenderUnavailable
-
         ownStatus : String
         ownStatus =
             case model.currentTurn.phase of
@@ -5752,14 +6124,6 @@ turnPanel model =
 
                 _ ->
                     "planning"
-
-        submitLabel : String
-        submitLabel =
-            if model.currentTurn.outcome /= Nothing then
-                "game over"
-
-            else
-                TurnLifecycle.toLabel model.currentTurn.phase
 
         opponentStatus : String
         opponentStatus =
@@ -5779,7 +6143,7 @@ turnPanel model =
             round ((BattlefieldNavigation.camera model.navigation).zoom * 100)
     in
     TurnControls.panel
-        [ Lazy.lazy2 turnSubmit (turnActivity model) submitLabel
+        [ Lazy.lazy2 turnSubmit (turnActivity model) (turnSubmitLabel model)
         , Lazy.lazy4
             turnFeedback
             model.players
@@ -5787,7 +6151,7 @@ turnPanel model =
             opponentStatus
             model.currentTurn.outcome
         , Lazy.lazy viewControls zoomPercent
-        , TurnControls.surrender surrenderState
+        , TurnControls.surrender (surrenderState model)
             |> H.map TurnControlsMsg
         ]
 
@@ -6086,10 +6450,10 @@ combatEnterShortcut model =
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ chatShortcut model
+        [ Browser.Events.onResize (\_ _ -> WindowResized)
+        , chatShortcut model
         , combatEnterShortcut model
         , Time.every 1000 ChatPollElapsed
-        , Browser.Events.onResize (\_ _ -> WindowResized)
         , Time.every 400 AnimationTimerElapsed
         , CurrentTurn.subscriptions model.currentTurn
             |> Sub.map CurrentTurnMsg

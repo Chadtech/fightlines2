@@ -128,6 +128,7 @@ module Style exposing
     , grow
     , h0
     , h1
+    , h100dvh
     , h11
     , h12
     , h128
@@ -203,6 +204,8 @@ module Style exposing
     , m2
     , m4
     , mAuto
+    , maxH100dvh
+    , maxH100vh
     , maxH16
     , maxH18
     , maxH24
@@ -320,9 +323,11 @@ module Style exposing
     , pb4
     , pb48
     , pb96
+    , pbSafeArea
     , pl16
     , pl2
     , pl4
+    , plSafeArea
     , placeContentCenter
     , pointerCursor
     , pointerEventsAuto
@@ -332,6 +337,7 @@ module Style exposing
     , pr2
     , pr3
     , pr4
+    , prSafeArea
     , pre
     , pt0
     , pt1
@@ -445,6 +451,7 @@ module Style exposing
     , verticalAlignTop
     , w0
     , w1
+    , w100vw
     , w104
     , w11
     , w12
@@ -484,7 +491,6 @@ module Style exposing
     , wAuto
     , wFitContent
     , wFull
-    , wFullViewport
     , when
     , whitespacePreWrap
     , widthMinRemVw
@@ -494,6 +500,7 @@ module Style exposing
     , yellow1Str
     , yellow5Str
     , z1
+    , z100
     , z2
     , z3
     , z4
@@ -604,6 +611,16 @@ h40 =
 h80 : Css.Style
 h80 =
     Css.height (Css.rem 20)
+
+
+maxH100dvh : Css.Style
+maxH100dvh =
+    Css.property "max-height" "100dvh"
+
+
+maxH100vh : Css.Style
+maxH100vh =
+    Css.maxHeight (Css.vh 100)
 
 
 maxH18 : Css.Style
@@ -1355,8 +1372,8 @@ w2x =
     Css.width <| Css.pct 200
 
 
-wFullViewport : Css.Style
-wFullViewport =
+w100vw : Css.Style
+w100vw =
     Css.width <| Css.vw 100
 
 
@@ -1565,6 +1582,11 @@ h320 =
 hFull : Css.Style
 hFull =
     Css.height <| Css.pct 100
+
+
+h100dvh : Css.Style
+h100dvh =
+    Css.property "height" "100dvh"
 
 
 hFullViewport : Css.Style
@@ -1845,6 +1867,21 @@ p3 =
 p4 : Css.Style
 p4 =
     Css.padding s4
+
+
+pbSafeArea : Css.Style
+pbSafeArea =
+    Css.property "padding-bottom" "env(safe-area-inset-bottom)"
+
+
+plSafeArea : Css.Style
+plSafeArea =
+    Css.property "padding-left" "env(safe-area-inset-left)"
+
+
+prSafeArea : Css.Style
+prSafeArea =
+    Css.property "padding-right" "env(safe-area-inset-right)"
 
 
 pb0 : Css.Style
@@ -2926,6 +2963,11 @@ z2 =
 z3 : Css.Style
 z3 =
     Css.zIndex (Css.int 30)
+
+
+z100 : Css.Style
+z100 =
+    Css.zIndex (Css.int 100)
 
 
 d1 : Float

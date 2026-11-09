@@ -18,7 +18,6 @@ import Fightlines.Feedback as Feedback
 import Fightlines.Route as Route
 import Fightlines.View.About as About
 import Fightlines.View.Feedback as FeedbackView
-import Fightlines.View.PrivacyPolicy as PrivacyPolicy
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
@@ -47,8 +46,6 @@ type Msg
     | FeedbackResponseReceived Feedback.RequestId (ApiRequest.Response Bool)
     | AboutButtonClicked
     | AboutDialogClosed
-    | PrivacyPolicyButtonClicked
-    | PrivacyPolicyDialogClosed
     | DialogButtonFocusReturned (Result Browser.Dom.Error ())
     | SceneCycleCompleted BackgroundScene
 
@@ -67,7 +64,6 @@ type ActiveDialog
     = NoDialog
     | FeedbackDialog
     | AboutDialog
-    | PrivacyPolicyDialog
 
 
 type BackgroundScene
@@ -273,17 +269,6 @@ update msg model =
         AboutDialogClosed ->
             closeDialog aboutButtonHtmlId model
 
-        PrivacyPolicyButtonClicked ->
-            ( { model | activeDialog = PrivacyPolicyDialog }
-            , E.batch
-                [ E.toJs (ToJs.OpenDialog { htmlId = PrivacyPolicy.htmlId })
-                , E.audio Audio.affirm
-                ]
-            )
-
-        PrivacyPolicyDialogClosed ->
-            closeDialog privacyPolicyButtonHtmlId model
-
         DialogButtonFocusReturned result ->
             case result of
                 Ok () ->
@@ -314,9 +299,6 @@ dialog model =
 
         AboutDialog ->
             Just (About.dialog { onClose = AboutDialogClosed })
-
-        PrivacyPolicyDialog ->
-            Just (PrivacyPolicy.dialog { onClose = PrivacyPolicyDialogClosed })
 
         NoDialog ->
             Nothing
@@ -398,10 +380,6 @@ view model =
                     |> Button.fullWidth
                     |> Button.withHtmlId aboutButtonHtmlId
                     |> Button.toHtml
-              , Button.secondary "privacy policy" PrivacyPolicyButtonClicked
-                    |> Button.fullWidth
-                    |> Button.withHtmlId privacyPolicyButtonHtmlId
-                    |> Button.toHtml
               ]
                 |> Card.toHtml Card.simple
             ]
@@ -430,11 +408,6 @@ feedbackButtonHtmlId =
 aboutButtonHtmlId : String
 aboutButtonHtmlId =
     "home-about-button"
-
-
-privacyPolicyButtonHtmlId : String
-privacyPolicyButtonHtmlId =
-    "home-privacy-policy-button"
 
 
 battlefieldBackground : Model -> Html Msg

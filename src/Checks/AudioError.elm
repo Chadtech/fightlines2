@@ -23,7 +23,16 @@ main =
     Browser.application
         { init =
             \_ url key ->
-                ( Shared.init (Time.millisToPosix 1700000000000) (Random.initialSeed 42) OperatingSystem.Unknown LocalStorage.test url key
+                ( Shared.init
+                    (Time.millisToPosix 1700000000000)
+                    (Random.initialSeed 42)
+                    OperatingSystem.Unknown
+                    { width = 1280
+                    , height = 800
+                    }
+                    LocalStorage.test
+                    url
+                    key
                 , Cmd.none
                 )
         , update = update

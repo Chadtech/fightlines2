@@ -1,17 +1,23 @@
 module View.Tabs exposing
     ( Tabs
+    , helpButtonHtmlId
+    , horizontal
     , new
     , panel
     , toHtml
+    , withHelp
     )
 
+import Css
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Json.Decode as Decode
 import NonEmptyList exposing (NonEmpty)
 import Style as S
+import Util.List as ListUtil
 import View.Aria as Aria
+import View.InfoMarker as InfoMarker
 
 
 
@@ -28,7 +34,28 @@ type Tabs value msg
         , htmlId : value -> String
         , onClick : value -> msg
         , onNavigate : value -> msg
+        , orientation : Orientation
+        , help : List (Help value msg)
         }
+
+
+type alias Help value msg =
+    { tab : value
+    , label : String
+    , onClick : msg
+    }
+
+
+type Orientation
+    = Vertical
+    | Horizontal
+
+
+type alias KeyEvent msg =
+    { message : msg
+    , stopPropagation : Bool
+    , preventDefault : Bool
+    }
 
 
 type alias Option value =
@@ -91,7 +118,34 @@ new :
     }
     -> Tabs value msg
 new config =
-    Tabs config
+    Tabs
+        { label = config.label
+        , selected = config.selected
+        , options = config.options
+        , htmlId = config.htmlId
+        , onClick = config.onClick
+        , onNavigate = config.onNavigate
+        , orientation = Vertical
+        , help = []
+        }
+
+
+horizontal : Tabs value msg -> Tabs value msg
+horizontal (Tabs config) =
+    Tabs { config | orientation = Horizontal }
+
+
+helpButtonHtmlId : String -> String
+helpButtonHtmlId tabHtmlId =
+    tabHtmlId ++ "-help"
+
+
+{-| Add a separate help button beside a tab label, within the same visual area.
+The help button remains available regardless of which tab is selected.
+-}
+withHelp : Help value msg -> Tabs value msg -> Tabs value msg
+withHelp help (Tabs config) =
+    Tabs { config | help = help :: config.help }
 
 
 
@@ -102,19 +156,137 @@ new config =
 
 toHtml : Tabs value msg -> Html msg
 toHtml ((Tabs config) as tabs) =
+    let
+        orientation : String
+        orientation =
+            case config.orientation of
+                Vertical ->
+                    "vertical"
+
+                Horizontal ->
+                    "horizontal"
+
+        layout : Css.Style
+        layout =
+            case config.orientation of
+                Vertical ->
+                    S.col
+
+                Horizontal ->
+                    S.row
+    in
     H.nav
         [ A.attribute "role" "tablist"
         , Aria.label config.label
-        , A.attribute "aria-orientation" "vertical"
+        , A.attribute "aria-orientation" orientation
         , A.css
-            [ S.col
+            [ layout
+            , S.minW0
             , S.g2
             ]
         ]
         (config.options
             |> NonEmptyList.toList
-            |> List.map (tabButton tabs)
+            |> List.map (tabView tabs)
         )
+
+
+tabView : Tabs value msg -> Option value -> Html msg
+tabView ((Tabs config) as tabs) option =
+    let
+        belongsToTab : Help value msg -> Bool
+        belongsToTab help =
+            help.tab == option.value
+
+        selected : Bool
+        selected =
+            config.selected == option.value
+
+        group : List (Html msg) -> Html msg
+        group content =
+            H.div
+                [ A.attribute "role" "presentation"
+                , A.css
+                    [ S.row
+                    , S.itemsStretch
+                    , S.minW0
+                    , S.flex1
+                    , S.when selected S.bgYellow2
+                    ]
+                ]
+                content
+    in
+    case ListUtil.find belongsToTab config.help of
+        Nothing ->
+            case config.orientation of
+                Vertical ->
+                    tabButton tabs option
+
+                Horizontal ->
+                    group [ tabButton tabs option ]
+
+        Just help ->
+            group
+                [ tabButton tabs option
+                , helpButton (config.htmlId option.value) selected help
+                ]
+
+
+helpButton : String -> Bool -> Help value msg -> Html msg
+helpButton tabHtmlId selected help =
+    let
+        activation : Decode.Decoder (KeyEvent msg)
+        activation =
+            Decode.field "key" Decode.string
+                |> Decode.andThen activate
+
+        activate : String -> Decode.Decoder (KeyEvent msg)
+        activate key =
+            if (key == "Enter") || (key == " ") then
+                Decode.succeed
+                    { message = help.onClick
+                    , stopPropagation = True
+                    , preventDefault = True
+                    }
+
+            else
+                Decode.fail "not a help activation key"
+    in
+    H.button
+        [ A.type_ "button"
+        , A.id (helpButtonHtmlId tabHtmlId)
+        , Aria.label help.label
+        , A.attribute "aria-haspopup" "dialog"
+        , Ev.onClick help.onClick
+        , Ev.custom "keydown" activation
+        , A.css
+            [ S.row
+            , S.itemsCenter
+            , S.justifyCenter
+            , S.shrink0
+            , S.w11
+            , S.minH11
+            , S.p0
+            , S.border0
+            , S.bgTransparent
+            , S.textGray4
+            , S.pointerCursor
+            , S.hover
+                [ S.bgGray2
+                , S.textGray5
+                ]
+            , S.when selected
+                (S.batch
+                    [ S.textYellow5
+                    , S.hover
+                        [ S.bgYellow2
+                        , S.textYellow6
+                        ]
+                    ]
+                )
+            ]
+        ]
+        [ InfoMarker.toHtml ]
 
 
 tabButton : Tabs value msg -> Option value -> Html msg
@@ -144,25 +316,62 @@ tabButton (Tabs config) option =
         values =
             NonEmptyList.map .value config.options
 
-        navigationDecoder : Decode.Decoder ( msg, Bool )
+        navigationDecoder : Decode.Decoder msg
         navigationDecoder =
             Decode.field "key" Decode.string
                 |> Decode.andThen decodeNavigation
 
-        decodeNavigation : String -> Decode.Decoder ( msg, Bool )
+        navigate :
+            Orientation
+            -> NonEmpty value
+            -> Decode.Decoder msg
+        navigate orientation options =
+            if config.orientation == orientation then
+                Decode.succeed
+                    (config.onNavigate (nextTab option.value options))
+
+            else
+                Decode.fail "not this tab orientation"
+
+        navigationEvent : Decode.Decoder (KeyEvent msg)
+        navigationEvent =
+            Decode.map handledNavigation navigationDecoder
+
+        handledNavigation : msg -> KeyEvent msg
+        handledNavigation message =
+            { message = message
+            , stopPropagation = True
+            , preventDefault = True
+            }
+
+        decodeNavigation : String -> Decode.Decoder msg
         decodeNavigation key =
             case key of
                 "ArrowDown" ->
-                    Decode.succeed ( config.onNavigate (nextTab option.value values), True )
+                    navigate Vertical values
 
                 "ArrowUp" ->
-                    Decode.succeed ( config.onNavigate (nextTab option.value (NonEmptyList.reverse values)), True )
+                    navigate Vertical (NonEmptyList.reverse values)
+
+                "ArrowRight" ->
+                    navigate Horizontal values
+
+                "ArrowLeft" ->
+                    navigate Horizontal (NonEmptyList.reverse values)
+
+                "Enter" ->
+                    Decode.succeed (config.onNavigate option.value)
+
+                " " ->
+                    Decode.succeed (config.onNavigate option.value)
 
                 "Home" ->
-                    Decode.succeed ( config.onNavigate (NonEmptyList.head values), True )
+                    Decode.succeed
+                        (config.onNavigate (NonEmptyList.head values))
 
                 "End" ->
-                    Decode.succeed ( config.onNavigate (NonEmptyList.last values), True )
+                    Decode.succeed
+                        (config.onNavigate (NonEmptyList.last values))
 
                 _ ->
                     Decode.fail "not a tab navigation key"
@@ -175,11 +384,19 @@ tabButton (Tabs config) option =
         , A.attribute "aria-selected" selectedText
         , A.attribute "aria-controls" (panelHtmlId (config.htmlId option.value))
         , Ev.onClick (config.onClick option.value)
-        , Ev.preventDefaultOn "keydown" navigationDecoder
+        , Ev.custom "keydown" navigationEvent
         , A.css
             [ S.wFull
+            , S.minW0
             , S.p3
             , S.textLeft
+            , S.when (config.orientation == Horizontal)
+                (S.batch
+                    [ S.p2
+                    , S.textAlignCenter
+                    , S.flex1
+                    ]
+                )
             , S.pointerCursor
             , S.bgTransparent
             , S.textGray4

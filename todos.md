@@ -6,13 +6,11 @@
 
 
 ## Immediately
-- A/B deployments
 - Tutorial missions
-- firefox?
+- E2E snapshot testing
+- More pleasant rotate your phone screen
 
 ## Soon
-- feature flags
-
 - Manufacturing and cities
 - Air planes and boats
 - Day Night Cycle

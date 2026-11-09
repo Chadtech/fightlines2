@@ -9,7 +9,15 @@ try {
   execFileSync('elm', ['make', 'src/Fightlines/Checks/Home.elm', `--output=${output}`], { stdio: 'inherit' });
 
   // Let Browser.application supply the opaque navigation key to Shared.init.
-  global.window = { addEventListener() {}, navigator: { userAgent: 'home-checks' } };
+  global.window = {
+    addEventListener(name, handler) {
+      if (name === 'resize') {
+        setTimeout(() => handler({ target: { innerWidth: 852, innerHeight: 393 } }), 0);
+      }
+    },
+    removeEventListener() {},
+    navigator: { userAgent: 'home-checks' },
+  };
   global.document = {
     addEventListener() {},
     removeEventListener() {},
@@ -30,7 +38,7 @@ try {
       console.error(failures.join('\n'));
       process.exitCode = 1;
     } else {
-      console.log('Home initialization, shared seed continuity, shared clock subscription, and feedback submission checks passed.');
+      console.log('Home initialization, shared seed continuity, shared clock and resize subscriptions, and feedback submission checks passed.');
     }
   });
 } finally {

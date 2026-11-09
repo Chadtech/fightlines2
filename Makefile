@@ -61,6 +61,7 @@ check: app-version combat-theater-calibrations
 	node tools/check-audio.cjs
 	node --test tools/check-assets.cjs
 	node tools/check-home.cjs
+	node tools/check-mobile-battlefield.cjs
 	$(MAKE) frontend
 	elm make src/DevTools.elm src/Style.elm src/View/*.elm src/Fightlines/View/*.elm src/Game/View/*.elm --output=/dev/null
 

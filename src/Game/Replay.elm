@@ -248,7 +248,7 @@ init config shared id flags =
     in
     ( model
     , E.batch
-        [ E.measure Battlefield.htmlId BattlefieldSizeReceived
+        [ measureWorkspace
         , E.toJs (ToJs.PreloadImages (Assets.imagePaths model.battlefield.map.theme))
         ]
     )
@@ -443,7 +443,7 @@ startTurnPlayback model =
                         |> applyFrame first
                         |> updateLossDialog (activeDialogHtmlId model)
             in
-            ( started, E.batch [ E.measure Battlefield.htmlId BattlefieldSizeReceived, dialogEffect ] )
+            ( started, E.batch [ measureWorkspace, dialogEffect ] )
 
         _ ->
             if isPlaying model then
@@ -526,6 +526,11 @@ loadTurn position model =
 getShared : Model -> Shared.Model
 getShared model =
     model.shared
+
+
+measureWorkspace : Eff Msg
+measureWorkspace =
+    E.measure Battlefield.htmlId BattlefieldSizeReceived
 
 
 setShared : Shared.Model -> Model -> Model
@@ -618,7 +623,7 @@ withInspectionMeasurement previous next =
     if (previous.inspection == Nothing) /= (next.inspection == Nothing) then
         ( next
             |> setViewport Nothing
-        , E.measure Battlefield.htmlId BattlefieldSizeReceived
+        , measureWorkspace
         )
 
     else
@@ -1068,7 +1073,9 @@ update msg model =
                 |> E.withOut
 
         WindowResized ->
-            ( model, E.measure Battlefield.htmlId BattlefieldSizeReceived )
+            ( model
+            , measureWorkspace
+            )
 
         BattlefieldSizeReceived result ->
             case result of
@@ -1770,8 +1777,10 @@ subscriptions model =
     Sub.batch
         [ Browser.Events.onResize (\_ _ -> WindowResized)
         , Time.every 400 (\_ -> AnimationTimerElapsed)
-        , PlaybackPresentation.subscriptions (playback model) |> Sub.map PlaybackMsg
-        , BattlefieldNavigation.subscriptions model.navigation |> Sub.map NavigationMsg
+        , PlaybackPresentation.subscriptions (playback model)
+            |> Sub.map PlaybackMsg
+        , BattlefieldNavigation.subscriptions model.navigation
+            |> Sub.map NavigationMsg
         ]
 
 

@@ -160,10 +160,32 @@ the release commit. Deploy the backend and frontend built from that commit.
 ## Feature switches
 
 Frontend feature switches live in
-[`src/Fightlines/FeatureFlags.elm`](../src/Fightlines/FeatureFlags.elm).
-Keep their current values in code rather than duplicating enabled/disabled status
-in documentation. Rebuild the frontend after changing a switch; the values apply
-to both production and development builds.
+[`src/Features.elm`](../src/Features.elm). `Features.Feature` is a custom type;
+`Features.Model` holds a list of enabled features and checks membership.
+`Shared.Model.features` loads from the `features` list under
+`fightlines.localStorage` and refreshes on storage notifications. Missing storage
+starts with no enabled features; malformed values also record a diagnostic.
+
+Open the dev panel with backtick and select **features** to toggle local features.
+Changes apply immediately and persist on this device, including across reloads
+and other open tabs. `MobileLandscape` is stored as `"mobileLandscape"` and shown
+as **mobile view**. No backend feature flags are loaded yet.
+
+`MobileLandscape` gates the minimal landscape battlefield. When enabled, the view
+branches early for Android/iOS or a viewport with a short edge up to 600px and a
+long edge up to 1023px. `Shared.Model.screenSize` comes from required startup flags
+and the shared resize subscription; resize and rotation update that choice.
+Portrait shows a rotate prompt;
+landscape uses a thin header and a selection rail over the map's right edge.
+The battlefield retains its full width when the rail opens or closes. Surrender
+sits at the far left of the header, the menu/logo/turn/chat group is centered,
+and a gold submit button sits at the far right. These use the existing surrender
+confirmation and turn submission flow. The rail offers orders/details tabs for friendly units and details for enemies.
+Details reuse the desktop inspector, including unit resources, cargo, terrain,
+and their help dialogs. All dialogs, including the dev panel, fill the viewport
+while mobile view is active; desktop dialog sizes are unchanged.
+Switching tabs retains pending orders; the footer's
+close button deselects without removing saved orders.
 
 ## Production and development bundles
 

@@ -1,12 +1,15 @@
 port module Fightlines.Checks.Home exposing (main)
 
 import Browser
+import DevPanel
+import Features
 import Fightlines.Feedback as Feedback
 import Fightlines.Page.Home as Home
 import Graphql.Http
 import LocalStorage
 import OperatingSystem
 import Random
+import ScreenSize exposing (ScreenSize)
 import Shared
 import Time
 
@@ -57,21 +60,34 @@ main =
                     initialTime =
                         Time.millisToPosix 1700000000000
 
+                    initialScreenSize : ScreenSize
+                    initialScreenSize =
+                        { width = 1280
+                        , height = 800
+                        }
+
                     shared : Shared.Model
                     shared =
-                        Shared.init initialTime (Random.initialSeed 42) OperatingSystem.Unknown LocalStorage.test url key
+                        Shared.init
+                            initialTime
+                            (Random.initialSeed 42)
+                            OperatingSystem.Unknown
+                            initialScreenSize
+                            LocalStorage.test
+                            url
+                            key
 
                     clockFailures : List String
                     clockFailures =
-                        if shared.now == initialTime then
+                        if (shared.now == initialTime) && (shared.screenSize == initialScreenSize) then
                             []
 
                         else
-                            [ "shared initialization must retain the supplied startup time" ]
+                            [ "shared initialization must retain the supplied startup time and screen size" ]
                 in
                 ( WaitingForClock
                     { shared = shared
-                    , failures = List.map errorToString (checks shared) ++ clockFailures
+                    , failures = List.map errorToString (checks shared) ++ clockFailures ++ featureChecks shared
                     }
                 , Cmd.none
                 )
@@ -92,7 +108,24 @@ updateClock msg model =
                     Shared.superUpdate sharedMsg pending.shared
             in
             if shared.now /= pending.shared.now then
-                ( Finished, results pending.failures )
+                let
+                    expectedScreenSize : ScreenSize
+                    expectedScreenSize =
+                        { width = 852
+                        , height = 393
+                        }
+
+                    resizeFailures : List String
+                    resizeFailures =
+                        if shared.screenSize == expectedScreenSize then
+                            []
+
+                        else
+                            [ "shared resize subscription must update screen size" ]
+                in
+                ( Finished
+                , results (pending.failures ++ resizeFailures)
+                )
 
             else
                 ( WaitingForClock { pending | shared = shared }, Cmd.none )
@@ -270,3 +303,64 @@ errorToString error =
 
         StaleFeedbackResponseAccepted ->
             "responses from an earlier submission cannot complete the current submission"
+
+
+featureChecks : Shared.Model -> List String
+featureChecks shared =
+    let
+        selectTab : Shared.Model
+        selectTab =
+            Shared.superUpdate
+                (Shared.devPanelMsg (DevPanel.TabClicked DevPanel.FeaturesTab))
+                shared
+                |> Tuple.first
+
+        toggle : Bool -> Shared.Model -> Shared.Model
+        toggle isEnabled model =
+            Shared.superUpdate
+                (Shared.devPanelMsg
+                    (DevPanel.FeatureCheckboxChanged
+                        Features.MobileLandscape
+                        isEnabled
+                    )
+                )
+                model
+                |> Tuple.first
+
+        on : Shared.Model
+        on =
+            toggle True selectTab
+
+        off : Shared.Model
+        off =
+            toggle False on
+
+        compact : Shared.Model
+        compact =
+            { on
+                | screenSize =
+                    { width = 852
+                    , height = 393
+                    }
+            }
+
+        mobileDevice : Shared.Model
+        mobileDevice =
+            { on | operatingSystem = OperatingSystem.Android }
+
+        passes : Bool
+        passes =
+            (on.devPanel.selectedTab == DevPanel.FeaturesTab)
+                && Features.enabled Features.MobileLandscape on.features
+                && not (Features.enabled Features.MobileLandscape off.features)
+                && (off.devPanel.selectedTab == DevPanel.FeaturesTab)
+                && Shared.isMobileView compact
+                && Shared.isMobileView mobileDevice
+                && not (Shared.isMobileView on)
+                && not (Shared.isMobileView { compact | features = off.features })
+    in
+    if passes then
+        []
+
+    else
+        [ "dev panel feature toggles must update shared availability immediately and preserve the selected tab" ]

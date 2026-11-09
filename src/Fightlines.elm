@@ -124,7 +124,7 @@ main =
                 let
                     ( newPage, eff ) =
                         update msg page
-                            |> restorePageDialog page
+                            |> syncDialog page
                             |> E.andThen (withPlaybackAudio page)
                 in
                 case getShared newPage of
@@ -157,6 +157,7 @@ init value url key =
                         flags.now
                         flags.seed
                         flags.operatingSystem
+                        flags.screenSize
                         flags.localStorage
                         url
                         key
@@ -176,31 +177,30 @@ init value url key =
 ----------------------------------------------------------------
 
 
-{-| Restore the page dialog only when the higher-priority dev panel closes.
+{-| Open the selected dialog when page state or shared state changes its priority.
 -}
-restorePageDialog : Page -> ( Page, Eff Msg ) -> ( Page, Eff Msg )
-restorePageDialog previous ( page, effect ) =
+syncDialog : Page -> ( Page, Eff Msg ) -> ( Page, Eff Msg )
+syncDialog previous ( page, effect ) =
     let
-        panelClosed : Bool
-        panelClosed =
-            (Maybe.map .devPanelOpen (getShared previous) == Just True)
-                && (Maybe.map .devPanelOpen (getShared page) == Just False)
-
-        result : ( Page, Eff Msg )
-        result =
-            ( page, effect )
+        previousHtmlId : Maybe String
+        previousHtmlId =
+            dialog previous |> Maybe.map Dialog.htmlId
     in
-    if panelClosed then
-        case pageDialog page of
-            Just activeDialog ->
-                result
-                    |> E.and (E.toJs (ToJs.OpenDialog { htmlId = Dialog.htmlId activeDialog }))
+    case dialog page of
+        Just activeDialog ->
+            if previousHtmlId /= Just (Dialog.htmlId activeDialog) then
+                ( page
+                , E.batch
+                    [ effect
+                    , E.toJs (ToJs.OpenDialog { htmlId = Dialog.htmlId activeDialog })
+                    ]
+                )
 
-            Nothing ->
-                result
+            else
+                ( page, effect )
 
-    else
-        result
+        Nothing ->
+            ( page, effect )
 
 
 getShared : Page -> Maybe Shared.Model
@@ -680,7 +680,7 @@ update msg page =
                             Shared.superUpdate subMsg shared
                     in
                     setShared newShared page
-                        |> afterSharedClockUpdate shared.now
+                        |> afterSharedUpdate shared
                         |> E.and (E.map GotSharedMsg effect)
 
                 Nothing ->
@@ -688,11 +688,11 @@ update msg page =
                         |> E.withOut
 
 
-afterSharedClockUpdate : Time.Posix -> Page -> ( Page, Eff Msg )
-afterSharedClockUpdate previousTime page =
+afterSharedUpdate : Shared.Model -> Page -> ( Page, Eff Msg )
+afterSharedUpdate previous page =
     case page of
         MatchMaking model ->
-            if model.shared.now /= previousTime then
+            if model.shared.now /= previous.now then
                 MatchMaking.enterGameWhenReady model
                     |> Tuple.mapBoth MatchMaking (E.map (MatchMakingMsg (MatchMaking.visitId model)))
 
@@ -700,12 +700,18 @@ afterSharedClockUpdate previousTime page =
                 page |> E.withOut
 
         Game id model ->
-            if model.shared.now /= previousTime then
-                GamePage.renewInactivityTimer id model
-                    |> Tuple.mapBoth (Game id) (E.map (GameMsg id))
+            let
+                result : ( GamePage.Model, Eff GamePage.Msg )
+                result =
+                    if model.shared.now /= previous.now then
+                        GamePage.renewInactivityTimer id model
 
-            else
-                page |> E.withOut
+                    else
+                        E.withOut model
+            in
+            result
+                |> E.and (GamePage.refreshLayout previous model)
+                |> Tuple.mapBoth (Game id) (E.map (GameMsg id))
 
         _ ->
             page |> E.withOut
@@ -722,7 +728,11 @@ view page =
     let
         overlayContent : List (Html Msg)
         overlayContent =
-            [ AppControls.toHtml audioContent ]
+            if Maybe.map Shared.isMobileView (getShared page) == Just True then
+                []
+
+            else
+                [ AppControls.toHtml audioContent ]
 
         audioContent : List (Html Msg)
         audioContent =
@@ -764,13 +774,22 @@ dialog : Page -> Maybe (Dialog Msg)
 dialog page =
     case getShared page of
         Just shared ->
-            if shared.devPanelOpen then
-                DevPanel.dialog (Shared.devPanelErrors shared) shared.devPanel
-                    |> Dialog.map (Shared.devPanelMsg >> GotSharedMsg)
-                    |> Just
+            let
+                activeDialog : Maybe (Dialog Msg)
+                activeDialog =
+                    if shared.devPanelOpen then
+                        DevPanel.dialog
+                            (Shared.devPanelErrors shared)
+                            shared.features
+                            shared.devPanel
+                            |> Dialog.map (Shared.devPanelMsg >> GotSharedMsg)
+                            |> Just
 
-            else
-                pageDialog page
+                    else
+                        pageDialog page
+            in
+            activeDialog
+                |> Maybe.map (Shared.adaptDialog shared)
 
         Nothing ->
             Nothing

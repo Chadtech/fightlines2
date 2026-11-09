@@ -1,5 +1,6 @@
 module Fightlines.View.OrderMenu exposing
     ( Msg(..)
+    , embedded
     , keyCommands
     , optionHtmlId
     , toHtml
@@ -51,6 +52,23 @@ keyCommands map depots unit =
 toHtml : List Depot -> Map -> Camera -> Coordinate -> Unit -> Html Msg
 toHtml depots map camera position unit =
     Lazy.lazy6 ordersView depots map camera.offset camera.zoom position unit
+
+
+{-| Order choices inside the mobile task rail, without a map anchor.
+-}
+embedded : List Depot -> Map -> Unit -> Html Msg
+embedded depots map unit =
+    H.section
+        [ Aria.label "unit orders"
+        , A.css
+            [ S.col
+            , S.g2
+            ]
+        ]
+        (List.map
+            (orderButton map depots unit)
+            (Order.available depots unit)
+        )
 
 
 ordersView :

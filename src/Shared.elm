@@ -1,12 +1,14 @@
 module Shared exposing
     ( Model
     , Msg
+    , adaptDialog
     , addError
     , audioMuteButtonClicked
     , devPanelErrors
     , devPanelMsg
     , gotFromJsError
     , init
+    , isMobileView
     , keyCommands
     , listeners
     , setAudioMute
@@ -26,6 +28,7 @@ import DevPanel
 import Effect as E exposing (Eff)
 import Error exposing (Error)
 import ErrorHistory
+import Features
 import Game.DirectionPlanning as DirectionPlanning
 import Game.IndirectFirePlanning as IndirectFirePlanning
 import Game.OrderDependencies as OrderDependencies
@@ -40,8 +43,10 @@ import OperatingSystem exposing (OperatingSystem)
 import Ports.Js.From as FromJs
 import Ports.Js.To as ToJs
 import Random
+import ScreenSize exposing (ScreenSize)
 import Time
 import Url exposing (Url)
+import View.Dialog as Dialog exposing (Dialog)
 
 
 
@@ -53,14 +58,17 @@ import Url exposing (Url)
 {-| Browser state and diagnostics shared by all applications.
 `now` is the latest browser clock sample, initialized by JavaScript and refreshed
 by the shared clock subscription. `origin` contains the scheme, hostname, and
-optional port for constructing complete application links.
+optional port for constructing complete application links. `screenSize` is the
+required startup viewport size, refreshed by the shared resize subscription.
 -}
 type alias Model =
     { deployment : Deployment.Model
     , now : Time.Posix
     , key : Navigation.Key
+    , screenSize : ScreenSize
     , operatingSystem : OperatingSystem
     , localStorage : LocalStorage
+    , features : Features.Model
     , seed : Random.Seed
     , errors : ErrorHistory.Model Error
     , devPanel : DevPanel.Model
@@ -73,12 +81,14 @@ type alias Model =
 
 type Msg
     = CurrentTimeReceived Time.Posix
+    | WindowResized ScreenSize
     | WindowVisibilityChanged Browser.Events.Visibility
     | GotLocalstorage LocalStorage
     | GotFromJsError FromJs.Error
     | AudioErrorReceived Error
     | DevPanelToggleKeyPressed
     | DevPanelMsg DevPanel.Msg
+    | DevPanelTabFocused (Result Browser.Dom.Error ())
     | AudioMuteButtonClicked
 
 
@@ -88,9 +98,20 @@ type Msg
 ----------------------------------------------------------------
 
 
-init : Time.Posix -> Random.Seed -> OperatingSystem -> LocalStorage -> Url -> Navigation.Key -> Model
-init now seed operatingSystem localStorage url key =
+init :
+    Time.Posix
+    -> Random.Seed
+    -> OperatingSystem
+    -> ScreenSize
+    -> LocalStorage
+    -> Url
+    -> Navigation.Key
+    -> Model
+init now seed operatingSystem screenSize localStorage url key =
     let
+        ( features, featuresError ) =
+            Features.init localStorage
+
         ( audioMute, muteError ) =
             Audio.loadMutePreference localStorage
 
@@ -100,8 +121,10 @@ init now seed operatingSystem localStorage url key =
     { deployment = Deployment.init url
     , now = now
     , key = key
+    , screenSize = screenSize
     , operatingSystem = operatingSystem
     , localStorage = localStorage
+    , features = features
     , seed = seed
     , errors = ErrorHistory.init
     , devPanel = DevPanel.init
@@ -118,12 +141,45 @@ init now seed operatingSystem localStorage url key =
     }
         |> addError muteError
         |> addError volumesError
+        |> addError featuresError
 
 
 
 ----------------------------------------------------------------
 -- API --
 ----------------------------------------------------------------
+
+
+{-| The local mobile-view feature uses the same device/viewport rule in every app.
+-}
+isMobileView : Model -> Bool
+isMobileView model =
+    let
+        shortEdge : Float
+        shortEdge =
+            min model.screenSize.width model.screenSize.height
+
+        longEdge : Float
+        longEdge =
+            max model.screenSize.width model.screenSize.height
+
+        mobileSize : Bool
+        mobileSize =
+            (shortEdge <= 600) && (longEdge <= 1023)
+    in
+    Features.enabled Features.MobileLandscape model.features
+        && (OperatingSystem.isMobile model.operatingSystem || mobileSize)
+
+
+{-| Adapt every dialog, including shared dev tools, at the application boundary.
+-}
+adaptDialog : Model -> Dialog msg -> Dialog msg
+adaptDialog model activeDialog =
+    if isMobileView model then
+        Dialog.fullscreen activeDialog
+
+    else
+        activeDialog
 
 
 audioMuteButtonClicked : Msg
@@ -178,6 +234,14 @@ audioErrorDecoder =
         (\operation details -> Error.AudioFailed { operation = operation, details = details })
         (Decode.field "operation" Decode.string)
         (Decode.field "details" Decode.string)
+
+
+windowResized : Int -> Int -> Msg
+windowResized width height =
+    WindowResized
+        { width = toFloat width
+        , height = toFloat height
+        }
 
 
 setDevPanelOpen : Bool -> Model -> Model
@@ -334,6 +398,13 @@ update msg model =
             , E.none
             )
 
+        WindowResized screenSize ->
+            ( { model
+                | screenSize = screenSize
+              }
+            , E.none
+            )
+
         WindowVisibilityChanged visibility ->
             let
                 eff : Eff Msg
@@ -367,26 +438,25 @@ update msg model =
             )
 
         DevPanelMsg panelMsg ->
-            case panelMsg of
-                DevPanel.Canceled ->
+            handleDevPanelMsg panelMsg model
+
+        DevPanelTabFocused result ->
+            case result of
+                Ok () ->
                     ( model
-                        |> setDevPanelOpen False
                     , E.none
                     )
 
-                DevPanel.TabClicked tab ->
-                    let
-                        panel : DevPanel.Model
-                        panel =
-                            model.devPanel
-                    in
-                    ( { model | devPanel = { panel | selectedTab = tab } }, E.none )
-
-                DevPanel.TestErrorButtonClicked ->
-                    ( addError (Just Error.TestError) model, E.none )
+                Err error ->
+                    ( addError (Just (Error.ElementFocusFailed error)) model
+                    , E.none
+                    )
 
         GotLocalstorage localStorage ->
             let
+                ( features, featuresError ) =
+                    Features.init localStorage
+
                 ( audioMute, muteError ) =
                     Audio.loadMutePreference localStorage
 
@@ -409,9 +479,15 @@ update msg model =
                     else
                         E.audio (Audio.SetVolumes audioVolumes)
             in
-            ( { model | localStorage = localStorage, audioMute = audioMute, audioVolumes = audioVolumes }
+            ( { model
+                | localStorage = localStorage
+                , features = features
+                , audioMute = audioMute
+                , audioVolumes = audioVolumes
+              }
                 |> addError muteError
                 |> addError volumesError
+                |> addError featuresError
             , E.batch [ muteEffect, volumesEffect ]
             )
 
@@ -420,6 +496,57 @@ update msg model =
 
         AudioErrorReceived error ->
             ( addError (Just error) model, E.none )
+
+
+handleDevPanelMsg : DevPanel.Msg -> Model -> ( Model, Eff Msg )
+handleDevPanelMsg msg model =
+    case msg of
+        DevPanel.Canceled ->
+            ( model
+                |> setDevPanelOpen False
+            , E.none
+            )
+
+        DevPanel.TabClicked tab ->
+            let
+                panel : DevPanel.Model
+                panel =
+                    model.devPanel
+            in
+            ( { model
+                | devPanel =
+                    { panel | selectedTab = tab }
+              }
+            , E.none
+            )
+
+        DevPanel.TabNavigationPressed tab ->
+            let
+                panel : DevPanel.Model
+                panel =
+                    model.devPanel
+            in
+            ( { model
+                | devPanel =
+                    { panel | selectedTab = tab }
+              }
+            , E.focus
+                { htmlId = DevPanel.tabHtmlId tab }
+                DevPanelTabFocused
+            )
+
+        DevPanel.FeatureCheckboxChanged feature isEnabled ->
+            let
+                features : Features.Model
+                features =
+                    Features.setEnabled feature isEnabled model.features
+            in
+            ( { model | features = features }
+            , E.setLocalStorage (Features.encodePreference features)
+            )
+
+        DevPanel.TestErrorButtonClicked ->
+            ( addError (Just Error.TestError) model, E.none )
 
 
 
@@ -431,7 +558,8 @@ update msg model =
 subscriptions : Sub Msg
 subscriptions =
     Sub.batch
-        [ Time.every 1000 CurrentTimeReceived
+        [ Browser.Events.onResize windowResized
+        , Time.every 1000 CurrentTimeReceived
         , Browser.Events.onVisibilityChange WindowVisibilityChanged
         ]
 

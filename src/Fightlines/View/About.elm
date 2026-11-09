@@ -27,6 +27,7 @@ type Section
     | Contact
     | Code
     | Pacifism
+    | PrivacyPolicy
 
 
 
@@ -42,6 +43,7 @@ all =
     , Contact
     , Code
     , Pacifism
+    , PrivacyPolicy
     ]
 
 
@@ -67,6 +69,9 @@ sectionTitle section =
 
         Code ->
             "code"
+
+        PrivacyPolicy ->
+            "privacy policy"
 
 
 aboutPhotoSource : String
@@ -239,6 +244,11 @@ Do wars resemble those cases of self defense? Not at all. Most wars were easily 
 not justified by the cause or the aims of the war. Most of the time, it would be better of either side just gave up and surrendered immediately."""
             ]
                 |> List.concatMap Prose.paragraphs
+
+        PrivacyPolicy ->
+            Prose.paragraphs """I retain a log of every game, including the chat messages. I use this for debugging, when there are errors
+and also so that I can understand people's user experience better and improve the game. I don't record any
+other info right now"""
 
 
 externalLink : { label : String, href : String } -> Html msg

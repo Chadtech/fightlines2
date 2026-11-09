@@ -170,10 +170,10 @@ The logo scales proportionally up to 40rem wide with viewport gutters, centered
 slightly above the viewport midpoint with the menu beneath it. Its image
 supplies the accessible heading. The ordinary beveled card has no title bar
 and contains a full-width primary `match making` button followed by secondary
-`create a lobby`, `feedback`, `about`, and `privacy policy` buttons. Keep it at most
+`create a lobby`, `feedback`, and `about` buttons. Keep it at most
 24rem wide with viewport gutters. `create a lobby` opens the existing form at `/new`.
 About opens a wide reading dialog
-(64rem, capped by the viewport gutters) with titled game, intro, contact, code, and pacifism sections
+(64rem, capped by the viewport gutters) with titled game, intro, contact, code, pacifism, and privacy policy sections
 and the creator portrait. Contact addresses and account names are real
 links using the shared link style; web links open a new tab or window and email
 opens the configured mail handler. Group the portrait and its small caption in
@@ -184,9 +184,8 @@ Put the content in a bounded scrolling panel with the inset `indentStrong` bevel
 `bgNightwood3` green background, and `p3` padding. Preserve paragraph breaks and
 wrap long text. Keep the title bar and bottom close button outside the scrolling
 panel and visible within the viewport. The close controls and Escape dismiss
-it and restore focus to the About button. Privacy policy uses the standard reference
-dialog with paragraph text, and is also available from the game menu.
-Closing it returns focus to its home button or the game menu button.
+it and restore focus to the About button or the game menu button. About is also
+available from the game menu; the privacy policy appears only as its subsection.
 On entry, fade the logo in while lowering it from 2rem above its resting position
 over 900ms with an ease-out curve. Reduced motion shows it immediately in place.
 Omar Bradley's monochrome portrait sits behind the logo and navigation, fitted
@@ -354,6 +353,35 @@ Refresh resumes the shared countdown; a completed pairing cannot be cancelled.
   same across both pages. The join form does not poll or disable the name field.
 
 ## Game board
+
+The `MobileLandscape` feature switch selects a separate minimal phone layout.
+The dev panel's **features** section exposes it as a **mobile view** checkbox;
+changes apply immediately and are remembered on this device.
+Use a thin full-width header and a task rail over the battlefield's right edge.
+Opening or closing the rail preserves the map's size and position.
+Put **surrender** at the far left of the top bar and the gold,
+shining **submit turn** button at the far right. Center the menu, logo, turn, and
+chat group on the screen between equal-width outer columns. Both actions reuse
+the ordinary submission and surrender flows. Scroll the task area independently
+and pin **close** below it; close deselects without removing saved orders.
+When no unit is selected, omit the entire rail, including close. The battlefield
+always fills the width beneath it. Do not show an idle selection prompt.
+Order choices and route/direction instructions replace one another in that area. A selected friendly unit opens horizontal **orders** and **details**
+tabs; enemies and locked turns show details only. New friendly selections open
+orders. Tab changes preserve the selected unit and unfinished orders. Keep the
+close action in the rail footer; omit a second × in the tab header. Keep the
+orders/details tabs at stable, equal widths. Place ⓘ beside the orders label
+within its visual tab area, as a separate sibling button with its own 44px tap
+target. Keep it visible while details is selected. The label selects orders;
+only ⓘ opens the order guide. Never nest the buttons; details reuse the inspector's unit, resource,
+cargo, and terrain help. Keep the tab header fixed above the scrolling content.
+In portrait, cover the entire view, including open dialogs, with
+**rotate your phone to landscape**. Keep selection and draft orders across
+rotation. Omit the floating version/audio overlay in this minimal layout.
+When mobile view is active, every dialog fills the viewport, including the orders
+reference and dev panel. Keep the title and close control visible, scroll long
+content within the dialog, and preserve each dialog's ordinary focus and cancel
+behavior. Desktop dialogs keep their usual sizes.
 
 - Float a compact header over the battlefield, centered flush with the top edge.
   Keep the surrounding area transparent and let map interaction reach it.

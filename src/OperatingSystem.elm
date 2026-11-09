@@ -1,6 +1,7 @@
 module OperatingSystem exposing
     ( OperatingSystem(..)
     , decoder
+    , isMobile
     )
 
 import Json.Decode as Decode exposing (Decoder)
@@ -19,6 +20,19 @@ type OperatingSystem
 decoder : Decoder OperatingSystem
 decoder =
     Decode.map fromPlatform Decode.string
+
+
+isMobile : OperatingSystem -> Bool
+isMobile operatingSystem =
+    case operatingSystem of
+        Android ->
+            True
+
+        IOS ->
+            True
+
+        _ ->
+            False
 
 
 fromPlatform : String -> OperatingSystem

@@ -1345,7 +1345,9 @@ update msg model =
             )
 
         WindowResized ->
-            ( model, measureViewport )
+            ( model
+            , measureViewport
+            )
 
         ViewportMeasured purpose result ->
             case result of
@@ -2413,8 +2415,8 @@ subscriptions model =
                     )
     in
     Sub.batch
-        [ gestures
+        [ Browser.Events.onResize (\_ _ -> WindowResized)
+        , gestures
         , Browser.Events.onKeyUp releasedSpace
         , Browser.Events.onVisibilityChange (always CanvasFocusLost)
-        , Browser.Events.onResize (\_ _ -> WindowResized)
         ]

@@ -111,7 +111,14 @@ init value url key =
             let
                 shared : Shared.Model
                 shared =
-                    Shared.init flags.now flags.seed flags.operatingSystem flags.localStorage url key
+                    Shared.init
+                        flags.now
+                        flags.seed
+                        flags.operatingSystem
+                        flags.screenSize
+                        flags.localStorage
+                        url
+                        key
             in
             handleRoute shared (Route.fromUrl url)
                 |> E.and (E.audio (Audio.SetMute shared.audioMute))
@@ -408,9 +415,13 @@ update msg page =
                         |> E.withOut
 
                 Just shared ->
-                    Shared.superUpdate inner shared
-                        |> Tuple.mapFirst (\next -> setShared next page)
-                        |> Tuple.mapSecond (E.map SharedMsg)
+                    let
+                        ( newShared, effect ) =
+                            Shared.superUpdate inner shared
+                    in
+                    ( setShared newShared page
+                    , E.map SharedMsg effect
+                    )
 
         SessionResponseReceived result ->
             case page of
@@ -600,8 +611,11 @@ view page =
 
         overlays : List (Html Msg)
         overlays =
-            [ AppControls.toHtml controls
-            ]
+            if Maybe.map Shared.isMobileView (getShared page) == Just True then
+                []
+
+            else
+                [ AppControls.toHtml controls ]
 
         dialog : List (Html Msg)
         dialog =
@@ -609,7 +623,8 @@ view page =
                 Replay replay ->
                     Replay.dialog replay
                         |> Maybe.map
-                            (Dialog.map ReplayMsg
+                            (Shared.adaptDialog (Replay.getShared replay)
+                                >> Dialog.map ReplayMsg
                                 >> Dialog.withOverlay overlays
                                 >> Dialog.toHtml
                                 >> List.singleton

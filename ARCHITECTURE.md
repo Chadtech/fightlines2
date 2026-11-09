@@ -678,13 +678,20 @@ commands at its application boundary. Links outside an app's routes load a new
 document so the server can select the correct bundle. Both apps use one closed
 `Shared.Model`, with common initialization, messages, updates, and subscriptions
 in `Shared.elm`. Pages and entry points import it directly. It owns the browser
-clock, navigation key, origin, operating system, local storage, random seed,
+clock, navigation key, origin, operating system, screen size, local storage, features, random seed,
 audio preferences, and diagnostics. `origin` is derived from each app's startup
 URL by removing the path, query, and fragment; the player lobby uses it for
 complete invite links. `ErrorHistory.Model` stores the session's errors newest
 first. `Shared.update` records incoming JavaScript failures directly as
 `Error.FromJsFailed`. Shared infrastructure does not depend on either app's
 model. Outgoing JS messages are shared through `Ports.Js.To`.
+
+`Shared.adaptDialog` applies viewport-filling presentation when
+`Shared.isMobileView` is active. Application dialog boundaries apply it to both
+page dialogs and the shared dev panel; Admin replay dialogs use the same adapter.
+`Dialog.fullscreen` retains the original dialog placement's focus policy while
+overriding its geometry. Its title stays fixed and its body scrolls. Mobile mode
+also suppresses the floating audio/version overlay so it cannot cover titles.
 
 Both apps use the common `Effect.Eff msg` type and interpreter. Each route
 module exposes `pushUrl : Route -> Eff msg`, converting its typed route to a
@@ -698,6 +705,14 @@ view without importing `Shared`. `Shared` owns the backtick toggle and handles t
 `DevPanel.Error` contains presentation titles and details. Each app passes
 `Shared.devPanelErrors shared` into `DevPanel.dialog`, reusing the exhaustive
 conversion from the shared error history. The panel has no `Shared` import.
+The features tab lists `Features.all` with checkboxes. `Shared` handles feature
+changes by updating `Shared.Model.features` immediately and saving the enabled
+list through `Effect.setLocalStorage`. `Features.Model` contains `List Feature`;
+`Feature` remains a custom type and availability checks use list membership.
+The `features` storage key contains string names (currently `mobileLandscape`).
+Initialization and storage notifications reload this model, defaulting to an empty
+list and recording malformed values in shared diagnostics. Backend flags are not
+loaded. The panel receives the feature model without importing `Shared`.
 The errors tab lists session diagnostics newest first, and its test button adds
 `Error.TestError` through the normal shared history operation. Each entry point
 maps panel events through `Shared.superUpdate`. Its `dialog` function prioritizes
@@ -705,8 +720,8 @@ the dev panel over the page dialog and renders only the selected dialog.
 `Shared.update` returns the updated model and the common `Eff Msg` directly.
 `Shared.superUpdate` detects when the dev panel opens and adds an open-dialog
 effect using the static `DevPanel.htmlId`. Each entry point calls it directly,
-checks when the panel closes after its app update, and reopens its pending page
-dialog. Shared has no knowledge of
+restores the pending page dialog when the panel closes. The player entry point
+also synchronizes the selected dialog when shared state changes. Shared has no knowledge of
 page dialogs. Page key commands are suspended while the dev panel is open;
 Escape uses the native dialog cancel event. The dev panel enables the dialog
 header’s optional close button, which emits the same cancellation event.
@@ -1020,6 +1035,38 @@ offset directly, without DOM measurements or team centering. Polling does not
 move the camera. Subscription events use the navigation module's `Msg` and `update`.
 
 ### Touch navigation and narrow layouts
+
+The local `MobileLandscape` feature flag branches `GamePage.view` into
+its own `MobileBattlefield` composition before desktop workspace rendering.
+`Shared.Model.screenSize` is required at initialization from each app's flags;
+`ScreenSize` owns its type and decoder. The shared `WindowResized` message updates
+it through a shared browser resize subscription. Battlefield and editor pages
+also subscribe directly to resize events and measure their own rendered workspace.
+App entry points do not forward shared size changes into page measurements.
+`GamePage` derives layout directly from the feature model, operating system, and shared screen
+size. Shared updates that change layout request a workspace measurement, retaining
+all existing planning/navigation state. `Shared.isMobileView` owns the feature-gated
+device/viewport classification. `MobileBattlefield` owns portrait presentation and
+the fixed header/task-rail structure. `GamePage.dialog` checks the rotation notice
+first in its ordinary dialog list for portrait mobile games. The dev panel retains
+its usual precedence over page dialogs. Returning to landscape restores the pending
+page dialog without changing its state. Recent chat messages are shared by both battlefield layouts.
+Its order choices reuse `OrderMenu.embedded`;
+its top bar centers `GameMenu.panel` between compact surrender and submit controls
+from `TurnControls`, retaining the ordinary confirmation and submission workflows.
+The rail footer closes the current selection. When no unit is selected, the
+rail is absent. The rail overlays the full-width battlefield without resizing
+or recentering it when selection changes. Mobile viewport measurement uses
+only the battlefield element, so absent rail elements do not cause measurement
+errors. There is no separate mobile review page or dialog.
+`GamePage.Model.mobileTab` owns the rail's orders/details selection separately from
+planning, so switching tabs retains unfinished routes and direction/target choices.
+Changing the selected unit resets the tab to orders for an editable friendly unit
+and details otherwise. Details reuse `selectionView`, preserving server-filtered
+resources and existing inspection help. Mobile order help uses a menu dialog rather
+than changing the planning workflow. `View.Tabs.horizontal` provides Left/Right
+and Home/End navigation; existing vertical tabs retain Up/Down navigation.
+Hidden portrait surfaces do not overwrite the last measured camera viewport.
 
 `Battlefield` decodes touch contacts from the browser's array-like `TouchList`
 relative to the map surface's center. `BattlefieldNavigation` keeps mouse and

@@ -1,5 +1,7 @@
 module Game.View.BattlefieldWorkspace exposing
-    ( controlsHtmlId
+    ( PlaybackFocus
+    , controlsHtmlId
+    , focusClass
     , inspectorHtmlId
     , toHtml
     , viewport
@@ -19,6 +21,13 @@ import View.Button as Button
 ----------------------------------------------------------------
 -- TYPES --
 ----------------------------------------------------------------
+
+
+type alias PlaybackFocus =
+    { loss : Bool
+    , combat : Bool
+    , dying : Bool
+    }
 
 
 type alias Contents msg =
@@ -90,6 +99,24 @@ viewport measured =
     }
 
 
+{-| Shared playback styling pauses background animation and dims the workspace
+while a loss or combat encounter owns the player's attention.
+-}
+focusClass : PlaybackFocus -> String
+focusClass focus =
+    if focus.loss then
+        "fightlines-death-focus fightlines-loss-focus"
+
+    else if focus.combat then
+        "fightlines-combat-focus"
+
+    else if focus.dying then
+        "fightlines-death-focus"
+
+    else
+        ""
+
+
 
 ----------------------------------------------------------------
 -- VIEW --
@@ -105,17 +132,11 @@ toHtml model =
 
         animationClass : String
         animationClass =
-            if model.loss then
-                "fightlines-death-focus fightlines-loss-focus"
-
-            else if model.combat then
-                "fightlines-combat-focus"
-
-            else if model.dying then
-                "fightlines-death-focus"
-
-            else
-                ""
+            focusClass
+                { loss = model.loss
+                , combat = model.combat
+                , dying = model.dying
+                }
 
         combatAttributes : List (H.Attribute msg)
         combatAttributes =

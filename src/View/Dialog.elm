@@ -4,6 +4,7 @@ module View.Dialog exposing
     , article
     , atBottom
     , form
+    , fullscreen
     , htmlId
     , make
     , map
@@ -41,6 +42,7 @@ type Dialog msg
         , onOpened : Maybe msg
         , body : List (Html msg)
         , placement : Placement
+        , fullscreen : Bool
         , showCloseButton : Bool
         , overlay : List (Html msg)
         }
@@ -87,6 +89,7 @@ make dialogHtmlId title canceled body =
         , onOpened = Nothing
         , body = body
         , placement = Centered
+        , fullscreen = False
         , showCloseButton = False
         , overlay = []
         }
@@ -140,6 +143,14 @@ workspace =
     setPlacement Workspace
 
 
+{-| Fill the viewport while retaining the dialog's content and focus policy.
+Long bodies scroll beneath the title.
+-}
+fullscreen : Dialog msg -> Dialog msg
+fullscreen (Dialog model) =
+    Dialog { model | fullscreen = True }
+
+
 atBottom : Dialog msg -> Dialog msg
 atBottom =
     setPlacement Bottom
@@ -159,6 +170,7 @@ map toMsg (Dialog model) =
         , onOpened = Maybe.map toMsg model.onOpened
         , body = List.map (H.map toMsg) model.body
         , placement = model.placement
+        , fullscreen = model.fullscreen
         , showCloseButton = model.showCloseButton
         , overlay = List.map (H.map toMsg) model.overlay
         }
@@ -296,9 +308,31 @@ toHtml (Dialog model) =
                 focusedHeader
                     |> CardHeader.toHtml
 
+        fullscreenStyles : List Css.Style
+        fullscreenStyles =
+            if model.fullscreen then
+                [ S.fixed
+                , S.top0
+                , S.bottom0
+                , S.left0
+                , S.right0
+                , S.w100vw
+                , S.h100dvh
+                , S.maxWFull
+                , S.maxH100vh
+                , S.maxH100dvh
+                , S.m0
+                , S.overflowHidden
+                , Css.pseudoClass "is([open])"
+                    [ S.col ]
+                ]
+
+            else
+                []
+
         dialogStyles : List Css.Style
         dialogStyles =
-            baseStyles ++ placementStyles
+            baseStyles ++ placementStyles ++ fullscreenStyles
 
         placementBodyStyles : List Css.Style
         placementBodyStyles =
@@ -311,6 +345,17 @@ toHtml (Dialog model) =
                 _ ->
                     []
 
+        fullscreenBodyStyles : List Css.Style
+        fullscreenBodyStyles =
+            if model.fullscreen then
+                [ S.flex1
+                , S.minH0
+                , S.overflowAuto
+                ]
+
+            else
+                []
+
         bodyStyles : List Css.Style
         bodyStyles =
             [ S.col
@@ -318,12 +363,15 @@ toHtml (Dialog model) =
             , S.p3
             ]
                 ++ placementBodyStyles
+                ++ fullscreenBodyStyles
 
         content : List (Html msg)
         content =
             [ H.div
                 [ A.css
-                    [ S.p2px ]
+                    [ S.p2px
+                    , S.when model.fullscreen S.shrink0
+                    ]
                 ]
                 [ headerContent ]
             , H.div
