@@ -150,8 +150,6 @@ conclusion config =
                 [ S.grid
                 , S.gridCols2
                 , S.g3
-                , S.belowWidth 440
-                    [ S.gridCols1 ]
                 ]
             ]
             [ Button.primary "return to battlefield" BattlefieldViewClicked
@@ -190,6 +188,7 @@ emblemStyles previousTurn =
     , S.relative
     , S.isolate
     , S.overflowHidden
+    , S.grow
     , S.col
     , S.itemsCenter
     , S.justifyCenter
@@ -218,9 +217,9 @@ emblemStyles previousTurn =
             ]
         ]
     , S.belowHeight 600
-        [ S.minH36
-        , S.g2
-        , S.p4
+        [ S.minH0
+        , S.g1
+        , S.p2
         ]
     ]
 
@@ -240,6 +239,14 @@ numberStyles previousTurn =
 
             else
                 "clamp(5rem, 18vw, 9rem)"
+
+        compactFontSize : Float
+        compactFontSize =
+            if hasReport previousTurn then
+                2
+
+            else
+                5
     in
     [ S.fontSizeValue fontSize
     , S.lineHeight1
@@ -254,7 +261,7 @@ numberStyles previousTurn =
             ++ "33"
         )
     , S.belowHeight 600
-        [ S.fontSizeRem 5
+        [ S.fontSizeRem compactFontSize
         ]
     ]
 
@@ -281,6 +288,8 @@ reportView previousTurn =
                         [ S.textGray4
                         , S.textAlignCenter
                         , S.mt3
+                        , S.belowHeight 600
+                            [ S.m0 ]
                         ]
                     ]
                     [ H.text ("turn " ++ String.fromInt resolution.number ++ " report") ]
@@ -290,10 +299,8 @@ reportView previousTurn =
                         , S.gridCols2
                         , S.g3
                         , S.m0
-                        , S.belowWidth 440
-                            [ S.gridCols1
-                            , S.g1p4
-                            ]
+                        , S.belowHeight 600
+                            [ S.g1 ]
                         ]
                     ]
                     [ reportMetric
@@ -333,7 +340,7 @@ reportMetric label value =
             [ S.p2
             , S.bgGray0_60
             , S.borderYellow5_20
-            , S.belowWidth 440
+            , S.belowHeight 600
                 [ S.row
                 , S.justifySpaceBetween
                 , S.g2
@@ -344,9 +351,8 @@ reportMetric label value =
             [ A.css
                 [ S.textGray4
                 , S.mb1p4
-                , S.belowWidth 440
-                    [ S.m0
-                    ]
+                , S.belowHeight 600
+                    [ S.m0 ]
                 ]
             ]
             [ H.text label ]

@@ -137,3 +137,7 @@
 
 # Local deployment tools and host configuration.
 /deploy/
+
+# Playwright reports and actual/diff images; approved baselines are tracked.
+/playwright-report/
+/test-results/

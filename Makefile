@@ -35,6 +35,7 @@ frontend: app-version generate-api combat-theater-calibrations
 
 check-all: RUST_TEST_ARGS = --include-ignored
 check-all: check
+	$(MAKE) check-visual
 
 check: app-version combat-theater-calibrations
 	cargo fmt --all -- --check
@@ -84,3 +85,10 @@ logs: frontend
 rehearse-deployment: frontend
 	cargo build --locked
 	python3 -B tools/deployment/rehearse.py $(if $(CADDY),--caddy $(CADDY))
+
+.PHONY: check-visual update-visual
+check-visual:
+	npm run test:visual
+
+update-visual:
+	npm run test:visual:update

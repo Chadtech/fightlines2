@@ -137,7 +137,8 @@ player. Use separate browser profiles when testing both sides on one machine.
 | `make run` | Build and start the game locally |
 | `make dev` | Enable a preview game, map editor, replay browser, and backdrop tools |
 | `make check` | Check formatting, Clippy, fast tests, frontend behavior, and compilation |
-| `make check-all` | Run all checks, including slow AI simulations |
+| `make check-visual` | Compare desktop and mobile browser screenshots |
+| `make check-all` | Run all checks, including slow AI simulations and visual tests |
 | `make build` | Build the server and production player frontend |
 
 **Current status:** playable prototype under active development. Active games and
@@ -154,6 +155,7 @@ page focused on the project while preserving the reference material.
 | Guide | What's inside |
 | --- | --- |
 | [Playing](docs/PLAYING.md) | Controls, orders, combat, fog, transport, and resources |
+| [Visual testing](docs/VISUAL_TESTING.md) | Local screenshot tests, baselines, and reports |
 | [Development](docs/DEVELOPMENT.md) | Setup, app layout, fixtures, builds, audio, replay, and debugging tools |
 | [Maps](docs/MAPS.md) | Runtime catalog, map editor, and scenario notes |
 | [Architecture](ARCHITECTURE.md) | State ownership, data flow, API boundaries, and simulation design |
