@@ -1,0 +1,2 @@
+/* Only release metadata is excluded. Keep all game content visible. */
+[title^="version "] { visibility: hidden !important; }

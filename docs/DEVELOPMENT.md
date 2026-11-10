@@ -9,6 +9,7 @@ Read [architecture](../ARCHITECTURE.md) for state ownership and cross-module flo
 - [Apps and source layout](#apps-and-source-layout)
 - [Development fixture](#development-fixture)
 - [Checks and builds](#checks-and-builds) · [generated API](#generated-api)
+- [Visual regression testing](VISUAL_TESTING.md)
 - [Feature switches](#feature-switches) · [production and development bundles](#production-and-development-bundles)
 - [Artwork and runtime assets](#artwork-and-runtime-assets)
 - [Game archives and replay](#game-archives-and-replay)
@@ -92,7 +93,8 @@ make combat-theater-calibrations # Generate the Elm catalog from saved backdrop 
 make sprites # Optional: re-export sprites using locally retained source artwork
 make build   # Generate the API client and build the production frontend and backend
 make check   # Routine formatting, lint, fast tests, and compilation
-make check-all # Full checks, including slow AI simulations
+make check-visual # End-to-end Chromium screenshot comparisons
+make check-all # Full checks, including slow AI simulations and visual tests
 ```
 
 `make check` runs Rust formatting, Clippy with warnings denied, fast Rust tests, Elm
@@ -113,8 +115,10 @@ verification required before production setup.
 
 Long AI simulations use Rust's `#[ignore]` attribute with a reason naming
 `make check-all`. They still compile during routine checks. `make check-all`
-runs the same checks with `--include-ignored`, so both fast and slow Rust tests
-run once. Run it before committing and pushing through the workflow below.
+runs the same Rust checks with `--include-ignored`, so both fast and slow Rust tests
+run once, then runs `make check-visual`. Install the pinned browser first with
+`npm run test:visual:install`; see [visual regression testing](VISUAL_TESTING.md).
+Run it before committing and pushing through the workflow below.
 
 ### Check in workflow
 
