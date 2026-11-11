@@ -8,6 +8,7 @@ module Fightlines.View.Settings exposing
     )
 
 import Audio
+import Css
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import NonEmptyList
@@ -43,6 +44,7 @@ type Msg
 
 type alias Config =
     { tab : Tab
+    , mobile : Bool
     , skipIntroduction : Bool
     , skipLosses : Bool
     , skipOrdersWarning : Bool
@@ -72,6 +74,21 @@ tabHtmlId tab =
             "settings-audio-tab"
 
 
+scrollEdge : Css.Style
+scrollEdge =
+    -- The cover scrolls with the content and hides the shadow at the bottom.
+    Css.property "background"
+        ("linear-gradient("
+            ++ S.nightwood3Str
+            ++ ", "
+            ++ S.nightwood3Str
+            ++ ") bottom / 100% 0.75rem no-repeat local, linear-gradient(transparent, "
+            ++ S.blackStr
+            ++ ") bottom / 100% 0.625rem no-repeat scroll, "
+            ++ S.nightwood3Str
+        )
+
+
 dialog : Config -> Dialog Msg
 dialog config =
     let
@@ -96,53 +113,135 @@ dialog config =
 
         panel : Tab -> List (Html Msg) -> Html Msg
         panel tab content =
+            let
+                gap : Css.Style
+                gap =
+                    if config.mobile && (tab == Dialogs) then
+                        S.g2
+
+                    else
+                        S.g4
+            in
             Tabs.panel tabs
                 tab
                 [ H.div
                     [ A.css
-                        [ S.col
-                        , S.g4
-                        , S.textGray5
+                        [ S.when config.mobile
+                            (S.batch
+                                [ S.hFull
+                                , S.overflowAuto
+                                , S.indentStrong
+                                , scrollEdge
+                                , Css.pseudoElement "-webkit-scrollbar"
+                                    [ Css.width (Css.rem 0.625) ]
+                                , Css.pseudoElement "-webkit-scrollbar-track"
+                                    [ S.bgGray1 ]
+                                , Css.pseudoElement "-webkit-scrollbar-thumb"
+                                    [ S.bgGray3 ]
+                                ]
+                            )
                         ]
                     ]
-                    content
-                ]
-    in
-    Dialog.make dialogHtmlId
-        "settings"
-        CloseClicked
-        [ H.div
-            [ A.css
-                [ S.grid
-                , S.gridColumns "8rem minmax(0, 1fr)"
-                , S.g4
-                , S.minH88
-                , S.belowWidth 480
-                    [ S.gridColumns "6rem minmax(0, 1fr)"
-                    , S.g3
+                    [ H.div
+                        [ A.css
+                            [ S.col
+                            , gap
+                            , S.textGray5
+                            , S.when config.mobile S.p3
+                            ]
+                        ]
+                        content
                     ]
                 ]
-            ]
-            [ tabs
-                |> Tabs.toHtml
-            , panel Dialogs (dialogPreferences config)
-            , panel Audio (audioPreferences config)
-            ]
-        , H.div
-            [ A.css
-                [ S.row
-                , S.flexWrap
-                , S.itemsCenter
-                , S.g3
-                , S.pt3
+
+        done : Html Msg
+        done =
+            H.div
+                [ A.css
+                    [ S.row
+                    , S.flexWrap
+                    , S.itemsCenter
+                    , S.g3
+                    , S.shrink0
+                    , S.when (not config.mobile) S.pt3
+                    ]
+                ]
+                [ Button.primary "done" CloseClicked
+                    |> Button.toHtml
+                ]
+
+        mobileFooter : List (Html Msg)
+        mobileFooter =
+            if config.mobile then
+                [ done ]
+
+            else
+                []
+
+        sectionContent : List (Html Msg)
+        sectionContent =
+            [ Tabs.toHtml tabs
+            , H.div
+                [ A.css
+                    [ S.when config.mobile
+                        (S.batch
+                            [ Css.property "grid-area" "1 / 2 / 3 / 3"
+                            , S.grid
+                            , S.gridRows "minmax(0, 1fr)"
+                            ]
+                        )
+                    ]
+                ]
+                [ panel Dialogs (dialogPreferences config)
+                , panel Audio (audioPreferences config)
                 ]
             ]
-            [ Button.primary "done" CloseClicked
-                |> Button.toHtml
-            ]
-        ]
-        |> Dialog.workspace
-        |> Dialog.withCloseButton
+                ++ mobileFooter
+
+        sections : Html Msg
+        sections =
+            H.div
+                [ A.css
+                    [ S.grid
+                    , S.gridColumns "8rem minmax(0, 1fr)"
+                    , S.g4
+                    , S.when config.mobile
+                        (S.batch
+                            [ S.flex1
+                            , S.minH0
+                            , S.gridRows "minmax(0, 1fr) auto"
+                            ]
+                        )
+                    , S.when (not config.mobile) S.minH88
+                    , S.belowWidth 480
+                        [ S.gridColumns "6rem minmax(0, 1fr)"
+                        , S.g3
+                        ]
+                    ]
+                ]
+                sectionContent
+
+        dialogContent : List (Html Msg)
+        dialogContent =
+            if config.mobile then
+                [ sections ]
+
+            else
+                [ sections, done ]
+
+        settings : Dialog Msg
+        settings =
+            Dialog.make dialogHtmlId
+                "settings"
+                CloseClicked
+                dialogContent
+                |> Dialog.workspace
+    in
+    if config.mobile then
+        settings
+
+    else
+        Dialog.withCloseButton settings
 
 
 dialogPreferences : Config -> List (Html Msg)
@@ -151,19 +250,22 @@ dialogPreferences config =
         []
         [ H.text "choose which dialogs to skip." ]
     , preference
-        { label = "skip turn introductions"
+        { mobile = config.mobile
+        , label = "skip turn introductions"
         , description = "go straight to planning when a new turn begins."
         , checked = config.skipIntroduction
         , onCheck = SkipIntroductionChanged
         }
     , preference
-        { label = "skip unit loss dialogs"
+        { mobile = config.mobile
+        , label = "skip unit loss dialogs"
         , description = "continue playback when a unit is destroyed."
         , checked = config.skipLosses
         , onCheck = SkipLossesChanged
         }
     , preference
-        { label = "skip units without orders warning"
+        { mobile = config.mobile
+        , label = "skip units without orders warning"
         , description = "submit without a reminder. units with no orders hold position."
         , checked = config.skipOrdersWarning
         , onCheck = SkipOrdersWarningChanged
@@ -171,7 +273,7 @@ dialogPreferences config =
     , H.p
         [ A.css
             [ S.textGray4
-            , S.mt3
+            , S.when (not config.mobile) S.mt3
             ]
         ]
         [ H.text "you can also change these using “skip this dialog” during a game." ]
@@ -179,13 +281,23 @@ dialogPreferences config =
 
 
 preference :
-    { label : String
+    { mobile : Bool
+    , label : String
     , description : String
     , checked : Bool
     , onCheck : Bool -> Msg
     }
     -> Html Msg
 preference config =
+    let
+        gap : Css.Style
+        gap =
+            if config.mobile then
+                S.g1
+
+            else
+                S.g2
+    in
     Checkbox.new
         { label = config.label
         , checked = config.checked
@@ -195,7 +307,7 @@ preference config =
             [ H.span
                 [ A.css
                     [ S.col
-                    , S.g2
+                    , gap
                     ]
                 ]
                 [ H.span

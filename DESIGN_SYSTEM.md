@@ -183,7 +183,7 @@ text wraps beside it and continues across the full width below it. At widths of
 Put the content in a bounded scrolling panel with the inset `indentStrong` bevel,
 `bgNightwood3` green background, and `p3` padding. Preserve paragraph breaks and
 wrap long text. Keep the title bar and bottom close button outside the scrolling
-panel and visible within the viewport. The close controls and Escape dismiss
+panel and visible within the viewport. The bottom close button and Escape dismiss
 it and restore focus to the About button or the game menu button. About is also
 available from the game menu; the privacy policy appears only as its subsection.
 On entry, fade the logo in while lowering it from 2rem above its resting position
@@ -361,13 +361,15 @@ Use a thin full-width header and a task rail over the battlefield's right edge.
 Opening or closing the rail preserves the map's size and position.
 Put **surrender** at the far left of the top bar and the gold,
 shining **submit turn** button at the far right. Center the menu, logo, turn, and
-chat group on the screen between equal-width outer columns. Both actions reuse
+chat group on the screen between equal-width outer columns, directly on the
+top bar without a surrounding border or bevel. Both actions reuse
 the ordinary submission and surrender flows. Scroll the task area independently
 and pin **close** below it; close deselects without removing saved orders.
-When no unit is selected, omit the entire rail, including close. The battlefield
+When nothing is selected, omit the entire rail, including close. The battlefield
 always fills the width beneath it. Do not show an idle selection prompt.
 Order choices and route/direction instructions replace one another in that area. A selected friendly unit opens horizontal **orders** and **details**
-tabs; enemies and locked turns show details only. New friendly selections open
+tabs. Depots, terrain tiles, enemies, and locked turns show details only.
+New friendly unit selections open
 orders. Tab changes preserve the selected unit and unfinished orders. Keep the
 close action in the rail footer; omit a second × in the tab header. Keep the
 orders/details tabs at stable, equal widths. Place ⓘ beside the orders label
@@ -397,6 +399,8 @@ behavior. Desktop dialogs keep their usual sizes.
   Open a centered native menu dialog
   with `settings` at the top and a primary `close` action at the bottom;
   Escape also returns to the battlefield.
+  In mobile landscape, center the menu actions in two columns with taller
+  buttons. Center `close` below the grid at the width of one column.
   Enable `settings` to open the settings workspace described below.
   Keep surrender out of the menu. Both the turn strip's `surrender` and the menu's
   `home` require confirmation before surrendering an active game.
@@ -536,7 +540,10 @@ behavior. Desktop dialogs keep their usual sizes.
   `close` action. Escape dismisses help while preserving selection and order
   planning. Keep the inspector layout stable when help opens. Use the shared
   `View.InfoMarker`: a centered `i` inside a circular outline, also used in
-  the order menu, terrain, and depot details. Hit points have no info marker or help. Resource gauges show the server-provided current
+  the order menu, terrain, and depot details. Unit hit points have no info marker.
+  Building HP and depot stock markers open the same reference dialogs, with a
+  scrollable body and a bottom close action in fullscreen mobile view. Resource
+  gauges show the server-provided current
   and maximum values. Enemy resources are withheld from the selection panel
   and have no gauges there. Live games and replays use the same inspector help;
   opening help during a replay pauses playback.
@@ -562,9 +569,10 @@ behavior. Desktop dialogs keep their usual sizes.
   list; up/down arrows or W/S cycle enabled orders whenever the popup is open, including
   before list focus, and Enter/Space chooses the focused order. Cancel and
   Escape clear selection while preserving saved orders.
-  Append the shortcut in parentheses to each order name: `move (m)`,
+  On desktop, append the shortcut in parentheses to each order name: `move (m)`,
   `hold position (h)`, `attack move (a)`, `ambush (b)`, `stand ground (g)`,
   `indirect fire (i)`, `dig in (d)`, and `sabotage (x)`. Show `cancel (esc)`.
+  In the mobile orders rail, show only the order names.
   Plain letter keys immediately activate enabled orders only while the popup
   is open, including before list focus. Preserve W/S navigation and the normal
   route/facing controls after choosing an order.
@@ -1337,11 +1345,15 @@ closes an open composer while preserving its draft. Focus its inset green text
 field, preserve planned orders, and suspend gameplay shortcuts while it is open.
 In the lobby, C focuses its always-visible chat field. Ignore the shortcut in text
 fields, native select controls, and other dialogs. Enter retains ordinary
-activation and movement-path confirmation outside chat. Enter sends; Escape or the
-title-bar close cancels. Keep the field full width,
-with regular-size **message history** and gold **send** buttons sharing the row
-below it. Omit recipient labels and keyboard hints. Disable browser autocomplete
-suggestions on the message input. Show sender names and
+activation and movement-path confirmation outside chat. Enter sends. Escape and
+the bottom **close** button dismiss the dialog. On desktop, keep the field full
+width. Group gold **send** and **close** on the left below the field and align
+the **message history** toggle to the right of the same row.
+On mobile, keep history visible and let it fill and scroll within the space
+above a single row. Place **close** on the left with a wider gap before the
+message field and **send** on the right. Omit recipient labels and keyboard
+hints. Disable browser autocomplete suggestions on the message input.
+Show sender names and
 message text without timestamps in lobby chat, game history, and replay history.
 Disable repeat submissions
 while sending. Sending immediately closes the game dialog; failures retain the
@@ -1351,8 +1363,8 @@ dialog is open.
 
 Show up to three recent messages briefly over the upper-left battlefield. Use
 readable red/blue player names with ordinary ivory message text and a dark text
-shadow. Messages do not intercept map input. History expands above the input,
-with a bounded scroll area in a beveled green depression, showing the complete
+shadow. Messages do not intercept map input. On desktop, history expands above
+the input, with a bounded scroll area in a beveled green depression. Show the complete
 conversation in chronological order, newest at the bottom, grouped by turn and
 lobby. Opening history starts at
 the bottom. New messages stay in view while the reader is at the bottom; scrolling
@@ -1476,13 +1488,17 @@ mute, master volume, combat, movement, ambience, and interface volume sliders.
 Disable the sliders while muted and retain their levels. Apply and remember
 changes immediately on this device. `done`, the title-bar close button, and
 Escape close settings and return focus to the game menu button.
+On mobile, omit the title-bar close button. Keep `done` at the bottom of the
+left rail below the tabs. The inset settings pane fills the height beside the
+rail and scrolls independently.
 
 
 ## Feedback
 
 The home and game menus offer `feedback`. Open a native form dialog with a
 labelled inset textarea, `submit feedback`, and `close`. Focus the textarea when
-opening; Escape and the title-bar close button dismiss and restore menu focus.
+opening. Escape and the bottom `close` button dismiss and restore menu focus.
+In fullscreen mobile view, let the textarea fill the space above the actions.
 Keep drafts when dismissed. Block blank or oversized submissions and disable
 repeat submits while saving. Keep the submitted text read-only during the
 request. Failures retain the draft and show an error beside the action; success

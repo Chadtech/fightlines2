@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "status": "concepts-not-runtime-assets",
+  "imported_on": "2026-11-11",
+  "generation_tool": "built-in image_gen",
+  "assets": [
+    {
+      "faction": "nazi-germany",
+      "current": "nazi-germany/concept-v9.png",
+      "source_filename": "concept-v9.png",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "sha256": "1bbb26f231a78e29401f371213e15cfdbf5a4bf64d1fb4d95e2a77962a79dc3e",
+      "status": "approved-concept"
+    },
+    {
+      "faction": "imperial-japan",
+      "current": "imperial-japan/concept-v13.png",
+      "source_filename": "concept-v13.png",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "sha256": "5c2b83e483702b10b4029557dd7c68d1dee3be0b111ac3901cd35aec3264a12d",
+      "status": "approved-concept"
+    },
+    {
+      "faction": "communist-china",
+      "current": "communist-china/concept-v15.png",
+      "source_filename": "concept-v15.png",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "sha256": "157eaf6b209cc96a82864e7ca899e75f51b9bc663d128070499b381d00e82b27",
+      "status": "approved-concept"
+    },
+    {
+      "faction": "united-states",
+      "current": "united-states/concept-v3.png",
+      "source_filename": "concept-v3.png",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "sha256": "6231364b55b2ebedf9f1dbe27dad1a096ee0e47fdd99375e5edea6f66e290f77",
+      "status": "approved-concept"
+    },
+    {
+      "faction": "chaos-cultist",
+      "current": "chaos-cultist/concept-v11.png",
+      "source_filename": "concept-v11.png",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "sha256": "420a6e96e6b8d6ec958c98655ac206bc105271ae601eadf0d5d20ca087e74c5d",
+      "status": "approved-concept"
+    },
+    {
+      "faction": "amazon-corporate",
+      "current": "amazon-corporate/concept-v5.png",
+      "source_filename": "concept-v5.png",
+      "width": 1254,
+      "height": 1254,
+      "mode": "RGBA",
+      "sha256": "3807cdd4336c0aa89c4786786fd5354c94b9aee27eff791f416e319af23192a7",
+      "status": "approved-concept"
+    }
+  ],
+  "reference": {
+    "path": "references/neutral-infantry.png",
+    "sha256": "6a72d7aa8fdb93435b81e24d8f16fa68b326ff706118b9c30e8d75320b8d2af5"
+  }
+}

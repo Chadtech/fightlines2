@@ -23,6 +23,7 @@ import Api.Enum.SpriteFacing as SpriteFacing exposing (SpriteFacing)
 import Api.Enum.UnitKind as UnitKind exposing (UnitKind)
 import Audio
 import Css
+import Css.Global as Global
 import Game.BackdropCalibration as BackdropCalibration
 import Game.CombatHealth as CombatHealth exposing (CombatHealth)
 import Game.Coordinate as Coordinate exposing (Coordinate)
@@ -693,21 +694,88 @@ automaticCloseDelayMs =
     500
 
 
+type alias TheaterOptions =
+    { automaticallyClose : Bool
+    , mobile : Bool
+    }
+
+
 toHtml :
     { calibrations : List BackdropCalibration.Entry
     , automaticallyClose : Bool
     , visibleTiles : List Coordinate
+    , mobile : Bool
     }
     -> List Depot
     -> Map
     -> Panel
     -> Html Msg
 toHtml config depots map panel =
-    Lazy.lazy6 theaterView config.calibrations config.automaticallyClose config.visibleTiles depots map panel
+    Lazy.lazy6 theaterView
+        config.calibrations
+        (theaterOptions config)
+        config.visibleTiles
+        depots
+        map
+        panel
 
 
-theaterView : List BackdropCalibration.Entry -> Bool -> List Coordinate -> List Depot -> Map -> Panel -> Html Msg
-theaterView calibrations automaticallyClose visibleTiles depots map panel =
+{-| Lazy views compare records by reference. Reuse the same record for each
+combination of options.
+-}
+theaterOptions : { a | automaticallyClose : Bool, mobile : Bool } -> TheaterOptions
+theaterOptions config =
+    if config.mobile then
+        if config.automaticallyClose then
+            mobileAutomatic
+
+        else
+            mobileManual
+
+    else if config.automaticallyClose then
+        desktopAutomatic
+
+    else
+        desktopManual
+
+
+mobileAutomatic : TheaterOptions
+mobileAutomatic =
+    { automaticallyClose = True
+    , mobile = True
+    }
+
+
+mobileManual : TheaterOptions
+mobileManual =
+    { automaticallyClose = False
+    , mobile = True
+    }
+
+
+desktopAutomatic : TheaterOptions
+desktopAutomatic =
+    { automaticallyClose = True
+    , mobile = False
+    }
+
+
+desktopManual : TheaterOptions
+desktopManual =
+    { automaticallyClose = False
+    , mobile = False
+    }
+
+
+theaterView :
+    List BackdropCalibration.Entry
+    -> TheaterOptions
+    -> List Coordinate
+    -> List Depot
+    -> Map
+    -> Panel
+    -> Html Msg
+theaterView calibrations options visibleTiles depots map panel =
     let
         scenery : Scenery
         scenery =
@@ -907,6 +975,99 @@ theaterView calibrations automaticallyClose visibleTiles depots map panel =
 
                 SeeingMap ->
                     0
+
+        sceneContent : List (Html Msg)
+        sceneContent =
+            if options.mobile then
+                List.map fullscreenScene portraits
+
+            else
+                portraits
+
+        content : List (Html Msg)
+        content =
+            [ H.div
+                [ A.css
+                    [ S.grid
+                    , S.g3
+                    , S.justifyCenter
+                    , sceneColumns
+                    , S.when options.mobile
+                        (S.batch
+                            [ S.flex1
+                            , S.minH0
+                            , Css.property "grid-auto-rows" "minmax(0, 1fr)"
+                            ]
+                        )
+                    ]
+                ]
+                sceneContent
+            , explanation
+            , H.div
+                [ A.css
+                    [ S.row
+                    , S.g3
+                    , S.flexWrap
+                    , S.itemsCenter
+                    , S.when options.mobile S.shrink0
+                    ]
+                ]
+                [ H.div
+                    [ Ev.preventDefaultOn "keydown" (HtmlEvent.enter ( SeeMapReleased, True ))
+                    , Ev.stopPropagationOn "keyup" (HtmlEvent.enter ( ContinueClicked, True ))
+                    ]
+                    [ Button.primary "continue" ContinueClicked |> Button.toHtml
+                    ]
+                , H.div
+                    [ Ev.on "pointerdown" (Decode.succeed SeeMapPressed)
+                    , Ev.on "pointerup" (Decode.succeed SeeMapReleased)
+                    , Ev.on "pointerleave" (Decode.succeed SeeMapReleased)
+                    , Ev.on "pointercancel" (Decode.succeed SeeMapReleased)
+                    , Ev.on "focusout" (Decode.succeed SeeMapReleased)
+                    , Ev.custom "keydown" (seeMapKey SeeMapPressed)
+                    , Ev.custom "keyup" (seeMapKey SeeMapReleased)
+                    ]
+                    [ Button.secondary "see map" SeeMapReleased |> Button.toHtml
+                    ]
+                , Checkbox.new
+                    { label = "automatically close"
+                    , checked = options.automaticallyClose
+                    , onCheck = AutomaticallyCloseChanged
+                    }
+                    |> Checkbox.toHtml
+                        [ H.text "automatically close" ]
+                ]
+            ]
+
+        theaterCard : Html Msg
+        theaterCard =
+            if options.mobile then
+                fullscreenCard title content
+
+            else
+                H.div
+                    [ A.css
+                        [ S.animation "fightlines-combat-pop 200ms ease-out both"
+                        , S.reducedMotion [ S.animationNone ]
+                        ]
+                    ]
+                    [ Card.toHtml card content ]
+
+        placementStyles : Css.Style
+        placementStyles =
+            if options.mobile then
+                S.batch
+                    [ S.col
+                    , S.hFull
+                    , S.overflowHidden
+                    ]
+
+            else
+                S.batch
+                    [ S.maxW256
+                    , S.maxHViewportInset6
+                    , S.overflowAuto
+                    ]
     in
     H.div
         [ A.attribute "data-combat-panels" ""
@@ -922,7 +1083,7 @@ theaterView calibrations automaticallyClose visibleTiles depots map panel =
             , S.col
             , S.itemsCenter
             , S.justifyCenter
-            , S.p3
+            , S.when (not options.mobile) S.p3
             ]
         ]
         [ H.div
@@ -943,67 +1104,88 @@ theaterView calibrations automaticallyClose visibleTiles depots map panel =
                 [ S.relative
                 , S.wFull
                 , S.textGray5
-                , S.maxW256
                 , S.opacity cardOpacity
-                , S.maxHViewportInsetRem 1.5
-                , S.overflowAuto
+                , placementStyles
                 ]
             ]
-            [ H.div
-                [ A.css
-                    [ S.animation "fightlines-combat-pop 200ms ease-out both"
-                    , S.reducedMotion
-                        [ S.animationNone ]
-                    ]
+            [ theaterCard ]
+        ]
+
+
+fullscreenCard : String -> List (Html Msg) -> Html Msg
+fullscreenCard title content =
+    H.article
+        [ A.css
+            [ S.col
+            , S.flex1
+            , S.minH0
+            , S.outdent
+            , S.bgGray1
+            ]
+        ]
+        [ H.div
+            [ A.css [ S.shrink0, S.p2px ] ]
+            [ CardHeader.simple title |> CardHeader.toHtml ]
+        , H.div
+            [ A.css
+                [ S.col
+                , S.flex1
+                , S.minH0
+                , S.g2
+                , S.p2
                 ]
-                [ Card.toHtml card
-                    [ H.div
-                        [ A.css
-                            [ S.grid
-                            , S.g3
-                            , S.justifyCenter
-                            , sceneColumns
-                            ]
-                        ]
-                        portraits
-                    , explanation
-                    , H.div
-                        [ A.css
-                            [ S.row
-                            , S.g3
-                            , S.flexWrap
-                            , S.itemsCenter
-                            ]
-                        ]
-                        [ H.div
-                            [ Ev.preventDefaultOn "keydown" (HtmlEvent.enter ( SeeMapReleased, True ))
-                            , Ev.stopPropagationOn "keyup" (HtmlEvent.enter ( ContinueClicked, True ))
-                            ]
-                            [ Button.primary "continue" ContinueClicked |> Button.toHtml
-                            ]
-                        , H.div
-                            [ Ev.on "pointerdown" (Decode.succeed SeeMapPressed)
-                            , Ev.on "pointerup" (Decode.succeed SeeMapReleased)
-                            , Ev.on "pointerleave" (Decode.succeed SeeMapReleased)
-                            , Ev.on "pointercancel" (Decode.succeed SeeMapReleased)
-                            , Ev.on "focusout" (Decode.succeed SeeMapReleased)
-                            , Ev.custom "keydown" (seeMapKey SeeMapPressed)
-                            , Ev.custom "keyup" (seeMapKey SeeMapReleased)
-                            ]
-                            [ Button.secondary "see map" SeeMapReleased |> Button.toHtml
-                            ]
-                        , Checkbox.new
-                            { label = "automatically close"
-                            , checked = automaticallyClose
-                            , onCheck = AutomaticallyCloseChanged
-                            }
-                            |> Checkbox.toHtml
-                                [ H.text "automatically close" ]
+            ]
+            content
+        ]
+
+
+portraitClass : String
+portraitClass =
+    "fightlines-combat-portrait"
+
+
+portraitArtClass : String
+portraitArtClass =
+    "fightlines-combat-portrait-art"
+
+
+{-| Each grid cell bounds its scene. Portraits give the artwork a smaller
+container so the readiness text below it can use its natural height.
+-}
+fullscreenScene : Html Msg -> Html Msg
+fullscreenScene artwork =
+    H.div
+        [ A.css
+            [ S.col
+            , S.containerSize
+            , Global.descendants
+                [ Global.selector "[data-combat-backdrop]"
+                    [ Css.property "width" "min(100%, 150cqh)"
+                    , S.mAuto
+                    ]
+                , Global.class portraitClass
+                    [ S.flex1
+                    , S.minH0
+                    ]
+                , Global.class portraitArtClass
+                    [ S.row
+                    , S.flex1
+                    , S.minH0
+                    , S.containerSize
+                    , Css.property "--combat-flank-inset"
+                        "max(0.5rem, calc((100% - 150cqh) / 2 + 0.5rem))"
+                    ]
+                , Global.selector "[data-depot-damage]"
+                    [ Css.property "display" "contents"
+                    , Global.children
+                        [ Global.typeSelector "div"
+                            [ Css.property "display" "contents" ]
                         ]
                     ]
                 ]
             ]
         ]
+        [ artwork ]
 
 
 seeMapKey : Msg -> Decode.Decoder { message : Msg, stopPropagation : Bool, preventDefault : Bool }
@@ -1499,10 +1681,10 @@ portrait scenery panel health unit =
         corner =
             case unit.spriteFacing of
                 SpriteFacing.Right ->
-                    S.left2
+                    Css.property "left" "var(--combat-flank-inset, 0.5rem)"
 
                 SpriteFacing.Left ->
-                    S.right2
+                    Css.property "right" "var(--combat-flank-inset, 0.5rem)"
 
         flankChip : Html Msg
         flankChip =
@@ -1529,14 +1711,15 @@ portrait scenery panel health unit =
                 H.text ""
     in
     H.div
-        [ A.css
+        [ A.class portraitClass
+        , A.css
             [ S.col
             , S.g2
             ]
         ]
         [ H.div
-            [ A.css
-                [ S.relative ]
+            [ A.class portraitArtClass
+            , A.css [ S.relative ]
             ]
             [ portraitScene scenery panel health unit
             , flankChip

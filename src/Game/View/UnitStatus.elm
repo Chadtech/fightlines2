@@ -23,6 +23,7 @@ import Svg.Styled as Svg
 import Svg.Styled.Attributes as SA
 import View.Aria as Aria
 import View.Button as Button
+import View.Layout as Layout exposing (Layout)
 
 
 
@@ -46,23 +47,46 @@ type Action msg
     | CancelOrder msg
 
 
-toHtml : Events msg -> String -> Unit -> Maybe (Action msg) -> Html msg
-toHtml events playerName unit action =
+toHtml :
+    Layout
+    -> Events msg
+    -> String
+    -> Unit
+    -> Maybe (Action msg)
+    -> Html msg
+toHtml layout events playerName unit action =
     case action of
         Just portraitAction ->
-            Lazy.lazy4 actionableStatusView events playerName unit portraitAction
+            Lazy.lazy5
+                actionableStatusView
+                layout
+                events
+                playerName
+                unit
+                portraitAction
 
         Nothing ->
-            Lazy.lazy3 inspectionStatusView events playerName unit
+            Lazy.lazy4
+                inspectionStatusView
+                layout
+                events
+                playerName
+                unit
 
 
-inspectionStatusView : Events msg -> String -> Unit -> Html msg
-inspectionStatusView events playerName unit =
-    statusView events playerName unit []
+inspectionStatusView : Layout -> Events msg -> String -> Unit -> Html msg
+inspectionStatusView layout events playerName unit =
+    statusView layout events playerName unit []
 
 
-actionableStatusView : Events msg -> String -> Unit -> Action msg -> Html msg
-actionableStatusView events playerName unit action =
+actionableStatusView :
+    Layout
+    -> Events msg
+    -> String
+    -> Unit
+    -> Action msg
+    -> Html msg
+actionableStatusView layout events playerName unit action =
     let
         button : Button.Button msg
         button =
@@ -73,7 +97,9 @@ actionableStatusView events playerName unit action =
                 CancelOrder onCancel ->
                     Button.danger "cancel order (esc)" onCancel
     in
-    statusView events
+    statusView
+        layout
+        events
         playerName
         unit
         [ button
@@ -82,30 +108,54 @@ actionableStatusView events playerName unit action =
         ]
 
 
-statusView : Events msg -> String -> Unit -> List (Html msg) -> Html msg
-statusView events playerName unit portraitActions =
+statusView :
+    Layout
+    -> Events msg
+    -> String
+    -> Unit
+    -> List (Html msg)
+    -> Html msg
+statusView layout events playerName unit actions =
     let
         identityContent : List (Html msg)
         identityContent =
-            [ unitHeader events playerName unit
-            , portrait playerName unit
-            ]
+            case layout of
+                Layout.Desktop ->
+                    [ unitHeader events playerName unit
+                    , portrait playerName unit
+                    ]
+
+                Layout.Mobile ->
+                    [ unitHeader events playerName unit ]
+
+        gap : Css.Style
+        gap =
+            case layout of
+                Layout.Desktop ->
+                    S.g3
+
+                Layout.Mobile ->
+                    S.g1
 
         resourceContent : List (Html msg)
         resourceContent =
             [ CombatReadiness.toHtml unit.combatState
             , exhaustionStatus unit
-            , resourcesView events unit.kind unit.resources
+            , resourcesView
+                layout
+                events
+                unit.kind
+                unit.resources
             ]
 
         content : List (Html msg)
         content =
-            identityContent ++ portraitActions ++ resourceContent
+            identityContent ++ actions ++ resourceContent
     in
     H.div
         [ A.css
             [ S.col
-            , S.g3
+            , gap
             , S.textGray5
             ]
         ]
@@ -146,9 +196,23 @@ exhaustionStatus unit =
             H.text ""
 
 
-resourcesView : Events msg -> UnitKind -> Maybe UnitResources -> Html msg
-resourcesView events kind maybeResources =
+resourcesView :
+    Layout
+    -> Events msg
+    -> UnitKind
+    -> Maybe UnitResources
+    -> Html msg
+resourcesView layout events kind maybeResources =
     let
+        gaugeGap : Css.Style
+        gaugeGap =
+            case layout of
+                Layout.Desktop ->
+                    S.g3
+
+                Layout.Mobile ->
+                    S.g1
+
         visibleResources : UnitResources -> List Resource
         visibleResources details =
             let
@@ -167,7 +231,7 @@ resourcesView events kind maybeResources =
     H.div
         [ A.css
             [ S.col
-            , S.g3
+            , gaugeGap
             ]
         ]
         (List.map (gauge events kind) resources)
@@ -227,7 +291,10 @@ unitHeader events playerName unit =
                 ]
                 [ H.text (unitTitle unit)
                 ]
-            , InspectionHelp.button events ("about " ++ UnitKindUtil.label unit.kind) (UnitHelp unit.kind)
+            , InspectionHelp.button
+                events
+                ("about " ++ UnitKindUtil.label unit.kind)
+                (UnitHelp (UnitSprite.appearance unit))
             ]
         , H.span
             [ A.css

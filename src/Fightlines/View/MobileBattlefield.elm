@@ -95,7 +95,7 @@ panelHeader config =
         tabs : Tabs Tab msg
         tabs =
             Tabs.new
-                { label = "selected unit"
+                { label = "selection"
                 , selected = config.tab
                 , options = options
                 , htmlId = tabHtmlId
@@ -191,6 +191,7 @@ toHtml :
     { header : Html msg
     , battlefield : Html msg
     , hasSelection : Bool
+    , tab : Tab
     , panelHeader : Html msg
     , panel : Html msg
     , close : Html msg
@@ -234,6 +235,18 @@ toHtml contents =
                 Nothing ->
                     H.text ""
 
+        panelPadding : Css.Style
+        panelPadding =
+            case contents.tab of
+                Orders ->
+                    S.p2
+
+                Details ->
+                    Css.batch
+                        [ S.px2
+                        , S.pb2
+                        ]
+
         panel : Html msg
         panel =
             if contents.hasSelection then
@@ -269,7 +282,7 @@ toHtml contents =
                             [ S.flex1
                             , S.minH0
                             , S.overflowAuto
-                            , S.p2
+                            , panelPadding
                             , S.col
                             , S.g2
                             ]

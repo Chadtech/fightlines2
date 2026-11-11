@@ -7,18 +7,25 @@ module Game.View.InspectionHelp exposing
     , dialogHtmlId
     )
 
+import Api.Enum.ResourceKind exposing (ResourceKind)
 import Api.Enum.UnitKind as Kind exposing (UnitKind)
+import Css
 import Game.Coordinate exposing (Coordinate)
+import Game.Depot as Depot
 import Game.Map as Map exposing (Map)
+import Game.Supply as Supply
 import Game.Terrain as Terrain exposing (Terrain)
 import Game.UnitKind as UnitKindUtil
 import Game.UnitStats exposing (UnitStats)
 import Game.View.TerrainTile as TerrainTile
+import Game.View.UnitSprite as UnitSprite
 import Game.View.UnitStats as UnitStatsView
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Html.Styled.Events as Ev
 import Style as S
+import Svg.Styled as Svg
+import Svg.Styled.Attributes as SA
 import Util.List as ListUtil
 import View.Aria as Aria
 import View.Button as Button
@@ -27,10 +34,12 @@ import View.InfoMarker as InfoMarker
 
 
 type Help
-    = UnitHelp UnitKind
+    = UnitHelp UnitSprite.Appearance
     | SupplyHelp
     | FuelHelp
     | CargoHelp
+    | BuildingHpHelp
+    | DepotStockHelp ResourceKind
     | TerrainHelp TerrainLocation
 
 
@@ -94,6 +103,12 @@ buttonHtmlId help =
         CargoHelp ->
             "unit-cargo-info-button"
 
+        BuildingHpHelp ->
+            "building-hp-info-button"
+
+        DepotStockHelp _ ->
+            "depot-stock-info-button"
+
         TerrainHelp _ ->
             "terrain-info-button"
 
@@ -103,14 +118,17 @@ dialogHtmlId =
     "inspection-info-dialog"
 
 
-dialog : List UnitStats -> msg -> Help -> Dialog msg
-dialog stats dismissed help =
+dialog :
+    { mobile : Bool, stats : List UnitStats, onClose : msg }
+    -> Help
+    -> Dialog msg
+dialog config help =
     let
         title : String
         title =
             case help of
-                UnitHelp kind ->
-                    "about " ++ UnitKindUtil.label kind
+                UnitHelp unit ->
+                    "about " ++ UnitKindUtil.label unit.kind
 
                 SupplyHelp ->
                     "supply"
@@ -121,14 +139,20 @@ dialog stats dismissed help =
                 CargoHelp ->
                     "cargo"
 
+                BuildingHpHelp ->
+                    "building hp"
+
+                DepotStockHelp kind ->
+                    "depot " ++ Supply.resourceLabel kind
+
                 TerrainHelp location ->
                     "about terrain: " ++ Terrain.label (Map.terrainAt location.map location.position)
 
         content : Html msg
         content =
             case help of
-                UnitHelp kind ->
-                    unitReference stats kind
+                UnitHelp unit ->
+                    unitReference config.mobile config.stats unit
 
                 SupplyHelp ->
                     H.p
@@ -145,26 +169,93 @@ dialog stats dismissed help =
                         []
                         [ H.text "supplies refill provisions; fuel drums refill vehicles before upkeep, while stock lasts" ]
 
+                BuildingHpHelp ->
+                    H.p
+                        []
+                        [ H.text "each shell removes one hp. occupying infantry can destroy this building in one turn with sabotage. the condition shown in fog was last observed." ]
+
+                DepotStockHelp kind ->
+                    H.p
+                        []
+                        [ H.text (Depot.stockDescription kind) ]
+
                 TerrainHelp location ->
                     terrainReference location
+
+        close : Html msg
+        close =
+            Button.secondary "close" config.onClose
+                |> Button.toHtml
+
+        reference : List (Html msg) -> Dialog msg
+        reference body =
+            Dialog.make dialogHtmlId title config.onClose body
+                |> Dialog.reference
+
+        standard : Dialog msg
+        standard =
+            reference [ content, close ]
+
+        mobile : Dialog msg
+        mobile =
+            reference
+                [ H.div
+                    [ A.css
+                        [ S.flex1
+                        , S.minH0
+                        , S.overflowAuto
+                        , Css.property "overscroll-behavior" "contain"
+                        ]
+                    ]
+                    [ content ]
+                , H.div
+                    [ A.css
+                        [ S.row
+                        , S.shrink0
+                        ]
+                    ]
+                    [ close ]
+                ]
     in
-    Dialog.make dialogHtmlId
-        title
-        dismissed
-        [ content
-        , Button.secondary "close" dismissed
-            |> Button.toHtml
-        ]
-        |> Dialog.reference
-        |> Dialog.withCloseButton
+    case help of
+        TerrainHelp _ ->
+            if config.mobile then
+                mobile
+
+            else
+                standard
+
+        SupplyHelp ->
+            standard
+                |> Dialog.withCloseButton
+
+        FuelHelp ->
+            standard
+                |> Dialog.withCloseButton
+
+        CargoHelp ->
+            standard
+                |> Dialog.withCloseButton
+
+        _ ->
+            if config.mobile then
+                mobile
+
+            else
+                standard
+                    |> Dialog.withCloseButton
 
 
-unitReference : List UnitStats -> UnitKind -> Html msg
-unitReference stats kind =
+unitReference :
+    Bool
+    -> List UnitStats
+    -> UnitSprite.Appearance
+    -> Html msg
+unitReference mobile stats unit =
     let
         statistics : List (Html msg)
         statistics =
-            case ListUtil.find (\entry -> entry.movement.kind == kind) stats of
+            case ListUtil.find (\entry -> entry.movement.kind == unit.kind) stats of
                 Just entry ->
                     [ UnitStatsView.toHtml entry ]
 
@@ -175,13 +266,29 @@ unitReference stats kind =
                         ]
                     ]
 
-        content : List (Html msg)
-        content =
+        description : Html msg
+        description =
             H.p
-                []
-                [ H.text (unitDescription kind)
+                [ A.css [ S.when mobile S.m0 ] ]
+                [ H.text (unitDescription unit.kind)
                 ]
-                :: statistics
+
+        introduction : Html msg
+        introduction =
+            if mobile then
+                H.div
+                    [ A.css
+                        [ S.row
+                        , S.itemsStart
+                        , S.g3
+                        ]
+                    ]
+                    [ unitPreview unit
+                    , description
+                    ]
+
+            else
+                description
     in
     H.div
         [ A.css
@@ -189,7 +296,32 @@ unitReference stats kind =
             , S.g3
             ]
         ]
-        content
+        (introduction :: statistics)
+
+
+unitPreview : UnitSprite.Appearance -> Html msg
+unitPreview unit =
+    H.div
+        [ Aria.hidden True
+        , A.css
+            [ S.bgNightwood3
+            , S.indentStrong
+            , S.w16
+            , S.shrink0
+            , S.p1
+            ]
+        ]
+        [ Svg.svg
+            [ SA.viewBox
+                ("0 0 " ++ String.fromFloat (UnitSprite.portraitWidth unit) ++ " 16")
+            , SA.css
+                [ S.block
+                , S.wFull
+                , S.h12
+                ]
+            ]
+            [ UnitSprite.portraitToSvg unit ]
+        ]
 
 
 terrainReference : TerrainLocation -> Html msg

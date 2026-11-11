@@ -49,11 +49,12 @@ type Msg
 
 type ComposerPlacement
     = DialogComposer
+    | MobileComposer
     | LobbyComposer
 
 
 type TranscriptPlacement
-    = LobbyTranscript
+    = FillingTranscript
     | HistoryTranscript
 
 
@@ -93,8 +94,8 @@ messagesHtmlId =
     "chat-messages"
 
 
-dialog : Chat.Model -> Composer -> Dialog Msg
-dialog model composer =
+dialog : { mobile : Bool } -> Chat.Model -> Composer -> Dialog Msg
+dialog layout model composer =
     let
         historyBody : List (Html Msg)
         historyBody =
@@ -103,6 +104,26 @@ dialog model composer =
 
             else
                 []
+
+        content : List (Html Msg)
+        content =
+            if layout.mobile then
+                [ transcript FillingTranscript
+                    { onScroll = Just HistoryScrolled }
+                    model.messages
+                , editor MobileComposer composer
+                ]
+
+            else
+                [ H.div
+                    [ A.hidden (not composer.history)
+                    , A.id historyHtmlId
+                    , A.css
+                        [ S.when (not composer.history) S.displayNone ]
+                    ]
+                    historyBody
+                , editor DialogComposer composer
+                ]
 
         errorOverlay : List (Html Msg)
         errorOverlay =
@@ -114,17 +135,9 @@ dialog model composer =
     Dialog.make dialogHtmlId
         "chat"
         CloseClicked
-        [ H.div
-            [ A.hidden (not composer.history)
-            , A.id historyHtmlId
-            , A.css [ S.when (not composer.history) S.displayNone ]
-            ]
-            historyBody
-        , editor DialogComposer composer
-        ]
+        content
         |> Dialog.form
         |> Dialog.onOpened DialogOpened
-        |> Dialog.withCloseButton
         |> Dialog.withOverlay errorOverlay
 
 
@@ -140,7 +153,9 @@ lobbyPanel model =
                 _ ->
                     H.text ""
     in
-    [ transcript LobbyTranscript { onScroll = Just HistoryScrolled } model.messages
+    [ transcript FillingTranscript
+        { onScroll = Just HistoryScrolled }
+        model.messages
     , input
     ]
         |> Card.toHtml
@@ -183,11 +198,26 @@ editor placement composer =
         focusedField : TextField.TextField Msg
         focusedField =
             case placement of
-                DialogComposer ->
-                    TextField.withAutofocus field
-
                 LobbyComposer ->
                     field
+
+                _ ->
+                    TextField.withAutofocus field
+
+        close : Html Msg
+        close =
+            Button.secondary "close" CloseClicked
+                |> Button.toHtml
+
+        inlineField : Html Msg
+        inlineField =
+            H.div
+                [ A.css
+                    [ S.flex1
+                    , S.minW0
+                    ]
+                ]
+                [ TextField.toHtml focusedField ]
 
         historyLabel : String
         historyLabel =
@@ -214,25 +244,28 @@ editor placement composer =
                     , H.div
                         [ A.css
                             [ S.row
-                            , S.justifySpaceBetween
-                            , S.g3
+                            , S.g2
                             , S.flexWrap
                             ]
                         ]
-                        [ historyAction
-                        , Button.toHtml send
+                        [ Button.toHtml send
+                        , close
+                        , H.div
+                            [ A.css [ Css.marginLeft Css.auto ] ]
+                            [ historyAction ]
                         ]
                     ]
 
-                LobbyComposer ->
+                MobileComposer ->
                     [ H.div
-                        [ A.css
-                            [ S.flex1
-                            , S.minW0
-                            ]
-                        ]
-                        [ TextField.toHtml focusedField
-                        ]
+                        [ A.css [ S.mr2 ] ]
+                        [ close ]
+                    , inlineField
+                    , Button.toHtml send
+                    ]
+
+                LobbyComposer ->
+                    [ inlineField
                     , Button.toHtml send
                     ]
 
@@ -244,7 +277,7 @@ editor placement composer =
                     , S.g3
                     ]
 
-                LobbyComposer ->
+                _ ->
                     [ S.row
                     , S.itemsCenter
                     , S.g2
@@ -458,7 +491,7 @@ transcript placement events messages =
         placementStyles : List Css.Style
         placementStyles =
             case placement of
-                LobbyTranscript ->
+                FillingTranscript ->
                     [ S.flex1
                     , S.minH0
                     ]

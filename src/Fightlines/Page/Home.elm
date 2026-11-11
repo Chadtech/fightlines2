@@ -295,7 +295,11 @@ dialog : Model -> Maybe (Dialog Msg)
 dialog model =
     case model.activeDialog of
         FeedbackDialog ->
-            Just (FeedbackView.dialog model.feedback |> Dialog.map FeedbackMsg)
+            FeedbackView.dialog
+                { mobile = Shared.isMobileView model.shared }
+                model.feedback
+                |> Dialog.map FeedbackMsg
+                |> Just
 
         AboutDialog ->
             Just (About.dialog { onClose = AboutDialogClosed })

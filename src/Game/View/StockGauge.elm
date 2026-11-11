@@ -1,4 +1,4 @@
-module Game.View.StockGauge exposing (hp, toHtml)
+module Game.View.StockGauge exposing (Help(..), hp, toHtml)
 
 import Css
 import Game.Depot as Depot
@@ -15,10 +15,15 @@ type GaugeKind
     | DepotHp
 
 
-type alias Description =
+type Help msg
+    = InlineHelp String
+    | DialogButton (Html msg)
+
+
+type alias Config msg =
     { label : String
     , accessibleLabel : String
-    , description : String
+    , help : Help msg
     }
 
 
@@ -33,21 +38,21 @@ summaryStyles =
     ]
 
 
-toHtml : Description -> Supply.Stock -> Html msg
+toHtml : Config msg -> Supply.Stock -> Html msg
 toHtml =
     gauge ResourceStock
 
 
-hp : { accessibleLabel : String, description : String } -> Depot.Hp -> Html msg
+hp : { accessibleLabel : String, help : Help msg } -> Depot.Hp -> Html msg
 hp config =
     gauge DepotHp
         { label = "hp"
         , accessibleLabel = config.accessibleLabel
-        , description = config.description
+        , help = config.help
         }
 
 
-gauge : GaugeKind -> Description -> { current : Int, maximum : Int } -> Html msg
+gauge : GaugeKind -> Config msg -> { current : Int, maximum : Int } -> Html msg
 gauge kind config stock =
     let
         fraction : Float
@@ -89,53 +94,68 @@ gauge kind config stock =
             else
                 []
 
-        contents : List (Html msg)
-        contents =
-            [ H.details
-                []
-                [ H.summary
-                    [ Aria.label ("about " ++ config.accessibleLabel)
-                    , A.css
-                        [ S.batch summaryStyles
-                        , S.justifySpaceBetween
-                        , S.flexWrap
-                        , S.g1
-                        ]
-                    ]
-                    [ H.span
-                        [ A.css
-                            [ S.row
-                            , S.itemsCenter
-                            , S.g2
-                            ]
-                        ]
-                        [ H.text config.label
-                        , InfoMarker.toHtml
-                        ]
-                    , H.span
-                        [ A.css
-                            [ S.noWrap
-                            , S.tabularNums
-                            ]
-                        ]
-                        [ H.text
-                            (String.fromInt stock.current
-                                ++ " / "
-                                ++ String.fromInt stock.maximum
-                            )
-                        ]
-                    ]
-                , H.p
-                    [ A.css
-                        [ S.bgYellow2
-                        , S.textGray5
-                        , S.p2
-                        , S.mt2
-                        ]
-                    ]
-                    [ H.text config.description
+        amount : Html msg
+        amount =
+            H.span
+                [ A.css
+                    [ S.noWrap
+                    , S.tabularNums
                     ]
                 ]
+                [ H.text
+                    (String.fromInt stock.current
+                        ++ " / "
+                        ++ String.fromInt stock.maximum
+                    )
+                ]
+
+        labelWithMarker : Html msg -> Html msg
+        labelWithMarker marker =
+            H.span
+                [ A.css
+                    [ S.row
+                    , S.itemsCenter
+                    , S.g2
+                    ]
+                ]
+                [ H.text config.label
+                , marker
+                ]
+
+        header : Html msg
+        header =
+            case config.help of
+                InlineHelp description ->
+                    H.details
+                        []
+                        [ H.summary
+                            [ Aria.label ("about " ++ config.accessibleLabel)
+                            , A.css (summaryStyles ++ headerStyles)
+                            ]
+                            [ labelWithMarker InfoMarker.toHtml
+                            , amount
+                            ]
+                        , H.p
+                            [ A.css
+                                [ S.bgYellow2
+                                , S.textGray5
+                                , S.p2
+                                , S.mt2
+                                ]
+                            ]
+                            [ H.text description ]
+                        ]
+
+                DialogButton button ->
+                    H.div
+                        [ A.css (S.row :: S.itemsCenter :: headerStyles) ]
+                        [ labelWithMarker button
+                        , amount
+                        ]
+
+        contents : List (Html msg)
+        contents =
+            [ header
             , H.div
                 [ Aria.role Aria.Meter
                 , Aria.label config.accessibleLabel
@@ -165,3 +185,11 @@ gauge kind config stock =
             ]
         ]
         (contents ++ notice)
+
+
+headerStyles : List Css.Style
+headerStyles =
+    [ S.justifySpaceBetween
+    , S.flexWrap
+    , S.g1
+    ]

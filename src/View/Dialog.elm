@@ -3,6 +3,7 @@ module View.Dialog exposing
     , announcement
     , article
     , atBottom
+    , compactForm
     , form
     , fullscreen
     , htmlId
@@ -55,7 +56,12 @@ type Placement
     | Reference
     | Article
     | Workspace
-    | Form
+    | Form FormDensity
+
+
+type FormDensity
+    = Regular
+    | Compact
 
 
 
@@ -158,7 +164,12 @@ atBottom =
 
 form : Dialog msg -> Dialog msg
 form =
-    setPlacement Form
+    setPlacement (Form Regular)
+
+
+compactForm : Dialog msg -> Dialog msg
+compactForm =
+    setPlacement (Form Compact)
 
 
 map : (a -> msg) -> Dialog a -> Dialog msg
@@ -203,7 +214,7 @@ toHtml (Dialog model) =
         placementStyles : List Css.Style
         placementStyles =
             case model.placement of
-                Form ->
+                Form _ ->
                     [ S.w170
                     , S.maxHViewportInset8
                     , S.overflowAuto
@@ -249,7 +260,7 @@ toHtml (Dialog model) =
                     [ S.fixed
                     , S.topAuto
                     , S.bottom18
-                    , S.maxHViewportInsetRem 6
+                    , S.maxHViewportInset24
                     , S.overflowAuto
                     , S.w104
                     , S.backdrop
@@ -356,12 +367,24 @@ toHtml (Dialog model) =
             else
                 []
 
+        bodySpacing : List Css.Style
+        bodySpacing =
+            case model.placement of
+                Form Compact ->
+                    [ S.g2
+                    , S.px3
+                    , S.py2
+                    ]
+
+                _ ->
+                    [ S.g3
+                    , S.p3
+                    ]
+
         bodyStyles : List Css.Style
         bodyStyles =
-            [ S.col
-            , S.g3
-            , S.p3
-            ]
+            S.col
+                :: bodySpacing
                 ++ placementBodyStyles
                 ++ fullscreenBodyStyles
 

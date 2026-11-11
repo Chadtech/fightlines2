@@ -89,7 +89,7 @@ toHtml observation stock =
             , StockGauge.toHtml
                 { label = Supply.resourceLabel stock.kind
                 , accessibleLabel = Supply.cargoLabel stock.kind ++ " " ++ Supply.resourceLabel stock.kind
-                , description = description
+                , help = StockGauge.InlineHelp description
                 }
                 { current = stock.current
                 , maximum = stock.maximum

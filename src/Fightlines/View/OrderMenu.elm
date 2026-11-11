@@ -25,6 +25,7 @@ import View.Aria as Aria
 import View.Button as Button
 import View.CardHeader as CardHeader
 import View.InfoMarker as InfoMarker
+import View.Layout as Layout exposing (Layout)
 
 
 type Msg
@@ -66,7 +67,7 @@ embedded depots map unit =
             ]
         ]
         (List.map
-            (orderButton map depots unit)
+            (orderButton Layout.Mobile map depots unit)
             (Order.available depots unit)
         )
 
@@ -187,7 +188,7 @@ ordersView depots map offset zoom position unit =
                     ]
                 ]
             ]
-            (List.map (orderButton map depots unit) orders)
+            (List.map (orderButton Layout.Desktop map depots unit) orders)
         , cancelRow
         ]
 
@@ -280,17 +281,49 @@ cancelRow =
         ]
 
 
-orderButton : Map -> List Depot -> Unit -> Order -> Html Msg
-orderButton map depots unit order =
+orderButton :
+    Layout
+    -> Map
+    -> List Depot
+    -> Unit
+    -> Order
+    -> Html Msg
+orderButton layout map depots unit order =
     let
         implemented : Bool
         implemented =
             Order.canUse map depots unit order
 
+        label : String
+        label =
+            Order.label order
+
+        shortcut : String
+        shortcut =
+            Order.shortcut order
+
+        buttonLabel : String
+        buttonLabel =
+            case layout of
+                Layout.Desktop ->
+                    label ++ " (" ++ shortcut ++ ")"
+
+                Layout.Mobile ->
+                    label
+
+        shortcutAttributes : List (H.Attribute Msg)
+        shortcutAttributes =
+            case layout of
+                Layout.Desktop ->
+                    [ A.attribute "aria-keyshortcuts" shortcut ]
+
+                Layout.Mobile ->
+                    []
+
         title : String
         title =
             if implemented then
-                Order.label order
+                label
 
             else if order == Order.Sabotage then
                 "requires infantry already on an operational depot and enough supplies for upkeep"
@@ -322,20 +355,23 @@ orderButton map depots unit order =
 
             else
                 orderRowStyles ++ [ S.opacity 0.45, S.notAllowedCursor ]
+
+        attributes : List (H.Attribute Msg)
+        attributes =
+            [ A.id (orderHtmlId order)
+            , A.type_ "button"
+            , A.disabled (not implemented)
+            , A.title title
+            , Ev.onClick (OrderPicked order)
+            , Ev.onFocus (OrderFocused (OrderOption order))
+            , Ev.custom "keydown" (navigationDecoder (OrderOption order))
+            , A.css styles
+            ]
     in
     H.button
-        [ A.id (orderHtmlId order)
-        , A.type_ "button"
-        , A.disabled (not implemented)
-        , A.title title
-        , Ev.onClick (OrderPicked order)
-        , Ev.onFocus (OrderFocused (OrderOption order))
-        , Ev.custom "keydown" (navigationDecoder (OrderOption order))
-        , A.attribute "aria-keyshortcuts" (Order.shortcut order)
-        , A.css styles
-        ]
+        (attributes ++ shortcutAttributes)
         [ orderIcon order
-        , H.text (Order.label order ++ " (" ++ Order.shortcut order ++ ")")
+        , H.text buttonLabel
         ]
 
 

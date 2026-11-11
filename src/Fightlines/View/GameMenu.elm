@@ -11,6 +11,7 @@ module Fightlines.View.GameMenu exposing
     )
 
 import Browser.Dom
+import Css
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
 import Style as S
@@ -69,7 +70,9 @@ resignationCancelButtonHtmlId =
     resignationDialogHtmlId ++ "-cancel"
 
 
-panel : { enabled : Bool, turnNumber : Int } -> Html Msg
+panel :
+    { enabled : Bool, turnNumber : Int, mobile : Bool }
+    -> Html Msg
 panel config =
     let
         headerButton : String -> Msg -> Button.Button Msg
@@ -83,18 +86,24 @@ panel config =
         turnLabel : String
         turnLabel =
             "turn " ++ String.fromInt config.turnNumber
+
+        desktopPanel : Css.Style
+        desktopPanel =
+            S.batch
+                [ S.bgGray1
+                , S.outdent
+                , S.borderT0
+                , S.py1
+                ]
     in
     H.section
         [ Aria.label "game header"
         , A.css
-            [ S.bgGray1
-            , S.outdent
-            , S.borderT0
+            [ S.when (not config.mobile) desktopPanel
             , S.grid
             , S.gridColumns "minmax(0, 4.5rem) minmax(0, 6rem) minmax(0, 4.5rem) minmax(0, 4.5rem)"
             , S.itemsCenter
             , S.g2
-            , S.py1
             , S.px1p5
             , S.maxWFull
             , S.childButtons
@@ -146,7 +155,7 @@ panel config =
         ]
 
 
-dialog : { resigning : Bool } -> Dialog Msg
+dialog : { resigning : Bool, mobile : Bool } -> Dialog Msg
 dialog config =
     let
         homeButton : Button.Button Msg
@@ -156,26 +165,57 @@ dialog config =
 
             else
                 Button.secondary "home" HomeClicked
+
+        layoutStyles : List Css.Style
+        layoutStyles =
+            if config.mobile then
+                [ S.grid
+                , S.gridColumns "repeat(4, minmax(0, 1fr))"
+                , S.maxW96
+                , S.mAuto
+                , S.shrink0
+                , S.childButtons
+                    [ Css.property "min-height" "clamp(3rem, 20dvh, 5rem)"
+                    , S.fontSizeRem 1.25
+                    , Css.property "grid-column" "span 2"
+                    , Css.lastChild
+                        [ Css.property "grid-column" "2 / 4"
+                        ]
+                    ]
+                ]
+
+            else
+                []
     in
     Dialog.make dialogHtmlId
         "menu"
         CloseClicked
-        [ Button.secondary "settings" SettingsClicked
-            |> Button.fullWidth
-            |> Button.toHtml
-        , Button.secondary "feedback" FeedbackClicked
-            |> Button.fullWidth
-            |> Button.toHtml
-        , Button.secondary "about" AboutClicked
-            |> Button.fullWidth
-            |> Button.toHtml
-        , homeButton
-            |> Button.fullWidth
-            |> Button.toHtml
-        , Button.primary "close" CloseClicked
-            |> Button.withHtmlId closeButtonHtmlId
-            |> Button.fullWidth
-            |> Button.toHtml
+        [ H.div
+            [ A.css
+                [ S.col
+                , S.g3
+                , S.wFull
+                , S.selfCenter
+                , S.batch layoutStyles
+                ]
+            ]
+            [ Button.secondary "settings" SettingsClicked
+                |> Button.fullWidth
+                |> Button.toHtml
+            , Button.secondary "feedback" FeedbackClicked
+                |> Button.fullWidth
+                |> Button.toHtml
+            , Button.secondary "about" AboutClicked
+                |> Button.fullWidth
+                |> Button.toHtml
+            , homeButton
+                |> Button.fullWidth
+                |> Button.toHtml
+            , Button.primary "close" CloseClicked
+                |> Button.withHtmlId closeButtonHtmlId
+                |> Button.fullWidth
+                |> Button.toHtml
+            ]
         ]
 
 

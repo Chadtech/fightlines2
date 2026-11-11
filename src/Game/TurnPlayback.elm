@@ -164,16 +164,15 @@ type Presentation
 
 
 type alias CombatFocus =
-    { encounter : Encounter
-    , remaining : List Encounter
+    { remaining : List Encounter
     , before : Frame
     , stage : CombatStage
     }
 
 
 type CombatStage
-    = Spotlighting Float
-    | ShowingPanels { elapsed : Float, mapView : MapView }
+    = Spotlighting { encounter : Encounter, elapsed : Float }
+    | ShowingPanels Panel
 
 
 type MapView
@@ -376,11 +375,21 @@ combat playback =
             Nothing
 
 
+focusEncounter : CombatFocus -> Encounter
+focusEncounter focus =
+    case focus.stage of
+        Spotlighting spotlightState ->
+            spotlightState.encounter
+
+        ShowingPanels panel ->
+            panel.encounter
+
+
 activeEncounter : Playback -> Maybe Encounter
 activeEncounter playback =
     case playback.presentation of
         Combat focus ->
-            Just focus.encounter
+            Just (focusEncounter focus)
 
         Deaths _ ->
             Nothing
@@ -392,15 +401,15 @@ activeEncounter playback =
 spotlight : Playback -> Maybe (List Coordinate)
 spotlight playback =
     case playback.presentation of
-        Combat { encounter, before, stage } ->
+        Combat { before, stage } ->
             case stage of
-                Spotlighting _ ->
-                    Just (encounterPositions before encounter)
+                Spotlighting spotlightState ->
+                    Just (encounterPositions before spotlightState.encounter)
 
                 ShowingPanels panel ->
                     case panel.mapView of
                         SeeingMap ->
-                            Just (encounterPositions before encounter)
+                            Just (encounterPositions before panel.encounter)
 
                         CardVisible ->
                             Nothing
@@ -415,14 +424,10 @@ spotlight playback =
 panels : Playback -> Maybe Panel
 panels playback =
     case playback.presentation of
-        Combat { encounter, stage } ->
+        Combat { stage } ->
             case stage of
                 ShowingPanels panel ->
-                    Just
-                        { encounter = encounter
-                        , elapsed = panel.elapsed
-                        , mapView = panel.mapView
-                        }
+                    Just panel
 
                 Spotlighting _ ->
                     Nothing
@@ -793,12 +798,11 @@ beginFrame before prepared =
             case encounters frames of
                 encounter :: rest ->
                     Combat
-                        { encounter = encounter
-                        , remaining = rest
+                        { remaining = rest
                         , before =
                             revealed
                                 |> setFrameShots []
-                        , stage = Spotlighting 0
+                        , stage = Spotlighting { encounter = encounter, elapsed = 0 }
                         }
 
                 [] ->
@@ -1267,16 +1271,32 @@ tickCombat delta focus playback =
         stage : CombatStage
         stage =
             case focus.stage of
-                Spotlighting elapsed ->
-                    if elapsed + delta >= 300 then
-                        ShowingPanels { elapsed = 0, mapView = CardVisible }
+                Spotlighting spotlightState ->
+                    if spotlightState.elapsed + delta >= 300 then
+                        ShowingPanels
+                            { encounter = spotlightState.encounter
+                            , elapsed = 0
+                            , mapView = CardVisible
+                            }
 
                     else
-                        Spotlighting (elapsed + delta)
+                        Spotlighting
+                            { spotlightState
+                                | elapsed = spotlightState.elapsed + delta
+                            }
 
                 ShowingPanels panel ->
-                    -- Allow staggered unit casualties followed by a depot strike and automatic-close pause.
-                    ShowingPanels { panel | elapsed = min 6000 (panel.elapsed + delta) }
+                    let
+                        -- Allow staggered unit casualties followed by a depot strike and automatic-close pause.
+                        elapsed : Float
+                        elapsed =
+                            min 6000 (panel.elapsed + delta)
+                    in
+                    if elapsed == panel.elapsed then
+                        focus.stage
+
+                    else
+                        ShowingPanels { panel | elapsed = elapsed }
     in
     ( Just
         (playback
@@ -1297,13 +1317,19 @@ setMapView mapView playback =
         Combat focus ->
             case focus.stage of
                 ShowingPanels panel ->
-                    playback
-                        |> setPresentation
-                            (Combat
-                                (focus
-                                    |> setCombatFocusStage (ShowingPanels { panel | mapView = mapView })
+                    if panel.mapView == mapView then
+                        playback
+
+                    else
+                        playback
+                            |> setPresentation
+                                (Combat
+                                    { focus
+                                        | stage =
+                                            ShowingPanels
+                                                { panel | mapView = mapView }
+                                    }
                                 )
-                            )
 
                 Spotlighting _ ->
                     playback
@@ -1362,7 +1388,7 @@ exchangeDeathFrame projected focus =
     let
         casualties : List UnitId
         casualties =
-            encounterCasualties focus.encounter
+            encounterCasualties (focusEncounter focus)
 
         before : Frame
         before =
@@ -1403,9 +1429,14 @@ advanceCombat focus playback =
                 playback
                     |> setPresentation
                         (Combat
-                            ({ focus | encounter = encounter, remaining = rest }
-                                |> setCombatFocusStage (Spotlighting 0)
-                            )
+                            { focus
+                                | remaining = rest
+                                , stage =
+                                    Spotlighting
+                                        { encounter = encounter
+                                        , elapsed = 0
+                                        }
+                            }
                         )
             , frame = focus.before
             }
@@ -1828,10 +1859,10 @@ focusPositions playback =
     in
     case playback.presentation of
         Combat focus ->
-            encounterPositions focus.before focus.encounter |> List.map point
+            encounterPositions focus.before (focusEncounter focus) |> List.map point
 
         Deaths { focus } ->
-            encounterPositions focus.before focus.encounter |> List.map point
+            encounterPositions focus.before (focusEncounter focus) |> List.map point
 
         Battlefield ->
             let

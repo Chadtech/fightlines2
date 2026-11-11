@@ -1,4 +1,7 @@
-module Game.View.TerrainInfo exposing (toHtml)
+module Game.View.TerrainInfo exposing
+    ( helpButton
+    , toHtml
+    )
 
 import Game.Coordinate exposing (Coordinate)
 import Game.Map as Map exposing (Map)
@@ -27,13 +30,13 @@ inspectionView events map position =
             , S.g3
             ]
         ]
-        [ terrainView events map position
+        [ helpButton events map position
         , TerrainTile.portrait map position
         ]
 
 
-terrainView : Events msg -> Map -> Coordinate -> Html msg
-terrainView events map position =
+helpButton : Events msg -> Map -> Coordinate -> Html msg
+helpButton events map position =
     let
         terrain : Terrain
         terrain =

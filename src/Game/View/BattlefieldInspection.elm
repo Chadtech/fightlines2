@@ -22,6 +22,7 @@ import Html.Styled.Attributes as A
 import Html.Styled.Keyed as Keyed
 import Style as S
 import View.Aria as Aria
+import View.Layout as Layout exposing (Layout)
 
 
 
@@ -55,8 +56,8 @@ type alias CargoArgs msg =
 ----------------------------------------------------------------
 
 
-toHtml : Contents msg -> Html msg
-toHtml model =
+toHtml : Layout -> Contents msg -> Html msg
+toHtml layout model =
     let
         unitRows : List ( String, Html msg )
         unitRows =
@@ -88,7 +89,12 @@ toHtml model =
                         depotRow : Depot -> ( String, Html msg )
                         depotRow depot =
                             ( "depot:" ++ coordinateKey
-                            , inspectionRow (Depot.label depot) [ DepotStatus.toHtml depot ]
+                            , inspectionRow (Depot.label depot)
+                                [ DepotStatus.toHtml
+                                    model.onHelp
+                                    layout
+                                    depot
+                                ]
                             )
 
                         crateRows : List ( String, Html msg )
@@ -107,7 +113,8 @@ toHtml model =
                         terrainRows : List ( String, Html msg )
                         terrainRows =
                             [ ( "terrain:" ++ coordinateKey
-                              , inspectionRow "terrain" [ terrainView model ]
+                              , inspectionRow "terrain"
+                                    [ terrainView layout model coordinate ]
                               )
                             ]
                     in
@@ -164,19 +171,30 @@ inspectionRow label contents =
         contents
 
 
-terrainView : Contents msg -> Html msg
-terrainView model =
-    case model.position of
-        Just coordinate ->
-            Keyed.node "div"
-                []
-                [ ( String.fromInt coordinate.x ++ "," ++ String.fromInt coordinate.y
-                  , TerrainInfo.toHtml { onHelp = model.onHelp } model.map coordinate
-                  )
-                ]
+terrainView : Layout -> Contents msg -> Coordinate -> Html msg
+terrainView layout model coordinate =
+    let
+        content : Html msg
+        content =
+            case layout of
+                Layout.Desktop ->
+                    TerrainInfo.toHtml
+                        { onHelp = model.onHelp }
+                        model.map
+                        coordinate
 
-        Nothing ->
-            H.text ""
+                Layout.Mobile ->
+                    TerrainInfo.helpButton
+                        { onHelp = model.onHelp }
+                        model.map
+                        coordinate
+    in
+    Keyed.node "div"
+        []
+        [ ( String.fromInt coordinate.x ++ "," ++ String.fromInt coordinate.y
+          , content
+          )
+        ]
 
 
 cargo : CargoArgs msg -> Unit -> Html msg

@@ -23,10 +23,12 @@ existing checks; `make check-all` now runs the slow Rust checks and then the vis
 suite, so the check-in workflow includes this guard. Browser installation is an
 explicit setup step, not an implicit download during checks.
 
-Each invocation rebuilds the frontend and debug server. A new server binds to
-`127.0.0.1:4187` and exits after the run. An occupied port is an error; the suite
-never silently reuses your running development server. Run one visual invocation
-at a time. Do not build the same checkout concurrently from another terminal.
+Each invocation rebuilds the frontend and debug server once. It starts isolated
+servers on `127.0.0.1:4187` for desktop and `127.0.0.1:4188` for mobile, so
+the two groups have independent lobby-creation budgets. Both servers exit
+after the run. The suite fails if either port is occupied. Run one visual
+invocation at a time. Do not build the same checkout concurrently from another
+terminal.
 
 The server starts outside the checkout without loading your `.env`, removes
 inherited `FIGHTLINES_*` configuration, and puts archives, feedback, diagnostics,
@@ -112,14 +114,23 @@ npm run test:visual
 Review every changed PNG before committing it with the corresponding code. Never
 update all snapshots merely to make a failing check green. Because the two desktop
 flag states share a battlefield reference, a normal comparison run after every
-update is mandatory. To check repeatability without rewriting baselines:
+update is mandatory.
+
+Each mobile screenshot has its own test. After approving an individual diff,
+target that test by name. This command updates the orders rail baseline.
+
+```sh
+npm run test:visual:update -- --project=mobile-landscape --grep 'orders rail$'
+```
+
+To check repeatability without rewriting baselines:
 
 ```sh
 for run in 1 2 3; do npm run test:visual || break; done
 ```
 
-Repeat whole invocations, not `--repeat-each`: each invocation restarts the server
-and its real per-IP lobby-creation rate limiter. Many repeats against one server
+Repeat whole invocations, not `--repeat-each`: each invocation restarts both servers
+and their per-IP lobby-creation rate limiters. Many repeats against one server
 correctly hit that limiter; tests do not disable production admission controls.
 
 ## Baseline environments

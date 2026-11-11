@@ -4,6 +4,7 @@ import Api.Enum.BuildingKind as BuildingKind
 import Css
 import Game.Depot as Depot exposing (Depot)
 import Game.Supply as Supply
+import Game.View.InspectionHelp as InspectionHelp exposing (Help(..))
 import Game.View.StockGauge as StockGauge
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
@@ -11,16 +12,30 @@ import Html.Styled.Lazy as Lazy
 import Style as S
 import View.Aria as Aria
 import View.InfoMarker as InfoMarker
+import View.Layout as Layout exposing (Layout)
 
 
-toHtml : Depot -> Html msg
-toHtml depot =
-    Lazy.lazy depotView depot
+toHtml : (Help -> msg) -> Layout -> Depot -> Html msg
+toHtml onHelp layout depot =
+    Lazy.lazy3 depotView onHelp layout depot
 
 
-depotView : Depot -> Html msg
-depotView depot =
+depotView : (Help -> msg) -> Layout -> Depot -> Html msg
+depotView onHelp layout depot =
     let
+        events : InspectionHelp.Events msg
+        events =
+            { onHelp = onHelp }
+
+        illustration : Html msg
+        illustration =
+            case layout of
+                Layout.Desktop ->
+                    depotIllustration depot
+
+                Layout.Mobile ->
+                    H.text ""
+
         status : Html msg
         status =
             if depot.kind == BuildingKind.Fortress then
@@ -45,10 +60,23 @@ depotView depot =
             else
                 case ( Depot.resourceKind depot, depot.stock ) of
                     ( Just kind, Just level ) ->
+                        let
+                            label : String
+                            label =
+                                Supply.resourceLabel kind
+
+                            accessibleLabel : String
+                            accessibleLabel =
+                                Depot.label depot ++ " " ++ label
+                        in
                         StockGauge.toHtml
-                            { label = Supply.resourceLabel kind
-                            , accessibleLabel = Depot.label depot ++ " " ++ Supply.resourceLabel kind
-                            , description = Depot.stockDescription kind
+                            { label = label
+                            , accessibleLabel = accessibleLabel
+                            , help =
+                                InspectionHelp.button events
+                                    ("about " ++ accessibleLabel)
+                                    (DepotStockHelp kind)
+                                    |> StockGauge.DialogButton
                             }
                             level
 
@@ -93,34 +121,43 @@ depotView depot =
                 [ H.text (Depot.description depot)
                 ]
             ]
-        , H.div
-            [ A.css
-                [ S.bgNightwood3
-                , S.indentStrong
-                , S.p3
-                , S.row
-                , S.justifyCenter
-                ]
-            ]
-            [ H.img
-                [ A.src (Depot.image depot)
-                , A.alt (Depot.label depot)
-                , A.css
-                    [ S.block
-                    , S.w128px
-                    , S.h128px
-                    , S.maxWFull
-                    , S.objectContain
-                    ]
-                ]
-                []
-            ]
+        , illustration
         , StockGauge.hp
             { accessibleLabel = Depot.label depot ++ " hp"
-            , description = "each shell removes one hp. occupying infantry can destroy this building in one turn with sabotage. the condition shown in fog was last observed."
+            , help =
+                InspectionHelp.button events
+                    ("about " ++ Depot.label depot ++ " hp")
+                    BuildingHpHelp
+                    |> StockGauge.DialogButton
             }
             depot.hp
         , status
+        ]
+
+
+depotIllustration : Depot -> Html msg
+depotIllustration depot =
+    H.div
+        [ A.css
+            [ S.bgNightwood3
+            , S.indentStrong
+            , S.p3
+            , S.row
+            , S.justifyCenter
+            ]
+        ]
+        [ H.img
+            [ A.src (Depot.image depot)
+            , A.alt (Depot.label depot)
+            , A.css
+                [ S.block
+                , S.w128px
+                , S.h128px
+                , S.maxWFull
+                , S.objectContain
+                ]
+            ]
+            []
         ]
 
 

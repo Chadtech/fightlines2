@@ -4,6 +4,7 @@ const { tmpdir } = require('node:os');
 const { join, resolve } = require('node:path');
 
 const repository = resolve(__dirname, '../..');
+const port = process.argv[2];
 const directory = mkdtempSync(join(tmpdir(), 'fightlines-visual-'));
 const frontend = join(directory, 'public');
 mkdirSync(frontend);
@@ -23,7 +24,7 @@ const server = spawn(join(repository, 'target/debug/fightlines-server'), [], {
   env: {
     ...environment,
     FIGHTLINES_ENV: 'development',
-    FIGHTLINES_ADDR: '127.0.0.1:4187',
+    FIGHTLINES_ADDR: `127.0.0.1:${port}`,
     FIGHTLINES_FRONTEND_DIR: frontend,
     FIGHTLINES_MAP_DIR: join(__dirname, 'fixtures/maps'),
     FIGHTLINES_GAME_LOG_DIR: join(directory, 'game-logs'),

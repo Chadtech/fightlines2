@@ -41,7 +41,7 @@ dialog dismissed =
                     , S.textGray5
                     , S.overflowAuto
                     , S.h128
-                    , S.maxHViewportInsetRem 10
+                    , S.maxHViewportInset40
                     ]
                 ]
                 entries

@@ -351,16 +351,24 @@ lossDialog config playback =
     loss config.skipDialogs playback |> Maybe.map notice
 
 
-combatOverlay : List BackdropCalibration.Entry -> Bool -> Map -> Maybe TurnPlayback.Playback -> Html CombatTheater.Msg
-combatOverlay calibrations automaticallyClose map playback =
+combatOverlay :
+    { calibrations : List BackdropCalibration.Entry
+    , automaticallyClose : Bool
+    , mobile : Bool
+    }
+    -> Map
+    -> Maybe TurnPlayback.Playback
+    -> Html CombatTheater.Msg
+combatOverlay config map playback =
     let
         overlay : TurnPlayback.Playback -> Maybe (Html CombatTheater.Msg)
         overlay animation =
             TurnPlayback.panels animation
                 |> Maybe.map
                     (CombatTheater.toHtml
-                        { calibrations = calibrations
-                        , automaticallyClose = automaticallyClose
+                        { calibrations = config.calibrations
+                        , automaticallyClose = config.automaticallyClose
+                        , mobile = config.mobile
                         , visibleTiles = animation.current.visibleTiles
                         }
                         animation.current.depots

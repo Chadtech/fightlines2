@@ -155,6 +155,7 @@ import View.Aria as Aria
 import View.Button as Button
 import View.Checkbox as Checkbox
 import View.Dialog as Dialog exposing (Dialog)
+import View.Layout as Layout exposing (Layout)
 import View.RequestError as RequestError
 
 
@@ -448,7 +449,10 @@ isMobileView model =
 refreshLayout : Shared.Model -> Model -> Eff Msg
 refreshLayout previous model =
     if Shared.isMobileView previous /= Shared.isMobileView model.shared then
-        measureWorkspace
+        E.batch
+            [ measureWorkspace
+            , scrollChatHistory model.chat model.shared
+            ]
 
     else
         E.none
@@ -1838,15 +1842,9 @@ withLayoutMeasurement previous next =
         playbackStarted =
             (playback previous == Nothing) && (playback next /= Nothing)
 
-        mobilePanelChanged : Bool
-        mobilePanelChanged =
-            isMobileView next
-                && ((selectedUnit previous == Nothing) /= (selectedUnit next == Nothing))
-
         layoutChanged : Bool
         layoutChanged =
             ((currentSelection previous == Nothing) /= (currentSelection next == Nothing))
-                || mobilePanelChanged
                 || (turnActivity previous /= turnActivity next)
                 || (previous.currentTurn.outcome /= next.currentTurn.outcome)
     in
@@ -1954,12 +1952,23 @@ applyChatUpdate chat model =
     ( next, effects )
 
 
+chatHistoryVisible : Chat.Model -> Shared.Model -> Bool
+chatHistoryVisible chat shared =
+    if Shared.isMobileView shared then
+        Chat.isOpen chat
+
+    else
+        Chat.historyVisible chat
+
+
 scrollChatHistory : Chat.Model -> Shared.Model -> Eff Msg
 scrollChatHistory chat shared =
     let
         canFollow : Bool
         canFollow =
-            Chat.historyVisible chat && Chat.followsHistory chat && not shared.devPanelOpen
+            chatHistoryVisible chat shared
+                && Chat.followsHistory chat
+                && not shared.devPanelOpen
     in
     if canFollow then
         E.scrollToBottom { htmlId = ChatView.messagesHtmlId } ChatScrollCompleted
@@ -2544,7 +2553,7 @@ update lobbyId msg model =
         ChatScrollCompleted result ->
             case result of
                 Err error ->
-                    if Chat.historyVisible model.chat && not model.shared.devPanelOpen then
+                    if chatHistoryVisible model.chat model.shared && not model.shared.devPanelOpen then
                         model
                             |> setShared (Shared.addError (Just (Error.ElementScrollFailed error)) model.shared)
                             |> E.withOut
@@ -4530,18 +4539,21 @@ desktopView model =
             GameMenu.panel
                 { enabled = canOpenDialog model
                 , turnNumber = displayedTurnNumber model
+                , mobile = False
                 }
                 |> H.map GameMenuMsg
                 |> Just
         , controls = turnPanel model
         , notification = requestErrorCard model
-        , inspection = selectionView model
+        , inspection = selectionView Layout.Desktop model
         , hasSelection = currentSelection model /= Nothing
         , onCloseInspection = InspectorCloseClicked
         , combatOverlay =
             PlaybackPresentation.combatOverlay
-                CombatTheaterCalibrations.catalog
-                model.automaticallyCloseCombatTheater
+                { calibrations = CombatTheaterCalibrations.catalog
+                , automaticallyClose = model.automaticallyCloseCombatTheater
+                , mobile = False
+                }
                 model.map
                 (playback model)
                 |> H.map CombatTheaterMsg
@@ -4577,6 +4589,7 @@ mobileView model =
                     GameMenu.panel
                         { enabled = canOpenDialog model
                         , turnNumber = displayedTurnNumber model
+                        , mobile = True
                         }
                         |> H.map GameMenuMsg
                 , submit =
@@ -4584,7 +4597,8 @@ mobileView model =
                         |> H.map TurnControlsMsg
                 }
         , battlefield = battlefieldView model
-        , hasSelection = selectedUnit model /= Nothing
+        , hasSelection = currentSelection model /= Nothing
+        , tab = mobilePanelTab model
         , panelHeader = mobilePanelHeader model
         , panel = mobileTaskPanel model
         , close =
@@ -4599,8 +4613,10 @@ mobileView model =
             }
         , combatOverlay =
             PlaybackPresentation.combatOverlay
-                CombatTheaterCalibrations.catalog
-                model.automaticallyCloseCombatTheater
+                { calibrations = CombatTheaterCalibrations.catalog
+                , automaticallyClose = model.automaticallyCloseCombatTheater
+                , mobile = True
+                }
                 model.map
                 (playback model)
                 |> H.map CombatTheaterMsg
@@ -4673,7 +4689,10 @@ mobileTaskPanel model =
                                 [ mobileOrdersPanel model ]
 
                             MobileBattlefield.Details ->
-                                [ selectionView model ]
+                                [ selectionView
+                                    Layout.Mobile
+                                    model
+                                ]
 
                     else
                         []
@@ -4797,8 +4816,8 @@ orderMenu model =
             H.text ""
 
 
-selectionView : Model -> Html Msg
-selectionView model =
+selectionView : Layout -> Model -> Html Msg
+selectionView layout model =
     case unloadPlanning model.currentTurn.phase of
         Just planning ->
             case planning.cargo of
@@ -4808,17 +4827,17 @@ selectionView model =
                         |> Maybe.andThen .resources
                         |> Maybe.andThen (.supplyCargo >> List.drop index >> List.head)
                         |> Maybe.map (BattlefieldInspection.unloadingFreight index)
-                        |> Maybe.withDefault (battlefieldSelectionView model)
+                        |> Maybe.withDefault (battlefieldSelectionView layout model)
 
                 UnloadCargo.Passenger _ ->
-                    battlefieldSelectionView model
+                    battlefieldSelectionView layout model
 
         Nothing ->
-            battlefieldSelectionView model
+            battlefieldSelectionView layout model
 
 
-battlefieldSelectionView : Model -> Html Msg
-battlefieldSelectionView model =
+battlefieldSelectionView : Layout -> Model -> Html Msg
+battlefieldSelectionView layout model =
     let
         inspectedUnit : Maybe Unit
         inspectedUnit =
@@ -4868,6 +4887,7 @@ battlefieldSelectionView model =
                 content : List (Html Msg)
                 content =
                     [ UnitStatus.toHtml
+                        layout
                         { onHelp = InspectionHelpClicked }
                         (ownerName model unit |> Maybe.withDefault "")
                         authoritativeUnit
@@ -4894,6 +4914,7 @@ battlefieldSelectionView model =
                     inspectionPosition model
     in
     BattlefieldInspection.toHtml
+        layout
         { onHelp = InspectionHelpClicked
         , map = model.map
         , depots = model.depots
@@ -5770,7 +5791,12 @@ chatDialog : Model -> () -> Maybe (Dialog Msg)
 chatDialog model _ =
     case model.chat.panel of
         Chat.Composing composer ->
-            Just (ChatView.dialog model.chat composer |> Dialog.map ChatMsg)
+            ChatView.dialog
+                { mobile = isMobileView model }
+                model.chat
+                composer
+                |> Dialog.map ChatMsg
+                |> Just
 
         _ ->
             Nothing
@@ -5880,14 +5906,26 @@ welcomeBriefingDialog model _ =
 
 inspectionHelpDialog : Model -> () -> Maybe (Dialog Msg)
 inspectionHelpDialog model _ =
-    Maybe.map (InspectionHelp.dialog model.unitStats DialogDismissed) model.inspectionHelp
+    Maybe.map
+        (InspectionHelp.dialog
+            { mobile = isMobileView model
+            , stats = model.unitStats
+            , onClose = DialogDismissed
+            }
+        )
+        model.inspectionHelp
 
 
 gameMenuDialog : Model -> () -> Maybe (Dialog Msg)
 gameMenuDialog model _ =
     case model.menu of
         MainMenu ->
-            Just (GameMenu.dialog { resigning = model.resigning } |> Dialog.map GameMenuMsg)
+            GameMenu.dialog
+                { resigning = model.resigning
+                , mobile = isMobileView model
+                }
+                |> Dialog.map GameMenuMsg
+                |> Just
 
         ConfirmingResignation destination ->
             Just
@@ -5896,7 +5934,11 @@ gameMenuDialog model _ =
                 )
 
         FeedbackMenu ->
-            Just (FeedbackView.dialog model.feedback |> Dialog.map FeedbackMsg)
+            FeedbackView.dialog
+                { mobile = isMobileView model }
+                model.feedback
+                |> Dialog.map FeedbackMsg
+                |> Just
 
         AboutMenu ->
             Just (About.dialog { onClose = GameMenuMsg GameMenu.CloseClicked })
@@ -5905,6 +5947,7 @@ gameMenuDialog model _ =
             Just
                 (Settings.dialog
                     { tab = tab
+                    , mobile = isMobileView model
                     , skipIntroduction = model.skipTurnIntroduction
                     , skipLosses = model.skipUnitLossDialogs
                     , skipOrdersWarning = model.skipUnplannedUnitsWarning

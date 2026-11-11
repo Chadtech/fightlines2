@@ -1433,18 +1433,22 @@ combatPlaybackChecks first second =
 
         volley : TurnPlayback.Frame
         volley =
+            volleyFor attacker
+
+        volleyFor : Unit -> TurnPlayback.Frame
+        volleyFor firingUnit =
             before
                 |> setFrameDurationMs 450
                 |> TurnPlayback.setFrameShots
-                    [ shot
+                    [ shot |> setShotAttacker firingUnit
                     , shot
                         |> setShotOrigin shot.destination
                         |> setShotDestination shot.origin
                         |> setShotAttacker target
-                        |> setShotTarget attacker
+                        |> setShotTarget firingUnit
                     ]
                 |> TurnPlayback.setFrameUnits
-                    [ attacker
+                    [ firingUnit
                         |> Unit.setDestroyed True
                     , target
                         |> Unit.setDestroyed True
@@ -2438,29 +2442,29 @@ combatPlaybackChecks first second =
                         fieldGunSounds : Float -> Float -> List Audio.Event
                         fieldGunSounds earlier later =
                             let
-                                withFieldGun : TurnPlayback.Playback -> TurnPlayback.Playback
-                                withFieldGun playback =
-                                    case playback.presentation of
-                                        TurnPlayback.Combat combatFocus ->
-                                            case combatFocus.encounter of
-                                                TurnPlayback.Exchange pair ->
-                                                    { playback
-                                                        | presentation =
-                                                            TurnPlayback.Combat
-                                                                { combatFocus
-                                                                    | encounter = TurnPlayback.Exchange { pair | attacker = Unit.setKind Kind.FieldGun pair.attacker }
-                                                                }
-                                                    }
+                                fieldGun : Unit
+                                fieldGun =
+                                    Unit.setKind Kind.FieldGun attacker
 
-                                                _ ->
-                                                    playback
-
-                                        _ ->
-                                            playback
+                                gunPanel : Maybe TurnPlayback.Playback
+                                gunPanel =
+                                    TurnPlayback.start
+                                        [ before
+                                            |> TurnPlayback.setFrameUnits
+                                                [ fieldGun, target ]
+                                        , volleyFor fieldGun
+                                        , cleanup
+                                        ]
+                                        |> Maybe.andThen
+                                            (TurnPlayback.tick 5000 >> Tuple.first)
+                                        |> Maybe.andThen
+                                            (TurnPlayback.tick 300 >> Tuple.first)
 
                                 gunPlayback : Float -> Maybe TurnPlayback.Playback
                                 gunPlayback elapsed =
-                                    atPanelTime elapsed |> Maybe.map withFieldGun
+                                    gunPanel
+                                        |> Maybe.andThen
+                                            (TurnPlayback.tick elapsed >> Tuple.first)
                             in
                             PlaybackPresentation.audioBetween { before = gunPlayback earlier, after = gunPlayback later }
 

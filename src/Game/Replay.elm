@@ -69,6 +69,7 @@ import View.Aria as Aria
 import View.Button as Button
 import View.Checkbox as Checkbox
 import View.Dialog as Dialog exposing (Dialog)
+import View.Layout as Layout
 import View.Select as Select
 
 
@@ -1470,8 +1471,10 @@ view model =
         , onCloseInspection = InspectorCloseClicked
         , combatOverlay =
             PlaybackPresentation.combatOverlay
-                CombatTheaterCalibrations.catalog
-                model.automaticallyCloseCombatTheater
+                { calibrations = CombatTheaterCalibrations.catalog
+                , automaticallyClose = model.automaticallyCloseCombatTheater
+                , mobile = Shared.isMobileView model.shared
+                }
                 model.battlefield.map
                 (playback model)
                 |> H.map CombatTheaterMsg
@@ -1496,6 +1499,7 @@ selectionView model =
             { unit = unit
             , content =
                 [ UnitStatus.toHtml
+                    Layout.Desktop
                     { onHelp = InspectionHelpClicked }
                     (PlaybackPresentation.ownerName model.battlefield.players unit |> Maybe.withDefault "")
                     unit
@@ -1511,6 +1515,7 @@ selectionView model =
             }
     in
     BattlefieldInspection.toHtml
+        Layout.Desktop
         { onHelp = InspectionHelpClicked
         , map = model.battlefield.map
         , depots = model.battlefield.depots
@@ -1754,7 +1759,14 @@ battlefieldDialog : Model -> Maybe (Dialog Msg)
 battlefieldDialog model =
     case model.inspectionHelp of
         Just help ->
-            Just (InspectionHelp.dialog model.battlefield.unitStats InspectionHelpDismissed help)
+            Just
+                (InspectionHelp.dialog
+                    { mobile = Shared.isMobileView model.shared
+                    , stats = model.battlefield.unitStats
+                    , onClose = InspectionHelpDismissed
+                    }
+                    help
+                )
 
         Nothing ->
             PlaybackPresentation.lossDialog

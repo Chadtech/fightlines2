@@ -214,8 +214,10 @@ module Style exposing
     , maxH40Viewport
     , maxH64
     , maxHContainerInset4
+    , maxHViewportInset24
+    , maxHViewportInset40
+    , maxHViewportInset6
     , maxHViewportInset8
-    , maxHViewportInsetRem
     , maxW12
     , maxW120
     , maxW128
@@ -1447,11 +1449,24 @@ maxW320 =
     Css.maxWidth s320
 
 
-{-| Leave a two-rem total gutter above and below viewport-height content.
--}
+maxHViewportInset6 : Css.Style
+maxHViewportInset6 =
+    Css.maxHeight (Css.calc (Css.vh 100) (Css.minus s6))
+
+
 maxHViewportInset8 : Css.Style
 maxHViewportInset8 =
-    Css.maxHeight (Css.calc (Css.vh 100) (Css.minus (Css.rem 2)))
+    Css.maxHeight (Css.calc (Css.vh 100) (Css.minus s8))
+
+
+maxHViewportInset24 : Css.Style
+maxHViewportInset24 =
+    Css.maxHeight (Css.calc (Css.vh 100) (Css.minus s24))
+
+
+maxHViewportInset40 : Css.Style
+maxHViewportInset40 =
+    Css.maxHeight (Css.calc (Css.vh 100) (Css.minus s40))
 
 
 maxH64 : Css.Style
@@ -3433,11 +3448,6 @@ widthPct value =
 minWidthRem : Float -> Css.Style
 minWidthRem value =
     Css.minWidth (Css.rem value)
-
-
-maxHViewportInsetRem : Float -> Css.Style
-maxHViewportInsetRem inset =
-    Css.maxHeight (Css.calc (Css.vh 100) (Css.minus (Css.rem inset)))
 
 
 maxWViewportInsetRem : Float -> Css.Style

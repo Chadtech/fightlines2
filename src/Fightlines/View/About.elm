@@ -112,7 +112,6 @@ dialog events =
             |> Button.toHtml
         ]
         |> Dialog.article
-        |> Dialog.withCloseButton
 
 
 creatorPhoto : Html msg

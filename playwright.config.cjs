@@ -1,5 +1,13 @@
 const { defineConfig } = require('@playwright/test');
 
+const desktopUrl = 'http://127.0.0.1:4187';
+const mobileUrl = 'http://127.0.0.1:4188';
+const serverOptions = {
+  reuseExistingServer: false,
+  timeout: 300_000,
+  gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
+};
+
 module.exports = defineConfig({
   testDir: './tests/visual',
   testMatch: '**/*.spec.cjs',
@@ -24,7 +32,7 @@ module.exports = defineConfig({
   outputDir: 'test-results/visual',
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
   use: {
-    baseURL: 'http://127.0.0.1:4187',
+    baseURL: desktopUrl,
     browserName: 'chromium',
     // Software rasterization avoids GPU-dependent image resampling noise.
     launchOptions: { args: ['--disable-gpu'] },
@@ -40,14 +48,20 @@ module.exports = defineConfig({
   projects: [
     { name: 'desktop', testMatch: '**/desktop.spec.cjs', use: { viewport: { width: 1440, height: 900 } } },
     { name: 'laptop', testMatch: '**/desktop.spec.cjs', use: { viewport: { width: 1280, height: 800 } } },
-    { name: 'mobile-landscape', testMatch: '**/mobile.spec.cjs', use: { viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true } },
-    { name: 'mobile-portrait', testMatch: '**/mobile.spec.cjs', use: { viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true } },
+    { name: 'mobile-landscape', testMatch: '**/mobile.spec.cjs', use: { baseURL: mobileUrl, viewport: { width: 852, height: 393 }, isMobile: true, hasTouch: true } },
+    { name: 'mobile-portrait', testMatch: '**/mobile-portrait.spec.cjs', use: { baseURL: mobileUrl, viewport: { width: 393, height: 852 }, isMobile: true, hasTouch: true } },
   ],
-  webServer: {
-    command: 'npm run test:visual:build && node tests/visual/server.cjs',
-    url: 'http://127.0.0.1:4187',
-    reuseExistingServer: false,
-    timeout: 300_000,
-    gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
-  },
+  // Build once, then give desktop and mobile separate lobby creation budgets.
+  webServer: [
+    {
+      ...serverOptions,
+      command: 'npm run test:visual:build && node tests/visual/server.cjs 4187',
+      url: desktopUrl,
+    },
+    {
+      ...serverOptions,
+      command: 'node tests/visual/server.cjs 4188',
+      url: mobileUrl,
+    },
+  ],
 });

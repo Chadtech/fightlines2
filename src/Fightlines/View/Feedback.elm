@@ -5,6 +5,7 @@ module Fightlines.View.Feedback exposing
     , inputHtmlId
     )
 
+import Css
 import Fightlines.Feedback as Feedback exposing (Draft, Status(..))
 import Html.Styled as H exposing (Html)
 import Html.Styled.Attributes as A
@@ -43,8 +44,8 @@ inputHtmlId =
     "feedback-text"
 
 
-dialog : Draft -> Dialog Msg
-dialog draft =
+dialog : { mobile : Bool } -> Draft -> Dialog Msg
+dialog layout draft =
     let
         textarea : Textarea.Textarea Msg
         textarea =
@@ -65,6 +66,14 @@ dialog draft =
 
             else
                 Button.disabled "submit feedback"
+
+        fieldHeight : Css.Style
+        fieldHeight =
+            if layout.mobile then
+                S.flex1
+
+            else
+                S.h48
     in
     Dialog.make htmlId
         "feedback"
@@ -73,12 +82,15 @@ dialog draft =
             [ A.css
                 [ S.col
                 , S.g1
+                , S.when layout.mobile
+                    (S.batch [ S.flex1, S.minH20 ])
                 ]
             ]
             [ H.text "your feedback"
             , H.div
                 [ A.css
-                    [ S.h48
+                    [ fieldHeight
+                    , S.minH0
                     ]
                 ]
                 [ textarea
@@ -93,6 +105,7 @@ dialog draft =
                 [ S.row
                 , S.flexWrap
                 , S.g2
+                , S.shrink0
                 ]
             ]
             [ submit
@@ -101,8 +114,7 @@ dialog draft =
                 |> Button.toHtml
             ]
         ]
-        |> Dialog.form
-        |> Dialog.withCloseButton
+        |> Dialog.compactForm
 
 
 status : Draft -> Html Msg
@@ -140,6 +152,7 @@ status draft =
         [ Aria.role role
         , A.css
             [ S.wrapAnywhere
+            , S.when (String.isEmpty message) S.absolute
             ]
         ]
         [ H.text message ]
