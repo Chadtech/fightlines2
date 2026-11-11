@@ -48,13 +48,16 @@ feature and compares against the **same** desktop reference.
 - Settings dialog, dialog preferences, audio tab, and Escape dismissal.
 - First-game briefing, turn introduction, and their continue buttons.
 - 852 × 393 touch/landscape: battlefield, orders rail, details rail, settings.
+- Resolved turn-two report: all four metrics and actions fit without scrolling
+  at 852 × 393, 828 × 379, and 667 × 320, with actions at the bottom;
+  snapshot both the shortest layout and one with spare height.
 - 393 × 852 touch/portrait: rotate prompt.
 
 Most game scenarios create their isolated lobby/game through the real API for
 speed; one desktop scenario per viewport goes through the UI end to end. Fresh
 browser contexts provide independent cookies and local storage for every test.
 Mobile projects emulate responsive Chromium and touch input, **not iOS Safari**.
-This initial suite does not snapshot combat playback, later resolved turns,
+This initial suite does not snapshot combat playback,
 matchmaking, chat, every map theme, Admin, or DevTools. Existing behavior tests
 remain necessary; screenshots do not prove those flows work.
 
@@ -119,7 +122,7 @@ Repeat whole invocations, not `--repeat-each`: each invocation restarts the serv
 and its real per-IP lobby-creation rate limiter. Many repeats against one server
 correctly hit that limiter; tests do not disable production admission controls.
 
-## Baseline environments and CI
+## Baseline environments
 
 Initial baselines were generated on **macOS 26.5.2 ARM64**, Node 22.23.4,
 Playwright 1.65.0, bundled Chromium 158.0.8127.18, and device scale factor 1.
@@ -129,17 +132,5 @@ their own reviewed baselines. The namespace does not encode OS patch versions.
 OS, browser, font, or rendering changes require explicit review, not a higher
 pixel tolerance or renamed Linux images masquerading as Mac images.
 
-`.github/workflows/visual.yml` runs comparison on pull requests, pushes to main,
-and manual dispatch. It uses the explicit **macos-26 ARM64** hosted image, Node
-22, Rust 1.92.0, Elm 0.19.3, and elm-format 0.8.7. Reports and traces are retained
-for 14 days. It has read-only repository permissions and never updates, commits,
-or pushes snapshots. Once the first hosted run passes, make **Visual regression /
-snapshots** a required branch-protection check in GitHub if desired.
-
-The hosted workflow has not been executed from this local implementation. GitHub's
-macOS image currently has a newer 26.x patch than the baseline producer, so inspect
-any first-run rasterization differences. Do not claim the CI gate is green until
-that first hosted run verifies it. A consistently different runner needs its own
-reviewed baseline set or a matching pinned runner environment; do not auto-approve
-its output. No remote branch, pull request, or branch-protection settings are
-changed by this setup.
+Visual tests run locally through the commands above and `make check-all`.
+There is no GitHub Actions workflow for them.

@@ -155,7 +155,7 @@ page focused on the project while preserving the reference material.
 | Guide | What's inside |
 | --- | --- |
 | [Playing](docs/PLAYING.md) | Controls, orders, combat, fog, transport, and resources |
-| [Visual testing](docs/VISUAL_TESTING.md) | Screenshot coverage, baselines, reports, and CI |
+| [Visual testing](docs/VISUAL_TESTING.md) | Local screenshot tests, baselines, and reports |
 | [Development](docs/DEVELOPMENT.md) | Setup, app layout, fixtures, builds, audio, replay, and debugging tools |
 | [Maps](docs/MAPS.md) | Runtime catalog, map editor, and scenario notes |
 | [Architecture](ARCHITECTURE.md) | State ownership, data flow, API boundaries, and simulation design |
