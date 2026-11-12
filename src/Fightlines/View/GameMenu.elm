@@ -30,6 +30,7 @@ type Msg
     = OpenClicked
     | ChatClicked
     | SettingsClicked
+    | DevPanelClicked
     | FeedbackClicked
     | AboutClicked
     | CloseClicked
@@ -175,7 +176,7 @@ dialog config =
                 , S.mAuto
                 , S.shrink0
                 , S.childButtons
-                    [ Css.property "min-height" "clamp(3rem, 20dvh, 5rem)"
+                    [ Css.property "min-height" "clamp(2.75rem, 15dvh, 5rem)"
                     , S.fontSizeRem 1.25
                     , Css.property "grid-column" "span 2"
                     , Css.lastChild
@@ -200,6 +201,9 @@ dialog config =
                 ]
             ]
             [ Button.secondary "settings" SettingsClicked
+                |> Button.fullWidth
+                |> Button.toHtml
+            , Button.secondary "dev panel" DevPanelClicked
                 |> Button.fullWidth
                 |> Button.toHtml
             , Button.secondary "feedback" FeedbackClicked

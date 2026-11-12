@@ -3612,6 +3612,9 @@ playAudio msg model =
                 GameMenu.SettingsClicked ->
                     Audio.affirm
 
+                GameMenu.DevPanelClicked ->
+                    Audio.affirm
+
                 GameMenu.FeedbackClicked ->
                     Audio.affirm
 
@@ -3971,6 +3974,15 @@ handleGameMenuMsg lobbyId msg model =
             else
                 model
                     |> E.withOut
+
+        GameMenu.DevPanelClicked ->
+            if model.menu == MainMenu then
+                model
+                    |> setShared (Shared.setDevPanelOpen True model.shared)
+                    |> E.withOut
+
+            else
+                E.withOut model
 
         GameMenu.CloseClicked ->
             let

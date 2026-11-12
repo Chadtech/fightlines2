@@ -13,6 +13,7 @@ module Shared exposing
     , listeners
     , setAudioMute
     , setAudioVolumes
+    , setDevPanelOpen
     , setSeed
     , subscriptions
     , superUpdate

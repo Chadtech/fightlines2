@@ -2,6 +2,42 @@ const { test, expect, openGame, createGame, graphql, snapshot } = require('./hel
 
 const interaction = { tag: '@mobile-interaction' };
 
+test('game menu lets touch players switch mobile view on and off', interaction, async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() => {
+    const key = 'fightlines.localStorage';
+    const preferences = JSON.parse(localStorage.getItem(key));
+    localStorage.setItem(key, JSON.stringify({ ...preferences, features: [] }));
+  });
+  await openGame(page);
+
+  const menu = page.getByRole('dialog', { name: 'menu', exact: true });
+  const panel = page.getByRole('dialog', { name: 'dev panel', exact: true });
+  const mobileView = panel.getByRole('checkbox', { name: 'mobile view', exact: true });
+  const openPanel = menu.getByRole('button', { name: 'dev panel', exact: true });
+  const closePanel = panel.getByRole('button', { name: 'close dev panel', exact: true });
+  const mobileBattlefield = page.locator('[aria-label="mobile battlefield"]');
+
+  await expect(mobileBattlefield).toBeHidden();
+  await page.getByRole('button', { name: 'menu', exact: true }).tap();
+  await openPanel.tap();
+  await panel.getByRole('tab', { name: 'features', exact: true }).tap();
+  await expect(mobileView).not.toBeChecked();
+  await mobileView.tap();
+  await expect(mobileView).toBeChecked();
+  await closePanel.tap();
+  await expect(menu).toBeVisible();
+  await expect(mobileBattlefield).toBeVisible();
+
+  await openPanel.tap();
+  await expect(mobileView).toBeChecked();
+  await mobileView.tap();
+  await expect(mobileView).not.toBeChecked();
+  await closePanel.tap();
+  await expect(menu).toBeVisible();
+  await expect(mobileBattlefield).toBeHidden();
+});
+
 async function swipeUp(page, scrollArea) {
   const bounds = await scrollArea.boundingBox();
   expect(bounds, 'visible scroll area').not.toBeNull();
